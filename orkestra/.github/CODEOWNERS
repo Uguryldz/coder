@@ -1,0 +1,56 @@
+# CODEOWNERS for Jira AI Orkestra
+#
+# Bu dosya GitHub tarafından her PR'da otomatik reviewer ataması için kullanılır.
+# @placeholder-* stringleri müşteri tarafından gerçek GitHub kullanıcı / takım
+# adları ile değiştirilmelidir (ör. @orkestra-team/tech-lead).
+#
+# Syntax: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+# Sonra yazılan kural öncekini ezer (last match wins).
+
+# Varsayılan — eşleşmeyen her değişiklik
+*                             @placeholder-tech-lead
+
+# Frontend / Studio
+apps/studio/**                @placeholder-tech-lead @placeholder-frontend
+
+# Backend workflows (Temporal)
+packages/workflows/**         @placeholder-backend
+
+# Güvenlik-kritik sandbox — iki onay (backend + security)
+packages/sandbox/**           @placeholder-backend @placeholder-security
+
+# Diğer backend paketleri
+packages/agents/**            @placeholder-backend
+packages/llm/**               @placeholder-backend @placeholder-security
+packages/audit/**             @placeholder-backend @placeholder-security
+packages/pii/**               @placeholder-backend @placeholder-security
+packages/jira/**              @placeholder-backend
+packages/git/**               @placeholder-backend
+packages/slack/**             @placeholder-backend
+packages/testrail/**          @placeholder-backend
+packages/db/**                @placeholder-backend
+packages/contracts/**         @placeholder-backend
+packages/config/**            @placeholder-backend
+
+# API
+apps/api/**                   @placeholder-backend
+apps/worker/**                @placeholder-backend
+
+# Dokümantasyon
+docs/**                       @placeholder-tech-lead
+docs/adr/**                   @placeholder-tech-lead @placeholder-architect
+
+# Ürün planı — sadece ürün + teknik lead
+plan/**                       @placeholder-tech-lead @placeholder-product
+
+# CI / DevOps
+.github/**                    @placeholder-devops
+deploy/**                     @placeholder-devops @placeholder-security
+scripts/**                    @placeholder-devops
+
+# Güvenlik & yönetişim dosyaları
+SECURITY.md                   @placeholder-security @placeholder-tech-lead
+LICENSE                       @placeholder-legal @placeholder-tech-lead
+CODE_OF_CONDUCT.md            @placeholder-tech-lead
+CODEOWNERS                    @placeholder-tech-lead @placeholder-devops
+.github/CODEOWNERS            @placeholder-tech-lead @placeholder-devops

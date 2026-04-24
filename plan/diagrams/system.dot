@@ -1,0 +1,150 @@
+digraph JiraAIOrkestraSystem {
+  rankdir=LR;
+  bgcolor="#FAFAFA";
+  fontname="Helvetica";
+  compound=true;
+  nodesep=0.5;
+  ranksep=0.9;
+  node [fontname="Helvetica", fontsize=11, style="filled,rounded", shape=box, margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="20"><B>Jira AI Orkestra — Sistem Mimarisi</B></FONT><BR/><FONT POINT-SIZE="11">on-prem · docker compose · tek dış çıkış: Claude API</FONT>>;
+
+  // ===== EXTERNAL INPUTS (LEFT) =====
+  subgraph cluster_input {
+    label="DIŞ SİSTEMLER (Müşteri ağı)";
+    style="filled,rounded"; fillcolor="#F1F5F9"; color="#64748B";
+    fontname="Helvetica-Bold"; fontsize=12;
+    jira   [label="Jira DC\nticket · yorum\nstatus · webhook", shape=folder, fillcolor="#E0E7FF", color="#4338CA"];
+    bit    [label="Bitbucket DC\nbranch · PR · webhook", shape=folder, fillcolor="#E0E7FF", color="#4338CA"];
+    pipe   [label="Bitbucket Pipelines\n(CI Gate)", shape=folder, fillcolor="#E0E7FF", color="#4338CA"];
+    slack  [label="Slack\nkritik bildirim", shape=folder, fillcolor="#E0E7FF", color="#4338CA"];
+    xray   [label="TestRail / Xray\ntest registry", shape=folder, fillcolor="#E0E7FF", color="#4338CA"];
+  }
+
+  // ===== API GATEWAY =====
+  subgraph cluster_api {
+    label="API KATMANI";
+    style="filled,rounded"; fillcolor="#ECFDF5"; color="#059669";
+    fontname="Helvetica-Bold"; fontsize=12;
+    api    [label="API Gateway\nNext.js\n· webhook receiver (HMAC)\n· REST (Agent Studio)\n· Jira yorum komut parser", fillcolor="#D1FAE5", color="#059669"];
+    studio [label="Agent Studio UI\nNext.js + shadcn\n· Persona / Knowledge / Eval\n· Routing rules\n· Audit viewer", fillcolor="#D1FAE5", color="#059669"];
+  }
+
+  // ===== PII MASKING LAYER =====
+  pii [label="PII Masking Layer\n· Jira field bazlı\n· regex patterns\n· reverse map", fillcolor="#FEF3C7", color="#D97706", shape=box];
+
+  // ===== TEMPORAL =====
+  subgraph cluster_temporal {
+    label="TEMPORAL CLUSTER";
+    style="filled,rounded"; fillcolor="#EFF6FF"; color="#2563EB";
+    fontname="Helvetica-Bold"; fontsize=12;
+    t_front [label="frontend", fillcolor="#DBEAFE", color="#2563EB"];
+    t_hist  [label="history", fillcolor="#DBEAFE", color="#2563EB"];
+    t_match [label="matching", fillcolor="#DBEAFE", color="#2563EB"];
+    t_front -> t_hist [style=invis];
+    t_hist -> t_match [style=invis];
+  }
+
+  // ===== WORKER POOL =====
+  subgraph cluster_workers {
+    label="WORKER POOL (role bazlı · yatay ölçek)";
+    style="filled,rounded"; fillcolor="#EFF6FF"; color="#2563EB";
+    fontname="Helvetica-Bold"; fontsize=12;
+    w1 [label="intake\nworker", fillcolor="#BFDBFE", color="#1D4ED8"];
+    w2 [label="analyst\nworker", fillcolor="#BFDBFE", color="#1D4ED8"];
+    w3 [label="developer\nworker", fillcolor="#BFDBFE", color="#1D4ED8"];
+    w4 [label="dev-reviewer\nworker", fillcolor="#BFDBFE", color="#1D4ED8"];
+    w5 [label="test-designer\nworker", fillcolor="#BFDBFE", color="#1D4ED8"];
+    w6 [label="test-reviewer\nworker", fillcolor="#BFDBFE", color="#1D4ED8"];
+    w7 [label="test-runner\nworker", fillcolor="#BFDBFE", color="#1D4ED8"];
+    w1 -> w2 [style=invis]; w2 -> w3 [style=invis]; w3 -> w4 [style=invis];
+    w4 -> w5 [style=invis]; w5 -> w6 [style=invis]; w6 -> w7 [style=invis];
+  }
+
+  // ===== RATE LIMITER + BACKPRESSURE =====
+  rate [label="Rate Limiter\n· Anthropic TPM/RPM\n· Bitbucket bucket\n· Backpressure signal", fillcolor="#FEF3C7", color="#D97706"];
+
+  // ===== DEV SANDBOX =====
+  subgraph cluster_sandbox {
+    label="DEV SANDBOX POOL (ephemeral)";
+    style="filled,rounded"; fillcolor="#FEF2F2"; color="#DC2626";
+    fontname="Helvetica-Bold"; fontsize=12;
+    sb_mgr [label="Sandbox Manager\n· capacity pool (N=CPU/4)\n· TTL 1h\n· network allow-list", fillcolor="#FEE2E2", color="#DC2626"];
+    sb_c1  [label="container #1\nBYO image\n.orkestra.yaml", fillcolor="#FECACA", color="#B91C1C"];
+    sb_c2  [label="container #2", fillcolor="#FECACA", color="#B91C1C"];
+    sb_c3  [label="container #N", fillcolor="#FECACA", color="#B91C1C"];
+    sb_dep [label="Dep Cache\n(persistent vol)\nrepo:lockhash", shape=cylinder, fillcolor="#FEE2E2", color="#DC2626"];
+    sb_scan [label="Security Scan\ngitleaks · semgrep\ntrivy", fillcolor="#FECACA", color="#B91C1C"];
+  }
+
+  // ===== EXTERNAL LLM =====
+  claude [label="Claude API\nOpus 4.7 · Sonnet 4.6 · Haiku 4.5\n(prompt caching · tek dış çıkış)", shape=cloud, fillcolor="#F5F3FF", color="#7C3AED", fontcolor="#5B21B6"];
+
+  // ===== DATA LAYER (BOTTOM) =====
+  subgraph cluster_data {
+    label="VERİ KATMANI";
+    style="filled,rounded"; fillcolor="#F8FAFC"; color="#64748B";
+    fontname="Helvetica-Bold"; fontsize=12;
+    pg    [label="PostgreSQL\n· Temporal history\n· AgentVariant + Prompt\n· KnowledgeFile (meta)\n· WorkflowRun + StepExec\n· HumanDecision\n· AuditLog (hash chain)", shape=cylinder, fillcolor="#E2E8F0", color="#475569"];
+    redis [label="Redis\n· SLA timer coalesce\n· rate limit bucket\n· short cache", shape=cylinder, fillcolor="#E2E8F0", color="#475569"];
+    minio [label="MinIO\n· analiz docs\n· test raporları\n· knowledge pack\n  file content\n· artifact", shape=cylinder, fillcolor="#E2E8F0", color="#475569"];
+    vault [label="Vault\n· Jira PAT\n· Bitbucket token\n· Claude API key\n· DB creds", shape=cylinder, fillcolor="#E2E8F0", color="#475569"];
+    pg -> redis [style=invis]; redis -> minio [style=invis]; minio -> vault [style=invis];
+  }
+
+  // ===== FLOW EDGES =====
+  // Input → API
+  jira -> api [label="webhook\n(ticket · yorum)", color="#059669", penwidth=1.5];
+  api -> jira [label="status\ntransition\nyorum yaz", color="#059669", style=dashed];
+
+  // API → PII → Temporal
+  api -> pii [label="ticket content", color="#D97706", penwidth=1.5];
+  pii -> t_front [label="masked input\nstartWorkflow()", color="#2563EB", penwidth=1.5];
+
+  // Temporal → Workers
+  t_match -> w1 [ltail=cluster_temporal, lhead=cluster_workers, label="task queue\n(role bazlı)", color="#2563EB", penwidth=1.8];
+
+  // Workers → Rate Limiter → Claude
+  w2 -> rate [label="LLM call", color="#7C3AED"];
+  rate -> claude [label="rate-safe\nrequest", color="#7C3AED", penwidth=1.5];
+  claude -> rate [label="response", color="#7C3AED", style=dashed];
+
+  // Workers → Sandbox (developer)
+  w3 -> sb_mgr [label="patch üret\n+ test et", color="#DC2626", penwidth=1.5];
+  sb_mgr -> sb_c1 [style=dotted, color="#B91C1C"];
+  sb_mgr -> sb_c2 [style=dotted, color="#B91C1C"];
+  sb_mgr -> sb_c3 [style=dotted, color="#B91C1C"];
+  sb_c1 -> sb_dep [label="cache", color="#B91C1C"];
+  sb_c1 -> sb_scan [label="security", color="#B91C1C"];
+
+  // Sandbox → Bitbucket
+  sb_c1 -> bit [label="push branch\nopen PR", color="#4338CA", penwidth=1.5];
+  bit -> pipe [label="trigger", color="#4338CA"];
+  pipe -> api [label="CI result\nwebhook", color="#4338CA", style=dashed];
+  bit -> api [label="PR comment\nwebhook", color="#4338CA", style=dashed];
+
+  // Status / notifications
+  api -> slack [label="kritik alarm", color="#059669", style=dashed];
+  sb_c1 -> xray [label="test sonucu", color="#4338CA", style=dashed];
+
+  // Data access
+  t_hist -> pg [label="history", color="#64748B", style=dashed];
+  w2 -> pg [label="audit\nstep exec", color="#64748B", style=dashed];
+  w2 -> minio [label="knowledge\nload", color="#64748B", style=dashed];
+  w2 -> vault [label="secret\nresolve", color="#64748B", style=dashed];
+  api -> redis [label="rate\ncount", color="#64748B", style=dashed];
+
+  // Admin UI
+  studio -> pg [label="variant / knowledge\nCRUD", color="#059669", style=dashed];
+  studio -> minio [label="file I/O", color="#059669", style=dashed];
+
+  // Konsol — Admin
+  admin [label="👤 Admin\n(Agent Studio'ya login)", shape=oval, fillcolor="#FEF3C7", color="#D97706"];
+  admin -> studio [label="browser", color="#D97706"];
+
+  // İnsan oyuncular
+  team [label="👤 Takım\n(PO · Tech Lead · QA · Dev)", shape=oval, fillcolor="#FEF3C7", color="#D97706"];
+  team -> jira [label="ticket · yorum\n/approve /reject\n/ai-takeover ...", color="#D97706"];
+}

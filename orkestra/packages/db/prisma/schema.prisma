@@ -1,0 +1,397 @@
+// Jira AI Orkestra — Data Model
+// Single-tenant PostgreSQL schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AGENT STUDIO — Variants & Knowledge
+// ============================================================================
+
+enum AgentRoleType {
+  intake
+  analyst
+  developer
+  dev_reviewer
+  test_designer
+  test_reviewer
+  test_runner
+}
+
+model AgentVariant {
+  id              String         @id @default(cuid())
+  role            AgentRoleType
+  name            String         // e.g. "mobile-analyst"
+  displayName     String
+  description     String?
+  active          Boolean        @default(true)
+  activeVersionId String?        @unique
+  activeVersion   PromptVersion? @relation("ActiveVersion", fields: [activeVersionId], references: [id])
+  versions        PromptVersion[] @relation("VariantVersions")
+  knowledgeLinks  VariantKnowledgeLink[]
+  routingRules    RoutingRule[]
+  stepExecutions  StepExecution[]
+  evaluations     Evaluation[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([role, name])
+  @@index([role, active])
+}
+
+model PromptVersion {
+  id              String   @id @default(cuid())
+  variantId       String
+  variant         AgentVariant @relation("VariantVersions", fields: [variantId], references: [id], onDelete: Cascade)
+  version         Int
+  systemPrompt    String
+  model           String
+  temperature     Float    @default(0.2)
+  maxTokens       Int      @default(4096)
+  toolAllowlist   Json     @default("[]")
+  outputSchemaRef String?
+  knowledgeHash   String   // hash of attached knowledge files at publish time
+  active          AgentVariant? @relation("ActiveVersion")
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  notes           String?
+
+  @@unique([variantId, version])
+  @@index([variantId])
+}
+
+enum KnowledgeCategory {
+  rules
+  conventions
+  domain
+  examples
+  glossary
+}
+
+model KnowledgeFile {
+  id          String            @id @default(cuid())
+  scope       KnowledgeScope    // variant-specific or shared
+  ownerId     String?           // null if shared, else variantId
+  category    KnowledgeCategory
+  filename    String
+  version     Int               @default(1)
+  contentKey  String            // MinIO object key
+  sizeBytes   Int
+  contentHash String
+  createdBy   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  links       VariantKnowledgeLink[]
+
+  @@index([scope, ownerId])
+  @@index([scope, category])
+}
+
+enum KnowledgeScope {
+  variant
+  shared
+}
+
+model VariantKnowledgeLink {
+  variantId       String
+  variant         AgentVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  knowledgeFileId String
+  knowledgeFile   KnowledgeFile @relation(fields: [knowledgeFileId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
+  @@id([variantId, knowledgeFileId])
+  @@index([knowledgeFileId])
+}
+
+model RoutingRule {
+  id             String        @id @default(cuid())
+  name           String
+  priority       Int           @default(100)
+  matchLabel     String?
+  matchComponent String?
+  matchProject   String?
+  matchWorkType  String?       // ticket type
+  variantId      String
+  variant        AgentVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  workMode       WorkMode      @default(full_auto)
+  active         Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+
+  @@index([active, priority])
+}
+
+// ============================================================================
+// EVALUATION — Golden tickets + eval snapshots
+// ============================================================================
+
+model GoldenTicket {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  ticketId    String   // source Jira ticket ID if any
+  category    String?
+  contentKey  String   // MinIO: full ticket snapshot
+  tags        String[] @default([])
+  evalRuns    EvaluationRun[]
+  createdAt   DateTime @default(now())
+
+  @@index([category])
+}
+
+model Evaluation {
+  id              String   @id @default(cuid())
+  variantId       String
+  variant         AgentVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  fromVersionId   String
+  toVersionId     String
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  runs            EvaluationRun[]
+  overallScore    Float?
+  notes           String?
+
+  @@index([variantId])
+}
+
+model EvaluationRun {
+  id             String       @id @default(cuid())
+  evaluationId   String
+  evaluation     Evaluation   @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  goldenTicketId String
+  goldenTicket   GoldenTicket @relation(fields: [goldenTicketId], references: [id])
+  fromOutputKey  String       // MinIO
+  toOutputKey    String       // MinIO
+  score          Float?
+  verdict        String?      // "better" | "worse" | "equivalent" | "unknown"
+  createdAt      DateTime     @default(now())
+
+  @@index([evaluationId])
+}
+
+// ============================================================================
+// WORKFLOW — Temporal-backed but also tracked here for query & audit
+// ============================================================================
+
+enum WorkMode {
+  full_auto
+  ai_assist
+  human_lead
+  human_only
+}
+
+enum WorkflowStatus {
+  running
+  waiting_info
+  waiting_po
+  waiting_tech_lead
+  in_development
+  ai_coding
+  security_scan
+  ai_reviewing
+  test_design
+  waiting_qa
+  testing
+  ci_running
+  waiting_qa_results
+  waiting_pr_approval
+  done
+  cancelled
+  blocked
+  failed
+}
+
+model WorkflowRun {
+  id                 String          @id @default(cuid())
+  jiraTicketId       String
+  jiraProjectKey     String
+  temporalWorkflowId String?         @unique
+  temporalRunId      String?
+  workMode           WorkMode
+  status             WorkflowStatus  @default(running)
+  currentStep        String          @default("start")
+  baseCommit         String?
+  branchName         String?
+  prId               String?
+  startedAt          DateTime        @default(now())
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  tokenCostUsdCents  Int             @default(0)
+  tokensIn           Int             @default(0)
+  tokensOut          Int             @default(0)
+  cacheHits          Int             @default(0)
+  errorCount         Int             @default(0)
+  steps              StepExecution[]
+  decisions          HumanDecision[]
+  artifacts          Artifact[]
+  auditEntries       AuditLog[]
+  retryCount         Int             @default(0)
+
+  @@index([jiraTicketId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model StepExecution {
+  id              String       @id @default(cuid())
+  workflowRunId   String
+  workflowRun     WorkflowRun  @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  stepName        String
+  agentRole       AgentRoleType?
+  variantId       String?
+  variant         AgentVariant? @relation(fields: [variantId], references: [id])
+  promptVersionId String?
+  knowledgeHash   String?
+  inputKey        String?      // MinIO
+  outputKey       String?      // MinIO
+  model           String?
+  tokensIn        Int          @default(0)
+  tokensOut       Int          @default(0)
+  cacheHits       Int          @default(0)
+  costUsdCents    Int          @default(0)
+  status          String       @default("running") // running|success|failed|retrying
+  attempt         Int          @default(1)
+  errorMessage    String?
+  startedAt       DateTime     @default(now())
+  endedAt         DateTime?
+
+  @@index([workflowRunId])
+  @@index([stepName, status])
+}
+
+model HumanDecision {
+  id            String      @id @default(cuid())
+  workflowRunId String
+  workflowRun   WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  stepName      String
+  jiraUserId    String
+  jiraUsername  String?
+  decision      String      // approve | reject | cancel | custom
+  reason        String?
+  command       String?     // original command text
+  signature     String      // HMAC over (stepName, user, decision, timestamp)
+  decidedAt     DateTime    @default(now())
+
+  @@index([workflowRunId])
+}
+
+// ============================================================================
+// ARTIFACT STORE (MinIO refs)
+// ============================================================================
+
+model Artifact {
+  id            String       @id @default(cuid())
+  workflowRunId String?
+  workflowRun   WorkflowRun? @relation(fields: [workflowRunId], references: [id])
+  kind          String       // analysis|techdesign|patch|testcase|testresult|...
+  contentKey    String       // MinIO
+  sizeBytes     Int
+  contentHash   String
+  metadata      Json         @default("{}")
+  createdAt     DateTime     @default(now())
+
+  @@index([workflowRunId, kind])
+}
+
+// ============================================================================
+// AUDIT LOG — hash-chained, tamper-evident
+// ============================================================================
+
+model AuditLog {
+  id            BigInt       @id @default(autoincrement())
+  workflowRunId String?
+  workflowRun   WorkflowRun? @relation(fields: [workflowRunId], references: [id])
+  actor         String       // user id | "system" | "ai:<variant>"
+  action        String
+  subject       String?
+  payload       Json         @default("{}")
+  prevHash      String
+  thisHash      String
+  timestamp     DateTime     @default(now())
+
+  @@index([workflowRunId])
+  @@index([actor])
+  @@index([timestamp])
+}
+
+// ============================================================================
+// ADMIN USER (Agent Studio only; workflow users come from Jira)
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  role          AdminRole @default(viewer)
+  active        Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([role, active])
+}
+
+enum AdminRole {
+  admin
+  team_lead
+  analyst
+  viewer
+}
+
+// ============================================================================
+// SYSTEM SETTINGS
+// ============================================================================
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model PIIMaskingConfig {
+  id           String   @id @default(cuid())
+  enabled      Boolean  @default(true)
+  fieldRules   Json     @default("[]")  // [{ field, strategy }]
+  patternRules Json     @default("[]")  // [{ name, regex, replacement }]
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+}
+
+// ============================================================================
+// COST TRACKING (rolling window for budget enforcement)
+// ============================================================================
+
+model CostCounter {
+  scope     String   @id           // "global" | "workflow:<id>"
+  usdCents  Int      @default(0)
+  tokensIn  Int      @default(0)
+  tokensOut Int      @default(0)
+  windowStart DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// KNOWLEDGE FEEDBACK (merge-delta capture, for v2 automation)
+// ============================================================================
+
+model KnowledgeFeedback {
+  id            String   @id @default(cuid())
+  workflowRunId String
+  aiPatchKey    String   // MinIO
+  finalDiffKey  String   // MinIO
+  deltaKey      String   // MinIO
+  reviewed      Boolean  @default(false)
+  reviewerId    String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([reviewed, createdAt])
+}

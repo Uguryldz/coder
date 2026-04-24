@@ -1,0 +1,9 @@
+frontend.enableClientVersionCheck:
+  - value: true
+    constraints: {}
+history.persistenceMaxQPS:
+  - value: 3000
+    constraints: {}
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}

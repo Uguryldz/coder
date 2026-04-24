@@ -1,0 +1,261 @@
+# ============================================================================
+# Jira AI Orkestra — Application Stack
+#
+# Harici altyapı (uinfra) kullanılır:
+#   - Postgres: uinfra-postgres (hostname: postgres, sa / SaPass..123)
+#   - Redis:    uinfra-redis    (hostname: redis)
+#
+# Orkestra'ya özel container'lar (bu dosya):
+#   - minio, minio-init, vault, temporal, temporal-ui, api, worker, studio
+#
+# Tüm servisler `uinfra` network'üne (external) bağlanır; böylece postgres ve
+# redis'e hostname ile erişilir.
+# ============================================================================
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: orkestra-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-orkestra}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-orkestra-dev-secret}
+    ports:
+      - "${MINIO_HOST_PORT:-9010}:9000"
+      - "${MINIO_CONSOLE_PORT:-9011}:9001"
+    volumes:
+      - minio_data:/data
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uinfra
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: orkestra-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_USER: ${S3_ACCESS_KEY:-orkestra}
+      MC_PASS: ${S3_SECRET_KEY:-orkestra-dev-secret}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $$MC_USER $$MC_PASS;
+      mc mb -p local/orkestra || true;
+      mc mb -p local/orkestra-knowledge || true;
+      mc mb -p local/orkestra-artifacts || true;
+      exit 0;
+      "
+    networks:
+      - uinfra
+
+  # Vault — MVP'de iç env-var üzerinden, gerçek Vault bağlantısı v2'de.
+  # (Bazı container runtime'ları IPC_LOCK/CAP_SETFCAP vermediği için vault-dev
+  #  ayaklanmıyor. Secret'lar şimdilik .env'den okunuyor.)
+  # vault: [disabled for MVP — v2'de eklenecek]
+
+  # Orkestra'nın ve Temporal'ın kullanacağı Postgres veritabanlarını oluşturur.
+  # Harici `uinfra-postgres` üzerinde idempotent CREATE DATABASE çalıştırır.
+  db-init:
+    image: postgres:18-alpine
+    container_name: orkestra-db-init
+    environment:
+      PGHOST: ${POSTGRES_HOST:-postgres}
+      PGPORT: ${POSTGRES_PORT:-5432}
+      PGUSER: ${POSTGRES_USER:-sa}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-SaPass..123}
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      echo 'db-init: postgres hazır olması bekleniyor...';
+      until pg_isready -h $$PGHOST -p $$PGPORT -U $$PGUSER -d postgres >/dev/null 2>&1; do sleep 2; done;
+      echo 'db-init: veritabanları oluşturuluyor (idempotent)...';
+      for db in orkestra temporal temporal_visibility; do
+        exists=$$(psql -h $$PGHOST -U $$PGUSER -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='$$db'\");
+        if [ \"$$exists\" = \"1\" ]; then
+          echo \"  ✓ $$db zaten var\";
+        else
+          psql -h $$PGHOST -U $$PGUSER -d postgres -c \"CREATE DATABASE $$db\";
+          echo \"  ✓ $$db oluşturuldu\";
+        fi;
+      done;
+      echo 'db-init: tamamlandı';
+      "
+    restart: "no"
+    networks:
+      - uinfra
+
+  # Prisma schema migrate + seed — db-init'ten sonra çalışır.
+  prisma-migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/api.Dockerfile
+    container_name: orkestra-prisma-migrate
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    working_dir: /app
+    user: node
+    entrypoint: >
+      sh -lc "
+      echo 'prisma-migrate: migrate deploy...';
+      pnpm --filter @orkestra/db exec prisma migrate deploy;
+      echo 'prisma-migrate: seed (idempotent)...';
+      pnpm --filter @orkestra/db exec tsx prisma/seed.ts || true;
+      echo 'prisma-migrate: tamamlandı';
+      "
+    restart: "no"
+    networks:
+      - uinfra
+
+  temporal:
+    image: temporalio/auto-setup:1.25
+    container_name: orkestra-temporal
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      DB: postgres12
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-sa}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-SaPass..123}
+      POSTGRES_SEEDS: ${POSTGRES_HOST:-postgres}
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports:
+      - "${TEMPORAL_HOST_PORT:-7233}:7233"
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    networks:
+      - uinfra
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    container_name: orkestra-temporal-ui
+    restart: unless-stopped
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:${STUDIO_HOST_PORT:-7000}
+    ports:
+      - "${TEMPORAL_UI_HOST_PORT:-8233}:8080"
+    networks:
+      - uinfra
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/api.Dockerfile
+    container_name: orkestra-api
+    restart: unless-stopped
+    depends_on:
+      prisma-migrate:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-orkestra}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-orkestra-dev-secret}
+      S3_BUCKET: ${S3_BUCKET:-orkestra}
+      VAULT_ADDR: ${VAULT_ADDR:-http://localhost:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-orkestra-dev-root}
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-orkestra}
+      LLM_MODE: ${LLM_MODE:-mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_USERNAME: ${JIRA_USERNAME:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-change-me}
+      BITBUCKET_BASE_URL: ${BITBUCKET_BASE_URL:-}
+      BITBUCKET_USERNAME: ${BITBUCKET_USERNAME:-}
+      BITBUCKET_APP_PASSWORD: ${BITBUCKET_APP_PASSWORD:-}
+      BITBUCKET_WEBHOOK_SECRET: ${BITBUCKET_WEBHOOK_SECRET:-change-me}
+    ports:
+      - "${API_HOST_PORT:-7001}:3000"
+    networks:
+      - uinfra
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/worker.Dockerfile
+    container_name: orkestra-worker
+    restart: unless-stopped
+    depends_on:
+      - temporal
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-orkestra}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-orkestra-dev-secret}
+      S3_BUCKET: ${S3_BUCKET:-orkestra}
+      VAULT_ADDR: ${VAULT_ADDR:-http://localhost:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-orkestra-dev-root}
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-orkestra}
+      LLM_MODE: ${LLM_MODE:-mock}
+      SANDBOX_MODE: ${SANDBOX_MODE:-real}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_USERNAME: ${JIRA_USERNAME:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      BITBUCKET_BASE_URL: ${BITBUCKET_BASE_URL:-}
+      BITBUCKET_USERNAME: ${BITBUCKET_USERNAME:-}
+      BITBUCKET_APP_PASSWORD: ${BITBUCKET_APP_PASSWORD:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - uinfra
+
+  studio:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/studio.Dockerfile
+    container_name: orkestra-studio
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      # PUBLIC_URL: Dış erişilen studio URL'si (reverse proxy arkasındaysa).
+      #   Örn. http://coder.uguryildiz.tech
+      # Boşsa localhost:STUDIO_HOST_PORT fallback edilir.
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:${API_HOST_PORT:-7001}}
+      NEXTAUTH_URL: ${PUBLIC_URL:-http://localhost:${STUDIO_HOST_PORT:-7000}}
+      # Container-to-container iç NextAuth çağrıları (token verify vb.)
+      NEXTAUTH_URL_INTERNAL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me}
+      # Next.js reverse proxy arkasında doğru URL üretmek için trustHost.
+      AUTH_TRUST_HOST: "true"
+      DATABASE_URL: ${DATABASE_URL}
+      # API server'dan artifact ve workflow aksiyonları için (container→container)
+      ORKESTRA_WORKER_URL: http://api:3000
+    ports:
+      - "${STUDIO_HOST_PORT:-7000}:3000"
+    networks:
+      - uinfra
+
+volumes:
+  minio_data:
+
+networks:
+  # Harici uinfra network'üne bağlan. Önce `cd ~/uinfra && docker compose up -d`.
+  uinfra:
+    name: uinfra
+    external: true

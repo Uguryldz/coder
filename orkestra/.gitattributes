@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.png binary
+*.svg binary
+pnpm-lock.yaml -diff linguist-generated=true
+packages/db/prisma/migrations/** linguist-generated=true

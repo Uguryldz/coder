@@ -1,0 +1,76 @@
+Jira AI Orkestra — Proprietary License
+========================================
+
+Türkçe Özet (bilgi amaçlıdır, bağlayıcı metin aşağıdaki İngilizce metindir)
+--------------------------------------------------------------------------
+Bu yazılım özel (tescilli) bir ticari üründür. Yeniden dağıtım, tersine mühendislik,
+türev çalışma üretimi, kamuya açık paylaşım ve üçüncü taraflara sublisans yasaktır.
+Kullanım yalnızca ayrı bir ticari lisans sözleşmesi kapsamında, sözleşmede tanımlı
+kullanıcı, site ve süre sınırları içinde izinlidir. Kaynak kod müşteriye teslim
+edilse dahi telif hakkı ve tüm fikri mülkiyet hakları lisans verende kalır.
+
+--------------------------------------------------------------------------
+
+Copyright (c) 2026 <Şirket Adı / Company Name — placeholder>. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL
+
+1. Grant. Subject to a separate written commercial agreement ("Commercial
+   Agreement") executed between the copyright holder ("Licensor") and the
+   recipient ("Licensee"), Licensor grants Licensee a non-exclusive,
+   non-transferable, revocable license to install and operate this software
+   ("Software") solely for Licensee's internal business purposes and only
+   within the scope, seat count, environment count, and term defined in the
+   Commercial Agreement.
+
+2. Restrictions. Licensee shall NOT, and shall not permit any third party to:
+   (a) copy, reproduce, publish, distribute, sublicense, lease, rent, or
+       otherwise make the Software available to any third party;
+   (b) modify, translate, adapt, or create derivative works of the Software
+       except as expressly permitted in the Commercial Agreement;
+   (c) reverse engineer, decompile, disassemble, or attempt to derive the
+       source code, algorithms, or internal structure of the Software, except
+       to the extent such activity is permitted by applicable law
+       notwithstanding this restriction;
+   (d) remove, alter, or obscure any copyright, trademark, or other
+       proprietary notices;
+   (e) use the Software to provide services to third parties (SaaS, managed
+       service, hosting, or outsourcing) without Licensor's prior written
+       consent;
+   (f) use the Software for benchmarking, competitive analysis, or to develop
+       a competing product.
+
+3. Ownership. The Software is licensed, not sold. Licensor retains all right,
+   title, and interest in and to the Software, including all intellectual
+   property rights. No rights are granted by implication, estoppel, or
+   otherwise.
+
+4. Confidentiality. The Software, including its source code, architecture,
+   prompts, knowledge packs, and documentation, is Licensor's confidential
+   information and must be protected with at least the same degree of care
+   Licensee uses for its own confidential information of similar importance,
+   and in no event less than reasonable care.
+
+5. No Warranty. THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   Any warranty terms, if any, are defined exclusively in the Commercial
+   Agreement.
+
+6. Limitation of Liability. TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO
+   EVENT SHALL LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+   CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS OR REVENUE,
+   ARISING OUT OF OR RELATED TO THIS LICENSE OR THE SOFTWARE.
+
+7. Termination. This license terminates automatically upon any breach of its
+   terms or upon termination or expiration of the Commercial Agreement. Upon
+   termination, Licensee shall cease all use of the Software and destroy all
+   copies in its possession.
+
+8. Governing Law. This license shall be governed by the laws specified in
+   the Commercial Agreement. Absent such specification, the laws of the
+   Republic of Türkiye shall apply, with exclusive jurisdiction of the courts
+   of Istanbul.
+
+For licensing inquiries, contact: <sales@company.tld — placeholder>
+For legal notices, contact: <legal@company.tld — placeholder>

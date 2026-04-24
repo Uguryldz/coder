@@ -1,0 +1,137 @@
+digraph AgentStudioUI {
+  rankdir=TB;
+  bgcolor="#FFFFFF";
+  fontname="Helvetica";
+  node [fontname="Helvetica", shape=none, margin=0];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="20"><B>Agent Studio — UI Wireframe (MVP)</B></FONT><BR/><FONT POINT-SIZE="11">3 ana ekran · Figma'ya SVG olarak import edilebilir</FONT>>;
+
+  // ===== SCREEN 1: Variant Liste =====
+  s1 [label=<
+    <TABLE BORDER="2" CELLBORDER="0" CELLSPACING="0" CELLPADDING="12" COLOR="#2563EB" BGCOLOR="#FFFFFF">
+      <TR><TD BGCOLOR="#2563EB"><FONT COLOR="white" POINT-SIZE="14"><B>  📋 Agent Studio · Variants  </B></FONT></TD></TR>
+      <TR><TD>
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="8">
+          <TR>
+            <TD BGCOLOR="#F1F5F9" WIDTH="140"><B>SIDEBAR</B><BR/>
+              <FONT POINT-SIZE="10">
+              ▸ Variants<BR/>
+              · Knowledge Lib<BR/>
+              · Routing Rules<BR/>
+              · Evaluations<BR/>
+              · Audit Log<BR/>
+              · Settings<BR/>
+              </FONT>
+            </TD>
+            <TD>
+              <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+                <TR><TD COLSPAN="4" ALIGN="LEFT"><FONT POINT-SIZE="13"><B>7 Role · 18 Variant</B></FONT>    <FONT POINT-SIZE="10" COLOR="#2563EB">[+ New Variant]</FONT></TD></TR>
+                <TR><TD BGCOLOR="#DBEAFE"><B>analyst</B></TD><TD>mobile-analyst</TD><TD><FONT COLOR="#059669">●</FONT> active</TD><TD><FONT POINT-SIZE="9">v3 · 2d ago</FONT></TD></TR>
+                <TR><TD BGCOLOR="#DBEAFE"></TD><TD>web-analyst</TD><TD><FONT COLOR="#059669">●</FONT> active</TD><TD><FONT POINT-SIZE="9">v5 · 6h ago</FONT></TD></TR>
+                <TR><TD BGCOLOR="#DBEAFE"></TD><TD>backend-analyst</TD><TD><FONT COLOR="#059669">●</FONT> active</TD><TD><FONT POINT-SIZE="9">v2 · 1w ago</FONT></TD></TR>
+                <TR><TD BGCOLOR="#DBEAFE"><B>developer</B></TD><TD>mobile-dev</TD><TD><FONT COLOR="#059669">●</FONT> active</TD><TD><FONT POINT-SIZE="9">v7 · 1d ago</FONT></TD></TR>
+                <TR><TD BGCOLOR="#DBEAFE"></TD><TD>web-dev</TD><TD><FONT COLOR="#059669">●</FONT> active</TD><TD><FONT POINT-SIZE="9">v4 · 3d ago</FONT></TD></TR>
+                <TR><TD BGCOLOR="#DBEAFE"></TD><TD>backend-dev</TD><TD><FONT COLOR="#D97706">●</FONT> paused</TD><TD><FONT POINT-SIZE="9">v1 · 2w ago</FONT></TD></TR>
+                <TR><TD BGCOLOR="#DBEAFE"><B>test-designer</B></TD><TD>mobile-test-designer</TD><TD><FONT COLOR="#059669">●</FONT> active</TD><TD><FONT POINT-SIZE="9">v2 · 4d ago</FONT></TD></TR>
+                <TR><TD COLSPAN="4"><FONT POINT-SIZE="9" COLOR="#64748B">... 11 variant daha</FONT></TD></TR>
+              </TABLE>
+            </TD>
+          </TR>
+        </TABLE>
+      </TD></TR>
+    </TABLE>
+  >];
+
+  // ===== SCREEN 2: Variant Detay — Knowledge Tab =====
+  s2 [label=<
+    <TABLE BORDER="2" CELLBORDER="0" CELLSPACING="0" CELLPADDING="12" COLOR="#2563EB" BGCOLOR="#FFFFFF">
+      <TR><TD BGCOLOR="#2563EB"><FONT COLOR="white" POINT-SIZE="14"><B>  📝 mobile-analyst · Edit  </B></FONT></TD></TR>
+      <TR><TD>
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="6">
+          <TR>
+            <TD><FONT POINT-SIZE="10">  Persona  </FONT></TD>
+            <TD BGCOLOR="#2563EB"><FONT COLOR="white" POINT-SIZE="10"><B>  Knowledge  </B></FONT></TD>
+            <TD><FONT POINT-SIZE="10">  Test  </FONT></TD>
+          </TR>
+        </TABLE>
+      </TD></TR>
+      <TR><TD>
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="8">
+          <TR>
+            <TD BGCOLOR="#F8FAFC" WIDTH="160" VALIGN="TOP">
+              <FONT POINT-SIZE="11"><B>Klasör Ağacı</B></FONT><BR/>
+              <FONT POINT-SIZE="9">
+              ▾ rules/ (3)<BR/>
+              &#160;&#160;● accessibility.md<BR/>
+              &#160;&#160;● offline-first.md<BR/>
+              &#160;&#160;● data-minimize.md<BR/>
+              ▾ conventions/ (2)<BR/>
+              &#160;&#160;● ios-patterns.md<BR/>
+              &#160;&#160;● turkish-terms.md<BR/>
+              ▾ domain/ (🔗 shared)<BR/>
+              &#160;&#160;🔗 refund-policy.md<BR/>
+              &#160;&#160;🔗 kvkk-rules.md<BR/>
+              ▸ examples/ (4)<BR/>
+              ▸ glossary/ (1)<BR/>
+              <BR/>
+              <FONT COLOR="#2563EB">[+ Dosya]</FONT><BR/>
+              <FONT COLOR="#2563EB">[🔗 Attach]</FONT>
+              </FONT>
+            </TD>
+            <TD VALIGN="TOP" BGCOLOR="#FAFAFA">
+              <FONT POINT-SIZE="11"><B>accessibility.md</B></FONT>  <FONT POINT-SIZE="9" COLOR="#64748B">v2 · modified 2h ago</FONT><BR/>
+              <FONT POINT-SIZE="9" COLOR="#64748B">─────────────────────────────</FONT><BR/>
+              <FONT POINT-SIZE="9" FACE="monospace">
+              # Accessibility Rules (Mobile)<BR/>
+              <BR/>
+              ## Must Follow<BR/>
+              - Her interactive element minimum 44x44pt<BR/>
+              - VoiceOver label zorunlu<BR/>
+              - Dynamic Type desteği<BR/>
+              - Kontrast oranı 4.5:1+<BR/>
+              <BR/>
+              ## Test Coverage<BR/>
+              - XCUI accessibility audit<BR/>
+              - Screen reader scenario<BR/>
+              </FONT>
+              <BR/>
+              <FONT POINT-SIZE="9" COLOR="#64748B">─────────────────────────────</FONT><BR/>
+              <FONT COLOR="#2563EB" POINT-SIZE="10">[Save Version]</FONT> <FONT COLOR="#64748B" POINT-SIZE="10">[Rollback v1]</FONT>
+            </TD>
+          </TR>
+        </TABLE>
+      </TD></TR>
+    </TABLE>
+  >];
+
+  // ===== SCREEN 3: Workflow Monitor =====
+  s3 [label=<
+    <TABLE BORDER="2" CELLBORDER="0" CELLSPACING="0" CELLPADDING="12" COLOR="#059669" BGCOLOR="#FFFFFF">
+      <TR><TD BGCOLOR="#059669"><FONT COLOR="white" POINT-SIZE="14"><B>  📊 Workflow Monitor  </B></FONT></TD></TR>
+      <TR><TD>
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="6">
+          <TR>
+            <TD BGCOLOR="#F0FDF4" CELLPADDING="8"><FONT POINT-SIZE="11"><B>Active</B><BR/><FONT POINT-SIZE="18" COLOR="#059669">47</FONT></FONT></TD>
+            <TD BGCOLOR="#FEF3C7" CELLPADDING="8"><FONT POINT-SIZE="11"><B>Waiting Human</B><BR/><FONT POINT-SIZE="18" COLOR="#D97706">12</FONT></FONT></TD>
+            <TD BGCOLOR="#FEE2E2" CELLPADDING="8"><FONT POINT-SIZE="11"><B>Blocked</B><BR/><FONT POINT-SIZE="18" COLOR="#DC2626">3</FONT></FONT></TD>
+            <TD BGCOLOR="#DBEAFE" CELLPADDING="8"><FONT POINT-SIZE="11"><B>Done (today)</B><BR/><FONT POINT-SIZE="18" COLOR="#2563EB">84</FONT></FONT></TD>
+          </TR>
+        </TABLE>
+      </TD></TR>
+      <TR><TD>
+        <TABLE BORDER="0" CELLBORDER="1" COLOR="#E2E8F0" CELLSPACING="0" CELLPADDING="6">
+          <TR BGCOLOR="#F1F5F9"><TD><B>Ticket</B></TD><TD><B>Variant</B></TD><TD><B>Step</B></TD><TD><B>Waiting</B></TD><TD><B>Mode</B></TD><TD><B>SLA</B></TD></TR>
+          <TR><TD>JIRA-1247</TD><TD>mobile-analyst</TD><TD>4. Analysis Approval</TD><TD>Ayşe Y. (PO)</TD><TD>full-auto</TD><TD><FONT COLOR="#059669">18h left</FONT></TD></TR>
+          <TR><TD>JIRA-1251</TD><TD>web-dev</TD><TD>6a. Coding</TD><TD>—</TD><TD>full-auto</TD><TD><FONT COLOR="#059669">in progress</FONT></TD></TR>
+          <TR><TD>JIRA-1245</TD><TD>backend-dev</TD><TD>10b. CI Gate</TD><TD>Pipelines</TD><TD>ai-assist</TD><TD><FONT COLOR="#D97706">2h left</FONT></TD></TR>
+          <TR><TD>JIRA-1240</TD><TD>mobile-analyst</TD><TD>9. Test Approval</TD><TD>QA Lead</TD><TD>full-auto</TD><TD><FONT COLOR="#DC2626">OVERDUE 3h</FONT></TD></TR>
+          <TR><TD>JIRA-1239</TD><TD>web-test-designer</TD><TD>8. Senaryo 4-göz</TD><TD>—</TD><TD>full-auto</TD><TD><FONT COLOR="#059669">active</FONT></TD></TR>
+        </TABLE>
+      </TD></TR>
+    </TABLE>
+  >];
+
+  s1 -> s2 [style=invis];
+  s2 -> s3 [style=invis];
+}

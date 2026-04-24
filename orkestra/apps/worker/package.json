@@ -1,0 +1,36 @@
+{
+  "name": "@orkestra/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@orkestra/config": "workspace:*",
+    "@orkestra/contracts": "workspace:*",
+    "@orkestra/db": "workspace:*",
+    "@orkestra/workflows": "workspace:*",
+    "@orkestra/agents": "workspace:*",
+    "@orkestra/jira": "workspace:*",
+    "@orkestra/git": "workspace:*",
+    "@orkestra/sandbox": "workspace:*",
+    "@orkestra/slack": "workspace:*",
+    "@orkestra/testrail": "workspace:*",
+    "@orkestra/llm": "workspace:*",
+    "@orkestra/audit": "workspace:*",
+    "@temporalio/worker": "catalog:",
+    "@temporalio/activity": "catalog:",
+    "@temporalio/client": "catalog:"
+  },
+  "devDependencies": {
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

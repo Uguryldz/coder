@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  * {
+    @apply border-border;
+  }
+}
+
+@layer components {
+  .tiptap {
+    @apply min-h-[320px] px-4 py-3 focus:outline-none prose prose-sm max-w-none;
+  }
+  .tiptap p {
+    @apply my-2;
+  }
+  .tiptap h1 {
+    @apply text-2xl font-semibold my-3;
+  }
+  .tiptap h2 {
+    @apply text-xl font-semibold my-2;
+  }
+  .tiptap code {
+    @apply bg-slate-100 px-1 py-0.5 rounded text-xs font-mono;
+  }
+  .tiptap pre {
+    @apply bg-slate-900 text-slate-100 p-3 rounded-md my-2 overflow-x-auto;
+  }
+  .tiptap pre code {
+    @apply bg-transparent text-inherit p-0;
+  }
+  .tiptap ul {
+    @apply list-disc pl-6;
+  }
+  .tiptap ol {
+    @apply list-decimal pl-6;
+  }
+}

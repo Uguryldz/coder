@@ -1,0 +1,52 @@
+{
+  "name": "jira-ai-orkestra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jira AI Orkestra — AI agents + human gates workflow for Jira tickets",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:turbo": "turbo run lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "check-all": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "pnpm --filter @orkestra/db generate",
+    "db:migrate": "pnpm --filter @orkestra/db migrate",
+    "db:seed": "pnpm --filter @orkestra/db seed",
+    "docker:up": "docker compose -f deploy/compose/docker-compose.yml up -d",
+    "docker:down": "docker compose -f deploy/compose/docker-compose.yml down",
+    "docker:logs": "docker compose -f deploy/compose/docker-compose.yml logs -f",
+    "smoke-test": "node scripts/smoke-test.mjs",
+    "prepare": "husky",
+    "lint-staged": "lint-staged"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "turbo": "^2.3.0",
+    "typescript": "catalog:",
+    "prettier": "^3.4.0",
+    "prettier-plugin-organize-imports": "^4.1.0",
+    "eslint": "^9.17.0",
+    "@eslint/js": "^9.17.0",
+    "typescript-eslint": "^8.18.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-unicorn": "^56.0.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0"
+  }
+}

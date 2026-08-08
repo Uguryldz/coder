@@ -5,7 +5,13 @@ import { JiraDcClient, type FetchLike, type TokenProvider } from "./client.js";
 import type { JiraDcConfig } from "./config.js";
 import { JiraArgumentError, JiraLinkFailedError, JiraResponseError } from "./errors.js";
 import { ISSUE_FIELDS, mapIssueToSnapshot, userIdOf } from "./mapping.js";
-import { commandFromWebhook, verifyWebhookSignature, type RawBody, type WebhookCommand } from "./webhook.js";
+import {
+  commandFromWebhook,
+  JIRA_SIGNATURE_HEADER,
+  verifyWebhookSignature,
+  type RawBody,
+  type WebhookCommand,
+} from "./webhook.js";
 
 export interface JiraDcWorkPortOptions {
   config: JiraDcConfig;
@@ -68,7 +74,7 @@ export class JiraDcWorkPort implements WorkPort {
    * Edit an existing comment in place — the "▶ Maestro durum" progress comment
    * is updated instead of spamming new ones (M75).
    */
-  async updateComment(key: TicketKey, commentId: string, body: unknown): Promise<{ commentId: string }> {
+  async updateComment(key: TicketKey, commentId: string, body: unknown): Promise<void> {
     const issueKey = requireTicketKey(key, "key");
     if (commentId.trim().length === 0) throw new JiraArgumentError("commentId", "empty");
     const rendered = adfToWikiMarkup(toAdfDocument(body));
@@ -76,7 +82,7 @@ export class JiraDcWorkPort implements WorkPort {
       `${API}/issue/${encodeURIComponent(issueKey)}/comment/${encodeURIComponent(commentId)}`,
       { body: rendered },
     );
-    return { commentId: requireId(updated, "comment") };
+    requireId(updated, "comment");
   }
 
   /** Full replacement of the label set — the only issue edit the driver performs (M102). */
@@ -179,8 +185,11 @@ export class JiraDcWorkPort implements WorkPort {
    * Verify a delivery before anything else touches it. Throws
    * JiraWebhookVerificationError on any failure — fail-closed, no boolean.
    */
-  async verifyWebhook(rawBody: RawBody, signatureHeader: string | null | undefined): Promise<void> {
-    verifyWebhookSignature(rawBody, signatureHeader, await this.webhookSecret());
+  async verifyWebhook(rawBody: RawBody, headers: Record<string, string>): Promise<void> {
+    const header = Object.entries(headers).find(
+      ([name]) => name.toLowerCase() === JIRA_SIGNATURE_HEADER,
+    )?.[1];
+    verifyWebhookSignature(rawBody, header, await this.webhookSecret());
   }
 
   /** Not supported on DC (M102): no workflow permission is requested. */

@@ -89,9 +89,19 @@ export const GateDecision = z
   });
 export type GateDecision = z.infer<typeof GateDecision>;
 
-/** ADO build validation result (M13), delivered to the workflow as a signal. */
+/**
+ * ADO build validation result (M13), delivered to the workflow as a signal.
+ *
+ * `adoProject`/`adoRepo` exist because ticketKey+prId do NOT identify a build
+ * uniquely: a mirrored/forked repo in another project can carry the same
+ * branch name and PR id. The workflow MUST reject a signal whose origin does
+ * not match the run's ApplicationRecord. Optional only so that a driver that
+ * cannot determine them fails validation downstream instead of at parse time.
+ */
 export const CiResultSignal = z.object({
   ticketKey: TicketKey,
+  adoProject: NonEmpty.optional(),
+  adoRepo: NonEmpty.optional(),
   prId: z.number().int().positive(),
   buildId: z.number().int().positive(),
   status: z.enum(["succeeded", "failed"]),

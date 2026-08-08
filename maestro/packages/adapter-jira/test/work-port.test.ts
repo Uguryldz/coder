@@ -66,9 +66,8 @@ describe("JiraDcWorkPort", () => {
 
   it("edits the progress comment in place (M75)", async () => {
     const stub = stubFetch([{ body: fixture("comment-created-response") }]);
-    const res = await port(stub).updateComment("UGURPAY-501", "45230", "▶ Maestro durum: adım 6a");
+    await port(stub).updateComment("UGURPAY-501", "45230", "▶ Maestro durum: adım 6a");
 
-    expect(res.commentId).toBe("45230");
     expect(stub.calls[0]!.method).toBe("PUT");
     expect(stub.calls[0]!.url).toBe("https://jira.internal.bank/rest/api/2/issue/UGURPAY-501/comment/45230");
   });
@@ -182,8 +181,14 @@ describe("JiraDcWorkPort", () => {
     const raw = JSON.stringify(fixture("webhook-comment-created"));
     const jira = port(stubFetch([]));
 
-    await expect(jira.verifyWebhook(raw, signWebhookBody(raw, SECRET))).resolves.toBeUndefined();
-    await expect(jira.verifyWebhook(raw, signWebhookBody(raw, "wrong"))).rejects.toThrow(/verification failed/);
+    const headers = (secret: string) => ({ "X-Hub-Signature": signWebhookBody(raw, secret) });
+    await expect(jira.verifyWebhook(raw, headers(SECRET))).resolves.toBeUndefined();
+    await expect(jira.verifyWebhook(raw, headers("wrong"))).rejects.toThrow(/verification failed/);
+    // header lookup is case-insensitive, and a missing header is fail-closed
+    await expect(
+      jira.verifyWebhook(raw, { "x-hub-signature": signWebhookBody(raw, SECRET) }),
+    ).resolves.toBeUndefined();
+    await expect(jira.verifyWebhook(raw, {})).rejects.toThrow();
   });
 
   it("parses commands out of verified payloads and never throws on unknown ones", async () => {

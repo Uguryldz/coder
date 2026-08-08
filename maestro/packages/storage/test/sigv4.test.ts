@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   amzDate,
   canonicalQueryString,
+  canonicalRequest,
   canonicalUri,
+  EMPTY_BODY_SHA256,
   presignQuery,
   sha256Hex,
   signingKey,
@@ -139,6 +141,19 @@ describe("canonicalisation rules", () => {
 
   it("sorts query parameters by encoded name then value", () => {
     expect(canonicalQueryString({ b: "2", a: "1", "a-x": "0" })).toBe("a=1&a-x=0&b=2");
+  });
+
+  it("treats header names differing only in case as one header", () => {
+    const { text, signedHeaders } = canonicalRequest({
+      method: "GET",
+      path: "/",
+      headers: { Host: "s3.corp.local", host: "s3.corp.local", "X-Amz-Meta-A": " 1  2 " },
+      payloadSha256: EMPTY_BODY_SHA256,
+    });
+    // "host;host" would make every endpoint reject the signature.
+    expect(signedHeaders).toBe("host;x-amz-meta-a");
+    expect(text).toContain("host:s3.corp.local,s3.corp.local\n");
+    expect(text).toContain("x-amz-meta-a:1 2\n");
   });
 
   it("formats the timestamp as basic ISO 8601", () => {

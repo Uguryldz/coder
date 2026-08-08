@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { decodeXmlText, parseErrorCode, parseListObjectsV2, readTag } from "../src/xml.js";
+import { UnexpectedResponseError } from "../src/errors.js";
+import {
+  decodeXmlText,
+  parseErrorCode,
+  parseListObjectsV2,
+  readTag,
+  rootElement,
+} from "../src/xml.js";
+
+const CONTEXT = { operation: "list", key: "evidence/2026/", status: 200 };
 
 const TRUNCATED_PAGE = `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
@@ -17,7 +26,7 @@ const EMPTY_PAGE = `<?xml version="1.0" encoding="UTF-8"?>
 
 describe("ListObjectsV2 parsing", () => {
   it("reads keys, the truncation flag and the continuation token", () => {
-    expect(parseListObjectsV2(TRUNCATED_PAGE)).toEqual({
+    expect(parseListObjectsV2(CONTEXT,TRUNCATED_PAGE)).toEqual({
       keys: ["evidence/2026/UGURPAY-1/run/a.json", "evidence/2026/UGURPAY-1/run/b & c.json"],
       isTruncated: true,
       nextContinuationToken: "1ueGcx",
@@ -25,7 +34,7 @@ describe("ListObjectsV2 parsing", () => {
   });
 
   it("returns an empty, non-truncated page when the bucket has no matches", () => {
-    expect(parseListObjectsV2(EMPTY_PAGE)).toEqual({
+    expect(parseListObjectsV2(CONTEXT,EMPTY_PAGE)).toEqual({
       keys: [],
       isTruncated: false,
       nextContinuationToken: undefined,
@@ -37,7 +46,26 @@ describe("ListObjectsV2 parsing", () => {
       `<ListBucketResult><IsTruncated>false</IsTruncated>` +
       `<CommonPrefixes><Prefix>evidence/2025/</Prefix></CommonPrefixes>` +
       `<Contents><Key>evidence/2026/a</Key></Contents></ListBucketResult>`;
-    expect(parseListObjectsV2(xml).keys).toEqual(["evidence/2026/a"]);
+    expect(parseListObjectsV2(CONTEXT,xml).keys).toEqual(["evidence/2026/a"]);
+  });
+});
+
+describe("documents that are not a listing at all", () => {
+  it.each([
+    ["a proxy login page", "<html><body>authentication required</body></html>"],
+    ["an error body", "<Error><Code>AccessDenied</Code></Error>"],
+    ["an empty body", ""],
+  ])("refuses %s instead of reporting an empty bucket", (_label, body) => {
+    expect(() => parseListObjectsV2(CONTEXT, body)).toThrow(UnexpectedResponseError);
+  });
+
+  it("names the root element it found", () => {
+    expect(rootElement('<?xml version="1.0"?><!DOCTYPE html><html><body>x</body></html>')).toBe(
+      "html",
+    );
+    expect(rootElement('<ListBucketResult xmlns="x">')).toBe("ListBucketResult");
+    expect(rootElement("<s3:ListBucketResult>")).toBe("ListBucketResult");
+    expect(rootElement("plain text")).toBeUndefined();
   });
 });
 
@@ -47,6 +75,14 @@ describe("entity decoding", () => {
       `a & b <c> "d" 'e'`,
     );
     expect(decodeXmlText("&#65;&#x42;")).toBe("AB");
+  });
+
+  it("leaves an out-of-range numeric reference alone instead of crashing", () => {
+    // String.fromCodePoint throws RangeError above U+10FFFF; a hostile or
+    // broken gateway must not be able to kill a listing with one entity.
+    expect(decodeXmlText("a &#1114112; b")).toBe("a &#1114112; b");
+    expect(decodeXmlText("a &#xFFFFFFFF; b")).toBe("a &#xFFFFFFFF; b");
+    expect(decodeXmlText("a &#xD800; b")).toBe("a &#xD800; b");
   });
 
   it("returns undefined for an absent tag rather than an empty string", () => {

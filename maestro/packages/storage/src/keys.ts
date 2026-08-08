@@ -19,9 +19,7 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
  */
 export function assertValidKey(key: string): void {
   if (key.length === 0) throw new InvalidKeyError(key, "empty");
-  if (Buffer.byteLength(key, "utf8") > MAX_KEY_BYTES) {
-    throw new InvalidKeyError(key, `longer than ${MAX_KEY_BYTES} bytes`);
-  }
+  assertKeyByteLength(key);
   if (key.startsWith("/")) throw new InvalidKeyError(key, "must not start with '/'");
   if (key.endsWith("/")) throw new InvalidKeyError(key, "must not end with '/'");
   if (key.includes("//")) throw new InvalidKeyError(key, "must not contain an empty segment");
@@ -32,17 +30,62 @@ export function assertValidKey(key: string): void {
   }
 }
 
+/**
+ * S3's key-length ceiling. Applied to the *physical* key as well, so a tenant
+ * `keyPrefix` cannot push an otherwise legal key past the limit at the endpoint.
+ */
+export function assertKeyByteLength(key: string): void {
+  if (Buffer.byteLength(key, "utf8") > MAX_KEY_BYTES) {
+    throw new InvalidKeyError(key, `longer than ${MAX_KEY_BYTES} bytes`);
+  }
+}
+
+/**
+ * Retention class of one object, derived from its key. The class is a property
+ * of the object, not of the deployment: an M65 workspace archive written
+ * through the same driver as an M34 evidence package must not inherit the
+ * evidence label. Keys outside the known layouts fall back to the driver default.
+ */
+export function retentionClassForKey(key: string, fallback: RetentionClass): RetentionClass {
+  const top = key.split("/", 1)[0] ?? "";
+  const parsed = RetentionClass.safeParse(top);
+  return parsed.success ? parsed.data : fallback;
+}
+
 /** Prefixes are keys that may be empty or end in a separator. */
 export function assertValidPrefix(prefix: string): void {
   if (prefix === "") return;
   assertValidKey(prefix.endsWith("/") ? prefix.slice(0, -1) : prefix);
 }
 
+/**
+ * File names arrive from `contracts.EvidenceFile.name`, which is any non-empty
+ * string: `test-report (junit).xml` and `rapor özet.pdf` (M59 — analysis output
+ * is Turkish) are both legal and must not make the M34 closing step fail. The
+ * key builder therefore *encodes* the name instead of rejecting it; only what
+ * cannot live inside a single key segment stays forbidden.
+ */
 const FileName = z
   .string()
-  .trim()
   .min(1)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "file name must be alphanumeric with . _ -");
+  .refine((name) => !name.includes("/"), "file name must not contain '/'")
+  .refine((name) => !CONTROL_CHARS.test(name), "file name must not contain control characters");
+
+/** Percent-encodes one path segment; `decodeSegment` is its exact inverse. */
+function encodeSegment(name: string): string {
+  return encodeURIComponent(name);
+}
+
+function decodeSegment(segment: string): string | undefined {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Four-digit calendar year — the width `parseEvidenceKey` accepts. */
+const KeyYear = z.number().int().min(1000).max(9999);
 
 const EvidenceKeyInput = z.object({
   ticketKey: TicketKey,
@@ -59,14 +102,14 @@ export type EvidenceKeyInput = z.infer<typeof EvidenceKeyInput>;
  */
 export function evidenceKey(input: EvidenceKeyInput): string {
   const { ticketKey, runId, fileName, createdAt } = EvidenceKeyInput.parse(input);
-  const key = `evidence/${utcYear(createdAt)}/${ticketKey}/${runId}/${fileName}`;
+  const key = `evidence/${utcYear(createdAt)}/${ticketKey}/${runId}/${encodeSegment(fileName)}`;
   assertValidKey(key);
   return key;
 }
 
 /** Prefix for every evidence object of one ticket in one year — for `list`. */
 export function evidenceTicketPrefix(ticketKey: string, year: number): string {
-  return `evidence/${z.number().int().parse(year)}/${TicketKey.parse(ticketKey)}/`;
+  return `evidence/${KeyYear.parse(year)}/${TicketKey.parse(ticketKey)}/`;
 }
 
 const ArchiveKeyInput = z.object({
@@ -81,7 +124,7 @@ const ArchiveKeyInput = z.object({
  */
 export function archiveKey(input: z.input<typeof ArchiveKeyInput>): string {
   const { ticketKey, fileName, createdAt } = ArchiveKeyInput.parse(input);
-  const key = `archive/${utcYear(createdAt)}/${ticketKey}/${fileName}`;
+  const key = `archive/${utcYear(createdAt)}/${ticketKey}/${encodeSegment(fileName)}`;
   assertValidKey(key);
   return key;
 }
@@ -92,10 +135,12 @@ export function parseEvidenceKey(
 ): { year: number; ticketKey: string; runId: string; fileName: string } | undefined {
   const parts = key.split("/");
   if (parts.length !== 5 || parts[0] !== "evidence") return undefined;
-  const [, yearText, ticketKey, runId, fileName] = parts as [string, string, string, string, string];
+  const [, yearText, ticketKey, runId, encoded] = parts as [string, string, string, string, string];
   const year = Number(yearText);
   if (!/^\d{4}$/.test(yearText) || !TicketKey.safeParse(ticketKey).success) return undefined;
-  if (runId.length === 0 || fileName.length === 0) return undefined;
+  if (!RunId.safeParse(runId).success) return undefined;
+  const fileName = decodeSegment(encoded);
+  if (fileName === undefined || fileName.length === 0) return undefined;
   return { year, ticketKey, runId, fileName };
 }
 

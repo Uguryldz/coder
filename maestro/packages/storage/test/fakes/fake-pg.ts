@@ -2,7 +2,7 @@ import type { SqlExecutor } from "../../src/deps.js";
 
 export interface FakePgRow {
   key: string;
-  data: Uint8Array;
+  data: Buffer;
   content_type: string;
   tags: string;
   object_lock: boolean;
@@ -46,19 +46,33 @@ export class FakePg implements SqlExecutor {
     if (!text.includes("ON CONFLICT (key) DO UPDATE")) {
       throw new Error("FakePg: insert must be an upsert on the key");
     }
+    // WORM columns are merged, never replaced: an unlocked put may not clear the
+    // retention a previous locked put established (M57).
+    if (!/object_lock = \(\w+\.object_lock OR EXCLUDED\.object_lock\)/.test(text)) {
+      throw new Error("FakePg: upsert must preserve an existing object_lock");
+    }
+    if (!/retain_until = GREATEST\(\w+\.retain_until, EXCLUDED\.retain_until\)/.test(text)) {
+      throw new Error("FakePg: upsert must preserve the longest retain_until");
+    }
     if (params.length !== 7) throw new Error(`FakePg: expected 7 insert params, got ${params.length}`);
     const key = stringParam(params, 0);
     const data = params[1];
-    if (!(data instanceof Uint8Array)) throw new Error("FakePg: $2 must be bytea (Uint8Array)");
+    // node-postgres writes a bare Uint8Array as a JSON object, silently
+    // corrupting the blob; only a Buffer reaches bytea intact.
+    if (!Buffer.isBuffer(data)) {
+      throw new Error("FakePg: $2 must be a node Buffer for a bytea column");
+    }
     const at = stringParam(params, 6);
+    const previous = this.rows.get(key);
+    const retainUntil = params[5] === null ? null : stringParam(params, 5);
     this.rows.set(key, {
       key,
-      data: new Uint8Array(data),
+      data: Buffer.from(data),
       content_type: stringParam(params, 2),
       tags: stringParam(params, 3),
-      object_lock: params[4] === true,
-      retain_until: params[5] === null ? null : stringParam(params, 5),
-      created_at: this.rows.get(key)?.created_at ?? at,
+      object_lock: previous?.object_lock === true || params[4] === true,
+      retain_until: greatest(previous?.retain_until ?? null, retainUntil),
+      created_at: previous?.created_at ?? at,
       updated_at: at,
     });
     return [];
@@ -79,6 +93,13 @@ export class FakePg implements SqlExecutor {
       .sort()
       .map((key) => ({ key }));
   }
+}
+
+/** Postgres GREATEST ignores NULL operands and returns NULL only if all are NULL. */
+function greatest(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
 }
 
 function stringParam(params: readonly unknown[], index: number): string {

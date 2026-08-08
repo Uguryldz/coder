@@ -4,10 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   LlmConfigError,
   LlmGateway,
-  LlmPolicyBlockedError,
   MSG_DEGRADED_AI_ASSIST,
-  MSG_QUEUED_QUOTA,
-  SubscriptionQueuedError,
   UnknownModelError,
   WINDOW_MS,
   createLlmGateway,
@@ -15,10 +12,10 @@ import {
 import { ANSWER, Analysis, anthropicBody, build, config, request } from "./gateway-fixture.js";
 import { SAMPLE_IBAN, fakeClock, gatewayDeps, piiMask, stubFetch } from "./helpers.js";
 
-describe("LlmGateway.generateObjectOrQueue", () => {
+describe("LlmGateway.generateObject", () => {
   it("routes a subscription binding through the seat's transport and credential", async () => {
     const { gateway, stub } = build();
-    const outcome = await gateway.generateObjectOrQueue(request, Analysis);
+    const outcome = await gateway.generateObject(request, Analysis);
 
     expect(outcome.status).toBe("ok");
     expect(stub.calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");
@@ -28,10 +25,10 @@ describe("LlmGateway.generateObjectOrQueue", () => {
 
   it("produces a contract-valid call log with usd null and the subscription driver", async () => {
     const { gateway, logs } = build({}, { runId: () => "run-abcdefgh" });
-    const outcome = await gateway.generateObjectOrQueue(request, Analysis);
+    const outcome = await gateway.generateObject(request, Analysis);
 
     if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
-    expect(outcome.object).toEqual({ risk: "orta", reason: "payment path touched" });
+    expect(outcome.value).toEqual({ risk: "orta", reason: "payment path touched" });
     expect(() => LlmCallLog.parse(outcome.log)).not.toThrow();
     expect(outcome.log).toEqual({
       at: "2026-08-08T09:00:00.000Z",
@@ -51,13 +48,13 @@ describe("LlmGateway.generateObjectOrQueue", () => {
 
   it("queues with resumeAt instead of failing when the pool is exhausted (M55)", async () => {
     const { gateway, stub, clock } = build({}, {}, [{ body: anthropicBody(ANSWER) }]);
-    await gateway.generateObjectOrQueue(request, Analysis);
+    await gateway.generateObject(request, Analysis);
 
-    const queued = await gateway.generateObjectOrQueue(request, Analysis);
+    const queued = await gateway.generateObject(request, Analysis);
     expect(queued).toEqual({
       status: "queued",
       resumeAt: new Date(Date.parse("2026-08-08T09:00:00.000Z") + WINDOW_MS["5h"]).toISOString(),
-      messageKey: MSG_QUEUED_QUOTA,
+      reason: "subscription_quota",
     });
     // The queued call never reached the provider.
     expect(stub.calls).toHaveLength(1);
@@ -69,13 +66,13 @@ describe("LlmGateway.generateObjectOrQueue", () => {
   it("burns the seat's quota even when the provider call fails", async () => {
     const { gateway } = build({}, {}, [{ status: 400, body: { error: "bad model" } }]);
 
-    await expect(gateway.generateObjectOrQueue(request, Analysis)).rejects.toThrow(/HTTP 400/);
+    await expect(gateway.generateObject(request, Analysis)).rejects.toThrow(/HTTP 400/);
     expect(gateway.poolSnapshot()[0]?.state).toBe("exhausted");
   });
 
   it("degrades a confidential request when no on-prem backend serves the role (M18)", async () => {
     const { gateway, stub } = build();
-    const outcome = await gateway.generateObjectOrQueue({ ...request, dataClass: "gizli" }, Analysis);
+    const outcome = await gateway.generateObject({ ...request, dataClass: "gizli" }, Analysis);
 
     expect(outcome).toEqual({ status: "degraded", dataClass: "gizli", messageKey: MSG_DEGRADED_AI_ASSIST });
     expect(stub.calls).toHaveLength(0);
@@ -91,7 +88,7 @@ describe("LlmGateway.generateObjectOrQueue", () => {
       },
     ]);
 
-    const outcome = await gateway.generateObjectOrQueue(
+    const outcome = await gateway.generateObject(
       { ...request, role: "test_designer", dataClass: "gizli" },
       Analysis,
     );
@@ -113,7 +110,7 @@ describe("LlmGateway.generateObjectOrQueue", () => {
     const { gateway, stub } = build(cloudGizli);
 
     await expect(
-      gateway.generateObjectOrQueue({ ...request, role: "intake", dataClass: "gizli" }, Analysis),
+      gateway.generateObject({ ...request, role: "intake", dataClass: "gizli" }, Analysis),
     ).rejects.toBeInstanceOf(LlmConfigError);
     expect(stub.calls).toHaveLength(0);
   });
@@ -129,7 +126,7 @@ describe("LlmGateway.generateObjectOrQueue", () => {
     };
     const { gateway, stub } = build(cloudGizli, { mask: piiMask() });
 
-    await gateway.generateObjectOrQueue(
+    await gateway.generateObject(
       { ...request, role: "intake", dataClass: "gizli", input: { ticket: "UGURPAY-1", iban: SAMPLE_IBAN } },
       Analysis,
     );
@@ -141,38 +138,10 @@ describe("LlmGateway.generateObjectOrQueue", () => {
 
   it("rejects an unbound role and a malformed request", async () => {
     const { gateway } = build();
-    await expect(gateway.generateObjectOrQueue({ ...request, role: "dev_reviewer" }, Analysis)).rejects.toBeInstanceOf(
+    await expect(gateway.generateObject({ ...request, role: "dev_reviewer" }, Analysis)).rejects.toBeInstanceOf(
       UnknownModelError,
     );
-    await expect(gateway.generateObjectOrQueue({ ...request, variantId: "" }, Analysis)).rejects.toThrow();
-  });
-});
-
-describe("LlmGateway LlmPort surface", () => {
-  it("returns object + log through the frozen port signature", async () => {
-    const { gateway } = build();
-    const result = await gateway.generateObject(request, Analysis);
-
-    expect(result.object.risk).toBe("orta");
-    expect(result.log.driver).toBe("claude-sub");
-  });
-
-  it("turns a queued pool into a typed error carrying resumeAt", async () => {
-    const { gateway } = build();
-    await gateway.generateObject(request, Analysis);
-
-    const error = await gateway.generateObject(request, Analysis).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(SubscriptionQueuedError);
-    expect((error as SubscriptionQueuedError).resumeAt).toBe(
-      new Date(Date.parse("2026-08-08T09:00:00.000Z") + WINDOW_MS["5h"]).toISOString(),
-    );
-  });
-
-  it("turns a degraded policy decision into a typed error", async () => {
-    const { gateway } = build();
-    await expect(gateway.generateObject({ ...request, dataClass: "gizli" }, Analysis)).rejects.toBeInstanceOf(
-      LlmPolicyBlockedError,
-    );
+    await expect(gateway.generateObject({ ...request, variantId: "" }, Analysis)).rejects.toThrow();
   });
 });
 

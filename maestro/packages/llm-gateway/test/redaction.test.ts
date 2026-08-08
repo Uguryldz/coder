@@ -80,7 +80,7 @@ describe("the masker is verified and its ReverseMap is carried (B8 · M20)", () 
   it("accepts @maestro/pii's maskOutbound as deps.mask without an adapter", async () => {
     const { gateway, stub } = build({ mask: piiMask() });
 
-    const outcome = await gateway.generateObjectOrQueue(request, Answer);
+    const outcome = await gateway.generateObject(request, Answer);
 
     const sent = JSON.stringify(stub.calls[0]?.body);
     expect(sent).toContain("[IBAN_1]");
@@ -89,9 +89,9 @@ describe("the masker is verified and its ReverseMap is carried (B8 · M20)", () 
     expect(sent).not.toContain(SAMPLE_TCKN);
     if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
     // What may be persisted is the masked object (M20/M82)…
-    expect(outcome.object).toEqual({ risk: "[IBAN_1] touched" });
+    expect(outcome.value).toEqual({ risk: "[IBAN_1] touched" });
     // …and the map survives, so the human-facing copy can be reopened.
-    expect(outcome.unmask?.(outcome.object)).toEqual({ risk: `${SAMPLE_IBAN} touched` });
+    expect(outcome.unmask?.(outcome.value)).toEqual({ risk: `${SAMPLE_IBAN} touched` });
   });
 
   it("refuses to send when the masker did not actually mask", async () => {
@@ -101,13 +101,13 @@ describe("the masker is verified and its ReverseMap is carried (B8 · M20)", () 
       mask: (payload) => ({ payload, map: new ReverseMap(), counts: { occurrences: 0, fields: 0, byType: {} } }),
     });
 
-    await expect(gateway.generateObjectOrQueue(request, Answer)).rejects.toBeInstanceOf(PiiLeakError);
+    await expect(gateway.generateObject(request, Answer)).rejects.toBeInstanceOf(PiiLeakError);
     expect(stub.calls).toHaveLength(0);
   });
 
   it("still refuses masked_cloud when no masker is wired at all", async () => {
     const { gateway, stub } = build({});
-    await expect(gateway.generateObjectOrQueue(request, Answer)).rejects.toBeInstanceOf(LlmConfigError);
+    await expect(gateway.generateObject(request, Answer)).rejects.toBeInstanceOf(LlmConfigError);
     expect(stub.calls).toHaveLength(0);
   });
 });

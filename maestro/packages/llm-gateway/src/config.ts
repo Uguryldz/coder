@@ -128,15 +128,12 @@ export const LlmGatewayConfig = z
     retry: RetryConfig.prefault({}),
     maxTokens: z.number().int().positive().default(4_096),
     temperature: z.number().min(0).max(2).default(0),
-    /** Role recorded for `agentSession` calls (doing roles — M17). */
-    agentRole: LlmRole.default("engineer"),
     /**
-     * `AgentSessionOptions` carries no data class, so agent turns are routed
-     * with this one until the port grows the field (RAPOR.md request #2). The
-     * default is the STRICTEST class: a deployment that has not thought about
-     * it must not discover that its core-banking work went to the cloud (M18).
+     * Role recorded for `agentSession` calls (doing roles — M17). The data class
+     * and the variant are NOT config: `AgentSessionOptions` carries them, so the
+     * gateway never routes an agent turn with a default (M18).
      */
-    agentDataClass: DataClass.default("gizli"),
+    agentRole: LlmRole.default("engineer"),
   })
   .superRefine((cfg, ctx) => {
     const configured = new Set<string>(cfg.drivers.map((d) => d.driver));

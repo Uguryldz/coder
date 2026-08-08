@@ -1,0 +1,50 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2026-07-14T09:20:11.123456789Z",
+  "ArtifactName": "/workspace",
+  "ArtifactType": "filesystem",
+  "Metadata": { "ImageConfig": { "architecture": "", "created": "0001-01-01T00:00:00Z", "os": "", "rootfs": { "type": "", "diff_ids": null }, "config": {} } },
+  "Results": [
+    {
+      "Target": "package-lock.json",
+      "Class": "lang-pkgs",
+      "Type": "npm",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2020-8203",
+          "PkgID": "lodash@4.17.15",
+          "PkgName": "lodash",
+          "InstalledVersion": "4.17.15",
+          "FixedVersion": "4.17.19",
+          "Status": "fixed",
+          "Layer": {},
+          "SeveritySource": "nvd",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2020-8203",
+          "Title": "nodejs-lodash: prototype pollution in zipObjectDeep function",
+          "Description": "Prototype pollution attack when using _.zipObjectDeep in lodash before 4.17.20.",
+          "Severity": "HIGH",
+          "CweIDs": ["CWE-1321"],
+          "References": ["https://github.com/lodash/lodash/issues/4874"],
+          "PublishedDate": "2020-07-15T17:15:00Z",
+          "LastModifiedDate": "2021-06-14T18:15:00Z"
+        },
+        {
+          "VulnerabilityID": "GHSA-xxxx-yyyy-zzzz",
+          "PkgID": "internal-lib@1.2.3",
+          "PkgName": "internal-lib",
+          "InstalledVersion": "1.2.3",
+          "Status": "unknown",
+          "Layer": {},
+          "Title": "Unrated advisory for an internal package",
+          "Severity": "UNKNOWN",
+          "References": []
+        }
+      ]
+    },
+    {
+      "Target": "go.sum",
+      "Class": "lang-pkgs",
+      "Type": "gomod"
+    }
+  ]
+}

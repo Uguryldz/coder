@@ -178,6 +178,37 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(tsx@4.23.11)
 
+  packages/memory:
+    dependencies:
+      '@maestro/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@maestro/db':
+        specifier: workspace:*
+        version: link:../db
+      '@maestro/pii':
+        specifier: workspace:*
+        version: link:../pii
+      '@maestro/ports':
+        specifier: workspace:*
+        version: link:../ports
+      '@maestro/storage':
+        specifier: workspace:*
+        version: link:../storage
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(tsx@4.23.11)
+
   packages/pii:
     dependencies:
       '@maestro/contracts':

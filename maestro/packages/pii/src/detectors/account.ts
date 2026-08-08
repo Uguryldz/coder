@@ -1,4 +1,5 @@
 import { PiiPolicyError } from "../errors.js";
+import { backtrackingRisk } from "../regex-safety.js";
 import type { AccountPattern, Detector, DetectorContext, PiiMatch } from "../types.js";
 
 /**
@@ -9,6 +10,13 @@ import type { AccountPattern, Detector, DetectorContext, PiiMatch } from "../typ
  */
 export function compileAccountPatterns(patterns: readonly AccountPattern[]): RegExp[] {
   return patterns.map((p) => {
+    // This pattern will run over every string of every payload on the LLM hot
+    // path, so a pattern that backtracks exponentially is a denial of service
+    // with the operator's own signature on it (B-18).
+    const risk = backtrackingRisk(p.pattern);
+    if (risk !== null) {
+      throw new PiiPolicyError(`account pattern "${p.name}" is unsafe to run: ${risk}`);
+    }
     let compiled: RegExp;
     try {
       compiled = new RegExp(p.pattern, "g");

@@ -34,9 +34,12 @@ export class PiiLeakError extends Error {
     readonly occurrences: number,
   ) {
     super(
-      `unmasked PII reached the "${boundary}" boundary: ` +
-        `${occurrences} occurrence(s) of ${types.join(", ")} — ` +
-        `route the payload through withPiiBoundary() (M20)`,
+      occurrences === 0
+        ? `a payload that never went through the PII boundary reached "${boundary}" ` +
+          `(it is not a Masked envelope) — route it through withPiiBoundary() (M20)`
+        : `unmasked PII reached the "${boundary}" boundary: ` +
+          `${occurrences} occurrence(s) of ${types.join(", ")} — ` +
+          `route the payload through withPiiBoundary() (M20)`,
     );
     this.name = "PiiLeakError";
   }

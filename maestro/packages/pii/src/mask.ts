@@ -230,11 +230,40 @@ export function unmaskValue<T>(value: T, map: ReverseMap): T {
 }
 
 /**
+ * Every string of a payload that masking does not rewrite: object keys.
+ *
+ * `{ "12345678950": { balance: … } }` is an ordinary per-customer map, and a
+ * masker that renamed keys would hand the callee a payload its schema no
+ * longer fits — so masking leaves keys alone and the tripwire refuses them
+ * instead (verifier B-10). This is also the one thing the tripwire genuinely
+ * sees that the masker cannot: everywhere else they share detectors, and
+ * RAPOR §2 no longer claims otherwise.
+ */
+function countKeyPii(value: unknown, profile: CompiledProfile, acc: CountAccumulator): void {
+  if (value === null || typeof value !== "object") return;
+  if (value instanceof Date) return;
+  if (Array.isArray(value)) {
+    for (const item of value) countKeyPii(item, profile, acc);
+    return;
+  }
+  if (!isPlainObject(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    for (const match of collectMatches(key, profile)) countOccurrence(acc, match.type);
+    countKeyPii(item, profile, acc);
+  }
+}
+
+/**
  * Count the PII in a payload without keeping any of it: the ReverseMap this
- * creates is discarded with the call frame.
+ * creates is discarded with the call frame. Keys are counted as well as
+ * values, because this is a leak detector rather than a transformer.
  */
 export function scanForPii(value: unknown, profile: CompiledProfile): MaskCounts {
-  return maskValue(value, createSessionWith(profile)).counts;
+  const session = createSessionWith(profile);
+  const acc = newAccumulator();
+  walk(value, session, acc, "", 0, false);
+  countKeyPii(value, profile, acc);
+  return toCounts(acc);
 }
 
 /**

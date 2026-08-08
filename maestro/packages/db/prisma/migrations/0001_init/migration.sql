@@ -40,6 +40,12 @@ CREATE TYPE "LlmRoleE" AS ENUM ('intake', 'analyst', 'engineer', 'dev_reviewer',
 -- CreateEnum
 CREATE TYPE "SubscriptionStateE" AS ENUM ('ready', 'cooling', 'exhausted', 'disabled');
 
+-- CreateEnum
+CREATE TYPE "StepKindE" AS ENUM ('system', 'ai', 'human_gate', 'human_wait', 'auto_gate');
+
+-- CreateEnum
+CREATE TYPE "CreatedViaE" AS ENUM ('onboarding', 'import');
+
 -- CreateTable
 CREATE TABLE "WorkflowRun" (
     "id" VARCHAR(128) NOT NULL,
@@ -62,7 +68,7 @@ CREATE TABLE "StepEvent" (
     "id" BIGSERIAL NOT NULL,
     "runId" VARCHAR(128) NOT NULL,
     "step" VARCHAR(8) NOT NULL,
-    "kind" VARCHAR(32) NOT NULL,
+    "kind" "StepKindE" NOT NULL,
     "at" TIMESTAMPTZ(3) NOT NULL,
     "dataJson" JSONB,
 
@@ -92,7 +98,7 @@ CREATE TABLE "Application" (
     "platform" VARCHAR(32) NOT NULL,
     "jiraComponent" VARCHAR(128),
     "maestroYamlPresent" BOOLEAN NOT NULL DEFAULT false,
-    "createdVia" VARCHAR(16) NOT NULL,
+    "createdVia" "CreatedViaE" NOT NULL,
 
     CONSTRAINT "Application_pkey" PRIMARY KEY ("appId")
 );
@@ -125,7 +131,7 @@ CREATE TABLE "JiraProjectBinding" (
 -- CreateTable
 CREATE TABLE "RoutingRule" (
     "ruleId" VARCHAR(64) NOT NULL,
-    "projectKey" VARCHAR(32) NOT NULL,
+    "projectKey" VARCHAR(32),
     "conditionJson" JSONB NOT NULL,
     "effectJson" JSONB NOT NULL,
     "priority" INTEGER NOT NULL,
@@ -150,6 +156,7 @@ CREATE TABLE "ParamVersion" (
     "scopeRef" VARCHAR(64) NOT NULL DEFAULT '',
     "version" INTEGER NOT NULL,
     "valueJson" JSONB NOT NULL,
+    "guarded" BOOLEAN NOT NULL,
     "changedBy" TEXT NOT NULL,
     "approvedBy" TEXT,
     "at" TIMESTAMPTZ(3) NOT NULL,
@@ -230,7 +237,7 @@ CREATE TABLE "KnowledgeDoc" (
     "contentRef" TEXT NOT NULL,
     "updatedAt" TIMESTAMPTZ(3) NOT NULL,
 
-    CONSTRAINT "KnowledgeDoc_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "KnowledgeDoc_pkey" PRIMARY KEY ("id","version")
 );
 
 -- CreateTable
@@ -257,9 +264,6 @@ CREATE TABLE "User" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "WorkflowRun_ticketKey_key" ON "WorkflowRun"("ticketKey");
-
--- CreateIndex
 CREATE INDEX "WorkflowRun_status_idx" ON "WorkflowRun"("status");
 
 -- CreateIndex
@@ -269,10 +273,16 @@ CREATE INDEX "WorkflowRun_appId_status_idx" ON "WorkflowRun"("appId", "status");
 CREATE INDEX "WorkflowRun_updatedAt_idx" ON "WorkflowRun"("updatedAt");
 
 -- CreateIndex
+CREATE INDEX "WorkflowRun_ticketKey_idx" ON "WorkflowRun"("ticketKey");
+
+-- CreateIndex
 CREATE INDEX "StepEvent_runId_at_idx" ON "StepEvent"("runId", "at");
 
 -- CreateIndex
 CREATE INDEX "RoutingRule_projectKey_priority_idx" ON "RoutingRule"("projectKey", "priority");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AuditLog_prevHash_key" ON "AuditLog"("prevHash");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "AuditLog_hash_key" ON "AuditLog"("hash");
@@ -302,10 +312,10 @@ CREATE INDEX "SubscriptionAccount_driver_state_idx" ON "SubscriptionAccount"("dr
 CREATE INDEX "KnowledgeDoc_kind_idx" ON "KnowledgeDoc"("kind");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "EvidencePackageRow_ticketKey_key" ON "EvidencePackageRow"("ticketKey");
+CREATE INDEX "EvidencePackageRow_createdAt_idx" ON "EvidencePackageRow"("createdAt");
 
 -- CreateIndex
-CREATE INDEX "EvidencePackageRow_createdAt_idx" ON "EvidencePackageRow"("createdAt");
+CREATE INDEX "EvidencePackageRow_ticketKey_idx" ON "EvidencePackageRow"("ticketKey");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
@@ -321,9 +331,6 @@ ALTER TABLE "JournalEntry" ADD CONSTRAINT "JournalEntry_runId_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "RepoCard" ADD CONSTRAINT "RepoCard_appId_fkey" FOREIGN KEY ("appId") REFERENCES "Application"("appId") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "RoutingRule" ADD CONSTRAINT "RoutingRule_projectKey_fkey" FOREIGN KEY ("projectKey") REFERENCES "JiraProjectBinding"("projectKey") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ParamVersion" ADD CONSTRAINT "ParamVersion_key_fkey" FOREIGN KEY ("key") REFERENCES "Param"("key") ON DELETE RESTRICT ON UPDATE CASCADE;

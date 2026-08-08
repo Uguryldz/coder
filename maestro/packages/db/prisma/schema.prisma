@@ -167,13 +167,28 @@ enum SubscriptionStateE {
   disabled
 }
 
+/// StepKind
+enum StepKindE {
+  system
+  ai
+  human_gate
+  human_wait
+  auto_gate
+}
+
+/// ApplicationRecord.createdVia (M100)
+enum CreatedViaE {
+  onboarding
+  import
+}
+
 // ---------------------------------------------------------------------------
 // Workflow
 // ---------------------------------------------------------------------------
 
 model WorkflowRun {
   id        String     @id @db.VarChar(128)
-  ticketKey String     @unique @db.VarChar(64)
+  ticketKey String     @db.VarChar(64)
   appId     String?    @db.VarChar(64)
   mode      WorkModeE
   risk      RiskTierE?
@@ -193,14 +208,19 @@ model WorkflowRun {
   @@index([status])
   @@index([appId, status])
   @@index([updatedAt]) // Studio "recent runs" list ordering
+  /// One ticket may legitimately be re-run (kill switch, handover, a second
+  /// `/ai-start`), so the key is indexed, not unique. "At most one LIVE run per
+  /// ticket" is a partial unique index Prisma cannot express — it lives in
+  /// prisma/migrations/0002_append_only_and_guards/migration.sql.
+  @@index([ticketKey])
 }
 
 model StepEvent {
-  id       BigInt   @id @default(autoincrement())
-  runId    String   @db.VarChar(128)
-  step     String   @db.VarChar(8)
-  kind     String   @db.VarChar(32) // StepKind
-  at       DateTime @db.Timestamptz(3)
+  id       BigInt    @id @default(autoincrement())
+  runId    String    @db.VarChar(128)
+  step     String    @db.VarChar(8)
+  kind     StepKindE
+  at       DateTime  @db.Timestamptz(3)
   dataJson Json?
 
   run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -228,16 +248,16 @@ model JournalEntry {
 // ---------------------------------------------------------------------------
 
 model Application {
-  appId              String  @id @db.VarChar(64)
+  appId              String      @id @db.VarChar(64)
   displayName        String
   adoProject         String
   adoRepo            String
   /// PlatformProfile — text because "linux-node" & co. are not legal Prisma
   /// enum identifiers; contracts' PlatformProfile is the validator.
-  platform           String  @db.VarChar(32)
-  jiraComponent      String? @db.VarChar(128)
-  maestroYamlPresent Boolean @default(false)
-  createdVia         String  @db.VarChar(16) // onboarding | import
+  platform           String      @db.VarChar(32)
+  jiraComponent      String?     @db.VarChar(128)
+  maestroYamlPresent Boolean     @default(false)
+  createdVia         CreatedViaE
 
   runs      WorkflowRun[]
   repoCards RepoCard[]
@@ -268,18 +288,21 @@ model JiraProjectBinding {
   dryRunSampleSize Int           @default(20)
   lastDryRunAt     DateTime?     @db.Timestamptz(3)
   version          Int           @default(1)
-
-  rules RoutingRule[]
 }
 
 model RoutingRule {
-  ruleId        String @id @db.VarChar(64)
-  projectKey    String @db.VarChar(32)
+  ruleId        String  @id @db.VarChar(64)
+  /// NULL = org-wide rule, which the contract spells `"*"`
+  /// (`RoutingRule.projectKey = ProjectKey.or("*")`). `src/routing-map.ts` owns
+  /// the `"*" <-> NULL` translation, so no caller invents its own sentinel.
+  ///
+  /// Deliberately NOT a foreign key to `JiraProjectBinding`: an org-wide guard
+  /// rule has no binding to point at, and M102's `unbind` keeps a project's
+  /// history after its binding row is gone.
+  projectKey    String? @db.VarChar(32)
   conditionJson Json // RuleCondition
   effectJson    Json // { appId?, mode?, dataClass? }
   priority      Int
-
-  binding JiraProjectBinding @relation(fields: [projectKey], references: [projectKey], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([projectKey, priority])
 }
@@ -303,8 +326,14 @@ model ParamVersion {
   scopeRef   String   @default("") @db.VarChar(64) // "" = global scope
   version    Int
   valueJson  Json
+  /// Denormalized copy of `Param.guarded` as it stood when the version was
+  /// written. It exists so the database itself can enforce four-eyes: a CHECK
+  /// constraint refuses a guarded version with no approver (M71/M78). A
+  /// sub-query cannot appear in a CHECK, hence the copy. `writeParamVersion()`
+  /// is the only writer and reads the flag from `Param`.
+  guarded    Boolean
   changedBy  String
-  approvedBy String? // required when the definition is guarded (4-eyes)
+  approvedBy String? // NOT NULL whenever `guarded` — CHECK in migration 0002
   at         DateTime @db.Timestamptz(3)
 
   param Param @relation(fields: [key], references: [key], onDelete: Restrict, onUpdate: Cascade)
@@ -322,7 +351,10 @@ model AuditLog {
   actor    String
   action   AuditActionE
   subject  String       @db.VarChar(128)
-  prevHash String       @db.VarChar(64) // sha256 hex | "genesis"
+  /// Unique: two rows may never share a predecessor, so the chain cannot fork
+  /// and there is at most one genesis row (M33). The writer's lock orders
+  /// appends inside one process; this index is what stops a second process.
+  prevHash String       @unique @db.VarChar(64) // sha256 hex | "genesis"
   hash     String       @unique @db.VarChar(64)
   metaJson Json?
 
@@ -392,25 +424,32 @@ model VariantVersion {
 // Knowledge & evidence
 // ---------------------------------------------------------------------------
 
+/// Versioned by (id, version): M83 pins a flow to the template version it
+/// started with, so a version may never be overwritten in place. Same pattern
+/// as RepoCard.
 model KnowledgeDoc {
-  id         String   @id @db.VarChar(64)
+  id         String   @db.VarChar(64)
   kind       String   @db.VarChar(32) // template | example_analysis | standard | app_intro | policy
   title      String
   version    Int
   contentRef String // StoragePort key
   updatedAt  DateTime @db.Timestamptz(3)
 
+  @@id([id, version])
   @@index([kind])
 }
 
 model EvidencePackageRow {
   runId        String   @id @db.VarChar(128)
-  ticketKey    String   @unique @db.VarChar(64)
+  /// Indexed, not unique: a re-run produces a second package, and refusing to
+  /// store it would mean losing evidence (M34/M56).
+  ticketKey    String   @db.VarChar(64)
   createdAt    DateTime @db.Timestamptz(3)
   manifestJson Json // EvidencePackage manifest
   storageKey   String
 
   @@index([createdAt]) // 10-year retention sweeps (M56)
+  @@index([ticketKey])
 }
 
 // MVP local users (M8); AD/LDAP arrives in Aşama 2.

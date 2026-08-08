@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  GATES_BY_RISK,
-  Locale,
-  NotifyChannel,
-  ParamDefinition,
-  ParamKey,
-} from "@maestro/contracts";
+import { ParamDefinition, ParamKey } from "@maestro/contracts";
 import {
   DEFAULT_PARAM_DEFINITIONS,
   GLOBAL_SCOPE_REF,
@@ -42,9 +36,68 @@ function fakeDb(): { db: SeedDb; params: UpsertCall[]; versions: UpsertCall[] } 
   return { db, params, versions };
 }
 
+/**
+ * The parameter set has two sources, and the seed must cover both:
+ *
+ *  · the mock's "Parametreler" screen (`mock/index.html`, `const PARAMS`) — the
+ *    screen a user will open, transliterated to `ParamKey` style because the
+ *    contract's regex forbids camelCase;
+ *  · knobs an M-decision requires that the mock screen never showed.
+ *
+ * Asserting a count would be tautological (the count comes from the same array
+ * it checks). Asserting *these two lists* is not: adding a parameter without a
+ * source, or dropping one the mock shows, fails here.
+ */
+const MOCK_PARAM_KEYS: Record<string, string> = {
+  "gates.risk_tiers": "gates.riskTiers",
+  "trigger.mode": "trigger.mode",
+  "merge.mode": "merge.mode",
+  "escalation.ladder": "escalation.ladder",
+  "lang.output": "lang.output",
+  "coverage.ratchet": "coverage.ratchet",
+  "sod.qa_split": "sod.qaSplit",
+  "workspace.max_age_days": "workspace.maxAgeDays",
+  "stuck.threshold": "stuck.threshold",
+  "quota.warn_pct": "quota.warnPct",
+  "build.timeout_min": "build.timeoutMin",
+  "scan.block_level": "scan.blockLevel",
+};
+
+const DECISION_ONLY_KEYS: Record<string, string> = {
+  "killswitch.state": "M58",
+  "binding.dry_run_sample_size": "M102",
+  "dataclass.policy": "M18/M63",
+  "subscription.queue_enabled": "M55",
+  "notify.reminder_channel": "M45",
+};
+
+/** The mock's "4-göz" badge, key by key. */
+const MOCK_GUARDED_KEYS = [
+  "gates.risk_tiers",
+  "merge.mode",
+  "coverage.ratchet",
+  "sod.qa_split",
+  "scan.block_level",
+];
+
 describe("default parameter definitions", () => {
-  it("ships the 12 parameters of the Studio parameters screen", () => {
-    expect(DEFAULT_PARAM_DEFINITIONS.length).toBe(12);
+  const seeded = new Set(DEFAULT_PARAM_DEFINITIONS.map((definition) => definition.key));
+
+  it("ships every parameter the mock's Parametreler screen shows", () => {
+    const missing = Object.keys(MOCK_PARAM_KEYS).filter((key) => !seeded.has(key));
+    expect(missing).toEqual([]);
+  });
+
+  it("ships nothing that has neither a mock row nor an M-decision", () => {
+    const orphans = [...seeded].filter(
+      (key) => MOCK_PARAM_KEYS[key] === undefined && DECISION_ONLY_KEYS[key] === undefined,
+    );
+    expect(orphans).toEqual([]);
+  });
+
+  it("covers exactly the union of both sources", () => {
+    const expected = new Set([...Object.keys(MOCK_PARAM_KEYS), ...Object.keys(DECISION_ONLY_KEYS)]);
+    expect([...seeded].sort()).toEqual([...expected].sort());
   });
 
   it("validates against the ParamDefinition contract", () => {
@@ -57,7 +110,7 @@ describe("default parameter definitions", () => {
   it("uses unique, contract-shaped keys", () => {
     const keys = DEFAULT_PARAM_DEFINITIONS.map((d) => d.key);
     expect(new Set(keys).size).toBe(keys.length);
-    for (const key of keys) expect(ParamKey.safeParse(key).success).toBe(true);
+    for (const key of keys) expect(ParamKey.safeParse(key).success, key).toBe(true);
   });
 
   it("names every description through the i18n catalog (M104)", () => {
@@ -99,104 +152,26 @@ describe("default parameter definitions", () => {
     }
   });
 
-  it("four-eyes guards every control-weakening parameter", () => {
+  it("four-eyes guards every parameter the mock badges, and the policy knobs", () => {
     const guarded = DEFAULT_PARAM_DEFINITIONS.filter((d) => d.guarded).map((d) => d.key).sort();
-    expect(guarded).toEqual([
-      "coverage.ratchet",
-      "dataclass.policy",
-      "gates.risk_tiers",
-      "killswitch.state",
-      "merge.mode",
-      "sod.qa_split",
-    ]);
-  });
-});
-
-/** Seeded values are decisions from the master plan — pinned one by one. */
-describe("seeded defaults follow the decision record", () => {
-  function def(key: string) {
-    const found = DEFAULT_PARAM_DEFINITIONS.find((d) => d.key === key);
-    expect(found, `missing seed parameter ${key}`).toBeDefined();
-    return found!;
-  }
-
-  it("M51 gate sets equal the contract's GATES_BY_RISK", () => {
-    expect(def("gates.risk_tiers").defaultValue).toEqual({
-      dusuk: [...GATES_BY_RISK.dusuk],
-      orta: [...GATES_BY_RISK.orta],
-      kritik: [...GATES_BY_RISK.kritik],
-    });
-  });
-
-  it("M88 escalation ladder is 24h -> 72h -> 7d", () => {
-    const ladder = def("escalation.ladder").defaultValue as { steps: { afterHours: number }[] };
-    expect(ladder.steps.map((s) => s.afterHours)).toEqual([24, 72, 168]);
-  });
-
-  it("M59 output language offers the supported locales and defaults to tr", () => {
-    const language = def("lang.output");
-    expect(language.enumValues).toEqual([...Locale.options]);
-    expect(language.defaultValue).toBe("tr");
-  });
-
-  it("M70 coverage ratchet forbids decreases and floors new lines at 80%", () => {
-    expect(def("coverage.ratchet").defaultValue).toEqual({
-      allowDecrease: false,
-      minNewLinePct: 80,
-    });
-  });
-
-  it("M92 QA separation of duties ships OFF", () => {
-    expect(def("sod.qa_split").defaultValue).toBe(false);
-  });
-
-  it("M65 workspace archive age is 60 days", () => {
-    expect(def("workspace.max_age_days").defaultValue).toBe(60);
-  });
-
-  it("M58 kill switch has both levels plus off, and starts off", () => {
-    const killSwitch = def("killswitch.state");
-    expect(killSwitch.enumValues).toEqual(["off", "intake_only", "all"]);
-    expect(killSwitch.defaultValue).toBe("off");
-  });
-
-  it("M48 merge mode defaults to human merge", () => {
-    expect(def("merge.mode").defaultValue).toBe("human_merge");
-    expect(def("merge.mode").scope).toBe("project");
-  });
-
-  it("M102 dry-run sample size is 20", () => {
-    expect(def("binding.dry_run_sample_size").defaultValue).toBe(20);
-  });
-
-  it("M18 data-class policy degrades to ai-assist when on-prem is missing", () => {
-    expect(def("dataclass.policy").defaultValue).toEqual({
-      backendByClass: { acik: "api", dahili: "api", gizli: "onprem" },
-      whenOnpremMissing: "degrade_ai_assist",
-    });
-  });
-
-  it("M55 subscription queueing is on (exhausted pool waits, never fails)", () => {
-    expect(def("subscription.queue_enabled").defaultValue).toBe(true);
-  });
-
-  it("M45 reminder channel is a NotifyPort channel, defaulting to Jira", () => {
-    const channel = def("notify.reminder_channel");
-    expect(channel.enumValues).toEqual([...NotifyChannel.options]);
-    expect(channel.defaultValue).toBe("jira");
+    for (const key of MOCK_GUARDED_KEYS) expect(guarded, key).toContain(key);
+    expect(guarded).toEqual(
+      [...MOCK_GUARDED_KEYS, "killswitch.state", "dataclass.policy"].sort(),
+    );
   });
 });
 
 describe("seedParams", () => {
   const now = new Date("2026-08-08T09:00:00.000Z");
+  const total = DEFAULT_PARAM_DEFINITIONS.length;
 
   it("upserts one definition and one initial version per parameter", async () => {
     const { db, params, versions } = fakeDb();
     const result = await seedParams(db, { now });
 
-    expect(result).toEqual({ definitions: 12, initialVersions: 12 });
-    expect(params.length).toBe(12);
-    expect(versions.length).toBe(12);
+    expect(result).toEqual({ definitions: total, initialVersions: total });
+    expect(params.length).toBe(total);
+    expect(versions.length).toBe(total);
   });
 
   it("writes the definition remainder into defJson", async () => {
@@ -230,9 +205,22 @@ describe("seedParams", () => {
         scopeRef: GLOBAL_SCOPE_REF,
         version: 1,
         changedBy: SEED_ACTOR,
-        approvedBy: null,
         at: now,
       });
+    }
+  });
+
+  it("satisfies the four-eyes CHECK on every guarded default (M71)", async () => {
+    const { db, versions } = fakeDb();
+    await seedParams(db, { now });
+
+    const guardedKeys = new Set(
+      DEFAULT_PARAM_DEFINITIONS.filter((d) => d.guarded).map((d) => d.key),
+    );
+    for (const version of versions) {
+      const key = String(version.create["key"]);
+      expect(version.create["guarded"], key).toBe(guardedKeys.has(key));
+      expect(version.create["approvedBy"], key).toBe(guardedKeys.has(key) ? SEED_ACTOR : null);
     }
   });
 

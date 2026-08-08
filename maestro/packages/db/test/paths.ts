@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  GUARDS_MIGRATION_RELATIVE_PATH,
   INITIAL_MIGRATION_RELATIVE_PATH,
   PRISMA_SCHEMA_RELATIVE_PATH,
 } from "../src/index.js";
@@ -11,6 +12,7 @@ export const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const SCHEMA_PATH = join(PACKAGE_ROOT, PRISMA_SCHEMA_RELATIVE_PATH);
 export const MIGRATION_PATH = join(PACKAGE_ROOT, INITIAL_MIGRATION_RELATIVE_PATH);
+export const GUARDS_MIGRATION_PATH = join(PACKAGE_ROOT, GUARDS_MIGRATION_RELATIVE_PATH);
 export const MIGRATION_LOCK_PATH = join(PACKAGE_ROOT, "prisma/migrations/migration_lock.toml");
 
 export function readSchema(): string {
@@ -19,4 +21,8 @@ export function readSchema(): string {
 
 export function readMigration(): string {
   return readFileSync(MIGRATION_PATH, "utf8");
+}
+
+export function readGuardsMigration(): string {
+  return readFileSync(GUARDS_MIGRATION_PATH, "utf8");
 }

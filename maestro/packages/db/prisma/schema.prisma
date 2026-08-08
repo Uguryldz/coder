@@ -1,0 +1,251 @@
+// Maestro core schema — DRAFT (Dalga 0). Wave 1 `db` packet owns
+// migrations, seed and the client. Enum values mirror @maestro/contracts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RunStatus {
+  running
+  gate
+  queued
+  fail
+  handover
+  done
+  cancelled
+}
+
+enum WorkModeE {
+  full_auto
+  ai_assist
+  human_lead
+  human_only
+}
+
+enum RiskTierE {
+  dusuk
+  orta
+  kritik
+}
+
+enum DataClassE {
+  acik
+  dahili
+  gizli
+}
+
+enum BindingStateE {
+  draft
+  dry_run
+  active
+  paused
+  unbound
+}
+
+model WorkflowRun {
+  id          String     @id
+  ticketKey   String     @unique
+  appId       String?
+  mode        WorkModeE
+  risk        RiskTierE?
+  dataClass   DataClassE
+  step        String
+  status      RunStatus
+  matchJson   Json? // MatchResult (M99)
+  startedAt   DateTime
+  updatedAt   DateTime   @updatedAt
+  stepEvents  StepEvent[]
+  journal     JournalEntry[]
+  application Application? @relation(fields: [appId], references: [appId])
+
+  @@index([status])
+  @@index([appId, status])
+}
+
+model StepEvent {
+  id        BigInt      @id @default(autoincrement())
+  runId     String
+  step      String
+  kind      String
+  at        DateTime
+  dataJson  Json?
+  run       WorkflowRun @relation(fields: [runId], references: [id])
+
+  @@index([runId, at])
+}
+
+model JournalEntry {
+  runId  String
+  seq    Int
+  at     DateTime
+  actor  String
+  kind   String
+  title  String
+  detail String      @default("")
+  costJson Json?
+  run    WorkflowRun @relation(fields: [runId], references: [id])
+
+  @@id([runId, seq]) // append-only; no updates by convention (M30)
+}
+
+model Application {
+  appId             String        @id
+  displayName       String
+  adoProject        String
+  adoRepo           String
+  platform          String
+  jiraComponent     String?
+  maestroYamlPresent Boolean      @default(false)
+  createdVia        String
+  runs              WorkflowRun[]
+  repoCards         RepoCard[]
+}
+
+model RepoCard {
+  appId           String
+  version         Int
+  modulesJson     Json
+  generatedFromSha String
+  updatedAt       DateTime
+  application     Application @relation(fields: [appId], references: [appId])
+
+  @@id([appId, version])
+}
+
+model JiraProjectBinding {
+  projectKey       String        @id
+  trigger          String
+  triggerLabel     String        @default("maestro")
+  defaultsJson     Json
+  state            BindingStateE
+  dryRunSampleSize Int           @default(20)
+  lastDryRunAt     DateTime?
+  version          Int
+  rules            RoutingRule[]
+}
+
+model RoutingRule {
+  ruleId        String             @id
+  projectKey    String
+  conditionJson Json
+  effectJson    Json
+  priority      Int
+  binding       JiraProjectBinding @relation(fields: [projectKey], references: [projectKey])
+
+  @@index([projectKey, priority])
+}
+
+model Param {
+  key       String         @id
+  scope     String
+  type      String
+  guarded   Boolean
+  defJson   Json // ParamDefinition remainder (enumValues, descriptionKey, defaultValue)
+  versions  ParamVersion[]
+}
+
+model ParamVersion {
+  key        String
+  scopeRef   String  @default("")
+  version    Int
+  valueJson  Json
+  changedBy  String
+  approvedBy String?
+  at         DateTime
+  param      Param   @relation(fields: [key], references: [key])
+
+  @@id([key, scopeRef, version])
+}
+
+model AuditLog {
+  seq      BigInt   @id
+  at       DateTime
+  actor    String
+  action   String
+  subject  String
+  prevHash String
+  hash     String   @unique
+  metaJson Json?
+
+  @@index([at])
+  @@index([action])
+}
+
+model LlmCall {
+  id        BigInt   @id @default(autoincrement())
+  at        DateTime
+  runId     String?
+  role      String
+  variantId String
+  driver    String
+  model     String
+  tokensIn  Int
+  tokensOut Int
+  cachePct  Float?
+  usd       Float?
+  dataClass DataClassE
+
+  @@index([runId])
+  @@index([at])
+}
+
+model SubscriptionAccount {
+  accountId   String   @id
+  driver      String
+  state       String
+  windowsJson Json // QuotaWindow[] (M55)
+  lastUsedAt  DateTime?
+}
+
+model Variant {
+  id       String           @id
+  role     String
+  name     String
+  versions VariantVersion[]
+}
+
+model VariantVersion {
+  variantId String
+  version   Int
+  model     String
+  configJson Json
+  evalScore Float?
+  createdAt DateTime
+  variant   Variant @relation(fields: [variantId], references: [id])
+
+  @@id([variantId, version])
+}
+
+model KnowledgeDoc {
+  id        String   @id
+  kind      String // template | example_analysis | standard | app_intro | policy
+  title     String
+  version   Int
+  contentRef String // StoragePort key
+  updatedAt DateTime
+
+  @@index([kind])
+}
+
+model EvidencePackageRow {
+  runId        String   @id
+  ticketKey    String   @unique
+  createdAt    DateTime
+  manifestJson Json // EvidencePackage manifest
+  storageKey   String
+}
+
+// MVP local users (M8); AD/LDAP arrives in Aşama 2.
+model User {
+  id           String  @id
+  email        String  @unique
+  displayName  String
+  passwordHash String
+  groupsJson   Json // string[]
+  active       Boolean @default(true)
+}

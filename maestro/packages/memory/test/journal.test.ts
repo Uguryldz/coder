@@ -168,8 +168,10 @@ describe("appendJournal", () => {
       detail: `reply to ${SAMPLE_EMAIL}`,
     });
     const row = table.of(RUN_ID)[0];
-    expect(row?.title).toContain("[EMAIL_1]");
-    expect(row?.detail).toContain("[EMAIL_1]");
+    expect(row?.title).toMatch(/\[EMAIL_1\.[0-9a-f]+\]/);
+    // same session → the same value gets the same token in title and detail
+    expect(row?.detail).toMatch(/\[EMAIL_1\.[0-9a-f]+\]/);
+    expect(row?.detail.match(/\[EMAIL_1\.[0-9a-f]+\]/)?.[0]).toBe(row?.title.match(/\[EMAIL_1\.[0-9a-f]+\]/)?.[0]);
     expect(JSON.stringify(row)).not.toContain(SAMPLE_EMAIL);
   });
 });

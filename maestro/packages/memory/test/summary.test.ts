@@ -123,7 +123,7 @@ describe("enrichLivingSummary", () => {
       enrich: async () => `the reporter is ${SAMPLE_EMAIL}`,
     });
     expect(enriched.text).toContain("## notes (model)");
-    expect(enriched.text).toContain("[EMAIL_1]");
+    expect(enriched.text).toMatch(/\[EMAIL_1\.[0-9a-f]+\]/);
     expect(enriched.text).not.toContain(SAMPLE_EMAIL);
     // Everything the deterministic pass guaranteed is still there, first.
     expect(enriched.text.startsWith(buildLivingSummary(RUN_ID, entries).text)).toBe(true);

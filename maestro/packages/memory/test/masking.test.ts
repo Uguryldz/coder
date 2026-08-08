@@ -17,7 +17,7 @@ describe("createJournalMasker", () => {
     const text = masker.prepare({ title: `mail ${SAMPLE_EMAIL}`, detail: "" });
     const entry = masker.seal(IDENTITY, text);
 
-    expect(entry.title).toBe("mail [EMAIL_1]");
+    expect(entry.title).toMatch(/^mail \[EMAIL_1\.[0-9a-f]+\]$/);
     expect(entry.seq).toBe(3);
     expect(entry.detail).toBe("");
   });
@@ -60,7 +60,8 @@ describe("createJournalMasker", () => {
   it("masks standalone strings and leaves already-masked text alone", () => {
     const masker = testMasker();
     const once = masker.text(`write to ${SAMPLE_EMAIL}`);
-    expect(once).toBe("write to [EMAIL_1]");
+    // The token carries a per-session nonce (pii B-8/B-9), so match its shape.
+    expect(once).toMatch(/^write to \[EMAIL_1\.[0-9a-f]+\]$/);
     expect(masker.text(once)).toBe(once);
   });
 

@@ -2,12 +2,13 @@ import { JournalEntry } from "@maestro/contracts";
 import {
   assertNoPii,
   compileProfile,
-  maskOutbound,
+  maskValue,
+  createSessionWith,
   resolveProfile,
   type CompiledProfile,
   type DataClassName,
   type MaskCounts,
-  type PiiPolicy,
+  type LoadedPiiPolicy,
 } from "@maestro/pii";
 
 declare const JOURNAL_MASKED: unique symbol;
@@ -43,7 +44,7 @@ export interface JournalIdentity {
 }
 
 export interface JournalMaskingOptions {
-  readonly policy: PiiPolicy;
+  readonly policy: LoadedPiiPolicy;
   /**
    * Declared data class of the ticket. `unknown` on purpose: it arrives from
    * Jira/webhooks and an unrecognised value must land on the strictest
@@ -84,16 +85,24 @@ export function createJournalMasker(options: JournalMaskingOptions): JournalMask
   const resolved = resolveProfile(options.policy, options.dataClass);
   const profile: CompiledProfile = compileProfile(resolved.profile);
 
+  /**
+   * ONE session for the masker's whole lifetime. Tokens carry a per-session
+   * nonce, so a fresh session per call would not recognise its own earlier
+   * output: re-masking an already-masked entry would strip the token's
+   * brackets and corrupt the journal. A journal is append-only and read back
+   * repeatedly, so masking here must be idempotent.
+   */
+  const session = createSessionWith(profile);
+
   const mask = <T>(payload: T): T => {
-    const out = maskOutbound(payload, {
-      policy: options.policy,
-      dataClass: options.dataClass,
-      boundary,
-      ...(options.onMasked ? { onMasked: options.onMasked } : {}),
-    });
-    // `out.map` is deliberately dropped here: it is the re-identification key
-    // and nothing downstream of the journal may hold it.
-    return out.payload as T;
+    const masked = maskValue(payload, session);
+    assertNoPii(masked.value, profile, boundary);
+    if (options.onMasked && masked.counts.occurrences > 0) {
+      options.onMasked(masked.counts, resolved.dataClass);
+    }
+    // The session's reverse map never leaves this closure: it is the
+    // re-identification key and nothing downstream of the journal may hold it.
+    return masked.value;
   };
 
   return {

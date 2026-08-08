@@ -93,7 +93,7 @@ describe("openRejections", () => {
       [gate({ step: "9", decision: "reject", signatureSeq: 1, reason: `ask ${SAMPLE_EMAIL}` })],
       (text) => masker.text(text),
     );
-    expect(open[0]?.reason).toContain("[EMAIL_1]");
+    expect(open[0]?.reason).toMatch(/\[EMAIL_1\.[0-9a-f]+\]/);
     expect(open[0]?.reason).not.toContain(SAMPLE_EMAIL);
   });
 });
@@ -174,7 +174,7 @@ describe("buildBootstrapPackage", () => {
       }),
       deps(),
     );
-    expect(pack.diff?.note).toContain("[EMAIL_1]");
+    expect(pack.diff?.note).toMatch(/\[EMAIL_1\.[0-9a-f]+\]/);
     expect(pack.text).not.toContain(SAMPLE_EMAIL);
   });
 

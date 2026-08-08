@@ -9,7 +9,7 @@ import {
   SecretNotFoundError,
   SecretPermissionDeniedError,
 } from "../src/index.js";
-import { ENV_FILE_CONFIG, fakeClock } from "./helpers.js";
+import { ENV_FILE_CONFIG, fakeClock, withAmbientNodeEnv } from "./helpers.js";
 
 const ENV = { MAESTRO_SECRET_KV_JIRA_PAT__TOKEN: "dev-jira-pat" };
 
@@ -48,6 +48,15 @@ describe("env-file driver get()", () => {
     const driver = port({ envPrefix: "DEV_" }, { env: { DEV_KV_JIRA_PAT__TOKEN: "prefixed" } });
 
     await expect(driver.get("kv/jira/pat#token")).resolves.toBe("prefixed");
+  });
+
+  it("never serves one secret in place of another whose name only differs by a separator", async () => {
+    const driver = port({}, { env: { MAESTRO_SECRET_KV_JIRA_PROD_PAT__VALUE: "value-of-kv-slash-jira-slash-prod" } });
+
+    await expect(driver.get("kv/jira/prod/pat")).resolves.toBe("value-of-kv-slash-jira-slash-prod");
+    await expect(driver.get("kv/jira-prod/pat")).rejects.toBeInstanceOf(SecretNotFoundError);
+    await expect(driver.get("kv/jira.prod/pat")).rejects.toBeInstanceOf(SecretNotFoundError);
+    await expect(driver.get("kv/jira_prod/pat")).rejects.toBeInstanceOf(SecretNotFoundError);
   });
 });
 
@@ -138,5 +147,51 @@ describe("env-file driver capabilities and stage gate", () => {
   it("is allowed in development and test", () => {
     expect(() => port({}, { nodeEnv: "development" })).not.toThrow();
     expect(() => port({}, { nodeEnv: "test" })).not.toThrow();
+  });
+});
+
+/**
+ * The production gate is a SAFETY gate, so the environment may only harden it:
+ * whatever the composition root passes as `deps.nodeEnv`, a process that is
+ * itself running in production must not get a dev secret source (M6).
+ */
+describe("env-file production gate cannot be talked open by the caller", () => {
+  it("refuses inside a production process even when the caller claims development", () => {
+    withAmbientNodeEnv("production", () => {
+      expect(() => port({}, { nodeEnv: "development" })).toThrow(SecretConfigError);
+      expect(() => port({}, { nodeEnv: "test" })).toThrow(SecretConfigError);
+      expect(() => port({}, { nodeEnv: undefined })).toThrow(SecretConfigError);
+    });
+  });
+
+  it.each(["prod", "PRODUCTION", "Production", "production ", "staging", "PROD"])(
+    "refuses the near-miss stage %j instead of waving it through",
+    (stage) => {
+      expect(() => port({}, { nodeEnv: stage })).toThrow(SecretConfigError);
+    },
+  );
+
+  it("refuses an ambient stage it cannot recognise", () => {
+    withAmbientNodeEnv("Production", () => {
+      expect(() => port({}, { nodeEnv: "test" })).toThrow(SecretConfigError);
+    });
+    withAmbientNodeEnv("prod", () => {
+      expect(() => port({}, { nodeEnv: "test" })).toThrow(SecretConfigError);
+    });
+  });
+
+  it("rejects a non-string stage rather than comparing it to a string", () => {
+    expect(() => port({}, { nodeEnv: 1 })).toThrow(SecretConfigError);
+    expect(() => port({}, { nodeEnv: { toString: () => "development" } })).toThrow(SecretConfigError);
+  });
+
+  it("still allows the dev driver when neither side says production", () => {
+    withAmbientNodeEnv("development", () => {
+      expect(() => port({}, { nodeEnv: undefined })).not.toThrow();
+      expect(() => port({}, { nodeEnv: "test" })).not.toThrow();
+    });
+    withAmbientNodeEnv(undefined, () => {
+      expect(() => port({}, { nodeEnv: undefined })).not.toThrow();
+    });
   });
 });

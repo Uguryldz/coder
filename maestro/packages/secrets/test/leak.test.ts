@@ -1,12 +1,7 @@
 import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
-import {
-  createEnvFileSecretPort,
-  createVaultSecretPort,
-  TtlCache,
-  VaultClient,
-  VaultConfig,
-} from "../src/index.js";
+import { createEnvFileSecretPort, createVaultSecretPort, TtlCache, VaultConfig } from "../src/index.js";
+import { VaultClient } from "../src/vault-client.js";
 import {
   APPROLE,
   ENV_FILE_CONFIG,

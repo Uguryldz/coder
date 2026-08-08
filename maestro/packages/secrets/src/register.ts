@@ -21,7 +21,8 @@ export interface VaultDeps {
 export interface EnvFileDeps {
   env?: Record<string, string | undefined>;
   readFile?: ReadTextFile;
-  nodeEnv?: string;
+  /** Validated (and only ever hardened) by the driver — see src/stage.ts. */
+  nodeEnv?: unknown;
   clock?: Clock;
 }
 
@@ -37,7 +38,12 @@ export function createVaultSecretPort(input: unknown): VaultSecretPort {
   return new VaultSecretPort({ config, client, clock: deps?.clock });
 }
 
-/** Throws in production before any secret is read (M6) — see EnvFileSecretPort. */
+/**
+ * Throws in production before any secret is read (M6) — see EnvFileSecretPort.
+ * `deps` is runtime wiring and deliberately not part of the Zod config, so the
+ * one value that can weaken a gate (`nodeEnv`) is validated by the driver
+ * itself rather than trusted from here.
+ */
 export function createEnvFileSecretPort(input: unknown): EnvFileSecretPort {
   const config = parse(EnvFileConfig, input, ENV_FILE_DRIVER);
   const deps = depsOf<EnvFileDeps>(input);

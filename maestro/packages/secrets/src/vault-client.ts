@@ -1,5 +1,5 @@
 import { type Clock, systemClock } from "./cache.js";
-import type { VaultConfig } from "./config.js";
+import { type VaultConfig, vaultAddrIssue } from "./config.js";
 import {
   SecretConfigError,
   SecretPermissionDeniedError,
@@ -50,6 +50,8 @@ export class VaultClient {
   readonly #secretId: string;
   #token: string | null = null;
   #tokenExpiresAtMs = 0;
+  /** When re-authentication starts — always strictly inside the lease. */
+  #renewAtMs = 0;
   #renewable = false;
   /** Single-flight guard: concurrent reads must not trigger parallel logins. */
   #pendingAuth: Promise<string> | null = null;
@@ -64,6 +66,8 @@ export class VaultClient {
     if (options.approle.roleId.trim().length === 0 || options.approle.secretId.trim().length === 0) {
       throw new SecretConfigError("approle roleId/secretId are required (M6: no default credentials)");
     }
+    const addrIssue = vaultAddrIssue(options.config);
+    if (addrIssue) throw new SecretConfigError(addrIssue);
     this.config = options.config;
     this.#roleId = options.approle.roleId;
     this.#secretId = options.approle.secretId;
@@ -73,8 +77,7 @@ export class VaultClient {
 
   /** Valid client token, logging in or renewing as needed. */
   async token(): Promise<string> {
-    const skewMs = this.config.tokenRenewSkewSeconds * 1000;
-    if (this.#token !== null && this.#clock() < this.#tokenExpiresAtMs - skewMs) return this.#token;
+    if (this.#token !== null && this.#clock() < this.#renewAtMs) return this.#token;
     this.#pendingAuth ??= this.#authenticate().finally(() => {
       this.#pendingAuth = null;
     });
@@ -126,7 +129,7 @@ export class VaultClient {
       }
       throw statusError(res.status, "approle login");
     }
-    return this.#adoptAuth(await this.#json(res, "approle login"), "approle login");
+    return this.#adoptAuth(await this.#json(res, "approle login"), "approle login", false);
   }
 
   /** Returns null when renewal is not possible, so the caller falls back to login. */
@@ -134,24 +137,41 @@ export class VaultClient {
     try {
       const res = await this.#send(`${this.#base()}/v1/auth/token/renew-self`, { method: "POST" }, this.#token);
       if (!res.ok) return null;
-      return this.#adoptAuth(await this.#json(res, "token renew"), "token renew");
+      // A renewal EXTENDS the token we already hold, so its body need not repeat it.
+      return this.#adoptAuth(await this.#json(res, "token renew"), "token renew", true);
     } catch {
       // Renewal is best effort; a fresh login is always the safe fallback.
       return null;
     }
   }
 
-  #adoptAuth(body: unknown, operation: string): string {
+  /**
+   * Adopts an auth block.
+   *
+   * `keepCurrentToken` is true only on the renewal path. A LOGIN that answers
+   * without a `client_token` means this process has no identity at all; reusing
+   * the previous one there would put a token Vault has just revoked back on the
+   * wire under a fresh deadline, and every later 403 would be reported as a
+   * policy denial instead of the identity failure it really is.
+   */
+  #adoptAuth(body: unknown, operation: string, keepCurrentToken: boolean): string {
     const auth = (body as { auth?: { client_token?: unknown; lease_duration?: unknown; renewable?: unknown } })?.auth;
-    const clientToken = typeof auth?.client_token === "string" && auth.client_token.length > 0 ? auth.client_token : this.#token;
+    const issued = typeof auth?.client_token === "string" && auth.client_token.length > 0 ? auth.client_token : null;
+    const clientToken = issued ?? (keepCurrentToken ? this.#token : null);
     if (!clientToken) throw new VaultResponseError(operation, "no client token in auth block");
 
-    const lease = typeof auth?.lease_duration === "number" && Number.isFinite(auth.lease_duration) ? auth.lease_duration : 0;
-    if (lease <= 0) throw new VaultResponseError(operation, "lease_duration missing or non-positive");
+    const lease = auth?.lease_duration;
+    if (typeof lease !== "number" || !Number.isSafeInteger(lease) || lease <= 0) {
+      throw new VaultResponseError(operation, "lease_duration missing, non-positive or not a whole number of seconds");
+    }
 
     this.#token = clientToken;
     this.#renewable = auth?.renewable === true;
     this.#tokenExpiresAtMs = this.#clock() + lease * 1000;
+    // Renew inside the lease, never before it starts: with a lease shorter than
+    // twice the configured skew a fixed skew would re-authenticate on EVERY
+    // read (30s lease, 60s skew → one login per call).
+    this.#renewAtMs = this.#tokenExpiresAtMs - Math.min(this.config.tokenRenewSkewSeconds * 1000, (lease * 1000) / 2);
     return clientToken;
   }
 

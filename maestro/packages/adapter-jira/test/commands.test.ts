@@ -74,11 +74,54 @@ describe("comment command grammar", () => {
   });
 
   it("only inspects the first non-empty line of a comment", () => {
-    expect(parseCommandBody("\n\n/approve\n/reject bu satır yok sayılır")).toEqual({
+    expect(parseCommandBody("\n\n/approve")).toEqual({ status: "ok", command: { name: "approve" } });
+    expect(parseCommandBody("\n/reject AC-3 yok\nbu satır yok sayılır")).toEqual({
       status: "ok",
-      command: { name: "approve" },
+      command: { name: "reject", reason: "AC-3 yok" },
     });
     expect(parseCommandBody("cevabım şu:\n/approve")).toEqual({ status: "none" });
     expect(parseCommandBody(undefined)).toEqual({ status: "none" });
+  });
+
+  // K-1: Turkish puts negation after the verb, so trailing text can invert the
+  // command it follows. An argument-free command must therefore stand alone.
+  it("refuses an /approve that carries extra text on the same line", () => {
+    for (const line of ["/approve etmiyorum, reddediyorum", "/approve değil", "/approve ama sonra"]) {
+      expect(parseCommandLine(line)).toEqual({
+        status: "invalid",
+        command: "approve",
+        messageKey: COMMAND_MESSAGE_KEYS.takesNoArgument,
+        messageParams: { command: "/approve" },
+      });
+    }
+  });
+
+  it("refuses an /approve followed by prose on another line", () => {
+    for (const body of ["/approve\n\nAma önce güvenlik testi bitsin.", "/approve\n/reject AC-3 yok"]) {
+      expect(parseCommandBody(body)).toMatchObject({
+        status: "invalid",
+        command: "approve",
+        messageKey: COMMAND_MESSAGE_KEYS.takesNoArgument,
+      });
+    }
+  });
+
+  it("applies the stand-alone rule to every argument-free command", () => {
+    for (const name of ["status", "ai-explain", "ai-start", "ai-takeover"]) {
+      expect(parseCommandLine(`/${name} lütfen`)).toMatchObject({
+        status: "invalid",
+        command: name,
+        messageKey: COMMAND_MESSAGE_KEYS.takesNoArgument,
+      });
+      expect(parseCommandBody(`/${name}\nteşekkürler`)).toMatchObject({
+        status: "invalid",
+        messageKey: COMMAND_MESSAGE_KEYS.takesNoArgument,
+      });
+    }
+  });
+
+  it("still lets argument commands take the rest of their line", () => {
+    expect(ok("/reject kabul kriterleri eksik")).toEqual({ name: "reject", reason: "kabul kriterleri eksik" });
+    expect(ok("/mode-change full-auto")).toEqual({ name: "mode-change", mode: "full_auto" });
   });
 });

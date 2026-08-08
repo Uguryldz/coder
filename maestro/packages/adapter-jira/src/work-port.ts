@@ -3,8 +3,13 @@ import { CapabilityNotSupportedError, type WorkPort } from "@maestro/ports";
 import { adfToWikiMarkup, toAdfDocument } from "./adf.js";
 import { JiraDcClient, type FetchLike, type TokenProvider } from "./client.js";
 import type { JiraDcConfig } from "./config.js";
-import { JiraArgumentError, JiraLinkFailedError, JiraResponseError } from "./errors.js";
-import { ISSUE_FIELDS, mapIssueToSnapshot, userIdOf } from "./mapping.js";
+import {
+  JiraArgumentError,
+  JiraLinkFailedError,
+  JiraMembershipUnresolvedError,
+  JiraResponseError,
+} from "./errors.js";
+import { ISSUE_FIELDS, mapIssueToSnapshot } from "./mapping.js";
 import {
   commandFromWebhook,
   JIRA_SIGNATURE_HEADER,
@@ -141,8 +146,10 @@ export class JiraDcWorkPort implements WorkPort {
   }
 
   /**
-   * Group membership backing gate authorisation (M32/M51). Inactive members do
-   * not count — an off-boarded approver must not pass a gate.
+   * Group membership backing gate authorisation (M32/M51). This is the ONLY
+   * evidence a gate decision rests on, so it matches solely on identifiers a
+   * Jira admin controls, skips inactive members locally, and never guesses:
+   * an undecidable page raises instead of quietly denying.
    */
   async verifyMembership(userId: string, group: string): Promise<boolean> {
     const needle = userId.trim().toLowerCase();
@@ -160,15 +167,17 @@ export class JiraDcWorkPort implements WorkPort {
       const body = asRecord(res);
       const values = Array.isArray(body?.["values"]) ? body["values"] : [];
       for (const member of values) {
-        if (identifiersOf(member).includes(needle)) return true;
+        if (isActiveMember(member) && identifiersOf(member).includes(needle)) return true;
       }
       if (values.length === 0) return false;
       startAt += values.length;
-      const total = body?.["total"];
-      const morePages = body?.["isLast"] === false || (typeof total === "number" && startAt < total);
-      if (!morePages) return false;
+      if (!hasMorePages(body, startAt, group)) return false;
     }
-    return false;
+    throw new JiraMembershipUnresolvedError(
+      group,
+      "too_many_pages",
+      `stopped after ${MAX_GROUP_PAGES} pages of ${this.config.groupPageSize}`,
+    );
   }
 
   /** Verified webhook payload → command, or null. Never throws on unknown commands. */
@@ -224,10 +233,43 @@ function requireKey(value: unknown, context: string): TicketKey {
   return parsed.data;
 }
 
-/** Every identifier a DC user object may be matched by, lowercased. */
+/**
+ * Identifiers a DC user may be matched by, lowercased. `displayName` is NOT
+ * one of them: it comes from LDAP, is not unique, and changes — two people
+ * called "Mert Demir" would share gate authority. Only the admin-controlled
+ * username, the rename-proof user key, and the e-mail address count.
+ */
 function identifiersOf(member: unknown): string[] {
   const user = asRecord(member);
   if (!user) return [];
-  const ids = [user["name"], user["key"], user["emailAddress"], user["displayName"], userIdOf(user)];
-  return ids.filter((id): id is string => typeof id === "string" && id.length > 0).map((id) => id.toLowerCase());
+  const ids = [user["name"], user["key"], user["emailAddress"]];
+  return ids
+    .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    .map((id) => id.trim().toLowerCase());
+}
+
+/**
+ * `includeInactiveUsers=false` asks the server to leave off-boarded accounts
+ * out, but the driver must not depend on the server honouring it — an approver
+ * who left the bank never passes a gate (M32 fail-closed).
+ */
+function isActiveMember(member: unknown): boolean {
+  return asRecord(member)?.["active"] !== false;
+}
+
+/**
+ * Decide whether another page must be fetched. A page bean that carries
+ * neither `isLast` nor a numeric `total` cannot be reasoned about, and
+ * stopping there would deny a real member without a trace.
+ */
+function hasMorePages(body: Record<string, unknown> | null, startAt: number, group: string): boolean {
+  const isLast = body?.["isLast"];
+  if (typeof isLast === "boolean") return !isLast;
+  const total = body?.["total"];
+  if (typeof total === "number") return startAt < total;
+  throw new JiraMembershipUnresolvedError(
+    group,
+    "incomplete_page_bean",
+    "the member page carries neither a boolean isLast nor a numeric total",
+  );
 }

@@ -4,6 +4,7 @@ import {
   createJiraDcWorkPort,
   JIRA_DC_DRIVER,
   JiraConfigError,
+  JiraDcConfig,
   JiraDcWorkPort,
   registerJiraDrivers,
   WORK_PORT,
@@ -39,9 +40,22 @@ describe("driver registration", () => {
     expect(stub.calls[0]!.headers["authorization"]).toBe("Bearer resolved:kv/jira/pat");
   });
 
-  it("applies the documented defaults", () => {
-    const driver = createJiraDcWorkPort({ ...baseConfig, deps: { secrets } });
+  it("applies the documented defaults", async () => {
+    expect(JiraDcConfig.parse(baseConfig)).toEqual({
+      ...baseConfig,
+      childIssueTypeName: "Task",
+      linkTypeName: "Relates",
+      requestTimeoutMs: 15_000,
+      groupPageSize: 50,
+    });
+
+    // …and the defaults reach the wire, not just the parsed object.
+    const stub = stubFetch([{ body: { isLast: true, total: 0, values: [] } }]);
+    const driver = createJiraDcWorkPort({ ...baseConfig, deps: { secrets, fetchImpl: stub.fetchImpl } });
     expect(driver.driver).toBe(JIRA_DC_DRIVER);
+
+    await driver.verifyMembership("mert.demir", "tech-leads");
+    expect(stub.calls[0]!.url).toContain("maxResults=50");
   });
 
   it("rejects an invalid config with the offending fields", () => {

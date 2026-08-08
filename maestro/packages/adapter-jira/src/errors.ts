@@ -105,6 +105,22 @@ export class JiraLinkFailedError extends Error {
   }
 }
 
+/**
+ * Group membership could not be decided one way or the other. Denying would be
+ * fail-closed but silent: a real approver would be turned away at a gate with
+ * no way to learn why (M32/M51). Raising instead keeps the failure visible.
+ */
+export class JiraMembershipUnresolvedError extends Error {
+  constructor(
+    readonly group: string,
+    readonly reason: "incomplete_page_bean" | "too_many_pages",
+    detail: string,
+  ) {
+    super(`Jira group "${group}" membership could not be resolved (${reason}): ${detail}`);
+    this.name = "JiraMembershipUnresolvedError";
+  }
+}
+
 /** Driver configuration or wiring is wrong — thrown at construction time. */
 export class JiraConfigError extends Error {
   constructor(message: string) {

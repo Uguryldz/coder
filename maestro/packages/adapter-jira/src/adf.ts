@@ -132,7 +132,7 @@ function renderBlock(node: AdfNode, depth: number): string {
     case "codeBlock": {
       const language = node.attrs?.["language"];
       const open = typeof language === "string" && language.length > 0 ? `{code:${language}}` : "{code}";
-      return `${open}\n${renderInline(node.content ?? [])}\n{code}`;
+      return `${open}\n${neutralizeFences(plainText(node.content ?? []))}\n{code}`;
     }
     case "panel": {
       const panelType = node.attrs?.["panelType"];
@@ -171,13 +171,46 @@ function renderInline(nodes: AdfNode[]): string {
   return nodes
     .map((node) => {
       if (node.type !== "text") return renderBlock(node, 0);
-      let out = node.text;
+      let out = escapeWikiText(node.text);
       for (const mark of node.marks ?? []) {
         if (mark.type === "strong") out = `*${out}*`;
         else if (mark.type === "code") out = `{{${out}}}`;
-        else if (mark.type === "link") out = `[${out}|${mark.attrs.href}]`;
+        else if (mark.type === "link") out = `[${out}|${sanitizeHref(mark.attrs.href)}]`;
       }
       return out;
     })
     .join("");
+}
+
+/**
+ * Comment text is not ours: it carries ticket descriptions and model output.
+ * Left raw, a `{panel}` or `[label|http://…]` inside it would render as real
+ * markup, so anyone able to file a ticket could forge Maestro's own gate
+ * comments. Escaping the macro/link/table openers keeps the text as text.
+ */
+function escapeWikiText(value: string): string {
+  return value.replace(/[{}[\]|]/g, (char) => `\\${char}`);
+}
+
+/**
+ * A `]`, `|` or brace in the URL would close the link early and inject markup.
+ * None of them is legal in a URL unencoded, so dropping them is lossless.
+ */
+function sanitizeHref(href: string): string {
+  return href.replace(/[[\]{}|\s]/g, "");
+}
+
+/** Code block content is literal — marks and escapes do not apply inside it. */
+function plainText(nodes: AdfNode[]): string {
+  return nodes.map((node) => (node.type === "text" ? node.text : plainText(node.content ?? []))).join("");
+}
+
+/**
+ * Backslash escapes are NOT interpreted inside `{code}`, so the only way to
+ * stop content from closing the fence early is to break the opening brace.
+ * A literal Jira macro inside a code sample gains one space; an injected
+ * `{code}{panel}…` loses its teeth.
+ */
+function neutralizeFences(value: string): string {
+  return value.replace(/\{(?=code|noformat|panel|quote|color)/gi, "{ ");
 }

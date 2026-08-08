@@ -52,7 +52,19 @@ export function signWebhookBody(rawBody: RawBody, secret: string): string {
 }
 
 export type JiraWebhookEvent =
-  | { kind: "comment"; event: string; ticketKey: TicketKey; author: string; at: string; body: string; commentId: string | null; issue: unknown }
+  | {
+      kind: "comment";
+      event: string;
+      ticketKey: TicketKey;
+      /** `comment.author` — the person who WROTE the comment, never the editor. */
+      author: string;
+      at: string;
+      body: string;
+      commentId: string | null;
+      /** True when the payload is an edit, or when created/updated disagree. */
+      edited: boolean;
+      issue: unknown;
+    }
   | { kind: "issue"; event: string; ticketKey: TicketKey; issue: unknown }
   | { kind: "other"; event: string };
 
@@ -87,6 +99,7 @@ export function parseWebhookEvent(payload: unknown): JiraWebhookEvent {
       at: normalizeJiraDateTime(comment["created"] ?? envelope["timestamp"], "comment.created"),
       body: typeof comment["body"] === "string" ? comment["body"] : "",
       commentId: typeof comment["id"] === "string" ? comment["id"] : null,
+      edited: isEdited(event, comment),
       issue: envelope["issue"],
     };
   }
@@ -98,6 +111,17 @@ export function parseWebhookEvent(payload: unknown): JiraWebhookEvent {
   return { kind: "other", event };
 }
 
+/**
+ * `comment_updated` is an edit by definition; a `comment_created` delivery
+ * whose `created` and `updated` timestamps disagree has been edited too.
+ */
+function isEdited(event: string, comment: Record<string, unknown>): boolean {
+  if (event === "comment_updated") return true;
+  const created = comment["created"];
+  const updated = comment["updated"];
+  return typeof created === "string" && typeof updated === "string" && created !== updated;
+}
+
 export interface WebhookCommand {
   envelope: CommandEnvelope | null;
   /** Present when the comment looked like a command but could not be honoured. */
@@ -107,10 +131,17 @@ export interface WebhookCommand {
 /**
  * Extract a command from a verified webhook payload. Returns `{ envelope: null }`
  * for anything that is not a command — never throws on unknown commands.
+ *
+ * ONLY a freshly created, never-edited comment can carry a command. In Jira DC
+ * "Edit All Comments" is a routine project-lead permission, so an edit event
+ * names the original `author` while a different `updateAuthor` supplied the
+ * text: honouring it would let anyone with that permission approve a gate as
+ * someone else and walk straight past the SoD matrix (M32/M51).
  */
 export function commandFromWebhook(payload: unknown): WebhookCommand {
   const event = parseWebhookEvent(payload);
   if (event.kind !== "comment") return { envelope: null, invalid: null };
+  if (event.event !== "comment_created" || event.edited) return { envelope: null, invalid: null };
 
   const parsed = parseCommandBody(event.body);
   if (parsed.status === "none") return { envelope: null, invalid: null };

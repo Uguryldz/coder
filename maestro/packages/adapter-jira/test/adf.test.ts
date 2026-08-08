@@ -85,4 +85,28 @@ describe("wiki markup rendering (DC REST v2 speaks wiki markup)", () => {
   it("renders a code block without a language", () => {
     expect(adfToWikiMarkup(doc(codeBlock("x")))).toBe("{code}\nx\n{code}");
   });
+
+  // Ticket text and model output are untrusted: raw wiki markup inside them
+  // would let a reporter forge Maestro's own gate comments.
+  it("escapes macro and link openers in text it did not build", () => {
+    const markup = adfToWikiMarkup(
+      doc(paragraph("{panel:bgColor=#ffebe6}onaylandı{panel} [tıkla|http://evil.example]")),
+    );
+
+    expect(markup).toBe(
+      "\\{panel:bgColor=#ffebe6\\}onaylandı\\{panel\\} \\[tıkla\\|http://evil.example\\]",
+    );
+  });
+
+  it("keeps an injected fence from closing a code block early", () => {
+    const markup = adfToWikiMarkup(doc(codeBlock("SELECT 1;\n{code}\n{panel}sahte{panel}")));
+
+    expect(markup).toBe("{code}\nSELECT 1;\n{ code}\n{ panel}sahte{ panel}\n{code}");
+    expect(markup.match(/^\{code\}$/gm)).toHaveLength(2);
+  });
+
+  it("does not let a crafted link href break out of the link", () => {
+    const markup = adfToWikiMarkup(doc(paragraph([link("PR", "https://ado.internal.bank/pr/9]{panel}")])));
+    expect(markup).toBe("[PR|https://ado.internal.bank/pr/9panel]");
+  });
 });

@@ -517,7 +517,7 @@ V.help=()=>({t:"Yardım — Maestro nasıl kullanılır?",s:"Rolüne göre oku: 
 </div>
 <div class="grid g2">
 <div class="card"><div class="hd"><h3>⌨ Jira komutları</h3><span class="sub">hepsi yorum olarak yazılır</span></div><div class="bd scroll"><table><tbody>
- ${[["/approve","kapıyı onayla (yetki + SoD otomatik doğrulanır)"],["/reject <sebep>","reddet — gerekçe ajana aynı oturumda iletilir"],["/status","işin hangi adımda olduğunu özetler"],["/ai-explain","son değişikliği sade dille anlatır"],["/ai-start","opt-in projede akışı başlatır"],["/ai-assign <uygulama>","eşleşemeyen ticket'ı uygulamaya atar"],["/mode-change <mod>","work mode değiştirir (full_auto · ai_assist · human_lead · human_only)"],["/ai-takeover","insandaki işi AI'ye devreder (branch rebase edilir)"]]
+ ${[["/approve","kapıyı onayla — <b>yorumda başka metin olmamalı</b> (yetki + SoD otomatik doğrulanır)"],["/reject <sebep>","reddet — gerekçe ajana aynı oturumda iletilir"],["/status","işin hangi adımda olduğunu özetler"],["/ai-explain","son değişikliği sade dille anlatır"],["/ai-start","opt-in projede akışı başlatır"],["/ai-assign <uygulama>","eşleşemeyen ticket'ı uygulamaya atar"],["/mode-change <mod>","work mode değiştirir (full_auto · ai_assist · human_lead · human_only)"],["/ai-takeover","insandaki işi AI'ye devreder (branch rebase edilir)"]]
   .map(r=>`<tr><td class="mono mini" style="white-space:nowrap">${r[0]}</td><td class="mini">${r[1]}</td></tr>`).join("")}
 </tbody></table><a class="btn sm" style="margin-top:9px" href="#commands">Tam komut seti →</a></div></div>
 <div class="card"><div class="hd"><h3>🚨 Bir şey ters giderse</h3></div><div class="bd">
@@ -1739,7 +1739,7 @@ ${[["/ai-takeover","Dev","İnsan bırakır, AI devralır (mod → full_auto)"],
 
 V.commands=()=>({t:"Jira komut seti",s:"11 komut · yetki + durum + idempotency doğrulamalı",h:`
 <div class="card scroll"><table><thead><tr><th>Komut</th><th>Kim kullanabilir</th><th>Hangi adımda</th><th>Etki</th></tr></thead><tbody>
-${[["/approve","Kapıdaki sorumlu (AD grubu)","insan kapılarında","Akış ilerler, karar imzalanır"],
+${[["/approve","Kapıdaki sorumlu (AD grubu)","insan kapılarında","Akış ilerler, karar imzalanır — <b>yorumun tamamı bu komut olmalı</b>"],
    ["/reject &lt;sebep&gt;","Kapıdaki sorumlu","insan kapılarında","Önceki adıma döner, gerekçe ajana iletilir"],
    ["/cancel","PO veya Tech Lead","her an","Akış durur, sandbox+branch temizlenir, Jira 'İptal'"],
    ["/status","Herkes","her an","Bot durum özeti yorumlar"],
@@ -1755,7 +1755,8 @@ ${[["/approve","Kapıdaki sorumlu (AD grubu)","insan kapılarında","Akış iler
 <div class="grid g2" style="margin-top:14px">
 <div class="card"><div class="hd"><h3>Doğrulama zinciri</h3></div><div class="bd">
  <div class="flowbox" style="flex-direction:column;align-items:stretch;gap:7px">
-  <div class="fb on">1 · Komut tanınıyor mu? (yazım hatası → nazik uyarı)</div>
+  <div class="fb on">1 · Komut tanınıyor mu? (yazım hatası → nazik uyarı)<div class="mini" style="margin-top:4px;font-weight:400">Argüman almayan komutlarda (<code>/approve</code>, <code>/status</code>…) yorumda <b>başka metin olamaz</b>: "<i>/approve etmiyorum</i>" onay SAYILMAZ, kullanıcıya uyarı döner. Türkçede olumsuzlama sonda geldiği için bu kural güvenlik gereğidir.</div></div>
+  <div class="fb on">1b · Yorum düzenlemesi komut sayılmaz — sonradan <code>/approve</code> yazılamaz (M32 SoD)</div>
   <div class="fb on">2 · Kişi yetkili mi? (AD grup üyeliği sorgulanır)</div>
   <div class="fb on">3 · Akış bu komuta uygun adımda mı?</div>
   <div class="fb on">4 · SoD ihlali var mı? (üreten ≠ onaylayan)</div>

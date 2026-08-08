@@ -1,0 +1,42 @@
+[
+  {
+    "Description": "Identified a pattern that may indicate AWS credentials, risking unauthorized cloud resource access and data breaches.",
+    "StartLine": 12,
+    "EndLine": 12,
+    "StartColumn": 19,
+    "EndColumn": 38,
+    "Match": "AKIA****************",
+    "Secret": "AKIA****************",
+    "File": "src/config/aws.ts",
+    "SymlinkFile": "",
+    "Commit": "b6f2c1f0a5f7f9d4e2c1b0a9f8e7d6c5b4a39281",
+    "Entropy": 3.65,
+    "Author": "Dev Eloper",
+    "Email": "dev@bank.example",
+    "Date": "2026-07-14T09:12:33Z",
+    "Message": "add aws client",
+    "Tags": [],
+    "RuleID": "aws-access-token",
+    "Fingerprint": "src/config/aws.ts:aws-access-token:12"
+  },
+  {
+    "Description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+    "StartLine": 41,
+    "EndLine": 41,
+    "StartColumn": 3,
+    "EndColumn": 52,
+    "Match": "apiKey: \"****\"",
+    "Secret": "****",
+    "File": "deploy/values.yaml",
+    "SymlinkFile": "",
+    "Commit": "",
+    "Entropy": 4.11,
+    "Author": "",
+    "Email": "",
+    "Date": "",
+    "Message": "",
+    "Tags": [],
+    "RuleID": "generic-api-key",
+    "Fingerprint": "deploy/values.yaml:generic-api-key:41"
+  }
+]

@@ -1,0 +1,62 @@
+{
+  "version": "1.86.0",
+  "results": [
+    {
+      "check_id": "javascript.express.security.audit.express-open-redirect.express-open-redirect",
+      "path": "src/routes/login.ts",
+      "start": { "line": 42, "col": 5, "offset": 1180 },
+      "end": { "line": 42, "col": 60, "offset": 1235 },
+      "extra": {
+        "message": "The application redirects to a URL specified by user-supplied input.",
+        "metadata": {
+          "category": "security",
+          "cwe": ["CWE-601: URL Redirection to Untrusted Site ('Open Redirect')"],
+          "confidence": "MEDIUM",
+          "likelihood": "MEDIUM",
+          "impact": "MEDIUM",
+          "severity": "HIGH",
+          "technology": ["express"],
+          "subcategory": ["vuln"],
+          "owasp": ["A01:2021 - Broken Access Control"]
+        },
+        "severity": "WARNING",
+        "fingerprint": "2f0e1a8c5b3d4e6f",
+        "lines": "  res.redirect(req.query.next);",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "typescript.lang.best-practice.unspecified-return-type",
+      "path": "src/lib/db.ts",
+      "start": { "line": 7, "col": 1, "offset": 90 },
+      "end": { "line": 7, "col": 44, "offset": 133 },
+      "extra": {
+        "message": "Function has no explicit return type.",
+        "metadata": { "category": "best-practice" },
+        "severity": "INFO",
+        "fingerprint": "9c1d2e3f4a5b6c7d",
+        "lines": "export async function query(sql) {",
+        "is_ignored": false,
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "typescript.lang.security.audit.suppressed-example",
+      "path": "src/lib/legacy.ts",
+      "start": { "line": 3, "col": 1, "offset": 10 },
+      "end": { "line": 3, "col": 20, "offset": 29 },
+      "extra": {
+        "message": "Suppressed by a nosemgrep comment.",
+        "metadata": { "category": "security", "severity": "HIGH" },
+        "severity": "ERROR",
+        "is_ignored": true,
+        "engine_kind": "OSS"
+      }
+    }
+  ],
+  "errors": [],
+  "paths": { "scanned": ["src/routes/login.ts", "src/lib/db.ts", "src/lib/legacy.ts"] },
+  "skipped_rules": []
+}

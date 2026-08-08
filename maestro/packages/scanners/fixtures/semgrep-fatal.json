@@ -1,0 +1,16 @@
+{
+  "version": "1.86.0",
+  "results": [],
+  "errors": [
+    {
+      "code": 3,
+      "level": "error",
+      "type": "SourceParseError",
+      "message": "Syntax error at line src/routes/login.ts:42",
+      "path": "src/routes/login.ts",
+      "spans": []
+    }
+  ],
+  "paths": { "scanned": [] },
+  "skipped_rules": []
+}

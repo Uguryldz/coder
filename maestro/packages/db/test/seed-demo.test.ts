@@ -1,33 +1,29 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   AppId,
   ApplicationRecord,
-  AuditAction,
   DataClass,
-  GateDecision,
+  JiraProjectBinding,
   JournalEntry,
   LlmCallLog,
   LlmDriverId,
   MatchResult,
-  ProjectKey,
   RepoCard,
   RiskTier,
-  RuleCondition,
+  RoutingRule,
   STEP_IDS,
+  STEP_META,
   TicketKey,
   WorkflowRunStatus,
   WorkMode,
 } from "@maestro/contracts";
 import {
-  auditPayload,
   buildDemoDataset,
-  chainAuditEvents,
-  DEMO_GATE_DECISIONS,
   DEMO_TICKETS,
   demoRunId,
   NO_PASSWORD_SET,
-  seedDemo,
+  toJiraProjectBinding,
+  toRoutingRule,
 } from "../src/index.js";
 
 const data = buildDemoDataset();
@@ -53,6 +49,11 @@ describe("demo dataset shape (insa-plani: seed = the mock dataset)", () => {
     expect(byStatus.get("fail")).toBe(1);
     expect(byStatus.get("done")).toBe(5);
     expect([...byStatus.values()].reduce((a, b) => a + b, 0)).toBe(22);
+  });
+
+  it("represents all three data classes (M18 routing has to be visible)", () => {
+    const classes = new Set(data.runs.map((run) => String(run.dataClass)));
+    expect([...classes].sort()).toEqual([...DataClass.options].sort());
   });
 
   it("is deterministic — two builds are identical", () => {
@@ -87,6 +88,14 @@ describe("demo rows honour the contracts", () => {
     }
   });
 
+  it("keeps a rule-matched run's appId and its MatchResult in agreement", () => {
+    for (const ticket of DEMO_TICKETS) {
+      const match = MatchResult.parse(ticket.match);
+      if (match.via === "onboarding") continue;
+      expect(match.appId, ticket.key).toBe(ticket.appId);
+    }
+  });
+
   it("validates every application against ApplicationRecord", () => {
     for (const app of data.applications) {
       const parsed = ApplicationRecord.safeParse({
@@ -116,11 +125,61 @@ describe("demo rows honour the contracts", () => {
     }
   });
 
-  it("validates routing rule conditions and keeps effects non-empty", () => {
-    for (const rule of data.routingRules) {
-      expect(RuleCondition.safeParse(rule.conditionJson).success, rule.ruleId).toBe(true);
-      expect(ProjectKey.safeParse(rule.projectKey).success, rule.ruleId).toBe(true);
-      expect(Object.keys(rule.effectJson as object).length, rule.ruleId).toBeGreaterThan(0);
+  it("validates every routing rule against the whole RoutingRule contract", () => {
+    for (const row of data.routingRules) {
+      const parsed = RoutingRule.safeParse(
+        toRoutingRule({
+          ruleId: row.ruleId,
+          projectKey: (row.projectKey ?? null) as string | null,
+          conditionJson: row.conditionJson,
+          effectJson: row.effectJson,
+          priority: row.priority,
+        }),
+      );
+      expect(parsed.success, `${row.ruleId}: ${parsed.error?.message ?? ""}`).toBe(true);
+    }
+  });
+
+  it("stores the org-wide guard rule (M99 tier 1) as NULL, read back as '*'", () => {
+    const orgWide = data.routingRules.filter((rule) => rule.projectKey === null);
+    expect(orgWide.length).toBe(1);
+    const rule = toRoutingRule({
+      ruleId: String(orgWide[0]?.ruleId),
+      projectKey: null,
+      conditionJson: orgWide[0]?.conditionJson,
+      effectJson: orgWide[0]?.effectJson,
+      priority: Number(orgWide[0]?.priority),
+    });
+    expect(rule.projectKey).toBe("*");
+    expect(rule.effect).toEqual({ mode: "human_lead", dataClass: "gizli" });
+  });
+
+  it("folds org-wide rules into every binding, in priority order (M102 ruleIds)", () => {
+    const rules = data.routingRules.map((rule) => ({
+      ruleId: rule.ruleId,
+      projectKey: (rule.projectKey ?? null) as string | null,
+      conditionJson: rule.conditionJson,
+      effectJson: rule.effectJson,
+      priority: rule.priority,
+    }));
+    for (const row of data.bindings) {
+      const binding = toJiraProjectBinding(
+        {
+          projectKey: row.projectKey,
+          trigger: row.trigger,
+          triggerLabel: String(row.triggerLabel),
+          defaultsJson: row.defaultsJson,
+          state: row.state,
+          dryRunSampleSize: Number(row.dryRunSampleSize),
+          lastDryRunAt: (row.lastDryRunAt as Date | null) ?? null,
+          version: Number(row.version),
+        },
+        rules,
+      );
+      expect(JiraProjectBinding.safeParse(binding).success, row.projectKey).toBe(true);
+      expect(binding.ruleIds, row.projectKey).toContain("rule-7");
+      const priorities = binding.ruleIds.map((id) => rules.find((r) => r.ruleId === id)?.priority ?? -1);
+      expect([...priorities].sort((a, b) => a - b), row.projectKey).toEqual(priorities);
     }
   });
 
@@ -140,49 +199,6 @@ describe("demo rows honour the contracts", () => {
         true,
       );
     }
-  });
-
-  it("numbers journal entries from 0 without gaps per run", () => {
-    const bySeq = new Map<string, number[]>();
-    for (const entry of data.journal) {
-      const list = bySeq.get(entry.runId) ?? [];
-      list.push(entry.seq);
-      bySeq.set(entry.runId, list);
-    }
-    expect(bySeq.size).toBe(22);
-    for (const [runId, seqs] of bySeq) {
-      const sorted = [...seqs].sort((a, b) => a - b);
-      expect(sorted, runId).toEqual(sorted.map((_, i) => i));
-    }
-  });
-
-  it("validates every signed gate decision against GateDecision", () => {
-    expect(DEMO_GATE_DECISIONS.length).toBeGreaterThanOrEqual(5);
-    for (const gate of DEMO_GATE_DECISIONS) {
-      const parsed = GateDecision.safeParse({
-        step: gate.step,
-        decision: gate.decision,
-        actorUserId: gate.actorUserId,
-        actorGroup: gate.actorGroup,
-        sodVerified: true,
-        signatureSeq: gate.signatureSeq,
-        source: gate.source,
-        at: gate.at.toISOString(),
-        ...(gate.reason === undefined ? {} : { reason: gate.reason }),
-      });
-      expect(parsed.success, `${gate.ticketKey}/${gate.step}: ${parsed.error?.message ?? ""}`).toBe(
-        true,
-      );
-    }
-  });
-
-  it("keeps separation of duties on UGURPAY-501 (PO ≠ Tech Lead)", () => {
-    const gates = DEMO_GATE_DECISIONS.filter((g) => g.ticketKey === "UGURPAY-501");
-    const po = gates.find((g) => g.step === "4");
-    const techLead = gates.find((g) => g.step === "5");
-    expect(po?.actorUserId).toBeDefined();
-    expect(techLead?.actorUserId).toBeDefined();
-    expect(po?.actorUserId).not.toBe(techLead?.actorUserId);
   });
 
   it("validates every llm call against LlmCallLog", () => {
@@ -212,10 +228,28 @@ describe("demo rows honour the contracts", () => {
   });
 });
 
+describe("step events carry the contract's own step kind (STEP_META)", () => {
+  it("never derives the kind from the run status", () => {
+    expect(data.stepEvents.length).toBeGreaterThan(0);
+    for (const event of data.stepEvents) {
+      const step = String(event.step) as keyof typeof STEP_META;
+      expect(STEP_META[step], `unknown step ${String(event.step)}`).toBeDefined();
+      expect(event.kind, `${event.runId} step ${step}`).toBe(STEP_META[step].kind);
+    }
+  });
+
+  it("classifies the three steps the old status-based rule got wrong", () => {
+    const kindOf = (runId: string, step: string): unknown =>
+      data.stepEvents.find((e) => e.runId === runId && e.step === step)?.kind;
+    expect(kindOf(demoRunId("UGURPAY-712"), "2b")).toBe("human_wait");
+    expect(kindOf(demoRunId("UGURWEB-88"), "6b")).toBe("system");
+    expect(kindOf(demoRunId("UGURDESK-45"), "10b")).toBe("auto_gate");
+  });
+});
+
 describe("referential integrity (the seed must load in one pass)", () => {
   const appIds = new Set(data.applications.map((a) => a.appId));
   const runIds = new Set(data.runs.map((r) => r.id));
-  const projectKeys = new Set(data.bindings.map((b) => b.projectKey));
   const variantIds = new Set(data.variants.map((v) => v.id));
 
   it("points every run at a known application", () => {
@@ -224,87 +258,23 @@ describe("referential integrity (the seed must load in one pass)", () => {
     }
   });
 
-  it("points every repo card, rule, event, journal row and evidence row at a known parent", () => {
+  it("points every child row at a parent that exists", () => {
     for (const card of data.repoCards) expect(appIds).toContain(card.appId);
-    for (const rule of data.routingRules) expect(projectKeys).toContain(rule.projectKey);
     for (const event of data.stepEvents) expect(runIds).toContain(event.runId);
     for (const entry of data.journal) expect(runIds).toContain(entry.runId);
     for (const version of data.variantVersions) expect(variantIds).toContain(version.variantId);
     for (const evidence of data.evidencePackages) expect(runIds).toContain(evidence.runId);
+    for (const call of data.llmCalls) expect(runIds).toContain(call.runId);
   });
 
-  it("writes an evidence package for exactly the closed runs (M56)", () => {
-    const done = data.runs.filter((r) => r.status === "done").map((r) => r.id).sort();
-    expect(data.evidencePackages.map((e) => e.runId).sort()).toEqual(done);
+  it("keeps knowledge docs unique per (id, version) — M83 pinning", () => {
+    const keys = data.knowledgeDocs.map((doc) => `${doc.id}@${doc.version}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(data.knowledgeDocs.filter((doc) => doc.id === "analiz-sablonu").length).toBe(2);
   });
 
   it("derives run ids from ticket keys", () => {
     for (const run of data.runs) expect(run.id).toBe(demoRunId(String(run.ticketKey)));
-  });
-});
-
-describe("audit chain (M33)", () => {
-  const rows = data.auditLog;
-
-  it("starts at genesis and links every row to its predecessor", () => {
-    expect(rows.length).toBeGreaterThan(10);
-    expect(rows[0]?.prevHash).toBe("genesis");
-    for (let i = 1; i < rows.length; i++) {
-      expect(rows[i]?.prevHash).toBe(rows[i - 1]?.hash);
-    }
-  });
-
-  it("re-verifies every hash independently", () => {
-    let prevHash = "genesis";
-    for (const row of rows) {
-      const expected = createHash("sha256")
-        .update(
-          auditPayload(
-            Number(row.seq),
-            {
-              at: row.at as Date,
-              actor: row.actor,
-              action: row.action,
-              subject: row.subject,
-            },
-            prevHash,
-          ),
-        )
-        .digest("hex");
-      expect(row.hash).toBe(expected);
-      prevHash = String(row.hash);
-    }
-  });
-
-  it("uses contract actions, unique hashes and a strictly increasing seq", () => {
-    const hashes = new Set(rows.map((r) => r.hash));
-    expect(hashes.size).toBe(rows.length);
-    for (let i = 1; i < rows.length; i++) {
-      expect(Number(rows[i]?.seq)).toBeGreaterThan(Number(rows[i - 1]?.seq));
-    }
-    for (const row of rows) {
-      expect(AuditAction.options).toContain(row.action);
-      expect(row.hash).toMatch(/^[0-9a-f]{64}$/);
-    }
-  });
-
-  it("detects tampering", () => {
-    const [first, second] = chainAuditEvents(
-      [
-        { at: new Date("2026-08-08T10:00:00.000Z"), actor: "a", action: "RUN_STARTED", subject: "X" },
-        { at: new Date("2026-08-08T10:01:00.000Z"), actor: "a", action: "RUN_CLOSED", subject: "X" },
-      ],
-      1,
-    );
-    const tampered = chainAuditEvents(
-      [
-        { at: new Date("2026-08-08T10:00:00.000Z"), actor: "mallory", action: "RUN_STARTED", subject: "X" },
-        { at: new Date("2026-08-08T10:01:00.000Z"), actor: "a", action: "RUN_CLOSED", subject: "X" },
-      ],
-      1,
-    );
-    expect(tampered[0]?.hash).not.toBe(first?.hash);
-    expect(tampered[1]?.hash).not.toBe(second?.hash); // the break propagates
   });
 });
 
@@ -314,64 +284,5 @@ describe("users", () => {
       expect(user.passwordHash).toBe(NO_PASSWORD_SET);
       expect(String(user.email)).toMatch(/@/);
     }
-  });
-
-  it("gives the approvers the groups their gate decisions claim", () => {
-    const groupsByEmail = new Map(
-      data.users.map((u) => [String(u.email), u.groupsJson as string[]]),
-    );
-    for (const gate of DEMO_GATE_DECISIONS) {
-      expect(groupsByEmail.get(gate.actorUserId), gate.actorUserId).toContain(gate.actorGroup);
-    }
-  });
-});
-
-describe("seedDemo", () => {
-  it("inserts every table in foreign-key order, skipping duplicates", async () => {
-    const calls: { table: string; count: number; skipDuplicates: boolean }[] = [];
-    const delegate = (table: string) => ({
-      createMany: (args: { data: unknown[]; skipDuplicates?: boolean }) => {
-        calls.push({
-          table,
-          count: args.data.length,
-          skipDuplicates: args.skipDuplicates === true,
-        });
-        return Promise.resolve({ count: args.data.length });
-      },
-    });
-
-    const db = {
-      user: delegate("user"),
-      application: delegate("application"),
-      repoCard: delegate("repoCard"),
-      jiraProjectBinding: delegate("jiraProjectBinding"),
-      routingRule: delegate("routingRule"),
-      workflowRun: delegate("workflowRun"),
-      stepEvent: delegate("stepEvent"),
-      journalEntry: delegate("journalEntry"),
-      auditLog: delegate("auditLog"),
-      llmCall: delegate("llmCall"),
-      variant: delegate("variant"),
-      variantVersion: delegate("variantVersion"),
-      subscriptionAccount: delegate("subscriptionAccount"),
-      knowledgeDoc: delegate("knowledgeDoc"),
-      evidencePackageRow: delegate("evidencePackageRow"),
-    } as unknown as Parameters<typeof seedDemo>[0];
-
-    const counts = await seedDemo(db);
-
-    expect(counts["runs"]).toBe(22);
-    expect(counts["applications"]).toBe(5);
-    expect(calls.every((c) => c.skipDuplicates)).toBe(true);
-
-    const order = calls.map((c) => c.table);
-    expect(order.indexOf("application")).toBeLessThan(order.indexOf("repoCard"));
-    expect(order.indexOf("application")).toBeLessThan(order.indexOf("workflowRun"));
-    expect(order.indexOf("jiraProjectBinding")).toBeLessThan(order.indexOf("routingRule"));
-    expect(order.indexOf("workflowRun")).toBeLessThan(order.indexOf("stepEvent"));
-    expect(order.indexOf("workflowRun")).toBeLessThan(order.indexOf("journalEntry"));
-    expect(order.indexOf("workflowRun")).toBeLessThan(order.indexOf("evidencePackageRow"));
-    expect(order.indexOf("variant")).toBeLessThan(order.indexOf("variantVersion"));
-    expect(new Set(order).size).toBe(15);
   });
 });

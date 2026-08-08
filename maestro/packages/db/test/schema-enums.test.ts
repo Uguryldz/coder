@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ApplicationRecord,
   AuditAction,
   BindingState,
   DataClass,
@@ -9,6 +10,7 @@ import {
   ParamScope,
   ParamType,
   RiskTier,
+  StepKind,
   SubscriptionAccountState,
   TriggerMode,
   WorkflowRunStatus,
@@ -37,6 +39,10 @@ const ENUM_MIRRORS: Record<string, readonly string[]> = {
   AuditActionE: AuditAction.options,
   LlmRoleE: LlmRole.options,
   SubscriptionStateE: SubscriptionAccountState.options,
+  StepKindE: StepKind.options,
+  // `createdVia` has no standalone contract enum; the shape inside
+  // `ApplicationRecord` is the source, so the mirror still cannot drift.
+  CreatedViaE: ApplicationRecord.shape.createdVia.options,
 };
 
 const schema = readSchema();

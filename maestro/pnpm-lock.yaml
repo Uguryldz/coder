@@ -124,12 +124,18 @@ importers:
 
   packages/db:
     dependencies:
+      '@maestro/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../contracts
       '@prisma/client':
         specifier: ^6.5.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      tsx:
+        specifier: ^4.23.11
+        version: 4.23.11
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -137,9 +143,6 @@ importers:
       prisma:
         specifier: ^6.5.0
         version: 6.19.3(typescript@5.9.3)
-      tsx:
-        specifier: ^4.23.11
-        version: 4.23.11
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -208,7 +211,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.0
-        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)
+        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(tsx@4.23.11)
 
   packages/test-kit:
     dependencies:

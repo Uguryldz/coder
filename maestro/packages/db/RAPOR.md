@@ -1,193 +1,400 @@
-# @maestro/db — packet report (Wave 1)
+# @maestro/db — paket raporu (Dalga 1, 2. tur: doğrulayıcı bulgularının kapatılması)
 
-Scope touched: `maestro/packages/db/**` + `maestro/pnpm-lock.yaml` (own deps only).
-`packages/contracts` and `packages/ports` were read, never modified.
+Dokunulan alan: `maestro/packages/db/**` + `maestro/pnpm-lock.yaml` (yalnız bu paketin
+bağımlılıkları). `packages/contracts` ve `packages/ports` **okundu, değiştirilmedi**;
+`packages/audit` yalnız **kullanıldı** (workspace bağımlılığı olarak eklendi).
 
-## 1. What was built
+Bu rapor gerçek kodun aynasıdır: aşağıdaki her dosya, her sayı ve her komut depodaki
+hâliyle doğrulanmıştır.
 
-| Artifact | Path |
-| --- | --- |
-| Finalized Prisma schema (17 models, 13 enums) | `prisma/schema.prisma` |
-| Initial migration, generated offline | `prisma/migrations/0001_init/migration.sql` (332 lines) |
-| Migration provider lock | `prisma/migrations/migration_lock.toml` |
-| Typed client factory `createDb(url)` | `src/client.ts` |
-| 12 default `ParamDefinition`s + idempotent seeder | `src/seed.ts` |
-| Demo dataset (the mock's data, as rows) + seeder | `src/seed-demo.ts` |
-| Seed CLI | `src/seed-cli.ts` |
-| Pure schema-text parsers (drift guards) | `src/schema-facts.ts` |
-| Public surface | `src/index.ts` |
+---
 
-Scripts (`pnpm -F @maestro/db <script>`):
+## 1. Ne var — dosya dosya
 
-- `postinstall` / `generate` — `prisma generate`. Running it on postinstall is what
-  makes `typecheck` work on a cold clone: the generated client lives in
-  `node_modules`, so CI (`pnpm install --frozen-lockfile` → `lint`/`typecheck`/`test`)
-  needs no extra step. Verified from a wiped `node_modules`.
-- `migration:build` — regenerates the initial migration, fully offline:
-  `prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script --output …`.
-- `seed` — `tsx src/seed-cli.ts` (parameters + demo dataset; `--params-only`
-  seeds just the parameters). Needs a live database, so the CLI itself is not
-  exercised by the offline suite — the data it writes is.
+| Dosya | Satır | İş |
+| --- | --- | --- |
+| `prisma/schema.prisma` | 463 | 17 model, 15 enum |
+| `prisma/migrations/0001_init/migration.sql` | 339 | `prisma migrate diff` çıktısı — **elle yazılmaz** |
+| `prisma/migrations/0002_append_only_and_guards/migration.sql` | 72 | **Tek elle yazılan migration**: trigger + CHECK + kısmi unique index (§3) |
+| `prisma/migrations/migration_lock.toml` | 3 | sağlayıcı kilidi |
+| `src/client.ts` | 60 | `createDb(url)` + fail-closed URL denetimi |
+| `src/index.ts` | 106 | paketin tek dışa açık yüzeyi |
+| `src/append-only.ts` | 61 | `AuditLog`/`JournalEntry` için daraltılmış yazma yüzeyi |
+| `src/mappers.ts` | 275 | satır → sözleşme dönüştürücüleri (BigInt/Decimal/Date geçiş noktası) |
+| `src/routing-map.ts` | 45 | `RoutingRule.projectKey`: sözleşmedeki `"*"` ↔ kolondaki `NULL` |
+| `src/params-defaults.ts` | 243 | 17 `ParamDefinition` (M71) |
+| `src/params-write.ts` | 117 | `writeParamVersion()` — 4-göz kuralının tek yazıcısı |
+| `src/seed.ts` | 82 | `seedParams()` — idempotent parametre tohumu |
+| `src/seed-demo.ts` | 134 | demo veri setinin birleştirilmesi + tek transaction'lı yazıcı |
+| `src/seed-cli.ts` | 36 | `pnpm -F @maestro/db seed` girişi |
+| `src/schema-facts.ts` | 110 | şema metni ayrıştırıcıları (sapma testleri için) |
+| `src/demo/clock.ts` | 27 | `DEMO_NOW`, `ago`, `ist`, `demoRunId` |
+| `src/demo/ticket-data.ts` | 174 | UGURPAY projesinin 10 ticket'ı (veri) |
+| `src/demo/ticket-data-other.ts` | 177 | UGURWEB/UGURMOB/UGURDESK + greenfield: 12 ticket (veri) |
+| `src/demo/tickets.ts` | 61 | 22 ticket → `WorkflowRun` satırı + **zamansal değişmezler** |
+| `src/demo/registry.ts` | 124 | uygulamalar, repo kartları, knowledge, kullanıcılar |
+| `src/demo/routing.ts` | 116 | Jira bağlamaları + yönlendirme kuralları |
+| `src/demo/gates.ts` | 157 | imzalı kapı kararlarının **niyeti** + SoD doğrulaması |
+| `src/demo/audit-ambient.ts` | 93 | başka tablodan türetilemeyen audit kayıtları |
+| `src/demo/decisions.ts` | 209 | **tek hikâye**: audit zinciri + imza no + kapı kararları |
+| `src/demo/params.ts` | 149 | parametre sürüm geçmişi (v2…v4) |
+| `src/demo/journal.ts` | 173 | ticket defteri (M30) |
+| `src/demo/step-events.ts` | 46 | adım olayları — `kind = STEP_META[step].kind` |
+| `src/demo/evidence.ts` | 63 | kanıt paketleri (M34/M56), şablon sürümü pinli (M83) |
+| `src/demo/gateway.ts` | 63 | LLM çağrı logu, varyantlar, abonelik havuzu |
+
+Kural gereği **hiçbir TypeScript kaynak/test dosyası 300 satırı geçmiyor** (en büyüğü
+`src/mappers.ts`, 275). Bunun dışında kalan iki dosya TypeScript değil ve bölünmeleri
+zarar verirdi:
+
+- `prisma/migrations/0001_init/migration.sql` (339) — **Prisma üretiyor**, elle
+  düzenlenmesi yasak, bölünemez;
+- `prisma/schema.prisma` (463) — tek şema dosyası; çok dosyalı şema klasörüne geçmek
+  `migration:build`'in `--to-schema-datamodel` yolunu, `PRISMA_SCHEMA_RELATIVE_PATH`
+  sabitini ve şema metnini okuyan üç sapma testini birden değiştirir. Bu turun konusu
+  bulguları kapatmaktı; öneri olarak §8.3'e yazıldı.
+
+Komutlar (`pnpm -F @maestro/db <script>`):
+
+- `postinstall` / `generate` — `prisma generate`. Soğuk klonda `typecheck`'in
+  çalışmasını sağlayan şey budur.
+- `migration:build` — `0001_init`'i tamamen çevrimdışı yeniden üretir:
+  `prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script`.
+  **`0002` bu komutla üretilmez, elle bakılır** (§3).
+- `seed` — `tsx src/seed-cli.ts` (parametreler + demo veri seti; `--params-only`
+  yalnız parametreleri yazar).
 - `typecheck`, `test`.
 
-### `createDb`
+---
 
-```ts
-createDb(url: string, options?: { log?: readonly DbLogLevel[] }): Db  // Db = PrismaClient
+## 2. Bulgu bazında ne yapıldı
+
+### B-1 · Org-wide yönlendirme kuralı saklanamıyordu — KAPANDI
+`RoutingRule.projectKey` üzerindeki `JiraProjectBinding` yabancı anahtarı **kaldırıldı**,
+kolon **nullable** oldu: `NULL = tüm projeler`. Sözleşmenin `"*"` değeri ile kolonun
+`NULL`'ı arasındaki çeviri tek yerde, `src/routing-map.ts`'te yaşıyor
+(`toColumnProjectKey` / `toContractProjectKey`), fail-closed: ne `"*"` ne de geçerli
+bir `ProjectKey` olan değer saklanmadan reddediliyor.
+
+Maketteki **kural 7** (`label=musteri-verisi` → `human_lead` + `gizli`) org-wide olarak
+geri kondu. FK'nın kaldırılmasının ikinci gerekçesi M102'nin `unbind` davranışı:
+"geçmiş korunur" diyorsa, bağlama silindiğinde kurallar FK yüzünden ölmemeli.
+
+`test/seed-demo.test.ts:122`'deki dar `ProjectKey` doğrulaması (bulguyu gizleyen
+assertion) kaldırıldı; artık her kural **tam `RoutingRule` sözleşmesine** parse
+ediliyor, ayrıca org-wide satırın `NULL` saklanıp `"*"` okunduğu ayrı test ediliyor.
+
+### B-2 + B-3 + B-5 · Kapı kararı ↔ audit ↔ kanıt paketi — KAPANDI
+Üçü tek diziden türüyor (`src/demo/decisions.ts`):
+
+1. her tablo kendi audit niyetini üretir — 22 `RUN_STARTED`, kapıdaki 7 run için
+   `GATE_OPEN`, hatalı run için `CI_RESULT`, her imzalı karar için
+   `GATE_APPROVE`/`GATE_REJECT`, kapanan 5 run için `PR_MERGED` + `RUN_CLOSED`,
+   her parametre sürümü için `PARAM_CHANGED`, artı türetilemeyen 10 ortam kaydı;
+2. dizi zamana göre sıralanır (`Array.prototype.sort` kararlı olduğu için veri seti
+   byte-byte tekrarlanabilir kalır) ve tek zincir olarak mühürlenir;
+3. bir kararın `signatureSeq`'i **ürettiği audit satırının `seq`'idir**.
+
+Sonuçlar: 76 audit satırı, 18 imzalı karar, 5 kanıt paketi. `EvidencePackage.approvals`
+artık boş değil; her kapanmış run'ın onay kümesi tam olarak `GATES_BY_RISK[risk]`.
+Defterdeki `imza #…` metinleri de artık `signatureSeqOf(...)`'tan geliyor — maketten
+kopyalanan `#81390` gibi sabitler kalmadı, defter ile audit tablosu çelişemez.
+
+Zamansal ters dönme (5 adet) kalmadı: dizi tek sıralamadan geçtiği için mümkün değil,
+ayrıca test var.
+
+### B-4 · İkinci hash zinciri implementasyonu — SİLİNDİ
+`chainAuditEvents()` ve `auditPayload()` kaldırıldı. Zincir artık `@maestro/audit`'in
+`sealEvent` + `GENESIS`'i ile üretiliyor; aktör dilbilgisi `assertActor` ile,
+"yalnız insan imzalayabilir" kuralı `actionInfo(...).humanOnly` ile aynı pakete
+sorularak uygulanıyor (maketteki `system` aktörü bu yüzden `maestro-worker` oldu:
+`system` audit paketinin kabul ettiği bir aktör değil).
+
+Yalnızca **döngü** yerel: `AuditChain` bir store etrafında asenkron, veri seti ise saf
+ve senkron bir fikstür olmak zorunda. Bunun bir kopya olmadığını kanıtlamak için
+`test/audit-chain.test.ts` zinciri **`@maestro/audit`'in kendi `verifyChain`'i** ile
+doğruluyor (satırlar `toAuditEvent` mapper'ından geçirilerek) ve `rehash` ile satır
+satır yeniden hash'liyor. Audit paketi meta'yı da hash'lediği için her satırın
+`metaJson`'ı zincire giren kanonik meta ile aynı.
+
+`seq` artık 1'den başlıyor. Maketin `#81408–81422` sayacı korunmadı: o sayılar
+"uzun süredir çalışan bir kurulum" hissi için uydurulmuştu ve `signatureSeq`'in
+gerçek satır numarası olması şartıyla bağdaşmıyordu. Demo zinciri dürüstçe
+`genesis`'ten başlayan yeni bir zincirdir.
+
+### B-6 · Zamansal değişmezler — KAPANDI
+- `updatedAt >= startedAt`: `assertTicketInvariants()` veri üretilirken atıyor
+  (`idleHours <= ageHours`); UGURPAY-504 düzeltildi (386/384 → 388/386).
+- Defter kayıtları monoton ve `[startedAt, updatedAt]` aralığında — `journal.ts`
+  aralığı ihlal eden satırda `JournalWindowError` atıyor, `seq` zamandan türüyor.
+- `StepEvent` run başlangıcından önce olamaz (test).
+- LLM çağrıları da run penceresinin içinde (yeni değişmez; eskiden UGURPAY-504'ün
+  analiz çağrısı run kapandıktan 16 gün sonraydı).
+
+Maketin kendi çelişkileri bu sırada karara bağlandı ve koda yorum olarak yazıldı:
+UGURPAY-501'in yaşı 144s→198s (defteri 31 Tem'de başlıyordu), UGURPAY-500 çocuklarından
+sonra başlıyordu (390s oldu), UGURPAY-123'ün kapısı "1s 10dk" diyordu ama maketin audit
+satırı 8 dakika önce açıldığını söylüyordu (audit'e uyuldu).
+
+### B-7 · `StepEvent.kind` — KAPANDI
+`kind` artık **`STEP_META[step].kind`**; run durumundan türetilmiyor. Maketin üç yanlışı
+düzeldi: `2b` → `human_wait` (onay kapısı değil, insan beklemesi), `6b` → `system`,
+`10b` → `auto_gate`. Test hem tüm olayları sözleşmeyle karşılaştırıyor hem de bu üç
+adımı ayrıca çiviliyor. Kolon ayrıca Postgres enum'una terfi etti (`StepKindE`).
+
+### B-8 · BigInt/Decimal geçiş noktası — BELGELENDİ
+BigInt kaldı; dönüşüm `src/mappers.ts`'te tek yerde:
+
+| Mapper | Ne dönüştürüyor |
+| --- | --- |
+| `toAuditEvent` | `seq: bigint → number`, `at: Date → ISO`, `metaJson → meta` (NULL → `{}`) |
+| `toLlmCallLog` | `usd: Decimal → number` (`.toNumber()`), `at → ISO` |
+| `toJournalEntry` | `costJson` NULL ise alan hiç konmaz |
+| `toWorkflowRunState` / `toParamChange` | `Date → ISO`, `scopeRef: "" → null` |
+| `toRoutingRule` / `toJiraProjectBinding` | `NULL → "*"`, `ruleIds` sırası (B-22) |
+| `toApplicationRecord` / `toEvidencePackage` | manifest ve kayıt biçimi |
+
+`bigIntToNumber` **taşmayı yuvarlamaz, atar** (`BigIntRangeError`): bir audit sırasında
+sessiz hassasiyet kaybı, bu platformun önlemek için var olduğu türden bir bozulmadır.
+
+### B-9 · Guarded parametrelerde 4-göz — KAPANDI
+- `ParamVersion.guarded` denormalize kolonu eklendi (CHECK içinde alt sorgu olamaz).
+- `0002` migration'ında `CHECK (NOT "guarded" OR "approvedBy" IS NOT NULL)`.
+- `writeParamVersion()` tek yazıcı: tanım yoksa reddeder (M14), `guarded`'ı **tanımdan**
+  okur (çağıran veremez), guarded'da onaylayan zorunlu **ve** değiştirenden farklı olmalı.
+- `seedParams` guarded varsayılanları `approvedBy: SEED_ACTOR` ile yazıyor
+  (`bootstrapParamVersionData`): kurulum anında ikinci bir insan yoktur, satır kurulumu
+  hem yazar hem onaylayan olarak dürüstçe kaydeder. Sonraki her değişiklik
+  `writeParamVersion`'dan geçer ve kendi kendini onaylayamaz.
+
+Testler: guarded + `approvedBy` NULL reddedilir (hem birim testinde hem canlı veritabanında).
+
+### B-10 · Eksik parametreler — KAPANDI
+5 parametre eklendi, toplam **17**: `stuck.threshold` (M54), `quota.warn_pct` (M19),
+`scan.block_level` (M27), `build.timeout_min` (M85), `trigger.mode` (M48a/M102).
+`test/seed.test.ts`'teki totolojik `length === 12` yerine iki kaynaktan türeyen kontrol
+geldi: (a) maketin `PARAMS` ekranındaki 12 anahtarın hepsi tohumda olmalı, (b) tohumdaki
+her anahtar ya makette olmalı ya da bir M-kararına bağlı olmalı, (c) küme tam olarak
+bu ikisinin birleşimi olmalı. Ayrıca guarded kümesi artık maketin "4-göz" rozetinden
+türetiliyor.
+
+### B-11 · Parametre sürüm geçmişi — KAPANDI
+`src/demo/params.ts` 8 sürüm satırı yazıyor: `gates.risk_tiers` v2/v3/v4,
+`escalation.ladder` v2/v3, `coverage.ratchet` v2, `trigger.mode` (UGURPAY kapsamı) v1/v2.
+v1 satırları her zaman kurulumun varsayılanıdır (`seedParams`); demo geçmişi onun
+üstüne binen operatör kararlarıdır. `gates.risk_tiers` v4 bilerek `GATES_BY_RISK`'e geri
+döner — çünkü kapanmış run'ların onay kümeleri o değerle tutarlı olmak zorunda.
+Her satır bir `PARAM_CHANGED` audit kaydı üretir, dolayısıyla "audit v4 diyor, tabloda
+yalnız v1 var" durumu yapısal olarak imkânsız hâle geldi.
+
+### B-12 · `WorkflowRun.ticketKey @unique` — KAPANDI
+`@unique` kaldırıldı, yerine index + `0002`'de **kısmi unique index**:
+`WHERE "status" NOT IN ('done','cancelled')`. Yani bir ticket yeniden başlatılabilir
+(kill-switch, devir, ikinci `/ai-start`) ama aynı anda iki canlı run olamaz.
+`EvidencePackageRow.ticketKey` de `@unique` yerine index oldu: yeniden koşan bir
+ticket'ın ikinci paketini reddetmek kanıt kaybıdır (M34/M56).
+
+### B-13 · `KnowledgeDoc` sürümlenemiyordu — KAPANDI
+`@@id([id, version])` (RepoCard kalıbı). Demo `analiz-sablonu` v2+v3 ve `api-tasarim`
+v4+v5 satırlarını yazıyor. Kanıt paketinin `templateVersion`'ı artık **run'ın
+`startedAt`'inde geçerli olan** sürümden hesaplanıyor: UGURPAY-478 → `v3`,
+UGURMOB-166 → `v2`. M83'ün "akış başladığı şablon sürümüyle biter" kuralı böylece
+veriyle kanıtlanıyor.
+
+### B-14 · Append-only DB düzeyinde — KAPANDI
+`0002` migration'ı `maestro_append_only()` plpgsql fonksiyonunu ve dört trigger'ı
+kuruyor: `JournalEntry` ve `AuditLog` için `BEFORE UPDATE OR DELETE` (satır) +
+`BEFORE TRUNCATE` (deyim). TRUNCATE ayrı olmalı, aksi hâlde `TRUNCATE "AuditLog"`
+tek bir satır trigger'ı tetiklemeden "append-only" tabloyu boşaltırdı.
+`AuditLog.prevHash` üzerine `@unique` geldi: iki satır aynı öncülü gösteremez, dolayısıyla
+zincir çatallanamaz ve genesis tektir.
+
+Tip düzeyinde ikinci hat: `appendOnly(db)` yalnız okuma/ekleme metotlarını taşıyan
+**yeni ve donmuş** bir nesne döndürüyor, yani `deleteMany` ne tipte ne çalışma
+zamanında erişilebilir. İkisi de gerekli — tip tek başına tavsiye niteliğindedir
+(cast onu bozar), trigger tek başına hatanın üretime çıkmasına izin verir.
+
+**Testler:** çevrimdışı tarafta migration metni denetleniyor; davranış
+`test/live-guards.test.ts`'te gerçek Postgres'e karşı doğrulanıyor (§4).
+
+### B-15 · UGURPAY-500'ün appId/matchJson çelişkisi — KAPANDI
+Koordinasyon parent'ına `appId: "ugurpay"` verildi. M100 zaten "keşif oturumu BİRİNCİL
+uygulamanın repo'sunda çalışır" diyor, dolayısıyla `{via:"rule", appId:"ugurpay"}` ile
+`appId: null` çelişkisi vardı. Yeni test: `MatchResult.appId === run.appId` (onboarding
+hariç, o kademede uygulama yoktur).
+
+### B-16 · Transaction + sessiz `skipDuplicates` — KAPANDI
+`seedDemo` tek `$transaction` içinde çalışıyor. Ana veri (`Application`, `User`, …)
+hâlâ `skipDuplicates: true` — gerçek bir kurulumun satırlarının üstüne yazılmamalı.
+`AuditLog` ve `JournalEntry` için `skipDuplicates` **kaldırıldı**: append-only bir
+tabloda çakışma "zincir iki kez yazılıyor" demektir ve bunu yutmak M33'ün yasakladığı
+fail-open'dır. Dolu bir veritabanında ikinci koşum yüksek sesle patlar ve transaction
+geri alınır (canlı olarak denendi, aşağıya bakınız).
+
+### B-17 · Veri sınıfı temsili — KAPANDI
+22 run'ın hepsi `dahili` değil artık: UGURDESK-52 `gizli` (toplu EFT dosyası; org-wide
+kural 7'nin `human_lead` + `gizli` etkisi uygulandı, uygulama ataması yine rule-6'dan),
+UGURWEB-83 `acik` (halka açık pazarlama sayfalarında WCAG etiketleri). UGURDESK-52'nin
+`gizli` LLM çağrısı on-prem sürücüye gidiyor — `dataclass.policy`'nin bu sınıf için
+öngördüğü şey tam olarak bu (M18/M63).
+
+### B-18 · `sodVerified` koşulsuz `true` — KAPANDI
+`verifyGateSod()` hesaplıyor: bir run'ın 4↔5 ve 5↔12 kapıları aynı kişi tarafından
+imzalanmışsa `false` döner. Veri bu kuralı sağladığı için testte `true` bekleniyor —
+ama artık bu bir **iddia değil, sonuç**.
+
+### B-19 · Enum'a terfi — KISMEN KAPANDI
+`StepEvent.kind` → `StepKindE` (sözleşmedeki `StepKind` aynası) ve
+`Application.createdVia` → `CreatedViaE` (`ApplicationRecord.shape.createdVia.options`
+aynası) enum oldu; ikisi de `test/schema-enums.test.ts`'in ayna tablosuna girdi.
+`KnowledgeDoc.kind` **metin kaldı**: sözleşmelerde karşılığı olan bir enum yok, uydurmak
+`contracts`'a dokunmak olurdu (§5 isteği).
+
+### B-20 · `tsx` — KAPANDI
+`devDependencies`'ten `dependencies`'e taşındı. `seed` komutu ona bağlı ve bu komut
+gerçek kurulumda da koşuyor; dev-only saymak yanlıştı.
+
+### B-22 · `ruleIds` sıra bilgisi — KAPANDI
+`toJiraProjectBinding(row, rules)` sözleşmenin sıralı `ruleIds` dizisini üretiyor:
+`priority` artan, eşitlikte `ruleId` — yani toplam sıra. Org-wide kurallar (projectKey
+`NULL`) her bağlamaya katılıyor; bunu bilen tek yer bu mapper. Test her bağlamanın
+`ruleIds`'inin öncelik sırasına uyduğunu ve `rule-7`'yi içerdiğini doğruluyor.
+
+---
+
+## 3. Migration stratejisi (neden iki dosya)
+
+`0001_init` **üretilir**: `pnpm -F @maestro/db migration:build`. Elle düzenlenmesi
+yasak; doğrulayıcı byte-byte karşılaştırabilir.
+
+`0002_append_only_and_guards` **elle yazılan tek dosyadır**, çünkü içerdiği üç şeyin
+Prisma şema sözdiziminde karşılığı yoktur:
+
+1. satır/deyim trigger'ları (append-only zorlaması),
+2. `CHECK` kısıtı (guarded parametrede onaylayan zorunluluğu),
+3. kısmi `UNIQUE INDEX` (`WHERE status NOT IN (...)`).
+
+Dosyanın başında bunun neden elle yazıldığı yazılı; `test/migration.test.ts` hem
+içeriğini (fonksiyon, dört trigger, CHECK, kısmi index) hem de "Prisma'nın üretebileceği
+hiçbir şeyi içermediğini" (`CREATE TABLE`/`CREATE TYPE` yok) denetliyor.
+
+Yabancı anahtar sayısı 7 → **6** düştü (RoutingRule → JiraProjectBinding kaldırıldı);
+kalan altısının hepsi `ON DELETE RESTRICT`.
+
+---
+
+## 4. Testler
+
+`pnpm -F @maestro/db test` → **13 dosya, 169 test**. Veritabanı olmadan **162** koşar,
+7'si (`test/live-guards.test.ts`) `TEST_DATABASE_URL` yoksa atlanır.
+
+| Dosya | Test | Kapsam |
+| --- | --- | --- |
+| `test/schema-enums.test.ts` | 27 | her şema enum'u sözleşme enum'unun birebir aynası; `@map` yasağı; timestamptz/Decimal/Restrict/native tip kuralları; ayrıştırıcıların kendi birim testleri |
+| `test/migration.test.ts` | 16 | `0001` her modeli/enum'u kapsıyor mu, 6 RESTRICT FK, yıkıcı deyim yok, `prevHash` unique, ticket kilidi kalktı, `KnowledgeDoc` çift anahtarlı; `0002`'de trigger + CHECK + kısmi index var ve Prisma'nın üreteceği hiçbir şey yok |
+| `test/prisma-validate.test.ts` | 1 | gerçek Prisma CLI, ağa çıkmadan (`CHECKPOINT_DISABLE=1`) |
+| `test/client.test.ts` | 10 | URL fail-closed denetimi, hata mesajında parola sızmıyor, 17 modelin delegate'i |
+| `test/param-defaults.test.ts` | 17 | 17 varsayılanın her biri kendi M-kararına çivili (M51/M102/M88/M59/M70/M92/M65/M54/M19/M85/M27/M58/M48/M18/M55/M45) |
+| `test/seed.test.ts` | 15 | parametre kümesi maket + M-kararı kaynaklarından türetiliyor; `ParamDefinition` uyumu; `seedParams` davranışı; guarded satırlarda CHECK'in sağlanması |
+| `test/params-write.test.ts` | 12 | `writeParamVersion` 4-göz kuralları (onaylayan yok / boş / kendisi), tanımsız anahtar reddi, `guarded`'ın tanımdan kopyalanması; demo sürüm geçmişinin bütünlüğü |
+| `test/mappers.test.ts` | 16 | BigInt taşma reddi, Decimal→number, her mapper'ın çıktısının sözleşmeye parse olması, `"*"`↔`NULL`, append-only yüzeyinde tek bir mutasyon metodunun bulunmaması |
+| `test/seed-demo.test.ts` | 22 | başlık sayıları, üç veri sınıfının temsili, determinizm, sözleşme doğrulamaları, org-wide kural, `ruleIds` sırası, `StepEvent.kind` = `STEP_META`, referans bütünlüğü |
+| `test/temporal.test.ts` | 4 | `updatedAt >= startedAt`, defter penceresi + monotonluk, `StepEvent` penceresi, LLM çağrısı penceresi |
+| `test/audit-chain.test.ts` | 17 | zincir `@maestro/audit`'in `verifyChain`'i ile doğrulanıyor; kurcalama/silme tespiti; her kararın audit satırıyla aynı `seq`'i; imza çakışması yok; dizi zamanla monoton; kanıt paketlerinin onay kümesi = `GATES_BY_RISK[risk]`; şablon sürümü pinlemesi |
+| `test/seed-demo-writer.test.ts` | 3 | tek transaction, FK sırası, append-only tablolarda `skipDuplicates` yok, hata yutulmuyor |
+| `test/live-guards.test.ts` | 9 (7'si canlı) | **gerçek Postgres**: journal UPDATE/DELETE reddi, audit UPDATE/DELETE/TRUNCATE reddi, aynı `prevHash`'e ikinci satır reddi, guarded + `approvedBy` NULL reddi, ikinci canlı run reddi + iptalden sonra yeniden başlatılabilme |
+
+Canlı testleri koşmak için:
+
+```bash
+docker run -d --rm -p 55432:5432 -e POSTGRES_PASSWORD=maestro \
+  -e POSTGRES_DB=maestro_test --name maestro-pg postgres:16-alpine
+TEST_DATABASE_URL=postgresql://postgres:maestro@localhost:55432/maestro_test \
+  pnpm -F @maestro/db test
 ```
 
-Validates the URL fail-closed (`assertPostgresUrl`, M6) before constructing the
-client and never echoes the URL in the error — it carries the password.
-Construction stays lazy, so it is safe in tests and at wiring time. The
-package re-exports `Db`; no other package should import `@prisma/client`.
+Bu tur bunlar **gerçekten koşturuldu**: 169/169 yeşil. Ayrıca aynı veritabanına
+`prisma migrate deploy` + `pnpm -F @maestro/db seed` uygulandı ve tohum uçtan uca
+yazdı; ikinci koşum beklendiği gibi `Unique constraint failed on the fields:
+(runId, seq)` ile patlayıp transaction'ı geri aldı.
 
-## 2. Schema decisions (draft → final)
+Kapı (kökten): `pnpm install` ✔ · `pnpm -F @maestro/db typecheck` ✔ ·
+`pnpm -F @maestro/db test` ✔ · `pnpm lint` ✔ · `pnpm typecheck` ✔ · `pnpm test` ✔.
 
-Model and enum names were kept 1:1 with the Wave-0 draft. Changes:
+---
 
-1. **`timestamptz(3)` for every `DateTime`** (was Prisma's default naive
-   `timestamp(3)`). Contracts carry offset-aware ISO strings and the audit
-   chain / 10-year evidence retention (M33/M56) cannot depend on server local
-   time. Enforced by a test.
-2. **`onDelete: Restrict` on every relation.** Runs, journal entries, params
-   and repo cards are retention material (M30/M56); an accidental cascade
-   would erase evidence. Nothing in the platform deletes a run today.
-3. **`LlmCall.usd` → `Decimal(12, 6)`** (was `Float`). Money is never a float;
-   6 decimals covers per-call costs down to micro-dollars. *Callers get
-   `Prisma.Decimal` and must `.toNumber()` when mapping to `LlmCallLog.usd`.*
-4. **Nine fields promoted from `String` to Postgres enums**, mirroring
-   contracts: `JiraProjectBinding.trigger` (`TriggerModeE`), `Param.scope`
-   (`ParamScopeE`), `Param.type` (`ParamTypeE`), `JournalEntry.actor/kind`
-   (`JournalActorE`/`JournalKindE`), `AuditLog.action` (`AuditActionE`),
-   `LlmCall.role` + `Variant.role` (`LlmRoleE`), `SubscriptionAccount.state`
-   (`SubscriptionStateE`). Rationale: these value sets are frozen in contracts,
-   so the database can reject garbage instead of trusting every writer.
-5. **Rule for *not* promoting**: a Prisma enum is only used when every contract
-   option is also a legal Prisma identifier, so the generated TS union equals
-   the contract union. `StepId` (`"2b"`, `"3o"`), `PlatformProfile`
-   (`"linux-node"`), `LlmDriverId`/`SubscriptionDriverId` (`"claude-sub"`)
-   would need `@map` aliases, which makes the client's TS value differ from
-   the contract value — a silent-mismatch trap for every caller. Those stay
-   `VarChar` with contracts as the validator. A test forbids `@map` on enum
-   members so this rule cannot erode.
-6. **Length caps** (`@db.VarChar`) on identifier-ish columns (ids, keys,
-   hashes, step ids). Postgres `text` and `varchar(n)` perform identically;
-   the caps exist as a cheap second line of defence behind the zod regexes.
-   Free-text columns (`title`, `detail`, `displayName`, `contentRef`) stay
-   unbounded `text`.
-7. **Indexes added**: `WorkflowRun(updatedAt)` (Studio "recent runs"),
-   `AuditLog(subject)` (evidence package collects one ticket's chain),
-   `LlmCall(driver, at)` (per-driver cost/quota reporting),
-   `SubscriptionAccount(driver, state)` (quota-aware pool picker, M55),
-   `EvidencePackageRow(createdAt)` (retention sweeps, M56). Existing draft
-   indexes were kept.
-8. **Defaults**: `JiraProjectBinding.version @default(1)`.
+## 5. Demo veri seti — gerçek satır sayıları
 
-Deliberately *not* done (kept for the packet that owns the behaviour):
-`LlmCall.runId` still has no FK (calls may precede/outlive a run row);
-`EvidencePackageRow` has no relation to `WorkflowRun` (would require adding a
-back-reference field to a frozen-shaped model); no `@@map` to snake_case table
-names (model name = table name keeps the mapping obvious).
+`buildDemoDataset()` saf ve deterministik; `DEMO_NOW` = maketin 8 Ağu 2026 14:20
+İstanbul anı. `pnpm seed` çıktısı (boş veritabanında ölçüldü):
 
-## 3. Seed — 12 default parameters (M71)
-
-| Key | Scope | Type | Guarded | Default | Decision |
-| --- | --- | --- | --- | --- | --- |
-| `gates.risk_tiers` | global | json | ✔ | `GATES_BY_RISK` (2 / 4 / 5 gates + the 2b wait) | M51 |
-| `escalation.ladder` | global | json | | 24h jira → 72h teams → 168h smtp | M88 |
-| `lang.output` | project | enum | | `tr` (`Locale.options`) | M59 |
-| `coverage.ratchet` | application | json | ✔ | `{ allowDecrease: false, minNewLinePct: 80 }` | M70 |
-| `sod.qa_split` | global | boolean | ✔ | `false` | M92 |
-| `workspace.max_age_days` | global | number | | `60` | M65 |
-| `killswitch.state` | global | enum | ✔ | `off` (`off` / `intake_only` / `all`) | M58 |
-| `merge.mode` | project | enum | ✔ | `human_merge` | M48 |
-| `binding.dry_run_sample_size` | project | number | | `20` | M102 |
-| `dataclass.policy` | global | json | ✔ | `gizli → onprem`, fallback `degrade_ai_assist` | M18/M63 |
-| `subscription.queue_enabled` | global | boolean | | `true` | M55 |
-| `notify.reminder_channel` | global | enum | | `jira` (`NotifyChannel.options`) | M45 |
-
-`seedParams(db, { changedBy?, now? })` is idempotent: definitions are
-*upserted* (code owns them, they may gain enum options), version 1 is
-*create-only* (`update: {}`) so re-running never walks back an operator's
-edit. The clock is injectable, which keeps the tests deterministic.
-
-## 3b. Seed — demo dataset (`src/seed-demo.ts`)
-
-`insa-plani.md` (Dalga 1) requires the seed to *be* the mock's dataset so that
-Studio opens populated, with nothing migrated from v1. `buildDemoDataset()` is
-a pure function over a fixed clock (`DEMO_NOW` = the mock's 8 Aug 2026 14:20
-Istanbul), so every run produces identical rows.
-
-| Table | Rows | Notes |
+| Tablo | Satır | Not |
 | --- | --- | --- |
-| `Application` | 5 | ugurpay · ugurweb · ugurmobil-ios · ugurmobil-android · ugurmasaustu, one per platform profile |
-| `RepoCard` | 5 | 2–3 modules each (M100 cross-app impact without cloning) |
-| `JiraProjectBinding` | 5 | 4 `active` (UGURPAY auto · UGURWEB label · UGURMOB command · UGURDESK auto) + UGURKREDI `draft` (onboarding 3/4) |
-| `RoutingRule` | 6 | the mock's tier ① rules; the "component missing" row is deliberately *absent* — no match is what triggers tier ② |
-| `WorkflowRun` | 22 | 7 gate · 8 running · 1 queued (quota) · 1 fail (CI red) · 5 done, including the UGURPAY-500 fan-out family and the greenfield UGURPAY-600 |
-| `JournalEntry` | 86 | the mock's full 23-entry journal for UGURPAY-501, a 3-entry journal for the rest |
-| `StepEvent` | 31 | one "entered step" per run + 9 signed gate decisions |
-| `AuditLog` | 15 | a real sha256 chain from `genesis`, seq 81408–81422 (the mock's counter) |
-| `LlmCall` | 5 | includes an on-prem `gizli` call and a subscription call with `usd = NULL` (M55) |
-| `Variant` / `VariantVersion` | 9 / 9 | the mock's variant table with eval scores |
-| `SubscriptionAccount` | 5 | one `exhausted` account with a 100% 5h window |
-| `KnowledgeDoc` | 6 | analysis template, BDDK policy, conventions |
-| `EvidencePackageRow` | 5 | exactly the closed runs, 10-year retention manifests |
-| `User` | 7 | the mock's people and AD groups |
+| `Param` / `ParamVersion` (v1) | 17 / 17 | `seedParams` |
+| `ParamVersion` (geçmiş) | 8 | `seedDemo`, v2…v4 |
+| `User` | 7 | maketin insanları ve AD grupları, kullanılabilir parola yok |
+| `Application` | 5 | her platform profilinden biri |
+| `RepoCard` | 5 | 2-3 modül (M100) |
+| `JiraProjectBinding` | 5 | 4 `active` + UGURKREDI `draft` |
+| `RoutingRule` | 6 | 5 proje kuralı + 1 org-wide (`projectKey IS NULL`) |
+| `WorkflowRun` | 22 | 7 gate · 8 running · 1 queued · 1 fail · 5 done |
+| `StepEvent` | 40 | run başına "adıma girildi" + 18 imzalı karar |
+| `JournalEntry` | 100 | UGURPAY-501'in 23 kayıtlık tam defteri + diğerleri |
+| `AuditLog` | 76 | `genesis`'ten seq 1…76, `@maestro/audit` ile doğrulanır |
+| `EvidencePackageRow` | 5 | tam onay zinciriyle, 10 yıl saklama |
+| `LlmCall` | 5 | biri on-prem `gizli`, biri abonelik (`usd = NULL`) |
+| `Variant` / `VariantVersion` | 9 / 9 | maketin varyant tablosu |
+| `SubscriptionAccount` | 5 | biri `exhausted`, %100 5s penceresiyle |
+| `KnowledgeDoc` | 8 | 6 doküman, ikisi çift sürümlü (M83) |
 
-Details worth knowing:
+---
 
-- **Step ids are contract ids.** The mock's numeric steps are indices into its
-  STEPS table, which is `STEP_IDS` in the same order, so the mapping is exact
-  (`step:16` → `"12"` PR approval, `step:18` → `"13"` closure).
-- **Run ids** are `run-<ticket-key-lowercased>`, so any screen can address a run
-  without a lookup table.
-- **No usable credentials**: every `User.passwordHash` is `"!"`, an
-  unmatchable placeholder. A demo install must not ship a working login.
-- **`skipDuplicates`** on every insert makes the demo seed re-runnable and
-  stops it from overwriting a real installation's rows.
-- The audit chain is verified *independently* in the tests (recomputed row by
-  row, plus a tamper-detection case).
+## 6. Bağımlılık gerekçeleri
 
-## 4. Tests
-
-`pnpm -F @maestro/db test` → **6 files, 92 tests, all passing**, offline and
-without a database.
-
-| File | Tests | Covers |
+| Bağımlılık | Tür | Neden |
 | --- | --- | --- |
-| `test/schema-enums.test.ts` | 25 | (a) every schema enum mirrors its `@maestro/contracts` enum exactly; no unmapped enum; no `@map` on members; timestamptz / Decimal / Restrict / native-type conventions; unit tests for the parsers themselves |
-| `test/migration.test.ts` | 7 | (b) migration SQL exists next to the provider lock, has a `CREATE TABLE` for every model, a `CREATE TYPE` with every value for every enum, 7 `RESTRICT` foreign keys, timestamptz columns, no destructive statements |
-| `test/seed.test.ts` | 24 | (c) all 12 definitions validate against `ParamDefinition`; unique contract-shaped keys; `params.description.*` prefix; type/default/enumValues coherence; the guarded set; each default pinned to its M-decision; `seedParams` behaviour against an in-memory fake |
-| `test/prisma-validate.test.ts` | 1 | (d) spawns the real Prisma CLI with a placeholder `DATABASE_URL` (`CHECKPOINT_DISABLE=1`, so no network) |
-| `test/client.test.ts` | 10 | URL fail-closed validation, no credential leak in errors, lazy client with a delegate for all 17 models |
-| `test/seed-demo.test.ts` | 25 | headline counts + status spread; determinism; every row validated against its contract (`MatchResult`, `ApplicationRecord`, `RepoCard`, `RuleCondition`, `JournalEntry`, `GateDecision`, `LlmCallLog`); journal seq contiguity; referential integrity in insert order; audit chain recomputed independently + tamper detection; no usable credential; approver groups match the users table |
+| `@maestro/audit` | dependency (**yeni**) | M33'ün tek zincir implementasyonu. Seed'deki ikinci implementasyon silindi; `sealEvent`/`GENESIS`/`assertActor`/`actionInfo` buradan geliyor, testler `verifyChain`/`rehash` ile doğruluyor. |
+| `@maestro/contracts` | dependency | donmuş şemalar |
+| `@prisma/client` | dependency | `createDb`'nin döndürdüğü üretilmiş istemci; sürüm ailesi `prisma` CLI ile aynı (ikisi de 6.19.3) |
+| `tsx` | dependency (**dev'den taşındı**) | `pnpm seed` buna bağlı ve seed gerçek kurulumda koşuyor (B-20). Node 24'ün yerel tip soyma özelliği yetmiyor: depo `.js` uzantılı belirteçlerle `.ts` dosyalarına işaret ediyor, Node'un çözücüsü bunu izlemiyor. |
+| `prisma` | devDependency | CLI (`generate`, `migrate diff`, `validate`) |
+| `@types/node`, `typescript`, `vitest` | devDependency | tip tanımları, derleyici, test koşucusu |
 
-Full gate from `maestro/`: `pnpm install` ✔ · `pnpm -F @maestro/db typecheck` ✔ ·
-`pnpm -F @maestro/db test` ✔ · `pnpm lint` ✔ (also `pnpm typecheck` + `pnpm test`
-across all 5 workspace projects ✔, from a wiped `node_modules`).
+Başka bağımlılık eklenmedi.
 
-## 5. Dependency justifications
+---
 
-| Dependency | Kind | Why |
-| --- | --- | --- |
-| `@prisma/client@^6.5.0` | dependency | The generated client `createDb` returns. Version range pinned to the same minor family as the `prisma` CLI already in the draft (both resolve to 6.19.3); a mismatch between CLI and client is a known breakage. |
-| `@types/node@^24.0.0` | devDependency | `node:fs` / `node:path` / `node:child_process` / `process` in the seed CLI and tests. Same version as `@maestro/test-kit`. |
-| `vitest@^3.2.0` | devDependency | The repo's test runner (contracts, config, test-kit already use it). Replaces the placeholder `test` script that only ran `prisma validate` — that check now lives inside the suite. |
-| `tsx@^4` | devDependency | Runs the seed CLI (`tsx src/seed-cli.ts`) without a build step. Node 24's native type stripping cannot be used here: the repo's ESM convention is `.js`-extension specifiers pointing at `.ts` files, which Node's resolver does not follow. Dev-only — nothing ships it. |
+## 7. Varsayımlar ve maket kararları
 
-No other dependency was added. `prisma` and `typescript` were already declared
-by the Wave-0 draft.
+1. **Parametre anahtar biçimi.** `ParamKey` `^[a-z][a-z0-9_.]+$` olduğu için maketin
+   camelCase anahtarları (`gates.riskTiers`) yasal değil; snake_case'e çevrildi,
+   ad alanları korundu. Eşleme `test/seed.test.ts`'te tablo hâlinde duruyor.
+2. **Maketin "platform" kapsamı** bir `ParamScope` değil; `build.timeout_min` global
+   kapsamda, değeri `PlatformProfile` ile anahtarlanmış JSON.
+3. **Audit `seq` 1'den başlar** (B-4). Maketin 81408+ sayacı korunmadı.
+4. **Maketin kendi çelişkileri** koda yorum olarak yazılıp veri lehine karara bağlandı
+   (B-6 listesi). Değişen alanlar yalnız `ageHours`/`idleHours`; ticket'ların içeriği,
+   sahipleri ve durumları makete sadık.
+5. **UGURPAY-501'in defteri** makette "alt ticket'lar açıldı" satırını taşır, yani
+   maket bu defteri hem parent hem child gibi kullanmış. Defter olduğu gibi 501'de
+   bırakıldı; parent UGURPAY-500 kısa defterle temsil ediliyor.
+6. **UGURPAY-501'in kapı kümesi** risk tier'ından (orta) bir fazla kapı içeriyor
+   (adım 9, QA senaryo onayı). Bu makette var ve M51 "PO tier'ı yükseltebilir" dediği
+   için korundu; testler yalnız **kapanmış** run'ların kümesini `GATES_BY_RISK` ile
+   birebir karşılaştırıyor.
+7. **`0001_init` 339 satır** ve 300 satır tavanını aşıyor; üretilmiş dosya olduğu için
+   bölünemez.
 
-## 6. REQUESTS (nothing was changed outside this package)
+---
 
-### 6.1 `packages/config` message catalog — 9 missing keys
+## 8. İSTEKLER (bu pakette hiçbir şey dışarıya dokunmadı)
 
-`params.description.gate_set`, `params.description.escalation_ladder` and
-`params.description.output_language` already exist in `locales/{tr,en}.json`.
-The seed needs nine more (TR / EN suggestions):
+### 8.1 `packages/config` mesaj kataloğu — 14 eksik anahtar
 
-| Key | tr | en |
+Mevcut: `params.description.gate_set`, `.escalation_ladder`, `.output_language`.
+Eksik olanlar (TR / EN önerisi):
+
+| Anahtar | tr | en |
 | --- | --- | --- |
 | `params.description.coverage_ratchet` | "Kapsam mandalı: düşüş yasak, yeni satırlarda alt sınır" | "Coverage ratchet: no decrease, floor for new lines" |
 | `params.description.sod_qa_split` | "QA görev ayrılığı: senaryo onaylayan ≠ sonuç onaylayan" | "QA separation of duties: scenario approver ≠ result approver" |
@@ -198,103 +405,57 @@ The seed needs nine more (TR / EN suggestions):
 | `params.description.data_class_policy` | "Veri sınıfı → LLM arka ucu eşlemesi ve on-prem yoksa davranış" | "Data class → LLM backend mapping and the no-on-prem fallback" |
 | `params.description.subscription_queue` | "Abonelik havuzu tükendiğinde işi kuyruğa al" | "Queue the run when the subscription pool is exhausted" |
 | `params.description.reminder_channel` | "İlk hatırlatıcının gönderileceği kanal" | "Channel used for the first reminder" |
+| `params.description.trigger_mode` | "Proje tetikleme modu: otomatik / etiket / komut" | "Project trigger mode: automatic / label / command" |
+| `params.description.stuck_threshold` | "Takılma eşiği: kaç ret veya CI hatasından sonra insana devredilir" | "Stuck threshold: rejections or CI failures before handover" |
+| `params.description.quota_warn_pct` | "Kota penceresinde uyarı eşiği (%)" | "Quota window warning threshold (%)" |
+| `params.description.build_timeout_min` | "Platform başına build zaman aşımı (dakika)" | "Per-platform build timeout (minutes)" |
+| `params.description.scan_block_level` | "Akışı durduran en düşük tarama önem derecesi" | "Lowest scan severity that stops the flow" |
 
-`test/seed.test.ts` only asserts the `params.description.` prefix, so the
-suite stays green until the catalog packet lands; a catalog-parity test on the
-`config` side should then cover the nine keys.
+Testler yalnız `params.description.` önekini denetliyor, bu yüzden katalog paketi
+gelene kadar süit yeşil kalır; katalog tarafında bir eşleşme testi bu 17 anahtarı
+kapsamalı.
 
-### 6.2 `packages/contracts` (frozen — wishes only)
+### 8.2 `packages/contracts` (donuk — yalnız dilek)
 
-1. **`ParamChange.scopeRef` is `string | null`, but the database column is part
-   of the `ParamVersion` primary key**, and Postgres does not allow NULL in a
-   PK. The DB therefore uses `""` for "no scope ref" (`GLOBAL_SCOPE_REF`), and
-   whoever writes the params service must map `null ↔ ""`. Cleaner: make the
-   contract `.default("")` instead of nullable, or the DB gain a surrogate key.
-2. **No `KillSwitchState` enum.** `KillSwitchSignal.level` is
-   `intake_only | all`, but the *stored parameter* also needs the resting
-   state, so the seed declares `off | intake_only | all` inline. Please add
-   `KillSwitchState = z.enum(["off", "intake_only", "all"])` and derive the
-   signal level from it.
-3. **No `MergeMode` enum** for M48; the seed declares
-   `human_merge | auto_merge` inline. A contract enum would let the DB use a
-   Postgres enum here too.
-4. **No value schemas for json-typed parameters.** `ParamDefinition.defaultValue`
-   is `unknown`, so nothing validates `gates.risk_tiers`,
-   `escalation.ladder`, `coverage.ratchet` or `dataclass.policy` when an admin
-   edits them in Studio. Suggestion: add `ParamValueSchemas` (a registry keyed
-   by `ParamKey`) or a `valueSchemaName` field on `ParamDefinition`, so the
-   params service can validate fail-closed the same way analyses are validated.
-5. **`LlmCallLog.usd` is `number`; the column is `Decimal`.** The llm-gateway
-   packet needs a documented conversion point (`.toNumber()` on read).
-6. **`RiskTier`-keyed gate sets are duplicated** between `GATES_BY_RISK`
-   (code constant) and the `gates.risk_tiers` parameter (runtime value). The
-   seed test pins them to each other; the workflow packet must decide which one
-   is authoritative at run time (proposal: the parameter, with the constant as
-   the seed value only).
-7. **`RoutingRule.projectKey` accepts `"*"` (org-wide rule), but the column is
-   a foreign key to `JiraProjectBinding`.** The demo therefore scopes the
-   "label = musteri-verisi → human_lead/gizli" rule to a real project instead
-   of `*`. Either the schema drops that FK, or a sentinel `*` binding row has
-   to exist, or the contract loses `"*"`. Needs a decision before the routing
-   service is written.
+1. **`ParamChange.scopeRef` `string | null`, ama kolon birincil anahtarın parçası**;
+   Postgres PK'da NULL kabul etmez. DB `""` kullanıyor (`GLOBAL_SCOPE_REF`), mapper
+   `null ↔ ""` çeviriyor. Temizi: sözleşmede `.default("")`.
+2. **`KillSwitchState` enum'u yok.** Tohum `off | intake_only | all`'ı satır içi
+   tanımlıyor; sözleşmeye eklenirse kolon Postgres enum'u olabilir.
+3. **`MergeMode` enum'u yok** (M48) — aynı gerekçe.
+4. **`ScanBlockLevel` / `TriggerMode` kapsamı**: `scan.block_level` `ScanSeverity`'yi,
+   `trigger.mode` `TriggerMode`'u yeniden kullanıyor; bunlar iyi. Eksik olan,
+   json tipli parametrelerin **değer şemaları**: `ParamDefinition.defaultValue`
+   `unknown`, dolayısıyla `gates.risk_tiers`, `escalation.ladder`, `coverage.ratchet`,
+   `dataclass.policy`, `stuck.threshold`, `build.timeout_min` Studio'dan
+   düzenlendiğinde hiçbir şey doğrulamıyor. Öneri: `ParamKey` ile anahtarlanmış bir
+   şema kaydı ya da `ParamDefinition.valueSchemaName`.
+5. **`LlmCallLog.usd` `number`, kolon `Decimal`.** Dönüşüm noktası artık
+   `toLlmCallLog` (§2 B-8); llm-gateway paketi bunu kullanmalı.
+6. **`GATES_BY_RISK` iki yerde**: sabit ve `gates.risk_tiers` parametresi. Testler
+   ikisini birbirine çiviliyor; workflow paketi çalışma anında hangisinin yetkili
+   olduğuna karar vermeli (öneri: parametre; sabit yalnız tohum değeri).
+7. **`KnowledgeDoc.kind` için enum yok** (`template | example_analysis | standard |
+   app_intro | policy`). Sözleşmeye eklenirse kolon enum'a terfi eder (B-19'un
+   kalan kısmı).
+8. **`MatchResult` tek `ruleId` taşıyor.** Demo'da UGURDESK-52'nin uygulaması
+   rule-6'dan, veri sınıfı + modu org-wide rule-7'den geliyor; sözleşme bunu
+   kaydedemiyor. Öneri: `ruleIds: string[]` ya da `appliedRuleIds`.
 
-### 6.2b `packages/audit` (does not exist yet)
+### 8.3 Orkestratör kararı bekleyen
 
-M33 says the hash chain has exactly one implementation, in `packages/audit`.
-The demo seed needs chained rows *now*, so `src/seed-demo.ts` carries a
-deliberately minimal `chainAuditEvents()` (sha256 over
-`seq|at|actor|action|subject|prevHash`, first predecessor `"genesis"`). **When
-the audit packet lands, the seed must import its chain builder and this helper
-must be deleted** — and the audit packet should adopt (or consciously
-replace) this canonical payload, because the seeded rows must stay verifiable.
+1. **Çok dosyalı Prisma şeması.** `prisma/schema.prisma` 463 satır ve 300 satır
+   tavanının üstünde. Prisma 6 `prismaSchemaFolder`'ı destekliyor; geçiş
+   `migration:build` argümanını, `PRISMA_SCHEMA_RELATIVE_PATH`'i ve `schema-facts`
+   tabanlı üç testi etkiler. Ayrı, küçük bir tur olarak yapılması önerilir.
+2. Kök `package.json`: Wave-0'da `@prisma/client` `pnpm.onlyBuiltDependencies`'e
+   eklendi; `pnpm install` artık uyarı vermiyor. Ek istek yok.
 
-### 6.3 Root `package.json` (out of scope for this packet)
+---
 
-`pnpm install` prints `Ignored build scripts: @prisma/client@6.19.3`. That
-script is `prisma generate` without a schema — harmless, since this package
-runs `prisma generate --schema prisma/schema.prisma` in its own `postinstall`.
-To silence the warning, add `"@prisma/client"` to `pnpm.onlyBuiltDependencies`
-in the root `package.json`.
+## 9. TAKILDIM
 
-## 7. Assumptions
+Yok.
 
-1. **Parameter key style.** `ParamKey` is `^[a-z][a-z0-9_.]+$`, so the mock's
-   camelCase keys (`gates.riskTiers`, `workspace.maxAgeDays`) are illegal.
-   Keys were transliterated to snake_case, keeping the mock's namespaces.
-   `binding.dry_run_sample_size` is a new namespace (the mock screen showed
-   the dry-run size on the routing screen, not the parameters screen).
-2. **Mock scope "repo" → contract scope `application`**, and "platform" is not
-   a `ParamScope`; the platform-specific build timeouts from the mock are not
-   part of this packet's 12.
-3. **Guarded flags** follow "does it weaken a control?": gate sets, coverage
-   ratchet, QA SoD, kill switch, merge mode and the data-class policy are
-   four-eyes; ladders, language, sample size, workspace age, queueing and
-   reminder channel are not.
-4. **Migration directory name** is `0001_init` as specified, not Prisma's
-   `<timestamp>_init` convention. Prisma applies migrations in lexicographic
-   order, so follow-ups must continue `0002_…`, `0003_…`.
-5. **Seed CLI runtime** is `tsx`; see the dependency table for why Node's own
-   type stripping is not enough. `src/seed.ts` and `src/seed-demo.ts` stay
-   pure data + functions, so the suite tests them without touching the CLI.
-6. `Param.type` uses a Postgres enum even though `string`/`number`/`enum` look
-   like Prisma keywords — verified accepted by `prisma validate` and covered
-   by the suite.
-7. **Demo data fidelity.** The mock is a static HTML prototype, so a few
-   values had to be decided rather than copied:
-   - The mock's numeric step is an index into its STEPS list; that list is
-     `STEP_IDS` in the same order, so the mapping is mechanical. The
-     coordination parent UGURPAY-500 ("koordinasyon") and the greenfield
-     UGURPAY-600 ("mimari") have no numeric step and were parked at `"3"`
-     (analysis, children fanned out) and `"5"` (architecture approval gate).
-   - All 22 runs are `dahili`. The mock only shows a `gizli` data class on an
-     LLM call, and that is where the demo puts it — inventing a `gizli` run
-     would contradict the routing rules that produce the class.
-   - Journals other than UGURPAY-501's are three synthetic entries; the mock
-     only ever showed one ticket's journal.
-   - `AuditLog.seq` runs 81408–81422 so the newest row is the mock's #81422,
-     and the chain starts from `genesis` at 81408 (a demo chain, not a
-     continuation of a real one).
-
-## 8. TAKILDIM
-
-None.
+Kapatılamayan tek şey B-19'un `KnowledgeDoc.kind` kısmı: sözleşmelerde karşılığı olan
+bir enum yok ve `packages/contracts` bu turda dokunulmaz. §8.2/7'ye istek olarak yazıldı.

@@ -1,5 +1,16 @@
-// Maestro core schema — DRAFT (Dalga 0). Wave 1 `db` packet owns
-// migrations, seed and the client. Enum values mirror @maestro/contracts.
+// Maestro core schema (Wave 1, `db` packet).
+//
+// Conventions — rationale in packages/db/RAPOR.md:
+//  · Enum values mirror @maestro/contracts 1:1. A Prisma enum is only used
+//    where every contract option is also a legal Prisma identifier, so the
+//    generated TypeScript union equals the contract union (no @map aliases,
+//    no translation layer for callers).
+//  · Every DateTime is timestamptz(3): the platform is audit-grade and the
+//    contracts carry offset-aware ISO strings (M33/M56).
+//  · Relations are onDelete: Restrict — runs, journals, audit rows and
+//    evidence are retained, never cascaded away (M30/M56). Key updates
+//    cascade, since an id rename is a rename, not a deletion.
+//  · Money is Decimal, never Float (M55 cost accounting).
 
 generator client {
   provider = "prisma-client-js"
@@ -10,6 +21,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------------------------------------------------------------------------
+// Enums — mirrors of @maestro/contracts (verified by test/schema-enums.test.ts)
+// ---------------------------------------------------------------------------
+
+/// WorkflowRunStatus
 enum RunStatus {
   running
   gate
@@ -20,6 +36,7 @@ enum RunStatus {
   cancelled
 }
 
+/// WorkMode (M46)
 enum WorkModeE {
   full_auto
   ai_assist
@@ -27,18 +44,21 @@ enum WorkModeE {
   human_only
 }
 
+/// RiskTier (M51)
 enum RiskTierE {
   dusuk
   orta
   kritik
 }
 
+/// DataClass (M18)
 enum DataClassE {
   acik
   dahili
   gizli
 }
 
+/// BindingState (M102)
 enum BindingStateE {
   draft
   dry_run
@@ -47,203 +67,356 @@ enum BindingStateE {
   unbound
 }
 
+/// TriggerMode (M48a/M102)
+enum TriggerModeE {
+  auto
+  label
+  command
+}
+
+/// ParamScope (M71)
+enum ParamScopeE {
+  global
+  project
+  application
+}
+
+/// ParamType (M71)
+enum ParamTypeE {
+  string
+  number
+  boolean
+  enum
+  json
+}
+
+/// JournalActor (M30)
+enum JournalActorE {
+  ai
+  human
+  system
+}
+
+/// JournalKind (M30)
+enum JournalKindE {
+  intake
+  clarification
+  discovery
+  analysis
+  gate
+  engineering
+  scan
+  review
+  test_design
+  test_review
+  test_run
+  ci
+  pr
+  handover
+  pii
+  quota
+  closure
+  other
+}
+
+/// AuditAction (M33)
+enum AuditActionE {
+  RUN_STARTED
+  GATE_OPEN
+  GATE_APPROVE
+  GATE_REJECT
+  CLARIFICATION_ASKED
+  CLARIFICATION_ANSWERED
+  PII_MASKED
+  SECURITY_SCAN_PASS
+  SECURITY_SCAN_FAIL
+  SANDBOX_CREATE
+  SANDBOX_DESTROY
+  TEST_RUN_COMPLETE
+  CI_RESULT
+  PR_OPENED
+  PR_MERGED
+  MODE_CHANGED
+  HANDOVER
+  ASSIGN_APP
+  PARAM_CHANGED
+  BINDING_CHANGED
+  KILL_SWITCH
+  QUOTA_WARN
+  RETENTION_ARCHIVE
+  RESTORE_DRILL
+  RUN_CLOSED
+}
+
+/// LlmRole (M17/M43)
+enum LlmRoleE {
+  intake
+  analyst
+  engineer
+  dev_reviewer
+  test_designer
+  test_reviewer
+  test_engineer
+}
+
+/// SubscriptionAccountState (M55)
+enum SubscriptionStateE {
+  ready
+  cooling
+  exhausted
+  disabled
+}
+
+// ---------------------------------------------------------------------------
+// Workflow
+// ---------------------------------------------------------------------------
+
 model WorkflowRun {
-  id          String     @id
-  ticketKey   String     @unique
-  appId       String?
-  mode        WorkModeE
-  risk        RiskTierE?
-  dataClass   DataClassE
-  step        String
-  status      RunStatus
-  matchJson   Json? // MatchResult (M99)
-  startedAt   DateTime
-  updatedAt   DateTime   @updatedAt
+  id        String     @id @db.VarChar(128)
+  ticketKey String     @unique @db.VarChar(64)
+  appId     String?    @db.VarChar(64)
+  mode      WorkModeE
+  risk      RiskTierE?
+  dataClass DataClassE
+  /// StepId — kept as text: "2b"/"3o" are not legal Prisma enum identifiers,
+  /// so contracts' StepId enum stays the single validator (M104 titles too).
+  step      String     @db.VarChar(8)
+  status    RunStatus
+  matchJson Json? // MatchResult (M99)
+  startedAt DateTime   @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+
   stepEvents  StepEvent[]
   journal     JournalEntry[]
-  application Application? @relation(fields: [appId], references: [appId])
+  application Application?   @relation(fields: [appId], references: [appId], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([status])
   @@index([appId, status])
+  @@index([updatedAt]) // Studio "recent runs" list ordering
 }
 
 model StepEvent {
-  id        BigInt      @id @default(autoincrement())
-  runId     String
-  step      String
-  kind      String
-  at        DateTime
-  dataJson  Json?
-  run       WorkflowRun @relation(fields: [runId], references: [id])
+  id       BigInt   @id @default(autoincrement())
+  runId    String   @db.VarChar(128)
+  step     String   @db.VarChar(8)
+  kind     String   @db.VarChar(32) // StepKind
+  at       DateTime @db.Timestamptz(3)
+  dataJson Json?
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([runId, at])
 }
 
 model JournalEntry {
-  runId  String
-  seq    Int
-  at     DateTime
-  actor  String
-  kind   String
-  title  String
-  detail String      @default("")
+  runId    String        @db.VarChar(128)
+  seq      Int
+  at       DateTime      @db.Timestamptz(3)
+  actor    JournalActorE
+  kind     JournalKindE
+  title    String
+  detail   String        @default("")
   costJson Json?
-  run    WorkflowRun @relation(fields: [runId], references: [id])
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([runId, seq]) // append-only; no updates by convention (M30)
 }
 
+// ---------------------------------------------------------------------------
+// Application registry (M100)
+// ---------------------------------------------------------------------------
+
 model Application {
-  appId             String        @id
-  displayName       String
-  adoProject        String
-  adoRepo           String
-  platform          String
-  jiraComponent     String?
-  maestroYamlPresent Boolean      @default(false)
-  createdVia        String
-  runs              WorkflowRun[]
-  repoCards         RepoCard[]
+  appId              String  @id @db.VarChar(64)
+  displayName        String
+  adoProject         String
+  adoRepo            String
+  /// PlatformProfile — text because "linux-node" & co. are not legal Prisma
+  /// enum identifiers; contracts' PlatformProfile is the validator.
+  platform           String  @db.VarChar(32)
+  jiraComponent      String? @db.VarChar(128)
+  maestroYamlPresent Boolean @default(false)
+  createdVia         String  @db.VarChar(16) // onboarding | import
+
+  runs      WorkflowRun[]
+  repoCards RepoCard[]
 }
 
 model RepoCard {
-  appId           String
-  version         Int
-  modulesJson     Json
-  generatedFromSha String
-  updatedAt       DateTime
-  application     Application @relation(fields: [appId], references: [appId])
+  appId            String   @db.VarChar(64)
+  version          Int
+  modulesJson      Json // RepoCardModule[]
+  generatedFromSha String   @db.VarChar(40)
+  updatedAt        DateTime @db.Timestamptz(3)
+
+  application Application @relation(fields: [appId], references: [appId], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([appId, version])
 }
 
+// ---------------------------------------------------------------------------
+// Jira binding & routing (M102/M99)
+// ---------------------------------------------------------------------------
+
 model JiraProjectBinding {
-  projectKey       String        @id
-  trigger          String
-  triggerLabel     String        @default("maestro")
-  defaultsJson     Json
+  projectKey       String        @id @db.VarChar(32)
+  trigger          TriggerModeE
+  triggerLabel     String        @default("maestro") @db.VarChar(64)
+  defaultsJson     Json // { mode, dataClass }
   state            BindingStateE
   dryRunSampleSize Int           @default(20)
-  lastDryRunAt     DateTime?
-  version          Int
-  rules            RoutingRule[]
+  lastDryRunAt     DateTime?     @db.Timestamptz(3)
+  version          Int           @default(1)
+
+  rules RoutingRule[]
 }
 
 model RoutingRule {
-  ruleId        String             @id
-  projectKey    String
-  conditionJson Json
-  effectJson    Json
+  ruleId        String @id @db.VarChar(64)
+  projectKey    String @db.VarChar(32)
+  conditionJson Json // RuleCondition
+  effectJson    Json // { appId?, mode?, dataClass? }
   priority      Int
-  binding       JiraProjectBinding @relation(fields: [projectKey], references: [projectKey])
+
+  binding JiraProjectBinding @relation(fields: [projectKey], references: [projectKey], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([projectKey, priority])
 }
 
+// ---------------------------------------------------------------------------
+// Parameters (M71) — versioned + audited operational settings
+// ---------------------------------------------------------------------------
+
 model Param {
-  key       String         @id
-  scope     String
-  type      String
-  guarded   Boolean
-  defJson   Json // ParamDefinition remainder (enumValues, descriptionKey, defaultValue)
-  versions  ParamVersion[]
+  key     String      @id @db.VarChar(64)
+  scope   ParamScopeE
+  type    ParamTypeE
+  guarded Boolean
+  defJson Json // ParamDefinition remainder (enumValues, descriptionKey, defaultValue)
+
+  versions ParamVersion[]
 }
 
 model ParamVersion {
-  key        String
-  scopeRef   String  @default("")
+  key        String   @db.VarChar(64)
+  scopeRef   String   @default("") @db.VarChar(64) // "" = global scope
   version    Int
   valueJson  Json
   changedBy  String
-  approvedBy String?
-  at         DateTime
-  param      Param   @relation(fields: [key], references: [key])
+  approvedBy String? // required when the definition is guarded (4-eyes)
+  at         DateTime @db.Timestamptz(3)
+
+  param Param @relation(fields: [key], references: [key], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([key, scopeRef, version])
 }
 
+// ---------------------------------------------------------------------------
+// Audit (M33) — hash chain, append-only
+// ---------------------------------------------------------------------------
+
 model AuditLog {
-  seq      BigInt   @id
-  at       DateTime
+  seq      BigInt       @id // assigned by packages/audit under a chain lock
+  at       DateTime     @db.Timestamptz(3)
   actor    String
-  action   String
-  subject  String
-  prevHash String
-  hash     String   @unique
+  action   AuditActionE
+  subject  String       @db.VarChar(128)
+  prevHash String       @db.VarChar(64) // sha256 hex | "genesis"
+  hash     String       @unique @db.VarChar(64)
   metaJson Json?
 
   @@index([at])
   @@index([action])
+  @@index([subject]) // evidence package collects one ticket's chain
 }
 
+// ---------------------------------------------------------------------------
+// LLM gateway (M16/M55)
+// ---------------------------------------------------------------------------
+
 model LlmCall {
-  id        BigInt   @id @default(autoincrement())
-  at        DateTime
-  runId     String?
-  role      String
-  variantId String
-  driver    String
-  model     String
+  id        BigInt     @id @default(autoincrement())
+  at        DateTime   @db.Timestamptz(3)
+  runId     String?    @db.VarChar(128) // no FK: calls may outlive/precede a run row
+  role      LlmRoleE
+  variantId String     @db.VarChar(64)
+  /// LlmDriverId — text because "anthropic-direct"/"claude-sub" are not legal
+  /// Prisma enum identifiers; contracts' LlmDriverId is the validator.
+  driver    String     @db.VarChar(32)
+  model     String     @db.VarChar(128)
   tokensIn  Int
   tokensOut Int
   cachePct  Float?
-  usd       Float?
+  usd       Decimal?   @db.Decimal(12, 6) // null for subscription drivers (M55)
   dataClass DataClassE
 
   @@index([runId])
   @@index([at])
+  @@index([driver, at]) // per-driver cost/quota reporting
 }
 
 model SubscriptionAccount {
-  accountId   String   @id
-  driver      String
-  state       String
+  accountId   String             @id @db.VarChar(64)
+  /// SubscriptionDriverId — text (dashes are not legal enum identifiers).
+  driver      String             @db.VarChar(32)
+  state       SubscriptionStateE
   windowsJson Json // QuotaWindow[] (M55)
-  lastUsedAt  DateTime?
+  lastUsedAt  DateTime?          @db.Timestamptz(3)
+
+  @@index([driver, state]) // quota-aware pool picker
 }
 
 model Variant {
-  id       String           @id
-  role     String
-  name     String
+  id   String   @id @db.VarChar(64)
+  role LlmRoleE
+  name String
+
   versions VariantVersion[]
 }
 
 model VariantVersion {
-  variantId String
-  version   Int
-  model     String
+  variantId  String   @db.VarChar(64)
+  version    Int
+  model      String   @db.VarChar(128)
   configJson Json
-  evalScore Float?
-  createdAt DateTime
-  variant   Variant @relation(fields: [variantId], references: [id])
+  evalScore  Float?
+  createdAt  DateTime @db.Timestamptz(3)
+
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([variantId, version])
 }
 
+// ---------------------------------------------------------------------------
+// Knowledge & evidence
+// ---------------------------------------------------------------------------
+
 model KnowledgeDoc {
-  id        String   @id
-  kind      String // template | example_analysis | standard | app_intro | policy
-  title     String
-  version   Int
+  id         String   @id @db.VarChar(64)
+  kind       String   @db.VarChar(32) // template | example_analysis | standard | app_intro | policy
+  title      String
+  version    Int
   contentRef String // StoragePort key
-  updatedAt DateTime
+  updatedAt  DateTime @db.Timestamptz(3)
 
   @@index([kind])
 }
 
 model EvidencePackageRow {
-  runId        String   @id
-  ticketKey    String   @unique
-  createdAt    DateTime
+  runId        String   @id @db.VarChar(128)
+  ticketKey    String   @unique @db.VarChar(64)
+  createdAt    DateTime @db.Timestamptz(3)
   manifestJson Json // EvidencePackage manifest
   storageKey   String
+
+  @@index([createdAt]) // 10-year retention sweeps (M56)
 }
 
 // MVP local users (M8); AD/LDAP arrives in Aşama 2.
 model User {
-  id           String  @id
-  email        String  @unique
+  id           String  @id @db.VarChar(64)
+  email        String  @unique @db.VarChar(320)
   displayName  String
   passwordHash String
   groupsJson   Json // string[]

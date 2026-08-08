@@ -163,6 +163,31 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(tsx@4.23.11)
 
+  packages/secrets:
+    dependencies:
+      '@maestro/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@maestro/ports':
+        specifier: workspace:*
+        version: link:../ports
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      '@maestro/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)
+
   packages/test-kit:
     dependencies:
       '@maestro/contracts':

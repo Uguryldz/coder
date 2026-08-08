@@ -34,13 +34,30 @@ export const TOKEN_PREFIX: Readonly<Record<PiiType, string>> = {
   field: "FIELD",
 };
 
-/**
- * Both token regexes are derived from TOKEN_PREFIX rather than spelled out:
- * the minter and the reader of a token must never be able to drift apart.
- */
-export const TOKEN_PATTERN_SOURCE = `\\[(${Object.values(TOKEN_PREFIX).join("|")})_(\\d+)\\]`;
+const PREFIXES = Object.values(TOKEN_PREFIX).join("|");
 
-/** A string that is nothing but a token — already masked, leave it alone. */
+/** Session nonce grammar: lower-case alphanumerics, so a token stays one word. */
+export const TOKEN_NONCE_PATTERN = /^[0-9a-z]{2,16}$/;
+
+/**
+ * A minted token: `[TCKN_1.a3f9]`. The suffix is the session nonce, and it is
+ * what makes a token mean something only inside the session that minted it.
+ * Without it two sessions both minted `[TCKN_1]`, so the wrong map opened the
+ * right-looking token and returned another person's identity (verifier B-8),
+ * and a `[TCKN_1]` typed by a user was indistinguishable from a real token
+ * (B-9). Both regexes are derived from TOKEN_PREFIX rather than spelled out:
+ * the minter and the reader must never be able to drift apart.
+ */
+export const TOKEN_PATTERN_SOURCE = `\\[(${PREFIXES})_(\\d+)\\.([0-9a-z]{2,16})\\]`;
+
+/**
+ * Anything token-*shaped*, nonce or not — what a user or a model may have
+ * typed. Masking neutralises every one of these that the current session did
+ * not mint, so an injected token can never be filled in later.
+ */
+export const TOKEN_SHAPE_SOURCE = `\\[(?:${PREFIXES})_\\d+(?:\\.[0-9a-z]{2,16})?\\]`;
+
+/** A string that is nothing but a well-formed token — already masked. */
 export const WHOLE_TOKEN_PATTERN = new RegExp(`^${TOKEN_PATTERN_SOURCE}$`);
 
 /**

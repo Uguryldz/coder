@@ -64,7 +64,7 @@ describe("the boundary a caller cannot skip (v1's fatal defect)", () => {
   it("lets a masked payload through the same guard", async () => {
     const guarded = guardEgress<Prompt, string>({ policy, dataClass: "gizli" }, gateway);
     const { payload } = maskOutbound(prompt(), { policy, dataClass: "gizli" });
-    await expect(guarded(payload)).resolves.toContain("[TCKN_1]");
+    await expect(guarded(payload)).resolves.toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
   });
 });
 
@@ -75,7 +75,11 @@ describe("withPiiBoundary", () => {
       { policy, dataClass: "gizli", boundary: "llm-gateway" },
       (masked) => {
         seenByGateway = JSON.stringify(masked);
-        return Promise.resolve(`[TCKN_1] numarali musteriye [EMAIL_1] adresinden donulmeli.`);
+        // The model answers in the vocabulary it was given, nonce included.
+        const nonce = /\[TCKN_1\.([0-9a-f]+)\]/.exec(seenByGateway)?.[1] ?? "no-nonce";
+        return Promise.resolve(
+          `[TCKN_1.${nonce}] numarali musteriye [EMAIL_1.${nonce}] adresinden donulmeli.`,
+        );
       },
     );
 
@@ -83,11 +87,11 @@ describe("withPiiBoundary", () => {
 
     expect(seenByGateway).not.toContain(SAMPLE_TCKN);
     expect(seenByGateway).not.toContain("ali@banka.com.tr");
-    expect(seenByGateway).toContain("[TCKN_1]");
+    expect(seenByGateway).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
     expect(result.output).toBe(
       `${SAMPLE_TCKN} numarali musteriye ali@banka.com.tr adresinden donulmeli.`,
     );
-    expect(result.maskedOutput).toContain("[TCKN_1]");
+    expect(result.maskedOutput).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
     expect(result.maskedOutput).not.toContain(SAMPLE_TCKN);
     expect(result.counts.occurrences).toBe(2);
     expect(result.dataClass).toBe("gizli");
@@ -126,8 +130,11 @@ describe("withPiiBoundary", () => {
     });
     await call(prompt());
     await call(prompt());
-    expect(tokens[0]).toBe(tokens[1]);
-    expect(tokens[0]).toContain("[TCKN_1]");
+    // Same numbering, different session nonce: two exchanges share no token,
+    // so neither one's map can ever open the other's text (B-8).
+    expect(tokens[0]).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
+    expect(tokens[1]).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
+    expect(tokens[0]).not.toBe(tokens[1]);
   });
 
   it("propagates a callee failure without swallowing it", async () => {
@@ -144,10 +151,13 @@ describe("maskOutbound / unmaskInbound", () => {
       policy,
       dataClass: "dahili",
     });
-    expect(payload.ticket.description).toBe("Musteri TCKN [TCKN_1] ile [EMAIL_1] adresinden yazdi.");
+    const n = map.nonce;
+    expect(payload.ticket.description).toBe(
+      `Musteri TCKN [TCKN_1.${n}] ile [EMAIL_1.${n}] adresinden yazdi.`,
+    );
     expect(counts.fields).toBe(1);
     expect(dataClass).toBe("dahili");
-    expect(unmaskInbound({ answer: "[TCKN_1] kontrol edildi" }, map)).toEqual({
+    expect(unmaskInbound({ answer: `[TCKN_1.${n}] kontrol edildi` }, map)).toEqual({
       answer: `${SAMPLE_TCKN} kontrol edildi`,
     });
   });

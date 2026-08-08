@@ -43,6 +43,20 @@ export class PiiLeakError extends Error {
 }
 
 /**
+ * A masking session was asked for something it cannot be: a nonce that would
+ * not survive the token grammar, or a token from a session that is not this
+ * one. Tokens are scoped to one session on purpose (M20) — a token that means
+ * different people in two sessions is how `unmask` returned the wrong
+ * person's identity without an error.
+ */
+export class PiiSessionError extends Error {
+  constructor(message: string) {
+    super(`PII masking session is invalid: ${message}`);
+    this.name = "PiiSessionError";
+  }
+}
+
+/**
  * Something tried to serialise a ReverseMap. The map is the one structure in
  * the system that holds token -> real value, so it must never be logged,
  * persisted or sent anywhere (M20/M82).

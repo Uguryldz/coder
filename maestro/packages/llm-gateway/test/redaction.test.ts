@@ -83,15 +83,17 @@ describe("the masker is verified and its ReverseMap is carried (B8 · M20)", () 
     const outcome = await gateway.generateObject(request, Answer);
 
     const sent = JSON.stringify(stub.calls[0]?.body);
-    expect(sent).toContain("[IBAN_1]");
-    expect(sent).toContain("[TCKN_1]");
+    expect(sent).toContain("[IBAN_1."); // per-session nonce, see @maestro/pii B-8
+    expect(sent).toContain("[TCKN_1.");
     expect(sent).not.toContain(SAMPLE_IBAN);
     expect(sent).not.toContain(SAMPLE_TCKN);
     if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
     // What may be persisted is the masked object (M20/M82)…
     expect(outcome.value).toEqual({ risk: "[IBAN_1] touched" });
-    // …and the map survives, so the human-facing copy can be reopened.
-    expect(outcome.unmask?.(outcome.value)).toEqual({ risk: `${SAMPLE_IBAN} touched` });
+    // …and the map survives, so the human-facing copy can be reopened. The
+    // stub answers with a literal token, so reopen the nonced one it was sent.
+    const token = /\[IBAN_1\.[0-9a-f]+\]/.exec(sent)?.[0] ?? "";
+    expect(outcome.unmask?.({ risk: `${token} touched` })).toEqual({ risk: `${SAMPLE_IBAN} touched` });
   });
 
   it("refuses to send when the masker did not actually mask", async () => {

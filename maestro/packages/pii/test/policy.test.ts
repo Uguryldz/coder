@@ -75,10 +75,10 @@ describe("profile resolution is fail-closed (M18/M63)", () => {
 
   it("makes the fallback actually mask more than the public profile", () => {
     const text = "Musteri MST-12345678 kaydi";
-    const acik = maskText(text, createSession(resolveProfile(policy, "acik").profile));
-    const unknown = maskText(text, createSession(resolveProfile(policy, "bilinmiyor").profile));
+    const acik = maskText(text, createSession(resolveProfile(policy, "acik").profile, "t1"));
+    const unknown = maskText(text, createSession(resolveProfile(policy, "bilinmiyor").profile, "t1"));
     expect(acik.text).toBe(text);
-    expect(unknown.text).toBe("Musteri [ACCT_1] kaydi");
+    expect(unknown.text).toBe("Musteri [ACCT_1.t1] kaydi");
   });
 });
 

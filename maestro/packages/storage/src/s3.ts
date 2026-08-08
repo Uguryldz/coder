@@ -1,87 +1,52 @@
-import { z } from "zod";
 import type { StoragePort } from "@maestro/ports";
 import type { Clock, FetchInit, FetchLike } from "./deps.js";
 import { systemClock } from "./deps.js";
+import type { ResponseContext } from "./errors.js";
 import {
+  InvalidTtlError,
   ObjectLockNotConfiguredError,
   ObjectNotFoundError,
   StorageConfigError,
   StorageRequestError,
+  UnexpectedResponseError,
 } from "./errors.js";
 import {
+  assertKeyByteLength,
   assertValidKey,
   assertValidPrefix,
   encodeTagging,
-  RETENTION_YEARS_DEFAULT,
   retainUntil,
-  RetentionClass,
+  retentionClassForKey,
   retentionPolicy,
   retentionTags,
 } from "./keys.js";
+import { S3StorageOptions as S3StorageOptionsSchema } from "./s3-options.js";
+import type { S3StorageOptions } from "./s3-options.js";
+import type { Endpoint } from "./s3-http.js";
+import {
+  contentMd5,
+  drain,
+  MAX_LIST_PAGES,
+  queryString,
+  responseProblem,
+  splitEndpoint,
+} from "./s3-http.js";
 import {
   canonicalUri,
   EMPTY_BODY_SHA256,
   presignQuery,
   sha256Hex,
   signRequest,
-  uriEncode,
 } from "./sigv4.js";
 import type { SigningContext } from "./sigv4.js";
 import { parseErrorCode, parseListObjectsV2 } from "./xml.js";
 
-const MAX_PRESIGN_SECONDS = 604800; // SigV4 hard limit: 7 days.
-
-/**
- * s3-compat driver options (M5 BYOS). The target is a corporate S3-compatible
- * endpoint; MinIO/SeaweedFS are only the dev-compose default.
- */
-export const S3StorageOptions = z.object({
-  /** Base endpoint, e.g. https://s3.corp.local or https://s3.corp.local:9000/gw */
-  endpoint: z.url(),
-  region: z.string().min(1).default("us-east-1"),
-  bucket: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, "invalid bucket name"),
-  accessKeyId: z.string().min(1),
-  secretAccessKey: z.string().min(1),
-  sessionToken: z.string().min(1).optional(),
-  /**
-   * Corporate endpoints usually have no wildcard DNS/TLS, so path-style is the
-   * default; AWS-style deployments switch to virtual-host.
-   */
-  addressing: z.enum(["path", "virtual-host"]).default("path"),
-  /** Optional tenant prefix prepended to every key. Invisible to callers. */
-  keyPrefix: z.string().default(""),
-  /**
-   * M57 WORM. Absent means the driver cannot honour objectLock puts and will
-   * reject them instead of writing an unprotected object.
-   */
-  objectLock: z
-    .object({
-      mode: z.enum(["COMPLIANCE", "GOVERNANCE"]),
-      years: z.number().int().positive().default(RETENTION_YEARS_DEFAULT),
-    })
-    .optional(),
-  retentionClass: RetentionClass.default("evidence"),
-  /** Emit x-amz-tagging on put (M56 lifecycle labelling). */
-  tagging: z.boolean().default(true),
-  maxPresignSeconds: z.number().int().positive().max(MAX_PRESIGN_SECONDS).default(3600),
-});
-export type S3StorageOptions = z.output<typeof S3StorageOptions>;
+/** The option schema lives in its own module; re-exported for callers. */
+export * from "./s3-options.js";
 
 export interface S3StorageDeps {
   fetch: FetchLike;
   now?: Clock | undefined;
-}
-
-interface Endpoint {
-  origin: string;
-  host: string;
-  basePath: string;
-}
-
-function splitEndpoint(endpoint: string): Endpoint {
-  const url = new URL(endpoint);
-  const basePath = url.pathname.replace(/\/+$/, "");
-  return { origin: url.origin, host: url.host, basePath };
 }
 
 export class S3CompatStorage implements StoragePort {
@@ -109,9 +74,8 @@ export class S3CompatStorage implements StoragePort {
       "content-type": opts?.contentType ?? "application/octet-stream",
     };
     if (this.options.tagging) {
-      headers["x-amz-tagging"] = encodeTagging(
-        retentionTags(retentionPolicy(this.options.retentionClass)),
-      );
+      const retentionClass = retentionClassForKey(key, this.options.retentionClass);
+      headers["x-amz-tagging"] = encodeTagging(retentionTags(retentionPolicy(retentionClass)));
     }
     if (opts?.objectLock === true) {
       const lock = this.options.objectLock;
@@ -121,6 +85,9 @@ export class S3CompatStorage implements StoragePort {
         this.now().toISOString(),
         lock.years,
       );
+      // Signed, because an Object Lock put without an integrity checksum is
+      // rejected with 400 by the real endpoint.
+      headers["content-md5"] = contentMd5(data);
     }
     const response = await this.send("put", key, {
       method: "PUT",
@@ -141,19 +108,27 @@ export class S3CompatStorage implements StoragePort {
     const fullPrefix = `${this.options.keyPrefix}${prefix}`;
     const keys: string[] = [];
     let continuationToken: string | undefined;
-    do {
+    for (let page = 0; page < MAX_LIST_PAGES; page += 1) {
       const query: Record<string, string> = { "list-type": "2", prefix: fullPrefix };
       if (continuationToken !== undefined) query["continuation-token"] = continuationToken;
-      const response = await this.send("list", prefix, {
-        method: "GET",
-        objectKey: "",
-        query,
-      });
-      const page = parseListObjectsV2(await response.text());
-      for (const key of page.keys) keys.push(key.slice(this.options.keyPrefix.length));
-      continuationToken = page.isTruncated ? page.nextContinuationToken : undefined;
-    } while (continuationToken !== undefined);
-    return keys;
+      const response = await this.send("list", prefix, { method: "GET", objectKey: "", query }, true);
+      const context: ResponseContext = { operation: "list", key: prefix, status: response.status };
+      const body = await response.text();
+      const parsed = parseListObjectsV2(context, body);
+      for (const key of parsed.keys) keys.push(key.slice(this.options.keyPrefix.length));
+      if (!parsed.isTruncated) return keys;
+      const next = parsed.nextContinuationToken;
+      // A truncated page without a token, or with the token we just used, means
+      // the listing is incomplete or looping: never report a partial result.
+      if (next === undefined) {
+        throw new UnexpectedResponseError(context, "page is truncated but carries no token", body);
+      }
+      if (next === continuationToken) {
+        throw new UnexpectedResponseError(context, "continuation token repeats", body);
+      }
+      continuationToken = next;
+    }
+    throw new StorageRequestError("list", prefix, 200, `listing exceeded ${MAX_LIST_PAGES} pages`);
   }
 
   /** Idempotent by contract: deleting an absent key is a no-op on both drivers. */
@@ -172,7 +147,11 @@ export class S3CompatStorage implements StoragePort {
 
   async presign(key: string, ttlSeconds: number): Promise<string> {
     const full = this.fullKey(key);
-    const ttl = z.number().int().positive().max(this.options.maxPresignSeconds).parse(ttlSeconds);
+    const max = this.options.maxPresignSeconds;
+    if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0 || ttlSeconds > max) {
+      throw new InvalidTtlError(key, ttlSeconds, max);
+    }
+    const ttl = ttlSeconds;
     const { host, path } = this.address(full);
     const query = presignQuery(
       this.signingContext(),
@@ -184,7 +163,10 @@ export class S3CompatStorage implements StoragePort {
 
   private fullKey(key: string): string {
     assertValidKey(key);
-    return `${this.options.keyPrefix}${key}`;
+    const full = `${this.options.keyPrefix}${key}`;
+    // The endpoint measures the physical key, tenant prefix included.
+    assertKeyByteLength(full);
+    return full;
   }
 
   private signingContext(): SigningContext {
@@ -234,6 +216,7 @@ export class S3CompatStorage implements StoragePort {
       query?: Record<string, string>;
       body?: Uint8Array;
     },
+    expectXml = false,
   ): Promise<Response> {
     const { host, path } = this.address(request.objectKey);
     const payloadSha256 = request.body ? sha256Hex(request.body) : EMPTY_BODY_SHA256;
@@ -251,27 +234,28 @@ export class S3CompatStorage implements StoragePort {
     const init: FetchInit = { method: request.method, headers };
     if (request.body) init.body = request.body;
     const response = await this.deps.fetch(`${this.baseUrl(request.objectKey)}${query}`, init);
-    if (response.ok) return response;
+    const context: ResponseContext = { operation, key: logicalKey, status: response.status };
+    if (response.ok) {
+      const problem = responseProblem(response, {
+        requireAmzResponseHeaders: this.options.requireAmzResponseHeaders,
+        expectXml,
+      });
+      if (problem === undefined) return response;
+      throw new UnexpectedResponseError(context, problem, await response.text());
+    }
     const body = await response.text();
-    if (response.status === 404 || parseErrorCode(body) === "NoSuchKey") {
+    const code = parseErrorCode(body);
+    // A 404 for the key is the documented "absent object"; a 404 for the whole
+    // bucket is a misconfiguration and must never read as a successful cleanup.
+    if (code === "NoSuchKey" || (response.status === 404 && code === undefined)) {
       throw new ObjectNotFoundError(logicalKey);
     }
     throw new StorageRequestError(operation, logicalKey, response.status, body);
   }
 }
 
-function queryString(query: Record<string, string>): string {
-  return Object.entries(query)
-    .map(([k, v]) => `${uriEncode(k)}=${uriEncode(v)}`)
-    .join("&");
-}
-
-async function drain(response: Response): Promise<void> {
-  await response.arrayBuffer();
-}
-
 export function createS3Storage(options: unknown, deps: S3StorageDeps): StoragePort {
-  const parsed = S3StorageOptions.safeParse(options);
+  const parsed = S3StorageOptionsSchema.safeParse(options);
   if (!parsed.success) {
     throw new StorageConfigError(
       parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),

@@ -10,20 +10,25 @@ import {
   StorageConfigError,
 } from "./errors.js";
 import {
+  assertKeyByteLength,
   assertValidKey,
   assertValidPrefix,
   RETENTION_YEARS_DEFAULT,
   retainUntil,
   RetentionClass,
+  retentionClassForKey,
   retentionPolicy,
   retentionTags,
 } from "./keys.js";
+
+/** Alias the upsert uses to read the row it is about to replace. */
+const EXISTING = "existing";
 
 /**
  * pg-blob driver options (M5: the small-installation backend, no S3 required).
  * Same retention semantics as s3-compat so callers cannot tell the two apart.
  */
-export const PgBlobStorageOptions = z.object({
+export const PgBlobStorageOptions = z.strictObject({
   /** Physical table; qualified name is validated, never interpolated blindly. */
   table: z
     .string()
@@ -33,7 +38,7 @@ export const PgBlobStorageOptions = z.object({
   keyPrefix: z.string().default(""),
   /** M57 WORM emulation. Absent means objectLock puts are refused, not downgraded. */
   objectLock: z
-    .object({
+    .strictObject({
       mode: z.enum(["COMPLIANCE", "GOVERNANCE"]),
       years: z.number().int().positive().default(RETENTION_YEARS_DEFAULT),
     })
@@ -58,8 +63,9 @@ interface LockRow {
 
 /** DDL for the backing table; applied by the `db` packet's migration. */
 export function pgBlobTableDdl(table = "storage_blob"): string {
+  const name = PgBlobStorageOptions.shape.table.parse(table);
   return [
-    `CREATE TABLE IF NOT EXISTS ${PgBlobStorageOptions.shape.table.parse(table)} (`,
+    `CREATE TABLE IF NOT EXISTS ${name} (`,
     `  key text PRIMARY KEY,`,
     `  data bytea NOT NULL,`,
     `  content_type text NOT NULL,`,
@@ -68,7 +74,11 @@ export function pgBlobTableDdl(table = "storage_blob"): string {
     `  retain_until timestamptz,`,
     `  created_at timestamptz NOT NULL,`,
     `  updated_at timestamptz NOT NULL`,
-    `)`,
+    `);`,
+    // `list` is a LIKE 'prefix%' scan; outside the C collation the primary key's
+    // btree cannot serve it, so every listing would read the whole table.
+    `CREATE INDEX IF NOT EXISTS ${name.replace(".", "_")}_key_pattern_idx`,
+    `  ON ${name} (key text_pattern_ops)`,
   ].join("\n");
 }
 
@@ -97,19 +107,25 @@ export class PgBlobStorage implements StoragePort {
     }
     await this.assertNotRetained(key, full);
     const at = this.now().toISOString();
+    const retentionClass = retentionClassForKey(key, this.options.retentionClass);
     await this.deps.sql.query(
-      `INSERT INTO ${this.options.table} ` +
+      `INSERT INTO ${this.options.table} AS ${EXISTING} ` +
         `(key, data, content_type, tags, object_lock, retain_until, created_at, updated_at) ` +
         `VALUES ($1, $2, $3, $4, $5, $6, $7, $7) ` +
         `ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, ` +
         `content_type = EXCLUDED.content_type, tags = EXCLUDED.tags, ` +
-        `object_lock = EXCLUDED.object_lock, retain_until = EXCLUDED.retain_until, ` +
+        // WORM columns are merged, never replaced: an ordinary put must not be
+        // able to erase a retention a previous locked put established (M57).
+        `object_lock = (${EXISTING}.object_lock OR EXCLUDED.object_lock), ` +
+        `retain_until = GREATEST(${EXISTING}.retain_until, EXCLUDED.retain_until), ` +
         `updated_at = EXCLUDED.updated_at`,
       [
         full,
-        data,
+        // node-postgres only writes a Buffer into bytea; a bare Uint8Array is
+        // serialised as a JSON object and the evidence is silently corrupted.
+        Buffer.from(data),
         opts?.contentType ?? "application/octet-stream",
-        JSON.stringify(retentionTags(retentionPolicy(this.options.retentionClass))),
+        JSON.stringify(retentionTags(retentionPolicy(retentionClass))),
         retainUntilAt !== null,
         retainUntilAt,
         at,
@@ -152,9 +168,13 @@ export class PgBlobStorage implements StoragePort {
     return Promise.reject(new CapabilityNotSupportedError("StoragePort", "presign"));
   }
 
-  /** WORM enforcement (M57): a retained row may be neither overwritten nor deleted. */
+  /**
+   * WORM enforcement (M57): a retained row may be neither overwritten nor
+   * deleted. The check reads the ROW, never the configuration — the protection
+   * belongs to the stored object, so removing `objectLock` from the deployment
+   * must not make ten years of retention evaporate.
+   */
   private async assertNotRetained(key: string, full: string): Promise<void> {
-    if (!this.options.objectLock) return;
     const rows = await this.deps.sql.query<LockRow>(
       `SELECT object_lock, retain_until FROM ${this.options.table} WHERE key = $1`,
       [full],
@@ -168,7 +188,10 @@ export class PgBlobStorage implements StoragePort {
 
   private fullKey(key: string): string {
     assertValidKey(key);
-    return `${this.options.keyPrefix}${key}`;
+    const full = `${this.options.keyPrefix}${key}`;
+    // The stored key includes the tenant prefix; keep both drivers' limits equal.
+    assertKeyByteLength(full);
+    return full;
   }
 }
 

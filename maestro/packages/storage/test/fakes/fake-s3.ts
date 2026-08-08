@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FetchInit, FetchLike } from "../../src/deps.js";
+import { verifySigV4 } from "./sigv4-verify.js";
 
 export interface FakeS3Object {
   data: Uint8Array;
@@ -22,12 +23,16 @@ export interface FakeS3Options {
   pageSize?: number;
   /** Gateway path the endpoint is mounted under, e.g. "/storage". */
   basePath?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
 }
 
 /**
- * In-memory S3-compatible endpoint. It re-derives the body hash and refuses
- * unauthenticated or mis-hashed requests, so a driver bug surfaces as a failed
- * request instead of a silently accepted one.
+ * In-memory S3-compatible endpoint. It re-computes the SigV4 signature with an
+ * independent implementation (fakes/sigv4-verify.ts) and enforces the AWS rules
+ * this package relies on — Object Lock puts need an integrity checksum, a
+ * retained object is neither overwritable nor deletable — so a driver bug
+ * surfaces as a failed request instead of a silently accepted one.
  */
 export class FakeS3 {
   readonly objects = new Map<string, FakeS3Object>();
@@ -45,25 +50,22 @@ export class FakeS3 {
     const headers = lowerCaseKeys(init.headers);
     this.requests.push({ method: init.method, url, path: parsed.pathname, headers });
 
-    const auth = headers["authorization"];
-    if (auth === undefined || !auth.startsWith("AWS4-HMAC-SHA256 Credential=")) {
-      return xmlError(403, "AccessDenied", "missing SigV4 authorization header");
-    }
-    if (!auth.includes("SignedHeaders=") || !auth.includes("Signature=")) {
-      return xmlError(403, "AccessDenied", "malformed SigV4 authorization header");
-    }
-    const declaredHash = headers["x-amz-content-sha256"];
-    const bodyHash = sha256Hex(init.body ?? new Uint8Array());
-    if (declaredHash !== bodyHash) {
-      return xmlError(400, "XAmzContentSHA256Mismatch", "payload hash does not match body");
-    }
+    const body = init.body ?? new Uint8Array();
+    const badSignature = verifySigV4(
+      { method: init.method, url: parsed, headers, body },
+      {
+        accessKeyId: this.options.accessKeyId ?? "AKIA_TEST",
+        secretAccessKey: this.options.secretAccessKey ?? "secret",
+      },
+    );
+    if (badSignature !== undefined) return xmlError(403, "SignatureDoesNotMatch", badSignature);
 
     const key = this.objectKey(parsed);
     if (key === undefined) return xmlError(404, "NoSuchBucket", "unknown bucket");
     if (init.method === "GET" && parsed.searchParams.get("list-type") === "2") {
       return this.list(parsed);
     }
-    if (init.method === "PUT") return this.put(key, headers, init.body ?? new Uint8Array());
+    if (init.method === "PUT") return this.put(key, headers, body);
     if (init.method === "GET") return this.get(key);
     if (init.method === "DELETE") return this.remove(key);
     return xmlError(405, "MethodNotAllowed", init.method);
@@ -82,9 +84,25 @@ export class FakeS3 {
   }
 
   private put(key: string, headers: Record<string, string>, body: Uint8Array): Response {
-    const existing = this.objects.get(key);
-    if (existing?.retainUntil !== undefined && new Date(existing.retainUntil) > new Date()) {
+    if (this.retained(key)) {
       return xmlError(403, "AccessDenied", "object is protected by an object lock retention");
+    }
+    // AWS PutObject: "The Content-MD5 or x-amz-sdk-checksum-algorithm header is
+    // required for any request to upload an object with a retention period
+    // configured using Amazon S3 Object Lock."
+    const locked =
+      headers["x-amz-object-lock-mode"] !== undefined ||
+      headers["x-amz-object-lock-retain-until-date"] !== undefined;
+    const md5 = headers["content-md5"];
+    if (locked && md5 === undefined && headers["x-amz-sdk-checksum-algorithm"] === undefined) {
+      return xmlError(
+        400,
+        "InvalidRequest",
+        "Content-MD5 or x-amz-sdk-checksum-algorithm is required for an Object Lock put",
+      );
+    }
+    if (md5 !== undefined && md5 !== createHash("md5").update(body).digest("base64")) {
+      return xmlError(400, "BadDigest", "Content-MD5 does not match the body");
     }
     this.objects.set(key, {
       data: body,
@@ -93,7 +111,7 @@ export class FakeS3 {
       objectLockMode: headers["x-amz-object-lock-mode"],
       retainUntil: headers["x-amz-object-lock-retain-until-date"],
     });
-    return new Response(null, { status: 200 });
+    return new Response(null, { status: 200, headers: AMZ_HEADERS });
   }
 
   private get(key: string): Response {
@@ -101,14 +119,23 @@ export class FakeS3 {
     if (!object) return xmlError(404, "NoSuchKey", key);
     return new Response(object.data, {
       status: 200,
-      headers: { "content-type": object.contentType },
+      headers: { ...AMZ_HEADERS, "content-type": object.contentType },
     });
   }
 
   private remove(key: string): Response {
+    if (this.retained(key)) {
+      return xmlError(403, "AccessDenied", "object is protected by an object lock retention");
+    }
     if (!this.objects.has(key)) return xmlError(404, "NoSuchKey", key);
     this.objects.delete(key);
-    return new Response(null, { status: 204 });
+    return new Response(null, { status: 204, headers: AMZ_HEADERS });
+  }
+
+  /** COMPLIANCE-mode retention: neither an overwrite nor a delete gets through. */
+  private retained(key: string): boolean {
+    const until = this.objects.get(key)?.retainUntil;
+    return until !== undefined && new Date(until) > new Date();
   }
 
   private list(url: URL): Response {
@@ -129,13 +156,18 @@ export class FakeS3 {
         : `<NextContinuationToken>${escapeXml(next)}</NextContinuationToken>`) +
       page.map((k) => `<Contents><Key>${escapeXml(k)}</Key></Contents>`).join("") +
       `</ListBucketResult>`;
-    return new Response(body, { status: 200, headers: { "content-type": "application/xml" } });
+    return new Response(body, {
+      status: 200,
+      headers: { ...AMZ_HEADERS, "content-type": "application/xml" },
+    });
   }
 }
 
-function sha256Hex(data: Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex");
-}
+/** Every S3 API response carries these; a proxy answering in its place does not. */
+const AMZ_HEADERS: Record<string, string> = {
+  "x-amz-request-id": "FAKE00000000001",
+  "x-amz-id-2": "ZmFrZS1pZC0y",
+};
 
 function lowerCaseKeys(headers: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
@@ -153,6 +185,6 @@ function xmlError(status: number, code: string, message: string): Response {
   return new Response(
     `<?xml version="1.0" encoding="UTF-8"?><Error><Code>${code}</Code>` +
       `<Message>${escapeXml(message)}</Message></Error>`,
-    { status, headers: { "content-type": "application/xml" } },
+    { status, headers: { ...AMZ_HEADERS, "content-type": "application/xml" } },
   );
 }

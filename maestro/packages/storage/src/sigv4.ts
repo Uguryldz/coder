@@ -99,8 +99,18 @@ interface CanonicalHeaders {
 }
 
 function canonicalHeaders(headers: Record<string, string>): CanonicalHeaders {
-  const normalized = Object.entries(headers)
-    .map(([k, v]) => [k.toLowerCase(), v.trim().replace(/\s+/g, " ")] as const)
+  // Names differing only in case are ONE header: AWS wants their values joined
+  // with a comma and the name listed once, not "host;host".
+  const merged = new Map<string, string[]>();
+  for (const [name, value] of Object.entries(headers)) {
+    const lower = name.toLowerCase();
+    const values = merged.get(lower);
+    const trimmed = value.trim().replace(/\s+/g, " ");
+    if (values) values.push(trimmed);
+    else merged.set(lower, [trimmed]);
+  }
+  const normalized = [...merged]
+    .map(([k, v]) => [k, v.join(",")] as const)
     .sort((a, b) => compare(a[0], b[0]));
   return {
     canonical: normalized.map(([k, v]) => `${k}:${v}\n`).join(""),
@@ -193,8 +203,7 @@ export function presignQuery(
     "X-Amz-Credential": `${ctx.credentials.accessKeyId}/${credentialScope(ctx)}`,
     "X-Amz-Date": amzDate(ctx.date),
     "X-Amz-Expires": String(expiresInSeconds),
-    "X-Amz-SignedHeaders": Object.keys(request.headers)
-      .map((h) => h.toLowerCase())
+    "X-Amz-SignedHeaders": [...new Set(Object.keys(request.headers).map((h) => h.toLowerCase()))]
       .sort(compare)
       .join(";"),
   };

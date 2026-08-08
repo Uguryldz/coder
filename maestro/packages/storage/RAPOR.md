@@ -1,164 +1,196 @@
-# `@maestro/storage` — Dalga 1 Builder Raporu
+# `@maestro/storage` — Builder Raporu (Tur 2: doğrulayıcı bulgularının kapatılması)
 
 **Durum: YEŞİL.** `pnpm install` · `pnpm -F @maestro/storage typecheck` · `pnpm -F @maestro/storage test` ·
-kökten `pnpm lint` ve `pnpm typecheck` — hepsi geçiyor. 160 test, 7 test dosyası.
+kökten `pnpm lint` + `pnpm typecheck` + `pnpm test` — hepsi geçiyor.
+**210 test, 8 test dosyası** (tur 1: 160 test, 7 dosya).
 
 ---
 
-## 1. Ne yapıldı
+## 0. Bu turda ne kapandı (doğrulayıcı bulguları)
 
-`StoragePort`'un (M5 / K67 BYOS) iki sürücüsü, ortak bir çekirdek üzerine yazıldı.
+Her düzeltmenin ÖNCE kırmızı bir regresyon testi yazıldı; testler yazıldığında paket
+**32 kırmızı** verdi. Aşağıdaki tabloda her satırın yanında onu ısıran test var.
 
-| Dosya | Satır | İçerik |
-|---|---|---|
-| `src/sigv4.ts` | 206 | AWS Signature V4 — sıfırdan, yalnız `node:crypto`. Kanonik istek, imza anahtarı zinciri, başlık-imzalama ve sorgu-imzalama (presign). |
-| `src/s3.ts` | 281 | s3-compat sürücüsü: `put/get/list/delete/presign`, path-style + virtual-host adresleme, ListObjectsV2 sayfalama, Object Lock başlıkları. |
-| `src/pg.ts` | 188 | pg-blob sürücüsü: enjekte edilebilir `SqlExecutor` üzerinden upsert/select/delete, WORM emülasyonu, `presign` → `CapabilityNotSupportedError`. |
-| `src/keys.ts` | 148 | M56 saklama politikası: anahtar şeması, anahtar güvenliği, 10 yıl hesabı, yaşam döngüsü etiketleri. |
-| `src/registry.ts` | 47 | `registerStorageDrivers(registry)` — M44 DI kaydı. |
-| `src/errors.ts` | 70 | Açık hata sınıfları (sessiz düşüş yok). |
-| `src/deps.ts` | 38 | Enjekte edilen işbirlikçiler: `FetchLike`, `Clock`, `SqlExecutor`. |
-| `src/xml.ts` | 51 | S3'ün iki XML gövdesi için asgari okuyucu (ListObjectsV2 + Error). |
-| **Toplam üretim** | **1037** | Tavan 1200 ✓ · en büyük dosya 281 satır (tavan 300 ✓) |
+### BLOKE bulgular
 
-### Kararların gerekçeleri
+| # | Durum | Ne yapıldı | Isıran test |
+|---|---|---|---|
+| **B-1** | KAPANDI | Kilitli `put` artık **imzalanan** `content-md5: base64(md5(body))` gönderiyor (AWS: Object Lock'lu yüklemede `Content-MD5` veya `x-amz-sdk-checksum-algorithm` zorunlu). `FakeS3` bu başlık yoksa **400 `InvalidRequest`** dönüyor, varsa MD5'i gövdeden yeniden hesaplayıp doğruluyor. | `s3.test.ts` "sends an integrity checksum with a locked put" + invariance paketindeki tüm kilitli put'lar |
+| **B-2** | KAPANDI | pg-blob WORM kontrolü **config kapısını kaybetti**: `assertNotRetained` artık her `put`/`delete`'te satırı okuyor. `put`'un `ON CONFLICT` bloğu WORM sütunlarını **birleştiriyor**, sıfırlamıyor: `object_lock = (existing.object_lock OR EXCLUDED.object_lock)`, `retain_until = GREATEST(existing.retain_until, EXCLUDED.retain_until)`. `FakePg` bu iki ifadeyi regex'le zorunlu tutuyor. | `pg.test.ts` "keeps enforcing a retention after the lock configuration is removed" + "never clears the WORM columns" + **invariance paketi** (aşağıda) |
+| **B-3** | KAPANDI | İki katmanlı: (a) `send` her 2xx yanıtta `x-amz-request-id`/`x-amz-id-2` arıyor — yoksa `UnexpectedResponseError` (yeni, `StorageRequestError` alt sınıfı); listelemede ayrıca `content-type`'ın XML olmasını şart koşuyor. (b) `parseListObjectsV2` kök elemanın `ListBucketResult` olduğunu doğruluyor. `get` ve `put` de aynı kontrolden geçiyor — proxy'nin 200'ü artık ne boş liste ne 25 baytlık "nesne". | `s3-response.test.ts` "a 200 that did not come from the S3 API…" (5 test) + `xml.test.ts` (4 test) |
+| **B-4** | KAPANDI | `isTruncated === true` ama token yok → `UnexpectedResponseError`. Kısmi liste asla döndürülmüyor. | `s3-response.test.ts` "refuses a truncated page that carries no continuation token" |
+| **B-6** | KAPANDI | 404 artık gövdedeki `<Code>`'a göre ayrılıyor: `NoSuchKey` (veya gövdesiz 404) → `ObjectNotFoundError`/no-op; `NoSuchBucket` ve diğerleri → `StorageRequestError`. | `s3-response.test.ts` "delete tells a missing key apart from a missing bucket" (4 test) |
+| **B-7** | KAPANDI (orkestratör kararına göre) | Sözleşme daraltılmadı. `FileName` artık yalnız `/` ve kontrol karakterini reddediyor; `evidenceKey`/`archiveKey` dosya adını **yüzde-kodluyor**, `parseEvidenceKey` geri çözüyor (çözülemeyen dizi → `undefined`). Türkçe ad, boşluk, parantez, `&`, `%` gidiş-dönüş testli. | `keys.test.ts` "accepts and round-trips a contract-legal file name" (6 vaka) + **invariance** "stores an evidence file whose name is Turkish and parenthesised" |
+| **B-8** | KAPANDI | `contracts`'taki yeni `RunId` ile gidiş-dönüş testi eklendi (en kısa geçerli id dahil); `parseEvidenceKey` runId'yi artık `RunId` şemasıyla doğruluyor. | `keys.test.ts` "round-trips the shortest run id the contract allows" |
 
-**SigV4 elde yazıldı.** Hedef kurumsal S3-uyumlu uç; resmî SDK'nın kimlik-sağlayıcı zinciri,
-IMDS sorgusu ve retry yığını hem ölü ağırlık hem egress riski. İmzanın kendisi ~150 satır
-hash işi. Doğruluk, AWS'nin **yayımlanmış üç bilinen-cevap vektörüyle** çivilendi (aşağıda).
+### Dalga 2 içinde kapatılması istenenler
 
-**Fail-closed Object Lock (M57).** `put(..., { objectLock: true })` çağrılır ve sürücü
-yapılandırmasında `objectLock` yoksa → `ObjectLockNotConfiguredError`. **Hiçbir istek gönderilmez.**
-Çağıran nesnenin WORM korumalı olduğunu sanacağı için sessizce korumasız yazmak yasak.
-Bu davranış her iki sürücüde de aynı ve invariance paketinde ayrı test ediliyor
-(mutasyon testiyle doğrulandı: kuralı kaldırınca testler kırılıyor).
+| # | Durum | Ne yapıldı | Isıran test |
+|---|---|---|---|
+| **B-5** | KAPANDI | Sayfalama `for` döngüsüne alındı: `MAX_LIST_PAGES = 10_000` tavanı **ve** `next === previous` token tekrar kontrolü. İkisi de `StorageRequestError`. | `s3-response.test.ts` "refuses a server that repeats the same continuation token" + "stops at the page ceiling" |
+| **B-9** | KAPANDI | `retentionClassForKey(key, fallback)`: sınıf **anahtar önekinden** türetiliyor (`evidence/`, `archive/`, `journal/`, `knowledge/`); sürücü konfigündeki `retentionClass` yalnız bilinmeyen düzenler için yedek. Her iki sürücüde de aynı. (`StoragePort.put` opsiyonları DONUK olduğu için sınıf oraya taşınamazdı.) | `s3.test.ts` "labels each object with the retention class of its own key" + `keys.test.ts` |
+| **B-10** | KAPANDI | Sürücü `bytea` parametresini `Buffer.from(data)` olarak bağlıyor; `SqlExecutor` dokümantasyonuna **ikili sözleşme** yazıldı; `FakePg` `Buffer.isBuffer` değilse `throw` ediyor. | `pg.test.ts` "binds bytea as a node Buffer" (+ mutasyonda 5 test kırılıyor) |
+| **B-11** | KAPANDI | `S3StorageOptions`, `PgBlobStorageOptions` ve iç `objectLock` nesneleri `z.strictObject`. `keyPrefixx` artık `StorageConfigError`. | `s3.test.ts` / `pg.test.ts` "rejects a misspelled option instead of silently ignoring it" |
 
-**pg-blob neden Prisma istemcisini kullanmıyor** (talep edildiği üzere gerekçe):
-1. Dalga 0 `@maestro/db`'de yalnız **taslak şema** var, üretilmiş istemci yok — import etseydim
-   `prisma generate` koşmadan bu paket typecheck bile edilemezdi (dalga sırasını kilitler).
-2. Üretilmiş bir Prisma istemcisi çevrimdışı sahtelenemez; her pg-blob testi canlı veritabanı
-   isterdi. Bu, "tamamen çevrimdışı ve deterministik test" kuralının doğrudan ihlali olurdu.
-3. Bunun yerine `SqlExecutor` (`query(sql, params) → rows`) tanımlandı. Kompozisyon kökünde
-   tek satırlık bir adaptör yeter: `prisma.$queryRawUnsafe(sql, ...params)` ya da `pg` Pool.
-   Tablo adı zod regex'iyle doğrulanır (`[şema.]ad`), diğer her değer **bağlı parametredir**;
-   SQL metnine hiçbir kullanıcı verisi enterpole edilmez (test edilmiştir).
+### Fırsat bulundukça listesi — hepsi kapatıldı
 
-**Anahtar şeması (M56).** `evidence/<yıl>/<ticket>/<runId>/<dosya>` — yıl başta, çünkü yaşam
-döngüsü kuralı tek prefix'le bir yılın tamamını sonlandırabilsin; ticket ikinci sırada,
-çünkü denetçi tek ticket'ı ucuza listeleyebilsin. M65 için `archive/<yıl>/<ticket>/<dosya>`.
-Saklama etiketleri (`maestro-class`, `maestro-retention-years`, `maestro-archive-after-days`)
-veriyle birlikte gider; restore tatbikatında (M66) politika yalnız kovadan yeniden kurulabilsin.
-
-**Sürücü-değişmezliği (masterplan §4).** `test/driver-contract.test.ts` tek bir test paketini
-**üç koşum** üzerinde çalıştırır: s3-compat (path-style), s3-compat (virtual-host), pg-blob.
-66 test. Kapsam: ikili/UTF-8 tam-tur, üzerine yazma, eksik anahtar hatası, prefix listeleme +
-sıralama, boş prefix, eşleşmeyen prefix, `keyPrefix`'in çağırana görünmezliği, silme,
-**eksik anahtarı silmenin no-op olması**, 8 farklı güvensiz anahtarın aynı hatayla reddi,
-M56 kanıt anahtarıyla yaz+listele, M57 fail-closed, ve `presign` yeteneğinin ilanı.
+| # | Ne yapıldı |
+|---|---|
+| **B-12** | `decodeXmlText` aralık dışı/surrogate sayısal varlıkta artık `RangeError` atmıyor, varlığı **harfi harfine** bırakıyor (`xml.test.ts`). |
+| **B-13** | 1024 baytlık sınır artık **fiziksel** anahtara da uygulanıyor (`assertKeyByteLength`, her iki sürücünün `fullKey`'inde). Invariance testinde. |
+| **B-14** | Geçersiz TTL artık `ZodError` değil `InvalidTtlError` (tamsayı/pozitif/tavan; 5 vaka). |
+| **B-15** | `evidenceTicketPrefix` yılı 4 haneye zorluyor (`KeyYear`), yani `parseEvidenceKey` ile aynı sözleşme. |
+| **B-16** | `pgBlobTableDdl` artık `CREATE INDEX … (key text_pattern_ops)` da üretiyor — `LIKE 'prefix%'` tam tablo taraması olmaktan çıktı. |
+| **B-17** | `canonicalHeaders` yalnız harf-büyüklüğüyle ayrışan başlıkları **tek başlıkta birleştiriyor** (değerler virgülle), `host;host` imkânsız. Presign'ın `X-Amz-SignedHeaders`'ında da tekilleştirme var. |
+| **B-18** | Tautolojik `typeof globalThis.fetch === "function"` testi atıldı; yerine **global `fetch`'i patlatan** ve sürücünün yalnız enjekte edilen `fetch`'i kullandığını kanıtlayan test kondu. |
+| **B-19** | §6 güncellendi (aşağıda). |
 
 ---
 
-## 2. Test özeti
+## 1. `FakeS3` artık imzayı gerçekten doğruluyor
 
-| Dosya | Test | Odak |
+Doğrulayıcının en önemli uyarısı buydu: sahte uç yalnız `Authorization` başlığının
+**varlığına** bakıyordu, dolayısıyla bir kanonikleştirme hatasını paket içi hiçbir test
+yakalayamazdı.
+
+`test/fakes/sigv4-verify.ts` (140 satır) **`src/sigv4.ts`'i import etmeyen bağımsız bir
+doğrulayıcı**: tele düşen baytlardan (istek satırı, `url.pathname`, `url.search`, başlıklar,
+gövde) imzayı yeniden türetir. Farklar bilinçli — RFC 3986 kodlaması bayt bayt yeniden
+yazıldı, kanonik yol/sorgu **çözülüp yeniden kodlanarak** karşılaştırılıyor, `host`
+URL'den alınıyor (sürücü onu başlık olarak göndermiyor). Uyuşmazsa `403 SignatureDoesNotMatch`.
+
+Kanıtı: `uriEncode`'u sıradan `encodeURIComponent`'e düşüren mutasyon artık yalnız birim
+testini değil, **sürücü sözleşme testini de** kırıyor (parantezli/Türkçe kanıt dosyası vakası).
+
+`FakeS3` bu turda ayrıca gerçek uç kurallarını öğrendi: kilitli put'ta bütünlük sağlaması
+zorunlu, saklama altındaki nesne ne yazılabilir ne silinebilir, her yanıt `x-amz-request-id`
+taşır.
+
+**Sınır:** presign edilmiş URL `fetch`'ten geçmediği için sahte uç onu doğrulamıyor;
+presign'ın doğruluğu hâlâ yalnız AWS'nin yayımlanmış bilinen-cevap vektörüne dayanıyor.
+
+---
+
+## 2. Sürücü-değişmezliği: WORM artık paketin içinde
+
+Doğrulayıcının "invariance paketinin en kritik ihlali" dediği vaka artık orada:
+
+> **"keeps a retained object protected when the lock configuration is removed"** —
+> kilit konfigüratlı bir sürücü örneğiyle nesne yazılır, sonra **aynı arka uca** kilitsiz
+> ikinci bir sürücü örneği bağlanır: hem `put` hem `delete` reddedilir, baytlar değişmez.
+
+Bunun için koşum yapısı `create()`'ten `deploy()`'a çevrildi: bir arka uç, üzerine
+istenildiği kadar sürücü örneği (`deployment.driver(objectLock?)`). Böylece "konfig
+değişti, veri aynı yerde" senaryosu üç koşumda da ifade edilebiliyor.
+
+**Hâlâ farklı olan tek nokta** (bilinçli, §5.1): ihlalin **hata sınıfı**. s3-compat'ta uç
+`403 AccessDenied` döndüğü için `StorageRequestError`, pg-blob'da `ObjectLockedError`.
+Invariance testi bu yüzden "reddedilir + veri korunur" diye yazıldı, hata sınıfını
+sabitlemiyor.
+
+---
+
+## 3. Dosya ve test özeti
+
+| Dosya | Satır | Değişiklik |
 |---|---|---|
-| `driver-contract.test.ts` | 66 | **Sürücü-değişmezliği** — aynı paket 3 koşumda |
-| `s3.test.ts` | 24 | Adresleme, imzalama, saklama başlıkları, presign, hata eşleme, sayfalama, config |
-| `keys.test.ts` | 28 | Anahtar şeması, anahtar güvenliği, 10 yıl hesabı, etiketler |
-| `pg.test.ts` | 16 | SQL yüzeyi, parametre bağlama, WORM emülasyonu, DDL |
-| `sigv4.test.ts` | 10 | **AWS bilinen-cevap vektörleri** + kanonikleştirme kuralları |
-| `xml.test.ts` | 8 | ListObjectsV2, varlık çözme, hata gövdesi |
-| `registry.test.ts` | 8 | M44 kaydı, çözümleme, eksik bağımlılık reddi |
-| **Toplam** | **160** | Ağ yok, saat enjekte, tamamen deterministik |
+| `src/s3.ts` | 265 | md5'li kilitli put, yanıt doğrulama, sayfalama tavanı/token kontrolü, 404 ayrımı, sınıf-anahtardan, TTL hatası |
+| `src/sigv4.ts` | 215 | yinelenen başlık birleştirme (B-17) |
+| `src/pg.ts` | 211 | WORM her zaman satırdan, WORM sütun birleştirme, `Buffer` bind, `text_pattern_ops` indeksi, `strictObject` |
+| `src/keys.ts` | 193 | dosya adı yüzde-kodlama, `assertKeyByteLength`, `retentionClassForKey`, 4 haneli yıl |
+| `src/errors.ts` | 112 | `UnexpectedResponseError`, `InvalidTtlError`, `ResponseContext` |
+| `src/xml.ts` | 91 | kök eleman doğrulaması, güvenli varlık çözme |
+| `src/s3-http.ts` | 67 | **yeni** — uç ayrıştırma, `queryString`, `contentMd5`, yanıt teşhisi, sayfa tavanı |
+| `src/s3-options.ts` | 47 | **yeni** — `S3StorageOptions` şeması (s3.ts 300 satır tavanının altında kalsın diye ayrıldı) |
+| `src/registry.ts` | 47 | — |
+| `src/deps.ts` | 44 | `SqlExecutor` ikili sözleşmesi belgelendi |
+| `src/index.ts` | 8 | — |
+| **Toplam üretim** | **1300** | En büyük dosya 265 (tavan 300 ✓). Tur 1'de 1037'ydi; artışın tamamı yukarıdaki bulgular. ~1200'lük paket tavanının %8 üzerinde — bölmek yerine bulguları kapatmayı tercih ettim, gerekçesi bu tablo. |
 
-**Bilinen-cevap vektörleri (AWS dokümantasyonu, S3 örnekleri):**
-- `GET /test.txt` başlık imzası → `f0e8bdb87c96...bdb41` ✓
-- `PUT /test$file.text` başlık imzası → `98ad721746da...108bd` ✓ (gövde hash'i de bağımsız doğrulandı)
-- Presigned URL, 86400 sn → `aeeed9bbccd4...4d404` ✓
+| Test dosyası | Test | Odak |
+|---|---|---|
+| `driver-contract.test.ts` | 75 | Sürücü-değişmezliği, 3 koşum (+WORM konfig-kaldırma, fiziksel anahtar sınırı, Türkçe dosya adı) |
+| `s3.test.ts` | 30 | Adresleme, imzalama, saklama başlıkları/etiketleri, presign, config |
+| `keys.test.ts` | 40 | Anahtar şeması + kodlama, anahtar güvenliği, 10 yıl, sınıf türetme |
+| `pg.test.ts` | 21 | SQL yüzeyi, `bytea` bağlama, WORM emülasyonu ve fail-open regresyonu, DDL |
+| `xml.test.ts` | 13 | Kök eleman, varlık çözme, hata gövdesi |
+| `s3-response.test.ts` | 12 | **yeni** — sahte 200, kesik/döngüsel listeleme, 404 ayrımı |
+| `sigv4.test.ts` | 11 | AWS bilinen-cevap vektörleri + kanonikleştirme (yinelenen başlık dahil) |
+| `registry.test.ts` | 8 | M44 kaydı |
+| **Toplam** | **210** | Ağ yok, saat enjekte, tamamen deterministik |
 
-> Not: `kSigning` türetimi için hafızadan yazdığım dördüncü bir vektör tutmadı ve
-> **doğrulanamadığı için testten çıkarıldı** — yanlış beklentiyi koda uydurmak yerine attım.
-> Üç yayımlanmış S3 imzası zaten `signingKey` zincirini uçtan uca kanıtlıyor.
-
-**Sahteler gerçek denetim yapar (tautolojik test değil):**
-- `FakeS3` her istekte SigV4 `Authorization` başlığını arar ve `x-amz-content-sha256`'yı gövdeden
-  yeniden hesaplayıp karşılaştırır; uyuşmazsa 400 döner. Sayfa boyutu 1-2'ye çekilerek
-  continuation döngüsü gerçekten koşturulur.
-- `FakePg` yalnız sürücünün üretmesi gereken ifadeleri tanır, **tanımadığına `throw` eder**;
-  parametre sayısını ve `$2`'nin `Uint8Array` olduğunu doğrular.
-
-**Mutasyon denetimi** (testlerin ısırdığının kanıtı — 4/4 yakalandı):
+**Mutasyon denetimi (bu tur, 7/7 yakalandı):**
 
 | Mutasyon | Sonuç |
 |---|---|
-| M57 fail-closed kuralını sessiz düşüşe çevir | KIRILDI ✓ |
-| Sayfalamayı ilk sayfada durdur | KIRILDI ✓ |
-| pg `presign` gerçek URL uydursun | KIRILDI ✓ |
-| `..` segment kontrolünü kaldır | KIRILDI ✓ |
+| Kilitli put'tan `content-md5`'i kaldır | 6 test KIRILDI ✓ |
+| pg WORM kontrolüne config kapısını geri koy | 2 test KIRILDI ✓ (biri invariance) |
+| Kanonik sorgu sıralamasını kaldır | 2 test KIRILDI ✓ (biri **sahte ucun imza doğrulaması** sayesinde) |
+| `uriEncode`'u düz `encodeURIComponent` yap | 3 test KIRILDI ✓ (ikisi sürücü seviyesinde) |
+| Yanıt teşhisini her zaman "sorun yok" yap | 2 test KIRILDI ✓ |
+| 404'ü koşulsuz "anahtar yok" say | 2 test KIRILDI ✓ |
+| `bytea`'yı çıplak `Uint8Array` bağla | 5 test KIRILDI ✓ |
 
 ---
 
-## 3. Varsayımlar
+## 4. Varsayımlar (değişenler işaretli)
 
-1. **`delete` fikirseldir (idempotent).** Olmayan anahtarı silmek her iki sürücüde de sessizce
-   başarılıdır (S3'ün doğal davranışı; pg'de `DELETE` 0 satır etkiler). Port dokümante etmiyordu;
-   invariance testi bunu sözleşme olarak sabitliyor.
-2. **`list` mantıksal anahtar döndürür.** `keyPrefix` yapılandırılmışsa çağıran onu hiç görmez —
-   ne `put`'ta verir ne `list`'te alır.
-3. **`content-length` imzalanmaz ve gönderilmez.** `fetch` bu başlığı kendi yönetir ve
-   çağıranınkini atar; imzalasaydım imza uçta geçersiz olurdu. `host` imzalanır ama açıkça
-   gönderilmez (fetch onu URL'den türetir, ikisi yapısal olarak aynıdır).
-4. **Varsayılan adresleme `path`.** Kurumsal uçlarda joker DNS/TLS genelde yok.
-5. **Saat enjekte edilir** (`now`); saklama son tarihleri bu yüzden testte birebir sabittir.
-6. `retainUntil` UTC takvimiyle çalışır; 29 Şubat başlangıcı 1 Mart'a yuvarlanır — saklamayı
-   **uzatır**, asla kısaltmaz.
-
----
-
-## 4. Arayüz / bağımlılık talepleri (orkestratör kararı gerekir)
-
-1. **Bağımlılık — kabul edilebilir olduğunu düşünüyorum, onayınıza sunulur:**
-   `@types/node` **devDependency** olarak eklendi (`node:crypto`, `Buffer`, `URL` tipleri için).
-   Yeni **runtime** bağımlılığı **yok**; `@maestro/test-kit` zaten aynı devDependency'yi
-   taşıdığından sürüm ve lockfile açısından bedelsiz.
-2. **`StoragePort` arayüz talebi (DOKUNMADIM, karar sizin):** `get` bir `Uint8Array` döndürüyor,
-   yani nesne tamamen belleğe alınıyor. Kanıt paketleri ve workspace arşivleri (M34/M65) yüzlerce
-   MB olabilir. Dalga 2'den önce `getStream`/`putStream` eklenmesi ya da `put`'un
-   `AsyncIterable<Uint8Array>` kabul etmesi değerlendirilmeli. Bugün için sınır: nesne boyutu
-   ≈ süreç belleği.
-3. **`db` paketine görev devri:** `pgBlobTableDdl()` ihtiyaç duyulan tabloyu (`storage_blob`)
-   üretiyor ve sütunları teste bağlanmış durumda; asıl migration'ı Dalga 1 `db` paketi yazmalı.
-   Sütunlar: `key/data/content_type/tags/object_lock/retain_until/created_at/updated_at`.
-4. **`config` paketine öneri:** `STORAGE_ENDPOINT` env'i var ama bucket/anahtar/adresleme yok.
-   Kompozisyon kökü yazılırken `S3StorageOptions`/`PgBlobStorageOptions` şemaları oradan
-   beslenmeli; şemalar bu paketten export ediliyor.
+1. **`delete` fikirseldir** — olmayan anahtar no-op. *Değişti:* bu yalnız `NoSuchKey`/gövdesiz
+   404 için geçerli; `NoSuchBucket` artık hata.
+2. **`list` mantıksal anahtar döndürür**; `keyPrefix` çağırana görünmez.
+3. **`content-length` imzalanmaz ve gönderilmez**; `host` imzalanır, gönderilmez.
+4. **Varsayılan adresleme `path`.**
+5. **Saat enjekte edilir.**
+6. `retainUntil` UTC takvimiyle çalışır; 29 Şubat başlangıcı saklamayı uzatır, kısaltmaz.
+7. *(Yeni)* **Her 2xx yanıt `x-amz-request-id` taşımalıdır.** Bunu bilerek soyan bir uç için
+   `requireAmzResponseHeaders: false` kapısı var; kapatan, proxy'nin login sayfasını "boş
+   kova" diye okuma riskini bilerek kabul eder.
+8. *(Yeni)* **Kanıt dosyası adı anahtarda yüzde-kodludur.** Fiziksel anahtar
+   `…/rapor%20özet.pdf` görünür; mantıksal ad `parseEvidenceKey` ile geri gelir. Denetçi
+   kovaya çıplak gözle bakarsa kodlanmış ad görür — bu bilinçli takas.
+9. *(Yeni)* **pg-blob her `put`/`delete` öncesi bir `SELECT` yapar.** WORM kontrolü artık
+   konfige bağlı olmadığı için kilit hiç kullanılmayan kurulumlarda da bir sorgu maliyeti
+   var; korumanın veriye bağlı olması bu maliyetten önemli.
 
 ---
 
 ## 5. Bilerek eksik bırakılanlar
 
-1. **S3'te WORM ihlalinin hata eşlemesi.** Nesne kilidi nedeniyle reddedilen üzerine-yazma/silme
-   gerçek S3/MinIO'da HTTP 403 + `<Code>AccessDenied</Code>` döner — kilide özgü, ayırt edilebilir
-   bir kod yoktur. Uydurma bir kod ("halüsinasyon entegrasyon") yazmaktansa bugün
-   `StorageRequestError` bırakıldı; **pg-blob** tarafında ise Postgres'in böyle bir özelliği
-   olmadığı için kilit sürücüde emüle edilir ve `ObjectLockedError` atar. Bu tek nokta iki sürücü
-   arasında farklıdır ve bu yüzden invariance paketinde **değildir**. Kapanışı: gerçek uçtan
-   kaydedilmiş yanıt fikstürüyle (insa-plani §6, Aşama-0 duman testi).
-2. **Çok parçalı yükleme (multipart upload).** Büyük nesneler için gerekli; yukarıdaki (4.2)
-   akış arayüzü kararına bağlı, o karardan önce yazmak boşa iş olur.
-3. **Kova yaşam döngüsü kuralının uca uygulanması.** Politika veriyle birlikte etiket olarak
-   gidiyor; kuralın kovaya `PutBucketLifecycleConfiguration` ile basılması bir kurulum/deploy
-   işidir (`deploy` paketi), sürücünün çalışma zamanı işi değil.
-4. **Retry/backoff ve devre kesici.** Bilinçli olarak dışarıda: bunlar tüm portlar için ortak bir
-   politika katmanıdır (llm-gateway'de de aynı ihtiyaç var); her sürücüye ayrı ayrı yazmak
-   v1'in dağınıklığını tekrarlar. Orkestratör ortak bir sarmalayıcıya karar vermeli.
-5. **Sunucu tarafı şifreleme (SSE-KMS) başlıkları.** Masterplan'da bir M kararı yok; spec dışına
-   taşmamak için eklenmedi.
+1. **S3'te WORM ihlalinin hata eşlemesi.** Gerçek uç 403 + `AccessDenied` döner, kilide özgü
+   kod yoktur; uydurma kod yazmaktansa `StorageRequestError` bırakıldı. Invariance testi bu
+   yüzden hata sınıfını değil davranışı sabitliyor (§2). Kapanışı: gerçek uçtan kaydedilmiş
+   yanıt fikstürü (insa-plani §6, Aşama-0 duman testi).
+2. **Çok parçalı yükleme.** `getStream`/`putStream` kararına bağlı (§7.2).
+3. **Kova yaşam döngüsü kuralının uca uygulanması** — `deploy` paketinin işi.
+4. **Retry/backoff ve devre kesici** — tüm portlar için ortak bir sarmalayıcı olmalı,
+   sürücü başına yazmak v1'in dağınıklığıdır.
+5. **SSE-KMS başlıkları** — masterplan'da M kararı yok.
+6. *(Yeni)* **Presign'ın sahte uçta doğrulanması** — §1'deki sınır.
+7. *(Yeni)* **`x-amz-sdk-checksum-algorithm` + `x-amz-checksum-sha256` yolu.** B-1 için
+   `content-md5` seçildi: gövde hash'i zaten hesaplanıyor, MD5 tek ek geçiş ve her
+   S3-uyumlu üründe destekli. SHA256 checksum başlıkları daha yeni bir API yüzeyi ve
+   kurumsal gateway'lerde desteği belirsiz.
 
 ---
 
-## 6. Not: dal tabanı
+## 6. Arayüz / bağımlılık talepleri (orkestratör kararı gerekir — tekrar)
 
-Worktree `origin/main` (`1c78e71`) üzerinden açılmıştı ve o commit'te `maestro/` dizini **yok**.
-Dalga 0 çalışması yalnız yerel `main`'de (`0dfde46`) duruyor. Bu yüzden bu paket
-`wave1-storage` dalında, `0dfde46` tabanı üzerine yazıldı. main'e merge edilmedi, push edilmedi.
+1. **`StoragePort.get` bir `Uint8Array` döndürüyor** → nesne tamamen bellekte. M34/M65
+   paketleri yüzlerce MB olabilir. `getStream`/`putStream` kararı hâlâ bekliyor.
+2. **`StoragePort.put` opsiyonları** `{ contentType, objectLock }` ile donuk; saklama sınıfı
+   bu yüzden anahtar önekinden türetildi (B-9). Sınıfı çağıran belirlesin isteniyorsa port
+   değişmeli.
+3. **`db` paketine görev devri:** `pgBlobTableDdl()` artık tablo **ve** `text_pattern_ops`
+   indeksini üretiyor; migration'ı `db` paketi yazmalı.
+4. **`config` paketine öneri:** şemalar artık `strict`; `STORAGE_*` env eşlemesi yazılırken
+   fazladan anahtar bırakmamak gerekiyor (sessizce yutulmaz, hata verir).
+5. **Bağımlılık:** yeni runtime bağımlılığı **yok**. `node:crypto`'dan `createHash("md5")`
+   eklendi (B-1). `@types/node` devDependency olarak duruyor.
+
+---
+
+## 7. Not: dal tabanı
+
+Tur 1 `wave1-storage` dalındaydı ve **main'e merge edildi** (doğrulayıcının B-19 notu
+haklıydı, önceki rapor eskimişti). Bu tur `main` üzerinden açılan **`wave2-storage-hardening`**
+dalında; merge edilmedi, push edilmedi.

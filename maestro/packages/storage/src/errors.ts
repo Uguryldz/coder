@@ -61,6 +61,48 @@ export class StorageRequestError extends Error {
   }
 }
 
+/** Where an unusable response was observed. */
+export interface ResponseContext {
+  operation: string;
+  key: string;
+  status: number;
+}
+
+/**
+ * A 2xx response the driver refuses to interpret: it did not come from the S3
+ * API (no `x-amz-request-id`), or its body is not the document the operation
+ * needs. Answering with an empty listing or a 25-byte "object" would make a
+ * proxy login page look like "this ticket has no evidence" (M34/M66).
+ */
+export class UnexpectedResponseError extends StorageRequestError {
+  constructor(
+    context: ResponseContext,
+    readonly reason: string,
+    body: string,
+  ) {
+    super(context.operation, context.key, context.status, body);
+    this.name = "UnexpectedResponseError";
+    this.message =
+      `storage: ${context.operation} "${context.key}" got an unusable HTTP ${context.status} ` +
+      `response (${reason}): ${body.slice(0, 300)}`;
+  }
+}
+
+/** A presign ttl outside the driver's accepted range. */
+export class InvalidTtlError extends Error {
+  constructor(
+    readonly key: string,
+    readonly ttlSeconds: number,
+    readonly maxSeconds: number,
+  ) {
+    super(
+      `storage: presign "${key}" ttl must be a positive integer of at most ` +
+        `${maxSeconds} seconds, got ${ttlSeconds}`,
+    );
+    this.name = "InvalidTtlError";
+  }
+}
+
 /** The driver configuration is unusable. Thrown at construction time. */
 export class StorageConfigError extends Error {
   constructor(readonly issues: string[]) {

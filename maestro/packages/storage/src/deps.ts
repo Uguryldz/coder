@@ -32,6 +32,12 @@ export const systemClock: Clock = () => new Date();
  * database and break the "deterministic, no network" rule. A one-line adapter
  * over `prisma.$queryRawUnsafe` or a `pg` Pool satisfies this interface at the
  * composition root.
+ *
+ * **Binary contract.** Parameters bound to a `bytea` column are node `Buffer`s
+ * and the adapter must pass them through untouched. `node-postgres` decides how
+ * to serialise a value with `Buffer.isBuffer`, and a plain `Uint8Array` is not a
+ * Buffer: it would be written as `{"0":72,…}` and the evidence would be
+ * corrupted without a single error. Rows come back with `bytea` as a Buffer.
  */
 export interface SqlExecutor {
   query<R = Record<string, unknown>>(sql: string, params: readonly unknown[]): Promise<R[]>;

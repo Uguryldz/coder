@@ -28,7 +28,9 @@ describe("SQL surface", () => {
     await port.put("a.json", new Uint8Array([1]), { contentType: "application/json" });
     await port.put("a.json", new Uint8Array([2]));
     expect(fake.rows.size).toBe(1);
-    expect(fake.statements[0]).toContain("ON CONFLICT (key) DO UPDATE");
+    expect(fake.statements.find((s) => s.startsWith("INSERT"))).toContain(
+      "ON CONFLICT (key) DO UPDATE",
+    );
   });
 
   it("uses bound parameters only — no value is interpolated into the SQL text", async () => {
@@ -74,6 +76,13 @@ describe("SQL surface", () => {
     expect(listStatement).toContain("ORDER BY key ASC");
   });
 
+  it("binds bytea as a node Buffer, which is the only form node-postgres stores intact", async () => {
+    const { fake, port } = build();
+    await port.put("a.bin", new Uint8Array([72, 105]));
+    expect(Buffer.isBuffer(fake.rows.get("a.bin")?.data)).toBe(true);
+    expect(await port.get("a.bin")).toEqual(new Uint8Array([72, 105]));
+  });
+
   it("surfaces database failures instead of returning an empty result", async () => {
     const failing: SqlExecutor = { query: () => Promise.reject(new Error("connection reset")) };
     const port = new PgBlobStorage(PgBlobStorageOptions.parse({}), { sql: failing, now: CLOCK });
@@ -115,7 +124,43 @@ describe("Object Lock emulation (M57)", () => {
     await port.put("evidence/a.json", new Uint8Array([1]), { objectLock: true });
     instant = new Date("2027-08-09T09:00:00.000Z");
     await port.put("evidence/a.json", new Uint8Array([2]));
-    expect(fake.rows.get("evidence/a.json")?.data).toEqual(new Uint8Array([2]));
+    expect(fake.rows.get("evidence/a.json")?.data).toEqual(Buffer.from([2]));
+  });
+
+  it("keeps enforcing a retention after the lock configuration is removed", async () => {
+    const fake = new FakePg();
+    const locked = new PgBlobStorage(PgBlobStorageOptions.parse({ objectLock: LOCK }), {
+      sql: fake,
+      now: CLOCK,
+    });
+    await locked.put("evidence/a.json", new Uint8Array([1]), { objectLock: true });
+    // Same table, driver redeployed without any objectLock configuration.
+    const unconfigured = new PgBlobStorage(PgBlobStorageOptions.parse({}), {
+      sql: fake,
+      now: CLOCK,
+    });
+    await expect(unconfigured.delete("evidence/a.json")).rejects.toBeInstanceOf(ObjectLockedError);
+    await expect(unconfigured.put("evidence/a.json", new Uint8Array([2]))).rejects.toBeInstanceOf(
+      ObjectLockedError,
+    );
+    const row = fake.rows.get("evidence/a.json");
+    expect(row?.object_lock).toBe(true);
+    expect(row?.data).toEqual(Buffer.from([1]));
+  });
+
+  it("never clears the WORM columns on a later unlocked write", async () => {
+    const fake = new FakePg();
+    let instant = new Date("2026-08-08T09:00:00.000Z");
+    const port = new PgBlobStorage(
+      PgBlobStorageOptions.parse({ objectLock: { mode: "COMPLIANCE", years: 1 } }),
+      { sql: fake, now: () => instant },
+    );
+    await port.put("evidence/a.json", new Uint8Array([1]), { objectLock: true });
+    instant = new Date("2027-08-09T09:00:00.000Z");
+    await port.put("evidence/a.json", new Uint8Array([2]));
+    const row = fake.rows.get("evidence/a.json");
+    expect(row?.object_lock).toBe(true);
+    expect(row?.retain_until).toBe("2027-08-08T09:00:00.000Z");
   });
 
   it("leaves unlocked objects freely writable", async () => {
@@ -152,6 +197,17 @@ describe("configuration validation", () => {
     ]) {
       expect(ddl).toContain(column);
     }
+  });
+
+  it("indexes the key for the prefix scan `list` performs", () => {
+    // A plain btree PK cannot serve LIKE 'prefix%' outside the C collation.
+    expect(pgBlobTableDdl()).toContain("text_pattern_ops");
+  });
+
+  it("rejects a misspelled option instead of silently ignoring it", () => {
+    expect(() => createPgBlobStorage({ keyPrefixx: "tenant-a/" }, { sql: new FakePg() })).toThrow(
+      StorageConfigError,
+    );
   });
 
   it("refuses to emit DDL for an unvalidated table name", () => {

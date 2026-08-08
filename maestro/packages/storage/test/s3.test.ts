@@ -1,5 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { ObjectLockNotConfiguredError, StorageConfigError, StorageRequestError } from "../src/errors.js";
+import {
+  InvalidTtlError,
+  ObjectLockNotConfiguredError,
+  StorageConfigError,
+  StorageRequestError,
+} from "../src/errors.js";
 import { createS3Storage, S3CompatStorage, S3StorageOptions } from "../src/s3.js";
 import type { FetchLike } from "../src/deps.js";
 import { FakeS3 } from "./fakes/fake-s3.js";
@@ -109,6 +115,32 @@ describe("retention metadata (M56/M57)", () => {
     expect(stored?.retainUntil).toBe("2036-08-08T09:00:00.000Z");
   });
 
+  it("sends an integrity checksum with a locked put, as Object Lock requires", async () => {
+    const { fake, port } = build({ objectLock: { mode: "COMPLIANCE", years: 10 } });
+    const data = new TextEncoder().encode("evidence");
+    await port.put("evidence/a.json", data, { objectLock: true });
+    expect(fake.requests[0]?.headers["content-md5"]).toBe(
+      createHash("md5").update(data).digest("base64"),
+    );
+    // The checksum must be inside the signature, or the endpoint rejects it.
+    expect(fake.requests[0]?.headers["authorization"]).toContain("content-md5");
+  });
+
+  it("labels each object with the retention class of its own key (M65)", async () => {
+    const { fake, port } = build();
+    await port.put("archive/2026/UGURPAY-1/session.tar", new Uint8Array([1]));
+    await port.put("evidence/2026/UGURPAY-1/run-01H8ZQXYZ/a.json", new Uint8Array([1]));
+    await port.put("scratch/x.bin", new Uint8Array([1]));
+    expect(fake.objects.get("archive/2026/UGURPAY-1/session.tar")?.tagging).toContain(
+      "maestro-class=archive",
+    );
+    expect(fake.objects.get("evidence/2026/UGURPAY-1/run-01H8ZQXYZ/a.json")?.tagging).toContain(
+      "maestro-class=evidence",
+    );
+    // Unknown layouts fall back to the driver default.
+    expect(fake.objects.get("scratch/x.bin")?.tagging).toContain("maestro-class=evidence");
+  });
+
   it("does not send retention headers for an unlocked put", async () => {
     const { fake, port } = build({ objectLock: { mode: "COMPLIANCE", years: 10 } });
     await port.put("evidence/a.json", new Uint8Array([1]));
@@ -142,14 +174,15 @@ describe("presigned URLs", () => {
     expect(url.pathname).toBe("/maestro/tenant-a/evidence/a.json");
   });
 
-  it("refuses a ttl beyond the configured ceiling", async () => {
+  it.each([
+    ["beyond the configured ceiling", 3601],
+    ["non-positive", 0],
+    ["negative", -60],
+    ["fractional", 1.5],
+    ["not a number", Number.NaN],
+  ])("refuses a ttl that is %s with a storage error, not a schema error", async (_label, ttl) => {
     const { port } = build({ maxPresignSeconds: 3600 });
-    await expect(port.presign("a.json", 3601)).rejects.toThrow();
-  });
-
-  it("refuses a non-positive ttl", async () => {
-    const { port } = build();
-    await expect(port.presign("a.json", 0)).rejects.toThrow();
+    await expect(port.presign("a.json", ttl)).rejects.toBeInstanceOf(InvalidTtlError);
   });
 });
 
@@ -211,9 +244,27 @@ describe("configuration validation", () => {
     );
   });
 
-  it("accepts the platform fetch as an injected dependency", () => {
-    const platformFetch: FetchLike = globalThis.fetch;
-    expect(typeof platformFetch).toBe("function");
+  it("rejects a misspelled option instead of silently ignoring it", () => {
+    expect(() => createS3Storage({ ...BASE, keyPrefixx: "tenant-a/" }, { fetch: fetchStub })).toThrow(
+      StorageConfigError,
+    );
+    expect(() =>
+      createS3Storage({ ...BASE, objectLock: { mode: "COMPLIANCE", yearz: 10 } }, { fetch: fetchStub }),
+    ).toThrow(StorageConfigError);
+  });
+
+  it("uses only the injected fetch, never the ambient global one", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (() => {
+      throw new Error("the driver must not reach for the global fetch");
+    }) as typeof globalThis.fetch;
+    try {
+      const { port } = build();
+      await port.put("a.json", new Uint8Array([1]));
+      expect(await port.get("a.json")).toEqual(new Uint8Array([1]));
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
 

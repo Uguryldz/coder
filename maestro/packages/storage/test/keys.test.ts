@@ -10,6 +10,7 @@ import {
   parseEvidenceKey,
   RETENTION_YEARS_DEFAULT,
   retainUntil,
+  retentionClassForKey,
   retentionPolicy,
   retentionTags,
 } from "../src/keys.js";
@@ -70,6 +71,63 @@ describe("evidence key scheme (M34/M56)", () => {
     expect(() => evidenceKey({ ...base, fileName: "a/b.json" })).toThrow();
     expect(() => evidenceKey({ ...base, ticketKey: "ugurpay-1" })).toThrow();
     expect(() => evidenceKey({ ...base, runId: "short" })).toThrow();
+  });
+
+  it.each([
+    ["test-report (junit).xml"],
+    ["rapor özet.pdf"],
+    ["análisis.md"],
+    ["_hidden.txt"],
+    ["kanıt & özet %100.json"],
+    ["already%20encoded.txt"],
+  ])("accepts and round-trips a contract-legal file name: %s", (fileName) => {
+    const key = evidenceKey({
+      ticketKey: "UGURPAY-4312",
+      runId: "run-01H8ZQXYZ",
+      fileName,
+      createdAt: CREATED_AT,
+    });
+    expect(key.split("/")).toHaveLength(5);
+    expect(() => assertValidKey(key)).not.toThrow();
+    expect(parseEvidenceKey(key)?.fileName).toBe(fileName);
+  });
+
+  it("round-trips the shortest run id the contract allows", () => {
+    const runId = "R1234567";
+    const key = evidenceKey({
+      ticketKey: "UGURPAY-1",
+      runId,
+      fileName: "a.json",
+      createdAt: CREATED_AT,
+    });
+    expect(parseEvidenceKey(key)?.runId).toBe(runId);
+  });
+
+  it("keeps a percent-encoded file name inside one segment", () => {
+    const key = evidenceKey({
+      ticketKey: "UGURPAY-1",
+      runId: "run-01H8ZQXYZ",
+      fileName: "a b-c.json",
+      createdAt: CREATED_AT,
+    });
+    expect(key).toBe("evidence/2026/UGURPAY-1/run-01H8ZQXYZ/a%20b-c.json");
+  });
+
+  it("still refuses what cannot live inside one segment", () => {
+    const base = { ticketKey: "UGURPAY-1", runId: "run-01H8ZQXYZ", createdAt: CREATED_AT };
+    expect(() => evidenceKey({ ...base, fileName: "a/b.json" })).toThrow();
+    expect(() => evidenceKey({ ...base, fileName: "a\u0007b.json" })).toThrow();
+    expect(() => evidenceKey({ ...base, fileName: "" })).toThrow();
+    expect(() => evidenceKey({ ...base, fileName: ".." })).toThrow();
+  });
+
+  it("does not parse a key whose file name is not decodable", () => {
+    expect(parseEvidenceKey("evidence/2026/UGURPAY-1/run-01H8ZQXYZ/%E0%A4%A.json")).toBeUndefined();
+  });
+
+  it("refuses to build a listing prefix for a year that is not four digits", () => {
+    expect(() => evidenceTicketPrefix("UGURPAY-1", 12)).toThrow();
+    expect(() => evidenceTicketPrefix("UGURPAY-1", 20260)).toThrow();
   });
 
   it("builds a listing prefix that matches its own keys", () => {
@@ -151,6 +209,13 @@ describe("retention policy (M56)", () => {
     expect(retentionPolicy("knowledge").archiveAfterDays).toBeGreaterThan(
       retentionPolicy("evidence").archiveAfterDays,
     );
+  });
+
+  it("derives the class from the key layout, not from the deployment (M65)", () => {
+    expect(retentionClassForKey("archive/2026/UGURPAY-1/session.tar", "evidence")).toBe("archive");
+    expect(retentionClassForKey("evidence/2026/UGURPAY-1/run/a.json", "archive")).toBe("evidence");
+    expect(retentionClassForKey("knowledge/a.md", "evidence")).toBe("knowledge");
+    expect(retentionClassForKey("scratch/x.bin", "evidence")).toBe("evidence");
   });
 
   it("encodes tags as an url-encoded tag set", () => {

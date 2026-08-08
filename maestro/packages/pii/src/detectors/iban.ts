@@ -1,16 +1,25 @@
 import type { Detector, PiiMatch } from "../types.js";
+import { isSeparator, SEPARATOR_CLASS } from "./separators.js";
 
-/** Country code + check digits. Everything after that is decided in code. */
-const IBAN_START = /(?<![0-9A-Za-z])[A-Z]{2}[0-9]{2}/g;
+/**
+ * Country code + check digits, case-insensitively.
+ *
+ * The `i` was missing (verifier B-2) and `canonicalIban` upper-cases anyway,
+ * which is the proof it was an oversight rather than a decision. The dangerous
+ * case is not a human typing `tr70…`: any upstream `.toLowerCase()` — log
+ * normalisation, a search index, Jira field processing — used to disable IBAN
+ * masking entirely.
+ */
+const IBAN_START = /(?<![0-9A-Za-z])[A-Za-z]{2}[0-9]{2}/g;
 
-/** 34 significant characters, at most one space between each. */
-const MAX_RAW_LENGTH = 34 + 33;
+/** 34 significant characters with up to two separators between each. */
+const MAX_RAW_LENGTH = 34 + 33 * 2;
 
 /** Turkish IBANs are fixed length; anything else claiming TR is noise. */
 const TR_IBAN_LENGTH = 26;
 
 export function canonicalIban(raw: string): string {
-  return raw.replace(/\s/g, "").toUpperCase();
+  return raw.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
 }
 
 /**
@@ -34,7 +43,7 @@ export function isValidIban(canonical: string): boolean {
   return remainder === 1;
 }
 
-const IBAN_BODY = /[A-Z0-9 ]/;
+const IBAN_BODY = new RegExp(`[A-Za-z0-9]|${SEPARATOR_CLASS}`, "u");
 const ALNUM = /[0-9A-Za-z]/;
 
 /**
@@ -52,7 +61,7 @@ function longestValidFrom(text: string, start: number): PiiMatch | null {
     const next = cut < text.length ? text.charAt(cut) : "";
     if (next !== "" && ALNUM.test(next)) continue;
     const raw = text.slice(start, cut);
-    if (raw.endsWith(" ")) continue;
+    if (isSeparator(raw.slice(-1))) continue;
     const canonical = canonicalIban(raw);
     if (!isValidIban(canonical)) continue;
     return { type: "iban", start, end: cut, text: raw, canonical };

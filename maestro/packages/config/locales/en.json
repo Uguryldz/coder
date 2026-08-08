@@ -57,6 +57,7 @@
   "params.description.subscription_queue": "Queue behaviour when the subscription pool is exhausted",
   "llm.degraded_ai_assist": "No on-prem model for the confidential data class — the flow fell back to ai-assist",
   "llm.blocked_confidential": "The confidential data class may not be sent to any model by policy",
+  "llm.blocked_by_route": "The routing policy permits no model for this data class",
   "run.queued_quota": "Flow queued: subscription pool exhausted",
   "run.handover_strikes": "Work handed to a human after 3 failed rounds",
   "evidence.ready": "Evidence package ready: {fileCount} files, written to archive"

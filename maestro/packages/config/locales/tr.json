@@ -57,6 +57,7 @@
   "params.description.subscription_queue": "Abonelik havuzu dolduğunda kuyruk davranışı",
   "llm.degraded_ai_assist": "Gizli veri sınıfı için on-prem model yok — akış ai-assist moduna düşürüldü",
   "llm.blocked_confidential": "Gizli veri sınıfı politika gereği hiçbir modele gönderilemez",
+  "llm.blocked_by_route": "Bu veri sınıfı için yönlendirme politikası hiçbir modele izin vermiyor",
   "run.queued_quota": "Akış kuyruğa alındı: abonelik havuzu dolu",
   "run.handover_strikes": "3 başarısız turdan sonra iş insana devredildi",
   "evidence.ready": "Kanıt paketi hazır: {fileCount} dosya, arşive yazıldı"

@@ -11,6 +11,7 @@ import { compileProfile, type CompiledProfile } from "./policy.js";
 import { ReverseMap } from "./reverse-map.js";
 import {
   PII_TYPES,
+  TOKEN_SHAPE_SOURCE,
   WHOLE_TOKEN_PATTERN,
   type MaskCounts,
   type MaskProfile,
@@ -32,12 +33,12 @@ export interface MaskSession {
   readonly map: ReverseMap;
 }
 
-export function createSession(profile: MaskProfile): MaskSession {
-  return { profile: compileProfile(profile), map: new ReverseMap() };
+export function createSession(profile: MaskProfile, nonce?: string): MaskSession {
+  return { profile: compileProfile(profile), map: new ReverseMap(nonce) };
 }
 
-export function createSessionWith(profile: CompiledProfile): MaskSession {
-  return { profile, map: new ReverseMap() };
+export function createSessionWith(profile: CompiledProfile, nonce?: string): MaskSession {
+  return { profile, map: new ReverseMap(nonce) };
 }
 
 export interface MaskTextResult {
@@ -78,18 +79,35 @@ function collectMatches(text: string, profile: CompiledProfile): PiiMatch[] {
   return picked;
 }
 
+const TOKEN_SHAPE = new RegExp(TOKEN_SHAPE_SOURCE, "g");
+
+/**
+ * Strip the brackets off every token-shaped string this session did not mint.
+ *
+ * A `[TCKN_1]` sitting in a Jira description is not a token, it is user input,
+ * and leaving it alone let `unmask` fill it in afterwards with whatever
+ * `[TCKN_1]` happened to mean — another ticket's customer (verifier B-9).
+ * De-fanging costs the reader nothing (`TCKN_1` still reads the same) and is
+ * not counted as masking, because nothing was disclosed.
+ */
+function defangForeignTokens(text: string, map: ReverseMap): string {
+  if (!text.includes("[")) return text;
+  return text.replace(TOKEN_SHAPE, (token) => (map.has(token) ? token : token.slice(1, -1)));
+}
+
 function maskInto(text: string, session: MaskSession, acc: CountAccumulator): string {
-  const matches = collectMatches(text, session.profile);
-  if (matches.length === 0) return text;
+  const source = defangForeignTokens(text, session.map);
+  const matches = collectMatches(source, session.profile);
+  if (matches.length === 0) return source;
   let out = "";
   let cursor = 0;
   for (const m of matches) {
-    out += text.slice(cursor, m.start);
+    out += source.slice(cursor, m.start);
     out += session.map.tokenFor(m.type, m.canonical, m.text);
     cursor = m.end;
     countOccurrence(acc, m.type);
   }
-  return out + text.slice(cursor);
+  return out + source.slice(cursor);
 }
 
 /** Mask a bare string. Counts one "field" when anything changed. */
@@ -113,8 +131,11 @@ function maskString(
 ): string {
   if (!fieldRuleApplies) return maskInto(value, session, acc);
   // An already-masked value must survive a second pass unchanged, otherwise
-  // masking twice would mint `[FIELD_n]` around `[TCKN_1]`.
-  if (value.length === 0 || WHOLE_TOKEN_PATTERN.test(value)) return value;
+  // masking twice would mint `[FIELD_n]` around `[TCKN_1.a3f9]`. The shape now
+  // requires a nonce, so a bare `[FIELD_1]` typed by a user is not exempt; a
+  // well-formed token from *another* session is exempt but inert, because no
+  // map here can open it.
+  if (value.length === 0 || session.map.has(value) || WHOLE_TOKEN_PATTERN.test(value)) return value;
   countOccurrence(acc, "field");
   return session.map.tokenFor("field", value, value);
 }
@@ -209,11 +230,40 @@ export function unmaskValue<T>(value: T, map: ReverseMap): T {
 }
 
 /**
+ * Every string of a payload that masking does not rewrite: object keys.
+ *
+ * `{ "12345678950": { balance: … } }` is an ordinary per-customer map, and a
+ * masker that renamed keys would hand the callee a payload its schema no
+ * longer fits — so masking leaves keys alone and the tripwire refuses them
+ * instead (verifier B-10). This is also the one thing the tripwire genuinely
+ * sees that the masker cannot: everywhere else they share detectors, and
+ * RAPOR §2 no longer claims otherwise.
+ */
+function countKeyPii(value: unknown, profile: CompiledProfile, acc: CountAccumulator): void {
+  if (value === null || typeof value !== "object") return;
+  if (value instanceof Date) return;
+  if (Array.isArray(value)) {
+    for (const item of value) countKeyPii(item, profile, acc);
+    return;
+  }
+  if (!isPlainObject(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    for (const match of collectMatches(key, profile)) countOccurrence(acc, match.type);
+    countKeyPii(item, profile, acc);
+  }
+}
+
+/**
  * Count the PII in a payload without keeping any of it: the ReverseMap this
- * creates is discarded with the call frame.
+ * creates is discarded with the call frame. Keys are counted as well as
+ * values, because this is a leak detector rather than a transformer.
  */
 export function scanForPii(value: unknown, profile: CompiledProfile): MaskCounts {
-  return maskValue(value, createSessionWith(profile)).counts;
+  const session = createSessionWith(profile);
+  const acc = newAccumulator();
+  walk(value, session, acc, "", 0, false);
+  countKeyPii(value, profile, acc);
+  return toCounts(acc);
 }
 
 /**

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  compiledProfileFor,
   defaultPiiPolicy,
   guardEgress,
   loadPiiPolicy,
@@ -7,10 +8,10 @@ import {
   PiiLeakError,
   unmaskInbound,
   withPiiBoundary,
+  type LoadedPiiPolicy,
   type MaskCounts,
   type Masked,
   type OutboundCall,
-  type PiiPolicy,
 } from "../src/index.js";
 import { SAMPLE_TCKN } from "./synthetic.js";
 
@@ -19,7 +20,8 @@ interface Prompt {
   readonly ticket: { readonly description: string };
 }
 
-const policy: PiiPolicy = loadPiiPolicy(defaultPiiPolicy());
+const policy: LoadedPiiPolicy = loadPiiPolicy(defaultPiiPolicy());
+const strict = compiledProfileFor(policy, "gizli").profile;
 
 function prompt(): Prompt {
   return {
@@ -28,7 +30,7 @@ function prompt(): Prompt {
   };
 }
 
-/** Stands in for the LLM gateway: it only ever accepts a masked payload. */
+/** Stands in for the LLM gateway: it only ever accepts a masked envelope. */
 const gateway: OutboundCall<Prompt, string> = (payload) =>
   Promise.resolve(`Cagri gonderildi: ${JSON.stringify(payload)}`);
 
@@ -42,7 +44,7 @@ describe("the boundary a caller cannot skip (v1's fatal defect)", () => {
 
   it("rejects a raw payload at run time even when someone casts past the brand", async () => {
     const guarded = guardEgress<Prompt, string>(
-      { policy, dataClass: "gizli", boundary: "llm-gateway" },
+      { profile: strict, boundary: "llm-gateway" },
       gateway,
     );
     const raw = prompt() as unknown as Masked<Prompt>;
@@ -57,14 +59,13 @@ describe("the boundary a caller cannot skip (v1's fatal defect)", () => {
     expect(caught).toBeInstanceOf(PiiLeakError);
     const leak = caught as PiiLeakError;
     expect(leak.boundary).toBe("llm-gateway");
-    expect(leak.types).toEqual(["tckn", "email"]);
     expect(leak.message).not.toContain(SAMPLE_TCKN);
   });
 
   it("lets a masked payload through the same guard", async () => {
-    const guarded = guardEgress<Prompt, string>({ policy, dataClass: "gizli" }, gateway);
-    const { payload } = maskOutbound(prompt(), { policy, dataClass: "gizli" });
-    await expect(guarded(payload)).resolves.toContain("[TCKN_1]");
+    const guarded = guardEgress<Prompt, string>({ profile: strict }, gateway);
+    const { envelope } = maskOutbound(prompt(), { policy, dataClass: "gizli" });
+    await expect(guarded(envelope)).resolves.toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
   });
 });
 
@@ -75,7 +76,11 @@ describe("withPiiBoundary", () => {
       { policy, dataClass: "gizli", boundary: "llm-gateway" },
       (masked) => {
         seenByGateway = JSON.stringify(masked);
-        return Promise.resolve(`[TCKN_1] numarali musteriye [EMAIL_1] adresinden donulmeli.`);
+        // The model answers in the vocabulary it was given, nonce included.
+        const nonce = /\[TCKN_1\.([0-9a-f]+)\]/.exec(seenByGateway)?.[1] ?? "no-nonce";
+        return Promise.resolve(
+          `[TCKN_1.${nonce}] numarali musteriye [EMAIL_1.${nonce}] adresinden donulmeli.`,
+        );
       },
     );
 
@@ -83,11 +88,11 @@ describe("withPiiBoundary", () => {
 
     expect(seenByGateway).not.toContain(SAMPLE_TCKN);
     expect(seenByGateway).not.toContain("ali@banka.com.tr");
-    expect(seenByGateway).toContain("[TCKN_1]");
-    expect(result.output).toBe(
+    expect(seenByGateway).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
+    expect(result.reveal()).toBe(
       `${SAMPLE_TCKN} numarali musteriye ali@banka.com.tr adresinden donulmeli.`,
     );
-    expect(result.maskedOutput).toContain("[TCKN_1]");
+    expect(result.maskedOutput).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
     expect(result.maskedOutput).not.toContain(SAMPLE_TCKN);
     expect(result.counts.occurrences).toBe(2);
     expect(result.dataClass).toBe("gizli");
@@ -100,10 +105,16 @@ describe("withPiiBoundary", () => {
       return Promise.resolve("ok");
     });
     const result = await call(prompt());
-    expect(Object.keys(result).sort()).toEqual(["counts", "dataClass", "maskedOutput", "output"]);
+    expect(Object.keys(result).sort()).toEqual([
+      "counts",
+      "dataClass",
+      "fellBack",
+      "maskedOutput",
+      "outputCounts",
+    ]);
     expect(JSON.stringify(received)).not.toContain(SAMPLE_TCKN);
     // The whole result is loggable: no path through it reaches a real value.
-    expect(JSON.stringify(result.counts)).not.toContain(SAMPLE_TCKN);
+    expect(JSON.stringify(result)).not.toContain(SAMPLE_TCKN);
   });
 
   it("falls back to the strictest profile when the data class is unusable", async () => {
@@ -114,7 +125,8 @@ describe("withPiiBoundary", () => {
     );
     const result = await call(prompt());
     expect(result.dataClass).toBe("gizli");
-    expect(seen).toHaveLength(1);
+    // One audit line per leg of the exchange: request and answer (B-11).
+    expect(seen).toHaveLength(2);
     expect(seen[0]?.occurrences).toBe(2);
   });
 
@@ -126,8 +138,11 @@ describe("withPiiBoundary", () => {
     });
     await call(prompt());
     await call(prompt());
-    expect(tokens[0]).toBe(tokens[1]);
-    expect(tokens[0]).toContain("[TCKN_1]");
+    // Same numbering, different session nonce: two exchanges share no token,
+    // so neither one's map can ever open the other's text (B-8).
+    expect(tokens[0]).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
+    expect(tokens[1]).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
+    expect(tokens[0]).not.toBe(tokens[1]);
   });
 
   it("propagates a callee failure without swallowing it", async () => {
@@ -144,10 +159,13 @@ describe("maskOutbound / unmaskInbound", () => {
       policy,
       dataClass: "dahili",
     });
-    expect(payload.ticket.description).toBe("Musteri TCKN [TCKN_1] ile [EMAIL_1] adresinden yazdi.");
+    const n = map.nonce;
+    expect(payload.ticket.description).toBe(
+      `Musteri TCKN [TCKN_1.${n}] ile [EMAIL_1.${n}] adresinden yazdi.`,
+    );
     expect(counts.fields).toBe(1);
     expect(dataClass).toBe("dahili");
-    expect(unmaskInbound({ answer: "[TCKN_1] kontrol edildi" }, map)).toEqual({
+    expect(unmaskInbound({ answer: `[TCKN_1.${n}] kontrol edildi` }, map)).toEqual({
       answer: `${SAMPLE_TCKN} kontrol edildi`,
     });
   });

@@ -78,21 +78,26 @@ describe("agent session masking survives the resume (B2 · M20/M54)", () => {
 
     expect(runner.inputs).toHaveLength(2);
     for (const input of runner.inputs) {
-      expect(input.task).toContain("[IBAN_1]");
+      // Tokens carry a per-session nonce ("[IBAN_1.a3f9]") since @maestro/pii's
+      // B-8 fix, so the assertion matches the prefix rather than the whole token.
+      expect(input.task).toContain("[IBAN_1.");
       expect(input.task).not.toContain(SAMPLE_IBAN);
     }
   });
 
   it("hands back an unmask for the human-facing text only (M20)", async () => {
-    const { gateway } = build({ onPremMissing: "masked_cloud", routes: gizli("gizli", ["anthropic-direct"]) }, [
-      turn(`done with [IBAN_1]`),
-    ]);
+    const { gateway, runner } = build(
+      { onPremMissing: "masked_cloud", routes: gizli("gizli", ["anthropic-direct"]) },
+      [turn(`done with [IBAN_1]`)],
+    );
 
     const outcome = await gateway.agentSession({ ...opts, dataClass: "gizli" });
     if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
-    // What may be persisted stays masked; the reveal is an explicit call.
+    // What may be persisted stays masked; the reveal is an explicit call. The
+    // token the model was actually given carries this session's nonce.
+    const token = /\[IBAN_1\.[0-9a-f]+\]/.exec(runner.inputs[0]?.task ?? "")?.[0] ?? "";
     expect(outcome.value.finalText).toBe("done with [IBAN_1]");
-    expect(outcome.unmask?.(outcome.value.finalText)).toBe(`done with ${SAMPLE_IBAN}`);
+    expect(outcome.unmask?.(`done with ${token}`)).toBe(`done with ${SAMPLE_IBAN}`);
   });
 });
 

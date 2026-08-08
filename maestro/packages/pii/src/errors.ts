@@ -34,11 +34,28 @@ export class PiiLeakError extends Error {
     readonly occurrences: number,
   ) {
     super(
-      `unmasked PII reached the "${boundary}" boundary: ` +
-        `${occurrences} occurrence(s) of ${types.join(", ")} — ` +
-        `route the payload through withPiiBoundary() (M20)`,
+      occurrences === 0
+        ? `a payload that never went through the PII boundary reached "${boundary}" ` +
+          `(it is not a Masked envelope) — route it through withPiiBoundary() (M20)`
+        : `unmasked PII reached the "${boundary}" boundary: ` +
+          `${occurrences} occurrence(s) of ${types.join(", ")} — ` +
+          `route the payload through withPiiBoundary() (M20)`,
     );
     this.name = "PiiLeakError";
+  }
+}
+
+/**
+ * A masking session was asked for something it cannot be: a nonce that would
+ * not survive the token grammar, or a token from a session that is not this
+ * one. Tokens are scoped to one session on purpose (M20) — a token that means
+ * different people in two sessions is how `unmask` returned the wrong
+ * person's identity without an error.
+ */
+export class PiiSessionError extends Error {
+  constructor(message: string) {
+    super(`PII masking session is invalid: ${message}`);
+    this.name = "PiiSessionError";
   }
 }
 

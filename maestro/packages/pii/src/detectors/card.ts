@@ -1,7 +1,16 @@
 import type { Detector, PiiMatch } from "../types.js";
+import { digitsOnly, SEPARATOR_RUN } from "./separators.js";
 
-/** 13..19 digits, optionally grouped with single spaces or hyphens. */
-const CARD_RE = /(?<![0-9A-Za-z])(?:[0-9][ -]?){12,18}[0-9](?![0-9A-Za-z])/g;
+/**
+ * 13..19 digits, grouped with any of the separators a clipboard produces
+ * (space, NBSP, tab, dot, hyphen — see `separators.ts`). The old class was
+ * `[ -]?`, which let `4000.0001.2345.6784` and a double-spaced number through
+ * unmasked (verifier B-3).
+ */
+const CARD_RE = new RegExp(
+  `(?<![0-9A-Za-z])(?:[0-9]${SEPARATOR_RUN}){12,18}[0-9](?![0-9A-Za-z])`,
+  "gu",
+);
 
 /**
  * Luhn (mod-10) check. Mandatory: a 16-digit reference number that fails Luhn
@@ -31,7 +40,7 @@ export const cardDetector: Detector = {
     for (const m of text.matchAll(CARD_RE)) {
       const raw = m[0];
       if (m.index === undefined) continue;
-      const digits = raw.replace(/[^0-9]/g, "");
+      const digits = digitsOnly(raw);
       if (!isValidLuhn(digits)) continue;
       matches.push({
         type: "card",

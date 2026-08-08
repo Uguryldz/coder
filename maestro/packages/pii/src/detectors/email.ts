@@ -4,9 +4,14 @@ import type { Detector, PiiMatch } from "../types.js";
  * Deliberately narrower than RFC 5322: a local part, an `@`, and a dotted
  * domain with a real TLD label. Quoted local parts and IP-literal domains are
  * not worth the false positives they bring in Jira prose.
+ *
+ * Letters and digits are matched as `\p{L}\p{N}`, not `A-Za-z0-9`: with the
+ * ASCII class `ali.öztürk@banka.com.tr` leaked its name half and
+ * `alı@banka.com.tr` was not masked at all (verifier B-13) — and Turkish
+ * addresses are the common case here, not the exotic one.
  */
 const EMAIL_RE =
-  /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+(?![A-Za-z0-9-])/g;
+  /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]+@[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?)+(?![\p{L}\p{N}-])/gu;
 
 export const emailDetector: Detector = {
   type: "email",

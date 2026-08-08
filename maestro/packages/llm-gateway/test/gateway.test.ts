@@ -132,7 +132,7 @@ describe("LlmGateway.generateObject", () => {
     );
 
     const sent = JSON.stringify(stub.calls[0]?.body);
-    expect(sent).toContain("[IBAN_1]");
+    expect(sent).toContain("[IBAN_1."); // per-session nonce, see @maestro/pii B-8
     expect(sent).not.toContain(SAMPLE_IBAN);
   });
 

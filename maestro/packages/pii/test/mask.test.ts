@@ -21,7 +21,7 @@ const STRICT: MaskProfile = {
 };
 
 function session(): MaskSession {
-  return createSession(STRICT);
+  return createSession(STRICT, "t1");
 }
 
 describe("maskText", () => {
@@ -31,8 +31,8 @@ describe("maskText", () => {
       `tel 0532 111 22 33, e-posta ali@banka.com.tr, musteri MST-12345678`;
     const { text: masked, counts } = maskText(text, session());
     expect(masked).toBe(
-      "TCKN [TCKN_1], IBAN [IBAN_1], kart [CARD_1], " +
-        "tel [PHONE_1], e-posta [EMAIL_1], musteri [ACCT_1]",
+      "TCKN [TCKN_1.t1], IBAN [IBAN_1.t1], kart [CARD_1.t1], " +
+        "tel [PHONE_1.t1], e-posta [EMAIL_1.t1], musteri [ACCT_1.t1]",
     );
     expect(counts.occurrences).toBe(6);
     expect(counts.byType).toEqual({ iban: 1, card: 1, tckn: 1, phone: 1, email: 1, account: 1 });
@@ -44,19 +44,19 @@ describe("maskText", () => {
       `${SAMPLE_TR_IBAN} ve ${groupIban(SAMPLE_TR_IBAN)} ve ${SAMPLE_TR_IBAN}`,
       s,
     );
-    expect(text).toBe("[IBAN_1] ve [IBAN_1] ve [IBAN_1]");
+    expect(text).toBe("[IBAN_1.t1] ve [IBAN_1.t1] ve [IBAN_1.t1]");
     expect(s.map.size).toBe(1);
   });
 
   it("numbers distinct values so the model can tell them apart", () => {
     const other = makeTckn("987654321");
     const { text } = maskText(`${SAMPLE_TCKN} ile ${other} ayni degil`, session());
-    expect(text).toBe("[TCKN_1] ile [TCKN_2] ayni degil");
+    expect(text).toBe("[TCKN_1.t1] ile [TCKN_2.t1] ayni degil");
   });
 
   it("does not let a phone match chop an IBAN in half", () => {
     const { text, counts } = maskText(`Hesap: ${SAMPLE_TR_IBAN}`, session());
-    expect(text).toBe("Hesap: [IBAN_1]");
+    expect(text).toBe("Hesap: [IBAN_1.t1]");
     expect(counts.occurrences).toBe(1);
   });
 
@@ -77,8 +77,8 @@ describe("maskValue over payloads", () => {
     const snapshot = structuredClone(payload);
     const { value, counts } = maskValue(payload, session());
     expect(payload).toEqual(snapshot);
-    expect(value.summary).toBe("Iade [IBAN_1] hesabina");
-    expect(value.comments[0]?.body).toBe("Ara [PHONE_1]");
+    expect(value.summary).toBe("Iade [IBAN_1.t1] hesabina");
+    expect(value.comments[0]?.body).toBe("Ara [PHONE_1.t1]");
     expect(value.comments[1]?.body).toBe("sorun yok");
     expect(value.meta.attempts).toBe(3);
     expect(value.meta.at).toEqual(new Date(0));
@@ -88,18 +88,18 @@ describe("maskValue over payloads", () => {
 
   it("masks identifiers stored as numbers instead of letting them through", () => {
     const { value, counts } = maskValue({ tckn: Number(SAMPLE_TCKN) }, session());
-    expect(value.tckn).toBe("[TCKN_1]");
+    expect(value.tckn).toBe("[TCKN_1.t1]");
     expect(counts.byType.tckn).toBe(1);
   });
 
   it("applies field rules to the whole value, whatever it contains (M20)", () => {
     const s = session();
     const { value, counts } = maskValue({ customerName: "Ayse Yilmaz", note: "Ayse Yilmaz" }, s);
-    expect(value.customerName).toBe("[FIELD_1]");
+    expect(value.customerName).toBe("[FIELD_1.t1]");
     // A name in free text is not detectable by pattern; only the field rule covers it.
     expect(value.note).toBe("Ayse Yilmaz");
     expect(counts.byType.field).toBe(1);
-    expect(s.map.unmask("[FIELD_1]")).toBe("Ayse Yilmaz");
+    expect(s.map.unmask("[FIELD_1.t1]")).toBe("Ayse Yilmaz");
   });
 
   it("is idempotent: masking masked data changes nothing", () => {
@@ -137,7 +137,7 @@ describe("unmaskValue", () => {
 
   it("is a no-op for a session that masked nothing", () => {
     const s = session();
-    expect(unmaskValue({ a: "[TCKN_1]" }, s.map)).toEqual({ a: "[TCKN_1]" });
+    expect(unmaskValue({ a: "[TCKN_1.t1]" }, s.map)).toEqual({ a: "[TCKN_1.t1]" });
   });
 });
 

@@ -1,40 +1,59 @@
+import { PiiLeakError } from "./errors.js";
 import { assertNoPii, createSession, maskValue, unmaskValue, type MaskSession } from "./mask.js";
-import { compileProfile, resolveProfile } from "./policy.js";
+import { Masked, mintMasked } from "./masked.js";
+import { resolveProfile, type CompiledProfile, type LoadedPiiPolicy } from "./policy.js";
 import type { ReverseMap } from "./reverse-map.js";
-import type { DataClassName, MaskCounts, PiiPolicy } from "./types.js";
-
-declare const MASKED_BRAND: unique symbol;
-
-/**
- * A payload that has been through the boundary.
- *
- * The brand is unforgeable outside this module, so an outbound function typed
- * `(payload: Masked<Request>) => ...` simply cannot be handed a raw request:
- * the compiler rejects it. This is the type-level half of the fix for v1's
- * fatal defect — v1 had a working masker that the runner never called, and
- * nothing in the type system noticed.
- */
-export type Masked<T> = T & { readonly [MASKED_BRAND]: "pii-masked" };
+import { PiiBoundaryResult } from "./result.js";
+import type { DataClassName, MaskCounts } from "./types.js";
 
 /** The only shape an egress function may take. */
 export type OutboundCall<TIn, TOut> = (payload: Masked<TIn>) => Promise<TOut>;
 
+/** Which leg of the exchange an audit line describes. */
+export type MaskLeg = "request" | "response";
+
+export interface MaskedInfo {
+  readonly boundary: string;
+  readonly leg: MaskLeg;
+  /**
+   * The declared data class was missing or unrecognised and the strictest
+   * profile was used instead. This used to be computed and then dropped on
+   * the floor, so a fail-closed fallback produced no audit signal at all.
+   */
+  readonly fellBack: boolean;
+}
+
+/** Audit hook (M33 `PII_MASKED`). Receives counts — never values. */
+export type MaskedHook = (
+  counts: MaskCounts,
+  dataClass: DataClassName,
+  info: MaskedInfo,
+) => void;
+
 export interface PiiBoundaryOptions {
-  readonly policy: PiiPolicy;
+  /**
+   * A policy that went through `loadPiiPolicy`. Typed as the branded
+   * `LoadedPiiPolicy` on purpose: a hand-written literal used to compile
+   * here, which skipped every fail-closed rule loading applies (B-7).
+   */
+  readonly policy: LoadedPiiPolicy;
   /**
    * Declared data class. Deliberately `unknown`: webhooks and Jira fields
    * hand us whatever they like, and an unrecognised value must land on the
-   * strictest profile rather than throw (M18/M63 fail-closed).
+   * strictest profile rather than throw (M18/M63 fail-closed). It is also,
+   * for the same reason, UNTRUSTED — see RAPOR §4.
    */
   readonly dataClass: unknown;
   /** Name used in leak errors and audit rows. */
   readonly boundary?: string;
-  /** Audit hook (M33 `PII_MASKED`). Receives counts — never values. */
-  readonly onMasked?: (counts: MaskCounts, dataClass: DataClassName) => void;
+  readonly onMasked?: MaskedHook;
 }
 
 export interface MaskOutboundResult<T> {
-  readonly payload: Masked<T>;
+  /** The masked payload itself, for a caller that builds a request body. */
+  readonly payload: T;
+  /** The same payload sealed — the only thing `guardEgress` accepts. */
+  readonly envelope: Masked<T>;
   /**
    * Session map. Hold it only for as long as the matching response needs
    * un-masking and never put it in a log, an artifact or a request body.
@@ -42,23 +61,26 @@ export interface MaskOutboundResult<T> {
   readonly map: ReverseMap;
   readonly counts: MaskCounts;
   readonly dataClass: DataClassName;
+  readonly fellBack: boolean;
+  /** The compiled profile that did the masking — hand this to `guardEgress`. */
+  readonly profile: CompiledProfile;
 }
 
-export interface PiiBoundaryResult<TOut> {
-  /** Tokens replaced by real values — for the human on the other end only. */
-  readonly output: TOut;
-  /** Tokens intact — this is the copy that may be persisted (M20/M82). */
-  readonly maskedOutput: TOut;
-  readonly counts: MaskCounts;
+export { PiiBoundaryResult } from "./result.js";
+
+interface Prepared {
+  readonly session: MaskSession;
   readonly dataClass: DataClassName;
+  readonly fellBack: boolean;
 }
 
-function prepare(options: PiiBoundaryOptions): {
-  session: MaskSession;
-  dataClass: DataClassName;
-} {
+function prepare(options: PiiBoundaryOptions): Prepared {
   const resolved = resolveProfile(options.policy, options.dataClass);
-  return { session: createSession(resolved.profile), dataClass: resolved.dataClass };
+  return {
+    session: createSession(resolved.profile),
+    dataClass: resolved.dataClass,
+    fellBack: resolved.fellBack,
+  };
 }
 
 /**
@@ -67,15 +89,19 @@ function prepare(options: PiiBoundaryOptions): {
  * by different call frames (a queued gateway call, for instance).
  */
 export function maskOutbound<T>(payload: T, options: PiiBoundaryOptions): MaskOutboundResult<T> {
-  const { session, dataClass } = prepare(options);
+  const { session, dataClass, fellBack } = prepare(options);
+  const boundary = options.boundary ?? "outbound";
   const masked = maskValue(payload, session);
-  options.onMasked?.(masked.counts, dataClass);
-  assertNoPii(masked.value, session.profile, options.boundary ?? "outbound");
+  options.onMasked?.(masked.counts, dataClass, { boundary, leg: "request", fellBack });
+  assertNoPii(masked.value, session.profile, boundary);
   return {
-    payload: masked.value as Masked<T>,
+    payload: masked.value,
+    envelope: mintMasked(masked.value),
     map: session.map,
     counts: masked.counts,
     dataClass,
+    fellBack,
+    profile: session.profile,
   };
 }
 
@@ -86,9 +112,10 @@ export function unmaskInbound<T>(value: T, map: ReverseMap): T {
 
 /**
  * The gate. Wrap the outbound call once and masking stops being something a
- * caller can forget: the wrapper masks, trips the runtime guard, calls, and
- * un-masks the answer. The ReverseMap is created and dropped inside this
- * frame, so it cannot be logged or persisted by anyone downstream.
+ * caller can forget: the wrapper masks, trips the runtime guard, calls, masks
+ * the answer as well, and only then un-masks a copy for the screen. The
+ * ReverseMap is created and dropped inside this frame, so it cannot be logged
+ * or persisted by anyone downstream.
  */
 export function withPiiBoundary<TIn, TOut>(
   options: PiiBoundaryOptions,
@@ -96,33 +123,63 @@ export function withPiiBoundary<TIn, TOut>(
 ): (payload: TIn) => Promise<PiiBoundaryResult<TOut>> {
   const boundary = options.boundary ?? "outbound";
   return async (payload: TIn): Promise<PiiBoundaryResult<TOut>> => {
-    const { session, dataClass } = prepare(options);
+    const { session, dataClass, fellBack } = prepare(options);
     const masked = maskValue(payload, session);
-    options.onMasked?.(masked.counts, dataClass);
+    options.onMasked?.(masked.counts, dataClass, { boundary, leg: "request", fellBack });
     assertNoPii(masked.value, session.profile, boundary);
-    const maskedOutput = await call(masked.value as Masked<TIn>);
-    return {
-      output: unmaskValue(maskedOutput, session.map),
-      maskedOutput,
-      counts: masked.counts,
+
+    const answer = await call(mintMasked(masked.value));
+
+    // The return leg is journalled for ten years (M82) and nothing used to
+    // look at it: a model that writes an identifier out of its own context
+    // put raw PII straight into the record (B-11). Masking it through the
+    // same session keeps token identity stable across the exchange.
+    const back = maskValue(answer, session);
+    options.onMasked?.(back.counts, dataClass, { boundary, leg: "response", fellBack });
+    assertNoPii(back.value, session.profile, `${boundary} (response)`);
+
+    return new PiiBoundaryResult(
+      back.value,
+      unmaskValue(back.value, session.map),
+      masked.counts,
+      back.counts,
       dataClass,
-    };
+      fellBack,
+    );
   };
+}
+
+export interface EgressGuardOptions {
+  /**
+   * The compiled profile the masker used — `maskOutbound(...).profile`, or
+   * `compiledProfileFor(policy, trustedClass).profile`.
+   *
+   * The guard deliberately does not resolve a class itself any more. It used
+   * to take `{ policy, dataClass }` and re-resolve, which meant the tripwire
+   * trusted the same webhook-supplied label the payload came with: declaring
+   * `dataClass: "acik"` was enough to walk a raw TCKN past it (B-6).
+   */
+  readonly profile: CompiledProfile;
+  readonly boundary?: string;
 }
 
 /**
  * Runtime half of the fix, for egress points that are not called through
- * `withPiiBoundary` (a storage writer, a notifier). A caller that casts its
- * way past `Masked<T>` still gets a `PiiLeakError` rather than a disclosure.
+ * `withPiiBoundary` (a storage writer, a notifier). A payload that never went
+ * through the boundary — a cast, a spread, a JSON round-trip typed `any` — is
+ * rejected before the scan even starts.
  */
 export function guardEgress<TIn, TOut>(
-  options: PiiBoundaryOptions,
+  options: EgressGuardOptions,
   send: OutboundCall<TIn, TOut>,
 ): OutboundCall<TIn, TOut> {
   const boundary = options.boundary ?? "outbound";
+  const { profile } = options;
   return async (payload: Masked<TIn>): Promise<TOut> => {
-    const { profile } = resolveProfile(options.policy, options.dataClass);
-    assertNoPii(payload, compileProfile(profile), boundary);
+    if (!Masked.is(payload)) throw new PiiLeakError(boundary, [], 0);
+    assertNoPii(payload.value, profile, boundary);
     return send(payload);
   };
 }
+
+export { Masked } from "./masked.js";

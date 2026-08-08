@@ -1,11 +1,18 @@
 import type { Detector, PiiMatch } from "../types.js";
+import { digitsOnly, SEPARATOR_RUN } from "./separators.js";
 
 /**
- * 11 digits, not starting with 0, not glued to another alphanumeric. The
- * lookarounds keep an 11-digit run inside a longer number or inside an IBAN
- * from being offered as a candidate at all.
+ * 11 digits, not starting with 0, not glued to another alphanumeric, and —
+ * like the card detector — tolerant of the separators people type: `TC: 123
+ * 456 789 50` and `123-456-78950` are ordinary banking spellings and used to
+ * travel to the model unmasked (verifier B-1). The lookarounds still keep an
+ * 11-digit run inside a longer number or inside an IBAN from being offered as
+ * a candidate at all; the checksum below throws out everything else.
  */
-const TCKN_RE = /(?<![0-9A-Za-z])[1-9][0-9]{10}(?![0-9A-Za-z])/g;
+const TCKN_RE = new RegExp(
+  `(?<![0-9A-Za-z])[1-9](?:${SEPARATOR_RUN}[0-9]){10}(?![0-9A-Za-z])`,
+  "gu",
+);
 
 /**
  * T.C. Kimlik Numarası checksum. Both check digits are mandatory: an
@@ -38,14 +45,16 @@ export const tcknDetector: Detector = {
   scan(text: string): PiiMatch[] {
     const matches: PiiMatch[] = [];
     for (const m of text.matchAll(TCKN_RE)) {
-      const value = m[0];
-      if (m.index === undefined || !isValidTckn(value)) continue;
+      const raw = m[0];
+      const digits = digitsOnly(raw);
+      if (m.index === undefined || !isValidTckn(digits)) continue;
       matches.push({
         type: "tckn",
         start: m.index,
-        end: m.index + value.length,
-        text: value,
-        canonical: value,
+        end: m.index + raw.length,
+        text: raw,
+        // Every spelling of one number is one person, hence one token.
+        canonical: digits,
       });
     }
     return matches;

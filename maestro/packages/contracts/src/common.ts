@@ -15,8 +15,12 @@ export type ProjectKey = z.infer<typeof ProjectKey>;
 export const AppId = z.string().regex(/^[a-z][a-z0-9-]{1,63}$/);
 export type AppId = z.infer<typeof AppId>;
 
-/** Temporal workflow run id (opaque). */
-export const RunId = z.string().min(8);
+/**
+ * Temporal workflow run id. Charset is constrained because the id becomes a
+ * SINGLE path segment in storage keys (evidence/<year>/<ticket>/<runId>/…):
+ * a slash inside it writes a key that can never be parsed back.
+ */
+export const RunId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{7,}$/);
 export type RunId = z.infer<typeof RunId>;
 
 export const IsoDateTime = z.iso.datetime({ offset: true });

@@ -60,5 +60,6 @@
   "llm.blocked_by_route": "Bu veri sınıfı için yönlendirme politikası hiçbir modele izin vermiyor",
   "run.queued_quota": "Akış kuyruğa alındı: abonelik havuzu dolu",
   "run.handover_strikes": "3 başarısız turdan sonra iş insana devredildi",
+  "run.handover_stuck": "Ajan {count}/{limit} turda ilerleyemedi — iş insana devredildi, work mode ai-assist'e alındı",
   "evidence.ready": "Kanıt paketi hazır: {fileCount} dosya, arşive yazıldı"
 }

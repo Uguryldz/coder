@@ -58,6 +58,14 @@ describe("runVerification", () => {
   });
 });
 
+/**
+ * The token grammar carries a per-session nonce (`[IBAN_1.a3f9]`), so tests
+ * match its shape rather than a literal token: a literal would only pass by
+ * accident, and asserting the nonce is present is what proves the payload
+ * went through a real session.
+ */
+const IBAN_TOKEN = /\[IBAN_\d+\.[0-9a-f]+\]/;
+
 describe("createReportJournal", () => {
   it("stores the MASKED report and never the raw one (M20/M82)", async () => {
     const stored: SessionReport[] = [];
@@ -65,7 +73,9 @@ describe("createReportJournal", () => {
       policy: defaultPiiPolicy(),
       dataClass: "dahili",
       sink: (payload: Masked<SessionReport>) => {
-        stored.push(payload);
+        // `.value` is the masked payload: the envelope is a class, and reading
+        // through it is the only way in (a spread would not survive it).
+        stored.push(payload.value);
         return Promise.resolve();
       },
     });
@@ -87,7 +97,7 @@ describe("createReportJournal", () => {
 
     const written = stored[0] as SessionReport;
     expect(written.finalText).not.toContain(SAMPLE_IBAN);
-    expect(written.finalText).toMatch(/\[IBAN_\d+\]/);
+    expect(written.finalText).toMatch(IBAN_TOKEN);
     // Command output is masked too: a failing test is a classic leak path.
     expect(written.commands[0]?.stdoutTail).not.toContain(SAMPLE_IBAN);
     expect(result.counts.occurrences).toBeGreaterThan(0);
@@ -100,7 +110,7 @@ describe("createReportJournal", () => {
       policy: defaultPiiPolicy(),
       dataClass: "gizli",
       sink: (payload: Masked<SessionReport>) => {
-        stored.push(payload);
+        stored.push(payload.value);
         return Promise.resolve();
       },
     });
@@ -124,16 +134,57 @@ describe("createReportJournal", () => {
     const write = createReportJournal<string>({
       policy: defaultPiiPolicy(),
       dataClass: "dahili",
-      // The sink echoes what it stored, so `output` shows what a human would see.
-      sink: (payload: Masked<SessionReport>) => Promise.resolve(payload.finalText),
+      // The sink echoes what it stored, so `reveal()` shows what a human sees.
+      sink: (payload: Masked<SessionReport>) => Promise.resolve(payload.value.finalText),
     });
     const result = await write(report({ finalText: `iban ${SAMPLE_IBAN}` }));
     expect(result.maskedOutput).not.toContain(SAMPLE_IBAN);
-    expect(result.output).toContain(SAMPLE_IBAN);
+    expect(result.reveal()).toContain(SAMPLE_IBAN);
+    // The real values are reachable only through `reveal()`: everything a log
+    // or a journal row would see is the masked copy (M82).
+    expect(JSON.stringify(result)).not.toContain(SAMPLE_IBAN);
+  });
+
+  it("keeps one masking session for the writer's lifetime", async () => {
+    const stored: SessionReport[] = [];
+    const write = createReportJournal<void>({
+      policy: defaultPiiPolicy(),
+      dataClass: "dahili",
+      sink: (payload: Masked<SessionReport>) => {
+        stored.push(payload.value);
+        return Promise.resolve();
+      },
+    });
+
+    await write(report({ finalText: `iban ${SAMPLE_IBAN}` }));
+    const once = stored[0] as SessionReport;
+    // The report the journal already holds, written again — an agent quoting
+    // its own masked output is the ordinary case, not a contrived one.
+    await write(once);
+
+    // With a session per call the second pass does not recognise the token and
+    // strips its brackets (`IBAN_1.a3f9`), so the row stops saying a value was
+    // removed there and the journal disagrees with itself.
+    expect(stored[1]).toEqual(once);
+    expect(stored[1]?.finalText).toMatch(IBAN_TOKEN);
+  });
+
+  it("gives the same value the same token across writes, so a run reads as one story", async () => {
+    const stored: SessionReport[] = [];
+    const write = createReportJournal<void>({
+      policy: defaultPiiPolicy(),
+      dataClass: "dahili",
+      sink: (payload: Masked<SessionReport>) => {
+        stored.push(payload.value);
+        return Promise.resolve();
+      },
+    });
+    await write(report({ finalText: `iban ${SAMPLE_IBAN}` }));
+    await write(report({ finalText: `same account: ${SAMPLE_IBAN}` }));
+    expect(stored[1]?.finalText).toBe(stored[0]?.finalText.replace("iban ", "same account: "));
   });
 
   it("cannot be reached with a raw report — the sink's parameter is branded", () => {
-    // pii now wraps masked payloads in a nominal envelope: read through .value
     const sink = (payload: Masked<SessionReport>) => Promise.resolve(payload.value.runId);
     // @ts-expect-error a raw SessionReport is not Masked<SessionReport>: the only
     // way to obtain the brand is to go through createReportJournal.

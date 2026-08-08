@@ -60,12 +60,11 @@ export interface JournalMaskingOptions {
  * The masking gate of the memory layer. Every string that reaches the journal,
  * the living summary or the bootstrap package goes through it.
  *
- * Each call opens its own masking session, so the ReverseMap is created and
- * dropped inside one call frame and never reaches storage (M20: the map is for
- * live display only). The visible consequence is that token numbering restarts
- * per call — `[EMAIL_1]` in entry 4 and in entry 9 need not be the same person.
- * That is the correct trade for a ten-year record: a stable numbering would be
- * a persistent, re-identifiable index of the very values we removed.
+ * One masker holds ONE session (see below), so `[EMAIL_1.<nonce>]` means the
+ * same person in every entry that masker writes; two maskers share no token,
+ * because the nonce differs. The ReverseMap stays inside the closure and never
+ * reaches storage (M20: it is for live display only), so build one masker per
+ * run and let it go when the run ends.
  */
 export interface JournalMasker {
   readonly dataClass: DataClassName;

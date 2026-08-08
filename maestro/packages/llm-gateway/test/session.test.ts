@@ -1,5 +1,6 @@
+import type { LlmDriverId } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
-import { AgentSessionStore, UnknownResumeTokenError } from "../src/index.js";
+import { AgentSessionStore, UnknownResumeTokenError, describePin, type SessionPin } from "../src/index.js";
 import { fakeClock, idSequence } from "./helpers.js";
 
 function store() {
@@ -7,10 +8,14 @@ function store() {
   return { clock, store: new AgentSessionStore(idSequence(), clock.now) };
 }
 
+function pin(driver: LlmDriverId, model: string, over: Partial<SessionPin> = {}): SessionPin {
+  return { driver, model, dataClass: "dahili", masked: false, ...over };
+}
+
 describe("AgentSessionStore (M17 delegation bookkeeping)", () => {
   it("issues a resume token pinned to the backend and workspace", () => {
     const { store: s } = store();
-    const record = s.start("claude-sub", "claude-x", "/work/UGURPAY-1");
+    const record = s.start(pin("claude-sub", "claude-x"), "/work/UGURPAY-1");
 
     expect(record).toMatchObject({
       resumeToken: "session-1",
@@ -25,7 +30,7 @@ describe("AgentSessionStore (M17 delegation bookkeeping)", () => {
 
   it("resumes the same backend and remembers the vendor handle", () => {
     const { clock, store: s } = store();
-    const started = s.start("claude-sub", "claude-x", "/work/UGURPAY-1");
+    const started = s.start(pin("claude-sub", "claude-x"), "/work/UGURPAY-1");
     s.complete(started.resumeToken, "vendor-abc");
 
     clock.advance(5_000);
@@ -36,7 +41,7 @@ describe("AgentSessionStore (M17 delegation bookkeeping)", () => {
 
   it("counts turns and moves updatedAt without touching createdAt", () => {
     const { clock, store: s } = store();
-    const started = s.start("anthropic-direct", "claude-x", "/work/a");
+    const started = s.start(pin("anthropic-direct", "claude-x"), "/work/a");
 
     s.complete(started.resumeToken, "v1");
     clock.advance(60_000);
@@ -57,15 +62,25 @@ describe("AgentSessionStore (M17 delegation bookkeeping)", () => {
 
   it("refuses to resume a session in a different workspace", () => {
     const { store: s } = store();
-    const started = s.start("claude-sub", "claude-x", "/work/a");
+    const started = s.start(pin("claude-sub", "claude-x"), "/work/a");
 
     expect(() => s.resume(started.resumeToken, "/work/b")).toThrow(/bound to workspace \/work\/a/);
   });
 
+  it("pins the data class and the masking decision, not just the backend", () => {
+    const { store: s } = store();
+    const started = s.start(pin("anthropic-direct", "claude-x", { dataClass: "gizli", masked: true }), "/work/a");
+    s.complete(started.resumeToken, null);
+
+    const resumed = s.resume(started.resumeToken, "/work/a");
+    expect(resumed).toMatchObject({ dataClass: "gizli", masked: true });
+    expect(describePin(resumed)).toBe("anthropic-direct/claude-x (gizli, masked)");
+  });
+
   it("keeps sessions independent", () => {
     const { store: s } = store();
-    const first = s.start("claude-sub", "claude-x", "/work/a");
-    const second = s.start("anthropic-direct", "claude-y", "/work/b");
+    const first = s.start(pin("claude-sub", "claude-x"), "/work/a");
+    const second = s.start(pin("anthropic-direct", "claude-y"), "/work/b");
     s.complete(first.resumeToken, "v1");
 
     expect(second.resumeToken).toBe("session-2");

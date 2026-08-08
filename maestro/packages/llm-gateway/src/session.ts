@@ -1,4 +1,4 @@
-import type { LlmDriverId } from "@maestro/contracts";
+import type { DataClass, LlmDriverId } from "@maestro/contracts";
 import { UnknownResumeTokenError } from "./errors.js";
 
 /**
@@ -30,15 +30,30 @@ export interface AgentRunner {
   run(input: AgentRunInput): Promise<AgentRunOutput>;
 }
 
-export interface SessionRecord {
-  resumeToken: string;
+/**
+ * What the first turn decided and every later turn must still agree with. The
+ * data class and the masking flag belong here, not just the backend: a session
+ * whose second turn goes out unmasked is a session that was never masked (M20).
+ */
+export interface SessionPin {
   driver: LlmDriverId;
   model: string;
+  dataClass: DataClass;
+  masked: boolean;
+}
+
+export interface SessionRecord extends SessionPin {
+  resumeToken: string;
   workspacePath: string;
   vendorSessionId: string | null;
   turns: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Human-readable pin, for the error a policy change raises. */
+export function describePin(pin: SessionPin): string {
+  return `${pin.driver}/${pin.model} (${pin.dataClass}${pin.masked ? ", masked" : ""})`;
 }
 
 /**
@@ -54,12 +69,11 @@ export class AgentSessionStore {
     private readonly now: () => Date,
   ) {}
 
-  start(driver: LlmDriverId, model: string, workspacePath: string): SessionRecord {
+  start(pin: SessionPin, workspacePath: string): SessionRecord {
     const at = this.now().toISOString();
     const record: SessionRecord = {
+      ...pin,
       resumeToken: this.newId(),
-      driver,
-      model,
       workspacePath,
       vendorSessionId: null,
       turns: 0,

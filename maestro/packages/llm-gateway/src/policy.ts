@@ -18,9 +18,10 @@ export type PolicyDecision =
 /**
  * Routing policy (M18/M19). Two independent questions, both fail-closed:
  * which backends may see this data class, and which model serves this
- * role/variant. `gizli` never reaches a cloud backend; when no on-prem backend
- * exists the configured action decides — degrade (default), block, or masked
- * cloud. An unresolvable model is an error, never a silent fallback.
+ * role/variant. `gizli` never reaches a cloud backend and never a subscription
+ * seat; when no on-prem backend exists the configured action decides — degrade
+ * (default), block, or masked cloud. An unresolvable model is an error, never a
+ * silent fallback.
  */
 export class LlmPolicy {
   constructor(
@@ -51,7 +52,11 @@ export class LlmPolicy {
       case "block":
         throw new LlmPolicyBlockedError(dataClass, MSG_BLOCKED_CONFIDENTIAL);
       case "masked_cloud": {
-        const cloud = usable[0];
+        // Masked or not, a subscription seat is a consumer contract with no
+        // enterprise agreement behind it — the confidential class never rides
+        // one. `parseGatewayConfig` refuses such a route; this is the second
+        // gate, for a config built by hand.
+        const cloud = usable.find((b) => !isSubscriptionDriver(b.driver));
         if (!cloud) throw new LlmPolicyBlockedError(dataClass, MSG_BLOCKED_CONFIDENTIAL);
         return { kind: "allow", driver: cloud.driver, model: cloud.model, masked: true };
       }

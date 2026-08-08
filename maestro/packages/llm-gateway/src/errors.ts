@@ -1,3 +1,5 @@
+import { redact } from "./redact.js";
+
 /**
  * Typed gateway failures. Every mode the core branches on gets a class —
  * nobody string-matches a message to tell a policy block from an expired key.
@@ -12,17 +14,25 @@ export class LlmConfigError extends LlmGatewayError {
   }
 }
 
-/** Any non-2xx provider response; `responseBody` is truncated for the audit trail (M33). */
+/**
+ * Any non-2xx provider response. `responseBody` is truncated for the audit
+ * trail (M33), redacted before it is stored, and NON-ENUMERABLE: a provider
+ * that echoes the request would otherwise put a key or a customer's TCKN into
+ * every `JSON.stringify(error)` a structured logger performs (M19/M82).
+ */
 export class LlmHttpError extends LlmGatewayError {
+  declare readonly responseBody: string;
+
   constructor(
     readonly status: number,
     readonly driver: string,
     readonly url: string,
-    readonly responseBody: string,
+    responseBody: string,
     message?: string,
   ) {
     super(message ?? `${driver} ${url} failed with HTTP ${status}`);
     this.name = "LlmHttpError";
+    Object.defineProperty(this, "responseBody", { value: redact(responseBody), enumerable: false });
   }
 }
 
@@ -99,5 +109,22 @@ export class UnknownResumeTokenError extends LlmGatewayError {
   constructor(readonly resumeToken: string) {
     super(`unknown resume token "${resumeToken}"`);
     this.name = "UnknownResumeTokenError";
+  }
+}
+
+/**
+ * M58/M18: the routing policy moved while a session was open and no longer
+ * agrees with what that session is pinned to. Both answers are wrong — the old
+ * backend ignores the new policy, a new backend loses the agent's context — so
+ * the turn is refused and the workflow decides what to do with the session.
+ */
+export class SessionPolicyChangedError extends LlmGatewayError {
+  constructor(
+    readonly resumeToken: string,
+    readonly pinned: string,
+    readonly resolved: string,
+  ) {
+    super(`session "${resumeToken}" is pinned to ${pinned} but the policy now resolves to ${resolved}; refusing the turn`);
+    this.name = "SessionPolicyChangedError";
   }
 }

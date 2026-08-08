@@ -158,6 +158,9 @@ importers:
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@maestro/pii':
+        specifier: workspace:*
+        version: link:../pii
       '@maestro/ports':
         specifier: workspace:*
         version: link:../ports

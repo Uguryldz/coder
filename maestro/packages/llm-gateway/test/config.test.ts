@@ -27,7 +27,8 @@ describe("parseGatewayConfig", () => {
     expect(cfg.bindings[0]?.variantId).toBe("*");
     expect(cfg.onPremMissing).toBe("degrade_ai_assist");
     expect(cfg.agentRole).toBe("engineer");
-    expect(cfg.agentDataClass).toBe("dahili");
+    // Fail-closed: an agent turn carries no data class of its own yet (M18).
+    expect(cfg.agentDataClass).toBe("gizli");
     expect(cfg.retry).toEqual({ maxAttempts: 3, baseDelayMs: 500, maxDelayMs: 8_000, jitterRatio: 0 });
     expect(cfg.rateLimit).toEqual({ capacity: 10, refillPerSecond: 2 });
     expect(cfg.subscriptionPool).toEqual({ accounts: [], exhaustedAtPct: 95, cooldownMs: 0 });

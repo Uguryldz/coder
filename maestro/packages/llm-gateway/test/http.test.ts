@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CallCounter,
   LlmAuthError,
   LlmHttpError,
   LlmRateLimitError,
@@ -166,5 +167,36 @@ describe("postJson", () => {
     const error = (await postJson(request, context(stub, c.now)).catch((e: unknown) => e)) as LlmHttpError;
     expect(error.responseBody).toHaveLength(500);
     expect(error.status).toBe(400);
+  });
+});
+
+/**
+ * B6: a logical gateway call costs one quota unit per PHYSICAL provider call.
+ * The count is an out-parameter because the failure path is where the retries
+ * pile up — a return value would be lost exactly when it matters most.
+ */
+describe("CallCounter (M55 quota accounting)", () => {
+  it("counts every physical attempt, retries included", async () => {
+    const counter = new CallCounter();
+    const stub = stubFetch([{ status: 503, body: { e: 1 } }, { status: 503, body: { e: 1 } }, { body: { ok: true } }]);
+    const c = clock();
+
+    await postJson(request, { ...context(stub, c.now, { baseDelayMs: 1 }), counter });
+    expect(counter.attempts).toBe(3);
+  });
+
+  it("still knows the attempt count when the call ends in a throw", async () => {
+    const counter = new CallCounter();
+    const stub = stubFetch([{ throws: "ECONNRESET" }, { throws: "ECONNRESET" }, { throws: "ECONNRESET" }]);
+    const c = clock();
+
+    await expect(postJson(request, { ...context(stub, c.now, { baseDelayMs: 1 }), counter })).rejects.toThrow(
+      /transport error/,
+    );
+    expect(counter.attempts).toBe(3);
+  });
+
+  it("counts nothing when the call was never issued", () => {
+    expect(new CallCounter().attempts).toBe(0);
   });
 });

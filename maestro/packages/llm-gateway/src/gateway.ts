@@ -1,5 +1,6 @@
 import type {
   ApiDriverId,
+  DataClass,
   GenerateObjectRequest,
   LlmDriverId,
   LlmRole,
@@ -7,6 +8,7 @@ import type {
   SubscriptionDriverId,
 } from "@maestro/contracts";
 import { GenerateObjectRequest as GenerateObjectRequestSchema, LlmCallLog, isSubscriptionDriver } from "@maestro/contracts";
+import type { PiiPolicy } from "@maestro/pii";
 import type { AgentSessionOptions, AgentSessionResult, LlmPort, SecretPort } from "@maestro/ports";
 import type { z } from "zod";
 import { ANY_VARIANT, type LlmGatewayConfig, parseGatewayConfig } from "./config.js";
@@ -14,13 +16,14 @@ import { AnthropicDirectDriver } from "./driver-anthropic.js";
 import { BedrockDriver, VertexDriver } from "./driver-cloud.js";
 import { OpenAiCompatDriver } from "./driver-openai.js";
 import type { DriverDeps, LlmDriver } from "./driver-types.js";
-import { AgentRunnerNotWiredError, LlmConfigError } from "./errors.js";
-import { type FetchLike, TokenBucket } from "./http.js";
+import { AgentRunnerNotWiredError, LlmConfigError, SessionPolicyChangedError } from "./errors.js";
+import { CallCounter, type FetchLike, TokenBucket } from "./http.js";
+import { type MaskFn, type MaskedPayload, maskForEgress } from "./masking.js";
 import { type ObjectOutcome, type QueuedOutcome, type SessionOutcome, asError } from "./outcomes.js";
 import { MSG_QUEUED_QUOTA } from "./messages.js";
 import { LlmPolicy } from "./policy.js";
 import { SubscriptionPool } from "./pool.js";
-import { type AgentRunner, AgentSessionStore } from "./session.js";
+import { type AgentRunner, AgentSessionStore, type SessionPin, describePin } from "./session.js";
 import { generateStructured } from "./structured.js";
 
 export interface LlmGatewayDeps {
@@ -32,8 +35,13 @@ export interface LlmGatewayDeps {
   newId?: () => string;
   /** Wave 2 supplies the Claude Agent SDK runner (M17). */
   agentRunner?: AgentRunner;
-  /** Required only when the policy resolves to `masked_cloud` (M18/M20). */
-  mask?: (text: string) => string;
+  /**
+   * Required only when the policy resolves to `masked_cloud` (M18/M20). Shaped
+   * exactly like `@maestro/pii`'s `maskOutbound`, ReverseMap included.
+   */
+  mask?: MaskFn;
+  /** Profile the gateway re-scans the masked payload with; defaults to the strict built-in. */
+  piiPolicy?: PiiPolicy;
   onCallLog?: (log: LlmCallLog) => void;
   runId?: () => string | null;
   signRequest?: DriverDeps["signRequest"];
@@ -104,76 +112,83 @@ export class LlmGateway implements LlmPort {
     if (decision.kind === "degrade") {
       return { status: "degraded", dataClass: decision.dataClass, messageKey: decision.messageKey };
     }
+    // Masking happens BEFORE a seat is taken: a missing masker is a wiring bug,
+    // and a wiring bug must not cost quota.
+    const masked = decision.masked ? this.mask(req.input, req.dataClass, "llm-gateway/generate-object") : null;
     const routed = this.route(decision.driver, decision.model);
     if (routed.status !== "ready") return routed;
 
-    const input = decision.masked ? this.maskPayload(JSON.stringify(req.input)) : req.input;
+    const counter = new CallCounter();
     try {
       const out = await generateStructured({
         driver: routed.transport,
         schemaName: req.schemaName,
         schema,
-        input,
+        input: masked === null ? req.input : masked.payload,
         call: {
           model: routed.model,
           maxTokens: this.cfg.maxTokens,
           temperature: this.cfg.temperature,
+          counter,
           ...(routed.credentialRef === null ? {} : { credentialRef: routed.credentialRef }),
         },
       });
       const { tokensIn, tokensOut, cachePct } = out;
       const { role, variantId, dataClass } = req;
       const log = this.writeLog({ role, variantId, dataClass, driver: routed.driver, model: routed.model, tokensIn, tokensOut, cachePct });
-      return { status: "ok", object: out.object, log };
+      return { status: "ok", object: out.object, log, ...(masked === null ? {} : { unmask: masked.unmask }) };
     } finally {
-      // A failed call still burned the seat's quota.
-      if (routed.accountId !== null) this.pool.record(routed.accountId);
+      // A failed call still burned the seat's quota — retries included.
+      if (routed.accountId !== null) this.pool.record(routed.accountId, Math.max(1, counter.attempts));
     }
   }
 
-  /** Queue-aware agent turn; execution itself is delegated (Wave 2). */
+  /**
+   * Queue-aware agent turn; execution itself is delegated (Wave 2). EVERY turn
+   * is re-resolved against the policy, so a narrowed route or a kill-switch
+   * (M58) reaches sessions that are already open — and a resolution that
+   * contradicts the session's pin is refused rather than quietly ignored.
+   */
   async agentSessionOrQueue(opts: AgentSessionOptions): Promise<SessionOutcome> {
     const runner = this.deps.agentRunner;
     if (!runner) throw new AgentRunnerNotWiredError();
     const role: LlmRole = this.cfg.agentRole;
 
     const existing = opts.resumeToken === undefined ? null : this.sessions.resume(opts.resumeToken, opts.workspacePath);
-    let masked = false;
-    let driver: LlmDriverId;
-    let model: string;
-    if (existing) {
-      driver = existing.driver;
-      model = existing.model;
-    } else {
-      const decision = this.policy.resolve(role, ANY_VARIANT, this.cfg.agentDataClass);
-      if (decision.kind === "degrade") {
-        return { status: "degraded", dataClass: decision.dataClass, messageKey: decision.messageKey };
-      }
-      driver = decision.driver;
-      model = decision.model;
-      masked = decision.masked;
+    const dataClass: DataClass = existing?.dataClass ?? this.cfg.agentDataClass;
+    const decision = this.policy.resolve(role, ANY_VARIANT, dataClass);
+    if (decision.kind === "degrade") {
+      return { status: "degraded", dataClass: decision.dataClass, messageKey: decision.messageKey };
+    }
+    const pin: SessionPin = { driver: decision.driver, model: decision.model, dataClass, masked: decision.masked };
+    if (existing && !samePin(existing, pin)) {
+      throw new SessionPolicyChangedError(existing.resumeToken, describePin(existing), describePin(pin));
     }
 
-    const routed = this.route(driver, model);
+    const masked = pin.masked ? this.mask(opts.task, dataClass, "llm-gateway/agent-session") : null;
+    const routed = this.route(pin.driver, pin.model);
     if (routed.status !== "ready") return routed;
 
-    const record = existing ?? this.sessions.start(driver, model, opts.workspacePath);
+    const record = existing ?? this.sessions.start(pin, opts.workspacePath);
     try {
       const out = await runner.run({
         driver: routed.driver,
         model: routed.model,
         workspacePath: opts.workspacePath,
-        task: masked ? this.maskPayload(opts.task) : opts.task,
+        task: masked === null ? opts.task : masked.payload,
         mcpServers: opts.mcpServers,
         vendorSessionId: record.vendorSessionId,
         credentialRef: routed.credentialRef,
       });
       this.sessions.complete(record.resumeToken, out.vendorSessionId ?? null);
       const log = this.writeLog({
-        role, variantId: ANY_VARIANT, dataClass: this.cfg.agentDataClass, driver: routed.driver,
+        role, variantId: ANY_VARIANT, dataClass, driver: routed.driver,
         model: routed.model, tokensIn: out.tokensIn, tokensOut: out.tokensOut, cachePct: null,
       });
-      return { status: "ok", resumeToken: record.resumeToken, finalText: out.finalText, log };
+      return {
+        status: "ok", resumeToken: record.resumeToken, finalText: out.finalText, log,
+        ...(masked === null ? {} : { unmask: masked.unmask }),
+      };
     } finally {
       if (routed.accountId !== null) this.pool.record(routed.accountId);
     }
@@ -214,10 +229,8 @@ export class LlmGateway implements LlmPort {
     return driver;
   }
 
-  private maskPayload(text: string): string {
-    const mask = this.deps.mask;
-    if (!mask) throw new LlmConfigError("policy resolved to masked_cloud but deps.mask was not wired");
-    return mask(text);
+  private mask<T>(payload: T, dataClass: DataClass, boundary: string): MaskedPayload<T> {
+    return maskForEgress(this.deps.mask, payload, { dataClass, boundary }, this.deps.piiPolicy);
   }
 
   private writeLog(fields: Omit<LlmCallLog, "at" | "runId" | "usd">): LlmCallLog {
@@ -232,6 +245,11 @@ export class LlmGateway implements LlmPort {
     this.deps.onCallLog?.(log);
     return log;
   }
+}
+
+/** A session may only continue on the exact backend/class/masking it opened with. */
+function samePin(a: SessionPin, b: SessionPin): boolean {
+  return a.driver === b.driver && a.model === b.model && a.dataClass === b.dataClass && a.masked === b.masked;
 }
 
 function buildDriver(cfg: LlmGatewayConfig["drivers"][number], deps: DriverDeps): LlmDriver {

@@ -142,17 +142,18 @@ describe("LlmPolicy (M18/M19)", () => {
   });
 
   it("never routes a subscription driver to the confidential class", () => {
-    const subOnPrem = policy(
-      {
-        routes: [
-          { dataClass: "acik", allowedDrivers: ["claude-sub"] },
-          { dataClass: "dahili", allowedDrivers: ["claude-sub"] },
-          { dataClass: "gizli", allowedDrivers: ["claude-sub"] },
-        ],
-      },
-      // Even if someone mislabels the subscription driver as on-prem.
-      ["claude-sub"],
-    );
+    // The config gate refuses the route outright, so the only way to hold such
+    // a config is to build it by hand — which the policy then still refuses.
+    // (Both gates are exercised end to end in confidential-routing.test.ts.)
+    const cfg = parseGatewayConfig({ drivers, bindings, routes, subscriptionPool });
+    const smuggled = {
+      ...cfg,
+      routes: cfg.routes.map((r) =>
+        r.dataClass === "gizli" ? { ...r, allowedDrivers: ["claude-sub" as const] } : r,
+      ),
+    };
+    // Even if someone mislabels the subscription driver as on-prem.
+    const subOnPrem = new LlmPolicy(smuggled, (id) => id === "claude-sub", () => true);
 
     expect(subOnPrem.resolve("analyst", "any", "gizli")).toMatchObject({ kind: "degrade" });
   });

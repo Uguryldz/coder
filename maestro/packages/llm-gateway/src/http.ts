@@ -54,10 +54,29 @@ export interface JsonRequest {
   timeoutMs: number;
 }
 
+/**
+ * Physical provider calls made for one logical gateway call (M55). It is an
+ * out-parameter rather than a return value on purpose: the retries a call
+ * burned must still be known when that call ends in a throw, and a quota that
+ * only counts successes under-reports by up to `maxAttempts × repair rounds`.
+ */
+export class CallCounter {
+  #attempts = 0;
+
+  attempt(): void {
+    this.#attempts += 1;
+  }
+
+  get attempts(): number {
+    return this.#attempts;
+  }
+}
+
 export interface RequestContext {
   deps: HttpDeps;
   bucket: TokenBucket;
   retry: RetryConfig;
+  counter?: CallCounter;
 }
 
 /**
@@ -73,6 +92,7 @@ export async function postJson(req: JsonRequest, ctx: RequestContext): Promise<u
     if (wait > 0) await ctx.deps.sleep(wait);
 
     let res: Response;
+    ctx.counter?.attempt();
     try {
       res = await ctx.deps.fetchImpl(req.url, {
         method: "POST",

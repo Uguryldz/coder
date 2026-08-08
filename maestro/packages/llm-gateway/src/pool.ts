@@ -21,6 +21,8 @@ interface Seat {
   cfg: SubscriptionAccountConfig;
   windows: Window[];
   lastUsedAtMs: number | null;
+  /** Calls handed out by `acquire` that have not reported back yet. */
+  reserved: number;
 }
 
 export interface PoolAcquisition {
@@ -58,11 +60,17 @@ export class SubscriptionPool {
     this.seats = cfg.accounts.map((account) => ({
       cfg: account,
       lastUsedAtMs: null,
+      reserved: 0,
       windows: account.windows.map((w) => ({ ...w, usedPct: 0, resetsAtMs: startedAt + WINDOW_MS[w.kind] })),
     }));
   }
 
-  /** Reserve the seat with the most headroom, or report when to resume. */
+  /**
+   * Reserve the seat with the most headroom, or report when to resume. The
+   * reservation is applied at selection time and not when the call reports
+   * back: twenty parallel callers would otherwise all read an empty seat and
+   * pile onto it, which is how a "40% full" pool runs out of real quota.
+   */
   acquire(driver: SubscriptionDriverId): PoolResult {
     const nowMs = this.now().getTime();
     const seats = this.seatsOf(driver, nowMs);
@@ -74,21 +82,34 @@ export class SubscriptionPool {
     const chosen = ready.sort((a, b) => this.compare(a, b))[0];
     if (!chosen) return { ok: false, resumeAt: new Date(this.earliestFreeAt(seats, nowMs)).toISOString() };
 
+    this.burn(chosen, 1, nowMs);
+    chosen.reserved += 1;
+
     const { accountId, transport, credentialRef } = chosen.cfg;
     return { ok: true, account: { accountId, transport, credentialRef } };
   }
 
   /**
-   * Burn quota for one call. Called in a `finally`: a failed call still consumed
-   * the seat's window, so pretending otherwise would overrun the real quota.
+   * Reconcile a reservation with what the call really cost. `calls` is the
+   * number of PHYSICAL provider calls the logical call caused — a schema repair
+   * round and every HTTP retry included — of which `acquire` already burned
+   * one. Called in a `finally`: a failed call consumed the window too, so its
+   * reservation is never handed back.
    */
-  record(accountId: string): void {
+  record(accountId: string, calls = 1): void {
     const nowMs = this.now().getTime();
     const seat = this.seats.find((s) => s.cfg.accountId === accountId);
     if (!seat) throw new LlmConfigError(`unknown subscription account "${accountId}"`);
     this.rollWindows(seat, nowMs);
-    for (const w of seat.windows) w.usedPct = Math.min(100, w.usedPct + w.costPctPerCall);
+    const alreadyBurned = seat.reserved > 0 ? 1 : 0;
+    if (seat.reserved > 0) seat.reserved -= 1;
+    this.burn(seat, Math.max(0, calls - alreadyBurned), nowMs);
+  }
+
+  private burn(seat: Seat, calls: number, nowMs: number): void {
     seat.lastUsedAtMs = nowMs;
+    if (calls <= 0) return;
+    for (const w of seat.windows) w.usedPct = Math.min(100, w.usedPct + w.costPctPerCall * calls);
   }
 
   /** Contract-validated view for Studio/KPI surfaces (M62). */

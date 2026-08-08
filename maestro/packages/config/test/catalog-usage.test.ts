@@ -13,7 +13,15 @@ import { catalogKeys } from "../src/index.js";
  * and asserts each one exists in every locale.
  */
 const PACKAGES_DIR = join(import.meta.dirname, "..", "..");
-const KEY_LITERAL = /"((?:steps|notify|gate|command|match|params|run|evidence|llm)\.[a-z0-9_.]+)"/g;
+/**
+ * Every message-key namespace in the monorepo. A package whose namespace is
+ * absent here is NOT protected: `publish.*` was missing while the package
+ * emitted 39 keys the catalog did not have, so the guard passed and the first
+ * published document would have thrown `MissingMessageError` at a human gate.
+ * Adding a namespace to a package means adding it here too.
+ */
+const KEY_LITERAL =
+  /"((?:steps|notify|gate|command|match|params|run|evidence|llm|publish)\.[a-z0-9_.]+)"/g;
 
 function sourceFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

@@ -145,6 +145,42 @@ describe("withPiiBoundary", () => {
     expect(tokens[0]).not.toBe(tokens[1]);
   });
 
+  it("keeps one session for the whole boundary when asked to", async () => {
+    const tokens: string[] = [];
+    const call = withPiiBoundary<Prompt, string>(
+      { policy, dataClass: "gizli", sessionScope: "boundary" },
+      (masked) => {
+        tokens.push(JSON.stringify(masked));
+        return Promise.resolve("ok");
+      },
+    );
+    await call(prompt());
+    await call(prompt());
+    // Same value, same writer, same token: a journal written twice reads the
+    // same way both times, which is what makes re-masking a no-op below.
+    expect(tokens[0]).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
+    expect(tokens[0]).toBe(tokens[1]);
+  });
+
+  it("does not de-fang its own tokens when a masked payload comes back through", async () => {
+    const seen: Prompt[] = [];
+    const call = withPiiBoundary<Prompt, string>(
+      { policy, dataClass: "gizli", sessionScope: "boundary" },
+      (masked) => {
+        seen.push(masked.value);
+        return Promise.resolve("ok");
+      },
+    );
+    await call(prompt());
+    const once = seen[0] as Prompt;
+    await call(once);
+    // The defect this scope exists for: with a session per call the second
+    // pass does not recognise `[TCKN_1.<nonce>]` as a token and strips its
+    // brackets, so the record stops saying that anything was removed there.
+    expect(seen[1]).toEqual(once);
+    expect(seen[1]?.ticket.description).toMatch(/\[TCKN_1\.[0-9a-f]{8}\]/);
+  });
+
   it("propagates a callee failure without swallowing it", async () => {
     const call = withPiiBoundary<Prompt, string>({ policy, dataClass: "gizli" }, () =>
       Promise.reject(new Error("gateway 503")),

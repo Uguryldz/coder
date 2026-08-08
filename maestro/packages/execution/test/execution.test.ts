@@ -7,6 +7,7 @@ import { StrikeLedger } from "../src/strikes.js";
 import {
   bootstrapContext,
   changed,
+  echoingLlm,
   failingProbe,
   fixedProbe,
   okSession,
@@ -38,7 +39,8 @@ function harness(over: Partial<AgentExecutionDeps> = {}, llm: LlmStub = stubLlm(
     verifier: stubVerifier({}),
     piiPolicy: defaultPiiPolicy(),
     journalSink: (payload: Masked<SessionReport>) => {
-      stored.push(payload);
+      // `Masked` is an envelope now: the masked report is its `.value`.
+      stored.push(payload.value);
       return Promise.resolve(undefined);
     },
     now: tickingClock(),
@@ -97,7 +99,34 @@ describe("AgentExecution.runTurn — happy path", () => {
     expect(result.status).toBe("ok");
     expect(h.stored).toHaveLength(1);
     expect(h.stored[0]?.finalText).not.toContain(SAMPLE_IBAN);
+    expect(h.stored[0]?.finalText).toMatch(/\[IBAN_\d+\.[0-9a-f]+\]/);
     if (result.status === "ok") expect(result.report.finalText).toContain(SAMPLE_IBAN);
+  });
+
+  it("journals every turn through one session, so a quoted token is not de-fanged", async () => {
+    const stored: SessionReport[] = [];
+    // Turn 1 states the IBAN; turn 2 quotes the journal row, which is the
+    // MASKED text — that is what the journal and the bootstrap package hold,
+    // so it is what the agent reads back and repeats.
+    const llm = echoingLlm(() => `still ${stored[0]?.finalText ?? ""}`, `refunded ${SAMPLE_IBAN}`);
+    const h = harness(
+      {
+        journalSink: (payload: Masked<SessionReport>) => {
+          stored.push(payload.value);
+          return Promise.resolve(undefined);
+        },
+      },
+      llm,
+    );
+
+    await h.execution.runTurn(request());
+    await h.execution.runTurn(request({ resumeToken: "resume-1" }));
+
+    expect(stored).toHaveLength(2);
+    // A writer per turn would mint a fresh vocabulary each time, fail to
+    // recognise turn 1's token and strip its brackets: `still IBAN_1.a3f9`.
+    expect(stored[1]?.finalText).toBe(`still ${stored[0]?.finalText}`);
+    expect(stored[1]?.finalText).toMatch(/\[IBAN_\d+\.[0-9a-f]+\]/);
   });
 });
 

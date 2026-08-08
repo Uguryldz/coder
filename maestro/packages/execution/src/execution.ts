@@ -1,5 +1,5 @@
 import type { DataClass } from "@maestro/contracts";
-import type { OutboundCall, PiiPolicy } from "@maestro/pii";
+import type { LoadedPiiPolicy, OutboundCall, PiiBoundaryResult } from "@maestro/pii";
 import type { LlmPort } from "@maestro/ports";
 import { type BootstrapContext, type BootstrapLimits, composeTurnPrompt } from "./bootstrap.js";
 import { createReportJournal, runVerification, type SessionReport, summarizeDiff, verificationFailures } from "./collect.js";
@@ -36,7 +36,8 @@ export interface AgentExecutionDeps {
   readonly probe: WorkspaceProbe;
   readonly verifier: VerificationRunner;
   readonly strikes: StrikeLedger;
-  readonly piiPolicy: PiiPolicy;
+  /** Must have been through `loadPiiPolicy` — `defaultPiiPolicy()` has. */
+  readonly piiPolicy: LoadedPiiPolicy;
   /** Masked report sink (journal row + StoragePort body). */
   readonly journalSink: OutboundCall<SessionReport, unknown>;
   readonly now: () => Date;
@@ -50,6 +51,14 @@ export interface AgentExecutionDeps {
  * on top of an illegal change would read like an endorsement of it.
  */
 export class AgentExecution {
+  /**
+   * One journal writer — and therefore one masking session — per data class,
+   * for this execution's lifetime. Building a writer per turn gave every turn
+   * a fresh token vocabulary, so turn 2's report, which quotes turn 1's masked
+   * text, had its tokens de-fanged on the way into the journal.
+   */
+  private readonly journals = new Map<DataClass, (report: SessionReport) => Promise<PiiBoundaryResult<unknown>>>();
+
   constructor(private readonly deps: AgentExecutionDeps) {}
 
   async runTurn(req: AgentTurnRequest): Promise<AgentTurnResult> {
@@ -132,11 +141,17 @@ export class AgentExecution {
   }
 
   private async publish(report: SessionReport, dataClass: DataClass): Promise<void> {
-    const write = createReportJournal({
-      policy: this.deps.piiPolicy,
-      dataClass,
-      sink: this.deps.journalSink,
-    });
+    let write = this.journals.get(dataClass);
+    if (write === undefined) {
+      // Per data class, never shared: two classes resolve to two profiles, and
+      // a session belongs to exactly one profile.
+      write = createReportJournal({
+        policy: this.deps.piiPolicy,
+        dataClass,
+        sink: this.deps.journalSink,
+      });
+      this.journals.set(dataClass, write);
+    }
     await write(report);
   }
 }

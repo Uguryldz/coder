@@ -1,8 +1,8 @@
 import {
   withPiiBoundary,
+  type LoadedPiiPolicy,
   type OutboundCall,
   type PiiBoundaryResult,
-  type PiiPolicy,
 } from "@maestro/pii";
 import type { ProtectedPathViolation } from "./protected-paths.js";
 import type { StrikeState } from "./strikes.js";
@@ -59,7 +59,13 @@ export function verificationFailures(results: readonly CommandResult[]): Command
 }
 
 export interface ReportJournalOptions<TOut> {
-  readonly policy: PiiPolicy;
+  /**
+   * A policy that went through `loadPiiPolicy` (`defaultPiiPolicy()` already
+   * has). The brand is the point: a hand-written literal skips every
+   * fail-closed rule loading applies, and the journal is the one place that
+   * must not be masked by a weakened profile.
+   */
+  readonly policy: LoadedPiiPolicy;
   /** Declared data class of the ticket; an unknown value falls to `gizli`. */
   readonly dataClass: unknown;
   /** Where the masked report goes (PG journal row + StoragePort body, M30). */
@@ -78,13 +84,21 @@ export const JOURNAL_BOUNDARY = "execution/session-report";
  * Command output is masked with the rest: a failing test that prints a customer
  * record is exactly how a diff summary leaks (v1's defect was a working masker
  * nobody called).
+ *
+ * The writer holds ONE masking session for its whole lifetime
+ * (`sessionScope: "boundary"`). A journal is written turn after turn and read
+ * back, and an agent quotes its own earlier — already masked — output; with a
+ * session per call those tokens belong to no session, so the next pass strips
+ * their brackets and the row stops recording that a value was removed there.
+ * Keep one writer per run and per data class, which is what `AgentExecution`
+ * does.
  */
 export function createReportJournal<TOut>(
   opts: ReportJournalOptions<TOut>,
 ): (report: SessionReport) => Promise<PiiBoundaryResult<TOut>> {
   const boundary = opts.boundary ?? JOURNAL_BOUNDARY;
   return withPiiBoundary<SessionReport, TOut>(
-    { policy: opts.policy, dataClass: opts.dataClass, boundary },
+    { policy: opts.policy, dataClass: opts.dataClass, boundary, sessionScope: "boundary" },
     opts.sink,
   );
 }

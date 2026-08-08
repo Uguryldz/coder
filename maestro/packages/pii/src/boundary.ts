@@ -49,6 +49,29 @@ export interface PiiBoundaryOptions {
   readonly onMasked?: MaskedHook;
 }
 
+/**
+ * How long one masking session — and with it the session's token vocabulary
+ * and its ReverseMap — lives.
+ *
+ * - `"call"` (the default) opens a session per call. This is right for an
+ *   exchange with a third party: the map is created and dropped inside one
+ *   call frame, and two exchanges share no token (B-8).
+ * - `"boundary"` keeps ONE session for the lifetime of the returned function.
+ *   This is right for an append-only sink that the same process writes to
+ *   repeatedly — a journal — where a payload may already carry tokens this
+ *   boundary minted earlier. With a session per call those tokens belong to
+ *   nobody, so `maskValue` de-fangs them (`[IBAN_1.a3f9]` -> `IBAN_1.a3f9`)
+ *   and the record no longer says that a value was removed there. The cost is
+ *   that the map lives as long as the writer, so use it only where the writer
+ *   is short-lived (one run) and the map stays inside the closure.
+ */
+export type PiiSessionScope = "call" | "boundary";
+
+/** `withPiiBoundary` options: the boundary is a function, so it has a lifetime. */
+export interface PiiGateOptions extends PiiBoundaryOptions {
+  readonly sessionScope?: PiiSessionScope;
+}
+
 export interface MaskOutboundResult<T> {
   /** The masked payload itself, for a caller that builds a request body. */
   readonly payload: T;
@@ -115,15 +138,18 @@ export function unmaskInbound<T>(value: T, map: ReverseMap): T {
  * caller can forget: the wrapper masks, trips the runtime guard, calls, masks
  * the answer as well, and only then un-masks a copy for the screen. The
  * ReverseMap is created and dropped inside this frame, so it cannot be logged
- * or persisted by anyone downstream.
+ * or persisted by anyone downstream — unless the caller asks for a
+ * boundary-scoped session, in which case it lives in this closure and still
+ * reaches nobody outside it (see `PiiSessionScope`).
  */
 export function withPiiBoundary<TIn, TOut>(
-  options: PiiBoundaryOptions,
+  options: PiiGateOptions,
   call: OutboundCall<TIn, TOut>,
 ): (payload: TIn) => Promise<PiiBoundaryResult<TOut>> {
   const boundary = options.boundary ?? "outbound";
+  const shared = options.sessionScope === "boundary" ? prepare(options) : null;
   return async (payload: TIn): Promise<PiiBoundaryResult<TOut>> => {
-    const { session, dataClass, fellBack } = prepare(options);
+    const { session, dataClass, fellBack } = shared ?? prepare(options);
     const masked = maskValue(payload, session);
     options.onMasked?.(masked.counts, dataClass, { boundary, leg: "request", fellBack });
     assertNoPii(masked.value, session.profile, boundary);

@@ -173,6 +173,28 @@ export function stubLlm(outcomes: Array<LlmOutcome<AgentSessionResult>>): LlmStu
   };
 }
 
+/**
+ * LlmPort double whose answer is computed at call time: the first turn says
+ * `first`, every later turn says whatever `later()` returns then. Needed where
+ * a turn must quote what an EARLIER turn produced, which a canned list cannot
+ * express.
+ */
+export function echoingLlm(later: () => string, first: string): LlmStub {
+  const calls: AgentSessionOptions[] = [];
+  let turn = 0;
+  return {
+    calls,
+    generateObject<T>(_req: unknown, _schema: z.ZodType<T>): Promise<LlmOutcome<T>> {
+      return Promise.reject(new Error("generateObject is not used by @maestro/execution"));
+    },
+    agentSession(opts: AgentSessionOptions): Promise<LlmOutcome<AgentSessionResult>> {
+      calls.push(opts);
+      turn += 1;
+      return Promise.resolve(okSession({ finalText: turn === 1 ? first : later() }));
+    },
+  };
+}
+
 export function okSession(over: Partial<AgentSessionResult> = {}): LlmOutcome<AgentSessionResult> {
   return {
     status: "ok",

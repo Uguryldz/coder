@@ -8,6 +8,7 @@ import {
   JiraDcConfig,
   JiraDcWorkPort,
   JiraLinkFailedError,
+  JiraMembershipUnresolvedError,
   JiraResponseError,
   paragraph,
   signWebhookBody,
@@ -177,6 +178,54 @@ describe("JiraDcWorkPort", () => {
     expect(stub.calls[1]!.url).toContain("startAt=2");
   });
 
+  // O-1: displayName comes from LDAP, is not unique and changes. Matching on
+  // it would hand gate authority to a namesake.
+  it("never matches a member on the display name", async () => {
+    const page = {
+      isLast: true,
+      total: 1,
+      values: [{ name: "selin.arslan", key: "JIRAUSER10344", displayName: "Mert Demir" }],
+    };
+    const stub = stubFetch([{ body: page }]);
+    await expect(port(stub).verifyMembership("mert demir", "tech-leads")).resolves.toBe(false);
+  });
+
+  // O-2: the server is asked to exclude inactive users, but the gate must not
+  // depend on it — an off-boarded approver stays out either way (M32).
+  it("skips members the payload marks inactive", async () => {
+    const page = {
+      isLast: true,
+      total: 1,
+      values: [{ name: "ayrilmis.calisan", key: "JIRAUSER10500", active: false }],
+    };
+    const stub = stubFetch([{ body: page }]);
+    await expect(port(stub).verifyMembership("ayrilmis.calisan", "tech-leads")).resolves.toBe(false);
+  });
+
+  // O-6: a silent `false` here reads exactly like "not a member", so a real
+  // approver would be turned away with nothing to debug.
+  it("raises instead of denying when a page bean cannot be reasoned about", async () => {
+    const stub = stubFetch([{ body: { values: [{ name: "a.user" }] } }]);
+    const error = await port(stub)
+      .verifyMembership("selin.arslan", "tech-leads")
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JiraMembershipUnresolvedError);
+    expect((error as JiraMembershipUnresolvedError).reason).toBe("incomplete_page_bean");
+  });
+
+  it("raises instead of denying when the group outgrows the page budget", async () => {
+    const page = { isLast: false, total: 100_000, values: [{ name: "a.user" }] };
+    const stub = stubFetch(Array.from({ length: 40 }, () => ({ body: page })));
+    const error = await port(stub)
+      .verifyMembership("selin.arslan", "tech-leads")
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JiraMembershipUnresolvedError);
+    expect((error as JiraMembershipUnresolvedError).reason).toBe("too_many_pages");
+    expect(stub.calls).toHaveLength(40);
+  });
+
   it("verifies webhook signatures with the injected secret", async () => {
     const raw = JSON.stringify(fixture("webhook-comment-created"));
     const jira = port(stubFetch([]));
@@ -201,6 +250,26 @@ describe("JiraDcWorkPort", () => {
     await expect(jira.parseCommand(payload)).resolves.toBeNull();
     expect(jira.parseCommandDetailed(payload).invalid).toMatchObject({ messageKey: "command.unknown" });
     await expect(jira.parseCommand(fixture("webhook-issue-created"))).resolves.toBeNull();
+  });
+
+  it("refuses an approval smuggled behind extra text or an edit", async () => {
+    const jira = port(stubFetch([]));
+
+    const negated = fixture("webhook-comment-created") as { comment: { body: string } };
+    negated.comment.body = "/approve etmiyorum, reddediyorum";
+    await expect(jira.parseCommand(negated)).resolves.toBeNull();
+    expect(jira.parseCommandDetailed(negated).invalid).toMatchObject({
+      messageKey: "command.takes_no_argument",
+    });
+
+    const edited = fixture("webhook-comment-created") as {
+      webhookEvent: string;
+      comment: { updateAuthor: { name: string }; updated: string };
+    };
+    edited.webhookEvent = "comment_updated";
+    edited.comment.updateAuthor = { name: "kotu.niyetli" };
+    edited.comment.updated = "2026-08-08T14:40:00.000+0300";
+    await expect(jira.parseCommand(edited)).resolves.toBeNull();
   });
 
   it("does not implement workflow transitions (M102)", async () => {

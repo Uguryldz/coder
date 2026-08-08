@@ -125,4 +125,41 @@ describe("command extraction from webhooks", () => {
     expect(result.envelope).toBeNull();
     expect(result.invalid).toMatchObject({ command: "reject", messageKey: "command.reject_needs_reason" });
   });
+
+  // K-2: "Edit All Comments" is a routine lead permission in DC. Honouring an
+  // edit would let a non-member approve a gate under the original author's
+  // name — the SoD matrix (M32) would never see it.
+  it("ignores a comment_updated event even when it carries a command", () => {
+    const payload = fixture("webhook-comment-created") as {
+      webhookEvent: string;
+      comment: { updateAuthor: { name: string }; updated: string };
+    };
+    payload.webhookEvent = "comment_updated";
+    payload.comment.updateAuthor = { name: "kotu.niyetli" };
+    payload.comment.updated = "2026-08-08T14:40:00.000+0300";
+
+    expect(parseWebhookEvent(payload)).toMatchObject({ kind: "comment", edited: true, author: "mert.demir" });
+    expect(commandFromWebhook(payload)).toEqual({ envelope: null, invalid: null });
+  });
+
+  it("ignores a created delivery whose comment has already been edited", () => {
+    const payload = fixture("webhook-comment-created") as { comment: { updated: string } };
+    payload.comment.updated = "2026-08-08T14:40:00.000+0300";
+
+    expect(parseWebhookEvent(payload)).toMatchObject({ edited: true });
+    expect(commandFromWebhook(payload)).toEqual({ envelope: null, invalid: null });
+  });
+
+  it("marks an untouched comment as not edited", () => {
+    expect(parseWebhookEvent(fixture("webhook-comment-created"))).toMatchObject({ edited: false });
+  });
+
+  it("does not approve when the /approve line carries extra text (K-1)", () => {
+    const payload = fixture("webhook-comment-created") as { comment: { body: string } };
+    payload.comment.body = "/approve etmiyorum, reddediyorum";
+    const result = commandFromWebhook(payload);
+
+    expect(result.envelope).toBeNull();
+    expect(result.invalid).toMatchObject({ command: "approve", messageKey: "command.takes_no_argument" });
+  });
 });

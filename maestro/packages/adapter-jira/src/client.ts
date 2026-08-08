@@ -71,6 +71,12 @@ export class JiraDcClient {
 
     if (first.status !== 429) return this.handle<T>(req.method, url, first);
 
+    // POST is the one non-idempotent verb here (create comment, create issue,
+    // create link). A throttled POST may still have been applied, so retrying
+    // it risks a duplicate comment or a duplicate fan-out child — the caller
+    // decides, with Temporal's durable retry and its own idempotency key.
+    if (req.method === "POST") return this.handle<T>(req.method, url, first);
+
     // One backoff, then the second 429 is final.
     const retryAfterMs = parseRetryAfter(first.headers.get("retry-after"), this.maxBackoffMs);
     await consumeBody(first);
@@ -101,6 +107,12 @@ export class JiraDcClient {
 
   private async send(req: JiraRequest, url: string): Promise<Response> {
     const token = await this.token();
+    // Fail closed, exactly like the webhook secret: an empty PAT would send
+    // `Authorization: Bearer ` and Jira would answer as the anonymous user —
+    // a silent identity downgrade instead of a loud configuration error.
+    if (typeof token !== "string" || token.trim().length === 0) {
+      throw new JiraConfigError("the resolved PAT is empty — refusing to send an unauthenticated request");
+    }
     const headers: Record<string, string> = {
       authorization: `Bearer ${token}`,
       accept: "application/json",

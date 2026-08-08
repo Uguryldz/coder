@@ -97,6 +97,16 @@ describe("JiraDcClient", () => {
     expect(stub.calls).toHaveLength(2);
   });
 
+  it("does not retry a throttled POST — a duplicate comment is worse than a failure", async () => {
+    const stub = stubFetch([{ status: 429, headers: { "retry-after": "1" }, body: {} }]);
+    await expect(client(stub).post("/rest/api/2/issue/UGURPAY-1/comment", { body: "x" })).rejects.toBeInstanceOf(
+      JiraRateLimitError,
+    );
+
+    expect(stub.calls).toHaveLength(1);
+    expect(stub.sleeps).toEqual([]);
+  });
+
   it("caps the honoured Retry-After", async () => {
     const stub = stubFetch([{ status: 429, headers: { "retry-after": "3600" }, body: {} }, { body: {} }]);
     await new JiraDcClient({
@@ -114,6 +124,22 @@ describe("JiraDcClient", () => {
     expect(() => new JiraDcClient({ baseUrl: "   ", token: () => "pat", fetchImpl: stubFetch([]).fetchImpl })).toThrow(
       JiraConfigError,
     );
+  });
+
+  // O-5: `Bearer ` with an empty token is accepted by Jira as an anonymous
+  // request, which silently downgrades the identity instead of failing.
+  it("refuses to send a request when the PAT resolves to nothing", async () => {
+    for (const token of ["", "   ", undefined as unknown as string]) {
+      const stub = stubFetch([{ body: {} }]);
+      const jira = new JiraDcClient({
+        baseUrl: "https://jira.internal.bank",
+        token: () => token,
+        fetchImpl: stub.fetchImpl,
+      });
+
+      await expect(jira.get("/rest/api/2/myself")).rejects.toBeInstanceOf(JiraConfigError);
+      expect(stub.calls).toHaveLength(0);
+    }
   });
 
   it("exports JiraHttpError as the shared base class", () => {

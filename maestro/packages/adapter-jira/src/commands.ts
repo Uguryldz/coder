@@ -2,8 +2,9 @@ import { AppId, ParsedCommand, WorkMode } from "@maestro/contracts";
 
 /**
  * Jira comment command grammar (M46; mock screen "Jira komut seti" is the
- * reference UX). Only the FIRST line of a comment is inspected: the rest is
- * free prose the reporter may attach to the same comment.
+ * reference UX). Commands that take an argument consume the rest of their
+ * line, and any following line is free prose. Commands that take NO argument
+ * must stand alone in the whole comment — see NO_ARGUMENT_COMMANDS.
  */
 
 /** Catalog keys the caller renders — no user-facing literals here (M104). */
@@ -12,6 +13,7 @@ export const COMMAND_MESSAGE_KEYS = {
   rejectNeedsReason: "command.reject_needs_reason",
   invalidAppId: "command.invalid_app_id",
   invalidMode: "command.invalid_mode",
+  takesNoArgument: "command.takes_no_argument",
 } as const;
 
 export const COMMAND_LIST = [
@@ -37,15 +39,44 @@ export type CommandParseResult =
 
 const NONE: CommandParseResult = { status: "none" };
 
+/**
+ * Commands that carry no argument at all. A gate decision (M51: `/approve` is
+ * the primary approval path) has to be unambiguous, and Jira comments are
+ * written in Turkish (M59) where negation trails the verb — "/approve
+ * etmiyorum" ("I do not approve") would otherwise be read as an approval.
+ * So any extra text, on the command line OR on a following line, makes the
+ * comment invalid instead of silently swallowing the reader's real intent.
+ */
+const NO_ARGUMENT_COMMANDS = ["approve", "status", "ai-explain", "ai-start", "ai-takeover"] as const;
+type NoArgumentCommand = (typeof NO_ARGUMENT_COMMANDS)[number];
+
+function isNoArgumentCommand(name: string): name is NoArgumentCommand {
+  return (NO_ARGUMENT_COMMANDS as readonly string[]).includes(name);
+}
+
 function invalid(command: string, messageKey: string, messageParams: Record<string, string> = {}): CommandParseResult {
   return { status: "invalid", command, messageKey, messageParams };
 }
 
-/** Parse a whole comment body: only its first non-empty line can be a command. */
+function takesNoArgument(name: string): CommandParseResult {
+  return invalid(name, COMMAND_MESSAGE_KEYS.takesNoArgument, { command: `/${name}` });
+}
+
+/**
+ * Parse a whole comment body. The first non-empty line carries the command;
+ * for argument-free commands the remaining lines must be empty too, so a
+ * trailing "ama onaylamıyorum" cannot ride along with an `/approve`.
+ */
 export function parseCommandBody(body: unknown): CommandParseResult {
   if (typeof body !== "string") return NONE;
-  const firstLine = body.split(/\r?\n/).find((line) => line.trim().length > 0);
-  return firstLine === undefined ? NONE : parseCommandLine(firstLine);
+  const lines = body.split(/\r?\n/);
+  const firstIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstIndex === -1) return NONE;
+
+  const result = parseCommandLine(lines[firstIndex]!);
+  if (result.status !== "ok" || !isNoArgumentCommand(result.command.name)) return result;
+  const hasTrailingText = lines.slice(firstIndex + 1).some((line) => line.trim().length > 0);
+  return hasTrailingText ? takesNoArgument(result.command.name) : result;
 }
 
 /** Parse a single line. Never throws — an unknown command is data, not a fault. */
@@ -57,17 +88,12 @@ export function parseCommandLine(line: string): CommandParseResult {
   const name = rawName.slice(1).toLowerCase();
   const argument = rest.join(" ").trim();
 
+  if (isNoArgumentCommand(name)) {
+    if (argument.length > 0) return takesNoArgument(name);
+    return { status: "ok", command: { name } };
+  }
+
   switch (name) {
-    case "approve":
-      return { status: "ok", command: { name: "approve" } };
-    case "status":
-      return { status: "ok", command: { name: "status" } };
-    case "ai-explain":
-      return { status: "ok", command: { name: "ai-explain" } };
-    case "ai-start":
-      return { status: "ok", command: { name: "ai-start" } };
-    case "ai-takeover":
-      return { status: "ok", command: { name: "ai-takeover" } };
     case "reject": {
       if (argument.length === 0) return invalid(name, COMMAND_MESSAGE_KEYS.rejectNeedsReason);
       return { status: "ok", command: { name: "reject", reason: argument } };

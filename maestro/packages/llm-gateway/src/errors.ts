@@ -76,25 +76,10 @@ export class UnknownModelError extends LlmGatewayError {
   }
 }
 
-/** M18: the data class policy forbids every candidate backend. `messageKey` is i18n (M104). */
-export class LlmPolicyBlockedError extends LlmGatewayError {
-  constructor(readonly dataClass: string, readonly messageKey: string) {
-    super(`data class "${dataClass}" blocked by routing policy (${messageKey})`);
-    this.name = "LlmPolicyBlockedError";
-  }
-}
-
-/**
- * M55: the whole subscription pool is exhausted. The queue-aware entry points
- * RETURN this state; the frozen `LlmPort` methods throw it so `resumeAt`
- * still reaches the caller (see RAPOR.md request #1).
- */
-export class SubscriptionQueuedError extends LlmGatewayError {
-  constructor(readonly resumeAt: string, readonly messageKey: string) {
-    super(`subscription pool exhausted; resume at ${resumeAt}`);
-    this.name = "SubscriptionQueuedError";
-  }
-}
+// Policy blocks (M18) and quota queues (M55) are deliberately NOT errors: they
+// are `LlmOutcome` states the caller branches on. Turning them back into
+// exceptions would re-create exactly the message-string matching this file
+// exists to prevent.
 
 /** Agent execution is delegated (Wave 2); no runner was wired in. */
 export class AgentRunnerNotWiredError extends LlmGatewayError {

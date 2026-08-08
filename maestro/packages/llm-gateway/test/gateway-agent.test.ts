@@ -1,23 +1,40 @@
+import type { AgentSessionOptions } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
-import { AgentRunnerNotWiredError, MSG_QUEUED_QUOTA } from "../src/index.js";
+import { AgentRunnerNotWiredError } from "../src/index.js";
 import { build } from "./gateway-fixture.js";
 import { stubRunner } from "./helpers.js";
 
-const opts = { workspacePath: "/work/UGURPAY-1", task: "implement the change", mcpServers: ["maestro-mcp"] };
+/** The data class and the variant are the CALLER's, never a gateway default (M18/M38). */
+const opts: AgentSessionOptions = {
+  workspacePath: "/work/UGURPAY-1",
+  task: "implement the change",
+  mcpServers: ["maestro-mcp"],
+  dataClass: "dahili",
+  variantId: "backend",
+};
 
 const DONE = [{ finalText: "done", tokensIn: 10, tokensOut: 3, vendorSessionId: "v1" }];
 
 describe("LlmGateway.agentSession (M17 delegation)", () => {
   it("picks the backend, opens a session and delegates the run", async () => {
     const agentRunner = stubRunner(DONE);
-    const { gateway, stub } = build({ agentDataClass: "dahili" }, { agentRunner }, []);
+    const { gateway, stub } = build({}, { agentRunner }, []);
 
-    const outcome = await gateway.agentSessionOrQueue(opts);
+    const outcome = await gateway.agentSession(opts);
 
     if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
-    expect(outcome.resumeToken).toBe("session-1");
-    expect(outcome.finalText).toBe("done");
-    expect(outcome.log).toMatchObject({ role: "engineer", driver: "claude-sub", model: "claude-sonnet", usd: null });
+    expect(outcome.value.resumeToken).toBe("session-1");
+    expect(outcome.value.finalText).toBe("done");
+    expect(outcome.log).toMatchObject({
+      role: "engineer",
+      variantId: "backend",
+      dataClass: "dahili",
+      driver: "claude-sub",
+      model: "claude-sonnet",
+      usd: null,
+    });
+    // The result carries the same log row, so a resumed turn can be logged alone.
+    expect(outcome.value.log).toBe(outcome.log);
     expect(agentRunner.inputs[0]).toEqual({
       driver: "claude-sub",
       model: "claude-sonnet",
@@ -38,7 +55,6 @@ describe("LlmGateway.agentSession (M17 delegation)", () => {
     ]);
     const { gateway } = build(
       {
-        agentDataClass: "dahili",
         subscriptionPool: {
           accounts: [
             {
@@ -56,20 +72,22 @@ describe("LlmGateway.agentSession (M17 delegation)", () => {
     );
 
     const first = await gateway.agentSession(opts);
-    const second = await gateway.agentSession({ ...opts, resumeToken: first.resumeToken });
+    if (first.status !== "ok") return expect.unreachable("expected an ok outcome");
+    const second = await gateway.agentSession({ ...opts, resumeToken: first.value.resumeToken });
 
-    expect(second.resumeToken).toBe(first.resumeToken);
+    if (second.status !== "ok") return expect.unreachable("expected an ok outcome");
+    expect(second.value.resumeToken).toBe(first.value.resumeToken);
     expect(agentRunner.inputs[1]?.vendorSessionId).toBe("v1");
-    expect(second.finalText).toBe("turn 2");
+    expect(second.value.finalText).toBe("turn 2");
   });
 
   it("queues an agent turn when the pool is exhausted, without calling the runner", async () => {
     const agentRunner = stubRunner(DONE);
-    const { gateway } = build({ agentDataClass: "dahili" }, { agentRunner }, []);
-    await gateway.agentSessionOrQueue(opts);
+    const { gateway } = build({}, { agentRunner }, []);
+    await gateway.agentSession(opts);
 
-    const queued = await gateway.agentSessionOrQueue(opts);
-    expect(queued).toMatchObject({ status: "queued", messageKey: MSG_QUEUED_QUOTA });
+    const queued = await gateway.agentSession(opts);
+    expect(queued).toMatchObject({ status: "queued", reason: "subscription_quota" });
     expect(agentRunner.inputs).toHaveLength(1);
   });
 
@@ -78,11 +96,14 @@ describe("LlmGateway.agentSession (M17 delegation)", () => {
     await expect(gateway.agentSession(opts)).rejects.toBeInstanceOf(AgentRunnerNotWiredError);
   });
 
-  it("degrades an agent turn when the configured agent data class has no backend", async () => {
+  it("degrades an agent turn when the caller's data class has no backend", async () => {
     const agentRunner = stubRunner(DONE);
-    const { gateway } = build({ agentDataClass: "gizli" }, { agentRunner }, []);
+    const { gateway } = build({}, { agentRunner }, []);
 
-    expect(await gateway.agentSessionOrQueue(opts)).toMatchObject({ status: "degraded", dataClass: "gizli" });
+    expect(await gateway.agentSession({ ...opts, dataClass: "gizli" })).toMatchObject({
+      status: "degraded",
+      dataClass: "gizli",
+    });
     expect(agentRunner.inputs).toHaveLength(0);
   });
 });

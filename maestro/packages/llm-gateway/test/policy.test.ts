@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   LlmPolicy,
-  LlmPolicyBlockedError,
   MSG_BLOCKED_CONFIDENTIAL,
+  MSG_BLOCKED_ROUTE,
   MSG_DEGRADED_AI_ASSIST,
   UnknownModelError,
   parseGatewayConfig,
@@ -93,13 +93,14 @@ describe("LlmPolicy (M18/M19)", () => {
 
   it("blocks instead of degrading when the compliance team chose block", () => {
     const blocking = policy({ onPremMissing: "block" }, [], ["anthropic-direct"]);
-    try {
-      blocking.resolve("engineer", "backend", "gizli");
-      expect.unreachable("expected a policy block");
-    } catch (error) {
-      expect(error).toBeInstanceOf(LlmPolicyBlockedError);
-      expect((error as LlmPolicyBlockedError).messageKey).toBe(MSG_BLOCKED_CONFIDENTIAL);
-    }
+
+    // Block and degrade are two DECISIONS, told apart by `kind` — not one error
+    // whose message key the caller would have to parse (M18).
+    expect(blocking.resolve("engineer", "backend", "gizli")).toEqual({
+      kind: "block",
+      dataClass: "gizli",
+      messageKey: MSG_BLOCKED_CONFIDENTIAL,
+    });
   });
 
   it("allows a masked cloud call only when the route itself permits that driver", () => {
@@ -125,7 +126,7 @@ describe("LlmPolicy (M18/M19)", () => {
 
   it("blocks under masked_cloud when the route permits nothing usable", () => {
     const masked = policy({ onPremMissing: "masked_cloud" }, [], ["anthropic-direct"]);
-    expect(() => masked.resolve("engineer", "backend", "gizli")).toThrow(LlmPolicyBlockedError);
+    expect(masked.resolve("engineer", "backend", "gizli")).toMatchObject({ kind: "block", dataClass: "gizli" });
   });
 
   it("blocks a non-confidential class whose route forbids every bound driver", () => {
@@ -138,7 +139,12 @@ describe("LlmPolicy (M18/M19)", () => {
     });
 
     // "acik" only allows openai-compat, but analyst/backend is bound to anthropic.
-    expect(() => narrowed.resolve("analyst", "backend", "acik")).toThrow(LlmPolicyBlockedError);
+    // The message key names the ROUTE, not the confidential class the request is not in.
+    expect(narrowed.resolve("analyst", "backend", "acik")).toEqual({
+      kind: "block",
+      dataClass: "acik",
+      messageKey: MSG_BLOCKED_ROUTE,
+    });
   });
 
   it("never routes a subscription driver to the confidential class", () => {

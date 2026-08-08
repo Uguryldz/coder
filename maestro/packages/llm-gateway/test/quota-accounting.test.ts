@@ -118,7 +118,7 @@ describe("one logical call burns every provider call it caused (B6 · M55)", () 
   it("counts the schema repair round", async () => {
     const { gateway: gw, stub } = gateway([{ body: anthropicBody("not json at all") }, { body: anthropicBody(OK) }]);
 
-    const outcome = await gw.generateObjectOrQueue(request, Answer);
+    const outcome = await gw.generateObject(request, Answer);
     expect(outcome.status).toBe("ok");
     expect(stub.calls).toHaveLength(2);
     expect(usedOf(gw.poolSnapshot(), "sub-1")).toBe(20);
@@ -131,7 +131,7 @@ describe("one logical call burns every provider call it caused (B6 · M55)", () 
       { status: 503, body: { error: "overloaded" } },
     ]);
 
-    await expect(gw.generateObjectOrQueue(request, Answer)).rejects.toThrow(/HTTP 503/);
+    await expect(gw.generateObject(request, Answer)).rejects.toThrow(/HTTP 503/);
     expect(stub.calls).toHaveLength(3);
     expect(usedOf(gw.poolSnapshot(), "sub-1")).toBe(30);
   });
@@ -144,7 +144,7 @@ describe("one logical call burns every provider call it caused (B6 · M55)", () 
       { body: anthropicBody(OK) },
     ]);
 
-    const outcome = await gw.generateObjectOrQueue(request, Answer);
+    const outcome = await gw.generateObject(request, Answer);
     expect(outcome.status).toBe("ok");
     expect(stub.calls).toHaveLength(4);
     expect(usedOf(gw.poolSnapshot(), "sub-1")).toBe(40);

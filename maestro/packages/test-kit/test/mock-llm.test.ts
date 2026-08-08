@@ -23,12 +23,13 @@ describe("mock-llm", () => {
   });
 
   it("returns schema-validated canned objects", async () => {
-    const { object, log } = await llm.generateObject(
+    const outcome = await llm.generateObject(
       { role: "analyst", variantId: "v1", dataClass: "dahili", schemaName: "AnalysisDoc", input: {} },
       AnalysisDoc,
     );
-    expect(object.riskTier).toBe("dusuk");
-    expect(log.usd).toBeNull();
+    if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
+    expect(outcome.value.riskTier).toBe("dusuk");
+    expect(outcome.log.usd).toBeNull();
   });
 
   it("fails when the fixture drifts from the contract", async () => {
@@ -50,12 +51,16 @@ describe("mock-llm", () => {
     ).rejects.toThrow(/no canned response/);
   });
 
-  it("serves deterministic agent sessions", async () => {
-    const res = await llm.agentSession({
+  it("serves deterministic agent sessions carrying the caller's data class", async () => {
+    const outcome = await llm.agentSession({
       workspacePath: "/tmp/ws",
       task: "implement password reset flow",
       mcpServers: ["workspace-mcp"],
+      dataClass: "dahili",
+      variantId: "backend",
     });
-    expect(res.finalText).toContain("4 files");
+    if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
+    expect(outcome.value.finalText).toContain("4 files");
+    expect(outcome.log).toMatchObject({ dataClass: "dahili", variantId: "backend" });
   });
 });

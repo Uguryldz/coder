@@ -57,13 +57,14 @@ describe("registerLlmDrivers (M44 registry)", () => {
     registerLlmDrivers(registry, gatewayDeps(stub, fakeClock()));
 
     const gateway = registry.resolve<LlmPort>(LLM_PORT, LLM_GATEWAY_DRIVER)(config);
-    const { log } = await gateway.generateObject(
+    const outcome = await gateway.generateObject(
       { role: "analyst", variantId: "backend", dataClass: "dahili", schemaName: "Ok", input: {} },
       z.object({ ok: z.boolean() }),
     );
 
+    if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
     expect(stub.calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");
-    expect(log.at).toBe("2026-08-08T09:00:00.000Z");
-    expect(log.usd).toBeNull();
+    expect(outcome.log.at).toBe("2026-08-08T09:00:00.000Z");
+    expect(outcome.log.usd).toBeNull();
   });
 });

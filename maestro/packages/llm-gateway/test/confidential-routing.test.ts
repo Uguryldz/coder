@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  LlmConfigError,
-  LlmPolicy,
-  LlmPolicyBlockedError,
-  parseGatewayConfig,
-  type LlmGatewayConfig,
-} from "../src/index.js";
+import { LlmConfigError, LlmPolicy, parseGatewayConfig, type LlmGatewayConfig } from "../src/index.js";
 
 /**
  * B1 regression (M18/M63): a subscription seat is a consumer contract with no
@@ -81,7 +75,10 @@ describe("confidential class never reaches a subscription seat (B1 · M18)", () 
   });
 
   it("refuses a subscription driver under masked_cloud even if the config gate is bypassed", () => {
-    expect(() => smuggle(["claude-sub"]).resolve("analyst", "any", "gizli")).toThrow(LlmPolicyBlockedError);
+    expect(smuggle(["claude-sub"]).resolve("analyst", "any", "gizli")).toMatchObject({
+      kind: "block",
+      dataClass: "gizli",
+    });
   });
 
   it("picks the API driver, not the seat, when masked_cloud has both on offer", () => {

@@ -9,9 +9,9 @@ import type {
 } from "@maestro/contracts";
 import { GenerateObjectRequest as GenerateObjectRequestSchema, LlmCallLog, isSubscriptionDriver } from "@maestro/contracts";
 import type { PiiPolicy } from "@maestro/pii";
-import type { AgentSessionOptions, AgentSessionResult, LlmPort, SecretPort } from "@maestro/ports";
+import type { AgentSessionOptions, LlmPort, SecretPort } from "@maestro/ports";
 import type { z } from "zod";
-import { ANY_VARIANT, type LlmGatewayConfig, parseGatewayConfig } from "./config.js";
+import { type LlmGatewayConfig, parseGatewayConfig } from "./config.js";
 import { AnthropicDirectDriver } from "./driver-anthropic.js";
 import { BedrockDriver, VertexDriver } from "./driver-cloud.js";
 import { OpenAiCompatDriver } from "./driver-openai.js";
@@ -19,8 +19,13 @@ import type { DriverDeps, LlmDriver } from "./driver-types.js";
 import { AgentRunnerNotWiredError, LlmConfigError, SessionPolicyChangedError } from "./errors.js";
 import { CallCounter, type FetchLike, TokenBucket } from "./http.js";
 import { type MaskFn, type MaskedPayload, maskForEgress } from "./masking.js";
-import { type ObjectOutcome, type QueuedOutcome, type SessionOutcome, asError } from "./outcomes.js";
-import { MSG_QUEUED_QUOTA } from "./messages.js";
+import {
+  QUEUE_REASON_QUOTA,
+  type GatewayOutcome,
+  type QueuedOutcome,
+  type SessionOutcome,
+  haltedFrom,
+} from "./outcomes.js";
 import { LlmPolicy } from "./policy.js";
 import { SubscriptionPool } from "./pool.js";
 import { type AgentRunner, AgentSessionStore, type SessionPin, describePin } from "./session.js";
@@ -60,8 +65,12 @@ interface Routed {
 /**
  * The LLM gateway (M16/M17/M18/M55). Driver choice is policy, invisible to
  * callers: data class picks the permitted backends, role+variant picks the
- * model, and a subscription binding goes through the quota-aware pool. When the
- * pool is exhausted the queue-aware entry points RETURN `queued + resumeAt`.
+ * model, and a subscription binding goes through the quota-aware pool.
+ *
+ * Both port methods return an `LlmOutcome`: `queued` (pool exhausted, wait until
+ * `resumeAt`), `degraded` (continue human-led, M97) and `blocked` (stop) are
+ * decisions, not exceptions. Exceptions mean something broke — transport,
+ * provider, wiring, schema.
  */
 export class LlmGateway implements LlmPort {
   private readonly policy: LlmPolicy;
@@ -105,13 +114,11 @@ export class LlmGateway implements LlmPort {
     this.sessions = new AgentSessionStore(deps.newId ?? (() => crypto.randomUUID()), this.now);
   }
 
-  /** Queue-aware structured call — the shape Temporal activities should use. */
-  async generateObjectOrQueue<T>(request: GenerateObjectRequest, schema: z.ZodType<T>): Promise<ObjectOutcome<T>> {
+  /** Thinking roles (M16/M19). One call, one schema, one outcome the caller branches on. */
+  async generateObject<T>(request: GenerateObjectRequest, schema: z.ZodType<T>): Promise<GatewayOutcome<T>> {
     const req = GenerateObjectRequestSchema.parse(request);
     const decision = this.policy.resolve(req.role, req.variantId, req.dataClass);
-    if (decision.kind === "degrade") {
-      return { status: "degraded", dataClass: decision.dataClass, messageKey: decision.messageKey };
-    }
+    if (decision.kind !== "allow") return haltedFrom(decision);
     // Masking happens BEFORE a seat is taken: a missing masker is a wiring bug,
     // and a wiring bug must not cost quota.
     const masked = decision.masked ? this.mask(req.input, req.dataClass, "llm-gateway/generate-object") : null;
@@ -136,7 +143,7 @@ export class LlmGateway implements LlmPort {
       const { tokensIn, tokensOut, cachePct } = out;
       const { role, variantId, dataClass } = req;
       const log = this.writeLog({ role, variantId, dataClass, driver: routed.driver, model: routed.model, tokensIn, tokensOut, cachePct });
-      return { status: "ok", object: out.object, log, ...(masked === null ? {} : { unmask: masked.unmask }) };
+      return { status: "ok", value: out.object, log, ...(masked === null ? {} : { unmask: masked.unmask }) };
     } finally {
       // A failed call still burned the seat's quota — retries included.
       if (routed.accountId !== null) this.pool.record(routed.accountId, Math.max(1, counter.attempts));
@@ -144,22 +151,24 @@ export class LlmGateway implements LlmPort {
   }
 
   /**
-   * Queue-aware agent turn; execution itself is delegated (Wave 2). EVERY turn
-   * is re-resolved against the policy, so a narrowed route or a kill-switch
-   * (M58) reaches sessions that are already open — and a resolution that
-   * contradicts the session's pin is refused rather than quietly ignored.
+   * Doing roles (M17); execution itself is delegated (Wave 2). EVERY turn is
+   * re-resolved against the policy, so a narrowed route or a kill-switch (M58)
+   * reaches sessions that are already open — and a resolution that contradicts
+   * the session's pin is refused rather than quietly ignored.
+   *
+   * The data class comes from the CALLER (`opts.dataClass`): a resume that
+   * arrives with a different class than the session was opened with produces a
+   * different pin and is refused, exactly like a policy change would be.
    */
-  async agentSessionOrQueue(opts: AgentSessionOptions): Promise<SessionOutcome> {
+  async agentSession(opts: AgentSessionOptions): Promise<SessionOutcome> {
     const runner = this.deps.agentRunner;
     if (!runner) throw new AgentRunnerNotWiredError();
     const role: LlmRole = this.cfg.agentRole;
+    const { dataClass, variantId } = opts;
 
     const existing = opts.resumeToken === undefined ? null : this.sessions.resume(opts.resumeToken, opts.workspacePath);
-    const dataClass: DataClass = existing?.dataClass ?? this.cfg.agentDataClass;
-    const decision = this.policy.resolve(role, ANY_VARIANT, dataClass);
-    if (decision.kind === "degrade") {
-      return { status: "degraded", dataClass: decision.dataClass, messageKey: decision.messageKey };
-    }
+    const decision = this.policy.resolve(role, variantId, dataClass);
+    if (decision.kind !== "allow") return haltedFrom(decision);
     const pin: SessionPin = { driver: decision.driver, model: decision.model, dataClass, masked: decision.masked };
     if (existing && !samePin(existing, pin)) {
       throw new SessionPolicyChangedError(existing.resumeToken, describePin(existing), describePin(pin));
@@ -182,30 +191,18 @@ export class LlmGateway implements LlmPort {
       });
       this.sessions.complete(record.resumeToken, out.vendorSessionId ?? null);
       const log = this.writeLog({
-        role, variantId: ANY_VARIANT, dataClass, driver: routed.driver,
+        role, variantId, dataClass, driver: routed.driver,
         model: routed.model, tokensIn: out.tokensIn, tokensOut: out.tokensOut, cachePct: null,
       });
       return {
-        status: "ok", resumeToken: record.resumeToken, finalText: out.finalText, log,
+        status: "ok",
+        value: { resumeToken: record.resumeToken, finalText: out.finalText, log },
+        log,
         ...(masked === null ? {} : { unmask: masked.unmask }),
       };
     } finally {
       if (routed.accountId !== null) this.pool.record(routed.accountId);
     }
-  }
-
-  // --- LlmPort (frozen signatures; queue/degrade become typed errors) ---
-
-  async generateObject<T>(request: GenerateObjectRequest, schema: z.ZodType<T>): Promise<{ object: T; log: LlmCallLog }> {
-    const outcome = await this.generateObjectOrQueue(request, schema);
-    if (outcome.status === "ok") return { object: outcome.object, log: outcome.log };
-    throw asError(outcome);
-  }
-
-  async agentSession(opts: AgentSessionOptions): Promise<AgentSessionResult> {
-    const outcome = await this.agentSessionOrQueue(opts);
-    if (outcome.status === "ok") return { resumeToken: outcome.resumeToken, finalText: outcome.finalText, log: outcome.log };
-    throw asError(outcome);
   }
 
   /** Quota view for Studio/KPI (M62). */
@@ -218,7 +215,7 @@ export class LlmGateway implements LlmPort {
       return { status: "ready", driver, model, transport: this.transport(driver as ApiDriverId), credentialRef: null, accountId: null };
     }
     const acquired = this.pool.acquire(driver as SubscriptionDriverId);
-    if (!acquired.ok) return { status: "queued", resumeAt: acquired.resumeAt, messageKey: MSG_QUEUED_QUOTA };
+    if (!acquired.ok) return { status: "queued", resumeAt: acquired.resumeAt, reason: QUEUE_REASON_QUOTA };
     const { transport, credentialRef, accountId } = acquired.account;
     return { status: "ready", driver, model, transport: this.transport(transport), credentialRef, accountId };
   }

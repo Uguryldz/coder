@@ -38,7 +38,7 @@ function harness(over: Partial<AgentExecutionDeps> = {}, llm: LlmStub = stubLlm(
     verifier: stubVerifier({}),
     piiPolicy: defaultPiiPolicy(),
     journalSink: (payload: Masked<SessionReport>) => {
-      stored.push(payload);
+      stored.push(payload.value);
       return Promise.resolve(undefined);
     },
     now: tickingClock(),

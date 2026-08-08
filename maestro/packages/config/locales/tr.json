@@ -61,5 +61,6 @@
   "run.queued_quota": "Akış kuyruğa alındı: abonelik havuzu dolu",
   "run.handover_strikes": "3 başarısız turdan sonra iş insana devredildi",
   "run.handover_stuck": "Ajan {count}/{limit} turda ilerleyemedi — iş insana devredildi, work mode ai-assist'e alındı",
-  "evidence.ready": "Kanıt paketi hazır: {fileCount} dosya, arşive yazıldı"
+  "evidence.ready": "Kanıt paketi hazır: {fileCount} dosya, arşive yazıldı",
+  "runner.session_timeout": "Ajan oturumu {minutes} dakikada tamamlanamadı — sandbox durduruldu"
 }

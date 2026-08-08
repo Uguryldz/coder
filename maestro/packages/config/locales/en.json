@@ -61,5 +61,6 @@
   "run.queued_quota": "Flow queued: subscription pool exhausted",
   "run.handover_strikes": "Work handed to a human after 3 failed rounds",
   "run.handover_stuck": "The agent made no progress in {count}/{limit} rounds — handed to a human, work mode set to ai-assist",
-  "evidence.ready": "Evidence package ready: {fileCount} files, written to archive"
+  "evidence.ready": "Evidence package ready: {fileCount} files, written to archive",
+  "runner.session_timeout": "The agent session did not finish within {minutes} minutes — the sandbox was stopped"
 }

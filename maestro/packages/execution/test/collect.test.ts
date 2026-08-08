@@ -133,7 +133,8 @@ describe("createReportJournal", () => {
   });
 
   it("cannot be reached with a raw report — the sink's parameter is branded", () => {
-    const sink = (payload: Masked<SessionReport>) => Promise.resolve(payload.runId);
+    // pii now wraps masked payloads in a nominal envelope: read through .value
+    const sink = (payload: Masked<SessionReport>) => Promise.resolve(payload.value.runId);
     // @ts-expect-error a raw SessionReport is not Masked<SessionReport>: the only
     // way to obtain the brand is to go through createReportJournal.
     const bypass = () => sink(report());

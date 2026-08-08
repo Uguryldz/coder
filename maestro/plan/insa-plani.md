@@ -55,7 +55,7 @@ Monorepo iskeleti (pnpm+turbo+CI) · `contracts` (tüm Zod şemaları) · `ports
 ### Dalga 1 — Çekirdek paketler (8 paralel builder + 8 verifier)
 | Paket | İçerik özü |
 |---|---|
-| `db` | Prisma şema+migration+seed (WorkflowRun, StepEvent, Journal, Variant, RoutingRule/Binding, Param, AuditLog) |
+| `db` | Prisma şema+migration+seed (WorkflowRun, StepEvent, Journal, Variant, RoutingRule/Binding, Param, AuditLog). **Seed maketteki veri setidir**: 5 uygulama + repo kartları, 4 bağlı Jira projesi + kuralları, 22 ticket (kapıda/çalışan/hatalı/kapanmış dağılımıyla), defter kayıtları, imzalı kapı kararları, audit zinciri — v1'den veri TAŞINMAZ, Studio ilk açılışta dolu gelir |
 | `adapter-jira` | DC istemci · webhook verify (raw-body) · yorum/label/assign · komut parse (M46/M102) |
 | `adapter-ado` | çift-mod istemci · repo/branch/PR/threads · Service Hook parse (M11-M13) |
 | `llm-gateway` | abonelik havuzu + kota pencere takibi + kuyruk (M55) · 4 API sürücüsü · politika/rate-limit |

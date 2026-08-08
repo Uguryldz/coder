@@ -328,6 +328,18 @@ Tam adım adım şema: [`diagrams/maestro-tumkapsam.md`](diagrams/maestro-tumkap
 ## 6. İşletim
 
 - **Dev/pilot:** Docker Compose — servisler: bff, worker, runner-svc, studio, temporal(+ui), postgres, redis, s3-uç (dev: minio/seaweedfs), vault, egress-proxy. Prod overlay: gerçek kurum Postgres/S3/Vault uçları. Eksik secret = başlamaz (M6).
+- **Port haritası** (compose varsayılanları, `.env` ile değiştirilebilir; kurumda öne ters vekil konur, dışarıya yalnız 443 açılır):
+
+| Servis | Port | Erişim |
+|---|---|---|
+| **Studio** (Next.js) | **7000** | kullanıcının gördüğü tek adres — `maestro.ugurbank.local` buraya bağlanır |
+| BFF (Fastify) | 7001 | webhook uçları + REST + `/mcp` (M101) |
+| Temporal | 7233 | gRPC, yalnız iç ağ |
+| Temporal UI | 8233 | yalnız admin |
+| PostgreSQL / Redis | 5432 / 6379 | dışa kapalı |
+| Runner Agent | **port yok** | win/mac makineler outbound bağlanır, içeri port açılmaz (M22) |
+
+  > 7000/7001 bilinçli seçim: eski v1 stack'i bu portlardaydı, emekliye ayrıldı (konteynerleri durduruldu, kaynağı `coder/orkestra`'da tarihsel referans olarak duruyor). v1 verisi taşınmaz — Maestro kendi seed'iyle dolar.
 - **Runner makineleri:** Win VM + Mac mini'ler Runner Agent daemon'unu servis olarak koşturur; outbound bağlanır; sağlıkları Studio'da görünür.
 - **Yedekleme:** PG (günlük dump + WAL), StoragePort (kurumun kendi depolama yedeği), Vault snapshot. Geri dönüş prosedürü runbook'ta, Aşama 3'te tatbikatlı.
 - **Yükseltme:** migration'lı sürüm çıkışı; çalışan workflow'lar Temporal versioning ile eski koduyla biter.

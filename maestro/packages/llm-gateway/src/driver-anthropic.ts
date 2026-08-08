@@ -72,7 +72,7 @@ export class AnthropicDirectDriver implements LlmDriver {
         body: messagesBody(call, { model: call.model }),
         timeoutMs: this.cfg.timeoutMs,
       },
-      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry },
+      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry, counter: call.counter },
     );
     return parseMessagesResponse(this.id, json);
   }

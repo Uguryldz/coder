@@ -34,7 +34,7 @@ export class BedrockDriver implements LlmDriver {
 
     const json = await postJson(
       { driver: this.id, url, headers: { accept: "application/json", ...headers }, body, timeoutMs: this.cfg.timeoutMs },
-      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry },
+      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry, counter: call.counter },
     );
     return parseMessagesResponse(this.id, json);
   }
@@ -71,7 +71,7 @@ export class VertexDriver implements LlmDriver {
         body: messagesBody(call, { anthropic_version: this.cfg.anthropicVersion }),
         timeoutMs: this.cfg.timeoutMs,
       },
-      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry },
+      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry, counter: call.counter },
     );
     return parseMessagesResponse(this.id, json);
   }

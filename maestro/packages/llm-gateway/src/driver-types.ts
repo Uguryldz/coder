@@ -1,7 +1,7 @@
 import type { ApiDriverId } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import type { RetryConfig } from "./config.js";
-import type { HttpDeps, TokenBucket } from "./http.js";
+import type { CallCounter, HttpDeps, TokenBucket } from "./http.js";
 
 export interface DriverCall {
   model: string;
@@ -14,6 +14,8 @@ export interface DriverCall {
    * own credential while riding the same transport (M55).
    */
   credentialRef?: string;
+  /** Counts the physical attempts this call costs, so quota can burn them (M55). */
+  counter?: CallCounter;
 }
 
 export interface DriverResult {

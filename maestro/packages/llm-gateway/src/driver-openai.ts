@@ -44,7 +44,7 @@ export class OpenAiCompatDriver implements LlmDriver {
         body: { model: call.model, max_tokens: call.maxTokens, temperature: call.temperature, messages },
         timeoutMs: this.cfg.timeoutMs,
       },
-      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry },
+      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry, counter: call.counter },
     );
 
     const parsed = ChatResponse.safeParse(json);

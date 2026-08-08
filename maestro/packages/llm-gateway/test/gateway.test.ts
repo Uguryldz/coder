@@ -1,10 +1,7 @@
-import type { GenerateObjectRequest } from "@maestro/contracts";
 import { LlmCallLog } from "@maestro/contracts";
 import type { LlmPort } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import {
-  AgentRunnerNotWiredError,
   LlmConfigError,
   LlmGateway,
   LlmPolicyBlockedError,
@@ -14,75 +11,9 @@ import {
   UnknownModelError,
   WINDOW_MS,
   createLlmGateway,
-  type AgentRunInput,
-  type AgentRunOutput,
-  type LlmGatewayDeps,
 } from "../src/index.js";
-import { type StubResponse, fakeClock, gatewayDeps, stubFetch, stubSecrets } from "./helpers.js";
-
-const Analysis = z.object({ risk: z.enum(["dusuk", "orta", "kritik"]), reason: z.string().min(1) });
-const ANSWER = '{"risk":"orta","reason":"payment path touched"}';
-
-function anthropicBody(text: string) {
-  return { content: [{ type: "text", text }], usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 25 } };
-}
-
-const config = {
-  drivers: [
-    { driver: "anthropic-direct", apiKeyRef: "llm/anthropic" },
-    { driver: "openai-compat", baseUrl: "https://vllm.internal.bank", apiKeyRef: "llm/vllm", onPrem: true },
-  ],
-  bindings: [
-    { role: "analyst", driver: "claude-sub", model: "claude-sonnet" },
-    { role: "intake", driver: "anthropic-direct", model: "claude-haiku" },
-    { role: "engineer", driver: "claude-sub", model: "claude-sonnet" },
-    { role: "test_designer", driver: "openai-compat", model: "qwen-onprem" },
-  ],
-  routes: [
-    { dataClass: "acik", allowedDrivers: ["anthropic-direct", "openai-compat", "claude-sub"] },
-    { dataClass: "dahili", allowedDrivers: ["anthropic-direct", "openai-compat", "claude-sub"] },
-    { dataClass: "gizli", allowedDrivers: ["openai-compat"] },
-  ],
-  subscriptionPool: {
-    accounts: [
-      {
-        accountId: "sub-1",
-        driver: "claude-sub",
-        transport: "anthropic-direct",
-        credentialRef: "llm/seat1",
-        windows: [
-          { kind: "5h", costPctPerCall: 95 },
-          { kind: "weekly", costPctPerCall: 1 },
-        ],
-      },
-    ],
-  },
-};
-
-const request: GenerateObjectRequest = {
-  role: "analyst",
-  variantId: "backend",
-  dataClass: "dahili",
-  schemaName: "Analysis",
-  input: { ticket: "UGURPAY-1" },
-};
-
-function build(
-  over: Record<string, unknown> = {},
-  extraDeps: Partial<LlmGatewayDeps> = {},
-  responses: StubResponse[] = [{ body: anthropicBody(ANSWER) }],
-) {
-  const stub = stubFetch(responses);
-  const clock = fakeClock();
-  const logs: LlmCallLog[] = [];
-  const deps = gatewayDeps(stub, clock, {
-    secrets: stubSecrets({ "llm/seat1": "sk-seat1", "llm/anthropic": "sk-ant", "llm/vllm": "sk-vllm" }),
-    onCallLog: (log) => logs.push(log),
-    ...extraDeps,
-  });
-  const gateway = createLlmGateway({ ...config, ...over }, deps);
-  return { gateway, stub, clock, logs };
-}
+import { ANSWER, Analysis, anthropicBody, build, config, request } from "./gateway-fixture.js";
+import { SAMPLE_IBAN, fakeClock, gatewayDeps, piiMask, stubFetch } from "./helpers.js";
 
 describe("LlmGateway.generateObjectOrQueue", () => {
   it("routes a subscription binding through the seat's transport and credential", async () => {
@@ -196,13 +127,16 @@ describe("LlmGateway.generateObjectOrQueue", () => {
         { dataClass: "gizli", allowedDrivers: ["anthropic-direct"] },
       ],
     };
-    const { gateway, stub } = build(cloudGizli, { mask: () => "***MASKED***" });
+    const { gateway, stub } = build(cloudGizli, { mask: piiMask() });
 
-    await gateway.generateObjectOrQueue({ ...request, role: "intake", dataClass: "gizli" }, Analysis);
+    await gateway.generateObjectOrQueue(
+      { ...request, role: "intake", dataClass: "gizli", input: { ticket: "UGURPAY-1", iban: SAMPLE_IBAN } },
+      Analysis,
+    );
 
     const sent = JSON.stringify(stub.calls[0]?.body);
-    expect(sent).toContain("***MASKED***");
-    expect(sent).not.toContain("UGURPAY-1");
+    expect(sent).toContain("[IBAN_1]");
+    expect(sent).not.toContain(SAMPLE_IBAN);
   });
 
   it("rejects an unbound role and a malformed request", async () => {
@@ -239,106 +173,6 @@ describe("LlmGateway LlmPort surface", () => {
     await expect(gateway.generateObject({ ...request, dataClass: "gizli" }, Analysis)).rejects.toBeInstanceOf(
       LlmPolicyBlockedError,
     );
-  });
-});
-
-describe("LlmGateway.agentSession (M17 delegation)", () => {
-  function runner(outputs: AgentRunOutput[] = [{ finalText: "done", tokensIn: 10, tokensOut: 3, vendorSessionId: "v1" }]) {
-    const inputs: AgentRunInput[] = [];
-    let index = 0;
-    return {
-      inputs,
-      run: (input: AgentRunInput) => {
-        inputs.push(input);
-        const out = outputs[index];
-        index += 1;
-        if (!out) throw new Error("unexpected runner call");
-        return Promise.resolve(out);
-      },
-    };
-  }
-
-  const opts = { workspacePath: "/work/UGURPAY-1", task: "implement the change", mcpServers: ["maestro-mcp"] };
-
-  it("picks the backend, opens a session and delegates the run", async () => {
-    const agentRunner = runner();
-    const { gateway, stub } = build({}, { agentRunner }, []);
-
-    const outcome = await gateway.agentSessionOrQueue(opts);
-
-    if (outcome.status !== "ok") return expect.unreachable("expected an ok outcome");
-    expect(outcome.resumeToken).toBe("session-1");
-    expect(outcome.finalText).toBe("done");
-    expect(outcome.log).toMatchObject({ role: "engineer", driver: "claude-sub", model: "claude-sonnet", usd: null });
-    expect(agentRunner.inputs[0]).toEqual({
-      driver: "claude-sub",
-      model: "claude-sonnet",
-      workspacePath: "/work/UGURPAY-1",
-      task: "implement the change",
-      mcpServers: ["maestro-mcp"],
-      vendorSessionId: null,
-      credentialRef: "llm/seat1",
-    });
-    // The gateway itself makes no provider call — execution is Wave 2's job.
-    expect(stub.calls).toHaveLength(0);
-  });
-
-  it("resumes the same session and hands the vendor handle back", async () => {
-    const agentRunner = runner([
-      { finalText: "turn 1", tokensIn: 10, tokensOut: 3, vendorSessionId: "v1" },
-      { finalText: "turn 2", tokensIn: 5, tokensOut: 2 },
-    ]);
-    const { gateway } = build(
-      {
-        subscriptionPool: {
-          accounts: [
-            {
-              accountId: "sub-1",
-              driver: "claude-sub",
-              transport: "anthropic-direct",
-              credentialRef: "llm/seat1",
-              windows: [{ kind: "5h", costPctPerCall: 1 }],
-            },
-          ],
-        },
-      },
-      { agentRunner },
-      [],
-    );
-
-    const first = await gateway.agentSession(opts);
-    const second = await gateway.agentSession({ ...opts, resumeToken: first.resumeToken });
-
-    expect(second.resumeToken).toBe(first.resumeToken);
-    expect(agentRunner.inputs[1]?.vendorSessionId).toBe("v1");
-    expect(second.finalText).toBe("turn 2");
-  });
-
-  it("queues an agent turn when the pool is exhausted, without calling the runner", async () => {
-    const agentRunner = runner();
-    const { gateway } = build({}, { agentRunner }, []);
-    await gateway.agentSessionOrQueue(opts);
-
-    const queued = await gateway.agentSessionOrQueue(opts);
-    expect(queued).toMatchObject({ status: "queued", messageKey: MSG_QUEUED_QUOTA });
-    expect(agentRunner.inputs).toHaveLength(1);
-  });
-
-  it("refuses to run when no agent runner is wired", async () => {
-    const { gateway } = build({}, {}, []);
-    await expect(gateway.agentSession(opts)).rejects.toBeInstanceOf(AgentRunnerNotWiredError);
-  });
-
-  it("degrades an agent turn when the configured agent data class has no backend", async () => {
-    const agentRunner = runner();
-    const { gateway } = build(
-      { agentDataClass: "gizli" },
-      { agentRunner },
-      [],
-    );
-
-    expect(await gateway.agentSessionOrQueue(opts)).toMatchObject({ status: "degraded", dataClass: "gizli" });
-    expect(agentRunner.inputs).toHaveLength(0);
   });
 });
 

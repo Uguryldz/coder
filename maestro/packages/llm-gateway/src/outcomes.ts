@@ -17,8 +17,21 @@ export interface DegradedOutcome {
   messageKey: string;
 }
 
-export type ObjectOutcome<T> = { status: "ok"; object: T; log: LlmCallLog } | QueuedOutcome | DegradedOutcome;
-export type SessionOutcome = ({ status: "ok" } & AgentSessionResult) | QueuedOutcome | DegradedOutcome;
+/**
+ * M20/M82: on a masked route the returned value stays MASKED — that is the copy
+ * an artifact store or a journal may keep — and `unmask` is the only way back
+ * to the real values, for a surface that is showing them to a human right now.
+ * It is absent when nothing was masked.
+ */
+export interface Unmaskable {
+  unmask?: <R>(value: R) => R;
+}
+
+export type ObjectOutcome<T> =
+  | ({ status: "ok"; object: T; log: LlmCallLog } & Unmaskable)
+  | QueuedOutcome
+  | DegradedOutcome;
+export type SessionOutcome = ({ status: "ok" } & AgentSessionResult & Unmaskable) | QueuedOutcome | DegradedOutcome;
 
 /** The frozen `LlmPort` methods have no place for these states — see RAPOR.md request #1. */
 export function asError(outcome: QueuedOutcome | DegradedOutcome): Error {

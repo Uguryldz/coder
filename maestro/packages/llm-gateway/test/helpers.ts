@@ -1,5 +1,41 @@
+import { defaultPiiPolicy, maskOutbound } from "@maestro/pii";
 import type { SecretPort } from "@maestro/ports";
-import type { FetchLike, LlmGatewayDeps } from "../src/index.js";
+import type { AgentRunInput, AgentRunOutput, FetchLike, LlmGatewayDeps, MaskFn } from "../src/index.js";
+
+/** A checksum-valid TR IBAN and TCKN — real shapes, fictional people. */
+export const SAMPLE_IBAN = "TR330006100519786457841326";
+export const SAMPLE_TCKN = "10000000146";
+
+/**
+ * The masker the composition root wires: `@maestro/pii`'s `maskOutbound`
+ * adapted to `deps.mask`. Using the real thing is the point — it proves the two
+ * signatures actually fit (B8).
+ */
+export function piiMask(): MaskFn {
+  return (payload, context) =>
+    maskOutbound(payload, { policy: defaultPiiPolicy(), dataClass: context.dataClass, boundary: context.boundary });
+}
+
+export interface RunnerStub {
+  inputs: AgentRunInput[];
+  run: (input: AgentRunInput) => Promise<AgentRunOutput>;
+}
+
+/** Agent runner double: answers in order, records every input. */
+export function stubRunner(outputs: AgentRunOutput[]): RunnerStub {
+  const inputs: AgentRunInput[] = [];
+  let index = 0;
+  return {
+    inputs,
+    run: (input) => {
+      inputs.push(input);
+      const out = outputs[index];
+      index += 1;
+      if (!out) throw new Error(`unexpected runner call #${index}`);
+      return Promise.resolve(out);
+    },
+  };
+}
 
 export interface StubResponse {
   status?: number;

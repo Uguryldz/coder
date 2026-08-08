@@ -98,8 +98,10 @@ describe("SubscriptionPool (M55)", () => {
     expect(p.acquire("claude-sub").ok).toBe(false);
 
     clock.advance(WINDOW_MS["5h"]);
-    expect(p.acquire("claude-sub")).toMatchObject({ ok: true, account: { accountId: "a" } });
     expect(p.snapshot()[0]?.windows.find((w) => w.kind === "5h")?.usedPct).toBe(0);
+    // …and acquiring again immediately reserves the next call's share.
+    expect(p.acquire("claude-sub")).toMatchObject({ ok: true, account: { accountId: "a" } });
+    expect(p.snapshot()[0]?.windows.find((w) => w.kind === "5h")?.usedPct).toBe(95);
   });
 
   it("rolls a window forward by whole periods, not to now()", () => {

@@ -132,9 +132,11 @@ export const LlmGatewayConfig = z
     agentRole: LlmRole.default("engineer"),
     /**
      * `AgentSessionOptions` carries no data class, so agent turns are routed
-     * with this one until the port grows the field (RAPOR.md request #2).
+     * with this one until the port grows the field (RAPOR.md request #2). The
+     * default is the STRICTEST class: a deployment that has not thought about
+     * it must not discover that its core-banking work went to the cloud (M18).
      */
-    agentDataClass: DataClass.default("dahili"),
+    agentDataClass: DataClass.default("gizli"),
   })
   .superRefine((cfg, ctx) => {
     const configured = new Set<string>(cfg.drivers.map((d) => d.driver));
@@ -161,6 +163,20 @@ export const LlmGatewayConfig = z
     for (const dc of DataClass.options) {
       if (!cfg.routes.some((r) => r.dataClass === dc)) {
         ctx.addIssue({ code: "custom", path: ["routes"], message: `no route for data class "${dc}"` });
+      }
+    }
+    // M18: a subscription seat is a consumer contract with no enterprise data
+    // agreement. Refusing it at install time means the compliance team cannot
+    // put one on the confidential route by accident in the first place.
+    for (const [i, route] of cfg.routes.entries()) {
+      if (route.dataClass !== "gizli") continue;
+      for (const [j, driver] of route.allowedDrivers.entries()) {
+        if (!isSubscriptionDriver(driver)) continue;
+        ctx.addIssue({
+          code: "custom",
+          path: ["routes", i, "allowedDrivers", j],
+          message: `subscription driver "${driver}" may not serve the "gizli" data class`,
+        });
       }
     }
   });

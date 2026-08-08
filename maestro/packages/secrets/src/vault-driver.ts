@@ -13,6 +13,14 @@ import { parseScope } from "./keys.js";
 import { resolveKey, toIsoDateTime } from "./shared.js";
 import type { VaultBody, VaultClient, VaultReadResult } from "./vault-client.js";
 
+/**
+ * How much longer than the requested window a granted lease may run before the
+ * driver calls it a violation. Mirrors `EXPIRY_SKEW_SECONDS` in adapter-ado,
+ * which rejects exactly the same condition on the consuming side — the two
+ * packages must not disagree about what "short-lived" means (M31).
+ */
+const GRANTED_LEASE_SKEW_SECONDS = 60;
+
 export interface VaultSecretPortOptions {
   config: VaultConfig;
   client: VaultClient;
@@ -66,6 +74,13 @@ export class VaultSecretPort implements SecretPort {
    * mandatory and capped by `shortLived.maxTtlSeconds`; an oversized request is
    * REJECTED rather than clamped, so a caller can never believe it holds a
    * longer-lived credential than Vault actually granted.
+   *
+   * The ceiling binds the GRANTED lease as well as the request (M31): a Vault
+   * role whose own ttl is 24h must not be able to hand a day-long push token
+   * back through a driver that promises short-lived credentials. And when the
+   * response carries no usable `lease_duration`, the driver refuses instead of
+   * assuming it got what it asked for — a guessed expiry is a credential that
+   * outlives its window without anyone noticing.
    */
   async issueShortLived(scope: string, ttlSeconds: number): Promise<{ secret: string; expiresAt: string }> {
     const parsedScope = parseScope(scope);
@@ -87,15 +102,22 @@ export class VaultSecretPort implements SecretPort {
     const secret = readField(body.data, field);
     if (secret === undefined) throw new VaultResponseError(operation, `field "${field}" is missing or empty`);
 
-    const lease = body.lease_duration;
-    const grantedSeconds = typeof lease === "number" && Number.isFinite(lease) ? lease : ttlSeconds;
-    const expiresAtMs = this.#clock() + grantedSeconds * 1000;
-    if (grantedSeconds <= 0 || expiresAtMs <= this.#clock()) {
-      throw new SecretExpiredError(parsedScope, toIsoDateTime(expiresAtMs));
+    // Bounds are checked BEFORE any date arithmetic: `lease_duration: 1e18`
+    // otherwise escapes as an untyped RangeError from the Date constructor.
+    const granted = body.lease_duration;
+    if (typeof granted !== "number" || !Number.isSafeInteger(granted)) {
+      throw new VaultResponseError(operation, "lease_duration is missing or not a whole number of seconds");
+    }
+    if (granted <= 0) throw new SecretExpiredError(parsedScope, toIsoDateTime(this.#clock()));
+    if (granted > maxTtlSeconds) {
+      throw new SecretTtlError(ttlSeconds, maxTtlSeconds, `vault granted ${granted}s, above the ceiling (M31)`);
+    }
+    if (granted > ttlSeconds + GRANTED_LEASE_SKEW_SECONDS) {
+      throw new SecretTtlError(ttlSeconds, maxTtlSeconds, `vault granted ${granted}s, outliving the requested window`);
     }
 
     // Never cached: a short-lived credential is single-use by design.
-    return { secret, expiresAt: toIsoDateTime(expiresAtMs) };
+    return { secret, expiresAt: toIsoDateTime(this.#clock() + granted * 1000) };
   }
 
   /** Drops cached values, e.g. after a rotation signal. */

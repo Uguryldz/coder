@@ -4,6 +4,7 @@ import { ENV_FILE_DRIVER, type EnvFileConfig } from "./config.js";
 import { SecretConfigError, SecretNotFoundError } from "./errors.js";
 import { envVarName } from "./keys.js";
 import { resolveKey } from "./shared.js";
+import { resolveStage } from "./stage.js";
 
 export type ReadTextFile = (path: string) => Promise<string>;
 
@@ -13,8 +14,12 @@ export interface EnvFileSecretPortOptions {
   env?: Record<string, string | undefined>;
   /** Reader for `filePath`; defaults to node:fs/promises. */
   readFile?: ReadTextFile;
-  /** Deployment stage gate; defaults to `process.env.NODE_ENV`. */
-  nodeEnv?: string;
+  /**
+   * Deployment stage. Defaults to `process.env.NODE_ENV`, and can only make the
+   * gate STRICTER: a production process stays production whatever is passed
+   * here. Unrecognised values ("prod", "PROD", "staging") are refused.
+   */
+  nodeEnv?: unknown;
   clock?: Clock;
 }
 
@@ -24,7 +29,9 @@ export interface EnvFileSecretPortOptions {
  *
  * Two hard rules:
  *  - It REFUSES to exist in production (M6: secrets belong in Vault). The check
- *    is in the constructor, so no wiring path can slip past it.
+ *    is in the constructor, so no wiring path can slip past it, and it reads
+ *    the AMBIENT stage as well as the injected one, so no caller can talk it
+ *    open from inside a production process either.
  *  - It cannot issue short-lived credentials and says so with
  *    CapabilityNotSupportedError instead of faking a long-lived one (M44).
  */
@@ -37,8 +44,8 @@ export class EnvFileSecretPort implements SecretPort {
   #fileEntries: Promise<Record<string, string>> | null = null;
 
   constructor(options: EnvFileSecretPortOptions) {
-    const nodeEnv = options.nodeEnv ?? process.env["NODE_ENV"];
-    if (nodeEnv === "production") {
+    // The ambient stage wins whenever it is the stricter one — see resolveStage.
+    if (resolveStage(options.nodeEnv) === "production") {
       throw new SecretConfigError(
         `the "${ENV_FILE_DRIVER}" driver is forbidden in production — use the "vault" driver (M6)`,
       );

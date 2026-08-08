@@ -66,6 +66,20 @@ describe.each(DRIVERS)("get() invariance — %s driver", (name) => {
     expect((error as SecretPermissionDeniedError).reason).toBe("mount_not_allowed");
   });
 
+  // "kv" in the allow-list must not entitle "kvault" or "kv-root": a prefix
+  // match would let a typo (or a crafted reference) walk another team's tree.
+  it.each(["kvault/jira/pat#token", "kv-root/jira/pat#token", "kv2/jira/pat#token", "KV/jira/pat#token"])(
+    "refuses %s — the allow-list is matched whole, not by prefix",
+    async (key) => {
+      const error = await scenarios.denied[name]()
+        .get(key)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(SecretPermissionDeniedError);
+      expect((error as SecretPermissionDeniedError).reason).toBe("mount_not_allowed");
+    },
+  );
+
   it("throws SecretKeyError for a malformed key, before any I/O", async () => {
     await expect(scenarios.denied[name]().get("kv/../auth/token")).rejects.toBeInstanceOf(SecretKeyError);
   });

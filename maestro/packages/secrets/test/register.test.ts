@@ -12,7 +12,8 @@ import {
   VaultConfig,
   VaultSecretPort,
 } from "../src/index.js";
-import { APPROLE, ENV_FILE_CONFIG, stubFetch, VAULT_CONFIG } from "./helpers.js";
+import * as publicApi from "../src/index.js";
+import { APPROLE, ENV_FILE_CONFIG, stubFetch, VAULT_CONFIG, withAmbientNodeEnv } from "./helpers.js";
 
 const vaultDeps = { approle: APPROLE, fetchImpl: stubFetch([]).fetchImpl };
 
@@ -92,5 +93,50 @@ describe("configuration validation", () => {
     expect(
       VaultConfig.safeParse({ ...VAULT_CONFIG, shortLived: { maxTtlSeconds: 86_401 } }).success,
     ).toBe(false);
+  });
+});
+
+/**
+ * Vault carries the AppRole secret_id and the client token in the clear on the
+ * wire, so plain http is a credential disclosure, not a convenience setting.
+ */
+describe("transport security of the vault address", () => {
+  const HTTP = { ...VAULT_CONFIG, addr: "http://vault.internal.bank:8200" };
+
+  it("refuses a plain-http address by default", () => {
+    const parsed = VaultConfig.safeParse(HTTP);
+
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error?.issues)).toMatch(/addr/);
+  });
+
+  it("allows plain http only through the explicit dev escape hatch", () => {
+    expect(VaultConfig.safeParse({ ...HTTP, allowInsecureAddr: true }).success).toBe(true);
+    expect(VaultConfig.parse(VAULT_CONFIG).allowInsecureAddr).toBe(false);
+  });
+
+  it("closes the escape hatch in production", () => {
+    withAmbientNodeEnv("production", () => {
+      expect(VaultConfig.safeParse({ ...HTTP, allowInsecureAddr: true }).success).toBe(false);
+      expect(VaultConfig.safeParse(VAULT_CONFIG).success).toBe(true);
+    });
+  });
+
+  it("refuses the factory too, not just the schema", () => {
+    expect(() => createVaultSecretPort({ ...HTTP, deps: vaultDeps })).toThrow(SecretConfigError);
+  });
+});
+
+describe("public API surface", () => {
+  it("does not hand out the raw VaultClient — it would bypass the mount allow-list", () => {
+    expect(Object.keys(publicApi)).not.toContain("VaultClient");
+  });
+
+  it("still exports what a composition root needs to wire the drivers", () => {
+    const exported = Object.keys(publicApi);
+
+    expect(exported).toEqual(
+      expect.arrayContaining(["createVaultSecretPort", "createEnvFileSecretPort", "registerSecretDrivers", "SECRET_PORT"]),
+    );
   });
 });

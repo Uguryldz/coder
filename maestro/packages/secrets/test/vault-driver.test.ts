@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createVaultSecretPort,
   SecretConfigError,
+  SecretError,
   SecretExpiredError,
   SecretKeyError,
   SecretNotFoundError,
@@ -175,6 +176,16 @@ describe("vault driver issueShortLived() — M31", () => {
     );
   });
 
+  it("issues for a real Azure DevOps project name (spaces and all)", async () => {
+    const { stub, port } = driver(withLogin([{ body: fixture("dynamic-creds") }]));
+
+    await port.issueShortLived("ado/Core Banking/core-api/push", 600);
+
+    expect(stub.calls[1]!.url).toBe(
+      "https://vault.internal.bank/v1/git/creds/ado/Core%20Banking/core-api/push?ttl=600s",
+    );
+  });
+
   it("is never served from the cache — two calls hit Vault twice", async () => {
     const { stub, port } = driver(
       withLogin([{ body: fixture("dynamic-creds") }, { body: fixture("dynamic-creds") }]),
@@ -186,6 +197,77 @@ describe("vault driver issueShortLived() — M31", () => {
     await port.issueShortLived("repo/ugurpay-core/push", 600);
 
     expect(stub.calls).toHaveLength(3);
+  });
+});
+
+/**
+ * The M31 ceiling is a property of the credential the caller ENDS UP HOLDING,
+ * not only of the request: a Vault role whose own ttl outlives the ceiling must
+ * not be able to hand a long-lived push token back through this driver.
+ */
+describe("vault driver issueShortLived() — the granted lease is capped too", () => {
+  function withLease(lease: unknown): Record<string, unknown> {
+    const body = structuredClone(fixture("dynamic-creds")) as Record<string, unknown>;
+    if (lease === undefined) delete body["lease_duration"];
+    else body["lease_duration"] = lease;
+    return body;
+  }
+
+  it("refuses a granted lease above the ceiling even though the request was inside it", async () => {
+    const { port } = driver(withLogin([{ body: withLease(86_400) }]));
+
+    const error = await port.issueShortLived("repo/ugurpay-core/push", 600).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SecretTtlError);
+    expect((error as Error).message).toContain("86400");
+  });
+
+  it("refuses a granted lease just over the ceiling, even inside the skew allowance", async () => {
+    const { port } = driver(withLogin([{ body: withLease(930) }]));
+
+    // 930s is within 900 + 60s of the request, so only the M31 ceiling catches it.
+    const error = await port.issueShortLived("repo/ugurpay-core/push", 900).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SecretTtlError);
+    expect((error as Error).message).toContain("above the ceiling");
+  });
+
+  it("refuses a granted lease that outlives the requested window", async () => {
+    const { port } = driver(withLogin([{ body: withLease(800) }]));
+
+    await expect(port.issueShortLived("repo/ugurpay-core/push", 600)).rejects.toBeInstanceOf(SecretTtlError);
+  });
+
+  it("tolerates a granted lease inside the clock-skew allowance", async () => {
+    const { port } = driver(withLogin([{ body: withLease(630) }]));
+
+    await expect(port.issueShortLived("repo/ugurpay-core/push", 600)).resolves.toEqual({
+      secret: "ghs.SHORT-LIVED-PUSH-TOKEN",
+      expiresAt: new Date(T0 + 630_000).toISOString(),
+    });
+  });
+
+  it("never guesses an expiry when Vault omits lease_duration", async () => {
+    const { port } = driver(withLogin([{ body: withLease(undefined) }]));
+
+    await expect(port.issueShortLived("repo/ugurpay-core/push", 600)).rejects.toBeInstanceOf(VaultResponseError);
+  });
+
+  it.each([
+    [1e18, "absurd lease"],
+    [Number.MAX_SAFE_INTEGER, "max safe integer"],
+    [1.5, "fractional lease"],
+    ["600", "string lease"],
+    [null, "null lease"],
+    [Number.NaN, "NaN lease"],
+    [Number.POSITIVE_INFINITY, "infinite lease"],
+  ])("turns an unusable lease_duration (%s) into a typed secret failure", async (lease, _label) => {
+    const { port } = driver(withLogin([{ body: withLease(lease) }]));
+
+    const error = await port.issueShortLived("repo/ugurpay-core/push", 600).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SecretError);
+    expect(error).not.toBeInstanceOf(RangeError);
   });
 });
 

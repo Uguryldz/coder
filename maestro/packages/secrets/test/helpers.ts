@@ -95,6 +95,32 @@ export function fakeClock(startMs: number = T0): FakeClock {
   };
 }
 
+/**
+ * Runs `body` with a forced ambient `process.env.NODE_ENV` and always restores
+ * it. The production gate reads the AMBIENT stage, so this is the only honest
+ * way to test that a caller cannot talk it open.
+ */
+export function withAmbientNodeEnv<T>(value: string | undefined, body: () => T): T {
+  const previous = process.env["NODE_ENV"];
+  if (value === undefined) delete process.env["NODE_ENV"];
+  else process.env["NODE_ENV"] = value;
+  try {
+    return body();
+  } finally {
+    if (previous === undefined) delete process.env["NODE_ENV"];
+    else process.env["NODE_ENV"] = previous;
+  }
+}
+
+/** Recorded Azure DevOps project/repository names — the source of the B5 scopes. */
+export function adoNames(): { projects: string[]; repos: string[] } {
+  return loadFixture(
+    FIXTURE_DIR,
+    "ado-names",
+    z.object({ projects: z.array(z.string()), repos: z.array(z.string()) }),
+  );
+}
+
 export const VAULT_CONFIG = {
   addr: "https://vault.internal.bank",
   allowedMounts: ["kv", "git"],

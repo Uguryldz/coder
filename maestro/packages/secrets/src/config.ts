@@ -1,5 +1,6 @@
 import { NonEmpty } from "@maestro/contracts";
 import { z } from "zod";
+import { isProductionStage } from "./stage.js";
 
 export const SECRET_PORT = "secret";
 export const VAULT_DRIVER = "vault";
@@ -30,10 +31,32 @@ export const ShortLivedConfig = z.object({
 });
 export type ShortLivedConfig = z.infer<typeof ShortLivedConfig>;
 
+/**
+ * TLS check for the Vault address. Everything that matters travels over this
+ * connection in the clear otherwise: the AppRole `secret_id` on the way in and
+ * the client token on the way back. Plain http is therefore a credential
+ * disclosure, allowed only as an explicit, opt-in dev convenience (local
+ * `http://127.0.0.1:8200`) and never in production, escape hatch or not.
+ *
+ * Returns the reason it is refused, or null when the address is acceptable.
+ */
+export function vaultAddrIssue(config: { addr: string; allowInsecureAddr?: boolean }): string | null {
+  if (/^https:\/\//i.test(config.addr)) return null;
+  if (isProductionStage()) {
+    return `addr "${config.addr}" is not https — Vault must be reached over TLS in production (M6)`;
+  }
+  if (config.allowInsecureAddr !== true) {
+    return `addr "${config.addr}" is not https — set allowInsecureAddr: true to accept it outside production`;
+  }
+  return null;
+}
+
 export const VaultConfig = z.object({
   allowedMounts: AllowedMounts,
   cacheTtlSeconds: CacheTtlSeconds.default(30),
   addr: z.url(),
+  /** Dev-only opt-in for a plain-http `addr`; ignored in production. */
+  allowInsecureAddr: z.boolean().default(false),
   /** Vault Enterprise namespace header, if the bank uses one. */
   namespace: NonEmpty.optional(),
   /** AppRole auth mount; role_id/secret_id are runtime deps, never config. */
@@ -42,6 +65,9 @@ export const VaultConfig = z.object({
   /** Renew this many seconds before the client token's lease actually ends. */
   tokenRenewSkewSeconds: z.number().int().min(1).max(3_600).default(60),
   shortLived: ShortLivedConfig.prefault({}),
+}).superRefine((config, ctx) => {
+  const issue = vaultAddrIssue(config);
+  if (issue) ctx.addIssue({ code: "custom", path: ["addr"], message: issue });
 });
 export type VaultConfig = z.infer<typeof VaultConfig>;
 

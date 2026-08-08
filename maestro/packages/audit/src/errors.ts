@@ -27,12 +27,33 @@ export class AuditActorError extends Error {
   }
 }
 
+/**
+ * A value that goes into the hash is not in the exact form the record stores.
+ * Zod's `.trim()` is a *transform*, so hashing a schema's input and storing its
+ * output silently produces a record that does not hash to its own fields. Every
+ * externally-supplied hashed field is therefore validated fail-closed — the
+ * same discipline `assertActor` already applies to `actor`.
+ */
+export class AuditFieldError extends Error {
+  constructor(
+    readonly field: string,
+    readonly value: string,
+    reason: string,
+  ) {
+    super(`audit: ${field} ${JSON.stringify(value)} is not acceptable: ${reason}`);
+    this.name = "AuditFieldError";
+  }
+}
+
 export type AuditChainErrorReason =
   | "not_an_event"
   | "sequence_conflict"
   | "hash_conflict"
+  | "prev_hash_conflict"
   | "head_unreadable"
-  | "actor_not_human";
+  | "actor_not_human"
+  | "not_self_hashing"
+  | "unanchored_slice";
 
 /** The append path refused a record — the chain state is unchanged. */
 export class AuditChainError extends Error {

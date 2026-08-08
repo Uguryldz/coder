@@ -52,6 +52,19 @@ export interface AuditChainOptions {
   readonly clock?: Clock;
 }
 
+export interface VerifyRange {
+  /** Inclusive lower bound. Omitted (or 1) means "the whole chain, from genesis". */
+  readonly fromSeq?: number;
+  /** Inclusive upper bound. */
+  readonly toSeq?: number;
+  /**
+   * Required when `fromSeq > 1`: the hash the slice must continue from, taken
+   * from a signed anchor. There is no default — a missing expectation is a
+   * refusal, never a pass.
+   */
+  readonly expectPrevHash?: string;
+}
+
 export interface AppendInput {
   readonly actor: string;
   readonly action: AuditAction;
@@ -98,16 +111,45 @@ export class AuditChain {
     return this.lock.withLock(() => this.sealAll(inputs));
   }
 
-  /** Re-verify the whole stored chain (or a slice) from the records themselves. */
-  async verify(range?: { fromSeq?: number; toSeq?: number }): Promise<ChainVerification> {
-    const events = await this.store.read(range);
-    const first = events[0];
-    return verifyChain(
-      events,
-      first && first.prevHash !== GENESIS
-        ? { expectFirstSeq: first.seq, expectPrevHash: first.prevHash }
-        : undefined,
-    );
+  /**
+   * Re-verify the stored chain against an expectation the records cannot
+   * influence.
+   *
+   * Without a range this is always "seq 1, pointing at genesis". Deriving the
+   * expectation from the first record on hand — the shortcut a slice check
+   * invites — is a fail-open: deleting the first records, emptying the table or
+   * re-sealing the chain from a forged genesis all produce a chain that agrees
+   * with itself, and the verifier would report `ok`.
+   *
+   * A slice that does not start at seq 1 must therefore carry `expectPrevHash`
+   * from *outside* the database — a signed anchor's `headHash` is the intended
+   * source (M33). Without it the verification is refused, not softened.
+   */
+  async verify(range?: VerifyRange): Promise<ChainVerification> {
+    const fromSeq = range?.fromSeq;
+    const startsAtGenesis = fromSeq === undefined || fromSeq <= 1;
+
+    if (startsAtGenesis) {
+      if (range?.expectPrevHash !== undefined && range.expectPrevHash !== GENESIS) {
+        throw new AuditChainError(
+          "unanchored_slice",
+          `a verification that starts at seq 1 must expect ${GENESIS}, not ${range.expectPrevHash}`,
+        );
+      }
+      return verifyChain(await this.store.read(range), { expectFirstSeq: 1, expectPrevHash: GENESIS });
+    }
+
+    if (range?.expectPrevHash === undefined) {
+      throw new AuditChainError(
+        "unanchored_slice",
+        `verifying from seq ${fromSeq} needs expectPrevHash from a signed anchor; the records cannot vouch for their own start`,
+      );
+    }
+
+    return verifyChain(await this.store.read(range), {
+      expectFirstSeq: fromSeq,
+      expectPrevHash: range.expectPrevHash,
+    });
   }
 
   private async sealAll(inputs: readonly AppendInput[]): Promise<AuditEvent[]> {

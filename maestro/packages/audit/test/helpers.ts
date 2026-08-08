@@ -39,3 +39,44 @@ export async function sampleChain(startIso = "2026-08-08T09:00:00.000Z"): Promis
 export function clone(events: readonly AuditEvent[]): AuditEvent[] {
   return events.map((event) => structuredClone(event) as AuditEvent);
 }
+
+export const SAMPLE_DAYS = ["2026-08-08", "2026-08-09", "2026-08-10"] as const;
+
+export interface MultiDayChain extends SampleChain {
+  /** `days[i]` is the slice of the chain that falls on `SAMPLE_DAYS[i]`. */
+  readonly days: AuditEvent[][];
+}
+
+/** One continuous chain spread over consecutive UTC days — the input a series of anchors covers. */
+export async function multiDayChain(days: readonly string[] = SAMPLE_DAYS): Promise<MultiDayChain> {
+  const store = new InMemoryAuditStore();
+  const chain = new AuditChain({ store });
+  const slices: AuditEvent[][] = [];
+
+  for (const [index, day] of days.entries()) {
+    slices.push(
+      await chain.appendMany([
+        {
+          actor: "maestro-worker",
+          action: "RUN_STARTED",
+          subject: `UGURPAY-${300 + index}`,
+          at: `${day}T09:00:00.000Z`,
+        },
+        {
+          actor: "po.demir@ugurbank.corp",
+          action: "GATE_APPROVE",
+          subject: `UGURPAY-${300 + index}`,
+          at: `${day}T12:00:00.000Z`,
+        },
+        {
+          actor: "maestro-worker",
+          action: "RUN_CLOSED",
+          subject: `UGURPAY-${300 + index}`,
+          at: `${day}T17:00:00.000Z`,
+        },
+      ]),
+    );
+  }
+
+  return { chain, store, events: slices.flat(), days: slices };
+}

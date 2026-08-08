@@ -101,6 +101,18 @@ export interface BuildAnchorOptions {
   /** The day's records, in chain order. */
   readonly events: readonly AuditEvent[];
   readonly signer: AnchorSigner;
+  /**
+   * `headHash` of the previous day's anchor, or `GENESIS` for the very first
+   * anchor. **Required**: an anchor that takes the expected link from the day's
+   * own first record signs whatever it is given, so deleting that record before
+   * anchoring makes the truncation permanently legitimate.
+   */
+  readonly expectPrevHash: string;
+  /**
+   * `lastSeq` of the previous day's anchor + 1. Required unless `expectPrevHash`
+   * is `GENESIS`, where the only possible answer is 1.
+   */
+  readonly expectFirstSeq?: number;
   /** Defaults to the day of the first record; records outside it are an error. */
   readonly day?: string;
   /** Anchor creation instant; injected so anchors are reproducible in tests. */
@@ -109,10 +121,11 @@ export interface BuildAnchorOptions {
 
 /**
  * Build and sign the anchor for one day. The slice is verified first — signing
- * a chain that is already broken would only certify the damage.
+ * a chain that is already broken, or a day whose first records were removed,
+ * would only certify the damage.
  */
 export async function buildAnchor(options: BuildAnchorOptions): Promise<AuditAnchor> {
-  const { events, signer, now } = options;
+  const { events, signer, now, expectPrevHash } = options;
   const first = events[0];
   const last = events.at(-1);
   if (!first || !last) {
@@ -121,13 +134,21 @@ export async function buildAnchor(options: BuildAnchorOptions): Promise<AuditAnc
     throw new AuditAnchorError("empty_day", "an anchor over zero records proves nothing");
   }
 
+  const expectFirstSeq = options.expectFirstSeq ?? (expectPrevHash === GENESIS ? 1 : undefined);
+  if (expectFirstSeq === undefined) {
+    throw new AuditAnchorError(
+      "missing_expectation",
+      "expectFirstSeq is required when the anchor continues a previous one (previous anchor's lastSeq + 1)",
+    );
+  }
+
   const day = options.day ?? utcDayOf(first.at);
   const outside = events.find((event) => utcDayOf(event.at) !== day);
   if (outside) {
     throw new AuditAnchorError("mixed_days", `seq ${outside.seq} is not on ${day}`);
   }
 
-  const chain = verifyChain(events, { expectFirstSeq: first.seq, expectPrevHash: first.prevHash });
+  const chain = verifyChain(events, { expectFirstSeq, expectPrevHash });
   if (!chain.ok) {
     throw new AuditAnchorError(
       "chain_broken",
@@ -140,10 +161,12 @@ export async function buildAnchor(options: BuildAnchorOptions): Promise<AuditAnc
     day,
     createdAt: now.toISOString(),
     algorithm: "sha256",
-    firstSeq: first.seq,
+    // Taken from the caller's expectation, which `verifyChain` just proved the
+    // records satisfy — not from the records themselves.
+    firstSeq: expectFirstSeq,
     lastSeq: last.seq,
     eventCount: events.length,
-    prevHash: first.prevHash,
+    prevHash: expectPrevHash,
     headHash: last.hash,
     chainDigest: chainDigestOf(events),
   });

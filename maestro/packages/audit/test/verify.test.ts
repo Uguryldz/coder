@@ -132,11 +132,57 @@ describe("verifyChain", () => {
     expect(verifyChain(slice, { expectFirstSeq: 3, expectPrevHash: "f".repeat(64) }).ok).toBe(false);
   });
 
-  it("reports an empty input as checked: 0 — emptiness proves nothing", () => {
+  it("refuses an empty input — emptiness proves nothing (O3)", () => {
     const result = verifyChain([]);
-    expect(result.ok).toBe(true);
+
+    // Every caller writes `if (result.ok)`. An emptied table must not pass.
+    expect(result.ok).toBe(false);
     expect(result.checked).toBe(0);
     expect(result.headHash).toBeNull();
+    expect(result.issues.map((issue) => issue.kind)).toEqual(["empty"]);
+    expect(result.issues[0]!.detail).toMatch(/proves nothing/);
+  });
+
+  it("keeps checking the record that FOLLOWS an unreadable one (D5)", async () => {
+    const { events } = await sampleChain();
+    const { events: other } = await sampleChain("2026-08-09T09:00:00.000Z");
+
+    // seq 2 is corrupted beyond the schema, and seq 3 was swapped in from
+    // another chain. Dropping the link state at the unreadable record made the
+    // very next record unchecked — the damage report stopped one row short.
+    const damaged: unknown[] = clone(events);
+    damaged[1] = { ...events[1]!, action: "NOT_AN_ACTION" };
+    damaged[2] = structuredClone(other[2]!);
+
+    const result = verifyChain(damaged);
+    expect(result.ok).toBe(false);
+    expect(result.checked).toBe(5);
+    expect(result.issues.map((issue) => issue.kind)).toContain("schema_invalid");
+    expect(
+      result.issues.filter((issue) => issue.kind === "prev_hash_mismatch").map((issue) => issue.seq),
+    ).toEqual([3, 4]);
+    expect(result.firstBadSeq).toBe(2);
+  });
+
+  it("reports the gap when records are deleted right after an unreadable one (D5)", async () => {
+    const { events } = await sampleChain();
+    const damaged: unknown[] = [
+      events[0]!,
+      { ...events[1]!, action: "NOT_AN_ACTION" },
+      // seq 3 deleted.
+      events[3]!,
+      events[4]!,
+    ];
+
+    const result = verifyChain(damaged);
+    const kinds = result.issues.map((issue) => issue.kind);
+
+    expect(result.ok).toBe(false);
+    expect(kinds).toContain("sequence_gap");
+    expect(kinds).toContain("prev_hash_mismatch");
+    expect(result.issues.find((issue) => issue.kind === "sequence_gap")!.detail).toMatch(
+      /seq jumps from 2 to 4/,
+    );
   });
 
   it("rejects a forged genesis link", async () => {

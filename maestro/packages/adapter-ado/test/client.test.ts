@@ -6,19 +6,21 @@ import {
   AdoNotFoundError,
   parseAdoConfig,
 } from "../src/index.js";
-import { createFakeHttp, fixture, queryOf, respondWith } from "./helpers.js";
+import { CI_CONFIG, createFakeHttp, fixture, queryOf, respondWith } from "./helpers.js";
 
 const serverConfig = parseAdoConfig({
   mode: "server",
   baseUrl: "https://tfs.ugurbank.local/tfs",
   collection: "DefaultCollection",
   tokenRef: "ado/server/pat",
+  ci: CI_CONFIG,
 });
 
 const servicesConfig = parseAdoConfig({
   mode: "services",
   org: "ugurbank",
   tokenRef: "ado/services/pat",
+  ci: CI_CONFIG,
 });
 
 function client(config: typeof serverConfig, http: { fetch: ReturnType<typeof respondWith>["fetch"] }) {

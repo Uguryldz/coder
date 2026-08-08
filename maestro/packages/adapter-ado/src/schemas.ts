@@ -105,12 +105,24 @@ export const ServiceHookEnvelope = z.looseObject({
 });
 export type ServiceHookEnvelope = z.infer<typeof ServiceHookEnvelope>;
 
-/** `build.complete` resource — the subset the CI signal needs (M12/M13). */
+/**
+ * `build.complete` resource — the subset the CI signal needs (M12/M13).
+ *
+ * `reason`, `definition`, `project` and `repository` are the provenance of
+ * the verdict: without them any queued build could answer for the PR. They
+ * stay optional here (a foreign payload must not throw) and are demanded by
+ * the gate in `ci.ts`, which drops the event when they are absent.
+ */
 export const BuildCompleteResource = z.looseObject({
   id: z.number().int().positive(),
   buildNumber: z.string().optional(),
   status: z.string().optional(),
   result: z.string().optional(),
+  /** Why the build ran: only "pullRequest" is a branch-policy validation build. */
+  reason: z.string().optional(),
+  definition: z.looseObject({ id: z.number().int().positive(), name: z.string().optional() }).optional(),
+  project: z.looseObject({ name: z.string().min(1), id: z.string().optional() }).optional(),
+  repository: z.looseObject({ name: z.string().min(1), id: z.string().optional() }).optional(),
   sourceBranch: z.string().optional(),
   sourceGetVersion: z.string().optional(),
   finishTime: z.string().optional(),

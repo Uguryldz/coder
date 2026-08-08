@@ -41,6 +41,8 @@
   "params.description.gate_set": "Risk katmanına göre onay kapısı seti",
   "params.description.escalation_ladder": "Hatırlatıcı ve eskalasyon merdiveni",
   "params.description.output_language": "AI çıktı dili (analiz, Jira yorumları)",
+  "llm.degraded_ai_assist": "Gizli veri sınıfı için on-prem model yok — akış ai-assist moduna düşürüldü",
+  "llm.blocked_confidential": "Gizli veri sınıfı politika gereği hiçbir modele gönderilemez",
   "run.queued_quota": "Akış kuyruğa alındı: abonelik havuzu dolu",
   "run.handover_strikes": "3 başarısız turdan sonra iş insana devredildi",
   "evidence.ready": "Kanıt paketi hazır: {fileCount} dosya, arşive yazıldı"

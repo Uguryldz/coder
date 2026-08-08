@@ -41,6 +41,8 @@
   "params.description.gate_set": "Approval gate set per risk tier",
   "params.description.escalation_ladder": "Reminder and escalation ladder",
   "params.description.output_language": "AI output language (analysis, Jira comments)",
+  "llm.degraded_ai_assist": "No on-prem model for the confidential data class — the flow fell back to ai-assist",
+  "llm.blocked_confidential": "The confidential data class may not be sent to any model by policy",
   "run.queued_quota": "Flow queued: subscription pool exhausted",
   "run.handover_strikes": "Work handed to a human after 3 failed rounds",
   "evidence.ready": "Evidence package ready: {fileCount} files, written to archive"

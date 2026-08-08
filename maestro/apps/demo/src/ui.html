@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maestro — canlı demo</title>
+<style>
+:root{
+  --bg:#f6f7fb; --panel:#fff; --panel2:#f1f3f9; --border:#e2e6f0; --border2:#cdd4e4;
+  --text:#0f172a; --mini:#64748b; --faint:#94a3b8;
+  --blue:#2563eb; --green:#16a34a; --amber:#d97706; --red:#dc2626; --teal:#0d9488;
+  --term:#0b1120; --termtext:#cbd5e1;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.wrap{max-width:1400px;margin:0 auto;padding:18px}
+h1{font-size:19px;margin:0}
+.sub{color:var(--mini);font-size:13px;margin-top:3px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px}
+.bd{padding:12px 14px}
+.mini{font-size:12px;color:var(--mini)}
+.honest{border-color:#fbbf24;background:#fffbeb;margin:14px 0}
+.honest b{color:#92400e}
+.top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.spacer{flex:1}
+.btn{border:1px solid var(--border2);background:var(--panel);color:var(--text);border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+.btn:hover{background:var(--panel2)}
+.btn.p{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.g{background:var(--green);border-color:var(--green);color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+@media(max-width:1050px){.grid{grid-template-columns:1fr}}
+.ph{padding:9px 13px;border-bottom:1px solid var(--border);font-weight:600;display:flex;gap:8px;align-items:center}
+.pane{display:flex;flex-direction:column;min-height:520px}
+.body{padding:12px;overflow:auto;flex:1;max-height:62vh}
+.jira{border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:8px;padding:10px 12px;margin-bottom:9px;background:var(--panel)}
+.jira.me{border-left-color:var(--green)}
+.who{display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--mini);margin-bottom:5px}
+.av{width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700}
+.cbody{white-space:pre-wrap;word-break:break-word;font-size:13.5px}
+.term{background:var(--term);color:var(--termtext);border-radius:0 0 10px 10px;padding:11px;font:12.5px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;overflow:auto;flex:1;max-height:40vh}
+.l-dim{color:#64748b}.l-info{color:#93c5fd}.l-ok{color:#6ee7b7}.l-warn{color:#fcd34d}.l-err{color:#fca5a5}
+.steps{padding:10px 12px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--border)}
+.step{display:flex;gap:9px;align-items:flex-start;padding:6px 8px;border-radius:7px;background:var(--panel2)}
+.step .dot{width:18px;height:18px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-size:11px;background:#cbd5e1;color:#fff;margin-top:2px}
+.step.calisiyor .dot{background:var(--blue)}
+.step.tamam .dot{background:var(--green)}
+.step.onay .dot{background:var(--amber)}
+.step.hata .dot{background:var(--red)}
+.step.calisiyor{background:#eff6ff}
+.step.onay{background:#fffbeb}
+.step.hata{background:#fef2f2}
+.step .t{font-weight:600;font-size:13px}
+.step .h{font-size:12px;color:var(--mini)}
+.step .n{font-size:12px;color:#334155;margin-top:2px}
+.tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;background:#e2e8f0;color:#334155}
+.tag.b{background:#dbeafe;color:#1e40af}.tag.g{background:#dcfce7;color:#166534}
+.tag.a{background:#fef3c7;color:#92400e}.tag.r{background:#fee2e2;color:#991b1b}
+.approve{border-top:1px solid var(--border);padding:11px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--panel2);border-radius:0 0 10px 10px}
+.inp{flex:1;min-width:200px;border:1px solid var(--border2);border-radius:8px;padding:8px 10px;font:inherit;background:#fff;color:var(--text)}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:9px 13px;min-width:132px}
+.kpi .l{font-size:11.5px;color:var(--mini)}
+.kpi .v{font-size:16px;font-weight:700;margin-top:2px}
+code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px}
+.err{color:var(--red);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>🎬 Maestro — canlı demo</h1>
+      <div class="sub">Ticket yaz → Maestro okur → analiz üretir → <b>sen onaylarsın</b> → kod yazılır → PR açılır → <b>sen onaylarsın</b> → birleşir.</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn p" id="start">▶ Akışı başlat</button>
+  </div>
+
+  <div class="card honest"><div class="bd">
+    <b>Dürüstlük notu:</b> Bu demoda <b>Jira ve Azure DevOps sahtedir</b> — bilgisayarında çalışan iki taklit sunucu (kurum erişimi yok).
+    <b>Model gerçektir</b>: analiz ve kod <span id="model">…</span> ile gerçekten üretiliyor. Testler gerçekten çalıştırılıyor.
+    Bir adım patlarsa ekranda kırmızı görünür — başarı taklit edilmez.
+  </div></div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="l">Ticket</div><div class="v" id="k-ticket">—</div></div>
+    <div class="kpi"><div class="l">Model çağrısı</div><div class="v" id="k-calls">0</div></div>
+    <div class="kpi"><div class="l">Token</div><div class="v" id="k-tokens">0</div></div>
+    <div class="kpi"><div class="l">Maskelenen alan</div><div class="v" id="k-masked">0</div></div>
+    <div class="kpi"><div class="l">Denetim kaydı</div><div class="v" id="k-audit">0</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card pane">
+      <div class="ph">💬 Jira görünümü <span class="mini" id="jira-key"></span><span class="spacer"></span><span class="mini">sahte Jira · localhost</span></div>
+      <div class="body" id="jira"><div class="mini">Akışı başlatınca ticket ve yorumlar burada görünecek…</div></div>
+      <div class="approve">
+        <input class="inp" id="cmt" value="/approve" spellcheck="false">
+        <button class="btn g" id="send">Jira'ya yaz (<span id="who">Mert Demir</span>)</button>
+        <span class="mini">onay komutu <code>/approve</code> · ret için <code>/reject gerekçe</code></span>
+      </div>
+    </div>
+
+    <div class="card pane">
+      <div class="ph">⚙ Maestro'nun iç işleyişi <span class="spacer"></span><span class="mini" id="run">—</span></div>
+      <div class="steps" id="steps"></div>
+      <div class="term" id="log"><div class="l-dim"># bekleniyor…</div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px"><div class="bd mini" id="footer">
+    Sol taraf gerçekten sahte Jira sunucusuyla konuşur (yorum yazınca imzalı webhook Maestro'ya gider).
+    Sağ taraf Maestro'nun adımlarıdır — her adım gerçek paketleri çağırır.
+  </div></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let STATE = null;
+
+function initials(name) {
+  return String(name).split(/[\s.]+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
+}
+
+function renderSteps(state) {
+  $("steps").innerHTML = state.steps.map((s) => `
+    <div class="step ${s.state}">
+      <div class="dot">${s.state === "tamam" ? "✓" : s.state === "hata" ? "!" : s.state === "onay" ? "⏸" : s.id}</div>
+      <div>
+        <div class="t">${esc(s.title)} ${s.state === "onay" ? '<span class="tag a">onay bekliyor</span>' : s.state === "calisiyor" ? '<span class="tag b">çalışıyor</span>' : s.state === "hata" ? '<span class="tag r">hata</span>' : ""}</div>
+        <div class="h">${esc(s.hint)}</div>
+        ${s.notes.map((n) => `<div class="n">· ${esc(n)}</div>`).join("")}
+      </div>
+    </div>`).join("");
+}
+
+function renderLog(state) {
+  const box = $("log");
+  box.innerHTML = state.log.map((l) => `<div class="l-${l.level}">${esc(l.text)}</div>`).join("")
+    || '<div class="l-dim"># bekleniyor…</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderState(state) {
+  STATE = state;
+  $("model").textContent = state.model;
+  $("k-ticket").textContent = state.ticketKey;
+  $("k-calls").textContent = state.llmCalls;
+  $("k-tokens").textContent = state.tokens;
+  $("k-masked").textContent = state.maskedFields;
+  $("k-audit").textContent = state.audit.records + (state.audit.verified === true ? " ✓" : state.audit.verified === false ? " ✗" : "");
+  $("run").textContent = state.runId ? "run " + state.runId : "—";
+  $("start").disabled = state.running;
+  $("start").textContent = state.finished ? "✓ tamamlandı" : state.running ? "akış sürüyor…" : "▶ Akışı başlat";
+  $("jira-key").textContent = state.ticketKey;
+  renderSteps(state);
+  renderLog(state);
+  $("footer").innerHTML = state.failure
+    ? `<span class="err">✗ Akış durdu: ${esc(state.failure)}</span> — bu ekranda hata gizlenmez.`
+    : "Sol taraf gerçekten sahte Jira sunucusuyla konuşur (yorum yazınca imzalı webhook Maestro'ya gider). Sağ taraf Maestro'nun adımlarıdır — her adım gerçek paketleri çağırır.";
+}
+
+async function refreshJira() {
+  if (!STATE) return;
+  try {
+    const res = await fetch(STATE.jiraUrl + "/_demo/state");
+    const data = await res.json();
+    const head = `<div class="jira"><div class="who"><span class="av">${initials(data.issue.reporter)}</span><b>${esc(data.issue.reporter)}</b> · ticket</div>
+      <b>${esc(data.issue.key)}</b> — ${esc(data.issue.summary)}
+      <div class="cbody" style="margin-top:6px;color:#475569">${esc(data.issue.description)}</div>
+      <div class="mini" style="margin-top:6px">etiketler: ${esc(data.issue.labels.join(", ") || "—")}</div></div>`;
+    const comments = data.comments.map((c) => `
+      <div class="jira ${c.author === "maestro-svc" ? "" : "me"}">
+        <div class="who"><span class="av" style="background:${c.author === "maestro-svc" ? "#2563eb" : "#16a34a"}">${initials(c.displayName)}</span><b>${esc(c.displayName)}</b> · ${esc(c.created.slice(11, 19))}</div>
+        <div class="cbody">${esc(c.body)}</div>
+      </div>`).join("");
+    $("jira").innerHTML = head + comments;
+    $("jira").scrollTop = $("jira").scrollHeight;
+  } catch (error) {
+    $("jira").innerHTML = '<div class="err">Sahte Jira sunucusuna ulaşılamadı.</div>';
+  }
+}
+
+$("start").onclick = async () => {
+  $("start").disabled = true;
+  await fetch("/api/start", { method: "POST" });
+};
+
+$("send").onclick = async () => {
+  const body = $("cmt").value.trim();
+  if (!body || !STATE) return;
+  $("send").disabled = true;
+  try {
+    await fetch(STATE.jiraUrl + "/_demo/comment", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ author: STATE.approver, body }),
+    });
+    await refreshJira();
+  } finally {
+    $("send").disabled = false;
+  }
+};
+
+const events = new EventSource("/api/events");
+events.onmessage = (event) => {
+  renderState(JSON.parse(event.data));
+  void refreshJira();
+};
+fetch("/api/state").then((r) => r.json()).then(renderState).then(refreshJira);
+setInterval(refreshJira, 1500);
+</script>
+</body>
+</html>

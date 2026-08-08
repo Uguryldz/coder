@@ -15,6 +15,7 @@
     "result": "succeeded",
     "finishTime": "2026-08-08T14:22:10.0000000Z",
     "reason": "pullRequest",
+    "definition": { "id": 12, "name": "ugurpay-pr-validation", "type": "build" },
     "sourceBranch": "refs/pull/130/merge",
     "triggerInfo": {
       "pr.number": "130",

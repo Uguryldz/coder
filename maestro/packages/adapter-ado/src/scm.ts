@@ -1,7 +1,14 @@
-import { ApplicationRecord, GitSha, IsoDateTime } from "@maestro/contracts";
+import { ApplicationRecord, GitSha } from "@maestro/contracts";
 import type { PrStatus, PrThread, RepoRef, ScmPort } from "@maestro/ports";
 import { isFullSha, toGitSha, toRefName, ZERO_OBJECT_ID } from "./branch.js";
 import type { AdoClient } from "./client.js";
+import { DEFAULT_MAX_PUSH_TTL_SECONDS } from "./config.js";
+import {
+  assertTtlWithinCeiling,
+  issuedCredentialIssues,
+  pushScope,
+  type SecretIssuer,
+} from "./credential.js";
 import { AdoResponseError } from "./errors.js";
 import { parseOrThrow as parse } from "./parse.js";
 import {
@@ -15,19 +22,13 @@ import {
   ThreadsListResponse,
 } from "./schemas.js";
 
-/**
- * Issues a short-lived credential. Injected as a callback so this package
- * never imports the secrets package (M44 clean-room DI / M80); the
- * composition root passes `SecretPort.issueShortLived`.
- */
-export type SecretIssuer = (
-  scope: string,
-  ttlSeconds: number,
-) => Promise<{ secret: string; expiresAt: string }>;
-
 export interface AdoScmDriverOptions {
   client: AdoClient;
   issueSecret: SecretIssuer;
+  /** Ceiling for push credential TTLs (M31); defaults to the config default. */
+  maxPushTtlSeconds?: number;
+  /** Injected clock so the expiry window can be asserted deterministically. */
+  now?: () => number;
 }
 
 /** ADO thread status → port status. */
@@ -52,10 +53,14 @@ const THREAD_STATUS: Record<AdoThreadStatus, PrThread["status"]> = {
 export class AdoScmDriver implements ScmPort {
   private readonly client: AdoClient;
   private readonly issueSecret: SecretIssuer;
+  private readonly maxPushTtlSeconds: number;
+  private readonly now: () => number;
 
   constructor(options: AdoScmDriverOptions) {
     this.client = options.client;
     this.issueSecret = options.issueSecret;
+    this.maxPushTtlSeconds = options.maxPushTtlSeconds ?? DEFAULT_MAX_PUSH_TTL_SECONDS;
+    this.now = options.now ?? Date.now;
   }
 
   /**
@@ -120,23 +125,19 @@ export class AdoScmDriver implements ScmPort {
    * Short-lived push credential for the runner (M31/M80): a pass-through of
    * whatever the injected issuer mints (an ADO PAT scoped to vso.code_write
    * in practice). This adapter never stores or logs the value.
+   *
+   * "Short-lived" is enforced, not assumed, on both sides of the call: the
+   * request may not ask for more than the configured ceiling, and the issued
+   * credential must actually expire inside the window it was asked for. A
+   * long-lived or already-expired credential is a failure, not a warning.
    */
   async getPushCredential(
     repo: RepoRef,
     ttlSeconds: number,
   ): Promise<{ token: string; expiresAt: string }> {
-    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds <= 0) {
-      throw new AdoResponseError("getPushCredential", [`invalid ttlSeconds: ${ttlSeconds}`]);
-    }
-    const scope = pushScope(repo);
-    const issued = await this.issueSecret(scope, ttlSeconds);
-    const issues: string[] = [];
-    if (typeof issued?.secret !== "string" || issued.secret.length === 0) {
-      issues.push("issuer returned an empty secret");
-    }
-    if (!IsoDateTime.safeParse(issued?.expiresAt).success) {
-      issues.push(`issuer returned a non-ISO expiresAt: ${String(issued?.expiresAt)}`);
-    }
+    assertTtlWithinCeiling(ttlSeconds, this.maxPushTtlSeconds);
+    const issued = await this.issueSecret(pushScope(repo), ttlSeconds);
+    const issues = issuedCredentialIssues(issued, ttlSeconds, this.now());
     if (issues.length > 0) throw new AdoResponseError("getPushCredential", issues);
     return { token: issued.secret, expiresAt: issued.expiresAt };
   }
@@ -208,7 +209,14 @@ export class AdoScmDriver implements ScmPort {
     }), "POST thread comment");
   }
 
-  /** PR state for the gates; `mergeSha` is null until ADO reports a merge. */
+  /**
+   * PR state for the gates. `mergeSha` is only ever filled for a COMPLETED
+   * pull request: ADO populates `lastMergeCommit` on every source-branch
+   * update with the commit of its *preview* merge, so on an active PR that
+   * field names a commit that exists in no target branch. Reporting it as
+   * the merge sha would tell the workflow a PR was merged while review is
+   * still open — the gate would record a merge that never happened.
+   */
   async getPrStatus(repo: RepoRef, prId: number): Promise<PrStatus> {
     const body = parse(PullRequestResponse, await this.client.request({
       project: repo.project,
@@ -228,7 +236,7 @@ export class AdoScmDriver implements ScmPort {
         throw new AdoResponseError("GET pullrequest", [`unsupported PR status: ${body.status}`]);
     }
 
-    const rawMergeSha = body.lastMergeCommit?.commitId;
+    const rawMergeSha = state === "completed" ? body.lastMergeCommit?.commitId : undefined;
     let mergeSha: GitSha | null = null;
     if (rawMergeSha !== undefined) {
       mergeSha = toGitSha(rawMergeSha);
@@ -240,11 +248,6 @@ export class AdoScmDriver implements ScmPort {
     }
     return { prId: body.pullRequestId, state, mergeSha };
   }
-}
-
-/** Secret scope key for a repository push credential (stable, greppable). */
-export function pushScope(repo: RepoRef): string {
-  return `ado/${repo.project}/${repo.repo}/push`;
 }
 
 function mapThread(thread: Thread): PrThread | null {

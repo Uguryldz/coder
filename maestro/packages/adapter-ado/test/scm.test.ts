@@ -1,5 +1,3 @@
-import type { ApplicationRecord } from "@maestro/contracts";
-import type { RepoRef } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
 import {
   AdoClient,
@@ -7,41 +5,18 @@ import {
   AdoResponseError,
   AdoScmDriver,
   parseAdoConfig,
-  pushScope,
-  type SecretIssuer,
 } from "../src/index.js";
-import { createFakeHttp, type FakeCall, type FakeReply, fixture, pathOf, queryOf } from "./helpers.js";
-
-const CONFIG = parseAdoConfig({
-  mode: "services",
-  org: "ugurbank",
-  tokenRef: "ado/services/pat",
-});
-
-const REPO: RepoRef = { project: "UgurPay", repo: "ugurpay" };
-
-const APP: ApplicationRecord = {
-  appId: "ugurpay",
-  displayName: "UgurPay",
-  adoProject: "UgurPay",
-  adoRepo: "ugurpay",
-  platform: "linux-node",
-  jiraComponent: null,
-  maestroYamlPresent: true,
-  createdVia: "onboarding",
-};
-
-const issuer: SecretIssuer = (_scope, ttlSeconds) =>
-  Promise.resolve({
-    secret: "ephemeral-pat",
-    expiresAt: new Date(Date.UTC(2026, 7, 8, 12, 0, 0) + ttlSeconds * 1000).toISOString(),
-  });
-
-function driver(handler: (call: FakeCall) => FakeReply, issueSecret: SecretIssuer = issuer) {
-  const http = createFakeHttp(handler);
-  const client = new AdoClient({ config: CONFIG, token: () => "pat", fetch: http.fetch });
-  return { scm: new AdoScmDriver({ client, issueSecret }), calls: http.calls };
-}
+import {
+  APP,
+  CI_CONFIG,
+  createFakeHttp,
+  fixture,
+  issuer,
+  pathOf,
+  queryOf,
+  REPO,
+  scmDriver as driver,
+} from "./helpers.js";
 
 describe("AdoScmDriver.resolveRepo", () => {
   it("resolves an ApplicationRecord to the canonical project/repo names", async () => {
@@ -114,44 +89,6 @@ describe("AdoScmDriver.createBranch", () => {
   });
 });
 
-describe("AdoScmDriver.getPushCredential", () => {
-  it("passes the issued short-lived credential through under a stable scope", async () => {
-    const scopes: string[] = [];
-    const { scm, calls } = driver(
-      () => ({ json: {} }),
-      (scope, ttl) => {
-        scopes.push(scope);
-        return issuer(scope, ttl);
-      },
-    );
-    const credential = await scm.getPushCredential(REPO, 900);
-
-    expect(credential.token).toBe("ephemeral-pat");
-    expect(credential.expiresAt).toBe("2026-08-08T12:15:00.000Z");
-    expect(scopes).toEqual([pushScope(REPO)]);
-    expect(pushScope(REPO)).toBe("ado/UgurPay/ugurpay/push");
-    // No REST call: the credential comes from the SecretPort, not from ADO.
-    expect(calls).toHaveLength(0);
-  });
-
-  it("rejects a non-positive ttl", async () => {
-    const { scm } = driver(() => ({ json: {} }));
-    await expect(scm.getPushCredential(REPO, 0)).rejects.toBeInstanceOf(AdoResponseError);
-  });
-
-  it("rejects an issuer that returns an empty secret or a bad expiry", async () => {
-    const empty = driver(() => ({ json: {} }), () =>
-      Promise.resolve({ secret: "", expiresAt: "2026-08-08T12:00:00.000Z" }),
-    );
-    await expect(empty.scm.getPushCredential(REPO, 60)).rejects.toThrow(/empty secret/);
-
-    const badExpiry = driver(() => ({ json: {} }), () =>
-      Promise.resolve({ secret: "s", expiresAt: "soon" }),
-    );
-    await expect(badExpiry.scm.getPushCredential(REPO, 60)).rejects.toThrow(/expiresAt/);
-  });
-});
-
 describe("AdoScmDriver pull requests", () => {
   it("opens a draft PR with fully-qualified refs (M13)", async () => {
     const { scm, calls } = driver(() => ({ json: fixture("pr-create-draft") }));
@@ -202,34 +139,7 @@ describe("AdoScmDriver pull requests", () => {
     await expect(scm.activatePr(REPO, 128)).rejects.toBeInstanceOf(AdoResponseError);
   });
 
-  it("maps PR state and merge commit for the gates", async () => {
-    const active = driver(() => ({ json: fixture("pr-get-active") }));
-    await expect(active.scm.getPrStatus(REPO, 128)).resolves.toEqual({
-      prId: 128,
-      state: "active",
-      mergeSha: "d3f9a172c48b5e60a7d1c2b3e4f5061728394a5b",
-    });
-
-    const draft = driver(() => ({ json: fixture("pr-create-draft") }));
-    const draftStatus = await draft.scm.getPrStatus(REPO, 128);
-    expect(draftStatus.state).toBe("draft");
-    expect(draftStatus.mergeSha).toBeNull();
-
-    const completed = driver(() => ({ json: fixture("pr-get-completed") }));
-    await expect(completed.scm.getPrStatus(REPO, 128)).resolves.toMatchObject({
-      state: "completed",
-      mergeSha: "d3f9a172c48b5e60a7d1c2b3e4f5061728394a5b",
-    });
-
-    const abandoned = driver(() => ({ json: fixture("pr-get-abandoned") }));
-    await expect(abandoned.scm.getPrStatus(REPO, 129)).resolves.toEqual({
-      prId: 129,
-      state: "abandoned",
-      mergeSha: null,
-    });
-  });
-
-  it("refuses a malformed merge commit instead of reporting 'not merged'", async () => {
+  it("refuses a malformed merge commit on a completed PR instead of 'not merged'", async () => {
     const { scm } = driver(() => ({
       json: { ...(fixture("pr-get-completed") as object), lastMergeCommit: { commitId: "zzz" } },
     }));
@@ -244,63 +154,54 @@ describe("AdoScmDriver pull requests", () => {
   });
 });
 
-describe("AdoScmDriver review threads (12b loop)", () => {
-  it("maps ADO thread statuses onto the port's three states", async () => {
-    const { scm, calls } = driver(() => ({ json: fixture("threads-list") }));
-    const threads = await scm.listPrThreads(REPO, 128);
-
-    expect(pathOf(calls[0]!)).toBe(
-      "https://dev.azure.com/ugurbank/UgurPay/_apis/git/repositories/ugurpay/pullrequests/128/threads",
-    );
-    expect(threads.map((t) => [t.threadId, t.status])).toEqual([
-      [9001, "active"],
-      [9002, "fixed"],
-      [9003, "closed"],
-      [9006, "active"],
-    ]);
+describe("AdoScmDriver.getPrStatus merge sha (K3)", () => {
+  it("reports no merge sha for an ACTIVE PR, even though ADO sends one", async () => {
+    // ADO refreshes `lastMergeCommit` on every source-branch update with the
+    // commit of a *preview* merge — the fixture carries one on purpose. That
+    // commit is on no target branch, so reporting it would tell the gate a
+    // PR was merged while review is still open.
+    const { scm } = driver(() => ({ json: fixture("pr-get-active") }));
+    await expect(scm.getPrStatus(REPO, 128)).resolves.toEqual({
+      prId: 128,
+      state: "active",
+      mergeSha: null,
+    });
+    expect((fixture("pr-get-active") as { lastMergeCommit?: unknown }).lastMergeCommit).toBeDefined();
   });
 
-  it("keeps reviewer comments with author and timestamp", async () => {
-    const { scm } = driver(() => ({ json: fixture("threads-list") }));
-    const threads = await scm.listPrThreads(REPO, 128);
-
-    expect(threads[0]!.comments).toEqual([
-      {
-        author: "Tech Lead",
-        text: "IBAN checksum should reject lowercase input as well.",
-        at: "2026-08-08T10:31:07.253Z",
-      },
-    ]);
-    expect(threads[1]!.comments).toHaveLength(2);
+  it("reports no merge sha for a draft PR", async () => {
+    const { scm } = driver(() => ({ json: fixture("pr-create-draft") }));
+    const status = await scm.getPrStatus(REPO, 128);
+    expect(status.state).toBe("draft");
+    expect(status.mergeSha).toBeNull();
   });
 
-  it("drops deleted threads and system (vote/policy) threads", async () => {
-    const { scm } = driver(() => ({ json: fixture("threads-list") }));
-    const ids = (await scm.listPrThreads(REPO, 128)).map((t) => t.threadId);
-    expect(ids).not.toContain(9004); // vote update, system comment only
-    expect(ids).not.toContain(9005); // deleted thread
-  });
-
-  it("replies inside the thread, parented to its first comment", async () => {
-    const { scm, calls } = driver(() => ({ json: fixture("thread-comment-created") }));
-    await scm.replyThread(REPO, 128, 9001, "Addressed in the latest iteration.");
-
-    const call = calls[0]!;
-    expect(call.method).toBe("POST");
-    expect(pathOf(call)).toBe(
-      "https://dev.azure.com/ugurbank/UgurPay/_apis/git/repositories/ugurpay" +
-        "/pullrequests/128/threads/9001/comments",
-    );
-    expect(call.body).toEqual({
-      content: "Addressed in the latest iteration.",
-      parentCommentId: 1,
-      commentType: "text",
+  it("fills the merge sha only once the PR is completed", async () => {
+    const { scm } = driver(() => ({ json: fixture("pr-get-completed") }));
+    await expect(scm.getPrStatus(REPO, 128)).resolves.toEqual({
+      prId: 128,
+      state: "completed",
+      mergeSha: "d3f9a172c48b5e60a7d1c2b3e4f5061728394a5b",
     });
   });
 
-  it("rejects a threads response that does not match the schema", async () => {
-    const { scm } = driver(() => ({ json: { value: [{ id: "nine-thousand" }] } }));
-    await expect(scm.listPrThreads(REPO, 128)).rejects.toBeInstanceOf(AdoResponseError);
+  it("reports no merge sha for an abandoned PR", async () => {
+    const { scm } = driver(() => ({ json: fixture("pr-get-abandoned") }));
+    await expect(scm.getPrStatus(REPO, 129)).resolves.toEqual({
+      prId: 129,
+      state: "abandoned",
+      mergeSha: null,
+    });
+  });
+
+  it("ignores a preview merge commit on an abandoned PR as well", async () => {
+    const { scm } = driver(() => ({
+      json: {
+        ...(fixture("pr-get-abandoned") as object),
+        lastMergeCommit: { commitId: "d3f9a172c48b5e60a7d1c2b3e4f5061728394a5b" },
+      },
+    }));
+    await expect(scm.getPrStatus(REPO, 129)).resolves.toMatchObject({ mergeSha: null });
   });
 });
 
@@ -313,6 +214,7 @@ describe("AdoScmDriver in server mode", () => {
         baseUrl: "https://tfs.ugurbank.local/tfs",
         collection: "DefaultCollection",
         tokenRef: "ado/server/pat",
+        ci: CI_CONFIG,
       }),
       token: () => "pat",
       fetch: http.fetch,

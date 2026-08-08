@@ -5,6 +5,7 @@ import {
   AuditAnchor,
   AuditAnchorError,
   AuditChain,
+  GENESIS,
   HmacAnchorSigner,
   InMemoryAuditStore,
   anchorPayload,
@@ -15,7 +16,7 @@ import {
   utcDayOf,
   verifyAnchor,
 } from "../src/index.js";
-import { clone, sampleChain } from "./helpers.js";
+import { clone, multiDayChain, sampleChain } from "./helpers.js";
 
 const NOW = new Date("2026-08-08T23:59:59.000Z");
 const signer = new HmacAnchorSigner("anchor-key-2026", "unit-test-anchor-secret");
@@ -23,7 +24,7 @@ const signer = new HmacAnchorSigner("anchor-key-2026", "unit-test-anchor-secret"
 describe("daily anchor (M33)", () => {
   it("summarises the day and signs the summary", async () => {
     const { events } = await sampleChain();
-    const anchor = await buildAnchor({ events, signer, now: NOW });
+    const anchor = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
 
     expect(AuditAnchor.safeParse(anchor).success).toBe(true);
     expect(anchor.day).toBe("2026-08-08");
@@ -38,14 +39,14 @@ describe("daily anchor (M33)", () => {
 
   it("is reproducible: same day, same records, same anchor", async () => {
     const { events } = await sampleChain();
-    const first = await buildAnchor({ events, signer, now: NOW });
-    const second = await buildAnchor({ events: clone(events), signer, now: NOW });
+    const first = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
+    const second = await buildAnchor({ events: clone(events), signer, now: NOW, expectPrevHash: GENESIS });
     expect(second).toEqual(first);
   });
 
   it("verifies against the records it covers", async () => {
     const { events } = await sampleChain();
-    const anchor = await buildAnchor({ events, signer, now: NOW });
+    const anchor = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
 
     expect(await verifyAnchor(anchor, signer, events)).toMatchObject({ ok: true, reasons: [] });
     expect((await verifyAnchor(anchor, signer)).ok).toBe(true);
@@ -53,7 +54,7 @@ describe("daily anchor (M33)", () => {
 
   it("catches an altered anchor", async () => {
     const { events } = await sampleChain();
-    const anchor = await buildAnchor({ events, signer, now: NOW });
+    const anchor = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
 
     const forged = { ...anchor, headHash: "a".repeat(64) };
     const result = await verifyAnchor(forged, signer, events);
@@ -63,7 +64,7 @@ describe("daily anchor (M33)", () => {
 
   it("catches a rewritten chain that is internally consistent", async () => {
     const { events } = await sampleChain();
-    const anchor = await buildAnchor({ events, signer, now: NOW });
+    const anchor = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
 
     // The attack a hash chain alone cannot stop: rebuild the whole day so every
     // link recomputes. Yesterday's signed anchor is what exposes it.
@@ -80,7 +81,7 @@ describe("daily anchor (M33)", () => {
 
   it("catches a truncated day", async () => {
     const { events } = await sampleChain();
-    const anchor = await buildAnchor({ events, signer, now: NOW });
+    const anchor = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
 
     const result = await verifyAnchor(anchor, signer, events.slice(0, 4));
     expect(result.ok).toBe(false);
@@ -89,7 +90,7 @@ describe("daily anchor (M33)", () => {
 
   it("rejects a signature made with another key", async () => {
     const { events } = await sampleChain();
-    const anchor = await buildAnchor({ events, signer, now: NOW });
+    const anchor = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
     const other = new HmacAnchorSigner("anchor-key-2026", "different-secret");
 
     expect((await verifyAnchor(anchor, other, events)).ok).toBe(false);
@@ -102,16 +103,63 @@ describe("daily anchor (M33)", () => {
     const broken = clone(events);
     broken[1] = { ...broken[1]!, subject: "UGURPAY-999" };
 
-    await expect(buildAnchor({ events: broken, signer, now: NOW })).rejects.toThrow(AuditAnchorError);
-    await expect(buildAnchor({ events: broken, signer, now: NOW })).rejects.toThrow(/first bad record is seq 2/);
+    await expect(buildAnchor({ events: broken, signer, now: NOW, expectPrevHash: GENESIS })).rejects.toThrow(AuditAnchorError);
+    await expect(buildAnchor({ events: broken, signer, now: NOW, expectPrevHash: GENESIS })).rejects.toThrow(/first bad record is seq 2/);
+  });
+
+  it("refuses to sign a day whose first records were deleted (O2)", async () => {
+    const { events } = await sampleChain();
+    // Before this fix the expectation came from the day's own first record, so
+    // a truncated day was signed without complaint — and the signature made the
+    // truncation permanent evidence.
+    const truncated = events.slice(1);
+
+    await expect(
+      buildAnchor({ events: truncated, signer, now: NOW, expectPrevHash: GENESIS }),
+    ).rejects.toThrow(/chain_broken/);
+    await expect(
+      buildAnchor({ events: truncated, signer, now: NOW, expectPrevHash: GENESIS }),
+    ).rejects.toThrow(/expected 1|expected genesis/);
+  });
+
+  it("refuses to continue a previous anchor without being told where it ended (O2)", async () => {
+    const { days } = await multiDayChain();
+    const secondDay = days[1]!;
+    const previousHead = days[0]!.at(-1)!.hash;
+
+    // A continuation anchor needs both halves of the expectation from outside.
+    await expect(
+      buildAnchor({ events: secondDay, signer, now: NOW, expectPrevHash: previousHead }),
+    ).rejects.toThrow(/missing_expectation/);
+
+    const anchor = await buildAnchor({
+      events: secondDay,
+      signer,
+      now: NOW,
+      expectPrevHash: previousHead,
+      expectFirstSeq: days[0]!.length + 1,
+    });
+    expect(anchor.firstSeq).toBe(4);
+    expect(anchor.prevHash).toBe(previousHead);
+
+    // The same day, offered as if it continued a different head, is refused.
+    await expect(
+      buildAnchor({
+        events: secondDay,
+        signer,
+        now: NOW,
+        expectPrevHash: "c".repeat(64),
+        expectFirstSeq: 4,
+      }),
+    ).rejects.toThrow(/chain_broken/);
   });
 
   it("refuses an empty day and a mixed-day slice", async () => {
     const { events } = await sampleChain();
     const { events: nextDay } = await sampleChain("2026-08-09T09:00:00.000Z");
 
-    await expect(buildAnchor({ events: [], signer, now: NOW })).rejects.toThrow(/empty_day/);
-    await expect(buildAnchor({ events: [...events, ...nextDay], signer, now: NOW })).rejects.toThrow(/mixed_days/);
+    await expect(buildAnchor({ events: [], signer, now: NOW, expectPrevHash: GENESIS })).rejects.toThrow(/empty_day/);
+    await expect(buildAnchor({ events: [...events, ...nextDay], signer, now: NOW, expectPrevHash: GENESIS })).rejects.toThrow(/mixed_days/);
   });
 
   it("rejects an anchor that is not an anchor", async () => {
@@ -121,7 +169,7 @@ describe("daily anchor (M33)", () => {
 
   it("signs the canonical body, so key order in the anchor object is irrelevant", async () => {
     const { events } = await sampleChain();
-    const anchor = await buildAnchor({ events, signer, now: NOW });
+    const anchor = await buildAnchor({ events, signer, now: NOW, expectPrevHash: GENESIS });
     const { signature: _signature, ...body } = anchor;
     const shuffled = Object.fromEntries(Object.entries(body).reverse());
 

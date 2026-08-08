@@ -130,11 +130,14 @@ describe("single-writer ordering", () => {
       ),
     );
 
-    // Every writer read the same empty head, so they all minted seq 1; the
-    // store's append-only invariant rejects all but the first.
+    // Every writer read the same empty head, so they all minted seq 1 pointing
+    // at genesis; the store's append-only invariants reject all but the first.
+    // Exactly one survives — asserting "fewer than 10" would also pass if nine
+    // forks had been written.
     const written = await store.read();
-    expect(written.length).toBeLessThan(10);
-    expect(results.some((result) => result.status === "rejected")).toBe(true);
+    expect(written).toHaveLength(1);
+    expect(written[0]!.seq).toBe(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(9);
   });
 
   it("keeps a multi-record run contiguous while another writer competes", async () => {
@@ -175,6 +178,24 @@ describe("store invariants", () => {
     await expect(store.append({ ...events[4]!, seq: 6 })).rejects.toThrow(/hash_conflict/);
     await expect(store.append({ ...events[4]!, hash: "b".repeat(64), seq: 3 })).rejects.toThrow(AuditChainError);
     await expect(store.append({ ...events[4]!, hash: "b".repeat(64), seq: 3 })).rejects.toThrow(/sequence_conflict/);
+  });
+
+  it("rejects a second record claiming the same predecessor — the DB's prevHash index (D2)", async () => {
+    const { events } = await sampleChain();
+    const store = new InMemoryAuditStore(events);
+
+    // `AuditLog.prevHash` is `@unique`, so this fork is impossible in Postgres.
+    // A reference store that allowed it would hide fork bugs from every test.
+    const fork: AuditEvent = { ...events[4]!, seq: 6, hash: "b".repeat(64) };
+    await expect(store.append(fork)).rejects.toThrow(AuditChainError);
+    await expect(store.append(fork)).rejects.toThrow(/prev_hash_conflict/);
+
+    // And there is at most one genesis row, exactly as the index guarantees.
+    const fresh = new InMemoryAuditStore();
+    await fresh.append(events[0]!);
+    await expect(fresh.append({ ...events[0]!, seq: 2, hash: "c".repeat(64) })).rejects.toThrow(
+      /prev_hash_conflict/,
+    );
   });
 
   it("reads inclusive ranges", async () => {

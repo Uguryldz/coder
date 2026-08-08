@@ -99,11 +99,15 @@ export class AdoCiDriver implements CiPort {
    * is rejected — there is no way to authenticate it, and "no header" must
    * never mean "no authentication required".
    */
-  async parseBuildEvent(rawBody: unknown): Promise<CiResultSignal | null> {
-    const request = asWebhookRequest(rawBody);
-    if (request === null) throw new AdoWebhookAuthError("missing");
-    const event = await this.parseAuthenticatedBuildEvent(request.headers, request.body);
-    return event?.signal ?? null;
+  async parseBuildEvent(request: unknown): Promise<CiResultSignal | null> {
+    const parsed = asWebhookRequest(request);
+    if (parsed === null) throw new AdoWebhookAuthError("missing");
+    const event = await this.parseAuthenticatedBuildEvent(parsed.headers, parsed.body);
+    if (event === null) return null;
+    // Carry provenance into the signal: ticketKey+prId alone do not identify a
+    // build (a mirrored repo can reuse both). The workflow rejects a signal
+    // whose origin does not match the run's ApplicationRecord.
+    return { ...event.signal, adoProject: event.project, adoRepo: event.repository };
   }
 
   /**

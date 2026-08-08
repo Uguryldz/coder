@@ -65,7 +65,10 @@ describe("registerAdoDrivers (M44 registry)", () => {
     await expect(
       ci.parseBuildEvent({ headers: authHeaders("not-the-secret"), body: event }),
     ).rejects.toBeInstanceOf(AdoWebhookAuthError);
-    await expect(ci.parseBuildEvent(event)).rejects.toBeInstanceOf(AdoWebhookAuthError);
+    // a bare body (no headers) can never be authenticated — fail-closed
+    await expect(
+      ci.parseBuildEvent(event as unknown as { headers: Record<string, string>; body: unknown }),
+    ).rejects.toBeInstanceOf(AdoWebhookAuthError);
   });
 
   it("validates the config at construction time, in both modes", () => {

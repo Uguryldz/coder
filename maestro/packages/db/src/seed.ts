@@ -1,6 +1,4 @@
-import { PrismaClient } from "@prisma/client";
-import { pathToFileURL } from "node:url";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { ParamDefinition } from "@maestro/contracts";
 
 /**
@@ -242,30 +240,4 @@ export async function seedParams(
     definitions: DEFAULT_PARAM_DEFINITIONS.length,
     initialVersions: DEFAULT_PARAM_DEFINITIONS.length,
   };
-}
-
-/**
- * CLI entry point (`pnpm -F @maestro/db seed`). Requires a reachable
- * database; it is deliberately not exercised by the offline test-suite.
- *
- * Note: this file only imports package specifiers and node builtins so that
- * `node src/seed.ts` works through Node's native type stripping.
- */
-export async function runSeedCli(env: Record<string, string | undefined>): Promise<void> {
-  const url = env["DATABASE_URL"];
-  if (url === undefined || url.trim().length === 0) {
-    throw new Error("DATABASE_URL is required to run the seed");
-  }
-  const db = new PrismaClient({ datasourceUrl: url, log: ["warn", "error"] });
-  try {
-    const result = await seedParams(db);
-    console.log(`seeded ${result.definitions} parameter definitions`);
-  } finally {
-    await db.$disconnect();
-  }
-}
-
-const invokedPath = process.argv[1];
-if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
-  await runSeedCli(process.env);
 }

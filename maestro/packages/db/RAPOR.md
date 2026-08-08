@@ -12,6 +12,8 @@ Scope touched: `maestro/packages/db/**` + `maestro/pnpm-lock.yaml` (own deps onl
 | Migration provider lock | `prisma/migrations/migration_lock.toml` |
 | Typed client factory `createDb(url)` | `src/client.ts` |
 | 12 default `ParamDefinition`s + idempotent seeder | `src/seed.ts` |
+| Demo dataset (the mock's data, as rows) + seeder | `src/seed-demo.ts` |
+| Seed CLI | `src/seed-cli.ts` |
 | Pure schema-text parsers (drift guards) | `src/schema-facts.ts` |
 | Public surface | `src/index.ts` |
 
@@ -23,7 +25,9 @@ Scripts (`pnpm -F @maestro/db <script>`):
   needs no extra step. Verified from a wiped `node_modules`.
 - `migration:build` — regenerates the initial migration, fully offline:
   `prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script --output …`.
-- `seed` — `node src/seed.ts` (needs a live database; not exercised by tests).
+- `seed` — `tsx src/seed-cli.ts` (parameters + demo dataset; `--params-only`
+  seeds just the parameters). Needs a live database, so the CLI itself is not
+  exercised by the offline suite — the data it writes is.
 - `typecheck`, `test`.
 
 ### `createDb`
@@ -107,9 +111,47 @@ names (model name = table name keeps the mapping obvious).
 *create-only* (`update: {}`) so re-running never walks back an operator's
 edit. The clock is injectable, which keeps the tests deterministic.
 
+## 3b. Seed — demo dataset (`src/seed-demo.ts`)
+
+`insa-plani.md` (Dalga 1) requires the seed to *be* the mock's dataset so that
+Studio opens populated, with nothing migrated from v1. `buildDemoDataset()` is
+a pure function over a fixed clock (`DEMO_NOW` = the mock's 8 Aug 2026 14:20
+Istanbul), so every run produces identical rows.
+
+| Table | Rows | Notes |
+| --- | --- | --- |
+| `Application` | 5 | ugurpay · ugurweb · ugurmobil-ios · ugurmobil-android · ugurmasaustu, one per platform profile |
+| `RepoCard` | 5 | 2–3 modules each (M100 cross-app impact without cloning) |
+| `JiraProjectBinding` | 5 | 4 `active` (UGURPAY auto · UGURWEB label · UGURMOB command · UGURDESK auto) + UGURKREDI `draft` (onboarding 3/4) |
+| `RoutingRule` | 6 | the mock's tier ① rules; the "component missing" row is deliberately *absent* — no match is what triggers tier ② |
+| `WorkflowRun` | 22 | 7 gate · 8 running · 1 queued (quota) · 1 fail (CI red) · 5 done, including the UGURPAY-500 fan-out family and the greenfield UGURPAY-600 |
+| `JournalEntry` | 86 | the mock's full 23-entry journal for UGURPAY-501, a 3-entry journal for the rest |
+| `StepEvent` | 31 | one "entered step" per run + 9 signed gate decisions |
+| `AuditLog` | 15 | a real sha256 chain from `genesis`, seq 81408–81422 (the mock's counter) |
+| `LlmCall` | 5 | includes an on-prem `gizli` call and a subscription call with `usd = NULL` (M55) |
+| `Variant` / `VariantVersion` | 9 / 9 | the mock's variant table with eval scores |
+| `SubscriptionAccount` | 5 | one `exhausted` account with a 100% 5h window |
+| `KnowledgeDoc` | 6 | analysis template, BDDK policy, conventions |
+| `EvidencePackageRow` | 5 | exactly the closed runs, 10-year retention manifests |
+| `User` | 7 | the mock's people and AD groups |
+
+Details worth knowing:
+
+- **Step ids are contract ids.** The mock's numeric steps are indices into its
+  STEPS table, which is `STEP_IDS` in the same order, so the mapping is exact
+  (`step:16` → `"12"` PR approval, `step:18` → `"13"` closure).
+- **Run ids** are `run-<ticket-key-lowercased>`, so any screen can address a run
+  without a lookup table.
+- **No usable credentials**: every `User.passwordHash` is `"!"`, an
+  unmatchable placeholder. A demo install must not ship a working login.
+- **`skipDuplicates`** on every insert makes the demo seed re-runnable and
+  stops it from overwriting a real installation's rows.
+- The audit chain is verified *independently* in the tests (recomputed row by
+  row, plus a tamper-detection case).
+
 ## 4. Tests
 
-`pnpm -F @maestro/db test` → **5 files, 67 tests, all passing**, offline and
+`pnpm -F @maestro/db test` → **6 files, 92 tests, all passing**, offline and
 without a database.
 
 | File | Tests | Covers |
@@ -119,6 +161,7 @@ without a database.
 | `test/seed.test.ts` | 24 | (c) all 12 definitions validate against `ParamDefinition`; unique contract-shaped keys; `params.description.*` prefix; type/default/enumValues coherence; the guarded set; each default pinned to its M-decision; `seedParams` behaviour against an in-memory fake |
 | `test/prisma-validate.test.ts` | 1 | (d) spawns the real Prisma CLI with a placeholder `DATABASE_URL` (`CHECKPOINT_DISABLE=1`, so no network) |
 | `test/client.test.ts` | 10 | URL fail-closed validation, no credential leak in errors, lazy client with a delegate for all 17 models |
+| `test/seed-demo.test.ts` | 25 | headline counts + status spread; determinism; every row validated against its contract (`MatchResult`, `ApplicationRecord`, `RepoCard`, `RuleCondition`, `JournalEntry`, `GateDecision`, `LlmCallLog`); journal seq contiguity; referential integrity in insert order; audit chain recomputed independently + tamper detection; no usable credential; approver groups match the users table |
 
 Full gate from `maestro/`: `pnpm install` ✔ · `pnpm -F @maestro/db typecheck` ✔ ·
 `pnpm -F @maestro/db test` ✔ · `pnpm lint` ✔ (also `pnpm typecheck` + `pnpm test`
@@ -131,6 +174,7 @@ across all 5 workspace projects ✔, from a wiped `node_modules`).
 | `@prisma/client@^6.5.0` | dependency | The generated client `createDb` returns. Version range pinned to the same minor family as the `prisma` CLI already in the draft (both resolve to 6.19.3); a mismatch between CLI and client is a known breakage. |
 | `@types/node@^24.0.0` | devDependency | `node:fs` / `node:path` / `node:child_process` / `process` in the seed CLI and tests. Same version as `@maestro/test-kit`. |
 | `vitest@^3.2.0` | devDependency | The repo's test runner (contracts, config, test-kit already use it). Replaces the placeholder `test` script that only ran `prisma validate` — that check now lives inside the suite. |
+| `tsx@^4` | devDependency | Runs the seed CLI (`tsx src/seed-cli.ts`) without a build step. Node 24's native type stripping cannot be used here: the repo's ESM convention is `.js`-extension specifiers pointing at `.ts` files, which Node's resolver does not follow. Dev-only — nothing ships it. |
 
 No other dependency was added. `prisma` and `typescript` were already declared
 by the Wave-0 draft.
@@ -187,6 +231,22 @@ suite stays green until the catalog packet lands; a catalog-parity test on the
    seed test pins them to each other; the workflow packet must decide which one
    is authoritative at run time (proposal: the parameter, with the constant as
    the seed value only).
+7. **`RoutingRule.projectKey` accepts `"*"` (org-wide rule), but the column is
+   a foreign key to `JiraProjectBinding`.** The demo therefore scopes the
+   "label = musteri-verisi → human_lead/gizli" rule to a real project instead
+   of `*`. Either the schema drops that FK, or a sentinel `*` binding row has
+   to exist, or the contract loses `"*"`. Needs a decision before the routing
+   service is written.
+
+### 6.2b `packages/audit` (does not exist yet)
+
+M33 says the hash chain has exactly one implementation, in `packages/audit`.
+The demo seed needs chained rows *now*, so `src/seed-demo.ts` carries a
+deliberately minimal `chainAuditEvents()` (sha256 over
+`seq|at|actor|action|subject|prevHash`, first predecessor `"genesis"`). **When
+the audit packet lands, the seed must import its chain builder and this helper
+must be deleted** — and the audit packet should adopt (or consciously
+replace) this canonical payload, because the seeded rows must stay verifiable.
 
 ### 6.3 Root `package.json` (out of scope for this packet)
 
@@ -213,14 +273,27 @@ in the root `package.json`.
 4. **Migration directory name** is `0001_init` as specified, not Prisma's
    `<timestamp>_init` convention. Prisma applies migrations in lexicographic
    order, so follow-ups must continue `0002_…`, `0003_…`.
-5. **Seed CLI runtime.** `src/seed.ts` imports only package specifiers and
-   node builtins (no relative `./x.js` imports), so `node src/seed.ts` works
-   through Node 24's native type stripping without adding a TS runner
-   dependency. The trade-off is a small duplication: the CLI constructs
-   `PrismaClient` itself instead of calling `createDb`.
+5. **Seed CLI runtime** is `tsx`; see the dependency table for why Node's own
+   type stripping is not enough. `src/seed.ts` and `src/seed-demo.ts` stay
+   pure data + functions, so the suite tests them without touching the CLI.
 6. `Param.type` uses a Postgres enum even though `string`/`number`/`enum` look
    like Prisma keywords — verified accepted by `prisma validate` and covered
    by the suite.
+7. **Demo data fidelity.** The mock is a static HTML prototype, so a few
+   values had to be decided rather than copied:
+   - The mock's numeric step is an index into its STEPS list; that list is
+     `STEP_IDS` in the same order, so the mapping is mechanical. The
+     coordination parent UGURPAY-500 ("koordinasyon") and the greenfield
+     UGURPAY-600 ("mimari") have no numeric step and were parked at `"3"`
+     (analysis, children fanned out) and `"5"` (architecture approval gate).
+   - All 22 runs are `dahili`. The mock only shows a `gizli` data class on an
+     LLM call, and that is where the demo puts it — inventing a `gizli` run
+     would contradict the routing rules that produce the class.
+   - Journals other than UGURPAY-501's are three synthetic entries; the mock
+     only ever showed one ticket's journal.
+   - `AuditLog.seq` runs 81408–81422 so the newest row is the mock's #81422,
+     and the chain starts from `genesis` at 81408 (a demo chain, not a
+     continuation of a real one).
 
 ## 8. TAKILDIM
 

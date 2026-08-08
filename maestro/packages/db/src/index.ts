@@ -6,14 +6,21 @@
 export { createDb, assertPostgresUrl, InvalidDatabaseUrlError } from "./client.js";
 export type { CreateDbOptions, Db, DbLogLevel } from "./client.js";
 
-export {
-  DEFAULT_PARAM_DEFINITIONS,
-  GLOBAL_SCOPE_REF,
-  SEED_ACTOR,
-  runSeedCli,
-  seedParams,
-} from "./seed.js";
+export { DEFAULT_PARAM_DEFINITIONS, GLOBAL_SCOPE_REF, SEED_ACTOR, seedParams } from "./seed.js";
 export type { SeedParamsOptions, SeedParamsResult } from "./seed.js";
+
+export {
+  auditPayload,
+  buildDemoDataset,
+  chainAuditEvents,
+  DEMO_GATE_DECISIONS,
+  DEMO_NOW,
+  DEMO_TICKETS,
+  demoRunId,
+  NO_PASSWORD_SET,
+  seedDemo,
+} from "./seed-demo.js";
+export type { AuditSeedEvent, DemoDataset, SeedDemoDb } from "./seed-demo.js";
 
 export {
   parseDateTimeFields,

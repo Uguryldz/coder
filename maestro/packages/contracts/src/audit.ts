@@ -23,6 +23,8 @@ export const AuditAction = z.enum([
   "PARAM_CHANGED",
   "BINDING_CHANGED",
   "KILL_SWITCH",
+  /** An MCP tool ran on a user's behalf (M101) — actor is `ai-via:<user>`. */
+  "MCP_TOOL_CALL",
   "QUOTA_WARN",
   "RETENTION_ARCHIVE",
   "RESTORE_DRILL",

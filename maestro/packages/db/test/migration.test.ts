@@ -5,6 +5,7 @@ import {
   GUARDS_MIGRATION_PATH,
   MIGRATION_LOCK_PATH,
   MIGRATION_PATH,
+  allMigrationSql,
   readGuardsMigration,
   readMigration,
   readSchema,
@@ -46,12 +47,20 @@ describe("initial migration", () => {
     expect(missing).toEqual([]);
   });
 
-  it("carries every enum value into the generated type", () => {
+  // Reads the WHOLE migration set, not just 0001: an enum value added later
+  // arrives through `ALTER TYPE ... ADD VALUE`, and a guard that only looked at
+  // the initial migration would call it drift.
+  it("carries every enum value into the migrated types", () => {
+    const allSql = allMigrationSql();
     for (const parsed of parseEnums(schema)) {
-      const line = sql.split("\n").find((l) => l.startsWith(`CREATE TYPE "${parsed.name}" AS ENUM`));
-      expect(line, `no CREATE TYPE for ${parsed.name}`).toBeDefined();
+      const created = allSql
+        .split("\n")
+        .find((l) => l.startsWith(`CREATE TYPE "${parsed.name}" AS ENUM`));
+      expect(created, `no CREATE TYPE for ${parsed.name}`).toBeDefined();
       for (const value of parsed.values) {
-        expect(line).toContain(`'${value}'`);
+        const inCreate = created?.includes(`'${value}'`) ?? false;
+        const added = allSql.includes(`ALTER TYPE "${parsed.name}" ADD VALUE '${value}'`);
+        expect(inCreate || added, `${parsed.name}.${value} never reaches the database`).toBe(true);
       }
     }
   });

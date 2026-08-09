@@ -48,6 +48,9 @@ export const AUDIT_ACTION_INFO: Record<AuditAction, AuditActionInfo> = {
   PARAM_CHANGED: { severity: 7, name: "Operational parameter changed", category: "governance" },
   BINDING_CHANGED: { severity: 7, name: "Project binding changed", category: "governance" },
   KILL_SWITCH: { severity: 10, name: "Kill switch operated", category: "governance" },
+  // M101: an MCP tool ran with a user's token. Severity 4 because the actor is
+  // "ai-via:<user>" — a human authorised it, but a machine performed it.
+  MCP_TOOL_CALL: { severity: 4, name: "MCP tool invoked on a user's behalf", category: "governance" },
   QUOTA_WARN: { severity: 5, name: "LLM quota threshold reached", category: "governance" },
   RETENTION_ARCHIVE: { severity: 3, name: "Records archived for retention", category: "retention" },
   RESTORE_DRILL: { severity: 4, name: "Restore drill executed", category: "retention" },

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -25,4 +25,17 @@ export function readMigration(): string {
 
 export function readGuardsMigration(): string {
   return readFileSync(GUARDS_MIGRATION_PATH, "utf8");
+}
+
+/**
+ * Every migration's SQL, in order. Drift guards read this rather than only the
+ * initial migration: a type added in 0003 is not drift, it is history.
+ */
+export function allMigrationSql(): string {
+  const root = join(PACKAGE_ROOT, "prisma", "migrations");
+  return readdirSync(root)
+    .filter((entry) => /^\d+_/.test(entry))
+    .sort()
+    .map((entry) => readFileSync(join(root, entry, "migration.sql"), "utf8"))
+    .join("\n");
 }

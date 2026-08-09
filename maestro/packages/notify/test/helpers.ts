@@ -1,6 +1,6 @@
 import { Notification } from "@maestro/contracts";
 import type { SecretPort, WorkPort } from "@maestro/ports";
-import type { FetchInit, FetchLike, SocketLike } from "../src/deps.js";
+import type { FetchInit, FetchLike, SocketLike, TlsInfo } from "../src/deps.js";
 
 /** Offline test doubles. Nothing here touches a network, a clock or a disk. */
 
@@ -103,6 +103,22 @@ export function fakeWorkPort(behaviour?: (ticket: string, call: number) => void)
   } as FakeWork;
 }
 
+/** A correctly verified TLS session against the relay the config names. */
+export const GOOD_TLS: TlsInfo = {
+  authorized: true,
+  protocol: "TLSv1.3",
+  servername: "mail.bank.local",
+};
+
+export interface FakeSocketOptions {
+  /** What `startTls()`/`tlsInfo()` report; defaults to a verified session. */
+  tls?: TlsInfo;
+  /** Already encrypted before the first byte (implicit TLS). */
+  secureFromStart?: boolean;
+  /** Thrown by `close()` — the "connection reset on QUIT" case. */
+  closeError?: Error;
+}
+
 /**
  * Scripted SMTP server: every `read()` hands back the next canned reply, and
  * every command the client writes is recorded for assertions.
@@ -112,8 +128,14 @@ export class FakeSocket implements SocketLike {
   tlsUpgrades = 0;
   closed = 0;
   private readonly encoder = new TextEncoder();
+  private secure: boolean;
 
-  constructor(private readonly replies: string[]) {}
+  constructor(
+    private readonly replies: string[],
+    private readonly options: FakeSocketOptions = {},
+  ) {
+    this.secure = options.secureFromStart ?? false;
+  }
 
   async read(): Promise<Uint8Array | null> {
     const next = this.replies.shift();
@@ -124,12 +146,19 @@ export class FakeSocket implements SocketLike {
     this.written.push(new TextDecoder().decode(data));
   }
 
-  async startTls(): Promise<void> {
+  async startTls(): Promise<TlsInfo> {
     this.tlsUpgrades += 1;
+    this.secure = true;
+    return this.options.tls ?? GOOD_TLS;
+  }
+
+  async tlsInfo(): Promise<TlsInfo | null> {
+    return this.secure ? (this.options.tls ?? GOOD_TLS) : null;
   }
 
   async close(): Promise<void> {
     this.closed += 1;
+    if (this.options.closeError) throw this.options.closeError;
   }
 
   /** The command verbs the client sent, without arguments. */

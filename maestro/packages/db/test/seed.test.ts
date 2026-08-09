@@ -69,6 +69,7 @@ const DECISION_ONLY_KEYS: Record<string, string> = {
   "dataclass.policy": "M18/M63",
   "subscription.queue_enabled": "M55",
   "notify.reminder_channel": "M45",
+  "notify.routing": "M45/M87",
 };
 
 /** The mock's "4-göz" badge, key by key. */

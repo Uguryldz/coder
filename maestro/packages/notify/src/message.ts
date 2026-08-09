@@ -17,7 +17,8 @@ export interface RenderedMessage {
 }
 
 const SUBJECT_LIMIT = 120;
-const UNRESOLVED_PLACEHOLDER = /\{[A-Za-z_][A-Za-z0-9_]*\}/;
+/** Exactly the placeholder syntax `@maestro/config`'s `t()` interpolates. */
+const PLACEHOLDER = /\{(\w+)\}/g;
 
 /**
  * Fail-closed parse of untrusted input against the frozen contract. A
@@ -38,11 +39,18 @@ export function requireNotification(driver: string, input: unknown): Notificatio
  *  2. a template whose `{param}` was not supplied throws, because shipping
  *     "{ticket} is waiting for {gate}" to a bank's approvers is worse than a
  *     loud error the workflow can retry with correct params.
+ *
+ * The completeness check reads the TEMPLATE, never the rendered body: a ticket
+ * summary or a log line routinely contains braces, and checking the output
+ * turned `{ops_takimi}` inside a parameter VALUE into a permanent failure —
+ * i.e. the gate notification never went out at all.
  */
 export function renderMessage(notification: Notification): RenderedMessage {
-  let body: string;
+  // `t()` with no params returns the template verbatim: every `{name}` falls
+  // back to itself. That is how the template is obtained without a second API.
+  let template: string;
   try {
-    body = t(notification.locale, notification.messageKey, notification.params);
+    template = t(notification.locale, notification.messageKey);
   } catch (error) {
     if (error instanceof MissingMessageError) {
       throw new NotifyMessageError(notification.messageKey, `not in the "${notification.locale}" catalog`);
@@ -50,14 +58,18 @@ export function renderMessage(notification: Notification): RenderedMessage {
     throw error;
   }
 
-  const unresolved = UNRESOLVED_PLACEHOLDER.exec(body);
-  if (unresolved) {
+  const missing = [...template.matchAll(PLACEHOLDER)]
+    .map((match) => match[1] as string)
+    .filter((name) => notification.params[name] === undefined);
+  if (missing.length > 0) {
+    const named = [...new Set(missing)].map((name) => `{${name}}`).join(", ");
     throw new NotifyMessageError(
       notification.messageKey,
-      `missing parameter ${unresolved[0]} for locale "${notification.locale}"`,
+      `missing parameter ${named} for locale "${notification.locale}"`,
     );
   }
 
+  const body = t(notification.locale, notification.messageKey, notification.params);
   return { subject: toSubject(body), body };
 }
 
@@ -84,7 +96,9 @@ export interface RoutedNotifications {
  * hidden, so the caller can log "muted by parameter" instead of losing it.
  */
 export function routeNotification(routing: NotifyRouting, draft: NotificationDraft): RoutedNotifications {
-  const configured = routing.byEvent[draft.event] ?? routing.default;
+  const configured = Object.hasOwn(routing.byEvent, draft.event)
+    ? (routing.byEvent[draft.event] ?? routing.default)
+    : routing.default;
   const channels = [...new Set<NotifyChannel>(configured)];
   return {
     notifications: channels.map((channel) => ({ ...draft, channel })),

@@ -53,6 +53,15 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
   {
     // M88 — reminder ladder; steps, channels and the working-day calendar are
     // all editable from Studio. Default is the plain 24h → 72h → 7d ladder.
+    //
+    // This value is THE ladder: `@maestro/notify` ships no compiled-in default
+    // (M71 — settings live in the DB), and `test/notify-params.test.ts` parses
+    // this object with the escalation engine's own schema.
+    //
+    // Every step carries a persistent `id`. That id is what a workflow stores
+    // in `firedStepIds`, so it must survive an edit: deriving it from the
+    // content meant that lowering a threshold from 72h to 48h in Studio minted
+    // a new id and instantly re-escalated every open gate.
     key: "escalation.ladder",
     scope: "global",
     type: "json",
@@ -60,9 +69,20 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     descriptionKey: "params.description.escalation_ladder",
     defaultValue: {
       steps: [
-        { afterHours: 24, channel: "jira", event: "gate_reminder" },
-        { afterHours: 72, channel: "teams", event: "escalation" },
-        { afterHours: 168, channel: "smtp", event: "escalation" },
+        { id: "reminder-24h", afterHours: 24, channel: "jira", event: "gate_reminder" },
+        { id: "escalation-72h", afterHours: 72, channel: "teams", event: "escalation" },
+        {
+          // 7 days: the gate is handed to the deputy. `action` is what makes it
+          // a delegation instead of a third shout, and the message key says so
+          // — the deputy is told the gate landed on their desk, not that
+          // somebody else is late.
+          id: "delegate-7d",
+          afterHours: 168,
+          channel: "smtp",
+          event: "escalation",
+          action: "delegate",
+          messageKey: "notify.delegated",
+        },
       ],
       businessHoursOnly: false,
     },
@@ -217,6 +237,39 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     guarded: false,
     descriptionKey: "params.description.subscription_queue",
     defaultValue: true,
+  },
+  {
+    // M45/M87 — event → channel routing. Without this row the routing map had
+    // no home in the database at all, so "which channel does a runner health
+    // warning go to" was answered by whatever a caller happened to construct.
+    //
+    // `default` covers every event without an entry. An event mapped to an
+    // empty list is muted deliberately and reported as muted — never dropped.
+    // Keys are `NotifyEventKey` values; the notify schema rejects anything else
+    // so a typo cannot silently fall back to the default.
+    key: "notify.routing",
+    scope: "global",
+    type: "json",
+    guarded: false,
+    descriptionKey: "params.description.notify_routing",
+    defaultValue: {
+      default: ["teams"],
+      byEvent: {
+        // Gate traffic stays on the ticket, where the conversation is.
+        gate_open: ["jira"],
+        gate_reminder: ["jira"],
+        clarification_reminder: ["jira"],
+        ci_red: ["jira"],
+        // An escalation deliberately leaves the ticket: e-mail reaches an
+        // approver who has stopped opening Jira, which is why it escalated.
+        escalation: ["teams", "smtp"],
+        handover: ["teams"],
+        // M87 — the platform team's operational channel.
+        runner_health: ["teams"],
+        quota_wait: ["teams"],
+        kill_switch: ["teams", "smtp"],
+      },
+    },
   },
   {
     // M45 — channel used for the first reminder step. Jira keeps the whole

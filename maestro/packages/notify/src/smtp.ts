@@ -103,7 +103,15 @@ export class SmtpNotifier implements NotifyPort {
       // Connect/DNS/TLS failures land here — worth another attempt.
       throw new NotifyTransientError(SMTP_DRIVER, safeMessage(error, [password]));
     } finally {
-      await session?.close();
+      // Closing must never decide the outcome. It used to: a 250-queued
+      // followed by an ECONNRESET on close reported "not delivered" and
+      // Temporal sent the mail again, while a permanent 552 vanished behind
+      // the close error and nobody learned the message was rejected.
+      try {
+        await session?.close();
+      } catch {
+        /* the transaction is already decided; the socket is being dropped */
+      }
     }
   }
 }

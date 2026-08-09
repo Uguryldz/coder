@@ -1,6 +1,6 @@
 import type { RetryPolicy } from "./config.js";
 import type { Sleep } from "./deps.js";
-import { NotifyDeliveryError, NotifyTransientError, safeMessage } from "./errors.js";
+import { NotifyDeliveryError, NotifyFanoutError, NotifyTransientError, type TargetFailure } from "./errors.js";
 
 /**
  * Delivery guarantee (spec §7): a send failure is NEVER swallowed.
@@ -47,31 +47,34 @@ export async function sendWithRetry(ctx: RetryContext, attempt: () => Promise<vo
  * Every target is attempted even when an earlier one failed — one dead webhook
  * must not silence the rest — and the failures are then reported together, so
  * a partial delivery is never mistaken for a full one.
+ *
+ * Repeated targets are collapsed first: `to: ["ops", "ops", "ops"]` (a Studio
+ * copy-paste, or two routing rules naming the same channel) must post once, not
+ * three times.
  */
 export async function sendToEachTarget(
   ctx: RetryContext,
   targets: readonly string[],
   attempt: (target: string) => Promise<void>,
 ): Promise<void> {
-  const failures: { target: string; error: unknown }[] = [];
-  for (const target of targets) {
+  const unique = [...new Set(targets)];
+  const failures: TargetFailure[] = [];
+  for (const target of unique) {
     try {
       await sendWithRetry(ctx, () => attempt(target));
     } catch (error) {
-      failures.push({ target, error });
+      // `sendWithRetry` already reports how many attempts it made and keeps the
+      // driver's own error as `cause`; both are carried over rather than
+      // wrapped again, so `attempts` never silently becomes a target count.
+      failures.push(
+        error instanceof NotifyDeliveryError
+          ? { target, attempts: error.attempts, cause: error.cause }
+          : { target, attempts: 1, cause: error },
+      );
     }
   }
   if (failures.length === 0) return;
-
-  const summary = failures
-    .map((failure) => `${failure.target}: ${safeMessage(failure.error, [])}`)
-    .join(" | ");
-  throw new NotifyDeliveryError(
-    ctx.driver,
-    ctx.event,
-    failures.length,
-    new Error(`${failures.length} of ${targets.length} target(s) failed — ${summary}`),
-  );
+  throw new NotifyFanoutError(ctx.driver, ctx.event, failures, unique.length);
 }
 
 /**

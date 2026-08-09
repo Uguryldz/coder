@@ -1,4 +1,4 @@
-import { NonEmpty, NotifyChannel } from "@maestro/contracts";
+import { NonEmpty, NotifyChannel, NotifyEventKey } from "@maestro/contracts";
 import { z } from "zod";
 import { NotifyConfigError } from "./errors.js";
 
@@ -50,17 +50,35 @@ export const EmailAddress = z
 export const SmtpSecurity = z.enum(["starttls", "implicit", "plaintext"]);
 export type SmtpSecurity = z.infer<typeof SmtpSecurity>;
 
+/**
+ * A DNS name (or dotted IPv4). Narrow ON PURPOSE: `host` and `ehloName` are
+ * Studio parameters, i.e. operator-editable rows in the DB, and `ehloName` is
+ * pasted straight into an SMTP command line — a CR/LF in it is a second
+ * command ("EHLO x\r\nMAIL FROM:<attacker@evil>"). IPv6 literals are not
+ * accepted; a bank relay is reachable by name.
+ */
+export const SmtpHostName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .regex(/^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$/);
+
 export const SmtpDriverConfig = z.object({
-  host: NonEmpty,
+  host: SmtpHostName,
   port: z.number().int().min(1).max(65_535).default(587),
-  /** starttls = upgrade in place and REQUIRE it; implicit = TLS from byte 0. */
+  /**
+   * `starttls` = REQUIRE the in-place upgrade; `implicit` = TLS from byte 0;
+   * `plaintext` = do not require it — an advertised STARTTLS is still taken
+   * (see smtp-client.ts), so this only decides whether its ABSENCE is fatal.
+   */
   security: SmtpSecurity.default("starttls"),
   from: EmailAddress,
   fromName: NonEmpty.optional(),
   /** Omit both to send unauthenticated (typical for an internal relay). */
   username: NonEmpty.optional(),
   passwordRef: NonEmpty.optional(),
-  ehloName: NonEmpty.default("maestro"),
+  ehloName: SmtpHostName.default("maestro"),
   /** Escape hatch for a lab relay; NEVER default-on — see smtp-client.ts. */
   allowInsecureAuth: z.boolean().default(false),
   requestTimeoutMs: z.number().int().positive().max(120_000).default(20_000),
@@ -83,10 +101,15 @@ export type JiraDriverConfig = z.infer<typeof JiraDriverConfig>;
  * `default` covers every event without an explicit entry; an event mapped to
  * an empty list is muted DELIBERATELY (an explicit decision, not a silent
  * drop) and `routeNotification` reports it as such.
+ *
+ * Keys are `NotifyEventKey`, never free text: a typo (`kill_swich`) used to
+ * parse cleanly and fall back to the default channel, so a routing rule an
+ * operator believed they had written silently did not exist. Persisted as the
+ * `notify.routing` parameter in the DB (M71).
  */
 export const NotifyRouting = z.object({
   default: z.array(NotifyChannel).default(["teams"]),
-  byEvent: z.record(z.string(), z.array(NotifyChannel)).default({}),
+  byEvent: z.partialRecord(NotifyEventKey, z.array(NotifyChannel)).default({}),
 });
 export type NotifyRouting = z.infer<typeof NotifyRouting>;
 

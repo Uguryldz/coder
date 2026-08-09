@@ -55,6 +55,7 @@
   "params.description.kill_switch_state": "Kill-switch durumu: kapalı · yalnız intake · tümü",
   "params.description.dry_run_sample_size": "Proje bağlarken kuru koşumda incelenecek ticket sayısı",
   "params.description.reminder_channel": "Hatırlatıcı ve eskalasyon bildirim kanalı",
+  "params.description.notify_routing": "Hangi olay hangi bildirim kanallarına gider",
   "params.description.subscription_queue": "Abonelik havuzu dolduğunda kuyruk davranışı",
   "llm.degraded_ai_assist": "Gizli veri sınıfı için on-prem model yok — akış ai-assist moduna düşürüldü",
   "llm.blocked_confidential": "Gizli veri sınıfı politika gereği hiçbir modele gönderilemez",

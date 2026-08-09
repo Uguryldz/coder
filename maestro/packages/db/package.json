@@ -21,6 +21,7 @@
     "tsx": "^4.23.11"
   },
   "devDependencies": {
+    "@maestro/notify": "workspace:*",
     "@types/node": "^24.0.0",
     "prisma": "^6.5.0",
     "typescript": "^5.7.0",

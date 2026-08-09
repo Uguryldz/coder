@@ -3,7 +3,7 @@ import { SmtpDriverConfig } from "../src/config.js";
 import type { SocketTarget } from "../src/deps.js";
 import { NotifyRecipientError } from "../src/errors.js";
 import { createSmtpNotifier } from "../src/smtp.js";
-import { FakeSocket, aNotification, fakeSecrets, fakeSleep, happyRelayReplies } from "./helpers.js";
+import { FakeSocket, type FakeSocketOptions, aNotification, fakeSecrets, fakeSleep, happyRelayReplies } from "./helpers.js";
 
 const PASSWORD = "sup3r-secret-relay-pw";
 
@@ -20,13 +20,18 @@ function config(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function harness(scripts: string[][], overrides: Record<string, unknown> = {}) {
+function harness(scripts: string[][], overrides: Record<string, unknown> = {}, socketOptions: FakeSocketOptions = {}) {
   const sockets: FakeSocket[] = [];
   const targets: SocketTarget[] = [];
   const notifier = createSmtpNotifier(config(overrides), {
     socketFactory: async (target) => {
+      // Implicit TLS means the transport hands back an already-encrypted
+      // socket; the driver verifies that claim before it writes anything.
+      const socket = new FakeSocket(scripts[sockets.length] ?? [], {
+        secureFromStart: target.tls,
+        ...socketOptions,
+      });
       targets.push(target);
-      const socket = new FakeSocket(scripts[sockets.length] ?? []);
       sockets.push(socket);
       return socket;
     },
@@ -103,6 +108,9 @@ describe("smtp driver (M45)", () => {
     expect(sockets[0]!.written.join("")).not.toContain("AUTH");
   });
 
+  // NOTE: this relay does NOT advertise STARTTLS, which is the only reason the
+  // connection stays in the clear — `smtp-hardening.test.ts` covers the case
+  // where it does advertise it and the upgrade is taken regardless of mode.
   it("never sends credentials over an unencrypted connection", async () => {
     const { notifier, sockets } = harness([["220 mail\r\n", "250-mail\r\n250 AUTH PLAIN\r\n", "221 bye\r\n"]], {
       security: "plaintext",

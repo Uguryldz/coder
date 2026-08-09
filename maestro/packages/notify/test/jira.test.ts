@@ -1,7 +1,7 @@
 import { CapabilityNotSupportedError } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
 import { JiraDriverConfig } from "../src/config.js";
-import { NotifyRecipientError } from "../src/errors.js";
+import { NotifyDeliveryError, NotifyRecipientError } from "../src/errors.js";
 import { createJiraCommentNotifier } from "../src/jira.js";
 import { aNotification, fakeSleep, fakeWorkPort } from "./helpers.js";
 
@@ -51,9 +51,11 @@ describe("jira comment driver (M44/M45)", () => {
       throw Object.assign(new Error("Forbidden"), { status: 403 });
     });
     const sleep = fakeSleep();
-    await expect(createJiraCommentNotifier(CONFIG, { work, sleep: sleep.sleep }).send(jiraNotification())).rejects.toThrow(
-      /not delivered after 1 attempt/,
-    );
+    const error = await createJiraCommentNotifier(CONFIG, { work, sleep: sleep.sleep })
+      .send(jiraNotification())
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(NotifyDeliveryError);
+    expect((error as NotifyDeliveryError).attempts).toBe(1);
     expect(sleep.waits).toEqual([]);
   });
 
@@ -61,9 +63,11 @@ describe("jira comment driver (M44/M45)", () => {
     const work = fakeWorkPort(() => {
       throw new CapabilityNotSupportedError("work", "addComment");
     });
-    await expect(createJiraCommentNotifier(CONFIG, { work }).send(jiraNotification())).rejects.toThrow(
-      /not delivered after 1 attempt/,
-    );
+    const error = await createJiraCommentNotifier(CONFIG, { work })
+      .send(jiraNotification())
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(NotifyDeliveryError);
+    expect((error as NotifyDeliveryError).attempts).toBe(1);
   });
 
   it("retries a socket failure that carries no status", async () => {

@@ -1,4 +1,11 @@
-import { type Locale, NonEmpty, type Notification, NotifyChannel, NotifyEventKey } from "@maestro/contracts";
+import {
+  IsoDateTime,
+  type Locale,
+  NonEmpty,
+  Notification,
+  NotifyChannel,
+  NotifyEventKey,
+} from "@maestro/contracts";
 import { z } from "zod";
 import { BusinessCalendar, addWorkingMinutes, workingMinutesBetween } from "./calendar.js";
 import { NotifyConfigError, NotifyRecipientError } from "./errors.js";
@@ -6,13 +13,14 @@ import { NotifyConfigError, NotifyRecipientError } from "./errors.js";
 /**
  * Escalation ladder (M88) — FULLY parametric: the steps, their delays, their
  * channels, the message keys, the recipients and the working calendar all come
- * from the `escalation.ladder` parameter in the DB (M71). The default below is
- * the plain "24h Jira → 72h Teams+e-mail → 7d delegate to the deputy", and it
- * is a default, not a rule: nothing here special-cases 24, 72 or 168.
+ * from the `escalation.ladder` parameter in the DB (M71).
  *
- * The schema is a superset of the persisted parameter shape
- * (`{ steps: [{ afterHours, channel, event }], businessHoursOnly }`), so the
- * stored value from `@maestro/db` parses unchanged.
+ * There is deliberately NO default ladder in this package. Settings live in the
+ * database (M71), and a second copy compiled in here is a second answer to
+ * "what is the ladder?" — the shipped default is
+ * `DEFAULT_PARAM_DEFINITIONS["escalation.ladder"]` in `@maestro/db`, and
+ * `packages/db/test/notify-params.test.ts` parses it with the schema below so
+ * the two cannot drift.
  */
 export const EscalationAction = z.enum(["notify", "delegate"]);
 export type EscalationAction = z.infer<typeof EscalationAction>;
@@ -22,8 +30,13 @@ export const EscalationStep = z.object({
   afterHours: z.number().positive().max(24 * 365),
   channel: NotifyChannel,
   event: NotifyEventKey,
-  /** Stable id; derived from the content when absent. */
-  id: NonEmpty.optional(),
+  /**
+   * Persistent identity, REQUIRED and seeded with the parameter. It is what
+   * `firedStepIds` remembers, so it must not be derived from the content:
+   * editing a threshold from 72h to 48h in Studio would then mint a new id and
+   * instantly re-escalate every open gate.
+   */
+  id: NonEmpty,
   /** Catalog key (M104); defaults to `notify.<event>`. */
   messageKey: NonEmpty.optional(),
   /** Fixed audience for this step; otherwise the caller resolves it. */
@@ -41,44 +54,35 @@ export const EscalationLadder = z.object({
 });
 export type EscalationLadder = z.infer<typeof EscalationLadder>;
 
-/** The M88 default, kept in one place so Studio can seed it. */
-export const DEFAULT_LADDER: EscalationLadder = EscalationLadder.parse({
-  steps: [
-    { afterHours: 24, channel: "jira", event: "gate_reminder" },
-    { afterHours: 72, channel: "teams", event: "escalation" },
-    { afterHours: 72, channel: "smtp", event: "escalation" },
-    { afterHours: 168, channel: "teams", event: "escalation", action: "delegate" },
-  ],
-  businessHoursOnly: false,
-});
-
 export interface ResolvedStep extends EscalationStep {
-  /** Unique within the ladder and stable across step insertions. */
+  /** The step's own `id` — stable across every edit except a rename. */
   stepId: string;
   thresholdMinutes: number;
 }
 
 /**
- * Ids are content-derived (`24h.jira.gate_reminder`), not index-derived: a step
- * inserted at the top of the ladder in Studio must not renumber the steps that
- * already fired, or every open gate would be re-notified.
+ * Ids come from the parameter and are checked for uniqueness here: two steps
+ * sharing an id would make `firedStepIds` ambiguous, and one of them would
+ * either fire twice or never.
  */
 export function resolveSteps(ladder: EscalationLadder): ResolvedStep[] {
-  const seen = new Map<string, number>();
+  const seen = new Set<string>();
   return ladder.steps.map((step) => {
-    const base = step.id ?? `${step.afterHours}h.${step.channel}.${step.event}.${step.action}`;
-    const count = (seen.get(base) ?? 0) + 1;
-    seen.set(base, count);
-    return {
-      ...step,
-      stepId: count === 1 ? base : `${base}#${count}`,
-      thresholdMinutes: Math.round(step.afterHours * 60),
-    };
+    if (seen.has(step.id)) {
+      throw new NotifyConfigError(`escalation ladder has a duplicate step id: "${step.id}"`);
+    }
+    seen.add(step.id);
+    return { ...step, stepId: step.id, thresholdMinutes: Math.round(step.afterHours * 60) };
   });
 }
 
 export interface LadderQuery {
-  /** When the clock started: the gate opened, the question was asked… */
+  /**
+   * When the clock started: the gate opened, the question was asked… Both are
+   * `IsoDateTime` (offset REQUIRED), the same shape `Notification.at` demands —
+   * `Date.parse` alone accepted "2026-08-02", which then travelled all the way
+   * to a driver and died there as a permanent failure.
+   */
   openedAt: string;
   now: string;
   /** Steps already sent — the ladder never fires the same step twice. */
@@ -146,10 +150,25 @@ export interface EscalationPlan extends EscalationDecision {
 }
 
 /**
+ * Catalog key for a step (M104). A `delegate` step announces a DELEGATION, not
+ * another escalation: sending "gate unanswered for 7 days" while quietly
+ * handing the gate to the deputy tells the deputy nothing about why it landed
+ * on their desk.
+ */
+function messageKeyOf(step: ResolvedStep): string {
+  if (step.messageKey !== undefined) return step.messageKey;
+  return step.action === "delegate" ? "notify.delegated" : `notify.${step.event}`;
+}
+
+/**
  * Turns the decision into notifications. Message text stays in the catalog
  * (M104): a step contributes a KEY, never a sentence. A step that resolves to
  * no recipient throws — a notification addressed to nobody is exactly the
  * silent death this ladder exists to prevent.
+ *
+ * Every notification is parsed against the frozen contract HERE, so a bad
+ * ladder or a bad `now` fails in the planner, where the parameter can be fixed,
+ * instead of in a driver three hops later.
  */
 export function planEscalation(ladder: EscalationLadder, ctx: EscalationContext): EscalationPlan {
   const decision = escalationDueAt(ladder, ctx);
@@ -158,15 +177,22 @@ export function planEscalation(ladder: EscalationLadder, ctx: EscalationContext)
     if (to.length === 0) {
       throw new NotifyRecipientError(step.channel, step.stepId, "escalation step resolved to no recipient");
     }
-    return {
+    const parsed = Notification.safeParse({
       event: step.event,
       channel: step.channel,
       to,
       locale: ctx.locale,
-      messageKey: step.messageKey ?? `notify.${step.event}`,
+      messageKey: messageKeyOf(step),
       params: ctx.params,
       at: ctx.now,
-    };
+    });
+    if (!parsed.success) {
+      const issues = parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+        .join("; ");
+      throw new NotifyConfigError(`escalation step "${step.stepId}" produced an invalid notification: ${issues}`);
+    }
+    return parsed.data;
   });
 
   return {
@@ -177,6 +203,9 @@ export function planEscalation(ladder: EscalationLadder, ctx: EscalationContext)
 }
 
 function parseInstant(field: string, iso: string): number {
+  if (!IsoDateTime.safeParse(iso).success) {
+    throw new NotifyConfigError(`${field} is not an ISO-8601 instant with an offset: "${iso}"`);
+  }
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) throw new NotifyConfigError(`${field} is not an ISO-8601 instant: "${iso}"`);
   return ms;

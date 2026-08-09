@@ -3,6 +3,7 @@ import {
   GATES_BY_RISK,
   Locale,
   NotifyChannel,
+  NotifyEventKey,
   PlatformProfile,
   ScanSeverity,
   TriggerMode,
@@ -30,9 +31,29 @@ describe("seeded defaults follow the decision record", () => {
     expect(def("trigger.mode").defaultValue).toBe("label");
   });
 
-  it("M88 escalation ladder is 24h -> 72h -> 7d", () => {
-    const ladder = def("escalation.ladder").defaultValue as { steps: { afterHours: number }[] };
+  it("M88 escalation ladder is 24h -> 72h -> 7d, ending in a delegation", () => {
+    const ladder = def("escalation.ladder").defaultValue as {
+      steps: { id: string; afterHours: number; action?: string; messageKey?: string }[];
+    };
     expect(ladder.steps.map((s) => s.afterHours)).toEqual([24, 72, 168]);
+    expect(ladder.steps.map((s) => s.id)).toEqual(["reminder-24h", "escalation-72h", "delegate-7d"]);
+    expect(ladder.steps.at(-1)).toMatchObject({ action: "delegate", messageKey: "notify.delegated" });
+  });
+
+  it("M45/M87 notification routing is a parameter, keyed by NotifyEventKey", () => {
+    const routing = def("notify.routing").defaultValue as {
+      default: string[];
+      byEvent: Record<string, string[]>;
+    };
+    const events = new Set<string>(NotifyEventKey.options);
+    const channels = new Set<string>(NotifyChannel.options);
+    expect(routing.default.every((channel) => channels.has(channel))).toBe(true);
+    for (const [event, targets] of Object.entries(routing.byEvent)) {
+      expect(events.has(event), event).toBe(true);
+      expect(targets.every((channel) => channels.has(channel)), event).toBe(true);
+    }
+    // M87: runner health warnings have an explicit ops channel.
+    expect(routing.byEvent["runner_health"]).toBeDefined();
   });
 
   it("M59 output language offers the supported locales and defaults to tr", () => {

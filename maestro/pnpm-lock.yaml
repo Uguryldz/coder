@@ -183,6 +183,9 @@ importers:
         specifier: ^4.23.11
         version: 4.23.11
     devDependencies:
+      '@maestro/notify':
+        specifier: workspace:*
+        version: link:../notify
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3

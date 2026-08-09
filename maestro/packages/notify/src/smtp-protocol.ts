@@ -40,12 +40,22 @@ export class SmtpReplyReader {
 
     for (;;) {
       const line = await this.nextLine();
-      if (line.length < 4 && line.length !== 3) {
+      if (line.length < 3) {
         throw new SmtpProtocolError(`reply line too short: ${JSON.stringify(line)}`);
       }
-      const parsed = Number(line.slice(0, 3));
-      if (!Number.isInteger(parsed) || parsed < 100 || parsed > 599) {
-        throw new SmtpProtocolError(`unparsable reply code: ${JSON.stringify(line.slice(0, 3))}`);
+      // RFC 5321 §4.2: exactly three digits, then SP or "-". `Number()` is not
+      // a parser — it read "2500 weird" as 250 and "1e2 exp" as 100, i.e. it
+      // turned a malformed line into a plausible status code.
+      const codeText = line.slice(0, 3);
+      if (!/^\d{3}$/.test(codeText)) {
+        throw new SmtpProtocolError(`unparsable reply code: ${JSON.stringify(codeText)}`);
+      }
+      if (line.length > 3 && line[3] !== " " && line[3] !== "-") {
+        throw new SmtpProtocolError(`reply code is not followed by SP or "-": ${JSON.stringify(line.slice(0, 4))}`);
+      }
+      const parsed = Number(codeText);
+      if (parsed < 100 || parsed > 599) {
+        throw new SmtpProtocolError(`reply code out of range: ${codeText}`);
       }
       if (code !== undefined && parsed !== code) {
         throw new SmtpProtocolError(`reply code changed mid-reply: ${code} then ${parsed}`);
@@ -155,6 +165,10 @@ function base64Lines(text: string): string {
  */
 export function buildMimeMessage(mail: MailMessage): string {
   assertHeaderSafe("From", mail.from);
+  // Checked explicitly, not left to `encodeHeaderWord`: CR/LF happens to take
+  // the base64 branch today, so the safety was an accident of the charset test
+  // and would disappear the moment that branch changed.
+  if (mail.fromName !== undefined) assertHeaderSafe("From (display name)", mail.fromName);
   assertHeaderSafe("Subject", mail.subject);
   for (const recipient of mail.to) assertHeaderSafe("To", recipient);
 

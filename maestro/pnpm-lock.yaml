@@ -505,9 +505,39 @@ importers:
 
   packages/workflows:
     dependencies:
+      '@maestro/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@maestro/execution':
+        specifier: workspace:*
+        version: link:../execution
+      '@maestro/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@maestro/notify':
+        specifier: workspace:*
+        version: link:../notify
+      '@maestro/ports':
+        specifier: workspace:*
+        version: link:../ports
+      '@maestro/publish':
+        specifier: workspace:*
+        version: link:../publish
+      '@maestro/scanners':
+        specifier: workspace:*
+        version: link:../scanners
+      '@maestro/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@temporalio/common':
+        specifier: ^1.11.0
+        version: 1.22.0
+      '@temporalio/worker':
+        specifier: ^1.11.0
+        version: 1.22.0
       '@temporalio/workflow':
         specifier: ^1.11.0
         version: 1.22.0
@@ -515,12 +545,30 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
     devDependencies:
+      '@maestro/adapter-jira':
+        specifier: workspace:*
+        version: link:../adapter-jira
+      '@maestro/llm-gateway':
+        specifier: workspace:*
+        version: link:../llm-gateway
+      '@maestro/pii':
+        specifier: workspace:*
+        version: link:../pii
+      '@maestro/secrets':
+        specifier: workspace:*
+        version: link:../secrets
+      '@maestro/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
+      '@temporalio/client':
+        specifier: ^1.11.0
+        version: 1.22.0
       '@temporalio/testing':
         specifier: ^1.11.0
         version: 1.22.0
-      '@temporalio/worker':
-        specifier: ^1.11.0
-        version: 1.22.0
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

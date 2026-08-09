@@ -17,6 +17,13 @@ export interface UiServerOptions {
   run: DemoRun;
   /** Starts the flow; rejects if one is already running. */
   start: () => Promise<void>;
+  /**
+   * Base URL of the fake Jira. The browser never talks to it directly: the
+   * page is often opened from another machine (or through a reverse proxy),
+   * where the fake Jira's own address resolves to the viewer's laptop. The UI
+   * server relays instead, so everything the browser touches is same-origin.
+   */
+  jiraUrl: string;
 }
 
 export function createUiServer(options: UiServerOptions): Server {
@@ -45,6 +52,24 @@ export function createUiServer(options: UiServerOptions): Server {
 
     if (url.pathname === "/api/state" && method === "GET") {
       sendJson(res, 200, options.store.snapshot());
+      return;
+    }
+
+    // Same-origin relay to the fake Jira (see UiServerOptions.jiraUrl).
+    if (url.pathname === "/api/jira/state" && method === "GET") {
+      const upstream = await fetch(`${options.jiraUrl}/_demo/state`);
+      sendJson(res, upstream.status, await upstream.json());
+      return;
+    }
+
+    if (url.pathname === "/api/jira/comment" && method === "POST") {
+      const body = await readRawBody(req);
+      const upstream = await fetch(`${options.jiraUrl}/_demo/comment`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      sendJson(res, upstream.status, await upstream.json().catch(() => ({})));
       return;
     }
 

@@ -165,7 +165,7 @@ function renderState(state) {
 async function refreshJira() {
   if (!STATE) return;
   try {
-    const res = await fetch(STATE.jiraUrl + "/_demo/state");
+    const res = await fetch("/api/jira/state");
     const data = await res.json();
     const head = `<div class="jira"><div class="who"><span class="av">${initials(data.issue.reporter)}</span><b>${esc(data.issue.reporter)}</b> · ticket</div>
       <b>${esc(data.issue.key)}</b> — ${esc(data.issue.summary)}
@@ -193,7 +193,7 @@ $("send").onclick = async () => {
   if (!body || !STATE) return;
   $("send").disabled = true;
   try {
-    await fetch(STATE.jiraUrl + "/_demo/comment", {
+    await fetch("/api/jira/comment", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ author: STATE.approver, body }),

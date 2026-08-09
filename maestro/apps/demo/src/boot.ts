@@ -147,7 +147,7 @@ export async function bootDemo(options: BootOptions = {}): Promise<DemoStage> {
     ...(options.ciTimeoutMs === undefined ? {} : { ciTimeoutMs: options.ciTimeoutMs }),
   });
 
-  const ui: Server = createUiServer({ store, run, start: () => run.start() });
+  const ui: Server = createUiServer({ store, run, start: () => run.start(), jiraUrl });
   const uiPort = await listen(ui, options.uiPort ?? UI_PORT);
   uiBase = `http://127.0.0.1:${uiPort}`;
 

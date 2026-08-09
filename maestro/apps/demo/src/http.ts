@@ -47,10 +47,18 @@ export function requestUrl(req: IncomingMessage): URL {
   return new URL(req.url ?? "/", "http://localhost");
 }
 
+/**
+ * Bind address. Loopback by default — the demo has no authentication and
+ * burns real model quota, so it must not be reachable from the network unless
+ * somebody asks for it. `MAESTRO_DEMO_HOST=0.0.0.0` opens it deliberately
+ * (e.g. to watch it from another machine or through a reverse proxy).
+ */
+const BIND_HOST = process.env["MAESTRO_DEMO_HOST"] ?? "127.0.0.1";
+
 export function listen(server: Server, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, BIND_HOST, () => {
       const address = server.address() as AddressInfo | null;
       resolve(address?.port ?? port);
     });

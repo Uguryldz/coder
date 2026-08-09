@@ -341,6 +341,9 @@ importers:
       '@maestro/execution':
         specifier: workspace:*
         version: link:../execution
+      '@maestro/pii':
+        specifier: workspace:*
+        version: link:../pii
       '@maestro/ports':
         specifier: workspace:*
         version: link:../ports

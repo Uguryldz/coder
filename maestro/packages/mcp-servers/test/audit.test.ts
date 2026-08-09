@@ -42,15 +42,18 @@ describe("every tool call reaches the audit chain as ai-via:<user> (M101)", () =
     await runtime.call("write_file", { path: "src/a.ts", content: "x" }, caller(["read"]));
     await runtime.call("write_file", { path: "db/migrations/0001.sql", content: "x" }, admin);
 
+    // Four calls, five rows: the protected-path write is the only one that got
+    // as far as the handler, so it is the only one bracketed (B1).
     expect(audit.all().map((entry) => [entry.tool, entry.outcome])).toEqual([
       ["read_file", "ok"],
       ["delete_everything", "denied"],
       ["write_file", "denied"],
+      ["write_file", "attempted"],
       ["write_file", "denied"],
     ]);
     expect(audit.all().every((entry) => entry.actor.startsWith("ai-via:"))).toBe(true);
     expect(audit.all()[1]?.scope).toBeNull();
-    expect(audit.all()[3]?.meta).toMatchObject({ reason: "policy", rule: "protected_path" });
+    expect(audit.all()[4]?.meta).toMatchObject({ reason: "policy", rule: "protected_path" });
   });
 
   it("maps only the calls a frozen AuditAction describes truthfully", async () => {
@@ -64,12 +67,17 @@ describe("every tool call reaches the audit chain as ai-via:<user> (M101)", () =
       admin,
     );
 
-    expect(audit.all().map((entry) => entry.action)).toEqual([
-      "RUN_STARTED",
-      "ASSIGN_APP",
+    // The action code goes on the row that says the thing HAPPENED, never on
+    // the `attempted` row that says it is about to be tried (B1).
+    expect(audit.all().map((entry) => [entry.outcome, entry.action])).toEqual([
+      ["attempted", null],
+      ["ok", "RUN_STARTED"],
+      ["attempted", null],
+      ["ok", "ASSIGN_APP"],
+      ["attempted", null],
       // A proposal is not a change; claiming PARAM_CHANGED here would be the
       // most misleading row in the chain.
-      null,
+      ["ok", null],
     ]);
   });
 

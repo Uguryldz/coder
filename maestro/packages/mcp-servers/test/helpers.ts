@@ -6,7 +6,17 @@ import type { CallerIdentity, ToolScope } from "../src/scopes.js";
 import type { ServerDefinition } from "../src/tool.js";
 import type { AdoDiffAccess, ApplicationLookup, PrDiff } from "../src/servers/ado.js";
 import type { JiraComment, JiraReadAccess, RelatedTicket } from "../src/servers/jira.js";
-import type { KnowledgeHit, MaestroPlatform, ParamChangeProposal, ParamView, RunDetail } from "../src/servers/maestro-platform.js";
+import type {
+  KillSwitchProposal,
+  KnowledgeHit,
+  MaestroPlatform,
+  ParamChangeProposal,
+  ParamView,
+  PendingGate,
+  QuotaStatus,
+  RunDetail,
+  RunnerHealth,
+} from "../src/servers/maestro-platform.js";
 import type { WorkspaceEntry, WorkspaceFileContent, WorkspaceFs, WorkspaceMatch } from "../src/servers/workspace.js";
 
 export const AT = "2026-08-09T09:00:00.000Z";
@@ -199,6 +209,29 @@ export function fakePlatform(calls: PlatformCalls): MaestroPlatform {
     calls.users.push(user);
     return Promise.resolve(value);
   };
+  const gate: PendingGate = {
+    runId: RUN.runId,
+    ticketKey: RUN.ticketKey,
+    step: "4",
+    ownerGroup: "product-owners",
+    openedAt: AT,
+    waitingDays: 16,
+  };
+  const quota: QuotaStatus = {
+    scope: "global",
+    scopeRef: null,
+    usedTokens: 120_000,
+    limitTokens: 1_000_000,
+    windowEndsAt: AT,
+    throttled: false,
+  };
+  const runner: RunnerHealth = {
+    runnerId: "runner-linux-1",
+    platform: "linux-node",
+    state: "idle",
+    activeSandboxes: 0,
+    lastHeartbeatAt: AT,
+  };
   return {
     listRuns: (user) => track(user, [RUN] as readonly WorkflowRunState[]),
     getRun: (user) => track(user, detail),
@@ -206,8 +239,17 @@ export function fakePlatform(calls: PlatformCalls): MaestroPlatform {
     getParams: (user) => track(user, [param] as readonly ParamView[]),
     getRepoCard: (user) => track(user, REPO_CARD),
     searchKnowledge: (user) => track(user, [hit] as readonly KnowledgeHit[]),
+    listPendingGates: (user) => track(user, [gate] as readonly PendingGate[]),
+    quotaStatus: (user) => track(user, [quota] as readonly QuotaStatus[]),
+    runnerHealth: (user) => track(user, [runner] as readonly RunnerHealth[]),
     startWorkflow: (user, args) => track(user, { runId: RUN.runId, ticketKey: args.ticketKey }),
     assignApp: (user, args) => track(user, { ticketKey: args.ticketKey, appId: args.appId }),
+    setWorkMode: (user, args) => track(user, { runId: args.runId, mode: args.mode }),
+    pauseRun: (user, args) => track(user, { runId: args.runId, status: "paused" }),
+    resumeRun: (user, args) => track(user, { runId: args.runId, status: "running" }),
+    retryStep: (user, args) => track(user, { runId: args.runId, step: args.step, attempt: 2 }),
+    notifyGateOwner: (user, args) =>
+      track(user, { runId: args.runId, step: args.step, notified: "product-owners" }),
     proposeParamChange: (user, proposal) =>
       track(user, {
         proposalId: "p-1",
@@ -216,5 +258,12 @@ export function fakePlatform(calls: PlatformCalls): MaestroPlatform {
         status: calls.proposalStatus,
         approverGroup: "platform-admins",
       } as ParamChangeProposal),
+    proposeKillSwitch: (user, proposal) =>
+      track(user, {
+        proposalId: "ks-1",
+        level: proposal.level,
+        status: calls.proposalStatus,
+        approverGroup: "platform-admins",
+      } as KillSwitchProposal),
   };
 }

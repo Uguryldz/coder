@@ -99,13 +99,21 @@ describe("workspace-mcp enforces protected_paths at the tool boundary (M52)", ()
 describe("guardWorkspacePath", () => {
   const matcher = workspaceMatcher(["docs/frozen/**"]);
 
-  it("separates an escape from a protected path", () => {
+  it("separates an escape, a secret and a protected path — three rules, three names", () => {
     expect(() => guardWorkspacePath("t", matcher, "../x", "read")).toThrow(
       expect.objectContaining({ rule: "path_escape" }) as unknown as Error,
     );
     expect(() => guardWorkspacePath("t", matcher, "docs/frozen/a.md", "write")).toThrow(
       expect.objectContaining({ rule: "protected_path" }) as unknown as Error,
     );
+    // B6: a secret is its own refusal, on BOTH legs, so an auditor reading the
+    // chain can tell "the model tried to change the schema" from "the model
+    // tried to read the private key".
+    for (const mode of ["read", "write"] as const) {
+      expect(() => guardWorkspacePath("t", matcher, "tls/server.key", mode)).toThrow(
+        expect.objectContaining({ rule: "secret_path" }) as unknown as Error,
+      );
+    }
   });
 
   it("refuses control characters, which truncate a name at the syscall boundary", () => {

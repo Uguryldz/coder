@@ -44,21 +44,68 @@ describe("gate decisions are not an MCP capability", () => {
     }
   });
 
-  it("maestro-mcp exposes exactly the nine tools M101 allows", () => {
+  it("maestro-mcp exposes exactly the tools M101 allows, and no others", () => {
     const server = maestroMcpServer({
       platform: fakePlatform({ users: [], proposalStatus: "pending_four_eyes" }),
     });
+    // M101's three scopes, spelled out: read (workflow durumu, journal, param,
+    // kota, runner sağlığı, bekleyen kapılar) · operate (workflow başlat,
+    // uygulama ata, work-mode değiştir, duraklat/sürdür, adım retry, kapı
+    // sahibine hatırlatma) · admin-öneri (param, kill-switch).
     expect(server.tools.map((tool) => tool.name).sort()).toEqual([
       "assign_app",
       "get_journal",
       "get_params",
       "get_repo_card",
       "get_run",
+      "list_pending_gates",
       "list_runs",
+      "notify_gate_owner",
+      "pause_run",
+      "propose_killswitch",
       "propose_param_change",
+      "quota_status",
+      "resume_run",
+      "retry_step",
+      "runner_health",
       "search_knowledge",
+      "set_workmode",
       "start_workflow",
     ]);
+  });
+
+  /**
+   * The mock's `V.mcp` screen showed `toggle_killswitch`. It is not here, and
+   * that is the decision, not an omission: M58's switch stops the platform and
+   * M101 words it "kill-switch = çift onay". A model holding a borrowed token
+   * is one approval at most — and resuming after an incident, before anyone has
+   * established what happened, is the more dangerous direction of the two.
+   */
+  it("proposes a kill-switch instead of toggling one (M58 double approval)", () => {
+    const server = maestroMcpServer({
+      platform: fakePlatform({ users: [], proposalStatus: "pending_four_eyes" }),
+    });
+    const names = server.tools.map((tool) => tool.name);
+
+    expect(names).not.toContain("toggle_killswitch");
+    expect(names).not.toContain("set_killswitch");
+    const proposal = server.tools.find((tool) => tool.name === "propose_killswitch");
+    expect(proposal?.scope).toBe("admin-proposal");
+    // Not `KILL_SWITCH`: nothing was switched. That code belongs to the worker
+    // activity that flips it, after the second human approves.
+    expect(proposal?.auditAction).toBeNull();
+  });
+
+  it("gives the gate tools a read scope and a reminder, never a verdict", () => {
+    const server = maestroMcpServer({
+      platform: fakePlatform({ users: [], proposalStatus: "pending_four_eyes" }),
+    });
+    const byName = new Map(server.tools.map((tool) => [tool.name, tool]));
+
+    expect(byName.get("list_pending_gates")?.scope).toBe("read");
+    // Reminding is operate work — it sends a message — but it carries no
+    // verdict and the platform method returns nothing about the gate's state.
+    expect(byName.get("notify_gate_owner")?.scope).toBe("operate");
   });
 
   it("the full tool list of every server, seen by a caller holding every scope, has no gate decision", () => {

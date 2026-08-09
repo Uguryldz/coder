@@ -1,20 +1,83 @@
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { Placeholder } from "../app/Placeholder.tsx";
+import { useApi } from "../auth/AuthProvider.tsx";
+import { useT } from "../i18n/I18nProvider.tsx";
+import { Badge, Card, EmptyState, Tabs, TabPanel } from "../ui/index.ts";
+import { QueryState, type RepoPolicy, type RepoPolicyView } from "./common/index.ts";
+import { useLabel } from "./common/label.ts";
+import { ProtectedPaths } from "./yaml/ProtectedPaths.tsx";
 
 /**
- * Screen: yaml
+ * `.maestro.yaml` (M52/M71): the repo-native half of a project's configuration
+ * — the build, lint and test commands, and the protected paths.
  *
- * STUB — owned by the screen agent assigned to "yaml".
- * Replace the body of this component with the real screen. Do not edit
- * src/app/screens.ts (the route table) or src/app/routes.tsx; your route,
- * title key and sidebar entry are already registered there.
- *
- * Rules that still apply to the finished screen:
- *  - every visible string comes from the catalog via useT() — no literals;
- *  - build from src/ui primitives (see src/ui/README.md);
- *  - fetch through useApi() + TanStack Query, never bare fetch();
- *  - keep this file under 300 lines, split into src/screens/yaml/ if it grows.
+ * The file itself is READ-ONLY here, and that is a product decision rather than
+ * an unfinished feature: the file lives in the repository so the team owns it
+ * through their own PR process. Studio shows what is currently checked in;
+ * changing it means opening a pull request. Protected paths are the one place
+ * with an editing affordance, and even there platform defaults are listed
+ * separately and cannot be removed (see ProtectedPaths).
  */
 export function YamlScreen(): ReactNode {
-  return <Placeholder id="yaml" />;
+  const api = useApi();
+  const t = useT();
+  const label = useLabel();
+  const [active, setActive] = useState<string>("");
+
+  const policies = useQuery({
+    queryKey: ["repo-policy"],
+    queryFn: ({ signal }) => api.get<RepoPolicyView>("/repo-policy", { signal }),
+  });
+
+  const rows: readonly RepoPolicy[] = policies.data?.policies ?? [];
+  const current = rows.find((policy) => policy.appId === active) ?? rows[0];
+
+  return (
+    <div className="scr-stack">
+      <QueryState
+        isPending={policies.isPending}
+        error={policies.error}
+        onRetry={() => void policies.refetch()}
+      >
+        {current === undefined ? (
+          <EmptyState
+            icon="📄"
+            title={t("yaml.empty.title")}
+            description={t("yaml.empty.description")}
+          />
+        ) : (
+          <>
+            <Tabs
+              label={t("yaml.tabs.label")}
+              active={current.appId}
+              onChange={setActive}
+              items={rows.map((policy) => ({ id: policy.appId, label: policy.appId }))}
+            />
+
+            {rows.map((policy) => (
+              <TabPanel key={policy.appId} id={policy.appId} active={current.appId}>
+                <div className="scr-stack">
+                  <Card
+                    title={policy.appId}
+                    subtitle={policy.repo}
+                    actions={
+                      <Badge tone="blue">{label(`platform.${policy.platform}`, policy.platform)}</Badge>
+                    }
+                  >
+                    <p className="scr-mini">{t("yaml.read_only")}</p>
+                    <pre className="scr-code">{policy.yaml}</pre>
+                  </Card>
+
+                  <ProtectedPaths policy={policy} />
+                </div>
+              </TabPanel>
+            ))}
+          </>
+        )}
+      </QueryState>
+
+      <div className="scr-note">{t("yaml.note.source_of_truth")}</div>
+    </div>
+  );
 }

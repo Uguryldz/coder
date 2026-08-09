@@ -22,6 +22,10 @@ export const DEV_ENV: Readonly<Record<string, string>> = {
   LLM_BASE_URL: "https://llm.invalid/v1",
   STORAGE_ENDPOINT: "https://s3.invalid",
   VAULT_ADDR: "https://vault.invalid",
+  // Present even in the dev fixture: several tests flip NODE_ENV to production
+  // to assert some OTHER refusal, and a missing REQUIRED_IN_PROD key would
+  // shadow it — the test would still go red, for the wrong reason.
+  REDIS_URL: "redis://redis.invalid:6379/0",
   // Digest-pinned, as M27 and the driver's schema both demand.
   SCAN_IMAGE_TRIVY:
     "aquasec/trivy@sha256:0000000000000000000000000000000000000000000000000000000000000001",

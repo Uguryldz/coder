@@ -12,7 +12,8 @@
 #
 #   postgres ─┬─→ migrate ─┬─→ bff ──→ studio
 #             │            └─→ worker
-#   temporal ─┘
+#   temporal ─┤
+#   redis ────┘
 #
 # `migrate` is a one-shot job, and both services wait for it to COMPLETE
 # (`service_completed_successfully`): a BFF querying a table that a migration
@@ -56,6 +57,11 @@ x-node-env: &node-env
   DATABASE_URL: postgresql://${POSTGRES_USER:-maestro}:${POSTGRES_PASSWORD:-maestro-local-only}@postgres:5432/${POSTGRES_DB:-maestro}
   TEMPORAL_ADDRESS: temporal:7233
   TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+  # Cross-process coordination (M4): the atomic token bucket (M19), the
+  # capacity semaphore, the distributed lock and the cache layer. Without it
+  # each replica runs a process-local limiter and the fleet grants N times the
+  # configured allowance — see packages/cache/RAPOR.md.
+  REDIS_URL: redis://redis:6379
   JIRA_BASE_URL: ${JIRA_BASE_URL}
   ADO_BASE_URL: ${ADO_BASE_URL}
   ADO_ORG: ${ADO_ORG}
@@ -137,6 +143,45 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
 
+  # ── coordination ───────────────────────────────────────────────────────────
+  # Redis (M4). Everything it holds is derivable — token buckets refill,
+  # semaphore permits expire, cache entries have a TTL — so there is no volume
+  # and no persistence. `--save ""` and `--appendonly no` state that on purpose
+  # rather than by omission: a disk write per rate-limit check would be the
+  # slowest thing in the request path, for data whose worst-case loss is one
+  # refilled bucket.
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      # Bounded, with a policy: coordination keys all carry a TTL, so evicting
+      # the longest-idle one under pressure is right. The default `noeviction`
+      # would instead start refusing writes — a rate limiter that errors rather
+      # than limits.
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - volatile-ttl
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Not published to the host: nothing outside this network needs it, and an
+    # unauthenticated Redis on a host port is a well-known way to lose a box.
+    expose:
+      - "6379"
+
   # ── workflow engine ────────────────────────────────────────────────────────
   temporal:
     image: ${TEMPORAL_IMAGE:-temporalio/auto-setup:1.25.2}
@@ -213,6 +258,8 @@ services:
         condition: service_healthy
       temporal:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     environment:
@@ -247,6 +294,8 @@ services:
       postgres:
         condition: service_healthy
       temporal:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully

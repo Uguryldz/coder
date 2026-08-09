@@ -22,8 +22,34 @@ describe("loadEnv (M6 fail-closed)", () => {
       ADO_BASE_URL: "https://tfs.corp.local/Collection",
       VAULT_ADDR: "https://vault.corp.local",
       STORAGE_ENDPOINT: "https://s3.corp.local",
+      REDIS_URL: "redis://redis:6379/0",
     });
     expect(env.NODE_ENV).toBe("production");
+  });
+
+  /**
+   * Redis is required in production for a reason worth stating in a test.
+   *
+   * Without it every replica falls back to a process-local token bucket, so N
+   * replicas grant N times the configured LLM rate and N times the sandbox
+   * capacity. Nothing errors — the limits simply stop being limits, which is a
+   * bill and an outage rather than a degradation, and it is invisible until it
+   * happens.
+   */
+  it("refuses production without Redis, naming it", () => {
+    const withoutRedis = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://maestro:x@db:5432/maestro",
+      TEMPORAL_ADDRESS: "temporal:7233",
+      JIRA_BASE_URL: "https://jira.corp.local",
+      ADO_BASE_URL: "https://tfs.corp.local/Collection",
+      VAULT_ADDR: "https://vault.corp.local",
+      STORAGE_ENDPOINT: "https://s3.corp.local",
+    };
+    expect(() => loadEnv(withoutRedis)).toThrow(/REDIS_URL/);
+    // Development still runs without it: the in-process bucket is correct for
+    // one process, and demanding Redis on a laptop would buy nothing.
+    expect(() => loadEnv({ ...withoutRedis, NODE_ENV: "development" })).not.toThrow();
   });
 });
 
@@ -36,6 +62,7 @@ describe("LDAPS identity configuration (M8)", () => {
     ADO_BASE_URL: "https://tfs.corp.local/Collection",
     VAULT_ADDR: "https://vault.corp.local",
     STORAGE_ENDPOINT: "https://s3.corp.local",
+    REDIS_URL: "redis://redis:6379/0",
   };
   const LDAP = {
     IDENTITY_DRIVER: "ldaps-bind",

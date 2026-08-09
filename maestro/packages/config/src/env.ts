@@ -72,6 +72,23 @@ export const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  /**
+   * Redis, for cross-process coordination (M4): the atomic token bucket
+   * (M19), the capacity semaphore, the distributed lock and the cache layer.
+   *
+   * `z.string()` rather than `z.url()`, unlike every other endpoint above:
+   * Zod's URL check demands a scheme it recognises, and `redis://` /
+   * `rediss://` are refused by it. `parseRedisUrl` in `@maestro/cache` does
+   * the real validation — scheme, host, database index — and it does it at
+   * boot, so a malformed value still fails in front of an operator rather
+   * than at the first rate-limit check.
+   *
+   * Required in production, and the reason is not tidiness: without it every
+   * replica runs a process-local token bucket, so N replicas grant N times the
+   * configured LLM rate and N times the sandbox capacity. That is a bill and an
+   * outage, not a degradation, which is why it sits in REQUIRED_IN_PROD below.
+   */
+  REDIS_URL: z.string().min(1).optional(),
 });
 export type Env = z.infer<typeof EnvSchema>;
 
@@ -82,6 +99,19 @@ const REQUIRED_IN_PROD = [
   "ADO_BASE_URL",
   "VAULT_ADDR",
   "STORAGE_ENDPOINT",
+  /**
+   * Added when `@maestro/cache` landed (orchestrator, 2026-08-09). Its author
+   * left it out of this list on purpose — the list is a cross-cutting contract
+   * that dozens of tests lean on, and a package should not widen it mid-wave —
+   * and guarded the same property inside `resolveCacheMode` instead. With the
+   * wave merged, it belongs here too.
+   *
+   * The reason is not tidiness. Without Redis every replica runs a
+   * process-local token bucket, so N replicas grant N times the configured LLM
+   * rate and N times the sandbox capacity. That is a bill and an outage, not a
+   * degradation — and it is invisible until it happens.
+   */
+  "REDIS_URL",
 ] as const;
 
 /**

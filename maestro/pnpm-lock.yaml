@@ -434,6 +434,25 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0)(lightningcss@1.33.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
 
+  packages/cache:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      '@maestro/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0)(lightningcss@1.33.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
+
   packages/claude-driver:
     dependencies:
       '@maestro/llm-gateway':

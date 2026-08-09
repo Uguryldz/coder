@@ -1,6 +1,7 @@
 import { type GateDecision, JournalKind, type StepId, type TicketKey } from "@maestro/contracts";
 import { planEscalation, type ResolvedStep } from "@maestro/notify";
 import { ApplicationFailure } from "@temporalio/common";
+import type { GateVerdict } from "../activities.js";
 import { GATE_OWNER } from "../gates.js";
 import type { ActivityDeps } from "./deps.js";
 import { handOver } from "./outcome.js";
@@ -53,13 +54,15 @@ export async function openGate(
  * The workflow already refused everything `canCloseGate` could see, but that
  * function only compares the group the SIGNAL claims. A decision that reaches
  * here claiming a membership the directory does not know is a forgery, not a
- * mistake, so it is refused permanently rather than retried.
+ * mistake — but it is the CLAIM that is wrong, not the run. The verdict goes
+ * back to the workflow, which leaves the gate open and tells the person why;
+ * failing the activity would kill a healthy run over somebody else's typo.
  */
 export async function recordGateDecision(
   deps: ActivityDeps,
   ticket: TicketKey,
   decision: GateDecision,
-): Promise<void> {
+): Promise<GateVerdict> {
   const run = await deps.runs.get(ticket);
   const expected = GATE_OWNER[decision.step as keyof typeof GATE_OWNER];
   const member = await deps.work.verifyMembership(decision.actorUserId, decision.actorGroup);
@@ -70,11 +73,10 @@ export async function recordGateDecision(
       detail: `${decision.actorUserId} · ${decision.actorGroup}`,
       key: `deny:${decision.step}:${decision.signatureSeq}`,
     });
-    throw ApplicationFailure.create({
-      message: `${decision.actorUserId} is not a member of "${decision.actorGroup}"`,
-      type: "GateAuthorityRejected",
-      nonRetryable: true,
-    });
+    return {
+      accepted: false,
+      reason: `${decision.actorUserId} · "${decision.actorGroup}" üyeliği doğrulanamadı`,
+    };
   }
 
   await audit(deps, run, {
@@ -92,6 +94,7 @@ export async function recordGateDecision(
     detail: decision.reason ?? "",
     key: `decision:${decision.step}:${decision.signatureSeq}`,
   });
+  return { accepted: true };
 }
 
 /**

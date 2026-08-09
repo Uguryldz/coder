@@ -57,6 +57,22 @@ const acts = proxyActivities<MaestroActivities>({
   retry: { maximumAttempts: 3 },
 });
 
+/**
+ * Thinking roles get a patient proxy. `queued` (M55: the subscription pool is
+ * full) comes back as a retryable failure, and waiting for a quota window is a
+ * legitimate hour-long wait — a three-attempt budget would drop the run instead.
+ * Real faults still stop: they are non-retryable and surface on the first try.
+ */
+const thinkActs = proxyActivities<MaestroActivities>({
+  startToCloseTimeout: "30 minutes",
+  retry: {
+    maximumAttempts: 50,
+    initialInterval: "1 minute",
+    maximumInterval: "1 hour",
+    backoffCoefficient: 2,
+  },
+});
+
 /** Long jobs get their own budget; the engineer may legitimately run for hours. */
 const longActs = proxyActivities<MaestroActivities>({
   startToCloseTimeout: "4 hours",
@@ -169,7 +185,14 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
           inbox.decision = undefined;
           continue;
         }
-        await acts.recordGateDecision(input.ticket, closed);
+        const recorded = await acts.recordGateDecision(input.ticket, closed);
+        if (!recorded.accepted) {
+          // The directory disagreed with what the payload claimed. The gate
+          // stays open and the person is told; the run does not die over it.
+          await acts.journal(input.ticket, "gate", "karar reddedildi", recorded.reason);
+          inbox.decision = undefined;
+          continue;
+        }
         if (closed.decision === "approve") approvers.set(at, closed.actorUserId);
         status = "running";
         return closed;
@@ -205,7 +228,7 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   // ── 2 · intake, 2b · clarification ───────────────────────────────────────
   await assertNotKilled();
   await goto("2", "ticket tamlık kontrolü");
-  const intake = await acts.runIntake(input.ticket);
+  const intake = await thinkActs.runIntake(input.ticket);
   if (!intake.complete) {
     await goto("2b", "reporter'a soru soruldu");
     status = "gate";
@@ -221,7 +244,7 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   await acts.discoverRepo(input.ticket, input.appId);
 
   await goto("3", "analiz üretiliyor");
-  const written = await acts.writeAnalysis(input.ticket, input.appId);
+  const written = await thinkActs.writeAnalysis(input.ticket, input.appId);
   analysis = written.analysis;
   risk = written.risk;
   await acts.publishAnalysis(input.ticket, analysis);
@@ -239,7 +262,7 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     if (verdict.decision === "reject") {
       // Back to analysis with the reason — the agent keeps its context (M54).
       await goto("3", `ret: ${verdict.reason ?? ""} — analiz yeniden yazılıyor`);
-      const redone = await acts.writeAnalysis(input.ticket, input.appId);
+      const redone = await thinkActs.writeAnalysis(input.ticket, input.appId);
       analysis = redone.analysis;
       await acts.publishAnalysis(input.ticket, analysis);
       approvers.clear();

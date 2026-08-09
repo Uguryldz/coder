@@ -49,6 +49,8 @@ export interface TestRunResult {
   coveragePct: number;
 }
 
+export type GateVerdict = { accepted: true } | { accepted: false; reason: string };
+
 export interface PrRef {
   adoProject: string;
   adoRepo: string;
@@ -68,7 +70,13 @@ export interface MaestroActivities {
 
   // ── gates ───────────────────────────────────────────────────────────────
   openGate(ticket: TicketKey, step: StepId, ownerGroup: string): Promise<void>;
-  recordGateDecision(ticket: TicketKey, decision: GateDecision): Promise<void>;
+  /**
+   * Persist a decision — and report whether the DIRECTORY accepted it.
+   * `gates.ts` can only check what the payload claims; group membership is a
+   * live lookup, so its verdict has to come back here. A refusal must leave the
+   * gate open and tell the person why, never fail the run.
+   */
+  recordGateDecision(ticket: TicketKey, decision: GateDecision): Promise<GateVerdict>;
   /** Reminder ladder tick (M88); returns the next due moment, or null when done. */
   escalateGate(ticket: TicketKey, step: StepId, waitingHours: number): Promise<string | null>;
 

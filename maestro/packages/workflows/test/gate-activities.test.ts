@@ -55,17 +55,21 @@ describe("recordGateDecision", () => {
 
   it("refuses a decision whose author the directory does not know", async () => {
     const fakes = makeFakes({ verifyMembership: false });
-    await expect(recordGateDecision(fakes.deps, "PAY-101", decision())).rejects.toMatchObject({
-      type: "GateAuthorityRejected",
-      nonRetryable: true,
-    });
+    // Refused, not thrown: the claim is wrong, the run is not. The workflow
+    // keeps the gate open on this verdict instead of dying.
+    const verdict = await recordGateDecision(fakes.deps, "PAY-101", decision());
+    expect(verdict.accepted).toBe(false);
+    expect(fakes.deps.gates.closed ?? []).toEqual([]);
   });
 
   it("refuses a group that does not own the gate, even if the person exists", async () => {
     const fakes = makeFakes();
-    await expect(
-      recordGateDecision(fakes.deps, "PAY-101", decision({ actorGroup: "product-owners" })),
-    ).rejects.toMatchObject({ type: "GateAuthorityRejected" });
+    const verdict = await recordGateDecision(
+      fakes.deps,
+      "PAY-101",
+      decision({ actorGroup: "product-owners" }),
+    );
+    expect(verdict.accepted).toBe(false);
   });
 
   it("is idempotent: a retry does not fork the audit chain", async () => {

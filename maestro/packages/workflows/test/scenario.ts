@@ -88,6 +88,8 @@ export interface ScenarioOptions {
   risk?: RiskTier;
   mode?: TicketWorkflowInput["mode"];
   gate?: (step: StepId, visit: number) => GatePolicy;
+  /** Lets a scenario make the directory refuse a decision (gate stays open). */
+  directory?: (decision: GateDecision) => { accepted: true } | { accepted: false; reason: string };
   /**
    * The build-validation results the CI gate will be given, in order. The last
    * one is repeated once the queue runs dry, which is what a real pipeline does
@@ -175,6 +177,9 @@ export function makeActivities(
     },
     recordGateDecision: async (_ticket, decision) => {
       scenario.decisions.push(decision);
+      // The directory accepts by default; a scenario can refuse to exercise the
+      // "gate stays open, run survives" path.
+      return scenario.options.directory?.(decision) ?? { accepted: true as const };
     },
     escalateGate: async (_ticket, step, waitingHours) => {
       scenario.escalations.push({ step, hours: waitingHours });

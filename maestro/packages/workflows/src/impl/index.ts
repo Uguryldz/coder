@@ -1,0 +1,59 @@
+import type { MaestroActivities } from "../activities.js";
+import * as analysis from "./analysis.js";
+import type { ActivityDeps } from "./deps.js";
+import * as delivery from "./delivery.js";
+import * as engineering from "./engineering.js";
+import * as gate from "./gate.js";
+import * as intake from "./intake.js";
+import * as scan from "./scan.js";
+
+export * from "./deps.js";
+export { InMemoryIdempotency } from "./idempotency.js";
+export { LLM_BLOCKED, QUOTA_WAIT, handOver, quotaWait, resolveOutcome } from "./outcome.js";
+export { AI_ASSIST_REQUIRED } from "./analysis.js";
+export { scannerErrorResult } from "./scan.js";
+export { MIN_SUGGESTION_CONFIDENCE, pickRule, ruleApplies } from "./intake.js";
+
+/**
+ * The activity set, bound to one set of collaborators.
+ *
+ * Every implementation takes `deps` as its first argument and is otherwise a
+ * free function, so each one is callable from a test without building a class
+ * — and the binding below is the only place that knows the interface's shape,
+ * so `MaestroActivities` gaining a method breaks compilation here.
+ */
+export function createActivities(deps: ActivityDeps): MaestroActivities {
+  return {
+    resolveWorkMode: (ticket) => intake.resolveWorkMode(deps, ticket),
+    matchApplication: (ticket) => intake.matchApplication(deps, ticket),
+    runIntake: (ticket) => intake.runIntake(deps, ticket),
+    askClarification: (ticket, question) => intake.askClarification(deps, ticket, question),
+
+    discoverRepo: (ticket, appId) => analysis.discoverRepo(deps, ticket, appId),
+    writeAnalysis: (ticket, appId) => analysis.writeAnalysis(deps, ticket, appId),
+    publishAnalysis: (ticket, doc) => analysis.publishAnalysis(deps, ticket, doc),
+    fanOutChildren: (ticket, doc) => analysis.fanOutChildren(deps, ticket, doc),
+
+    openGate: (ticket, step, ownerGroup) => gate.openGate(deps, ticket, step, ownerGroup),
+    recordGateDecision: (ticket, decision) => gate.recordGateDecision(deps, ticket, decision),
+    escalateGate: (ticket, step, waitingHours) => gate.escalateGate(deps, ticket, step, waitingHours),
+
+    runEngineering: (ticket, resumeToken, task) =>
+      engineering.runEngineering(deps, ticket, resumeToken, task),
+    runScans: (ticket) => scan.runScans(deps, ticket),
+    reviewDiff: (ticket) => engineering.reviewDiff(deps, ticket),
+    designTests: (ticket) => engineering.designTests(deps, ticket),
+    reviewTests: (ticket) => engineering.reviewTests(deps, ticket),
+    runTests: (ticket) => engineering.runTests(deps, ticket),
+
+    openPullRequest: (ticket) => delivery.openPullRequest(deps, ticket),
+    activatePullRequest: (ticket, pr) => delivery.activatePullRequest(deps, ticket, pr),
+    verifyCiOrigin: (ticket, signal) => delivery.verifyCiOrigin(deps, ticket, signal),
+    mergePullRequest: (ticket, pr) => delivery.mergePullRequest(deps, ticket, pr),
+    buildEvidencePackage: (ticket) => delivery.buildEvidencePackage(deps, ticket),
+    closeTicket: (ticket) => delivery.closeTicket(deps, ticket),
+
+    journal: (ticket, kind, title, detail) => gate.journal(deps, ticket, kind, title, detail),
+    handOverToHuman: (ticket, reason) => gate.handOverToHuman(deps, ticket, reason),
+  };
+}

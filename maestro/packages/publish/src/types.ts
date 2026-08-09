@@ -8,6 +8,7 @@ import type {
   TicketKey,
 } from "@maestro/contracts";
 import type { ScmPort, SecretPort, WorkPort } from "@maestro/ports";
+import type { PublishPiiDeps } from "./pii.js";
 
 /**
  * Message-catalog lookup (M104). Structurally identical to `@maestro/config`'s
@@ -61,6 +62,14 @@ export interface RepoWorkspace {
     content: string;
     message: string;
   }): Promise<{ sha: string }>;
+  /**
+   * Sha of the commit that last touched `path` on `branch`, when the workspace
+   * can answer it. Needed only on the recovery path: bookkeeping lost while
+   * the repository already holds these exact bytes. Without it the driver has
+   * nothing true to put in the receipt and refuses rather than receipting a
+   * file path as if it were a commit (F8).
+   */
+  headSha?(branch: string, path: string): Promise<string | null>;
 }
 
 /**
@@ -72,6 +81,24 @@ export interface RepoWorkspace {
 export interface PublishRunContext {
   ticketKey: TicketKey;
   app?: ApplicationRecord;
+  /**
+   * The ticket's declared data class (M18/M63). `unknown` on purpose: it comes
+   * from a Jira field, so an absent or unrecognised value must land on the
+   * strictest masking profile rather than throw.
+   */
+  dataClass?: unknown;
+  /**
+   * The exact values this run's documents must keep in clear despite masking.
+   * Two things belong here and nothing else (RAPOR §4.9):
+   *
+   * 1. the corporate addresses of the people who signed the gates — the
+   *    evidence summary exists to say WHO approved (M82), and `[EMAIL_1.…]`
+   *    would destroy the only fact it is kept for;
+   * 2. the pinned template version (M83). `analysis-template@1.4.0` matches
+   *    the email detector, so an unlisted pin is masked; the redactor refuses
+   *    the publish in that case rather than shipping a corrupted pin.
+   */
+  piiExemptions?: readonly string[];
 }
 
 export type RunContextResolver = (runId: RunId) => Promise<PublishRunContext>;
@@ -81,6 +108,8 @@ export interface PublishDeps {
   translate: Translate;
   runContext: RunContextResolver;
   state: PublishStateStore;
+  /** PII gate (M20/M82). Not optional — see `src/pii.ts`. */
+  pii: PublishPiiDeps;
   work?: WorkPort;
   scm?: ScmPort;
   workspace?: RepoWorkspace;

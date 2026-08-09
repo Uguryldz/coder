@@ -25,13 +25,24 @@ export const RepoDocsPublishConfig = z
   .strict();
 export type RepoDocsPublishConfig = z.infer<typeof RepoDocsPublishConfig>;
 
+const PrState = z.enum(["draft", "active", "completed", "abandoned"]);
+
+/**
+ * Remembered delivery state. `prState` and `revision` were added because the
+ * branch alone is not enough: once a PR is merged the branch is normally
+ * deleted, and a driver that only remembers its name commits the next revision
+ * to a ref nobody can see.
+ */
 const RepoDocsState = z.object({
   branch: z.string().min(1),
   path: z.string().min(1),
   hash: z.string().min(1),
   sha: z.string().min(1).nullable(),
   prId: z.number().int().positive().optional(),
+  prState: PrState.optional(),
+  revision: z.number().int().nonnegative().default(0),
 });
+type RepoDocsState = z.infer<typeof RepoDocsState>;
 
 export interface RepoDocsPublisherDeps {
   scm: ScmPort;
@@ -76,56 +87,111 @@ export class RepoDocsPublisher implements TargetPublisher {
     const stateKey = `publish:repo-docs:${req.runId}:${req.doc}`;
     const previous = await this.readState(stateKey);
     const hash = contentHash(markdownSource);
-    if (previous && previous.hash === hash && previous.sha) {
+    // "Already published" means committed AND delivered: a run that died
+    // between the commit and the PR left the document on a branch nobody was
+    // asked to review, and an early return here would leave it there forever.
+    const delivered = this.config.openPullRequest ? previous?.prId !== undefined : true;
+    if (previous && previous.hash === hash && previous.sha && delivered) {
       return { target: this.target, ref: previous.sha };
     }
 
     const path = `${this.config.docsDir}/${ticketKey}/${req.doc}.md`;
-    const branch = previous?.branch ?? `${this.config.branchPrefix}/${ticketKey}-${req.doc}`;
     const repo = await this.deps.scm.resolveRepo(app);
+    const cycle = await this.resolveCycle(repo, ticketKey, req.doc, previous);
+    const { branch } = cycle;
+    const title = `docs(maestro): ${req.doc.replace(/_/g, " ")} for ${ticketKey}`;
+    // Every side effect is followed immediately by a state write. A publish
+    // interrupted between the commit and the PR used to leave no trace at all:
+    // the next attempt found identical bytes, could not name the commit and
+    // opened a SECOND pull request for the same document (F8).
+    const remember = (patch: Partial<RepoDocsState>): Promise<void> =>
+      this.deps.state.set(stateKey, JSON.stringify({ ...cycle.record, path, hash, ...patch }));
 
     const existing = await this.deps.workspace.readFile(branch, path);
-    if (existing === null && !previous) {
+    if (existing === null && cycle.fresh) {
       await this.deps.scm.createBranch(repo, branch, this.config.baseBranch);
+      await remember({});
     }
 
-    let sha = previous?.sha ?? null;
+    let sha = cycle.record.sha;
     if (existing !== markdownSource) {
-      const committed = await this.deps.workspace.commitFile({
-        branch,
-        path,
-        content: markdownSource,
-        message: `docs(maestro): ${req.doc.replace(/_/g, " ")} for ${ticketKey}`,
-      });
+      const committed = await this.deps.workspace.commitFile({ branch, path, content: markdownSource, message: title });
       if (typeof committed?.sha !== "string" || committed.sha.trim().length === 0) {
         throw new PublishConfigError("RepoWorkspace.commitFile returned an empty commit sha");
       }
       sha = committed.sha;
+      cycle.record.sha = sha;
+      await remember({});
     }
 
-    let prId = previous?.prId;
-    if (this.config.openPullRequest && prId === undefined) {
+    if (this.config.openPullRequest && cycle.record.prId === undefined) {
       const opened = await this.deps.scm.openPr(repo, {
         sourceBranch: branch,
         targetBranch: this.config.baseBranch,
-        title: `docs(maestro): ${req.doc.replace(/_/g, " ")} for ${ticketKey}`,
+        title,
         description: `Automated document publication for ${ticketKey} (run ${req.runId}). File: ${path}`,
         draft: false,
       });
-      prId = opened.prId;
+      cycle.record.prId = opened.prId;
+      cycle.record.prState = "active";
+      await remember({});
     }
 
-    await this.deps.state.set(
-      stateKey,
-      JSON.stringify({ branch, path, hash, sha, ...(prId === undefined ? {} : { prId }) }),
-    );
-    // A run whose bookkeeping was lost re-publishes identical bytes: there is
-    // no commit to point at, so the receipt carries the file path instead
-    // (both are legal `PublishReceipt.ref` values).
-    return { target: this.target, ref: sha ?? path };
+    return { target: this.target, ref: sha ?? (await this.recoverSha(branch, path)) };
   }
 
-  private async readState(key: string): Promise<z.infer<typeof RepoDocsState> | null> {
+  /**
+   * Which branch this publication belongs on.
+   *
+   * The M54 rejection loop is routine: analysis published → PR merged → branch
+   * deleted → analysis rejected → revised analysis published. The driver used
+   * to reuse the remembered branch because it existed once and to skip the PR
+   * because an id was remembered, so the revision was committed to a dangling
+   * ref and the receipt still said "published". `ScmPort` exposes no branch
+   * lookup (see RAPOR §6.2b), so the PR is the witness: a completed or
+   * abandoned PR ends the cycle and the next revision gets its own branch.
+   */
+  private async resolveCycle(
+    repo: Awaited<ReturnType<ScmPort["resolveRepo"]>>,
+    ticketKey: string,
+    doc: string,
+    previous: RepoDocsState | null,
+  ): Promise<{ branch: string; fresh: boolean; record: RepoDocsState }> {
+    const base = `${this.config.branchPrefix}/${ticketKey}-${doc}`;
+    const start = (revision: number): { branch: string; fresh: boolean; record: RepoDocsState } => {
+      const branch = revision === 0 ? base : `${base}-r${String(revision)}`;
+      return { branch, fresh: true, record: { branch, path: "", hash: "", sha: null, revision } };
+    };
+    if (!previous) return start(0);
+    if (previous.prId === undefined) {
+      return { branch: previous.branch, fresh: false, record: { ...previous } };
+    }
+
+    const status = await this.deps.scm.getPrStatus(repo, previous.prId);
+    if (status.state === "active" || status.state === "draft") {
+      return { branch: previous.branch, fresh: false, record: { ...previous, prState: status.state } };
+    }
+    return start(previous.revision + 1);
+  }
+
+  /**
+   * Bookkeeping lost while the repository already holds these exact bytes.
+   * The receipt used to carry the file path here, which reads as a commit ref
+   * in an evidence package and is not one; a workspace that cannot name the
+   * commit must fail loudly instead.
+   */
+  private async recoverSha(branch: string, path: string): Promise<string> {
+    const sha = (await this.deps.workspace.headSha?.(branch, path)) ?? null;
+    if (sha === null || sha.trim().length === 0) {
+      throw new PublishConfigError(
+        `${path} on ${branch} already holds these bytes but its commit sha is unknown ` +
+          `(no RepoWorkspace.headSha) — refusing to receipt a file path as a commit`,
+      );
+    }
+    return sha;
+  }
+
+  private async readState(key: string): Promise<RepoDocsState | null> {
     const raw = await this.deps.state.get(key);
     if (raw === null) return null;
     try {

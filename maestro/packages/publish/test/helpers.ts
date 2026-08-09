@@ -5,8 +5,10 @@ import type {
   PublishRequest,
   TicketKey,
 } from "@maestro/contracts";
+import { defaultPiiPolicy } from "@maestro/pii";
 import type { ScmPort, SecretPort, WorkPort } from "@maestro/ports";
 import type { ReleaseNoteDraft } from "../src/documents.js";
+import type { PublishPiiDeps } from "../src/pii.js";
 import type { FetchLike, PublishRunContext, RepoWorkspace, Translate } from "../src/types.js";
 
 export const RUN_ID = "run-20260808-0001";
@@ -27,8 +29,24 @@ export function fakeTranslate(recorded?: string[]): Translate {
   };
 }
 
+/**
+ * What a composition root exempts from masking for this run: the M83 template
+ * pins and the approver whose signature the evidence summary records.
+ */
+export const EXEMPTIONS = [
+  "analysis-template@1.4.0",
+  "release-note-template@1.0.0",
+  "tl.yilmaz@ugurbank.corp",
+] as const;
+
 export function runContext(context: Partial<PublishRunContext> = {}) {
-  return () => Promise.resolve({ ticketKey: TICKET, ...context } satisfies PublishRunContext);
+  return () =>
+    Promise.resolve({ ticketKey: TICKET, piiExemptions: EXEMPTIONS, ...context } satisfies PublishRunContext);
+}
+
+/** The install-time default policy: every detector on, strictest fallback. */
+export function piiDeps(overrides: Partial<PublishPiiDeps> = {}): PublishPiiDeps {
+  return { policy: defaultPiiPolicy(), ...overrides };
 }
 
 export const APP: ApplicationRecord = {
@@ -124,8 +142,13 @@ export class FakeWorkPort {
   }
 }
 
+export type FakePrState = "draft" | "active" | "completed" | "abandoned";
+
 export class FakeScmPort {
   readonly calls: Array<{ method: string; args: unknown[] }> = [];
+  readonly branches = new Set<string>();
+  /** PR id → state; a merged (`completed`) PR is how a branch dies. */
+  readonly prStates = new Map<number, FakePrState>();
   private nextPr = 100;
 
   resolveRepo(app: ApplicationRecord) {
@@ -135,12 +158,28 @@ export class FakeScmPort {
 
   createBranch(repo: unknown, name: string, fromRef: string): Promise<void> {
     this.calls.push({ method: "createBranch", args: [repo, name, fromRef] });
+    if (this.branches.has(name)) return Promise.reject(new Error(`branch ${name} already exists`));
+    this.branches.add(name);
     return Promise.resolve();
   }
 
   openPr(repo: unknown, args: unknown): Promise<{ prId: number }> {
     this.calls.push({ method: "openPr", args: [repo, args] });
-    return Promise.resolve({ prId: this.nextPr++ });
+    const prId = this.nextPr++;
+    this.prStates.set(prId, "active");
+    return Promise.resolve({ prId });
+  }
+
+  getPrStatus(repo: unknown, prId: number): Promise<{ prId: number; state: FakePrState; mergeSha: string | null }> {
+    this.calls.push({ method: "getPrStatus", args: [repo, prId] });
+    const state = this.prStates.get(prId) ?? "active";
+    return Promise.resolve({ prId, state, mergeSha: state === "completed" ? "f".repeat(40) : null });
+  }
+
+  /** Merge the PR and delete its branch, exactly as a real SCM would. */
+  merge(prId: number, branch: string): void {
+    this.prStates.set(prId, "completed");
+    this.branches.delete(branch);
   }
 
   asPort(): ScmPort {
@@ -150,6 +189,7 @@ export class FakeScmPort {
 
 export class FakeWorkspace implements RepoWorkspace {
   readonly files = new Map<string, string>();
+  readonly shas = new Map<string, string>();
   readonly commits: Array<{ branch: string; path: string; message: string }> = [];
   private nextSha = 1;
 
@@ -158,9 +198,15 @@ export class FakeWorkspace implements RepoWorkspace {
   }
 
   commitFile(args: { branch: string; path: string; content: string; message: string }): Promise<{ sha: string }> {
+    const sha = `${String(this.nextSha++).padStart(2, "0")}${"c0ffee".repeat(6)}`;
     this.files.set(`${args.branch}:${args.path}`, args.content);
+    this.shas.set(`${args.branch}:${args.path}`, sha);
     this.commits.push({ branch: args.branch, path: args.path, message: args.message });
-    return Promise.resolve({ sha: `${String(this.nextSha++).padStart(2, "0")}${"c0ffee".repeat(6)}` });
+    return Promise.resolve({ sha });
+  }
+
+  headSha(branch: string, path: string): Promise<string | null> {
+    return Promise.resolve(this.shas.get(`${branch}:${path}`) ?? null);
   }
 }
 

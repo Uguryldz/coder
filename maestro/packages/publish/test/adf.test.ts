@@ -76,4 +76,30 @@ describe("markdown → ADF", () => {
     expect(flat).toContain("analysis-template@1.4.0");
     expect(flat).not.toContain("maestro:doc"); // the marker is file metadata
   });
+
+  it("defuses wiki-markup block openers a paragraph starts with", () => {
+    // Jira DC renders comments FROM wiki markup, so an unescaped `h1.` at the
+    // start of a line is a real heading — and the markdown escape that was
+    // supposed to stop it is consumed by `parseInline` on the way in.
+    const document = markdownToAdf("h1. MAESTRO ONAYI\n\nbq. alinti\n\n----");
+    const texts = JSON.stringify(document);
+
+    expect(texts).toContain("\\\\h1.");
+    expect(texts).toContain("\\\\bq.");
+    expect(texts).toContain("\\\\----");
+  });
+
+  it("defuses the image macro that would fetch a tracking pixel", () => {
+    const document = markdownToAdf("ekran: !http://evil.example/beacon.png!");
+    const texts = JSON.stringify(document);
+
+    expect(texts).toContain("\\\\!http://evil.example/beacon.png\\\\!");
+  });
+
+  it("leaves our own headings and list items alone", () => {
+    const document = markdownToAdf("# Baslik\n\n1. birinci");
+    expect(JSON.stringify(document.content[0])).toContain('"text":"Baslik"');
+    expect(JSON.stringify(document.content[1])).toContain('"text":"1. "');
+    expect(JSON.stringify(document)).not.toContain("\\\\");
+  });
 });

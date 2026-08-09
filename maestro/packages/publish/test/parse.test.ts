@@ -57,6 +57,28 @@ describe("markdown blocks", () => {
     expect(blocks).toEqual([{ kind: "paragraph", inline: [{ kind: "text", text: "metin" }] }]);
   });
 
+  it("ends an UNTERMINATED comment at its own line instead of swallowing the document", () => {
+    // The whole document used to disappear behind one stray `<!--`, and the
+    // drivers then published an empty ADF / an empty page under a receipt.
+    const blocks = parseMarkdown("<!-- kapanmamis\n\n# Baslik\n\nmetin");
+    expect(blocks).toEqual([
+      { kind: "heading", level: 1, inline: [{ kind: "text", text: "Baslik" }] },
+      { kind: "paragraph", inline: [{ kind: "text", text: "metin" }] },
+    ]);
+  });
+
+  it("drops characters XML cannot carry and controls that reverse what a reader sees", () => {
+    // Model output quotes logs and terminal captures as a matter of routine:
+    // a NUL and an ANSI colour code are permanent Confluence 400s, and U+202E
+    // reverses the DISPLAY order of a risk verdict on a signed gate.
+    const raw = "risk \u0000 d\u001b[31musuk\u202e ters\u200b";
+    const blocks = parseMarkdown(raw);
+    const text = blocks[0]?.kind === "paragraph" ? blocks[0].inline.map((n) => n.text).join("") : "";
+
+    expect(text).toBe("risk  d[31musuk ters");
+    for (const forbidden of ["\u0000", "\u001b", "\u202e", "\u200b"]) expect(text).not.toContain(forbidden);
+  });
+
   it("degrades syntax it does not model to plain text instead of dropping it", () => {
     const blocks = parseMarkdown("> alinti\n\n| a | b |");
     expect(blocks.map((b) => b.kind)).toEqual(["paragraph", "paragraph"]);

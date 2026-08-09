@@ -12,6 +12,7 @@ import {
   fakeFetch,
   fakeSecrets,
   fakeTranslate,
+  piiDeps,
   request,
   runContext,
 } from "./helpers.js";
@@ -34,6 +35,7 @@ function deps(overrides: Partial<PublishDeps> = {}): PublishDeps {
     translate: fakeTranslate(),
     runContext: runContext({ app: APP }),
     state: new InMemoryPublishState(),
+    pii: piiDeps(),
     work: new FakeWorkPort().asPort(),
     scm: new FakeScmPort().asPort(),
     workspace: new FakeWorkspace(),
@@ -62,14 +64,20 @@ describe("publish port fan-out (M47)", () => {
     expect(receipts).toHaveLength(1);
   });
 
-  it("refuses docx and pdf loudly — Aşama 2, never a silently dropped target (M103)", async () => {
-    const port = createPublishPort(["jira", "docx", "pdf"], {}, deps());
+  it("refuses docx and pdf at COMPOSITION time — before any target has a side effect (M103)", () => {
+    // The old behaviour let `jira+pdf` compose, post the Jira comment and only
+    // then fail: side effects done, no receipt, no way to tell what landed.
+    expect(() => createPublishPort(["docx"], {}, deps())).toThrow(CapabilityNotSupportedError);
+    expect(() => createPublishPort(["pdf"], {}, deps())).toThrow(CapabilityNotSupportedError);
+    expect(() => createPublishPort(["jira", "pdf"], {}, deps())).toThrow(CapabilityNotSupportedError);
+  });
 
-    await expect(port.publish(request({ targets: ["docx"] }), DOC)).rejects.toThrow(CapabilityNotSupportedError);
-    await expect(port.publish(request({ targets: ["pdf"] }), DOC)).rejects.toThrow(CapabilityNotSupportedError);
-    await expect(port.publish(request({ targets: ["jira", "docx"] }), DOC)).rejects.toThrow(
+  it("does not touch a target when the set contains an unsupported one", () => {
+    const work = new FakeWorkPort();
+    expect(() => createPublishPort(["jira", "docx"], {}, deps({ work: work.asPort() }))).toThrow(
       CapabilityNotSupportedError,
     );
+    expect(work.calls).toHaveLength(0);
   });
 
   it("refuses a target this instance was not built for", async () => {

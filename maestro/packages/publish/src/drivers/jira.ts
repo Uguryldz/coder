@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { PublishReceipt, PublishRequest, PublishTarget } from "@maestro/contracts";
 import type { WorkPort } from "@maestro/ports";
 import { markdownToAdf } from "../adf.js";
-import { PublishConfigError } from "../errors.js";
+import { PublishConfigError, PublishRenderError } from "../errors.js";
 import { contentHash } from "../md.js";
 import type { PublishStateStore, RunContextResolver, TargetPublisher } from "../types.js";
 
@@ -42,6 +42,12 @@ export class JiraPublisher implements TargetPublisher {
     }
 
     const body = markdownToAdf(markdownSource);
+    if (body.content.length === 0) {
+      // `{ content: [] }` is not a valid ADF document and Jira renders it as an
+      // empty comment. The source was not blank — parsing consumed all of it —
+      // so this must fail rather than post a blank comment under a receipt.
+      throw new PublishRenderError(`document ${req.doc} rendered to an empty ADF document`);
+    }
     if (previous) {
       await this.deps.work.updateComment(ticketKey, previous.commentId, body);
       await this.deps.state.set(stateKey, JSON.stringify({ commentId: previous.commentId, hash }));

@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { ConfluencePublisher, ConfluencePublishConfig } from "../src/drivers/confluence.js";
-import { PublishConfigError, PublishHttpError, PublishResponseError } from "../src/errors.js";
+import { PublishConfigError, PublishHttpError, PublishRenderError, PublishResponseError } from "../src/errors.js";
 import { InMemoryPublishState, type Translate } from "../src/types.js";
-import { fakeFetch, fakeSecrets, fakeTranslate, request, runContext, type RecordedRequest } from "./helpers.js";
+import {
+  TICKET,
+  fakeFetch,
+  fakeSecrets,
+  fakeTranslate,
+  request,
+  runContext,
+  type RecordedRequest,
+} from "./helpers.js";
 
 const CONFIG = ConfluencePublishConfig.parse({
   baseUrl: "https://confluence.test/confluence",
@@ -217,5 +225,96 @@ describe("confluence publish driver (M47)", () => {
   it("validates its own configuration", () => {
     expect(() => ConfluencePublishConfig.parse({ baseUrl: "not-a-url", spaceKey: "M", tokenRef: "x" })).toThrow();
     expect(() => ConfluencePublishConfig.parse({ ...CONFIG, spaceKey: "BAD KEY" })).toThrow();
+  });
+
+  // The PAT travels in an Authorization header, so the scheme decides whether
+  // it travels in clear text; `z.url()` alone waves `http:`/`ftp:` through.
+  it("refuses a base URL that would carry the PAT in clear text", () => {
+    const base = { spaceKey: "MAESTRO", tokenRef: "secret/pat" };
+    expect(() => ConfluencePublishConfig.parse({ ...base, baseUrl: "http://confluence.test" })).toThrow();
+    expect(() => ConfluencePublishConfig.parse({ ...base, baseUrl: "ftp://confluence.test" })).toThrow();
+    expect(() => ConfluencePublishConfig.parse({ ...base, baseUrl: "javascript:alert(1)" })).toThrow();
+    // ftp/file/javascript stay refused even with the development escape hatch.
+    expect(() =>
+      ConfluencePublishConfig.parse({ ...base, baseUrl: "file:///etc/passwd", allowInsecureHttp: true }),
+    ).toThrow();
+    expect(
+      ConfluencePublishConfig.parse({ ...base, baseUrl: "http://localhost:8090", allowInsecureHttp: true }).baseUrl,
+    ).toBe("http://localhost:8090");
+  });
+
+  it("fails the publish when the PUT lands on a page that is gone", async () => {
+    // 404 used to be translated into `null` for EVERY method, so `update()`
+    // saw no exception and the run got a "published" receipt for a page
+    // Confluence never wrote — a forged line in the evidence package.
+    const { driver, calls } = driverWith((req) =>
+      req.method === "GET"
+        ? { status: 200, body: { results: [{ id: "555", version: { number: 1 }, body: { storage: { value: "" } } }] } }
+        : { status: 404 },
+    );
+
+    await expect(driver.publish(request({ targets: ["confluence"] }), DOC)).rejects.toThrow(PublishHttpError);
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1);
+  });
+
+  it("keeps ONE live page per ticket — the state key is scoped like the title", async () => {
+    const { handler, store } = server();
+    const { fetchImpl } = fakeFetch(handler);
+    const state = new InMemoryPublishState();
+    const build = () =>
+      new ConfluencePublisher(CONFIG, {
+        secrets: fakeSecrets(),
+        state,
+        runContext: runContext(),
+        translate: fakeTranslate(),
+        fetchImpl,
+        sleep: () => Promise.resolve(),
+      });
+
+    const first = await build().publish(request({ targets: ["confluence"] }), DOC);
+    // A SECOND run of the same ticket (M54 rejection loop): the page it must
+    // update is the one the first run created.
+    const second = await build().publish(request({ runId: "run-20260808-0002", targets: ["confluence"] }), `${DOC} v2`);
+
+    expect(second.ref).toBe(first.ref);
+    expect(store.size).toBe(1);
+    expect(await state.get(`publish:confluence:${TICKET}:analysis`)).toBe(first.ref);
+  });
+
+  it("adopts the existing page when Confluence says the title is taken (index lag)", async () => {
+    const { handler, store } = server();
+    let created = false;
+    const { driver, calls } = driverWith((req) => {
+      if (req.method === "POST" && !created) {
+        // The page exists but the search index has not caught up yet.
+        created = true;
+        store.set("610", {
+          id: "610",
+          title: "tr:publish.title.analysis(ticket=UGURPAY-123)",
+          version: 1,
+          value: "<p>eski</p>",
+        });
+        return { status: 400, body: { message: "A page with this title already exists" } };
+      }
+      return handler(req);
+    });
+
+    const receipt = await driver.publish(request({ targets: ["confluence"] }), DOC);
+
+    expect(receipt.ref).toBe("610");
+    expect(store.size).toBe(1); // no duplicate page
+    expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+  });
+
+  it("refuses a document that renders to an empty page", async () => {
+    const { handler } = server();
+    const { driver, calls } = driverWith(handler);
+
+    // An unterminated comment used to swallow the document and publish a page
+    // with no content at all, under a success receipt.
+    await expect(driver.publish(request({ targets: ["confluence"] }), "<!-- kapanmamis yorum")).rejects.toThrow(
+      PublishRenderError,
+    );
+    expect(calls).toHaveLength(0);
   });
 });

@@ -56,9 +56,36 @@ export class Markdown {
 
 const INLINE_SPECIALS = /[\\`*_[\]<>|]/g;
 
+/**
+ * Characters no published document may carry, filtered in ONE place because
+ * every escape path below and `parseMarkdown` above route through it:
+ *
+ * 1. `U+0000-08, 0B, 0C, 0E-1F` are illegal in XML 1.0 in every form — CDATA
+ *    included. Analysis text is model output and quotes logs and test runs, so
+ *    a NUL or an ANSI colour code (ESC[31m) reaches the renderer as a
+ *    matter of routine; Confluence answers 400 permanently and, because one
+ *    failing target fails the whole publish, jira and repo-docs die with it.
+ * 2. Bidi and invisible controls (`U+202E` and friends) reverse the DISPLAY
+ *    order of text without changing its bytes: "RİSK DÜŞÜK" can be made to
+ *    read backwards on a signed approval gate. They are dropped, not escaped —
+ *    no legitimate document in this pipeline needs them.
+ */
+const FORBIDDEN_CHARS = new RegExp(
+  "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F" + // illegal in XML 1.0, CDATA included
+    "\\u200B-\\u200F\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]", // bidi / invisible
+  "g",
+);
+
+export function stripUnsafeChars(text: string): string {
+  return text.replace(FORBIDDEN_CHARS, "");
+}
+
 /** Escape markdown/HTML specials inside a single line of foreign text. */
 export function escapeInline(text: string): string {
-  return text.replace(/\r\n?/g, " ").replace(/\n/g, " ").replace(INLINE_SPECIALS, (c) => `\\${c}`);
+  return stripUnsafeChars(text)
+    .replace(/\r\n?/g, " ")
+    .replace(/\n/g, " ")
+    .replace(INLINE_SPECIALS, (c) => `\\${c}`);
 }
 
 /**
@@ -67,7 +94,7 @@ export function escapeInline(text: string): string {
  * section, a list or a code block of its own.
  */
 export function escapeBlock(text: string): string {
-  return text
+  return stripUnsafeChars(text)
     .split(/\r\n?|\n/)
     .map((line) => {
       const escaped = line.replace(INLINE_SPECIALS, (c) => `\\${c}`);

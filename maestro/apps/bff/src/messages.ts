@@ -1,0 +1,109 @@
+import { t } from "@maestro/config";
+import { STEP_META, type StepId } from "@maestro/contracts";
+import type { MessageCatalog } from "./deps.js";
+
+/**
+ * Every sentence this service writes into Jira comes from the catalog (M104).
+ * Nothing here is a literal, which is also why adding Turkish-plus-English is
+ * an orchestrator edit to `packages/config/locales`, not a change to this file.
+ */
+export const BFF_MESSAGE_KEYS = {
+  gateApproved: "gate.approved",
+  gateRejected: "gate.rejected",
+  gateMembershipFailed: "gate.membership_failed",
+  gateSodFailed: "gate.sod_failed",
+  killSwitch: "notify.kill_switch",
+  commandAccepted: "command.accepted",
+  commandNoRun: "command.no_run",
+  commandNoOpenGate: "command.no_open_gate",
+  commandRunStatus: "command.run_status",
+  commandUnsupported: "command.unsupported",
+  pendingAssignment: "match.pending_assignment",
+} as const;
+
+export type BffMessageKey = (typeof BFF_MESSAGE_KEYS)[keyof typeof BFF_MESSAGE_KEYS];
+
+/** Step titles are quoted back to the user in every gate reply (M104). */
+export function stepTitleKey(step: StepId): string {
+  return STEP_META[step].titleKey;
+}
+
+const STEP_TITLE_KEYS: readonly string[] = Object.values(STEP_META).map((meta) => meta.titleKey);
+
+/**
+ * Keys the work driver hands back when a comment looks like a command but is
+ * not one it can honour (M105). The BFF renders them, so it is the BFF that
+ * must be able to — checking them at boot pins the driver↔catalog contract.
+ */
+export const COMMAND_DIAGNOSIS_KEYS: readonly string[] = [
+  "command.unknown",
+  "command.reject_needs_reason",
+  "command.takes_no_argument",
+  "command.invalid_app_id",
+  "command.invalid_mode",
+];
+
+/** Everything this service must be able to render before it accepts traffic. */
+export const REQUIRED_MESSAGE_KEYS: readonly string[] = [
+  ...Object.values(BFF_MESSAGE_KEYS),
+  ...STEP_TITLE_KEYS,
+  ...COMMAND_DIAGNOSIS_KEYS,
+];
+
+/**
+ * Keys this package needs that the shipped catalog does not carry yet; the
+ * Turkish and English wording is in `apps/bff/RAPOR.md` for the orchestrator to
+ * add. Listing them here is what lets `assertCatalog` stay fail-closed about
+ * everything else while the request is outstanding — and what makes the
+ * omission impossible to forget, because the boot check names them.
+ */
+export const REQUESTED_MESSAGE_KEYS: readonly string[] = [
+  BFF_MESSAGE_KEYS.commandAccepted,
+  BFF_MESSAGE_KEYS.commandNoRun,
+  BFF_MESSAGE_KEYS.commandNoOpenGate,
+  BFF_MESSAGE_KEYS.commandRunStatus,
+  BFF_MESSAGE_KEYS.commandUnsupported,
+];
+
+/** The catalog shipped with `@maestro/config`. */
+export const defaultCatalog: MessageCatalog = {
+  t: (locale, key, params) => t(locale, key, params ?? {}),
+};
+
+export class MissingCatalogKeysError extends Error {
+  constructor(readonly keys: readonly string[]) {
+    super(
+      `message catalog is missing ${keys.length} key(s) this service writes to users: ${keys.join(", ")} — see apps/bff/RAPOR.md for the tr+en wording`,
+    );
+    this.name = "MissingCatalogKeysError";
+  }
+}
+
+/** Keys the catalog cannot resolve, in declaration order. */
+export function missingKeys(
+  catalog: MessageCatalog,
+  locale: Parameters<MessageCatalog["t"]>[0],
+  keys: readonly string[] = REQUIRED_MESSAGE_KEYS,
+): string[] {
+  return keys.filter((key) => {
+    try {
+      catalog.t(locale, key, {});
+      return false;
+    } catch {
+      return true;
+    }
+  });
+}
+
+/**
+ * Boot-time gate (M6 fail-closed): a server that cannot render the sentence it
+ * owes a user must not accept traffic. Silently posting a raw key into a Jira
+ * ticket would be worse than refusing to start, because nobody would notice.
+ */
+export function assertCatalog(
+  catalog: MessageCatalog,
+  locale: Parameters<MessageCatalog["t"]>[0],
+): void {
+  const missing = missingKeys(catalog, locale);
+  if (missing.length > 0) throw new MissingCatalogKeysError(missing);
+}

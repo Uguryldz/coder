@@ -12,6 +12,20 @@ import type {
 } from "@maestro/contracts";
 import type { CiPort, WorkPort } from "@maestro/ports";
 import type { RunGateway } from "./gateway.js";
+import type {
+  AppRegistry,
+  AuditReader,
+  CostReader,
+  EvidenceReader,
+  GateBoard,
+  HealthReader,
+  JournalReader,
+  KnowledgeIndex,
+  QuotaReader,
+  RunCatalog,
+  RunnerFleet,
+  ScanReader,
+} from "./read-models.js";
 
 /**
  * Everything the BFF needs from the outside world, as interfaces. The
@@ -239,9 +253,32 @@ export interface BffDeps {
   gates: GateDirectory;
   params: ParamStore;
   killSwitch: KillSwitchStore;
+  /**
+   * Studio's read side (M7). Grouped rather than spread across `BffDeps` so it
+   * is obvious at a glance which dependencies exist to ANSWER questions and
+   * which exist to change something — the write set above is the short one on
+   * purpose.
+   */
+  read: ReadModels;
   messages?: MessageCatalog;
   clock?: Clock;
   config?: Partial<BffConfig>;
+}
+
+/** The injected read side; see `read-models.ts` for what each one owes Studio. */
+export interface ReadModels {
+  runs: RunCatalog;
+  journal: JournalReader;
+  gates: GateBoard;
+  apps: AppRegistry;
+  knowledge: KnowledgeIndex;
+  runners: RunnerFleet;
+  quota: QuotaReader;
+  cost: CostReader;
+  scans: ScanReader;
+  evidence: EvidenceReader;
+  audit: AuditReader;
+  health: HealthReader;
 }
 
 export interface ResolvedDeps extends Omit<BffDeps, "messages" | "clock" | "config"> {

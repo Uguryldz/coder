@@ -1,4 +1,5 @@
 import { loadEnv } from "@maestro/config";
+import type { MaestroPlatform } from "@maestro/mcp-servers";
 import Fastify, {
   type FastifyError,
   type FastifyInstance,
@@ -8,11 +9,15 @@ import { commandDiagnosticsOf, type BffConfig, type BffDeps, type ResolvedDeps }
 import { HttpError } from "./errors.js";
 import { assertCatalog, defaultCatalog } from "./messages.js";
 import { SESSION_TTL_MS } from "./auth/sessions.js";
+import { bffPlatform } from "./platform/index.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { killSwitchRoutes } from "./routes/killswitch.js";
 import { paramRoutes } from "./routes/params.js";
 import { runRoutes } from "./routes/runs.js";
+import { studioCatalogRoutes } from "./routes/studio-catalog.js";
+import { studioOpsRoutes } from "./routes/studio-ops.js";
+import { studioRunRoutes } from "./routes/studio-runs.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 
 export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
@@ -97,8 +102,16 @@ export async function buildServer(
   await app.register(async (scope) => runRoutes(scope, resolved));
   await app.register(async (scope) => paramRoutes(scope, resolved));
   await app.register(async (scope) => killSwitchRoutes(scope, resolved));
+  // Studio's read surface (M86/M7): the 37 screens read through these, and
+  // through the same guards and the same project scoping as everything above.
+  await app.register(async (scope) => studioRunRoutes(scope, resolved));
+  await app.register(async (scope) => studioOpsRoutes(scope, resolved));
+  await app.register(async (scope) => studioCatalogRoutes(scope, resolved));
 
   app.decorate("maestro", resolved);
+  // The MCP surface reads the platform through the SAME container, so an AI and
+  // a human asking the same question reach the same read models (M101).
+  app.decorate("platform", bffPlatform(resolved));
   return app;
 }
 
@@ -106,5 +119,7 @@ declare module "fastify" {
   interface FastifyInstance {
     /** The resolved container, for tests and for the composition root. */
     maestro: ResolvedDeps;
+    /** `MaestroPlatform` over this container — what maestro-mcp is injected with (M101). */
+    platform: MaestroPlatform;
   }
 }

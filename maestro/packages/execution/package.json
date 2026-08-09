@@ -12,14 +12,13 @@
   },
   "dependencies": {
     "@maestro/contracts": "workspace:*",
-    "@maestro/llm-gateway": "workspace:*",
     "@maestro/pii": "workspace:*",
-    "@maestro/ports": "workspace:*",
-    "zod": "^4.0.0"
+    "@maestro/ports": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "zod": "^4.0.0"
   }
 }

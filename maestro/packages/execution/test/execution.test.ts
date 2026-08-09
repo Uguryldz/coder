@@ -1,7 +1,7 @@
 import { defaultPiiPolicy, type Masked } from "@maestro/pii";
 import { describe, expect, it } from "vitest";
 import type { SessionReport } from "../src/collect.js";
-import { WorkspaceProbeError } from "../src/errors.js";
+import { DataClassChangedError, WorkspaceProbeError } from "../src/errors.js";
 import { AgentExecution, type AgentExecutionDeps, type AgentTurnRequest } from "../src/execution.js";
 import { StrikeLedger } from "../src/strikes.js";
 import {
@@ -10,6 +10,7 @@ import {
   echoingLlm,
   failingProbe,
   fixedProbe,
+  gitInternalProbe,
   okSession,
   SAMPLE_IBAN,
   stubLlm,
@@ -162,6 +163,53 @@ describe("AgentExecution.runTurn — protected paths (M52)", () => {
     const h = harness({ probe: failingProbe("git exited 128") });
     await expect(h.execution.runTurn(request())).rejects.toBeInstanceOf(WorkspaceProbeError);
   });
+
+  // Y3 — an empty repo list used to switch the gate off entirely.
+  it("applies the platform floor when the repo configured NO protected paths", async () => {
+    const h = harness({
+      probe: fixedProbe([
+        changed("db/migrations/1.sql"),
+        changed("api/.env"),
+        changed("tls/server.key"),
+      ]),
+    });
+    const result = await h.execution.runTurn(
+      request({ context: { ...bootstrapContext(), protectedPaths: [] } }),
+    );
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.reason).toBe("protected_path");
+    expect(result.report.protectedViolations.map((v) => v.path).sort()).toEqual([
+      "api/.env",
+      "db/migrations/1.sql",
+      "tls/server.key",
+    ]);
+  });
+
+  // O8 — `git status` structurally cannot report `.git/`, so a hook there is
+  // both unprotected and invisible.
+  it("catches a git hook even though the tracked diff is empty", async () => {
+    const h = harness({
+      probe: gitInternalProbe([changed(".git/hooks/post-checkout", { status: "added" })]),
+    });
+    const result = await h.execution.runTurn(request());
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.report.protectedViolations[0]?.path).toBe(".git/hooks/post-checkout");
+  });
+
+  // O6 — one git entry, two paths.
+  it("catches a rename that moves a key out of a protected directory", async () => {
+    const h = harness({
+      probe: fixedProbe([
+        changed("public/notes.txt", { status: "renamed", fromPath: "tls/server.key" }),
+      ]),
+    });
+    const result = await h.execution.runTurn(request());
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.report.protectedViolations[0]?.path).toBe("tls/server.key");
+  });
 });
 
 describe("AgentExecution.runTurn — verification and the 3-strike rule (M54)", () => {
@@ -209,6 +257,93 @@ describe("AgentExecution.runTurn — verification and the 3-strike rule (M54)", 
     const good = harness({ strikes }, llm);
     await good.execution.runTurn(request());
     expect(strikes.state({ runId: "run-000001", scope: "agent", ref: "protected_path" })).toBeNull();
+  });
+});
+
+// O1 — the writer used to be keyed by data class alone, so two tickets that
+// shared a class shared a masking session.
+describe("AgentExecution.runTurn — one masking session per RUN", () => {
+  it("does not write the same token into two different tickets' journals", async () => {
+    const stored: SessionReport[] = [];
+    const llm = stubLlm([okSession({ finalText: `a ${SAMPLE_IBAN}` }), okSession({ finalText: `b ${SAMPLE_IBAN}` })]);
+    const h = harness(
+      {
+        journalSink: (payload: Masked<SessionReport>) => {
+          stored.push(payload.value);
+          return Promise.resolve(undefined);
+        },
+      },
+      llm,
+    );
+
+    // Same data class, two tickets. Keyed by class alone these shared one
+    // writer, so one session minted one token for both journals — and ticket
+    // A's real values stayed resolvable in memory for as long as B ran.
+    await h.execution.runTurn(request({ context: { ...bootstrapContext(), runId: "run-A", ticketKey: "A-1" } }));
+    await h.execution.runTurn(request({ context: { ...bootstrapContext(), runId: "run-B", ticketKey: "B-1" } }));
+
+    const tokenOf = (text: string): string => /\[IBAN_\d+\.[0-9a-f]+\]/.exec(text)?.[0] ?? "";
+    const a = tokenOf(stored[0]?.finalText ?? "");
+    const b = tokenOf(stored[1]?.finalText ?? "");
+    expect(a).not.toBe("");
+    expect(b).not.toBe("");
+    expect(a).not.toBe(b);
+  });
+
+  it("keeps ONE session within a run, so a quoted token is not de-fanged", async () => {
+    const stored: SessionReport[] = [];
+    const llm = echoingLlm(() => `still ${stored[0]?.finalText ?? ""}`, `refunded ${SAMPLE_IBAN}`);
+    const h = harness(
+      {
+        journalSink: (payload: Masked<SessionReport>) => {
+          stored.push(payload.value);
+          return Promise.resolve(undefined);
+        },
+      },
+      llm,
+    );
+    await h.execution.runTurn(request());
+    await h.execution.runTurn(request({ resumeToken: "resume-1" }));
+    expect(stored[1]?.finalText).toBe(`still ${stored[0]?.finalText}`);
+  });
+
+  it("drops a finished run's session, and with it the map of real values", async () => {
+    const stored: SessionReport[] = [];
+    const llm = stubLlm([okSession({ finalText: `a ${SAMPLE_IBAN}` }), okSession({ finalText: `b ${SAMPLE_IBAN}` })]);
+    const h = harness(
+      {
+        journalSink: (payload: Masked<SessionReport>) => {
+          stored.push(payload.value);
+          return Promise.resolve(undefined);
+        },
+      },
+      llm,
+    );
+    await h.execution.runTurn(request());
+    h.execution.endRun(bootstrapContext().runId);
+    await h.execution.runTurn(request());
+    // A fresh session mints a fresh vocabulary for the same value.
+    expect(stored[0]?.finalText).not.toBe(stored[1]?.finalText);
+  });
+
+  it("bounds how many runs may hold an open session at once", async () => {
+    const llm = stubLlm([okSession(), okSession(), okSession()]);
+    const h = harness({ maxOpenRuns: 1 }, llm);
+    for (const runId of ["run-1", "run-2", "run-3"]) {
+      await h.execution.runTurn(request({ context: { ...bootstrapContext(), runId } }));
+    }
+    expect(h.stored).toHaveLength(3);
+  });
+
+  // O2 — the class used to be part of the key, so changing it mid-run silently
+  // opened a second session and re-tokenised turn 1's already-journalled text.
+  it("refuses a data class that changes in the middle of a run", async () => {
+    const llm = stubLlm([okSession(), okSession()]);
+    const h = harness({}, llm);
+    await h.execution.runTurn(request({ dataClass: "dahili" }));
+    await expect(h.execution.runTurn(request({ dataClass: "gizli", resumeToken: "resume-1" }))).rejects.toBeInstanceOf(
+      DataClassChangedError,
+    );
   });
 });
 

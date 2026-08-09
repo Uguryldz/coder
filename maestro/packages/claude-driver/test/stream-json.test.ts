@@ -59,18 +59,42 @@ describe("parseStreamJson", () => {
     expect(parsed.unparsedLines).toBe(2);
   });
 
-  it("ignores negative or non-numeric usage rather than emitting a negative token count", () => {
-    const parsed = parseStreamJson(
-      stream(resultLine({ usage: { input_tokens: -5, output_tokens: "many" }, num_turns: -1 })),
-    );
-    expect(parsed.tokensIn).toBe(0);
-    expect(parsed.tokensOut).toBe(0);
-    expect(parsed.numTurns).toBe(0);
-  });
-
   it("falls back to the init session id when the result omits it", () => {
     const parsed = parseStreamJson(stream(initLine(), resultLine({ session_id: undefined })));
     expect(parsed.sessionId).toBe(SESSION_ID);
+  });
+});
+
+// O5 — quota is the meter (M55), so an unreadable meter is not "zero".
+describe("parseStreamJson — usage on a successful turn is mandatory", () => {
+  it("refuses a success result with no usage block instead of reporting a free turn", () => {
+    expect(() => parseStreamJson(stream(initLine(), resultLine({ usage: undefined })))).toThrow(
+      /quota accounting would count the turn as free/,
+    );
+  });
+
+  it("refuses a success result whose token counts are not numbers", () => {
+    expect(() =>
+      parseStreamJson(stream(resultLine({ usage: { input_tokens: -5, output_tokens: "many" } }))),
+    ).toThrow(ClaudeCliProtocolError);
+  });
+
+  it("accepts a genuinely free turn — zero is a number, absent is not", () => {
+    const parsed = parseStreamJson(stream(resultLine({ usage: { input_tokens: 0, output_tokens: 0 } })));
+    expect(parsed.tokensIn).toBe(0);
+    expect(parsed.tokensOut).toBe(0);
+  });
+
+  it("does not demand usage from a failed turn, whose reason matters more", () => {
+    const parsed = parseStreamJson(
+      stream(resultLine({ subtype: "error_during_execution", is_error: true, usage: undefined })),
+    );
+    expect(parsed.isError).toBe(true);
+    expect(parsed.tokensIn).toBe(0);
+  });
+
+  it("still floors a nonsensical num_turns rather than reporting a negative", () => {
+    expect(parseStreamJson(stream(resultLine({ num_turns: -1 }))).numTurns).toBe(0);
   });
 });
 

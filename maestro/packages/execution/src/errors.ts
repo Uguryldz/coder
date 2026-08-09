@@ -6,28 +6,7 @@ export class ExecutionError extends Error {
   }
 }
 
-/** The CLI ran but did not speak the protocol we parse. Never downgraded to
- * "empty answer": a turn we cannot read is one we can prove nothing about. */
-export class ClaudeCliProtocolError extends ExecutionError {
-  constructor(message: string) {
-    super(`claude CLI stream protocol: ${message}`);
-    this.name = "ClaudeCliProtocolError";
-  }
-}
-
-/** The CLI exited non-zero, or reported `is_error` in its result message. */
-export class ClaudeCliError extends ExecutionError {
-  constructor(
-    message: string,
-    readonly exitCode: number,
-    readonly stderrTail: string,
-  ) {
-    super(message);
-    this.name = "ClaudeCliError";
-  }
-}
-
-/** Misconfiguration of the runner itself (bad flag values, missing binary path). */
+/** Misconfiguration of the runner itself (bad pattern, bad limit). */
 export class ExecutionConfigError extends ExecutionError {
   constructor(message: string) {
     super(message);
@@ -35,11 +14,17 @@ export class ExecutionConfigError extends ExecutionError {
   }
 }
 
-/** M52: carries the offending paths so a handover names files, not "policy". */
-export class ProtectedPathViolationError extends ExecutionError {
-  constructor(readonly violations: readonly string[]) {
-    super(`protected paths changed by the agent session: ${violations.join(", ")}`);
-    this.name = "ProtectedPathViolationError";
+/**
+ * A run's declared data class changed between two turns. Fail-closed and loud:
+ * the journal writer holds ONE masking session per run, so a mid-run change
+ * would either re-tokenise text the journal already recorded (turn 1's
+ * `[IBAN_1.a3f9]` losing its brackets) or keep masking a now-stricter run with
+ * the looser profile. Neither is recoverable after the fact.
+ */
+export class DataClassChangedError extends ExecutionError {
+  constructor(runId: string, from: string, to: string) {
+    super(`run ${runId} was journalled as data class "${from}" and this turn declares "${to}"`);
+    this.name = "DataClassChangedError";
   }
 }
 

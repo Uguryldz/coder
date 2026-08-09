@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ExecutionConfigError } from "../src/errors.js";
 import {
-  ciFingerprint,
   DEFAULT_STRIKE_LIMIT,
   handoverDecision,
   MSG_HANDOVER_STUCK,
@@ -68,24 +67,6 @@ describe("StrikeLedger", () => {
     ledger.record({ runId: "run-1", scope: "ci", ref: "abc" }, "b");
     ledger.record({ runId: "run-2", scope: "ci", ref: "abc" }, "c");
     expect(ledger.stuckKeys("run-1").map((s) => s.key.scope).sort()).toEqual(["ci", "gate"]);
-  });
-});
-
-describe("ciFingerprint", () => {
-  it("collapses two runs of the same failure", () => {
-    const a = "FAIL src/pay/mapper.test.ts > maps null (1243ms)\n  at /w/run-1/src/pay/mapper.ts:88:3";
-    const b = "FAIL src/pay/mapper.test.ts > maps null (985ms)\n  at /w/run-2/src/pay/mapper.ts:88:3";
-    expect(ciFingerprint(a)).toBe(ciFingerprint(b));
-  });
-
-  it("keeps two genuinely different failures apart", () => {
-    expect(ciFingerprint("FAIL mapper > maps null")).not.toBe(ciFingerprint("FAIL router > routes card"));
-  });
-
-  it("is stable and short enough for a database key", () => {
-    const fp = ciFingerprint("boom");
-    expect(fp).toMatch(/^[0-9a-f]{16}$/);
-    expect(ciFingerprint("boom")).toBe(fp);
   });
 });
 

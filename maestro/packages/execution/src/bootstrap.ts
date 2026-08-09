@@ -1,4 +1,5 @@
 import type { JournalEntry, LivingSummary } from "@maestro/contracts";
+import { createProtectedPathMatcher } from "./protected-paths.js";
 
 /**
  * M30, "context is never lost". A doing role gets its history exactly once:
@@ -27,7 +28,8 @@ export interface BootstrapContext {
   readonly journal: readonly JournalEntry[];
   readonly livingSummary: LivingSummary | null;
   readonly workspace: WorkspaceState;
-  /** M52 deny-list, quoted verbatim so the agent is told before it is judged. */
+  /** The repo's ADDITIONS to the M52 deny-list; the prompt shows the effective
+   * list (platform floor included) so the agent is told before it is judged. */
   readonly protectedPaths: readonly string[];
   readonly mcpServers: readonly string[];
 }
@@ -97,6 +99,10 @@ export function buildSessionBootstrap(
       ? "  (none yet)"
       : `  (covers journal entries up to #${ctx.livingSummary.upToSeq})\n  ${ctx.livingSummary.text}`;
 
+  // The EFFECTIVE list, not just the repo's additions: the gate judges against
+  // the platform floor too, and a rule the agent was never shown is a trap.
+  const protectedPaths = createProtectedPathMatcher(ctx.protectedPaths).patterns;
+
   return [
     `# Session bootstrap — ticket ${ctx.ticketKey}, run ${ctx.runId}`,
     "",
@@ -114,12 +120,13 @@ export function buildSessionBootstrap(
     workspaceSection(ctx.workspace, limits),
     "",
     "## Protected paths — do not modify (M52)",
-    list(ctx.protectedPaths, ctx.protectedPaths.length),
+    list(protectedPaths, protectedPaths.length),
     "  A change under any of these fails the session and hands the ticket to a human.",
+    "  Renaming a file into or out of one counts as changing it.",
     "  If the task cannot be done without touching one, say so instead of doing it.",
     "",
     "## Tools",
-    "  Reach systems through these MCP servers only:",
+    "  These MCP servers are configured for this session:",
     list(ctx.mcpServers, ctx.mcpServers.length),
     "",
     "## Task",

@@ -13,6 +13,8 @@ export const BFF_MESSAGE_KEYS = {
   gateMembershipFailed: "gate.membership_failed",
   gateSodFailed: "gate.sod_failed",
   killSwitch: "notify.kill_switch",
+  /** The nudge `notify_gate_owner` posts when a gate has been waiting (M45/M101). */
+  gateReminder: "notify.gate_reminder",
   commandAccepted: "command.accepted",
   commandNoRun: "command.no_run",
   commandNoOpenGate: "command.no_open_gate",

@@ -35,6 +35,9 @@ importers:
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@maestro/mcp-servers':
+        specifier: workspace:*
+        version: link:../../packages/mcp-servers
       '@maestro/ports':
         specifier: workspace:*
         version: link:../../packages/ports

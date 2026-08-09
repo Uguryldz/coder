@@ -9,24 +9,10 @@ import { decideGate } from "../gate-decision.js";
 import { workflowIdFor } from "../gateway.js";
 import { projectKeyOf } from "../jira-intake.js";
 import { isStudioSignal, SIGNALS, STUDIO_SIGNALS } from "../signal-names.js";
+import { assertProjectAccess, canSeeProject } from "./access.js";
 
-/**
- * Roles that see every project. An admin operates the platform and a tech lead
- * carries the gates across teams (M86); everyone else sees the projects they
- * belong to.
- */
-export const CROSS_PROJECT_ROLES = ["admin", "tech-lead"] as const;
-
-/**
- * The directory group that grants access to a project's runs. Membership lives
- * in AD (M8) and the naming convention is the seam: `UGURPAY` → `maestro-ugurpay`.
- * A per-project mapping belongs in the bindings once M102's onboarding wizard
- * owns it; until then the convention is explicit and testable rather than
- * implied.
- */
-export function projectGroupFor(projectKey: string): string {
-  return `maestro-${projectKey.toLowerCase()}`;
-}
+/** Project visibility now lives in `access.js`; re-exported for existing callers. */
+export { CROSS_PROJECT_ROLES, projectGroupFor } from "./access.js";
 
 /**
  * Run visibility and Studio's secondary decision path (M51: Jira is the main
@@ -80,23 +66,6 @@ export async function runRoutes(app: FastifyInstance, deps: ResolvedDeps): Promi
     }
     return reply.code(202).send(await studioModeChange(deps, ticket, session, request.body));
   });
-}
-
-/** True when the session may see this project at all (M86). */
-function canSeeProject(session: SessionRecord, projectKey: string): boolean {
-  if (CROSS_PROJECT_ROLES.some((role) => session.roles.includes(role))) return true;
-  return session.groups.includes(projectGroupFor(projectKey));
-}
-
-/**
- * Fail-closed project membership. The gate decision keeps its own, stricter
- * check (`verifyMembership` against the gate's owning group) — this one only
- * establishes that the caller has any business with the ticket at all.
- */
-function assertProjectAccess(session: SessionRecord, ticket: TicketKey): void {
-  if (!canSeeProject(session, projectKeyOf(ticket))) {
-    throw forbidden("project_access", { ticket });
-  }
 }
 
 const GateBody = z.object({

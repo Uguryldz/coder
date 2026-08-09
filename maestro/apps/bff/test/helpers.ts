@@ -4,7 +4,7 @@ import type { CiResultSignal, Locale, ParamDefinition } from "@maestro/contracts
 import type { FastifyInstance } from "fastify";
 import { InMemoryUserDirectory, LocalIdentityProvider } from "../src/auth/local-identity.js";
 import { InMemorySessionStore } from "../src/auth/sessions.js";
-import type { BffDeps, Clock, JiraBinding, MessageCatalog } from "../src/deps.js";
+import type { BffDeps, Clock, JiraBinding, MessageCatalog, ReadModels } from "../src/deps.js";
 import { buildServer } from "../src/server.js";
 import {
   InMemoryKillSwitchStore,
@@ -12,6 +12,21 @@ import {
   StaticGateDirectory,
   StaticJiraProjectBindings,
 } from "../src/stores/memory.js";
+import {
+  AuditStoreReader,
+  InMemoryAppRegistry,
+  InMemoryCostReader,
+  InMemoryEvidenceReader,
+  InMemoryGateBoard,
+  InMemoryJournalReader,
+  InMemoryKnowledgeIndex,
+  InMemoryQuotaReader,
+  InMemoryRunCatalog,
+  InMemoryRunnerFleet,
+  InMemoryScanReader,
+  StaticHealthReader,
+} from "../src/stores/read-memory.js";
+import type { ServiceHealth } from "../src/read-models.js";
 import { FakeCiPort, FakeRunGateway, FakeWorkEventReader, FakeWorkPort, WEBHOOK_SECRET } from "./fakes.js";
 
 /**
@@ -90,6 +105,10 @@ export interface Harness {
   params: InMemoryParamStore;
   killSwitch: InMemoryKillSwitchStore;
   bindings: StaticJiraProjectBindings;
+  /** Studio's read side, as concrete stores the tests seed directly. */
+  read: TestReadModels;
+  /** `MaestroPlatform` over this harness — what maestro-mcp would be injected with. */
+  platform: FastifyInstance["platform"];
   /** Log in and return the bearer token. */
   login(username: string, password?: string): Promise<string>;
   /** Create an account and return its username. */
@@ -106,12 +125,42 @@ export interface Harness {
 
 export const TEST_PASSWORD = "Maestro!Test-2026";
 
+/**
+ * The read side as concrete stores rather than interfaces, so a test can seed
+ * exactly the rows the endpoint under test should return — and so an endpoint
+ * that invents a field instead of reading one fails here.
+ */
+export interface TestReadModels extends ReadModels {
+  runs: InMemoryRunCatalog;
+  journal: InMemoryJournalReader;
+  gates: InMemoryGateBoard;
+  apps: InMemoryAppRegistry;
+  knowledge: InMemoryKnowledgeIndex;
+  runners: InMemoryRunnerFleet;
+  cost: InMemoryCostReader;
+  scans: InMemoryScanReader;
+  evidence: InMemoryEvidenceReader;
+}
+
+export const TEST_SERVICES: readonly ServiceHealth[] = [
+  {
+    service: "bff",
+    state: "healthy",
+    version: "0.1.0",
+    checkedAt: "2026-08-09T09:00:00.000Z",
+    note: null,
+  },
+];
+
 export interface HarnessOptions {
   groups?: Record<string, readonly string[]>;
   bindings?: readonly JiraBinding[];
   ciSignal?: CiResultSignal | null;
   adoAuthorization?: string;
   deps?: Partial<BffDeps>;
+  /** Subscription pool (M55); empty by default — most tests do not exercise quota. */
+  accounts?: ReadModels["quota"];
+  services?: readonly ServiceHealth[];
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -131,6 +180,23 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const killSwitch = new InMemoryKillSwitchStore();
   const bindings = new StaticJiraProjectBindings(options.bindings ?? [UGURPAY_BINDING]);
 
+  const read: TestReadModels = {
+    runs: new InMemoryRunCatalog(),
+    journal: new InMemoryJournalReader(),
+    gates: new InMemoryGateBoard(),
+    apps: new InMemoryAppRegistry(),
+    knowledge: new InMemoryKnowledgeIndex(),
+    runners: new InMemoryRunnerFleet(),
+    quota: options.accounts ?? new InMemoryQuotaReader(),
+    cost: new InMemoryCostReader(),
+    scans: new InMemoryScanReader(),
+    evidence: new InMemoryEvidenceReader(),
+    // The SAME store the chain appends to: a reader with its own copy would
+    // verify itself rather than the trail.
+    audit: new AuditStoreReader(auditStore),
+    health: new StaticHealthReader(options.services ?? TEST_SERVICES),
+  };
+
   const app = await buildServer({
     work,
     workEvents: new FakeWorkEventReader(),
@@ -144,6 +210,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     gates: new StaticGateDirectory(),
     params,
     killSwitch,
+    read,
     messages: testCatalog,
     clock,
     config: { actorDomain: "ugurbank.local" },
@@ -197,6 +264,8 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     params,
     killSwitch,
     bindings,
+    read,
+    platform: app.platform,
     login,
     addUser,
     delegatedToken,

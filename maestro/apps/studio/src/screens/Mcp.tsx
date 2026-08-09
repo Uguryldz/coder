@@ -4,8 +4,9 @@ import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Kpi, Table } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
-import { type McpScope, type McpTool, type McpView, QueryState } from "./common/index.ts";
+import { type McpScope, type McpTool, type McpView } from "./common/index.ts";
 import { useLabel } from "./common/label.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 
 const SCOPE_TONE: Readonly<Record<McpScope, BadgeTone>> = {
   read: "green",
@@ -59,7 +60,8 @@ export function McpScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
-      <QueryState isPending={mcp.isPending} error={mcp.error} onRetry={() => void mcp.refetch()}>
+      {/* `GET /mcp/manifest` is not built yet — see MaybeUnwired. */}
+      <MaybeUnwired isPending={mcp.isPending} error={mcp.error} onRetry={() => void mcp.refetch()}>
         <div className="scr-grid scr-grid--4">
           <Kpi
             label={t("mcp.kpi.endpoint")}
@@ -109,7 +111,7 @@ export function McpScreen(): ReactNode {
             {t("mcp.note.no_gate_decision")}
           </div>
         </Card>
-      </QueryState>
+      </MaybeUnwired>
 
       <Card title={t("mcp.card.connect")} subtitle={t("mcp.card.connect_sub")}>
         <p className="scr-mini">{t("mcp.connect.token_note")}</p>

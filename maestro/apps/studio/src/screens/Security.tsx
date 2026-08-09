@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { ScanFinding } from "@maestro/contracts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { bySeverity, severityTone, toSeverity } from "./shared/severity.ts";
 
@@ -33,11 +35,71 @@ interface ScanPage {
   readonly nextCursor: string | null;
 }
 
-const OUTCOME_TONE = { pass: "green", fail: "red", error: "red" } as const;
+const OUTCOME_TONE: Readonly<Record<string, "green" | "red" | "gray">> = {
+  pass: "green",
+  fail: "red",
+  error: "red",
+};
+
+/**
+ * `ScanFinding.message` in a deliberate container.
+ *
+ * This field is `NonEmpty` in the contract — free prose written by Semgrep,
+ * Trivy or Gitleaks. Three separate problems with printing it bare, which the
+ * previous `cell: (row) => row.finding.message` did:
+ *
+ *  1. It is not in the catalog. Every other sentence on this screen is Turkish
+ *     from packages/config/locales; a scanner's English sentence beside them
+ *     reads as if Maestro wrote it.
+ *  2. A GITLEAKS finding's message can quote the leaked secret itself. The
+ *     screen whose job is to report a leak must not become a second copy of it,
+ *     rendered to anyone with a security role and captured in any screenshot of
+ *     this page.
+ *  3. Length is unbounded, so one finding could push a paragraph into a cell.
+ *
+ * The resolution is not to hide the text — an operator triaging a finding needs
+ * it — but to make revealing it a decision. Collapsed by default with the tool
+ * name visible, expanded on request, and labelled as untranslated scanner output
+ * so nobody mistakes it for a platform message. A leaked secret then requires a
+ * deliberate click rather than merely opening the screen.
+ */
+function FindingMessage({ finding }: { readonly finding: ScanFinding }): ReactNode {
+  const t = useT();
+  const [shown, setShown] = useState(false);
+
+  if (!shown) {
+    return (
+      <button
+        type="button"
+        className="screen-chip"
+        onClick={() => setShown(true)}
+        title={t("value.raw_scanner_finding")}
+      >
+        {t("value.scanner_finding_show")}
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <span className="scr-mini">{t("value.raw_scanner_finding")}</span>
+      {/*
+        `lang` is set because the content is a foreign-language machine string
+        inside a Turkish page: a screen reader must not read English prose with
+        Turkish phonetics. `<samp>` marks it as program output rather than the
+        page's own voice.
+      */}
+      <samp lang="en" style={{ display: "block", wordBreak: "break-word" }}>
+        {finding.message}
+      </samp>
+    </div>
+  );
+}
 
 export function SecurityScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
 
   const query = useQuery({
     queryKey: ["scans"],
@@ -86,7 +148,8 @@ export function SecurityScreen(): ReactNode {
               {
                 key: "finding",
                 header: t("security.col.finding"),
-                cell: (row) => row.finding.message,
+                // Never `row.finding.message` bare — see FindingMessage.
+                cell: (row) => <FindingMessage finding={row.finding} />,
               },
               {
                 key: "location",
@@ -108,9 +171,16 @@ export function SecurityScreen(): ReactNode {
                 header: t("security.col.status"),
                 // "error" is not a pass: a scanner that could not run must never
                 // read as clean.
-                cell: (row) => (
-                  <Badge tone={OUTCOME_TONE[row.outcome]}>{t(`security.outcome.${row.outcome}`)}</Badge>
-                ),
+                cell: (row) => {
+                  const label = enumLabel("security.outcome", row.outcome);
+                  // An unrecognised outcome must never be toned green: "not a
+                  // known result" is not "passed".
+                  return (
+                    <Badge tone={label.unknown ? "gray" : (OUTCOME_TONE[row.outcome] ?? "gray")}>
+                      {label.text}
+                    </Badge>
+                  );
+                },
               },
               { key: "at", header: t("security.col.at"), cell: (row) => row.at },
             ]}

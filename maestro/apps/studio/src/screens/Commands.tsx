@@ -4,8 +4,9 @@ import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
-import { type CommandsView, type JiraCommand, QueryState } from "./common/index.ts";
-import { useLabel } from "./common/label.ts";
+import { type CommandsView, type JiraCommand } from "./common/index.ts";
+import { useEnumLabel, useLabel } from "./common/label.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 
 /** The checks a comment passes before it counts as a decision. */
 const VALIDATION_STEPS = [
@@ -33,6 +34,7 @@ export function CommandsScreen(): ReactNode {
   const api = useApi();
   const t = useT();
   const label = useLabel();
+  const enumLabel = useEnumLabel();
 
   const commands = useQuery({
     queryKey: ["commands"],
@@ -58,11 +60,14 @@ export function CommandsScreen(): ReactNode {
           {row.roles.length === 0 ? (
             <Badge tone="gray">{t("commands.who.anyone")}</Badge>
           ) : (
-            row.roles.map((role) => (
-              <Badge key={role} tone="blue">
-                {t(`role.${role}`)}
-              </Badge>
-            ))
+            row.roles.map((role) => {
+              const roleLabel = enumLabel("role", role);
+              return (
+                <Badge key={role} tone={roleLabel.unknown ? "gray" : "blue"}>
+                  {roleLabel.text}
+                </Badge>
+              );
+            })
           )}
         </span>
       ),
@@ -81,7 +86,8 @@ export function CommandsScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
-      <QueryState
+      {/* `GET /commands` is not built yet — see MaybeUnwired. */}
+      <MaybeUnwired
         isPending={commands.isPending}
         error={commands.error}
         onRetry={() => void commands.refetch()}
@@ -95,7 +101,7 @@ export function CommandsScreen(): ReactNode {
             caption={t("commands.card.list")}
           />
         </Card>
-      </QueryState>
+      </MaybeUnwired>
 
       <Card title={t("commands.card.validation")} subtitle={t("commands.card.validation_sub")}>
         <ol className="scr-stack" style={{ gap: 7, margin: 0, paddingLeft: 18 }}>

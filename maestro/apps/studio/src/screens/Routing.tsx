@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 import { outcomeExplanationKey, outcomeKey, outcomeTone } from "./shared/outcome.ts";
 
@@ -41,6 +42,7 @@ interface RoutingResponse {
 export function RoutingScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
 
   const query = useQuery({
     queryKey: ["routing"],
@@ -67,7 +69,10 @@ export function RoutingScreen(): ReactNode {
               {
                 key: "trigger",
                 header: t("routing.col.trigger"),
-                cell: (row) => <Badge tone="blue">{t(`routing.trigger.${row.trigger}`)}</Badge>,
+                cell: (row) => {
+                  const label = enumLabel("routing.trigger", row.trigger);
+                  return <Badge tone={label.unknown ? "gray" : "blue"}>{label.text}</Badge>;
+                },
               },
               {
                 key: "apps",

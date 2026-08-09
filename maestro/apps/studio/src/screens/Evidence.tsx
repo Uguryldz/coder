@@ -23,7 +23,7 @@ import "./shared/screens.css";
  *    table shows that field. A green tick invented by the client would be an
  *    audit claim with nothing behind it.
  *
- * ENDPOINT REQUEST: `GET /runs/:ticket/evidence` (see RAPOR-ekranlar-A.md).
+ * Reads `GET /studio/runs/:ticket/evidence` (routes/studio-runs.ts:113).
  */
 export function EvidenceScreen(): ReactNode {
   const t = useT();

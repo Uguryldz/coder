@@ -94,13 +94,25 @@ export function useRunState(ticket: string | undefined): UseQueryResult<Workflow
 }
 
 /**
- * ENDPOINT REQUEST (not implemented by the BFF today — see RAPOR-ekranlar-A.md).
- * GET /runs/:ticket/journal -> { entries: JournalEntry[] }
- * The screens below call it; until it exists the query fails and the tab shows
- * a translated error rather than fabricated history.
+ * The ticket journal (M30).
+ *
+ * `GET /studio/runs/:ticket/journal` — apps/bff/src/routes/studio-runs.ts:80.
+ * The route EXISTS and always did; an earlier revision of this file called
+ * `/runs/:ticket/journal`, which Fastify answers 404 for because
+ * apps/bff/src/routes/runs.ts registers no sub-resources. That is the exact
+ * failure mode this project treats as fatal — calling a real capability down an
+ * invented path — so the path here is copied from the route registration rather
+ * than inferred from the sibling `/runs` prefix.
+ *
+ * The BFF sends the shared page envelope `{ items, nextCursor }` (`pageBody`,
+ * routes/paging.ts:43), NOT `{ entries }`. Getting the path right while keeping
+ * the wrong field name would be worse than the 404: the tab would render an
+ * empty journal with no error at all, and an empty audit trail that looks
+ * healthy is a lie a reader cannot detect.
  */
 export interface JournalResponse {
-  readonly entries: readonly JournalEntry[];
+  readonly items: readonly JournalEntry[];
+  readonly nextCursor: string | null;
 }
 
 export function useJournal(
@@ -110,15 +122,23 @@ export function useJournal(
   const api = useApi();
   return useQuery({
     queryKey: ["journal", ticket ?? null],
-    queryFn: ({ signal }) => api.get<JournalResponse>(`/runs/${ticket ?? ""}/journal`, { signal }),
+    queryFn: ({ signal }) =>
+      api.get<JournalResponse>(`/studio/runs/${encodeURIComponent(ticket ?? "")}/journal`, {
+        signal,
+      }),
     enabled: enabled && ticket !== undefined && ticket !== "",
     retry: false,
   });
 }
 
 /**
- * ENDPOINT REQUEST: GET /runs/:ticket/evidence -> EvidencePackage.
- * Same honesty rule: no package, no file list.
+ * The evidence package manifest (M56).
+ *
+ * `GET /studio/runs/:ticket/evidence` — routes/studio-runs.ts:113. Sends the
+ * bare `EvidencePackage` (no page envelope: a manifest is one object), so the
+ * response type is used as-is. 404 `no_evidence` means the run has not produced
+ * a package yet, which the screen shows as an error rather than an empty file
+ * list — an audit screen must never imply "no files" when it means "no answer".
  */
 export function useEvidence(
   ticket: string | undefined,
@@ -127,7 +147,10 @@ export function useEvidence(
   const api = useApi();
   return useQuery({
     queryKey: ["evidence", ticket ?? null],
-    queryFn: ({ signal }) => api.get<EvidencePackage>(`/runs/${ticket ?? ""}/evidence`, { signal }),
+    queryFn: ({ signal }) =>
+      api.get<EvidencePackage>(`/studio/runs/${encodeURIComponent(ticket ?? "")}/evidence`, {
+        signal,
+      }),
     enabled: enabled && ticket !== undefined && ticket !== "",
     retry: false,
   });

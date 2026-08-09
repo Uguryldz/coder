@@ -10,9 +10,11 @@ import { useJournal } from "../shared/runs.ts";
  * The append-only ticket journal (M30) — the raw material of the evidence
  * package and the source of the living summary.
  *
- * ENDPOINT REQUEST: `GET /runs/:ticket/journal` does not exist yet. Until it
- * does this tab renders the translated error from the failed request, which is
- * the honest outcome; it never falls back to a fabricated history.
+ * Reads `GET /studio/runs/:ticket/journal`, which returns the shared page
+ * envelope `{ items, nextCursor }`. Only the first page is rendered today; the
+ * cursor is deliberately not followed, because silently concatenating pages
+ * would make "the journal" mean a different number of entries on every render.
+ * A failed request renders the translated error — never a fabricated history.
  */
 
 const ACTOR_ICON: Readonly<Record<JournalActor, string>> = {
@@ -29,7 +31,7 @@ export function JournalTab({ ticket }: { readonly ticket: string }): ReactNode {
   const [actor, setActor] = useState<JournalActor | "all">("all");
   const { data, isPending, error, refetch } = useJournal(ticket);
 
-  const entries = useMemo(() => data?.entries ?? [], [data]);
+  const entries = useMemo(() => data?.items ?? [], [data]);
   const rows = useMemo(
     () => (actor === "all" ? entries : entries.filter((entry) => entry.actor === actor)),
     [entries, actor],

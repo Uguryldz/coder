@@ -93,20 +93,47 @@ export interface TemplateProjectBinding {
  * keys, and a Turkish title must produce a key that is valid as a schema
  * property and as a filename.
  */
+/**
+ * Turkish letters have no ASCII equivalent under NFD, so they are mapped
+ * explicitly. Both cases are listed because the fold runs before lowercasing
+ * (see `slugify`), and dotless `I` folds to `i` rather than to `ı` — a section
+ * key is an ASCII identifier, not Turkish text.
+ */
 const TR_FOLD: Readonly<Record<string, string>> = {
   ç: "c",
+  Ç: "c",
   ğ: "g",
+  Ğ: "g",
   ı: "i",
+  I: "i",
   İ: "i",
   ö: "o",
+  Ö: "o",
   ş: "s",
+  Ş: "s",
   ü: "u",
+  Ü: "u",
 };
+
+/**
+ * Fold BEFORE lowercasing.
+ *
+ * The order matters for exactly one character. `"İ".toLowerCase()` is not `"i"`
+ * in JavaScript — it is `"i"` plus U+0307 COMBINING DOT ABOVE — so a fold that
+ * ran after `.toLowerCase()` never saw an `İ` at all and its dictionary entry
+ * was dead code. The output happened to be correct anyway (the NFD pass strips
+ * the combining dot), but a guard that cannot fire is worse than no guard: the
+ * next reader trusts it.
+ *
+ * Folding first makes the mapping the thing that actually does the work, and
+ * covers the uppercase forms in the same pass.
+ */
+const TR_FOLD_RE = /[çÇğĞıIİöÖşŞüÜ]/g;
 
 export function slugify(title: string): string {
   const folded = title
+    .replace(TR_FOLD_RE, (ch) => TR_FOLD[ch] ?? ch)
     .toLowerCase()
-    .replace(/[çğıİöşü]/g, (ch) => TR_FOLD[ch] ?? ch)
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
   const slug = folded

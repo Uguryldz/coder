@@ -4,8 +4,9 @@ import type { ReactNode } from "react";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, EmptyState, Tabs, TabPanel } from "../ui/index.ts";
-import { QueryState, type RepoPolicy, type RepoPolicyView } from "./common/index.ts";
+import { type RepoPolicy, type RepoPolicyView } from "./common/index.ts";
 import { useLabel } from "./common/label.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 import { ProtectedPaths } from "./yaml/ProtectedPaths.tsx";
 
 /**
@@ -35,7 +36,13 @@ export function YamlScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
-      <QueryState
+      {/*
+        `GET /repo-policy` is not built yet. Template.tsx already used
+        MaybeUnwired for the same class of unbuilt read model; this screen
+        showing a different failure for the same server condition was an
+        inconsistency, not a decision.
+      */}
+      <MaybeUnwired
         isPending={policies.isPending}
         error={policies.error}
         onRetry={() => void policies.refetch()}
@@ -75,7 +82,7 @@ export function YamlScreen(): ReactNode {
             ))}
           </>
         )}
-      </QueryState>
+      </MaybeUnwired>
 
       <div className="scr-note">{t("yaml.note.source_of_truth")}</div>
     </div>

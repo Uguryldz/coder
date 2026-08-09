@@ -5,8 +5,9 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Kpi, runStatusTone } from "../ui/index.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { ageLabel } from "./shared/format.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { useRuns, type RunSummary } from "./shared/runs.ts";
-import { statusKey } from "./Tickets.tsx";
+import { RUN_STATUS_PREFIX } from "./Tickets.tsx";
 import "./shared/screens.css";
 
 /**
@@ -24,6 +25,7 @@ const ATTENTION_LIMIT = 5;
 export function DashScreen(): ReactNode {
   const t = useT();
   const navigate = useNavigate();
+  const enumLabel = useEnumLabel();
   const { data, isPending, error, refetch } = useRuns(200);
 
   const runs = useMemo(() => data?.runs ?? [], [data]);
@@ -129,7 +131,9 @@ export function DashScreen(): ReactNode {
                   <span aria-hidden="true">{failed ? "✕" : "⏳"}</span>
                   <span className="screen-issue__body">
                     <b className="screen-mono">{run.ticketKey}</b>{" "}
-                    <Badge tone={runStatusTone(run.status)}>{t(statusKey(run.status))}</Badge>
+                    <Badge tone={runStatusTone(run.status)}>
+                      {enumLabel(RUN_STATUS_PREFIX, run.status).text}
+                    </Badge>
                     <span className="screen-note">
                       {age === null ? "" : t("dash.attention.age", { age: t(age.key, age.params) })}
                     </span>

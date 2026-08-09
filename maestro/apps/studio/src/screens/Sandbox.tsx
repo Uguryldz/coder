@@ -5,7 +5,7 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
 import type { Page, SandboxRecord, SandboxState } from "./common/index.ts";
-import { QueryState } from "./common/index.ts";
+import { QueryState, useEnumLabel } from "./common/index.ts";
 import { ageLabel, byteSize } from "./shared/format.ts";
 
 const STATE_TONE: Readonly<Record<SandboxState, BadgeTone>> = {
@@ -13,6 +13,15 @@ const STATE_TONE: Readonly<Record<SandboxState, BadgeTone>> = {
   resumable: "blue",
   human_held: "orange",
 };
+
+/**
+ * Three states exist today. A fourth added server-side would, with a bare
+ * `t()`, throw and blank the whole fleet view — hiding every sandbox an
+ * operator can still act on. Unknown states render grey and marked instead.
+ */
+function stateTone(state: string): BadgeTone {
+  return Object.hasOwn(STATE_TONE, state) ? STATE_TONE[state as SandboxState] : "gray";
+}
 
 /**
  * Live sandboxes and the workspaces they left behind (M31/M65).
@@ -28,6 +37,7 @@ const STATE_TONE: Readonly<Record<SandboxState, BadgeTone>> = {
 export function SandboxScreen(): ReactNode {
   const api = useApi();
   const t = useT();
+  const enumLabel = useEnumLabel();
 
   const sandboxes = useQuery({
     queryKey: ["studio-sandboxes"],
@@ -51,7 +61,12 @@ export function SandboxScreen(): ReactNode {
     {
       key: "state",
       header: t("sandbox.col.session"),
-      cell: (row) => <Badge tone={STATE_TONE[row.state]}>{t(`sandbox.state.${row.state}`)}</Badge>,
+      cell: (row) => {
+        const label = enumLabel("sandbox.state", row.state);
+        return (
+          <Badge tone={label.unknown ? "gray" : stateTone(row.state)}>{label.text}</Badge>
+        );
+      },
     },
     {
       key: "size",

@@ -7,11 +7,11 @@ import type { BadgeTone, Column } from "../ui/index.ts";
 import {
   type Delegation,
   type NotifyView,
-  QueryState,
   useDuration,
   type WaitingGate,
 } from "./common/index.ts";
-import { useLabel } from "./common/label.ts";
+import { useEnumLabel, useLabel } from "./common/label.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 
 /**
  * Reminders and escalation (M45/M88): the ladder that keeps a gate from being
@@ -27,6 +27,7 @@ export function NotifyScreen(): ReactNode {
   const api = useApi();
   const t = useT();
   const label = useLabel();
+  const enumLabel = useEnumLabel();
   const duration = useDuration();
 
   const notify = useQuery({
@@ -35,7 +36,7 @@ export function NotifyScreen(): ReactNode {
   });
 
   const delegationColumns: readonly Column<Delegation>[] = [
-    { key: "role", header: t("notify.col.role"), cell: (row) => t(`role.${row.role}`) },
+    { key: "role", header: t("notify.col.role"), cell: (row) => enumLabel("role", row.role).text },
     { key: "primary", header: t("notify.col.primary"), cell: (row) => row.primary },
     {
       key: "backup",
@@ -83,7 +84,8 @@ export function NotifyScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
-      <QueryState
+      {/* `GET /notify` is not built yet — see MaybeUnwired. */}
+      <MaybeUnwired
         isPending={notify.isPending}
         error={notify.error}
         onRetry={() => void notify.refetch()}
@@ -138,7 +140,7 @@ export function NotifyScreen(): ReactNode {
             />
           </Card>
         </div>
-      </QueryState>
+      </MaybeUnwired>
     </div>
   );
 }

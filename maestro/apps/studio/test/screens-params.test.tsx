@@ -125,6 +125,75 @@ describe("params screen", () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * O1 regression. Four-eyes counts PEOPLE. The BFF refuses a proposer's own
+   * confirmation and answers `status: "pending"` again
+   * (apps/bff/src/params-service.ts:82), so a button reading "Approve the
+   * change" for that person promises an outcome the server will not deliver —
+   * the operator walks away believing a guarded parameter is live when it is
+   * still waiting.
+   */
+  const OWN_PENDING = {
+    key: "gates.gate_set",
+    scopeRef: null,
+    value: "always_six",
+    proposedBy: "ugur.yildiz@ugurbank.local",
+    at: "2026-08-08T10:00:00.000Z",
+  };
+
+  it("never offers to approve a change to the person who proposed it", async () => {
+    const { fetchImpl } = stubFetch(paramsRoutes({ pending: [OWN_PENDING] }));
+    // ADMIN in the harness IS ugur.yildiz@ugurbank.local — the proposer.
+    renderScreen(<ParamsScreen />, { fetchImpl });
+
+    await screen.findByText("gates.gate_set");
+    // A guarded row's action reads "İncele" (review), not "Düzenle".
+    await userEvent.click(screen.getByRole("button", { name: "İncele" }));
+
+    const field = await screen.findByLabelText("Yeni değer");
+    await userEvent.clear(field);
+    // Typing the pending value byte-for-byte is what used to flip the label.
+    await userEvent.type(field, "always_six");
+
+    expect(screen.queryByRole("button", { name: "Öneriyi onayla" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Onaya gönder" })).toBeInTheDocument();
+    // And the operator is told why, rather than left to guess.
+    expect(screen.getByText(/kendi önerini onaylayamazsın/i)).toBeInTheDocument();
+  });
+
+  it("offers to approve when a DIFFERENT person proposed the same value", async () => {
+    const { fetchImpl } = stubFetch(
+      paramsRoutes({ pending: [{ ...OWN_PENDING, proposedBy: "mert.demir@ugurbank.local" }] }),
+    );
+    renderScreen(<ParamsScreen />, { fetchImpl });
+
+    await screen.findByText("gates.gate_set");
+    await userEvent.click(screen.getByRole("button", { name: "İncele" }));
+
+    const field = await screen.findByLabelText("Yeni değer");
+    await userEvent.clear(field);
+    await userEvent.type(field, "always_six");
+
+    expect(screen.getByRole("button", { name: "Öneriyi onayla" })).toBeInTheDocument();
+  });
+
+  it("treats an AI delegate as the same pair of eyes as the human behind it", async () => {
+    const { fetchImpl } = stubFetch(
+      paramsRoutes({ pending: [{ ...OWN_PENDING, proposedBy: "ai-via:ugur.yildiz@ugurbank.local" }] }),
+    );
+    renderScreen(<ParamsScreen />, { fetchImpl });
+
+    await screen.findByText("gates.gate_set");
+    await userEvent.click(screen.getByRole("button", { name: "İncele" }));
+
+    const field = await screen.findByLabelText("Yeni değer");
+    await userEvent.clear(field);
+    await userEvent.type(field, "always_six");
+
+    // ugur and ai-via:ugur are one person holding two credentials (M32/M101).
+    expect(screen.queryByRole("button", { name: "Öneriyi onayla" })).not.toBeInTheDocument();
+  });
+
   it("renders a translated sentence, never the server's error code, when the list fails", async () => {
     const { fetchImpl } = stubFetch([
       { path: "/params", status: 403, body: { error: "role_required" } },

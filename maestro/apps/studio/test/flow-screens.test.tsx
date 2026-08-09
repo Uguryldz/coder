@@ -75,6 +75,33 @@ const GATE_RUN = {
   updatedAt: "2026-08-06T09:00:00.000Z",
 };
 
+/**
+ * A journal page exactly as `GET /studio/runs/:ticket/journal` sends it: the
+ * shared `{ items, nextCursor }` envelope from routes/paging.ts, not `{ entries }`.
+ * The field name is load-bearing — a screen reading `entries` off this body
+ * renders an empty journal with no error at all.
+ */
+const JOURNAL = [
+  {
+    runId: "run-501-aaaaaaaa",
+    seq: 1,
+    at: "2026-08-01T09:05:00.000Z",
+    actor: "ai",
+    kind: "analysis",
+    title: "Analiz belgesi üretildi",
+    detail: "",
+  },
+  {
+    runId: "run-501-aaaaaaaa",
+    seq: 2,
+    at: "2026-08-01T10:15:00.000Z",
+    actor: "human",
+    kind: "gate",
+    title: "Kapı onayı verildi",
+    detail: "",
+  },
+];
+
 interface Call {
   readonly url: string;
   readonly method: string;
@@ -225,7 +252,11 @@ describe("dash", () => {
 
 describe("detail + gate decision", () => {
   const routes: Readonly<Record<string, () => Response>> = {
-    "/api/runs/UGURPAY-501/journal": () => json({ error: "not_found" }, 404),
+    // The journal lives under /studio/runs (routes/studio-runs.ts:80), NOT under
+    // the /runs prefix the detail header uses. The stub answers only the real
+    // path so a regression back to /runs/:ticket/journal falls through to the
+    // stub's 404 and the assertions below fail.
+    "/api/studio/runs/UGURPAY-501/journal": () => json({ items: JOURNAL, nextCursor: null }),
     "/api/runs/UGURPAY-501": () => json(GATE_RUN),
   };
 
@@ -322,13 +353,42 @@ describe("detail + gate decision", () => {
     expect(document.body.textContent).not.toContain("no_run");
   });
 
+  /**
+   * K1 regression. Two independent ways to break this, both silent in the old
+   * suite: call `/runs/:ticket/journal` (404, no such route) or read `entries`
+   * off a body that carries `items`. The first shows an error panel, the second
+   * shows an empty journal that looks healthy — so the test asserts the URL
+   * that left the client AND the rows that came back.
+   */
+  it("reads the journal from GET /studio/runs/:ticket/journal and renders its items", async () => {
+    const stub = renderDetail(TECH_LEAD);
+    await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("tab", { name: /Ticket defteri/ }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Analiz belgesi üretildi")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Kapı onayı verildi")).toBeInTheDocument();
+
+    const call = stub.calls.find((entry) => entry.url.includes("/journal"));
+    expect(call).toBeDefined();
+    expect(call!.url).toContain("/api/studio/runs/UGURPAY-501/journal");
+    // The /runs prefix has no journal sub-resource; asking there is a 404.
+    expect(call!.url).not.toMatch(/\/api\/runs\/UGURPAY-501\/journal/);
+
+    // An empty envelope must not be mistaken for a populated one.
+    expect(screen.queryByText("Defter boş")).not.toBeInTheDocument();
+  });
+
   it("shows the journal's failure as translated text, not invented history", async () => {
-    renderDetail(TECH_LEAD);
+    renderDetail(TECH_LEAD, {
+      "/api/studio/runs/UGURPAY-501/journal": () => json({ error: "no_run" }, 404),
+    });
     await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("tab", { name: /Ticket defteri/ }));
 
     await waitFor(() => expect(screen.getByText("Veri alınamadı")).toBeInTheDocument());
-    expect(document.body.textContent).not.toContain("not_found");
+    expect(document.body.textContent).not.toContain("no_run");
   });
 });
 
@@ -448,14 +508,22 @@ describe("evidence", () => {
   };
 
   it("renders the manifest and the signed approval chain", async () => {
-    const { fetchImpl } = stubFetch({
-      "/api/runs/UGURPAY-123/evidence": () => json(PACKAGE),
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-123/evidence": () => json(PACKAGE),
     });
+    const { fetchImpl } = stub;
     renderScreen(<EvidenceScreen />, { fetchImpl });
 
     await userEvent.type(screen.getByLabelText("Ticket"), "UGURPAY-123");
 
     await waitFor(() => expect(screen.getByText("01-analiz.md")).toBeInTheDocument());
+
+    // K1 regression: the manifest route is /studio/runs/..., not /runs/....
+    // Typing fires a request per keystroke, so the FULL key is the last one.
+    const evidenceCalls = stub.calls.filter((entry) => entry.url.includes("/evidence"));
+    expect(evidenceCalls.at(-1)!.url).toContain("/api/studio/runs/UGURPAY-123/evidence");
+    // No call, at any keystroke, may go to the /runs prefix.
+    expect(evidenceCalls.every((entry) => entry.url.includes("/api/studio/runs/"))).toBe(true);
     expect(screen.getByText("28 KB")).toBeInTheDocument();
     expect(screen.getByText("ayse.kaya@ugurbank")).toBeInTheDocument();
     // sodVerified comes from the decision, and is shown as such.
@@ -468,7 +536,7 @@ describe("evidence", () => {
       approvals: [{ ...PACKAGE.approvals[0]!, sodVerified: false }],
     };
     const { fetchImpl } = stubFetch({
-      "/api/runs/UGURPAY-123/evidence": () => json(unverified),
+      "/api/studio/runs/UGURPAY-123/evidence": () => json(unverified),
     });
     renderScreen(<EvidenceScreen />, { fetchImpl });
 

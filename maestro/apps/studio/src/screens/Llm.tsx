@@ -4,6 +4,7 @@ import type { LlmCallLog, SubscriptionAccount } from "@maestro/contracts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { poolOutcome, outcomeExplanationKey, outcomeKey, outcomeTone } from "./shared/outcome.ts";
 
@@ -54,6 +55,7 @@ const ACCOUNT_TONE = (state: string): "green" | "amber" | "red" | "gray" => {
 export function LlmScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
 
   const quota = useQuery({
     queryKey: ["quota"],
@@ -102,8 +104,12 @@ export function LlmScreen(): ReactNode {
               {
                 key: "state",
                 header: t("llm.col.state"),
+                // ACCOUNT_TONE already falls through to grey for an unknown
+                // state; the label needs the same treatment or the row throws.
                 cell: (row) => (
-                  <Badge tone={ACCOUNT_TONE(row.state)}>{t(`llm.account_state.${row.state}`)}</Badge>
+                  <Badge tone={ACCOUNT_TONE(row.state)}>
+                    {enumLabel("llm.account_state", row.state).text}
+                  </Badge>
                 ),
               },
               {
@@ -151,7 +157,11 @@ export function LlmScreen(): ReactNode {
             <Table
               columns={[
                 { key: "at", header: t("llm.col.at"), cell: (row: LlmCallLog) => row.at },
-                { key: "role", header: t("llm.col.role"), cell: (row) => t(`llm.role.${row.role}`) },
+                {
+                  key: "role",
+                  header: t("llm.col.role"),
+                  cell: (row) => enumLabel("llm.role", row.role).text,
+                },
                 {
                   key: "driver",
                   header: t("llm.col.driver"),
@@ -177,7 +187,7 @@ export function LlmScreen(): ReactNode {
                   header: t("llm.col.class"),
                   cell: (row) => (
                     <Badge tone={row.dataClass === "gizli" ? "red" : "gray"}>
-                      {t(`data_class.${row.dataClass}`)}
+                      {enumLabel("data_class", row.dataClass).text}
                     </Badge>
                   ),
                 },

@@ -4,6 +4,7 @@ import type { LlmCallLog, SubscriptionAccount } from "@maestro/contracts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Kpi, Table } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { poolOutcome, outcomeExplanationKey, outcomeKey, outcomeTone } from "./shared/outcome.ts";
 
@@ -39,6 +40,7 @@ interface QuotaResponse {
 export function CostScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
 
   const calls = useQuery({
     queryKey: ["cost", "calls"],
@@ -132,7 +134,13 @@ export function CostScreen(): ReactNode {
                   // A call with no runId is platform overhead, not a run's cost.
                   cell: (row) => row.runId ?? t("cost.no_run"),
                 },
-                { key: "role", header: t("llm.col.role"), cell: (row) => t(`llm.role.${row.role}`) },
+                {
+                  key: "role",
+                  header: t("llm.col.role"),
+                  // The gateway's role vocabulary grows independently of this
+                  // build; an unrecognised one must not blank the cost table.
+                  cell: (row) => enumLabel("llm.role", row.role).text,
+                },
                 {
                   key: "driver",
                   header: t("llm.col.driver"),
@@ -153,9 +161,12 @@ export function CostScreen(): ReactNode {
                 {
                   key: "class",
                   header: t("llm.col.class"),
+                  // "gizli" stays red on the raw value, not on the label: the
+                  // classification must keep its warning colour even if this
+                  // build has no translation for some other class.
                   cell: (row) => (
                     <Badge tone={row.dataClass === "gizli" ? "red" : "gray"}>
-                      {t(`data_class.${row.dataClass}`)}
+                      {enumLabel("data_class", row.dataClass).text}
                     </Badge>
                   ),
                 },

@@ -170,6 +170,9 @@ importers:
       '@maestro/llm-gateway':
         specifier: workspace:*
         version: link:../../packages/llm-gateway
+      '@maestro/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@maestro/notify':
         specifier: workspace:*
         version: link:../../packages/notify

@@ -831,6 +831,7 @@
   "params.description.merge_mode": "Merge mode: human merge (default) or auto merge",
   "params.description.notify_routing": "Which notification channels each event fans out to",
   "params.description.output_language": "AI output language (analysis, Jira comments)",
+  "params.description.publish_targets": "Which targets generated documents are published to",
   "params.description.quota_warn_pct": "Warning threshold within a subscription quota window (%)",
   "params.description.reminder_channel": "Notification channel for reminders and escalation",
   "params.description.scan_block_level": "Which security finding severity blocks the flow",

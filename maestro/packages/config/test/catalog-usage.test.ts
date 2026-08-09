@@ -40,20 +40,70 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
   return acc;
 }
 
+/**
+ * Every M71 parameter key, read from the file that defines them.
+ *
+ * Read rather than imported: `@maestro/config` is a leaf that `@maestro/db`
+ * depends on, so importing the registry here would invert the dependency. The
+ * `key:` literals in that one file are the registry, and taking them from the
+ * source keeps this list from drifting out of date the way a hand-copied one
+ * would.
+ */
+function parameterKeys(): Set<string> {
+  const source = readFileSync(
+    join(PACKAGES_DIR, "db", "src", "params-defaults.ts"),
+    "utf8",
+  );
+  const keys = new Set<string>();
+  for (const match of source.matchAll(/\bkey:\s*"([a-z0-9_.]+)"/g)) keys.add(match[1]!);
+  return keys;
+}
+
 describe("message catalog usage (M104)", () => {
+  const PARAM_KEYS = parameterKeys();
   const used = new Map<string, string>(); // key -> first file that emits it
   for (const file of [...sourceFiles(PACKAGES_DIR), ...sourceFiles(APPS_DIR)]) {
     if (file.includes(join("config", "src"))) continue; // the catalog itself
     const text = readFileSync(file, "utf8");
     for (const match of text.matchAll(KEY_LITERAL)) {
       const key = match[1]!;
-      // `key: "notify.reminder_channel"` is a PARAMETER key (M71), not a
-      // message key — same shape, different namespace.
+      /**
+       * A PARAMETER key (M71) is not a message key, and the two are shaped
+       * identically — `notify.routing` could be either. The catalog cannot
+       * contain them, so a scan that treated them as message keys would report
+       * a permanent, unfixable failure.
+       *
+       * They are recognised by NAME rather than by syntax. The check used to
+       * be positional (`key:\s*$`), which only covered
+       * `{ key: "notify.routing" }` and missed every other way a parameter key
+       * legitimately appears — a lookup argument, or a named constant like
+       * `PARAM_KEYS.notifyRouting`. Matching the value against the parameter
+       * registry covers all of them and cannot drift: a parameter that stops
+       * existing stops being excluded.
+       */
+      if (PARAM_KEYS.has(key)) continue;
+      /**
+       * The positional form too, for parameter keys that are NOT in the
+       * shipped registry: test helpers build `ParamDefinition` fixtures with
+       * invented keys (`gate.reminder_days`), and those are parameter keys by
+       * position even though no real parameter has the name.
+       */
       const before = text.slice(Math.max(0, match.index - 24), match.index);
       if (/(?:^|[^A-Za-z])key:\s*$/.test(before)) continue;
       if (!key.endsWith(".")) used.set(key, used.get(key) ?? file);
     }
   }
+
+  /**
+   * The exclusion list must be real. If `params-defaults.ts` moves or its
+   * shape changes, `parameterKeys()` would return an empty set and every
+   * parameter key would be reported as a missing message key — a confusing
+   * failure. Asserting it found something turns that into a clear one.
+   */
+  it("reads the parameter registry it excludes", () => {
+    expect(PARAM_KEYS.size).toBeGreaterThan(10);
+    expect(PARAM_KEYS.has("notify.routing")).toBe(true);
+  });
 
   it("finds message keys to check (the scan itself must not silently pass)", () => {
     expect(used.size).toBeGreaterThan(10);

@@ -40,3 +40,33 @@ export function prismaSqlExecutor(db: RawQueryClient): SqlExecutor {
     },
   };
 }
+
+/** The subset of the Prisma client the transaction runner needs. */
+export interface InteractiveTransactionClient extends RawQueryClient {
+  $transaction<T>(fn: (tx: RawQueryClient) => Promise<T>): Promise<T>;
+}
+
+/**
+ * Run a callback inside ONE interactive transaction, on ONE connection.
+ *
+ * This exists for the audit chain's advisory lock (`stores/audit.ts`).
+ * `pg_advisory_xact_lock` is released when the transaction ends, which is the
+ * property that makes a crashed worker release the chain instead of wedging
+ * it — but it only holds if the lock and the work that follows run on the same
+ * connection. Prisma's interactive transaction is what guarantees that; issuing
+ * the lock through the ordinary client would take it on a pooled connection
+ * and release it immediately, leaving the chain unprotected while looking
+ * locked.
+ *
+ * The callback gets a transactional handle whose `query` goes through the SAME
+ * connection, so the store built on top of it writes inside the lock.
+ */
+export function prismaTransactionRunner(db: InteractiveTransactionClient): {
+  transaction<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T>;
+} {
+  return {
+    transaction<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T> {
+      return db.$transaction((tx) => fn(prismaSqlExecutor(tx)));
+    },
+  };
+}

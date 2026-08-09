@@ -202,7 +202,38 @@ model WorkflowRun {
   startedAt DateTime   @db.Timestamptz(3)
   updatedAt DateTime   @updatedAt @db.Timestamptz(3)
 
+  /// ---------------------------------------------------------------------
+  /// Run context (Dalga 5). An activity receives a `TicketKey` and nothing
+  /// else — the workflow may not carry mutable business state through its
+  /// arguments — so every fact about the run is read back from this row
+  /// (`RunContextStore`, packages/workflows/src/impl/deps.ts).
+  ///
+  /// The columns are NOT NULL with defaults rather than nullable: a run whose
+  /// branch is NULL is a run the engineering turn cannot push, and "" is a
+  /// value the store can refuse loudly. Nullable columns would push that
+  /// check to every reader, and one of them would forget.
+  /// ---------------------------------------------------------------------
+  /// Locale — text, because contracts' Locale is the validator (M104).
+  locale           String  @default("tr") @db.VarChar(8)
+  /// Prompt-variant the run is pinned to (M38).
+  variantId        String  @default("") @db.VarChar(64)
+  /// Analysis template pinned at run start (M83).
+  templateVersion  String  @default("") @db.VarChar(64)
+  workspacePath    String  @default("")
+  /// False after an M65 archive — the clone is gone, the context is not.
+  workspacePresent Boolean @default(false)
+  /// The repo's ADDITIONS to the M52 deny-list, from `.maestro.yaml` (M71).
+  protectedPathsJson Json? // string[]
+  /// The repo's own lint/build/test commands (`.maestro.yaml`, M71).
+  verificationJson   Json? // CommandSpec[]
+  branch           String  @default("") @db.VarChar(255)
+  targetBranch     String  @default("") @db.VarChar(255)
+  prId             Int?
+  /// Resume token of the live agent session (M30); NULL before the first turn.
+  resumeToken      String?
+
   stepEvents  StepEvent[]
+  gates       Gate[]
   journal     JournalEntry[]
   application Application?   @relation(fields: [appId], references: [appId], onDelete: Restrict, onUpdate: Cascade)
 
@@ -242,6 +273,82 @@ model JournalEntry {
   run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([runId, seq]) // append-only; no updates by convention (M30)
+}
+
+/// One approval gate, and the escalation ladder's anchor (M88).
+///
+/// `openedAt` is that anchor: the ladder's thresholds are measured from it, so
+/// re-opening an already-open gate must NOT move it — `GateStore.open` is
+/// idempotent and the primary key below is what makes that enforceable rather
+/// than merely intended. Two workers racing the same signal get one row and
+/// one ladder, not two.
+///
+/// `firedStepIds` is the ladder's memory: a step whose id is in this array is
+/// never sent again. It is an array column rather than a child table because
+/// it is only ever read whole, and because appending under a single UPDATE is
+/// what keeps a concurrent reminder from losing the other's write.
+model Gate {
+  runId    String    @db.VarChar(128)
+  /// StepId — text, same reason as `WorkflowRun.step`.
+  step     String    @db.VarChar(8)
+  /// The group that OWNS the gate; only its members may close it (M32/M51).
+  ownerGroup String  @db.VarChar(128)
+  openedAt DateTime  @db.Timestamptz(3)
+  /// Ladder steps already sent; the ladder never fires the same one twice.
+  firedStepIds String[]
+  /// NULL while the gate is open. A closed gate is never re-opened — a second
+  /// decision on the same step is a new run's business (M51).
+  closedAt DateTime? @db.Timestamptz(3)
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([runId, step])
+  @@index([closedAt]) // "which gates are still open" — the ladder's sweep
+}
+
+/// Table-backed idempotency (M33).
+///
+/// Temporal retries an activity that failed halfway, so "post the Jira comment,
+/// then append the audit record" would run the comment twice unless something
+/// remembers across processes. `InMemoryIdempotency` remembers within ONE
+/// worker; this table is what makes the guarantee survive a second worker and
+/// a restart.
+///
+/// The primary key is the whole mechanism: two workers racing the same key
+/// both INSERT, exactly one wins, and the loser waits for the winner's row
+/// rather than running the effect a second time.
+model IdempotencyKey {
+  key       String   @id @db.VarChar(512)
+  /// `done` rows carry the first result, replayed verbatim on every retry.
+  /// A row is inserted `running` first: the claim has to be visible to the
+  /// racing worker BEFORE the effect runs, or both would run it.
+  state     String   @db.VarChar(16) // running | done
+  /// The first result, JSON-encoded. NULL while `running`, and legitimately
+  /// NULL for a `done` effect that returned `undefined`.
+  resultJson Json?
+  claimedAt DateTime @db.Timestamptz(3)
+  /// Set when the effect completed; NULL while `running`.
+  completedAt DateTime? @db.Timestamptz(3)
+
+  @@index([claimedAt]) // retention sweep: finished keys are not kept forever
+}
+
+/// Publish receipts, keyed by document (M47/M75).
+///
+/// `@maestro/publish` remembers "I already posted this analysis as comment
+/// 4711 with hash abc" so a republish EDITS that comment instead of adding a
+/// second one. `InMemoryPublishState` loses that on restart, and the next
+/// publish then posts a duplicate to a bank's ticket — which is why the
+/// composition root refused to build the publish deps without this table.
+///
+/// The value is opaque text: each driver stores its own shape (a Confluence
+/// page id, a JSON `{commentId, hash}`), and giving them columns here would
+/// make this table know about drivers it must not know about.
+model PublishState {
+  key   String @id @db.VarChar(512)
+  value String
+
+  updatedAt DateTime @db.Timestamptz(3)
 }
 
 // ---------------------------------------------------------------------------

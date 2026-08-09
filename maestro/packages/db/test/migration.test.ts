@@ -33,10 +33,22 @@ describe("initial migration", () => {
     expect(readFileSync(MIGRATION_LOCK_PATH, "utf8")).toContain('provider = "postgresql"');
   });
 
+  /**
+   * Reads the WHOLE migration set, not only 0001 — the same reasoning the enum
+   * test below already follows. A model added in a later migration is history,
+   * not drift: `Gate`, `IdempotencyKey` and `PublishState` arrive in 0004, and
+   * a guard that only looked at the initial migration would demand they be
+   * back-dated into a generated file that must never be edited by hand.
+   *
+   * What the guard still catches is the thing it exists for: a model in the
+   * schema that NO migration creates, which is a table the deployment will not
+   * have.
+   */
   it("creates a table for every model", () => {
+    const allSql = allMigrationSql();
     const missing = parseModels(schema)
       .map((m) => m.tableName)
-      .filter((table) => !sql.includes(`CREATE TABLE "${table}" (`));
+      .filter((table) => !allSql.includes(`CREATE TABLE "${table}" (`));
     expect(missing).toEqual([]);
   });
 

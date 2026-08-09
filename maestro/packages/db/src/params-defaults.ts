@@ -272,6 +272,28 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     },
   },
   {
+    // M47 — where a generated document is published, per document kind.
+    //
+    // The two kinds are the two `ParamReader.publishTargets` asks for. Both
+    // default to Jira alone: the ticket is where the conversation already is,
+    // and a Confluence space or a shared drive is a wider audience than the
+    // people on the ticket — widening it is a decision an operator makes
+    // deliberately, not one a default makes for them (an analysis of a
+    // `gizli` ticket published to an org-wide space is a data-class incident).
+    //
+    // An empty list for a kind means "do not publish it", which the delivery
+    // activity reports rather than silently skipping.
+    key: "publish.targets",
+    scope: "project",
+    type: "json",
+    guarded: false,
+    descriptionKey: "params.description.publish_targets",
+    defaultValue: {
+      analysis: ["jira"],
+      evidence_summary: ["jira"],
+    },
+  },
+  {
     // M45 — channel used for the first reminder step. Jira keeps the whole
     // conversation on the ticket, so it is the default.
     key: "notify.reminder_channel",

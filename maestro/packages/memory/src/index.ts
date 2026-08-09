@@ -24,25 +24,29 @@ export type { Clock, JournalDraft, JournalStore } from "./types.js";
 // 2 — living summary (M30, deterministic; the model pass is optional)
 export {
   buildLivingSummary,
-  enrichLivingSummary,
   DEFAULT_LINE_CHARS,
   DEFAULT_RECENT_COUNT,
   FINDING_KINDS,
   SUMMARY_MAX_CHARS,
 } from "./summary.js";
-export type { EnrichOptions, SummaryEnricher, SummaryOptions } from "./summary.js";
-export { clip, digestLine, entryLine, kindCounts, oneLine } from "./summary-format.js";
+export type { SummaryOptions } from "./summary.js";
+export { enrichLivingSummary } from "./enrich.js";
+export type { EnrichOptions, SummaryEnricher } from "./enrich.js";
+export { clip, digestLine, entryLine, kindCounts, oneLine, utcInstant } from "./summary-format.js";
 
 // 3 — bootstrap package (M30/M65)
-export { buildBootstrapPackage, openRejections, BOOTSTRAP_MAX_CHARS } from "./bootstrap.js";
+export { buildBootstrapPackage, BOOTSTRAP_MAX_CHARS, MAX_NOTE_CHARS } from "./bootstrap.js";
 export type {
   BootstrapDeps,
   BootstrapInput,
   BootstrapPackage,
   DiffDigest,
   DiffSummaryInput,
-  OpenRejection,
 } from "./bootstrap.js";
+
+// gate history (M32/M54) — what the resumed agent still owes
+export { openRejections, reviewGateDecisions, MAX_REASON_CHARS } from "./rejections.js";
+export type { GateReview, OpenRejection, SuspectDecision } from "./rejections.js";
 
 // protected paths (M52) — the warning a resumed session is given
 export {
@@ -76,14 +80,16 @@ export {
   SESSION_FILE_SUFFIX,
 } from "./session.js";
 export type { SavedSession, SessionArchiveDeps, SessionRef } from "./session.js";
+// `nodeRandom`/`RandomSource` are deliberately NOT re-exported (verifier
+// O-10): injectable randomness is a nonce-reuse handle, and nothing outside
+// this package's own tests may hold it.
 export {
-  nodeRandom,
   openSessionBytes,
   sealSessionBytes,
   SEALED_OVERHEAD_BYTES,
+  SESSION_FORMAT_VERSION,
   SESSION_KEY_BYTES,
 } from "./crypto.js";
-export type { RandomSource } from "./crypto.js";
 
 // workspace archiving (M65)
 export {

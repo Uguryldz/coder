@@ -13,12 +13,27 @@ export function clip(text: string, max: number): string {
 }
 
 /**
- * One entry, one line: `#12 2026-08-08T09:00:00+03:00 ai/gate: title — detail`.
+ * Canonical UTC form of an instant.
+ *
+ * The journal stores whatever offset the caller wrote (`+03:00`), Postgres
+ * hands it back as `Z`, and a summary that printed either would produce two
+ * different documents for one journal either side of a restart (verifier
+ * O-8). Determinism is the whole promise of this artefact, so every rendered
+ * timestamp is normalised. An unparseable value is printed as it stands — a
+ * summary is not the place to discover a broken timestamp.
+ */
+export function utcInstant(iso: string): string {
+  const millis = Date.parse(iso);
+  return Number.isNaN(millis) ? iso : new Date(millis).toISOString();
+}
+
+/**
+ * One entry, one line: `#12 2026-08-08T06:00:00.000Z ai/gate: title — detail`.
  * The seq is first because it is the only stable handle a reader (or a later
  * entry) has on an event.
  */
 export function entryLine(entry: JournalEntry, lineChars: number): string {
-  const head = `#${entry.seq} ${entry.at} ${entry.actor}/${entry.kind}: ${oneLine(entry.title)}`;
+  const head = `#${entry.seq} ${utcInstant(entry.at)} ${entry.actor}/${entry.kind}: ${oneLine(entry.title)}`;
   const detail = oneLine(entry.detail);
   return clip(detail.length === 0 ? head : `${head} — ${detail}`, lineChars);
 }

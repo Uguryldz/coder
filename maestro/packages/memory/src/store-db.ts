@@ -25,17 +25,28 @@ function isSeqConflict(error: unknown): boolean {
  * pick the same seq both try to insert it, exactly one commits, and the loser
  * gets a `SeqTakenError` it can retry. No advisory lock, no sequence object,
  * no gap — the head of the journal is whatever is committed.
+ *
+ * `AppendOnlyDelegate` is a structural type, so a caller *can* hand in a
+ * wider object — the type stops this module from naming `update`, not a
+ * caller from passing a client that has one (verifier D-13). The three
+ * permitted methods are therefore captured here and the object is never
+ * consulted again: nothing this store holds can reach a mutating method, whoever
+ * passed what.
  */
 export function journalStoreFromDb(delegate: JournalDelegate): JournalStore {
+  const readHead = delegate.aggregate.bind(delegate);
+  const insertRow = delegate.create.bind(delegate);
+  const readRows = delegate.findMany.bind(delegate);
+
   return {
     async maxSeq(runId: string): Promise<number | null> {
-      const aggregate = await delegate.aggregate({ where: { runId }, _max: { seq: true } });
+      const aggregate = await readHead({ where: { runId }, _max: { seq: true } });
       return aggregate._max?.seq ?? null;
     },
 
     async insert(entry): Promise<void> {
       try {
-        await delegate.create({
+        await insertRow({
           data: {
             runId: entry.runId,
             seq: entry.seq,
@@ -54,7 +65,7 @@ export function journalStoreFromDb(delegate: JournalDelegate): JournalStore {
     },
 
     async list(runId: string, fromSeq?: number): Promise<JournalEntry[]> {
-      const rows = await delegate.findMany({
+      const rows = await readRows({
         where: fromSeq === undefined ? { runId } : { runId, seq: { gte: fromSeq } },
         orderBy: { seq: "asc" },
       });

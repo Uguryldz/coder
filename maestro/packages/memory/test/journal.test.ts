@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import * as memory from "../src/index.js";
 import { MemoryArgumentError, SeqAllocationError, SeqTakenError } from "../src/errors.js";
-import { appendJournal, type JournalDeps } from "../src/journal.js";
+import {
+  appendJournal,
+  DEFAULT_MAX_APPEND_ATTEMPTS,
+  MAX_APPEND_BACKOFF_MS,
+  type JournalDeps,
+} from "../src/journal.js";
 import type { JournalStore } from "../src/types.js";
 import { fakeJournalStore, JournalTable } from "./fakes/journal-table.js";
 import { fixedClock, RUN_ID, SAMPLE_EMAIL, testMasker } from "./fakes/support.js";
@@ -90,6 +95,66 @@ describe("appendJournal", () => {
     expect(seqs).toEqual(Array.from({ length: 40 }, (_, i) => i));
     // The race must actually have happened, otherwise this test proves nothing.
     expect(a.stats.conflicts + b.stats.conflicts).toBeGreaterThan(0);
+  });
+
+  it("survives twenty independent writers on one run (Y-2)", async () => {
+    // The in-process write chain is keyed by the store object, so a wiring
+    // that builds a store per activity gets no help from it. Fan-out + a CI
+    // signal + notify writing to the same run is a realistic twenty; not one
+    // of them may lose its entry.
+    const table = new JournalTable();
+    const stores = Array.from({ length: 20 }, () => fakeJournalStore(table, { yields: 2 }));
+
+    const written = await Promise.all(
+      stores.map((store, i) =>
+        appendJournal({ ...deps(store), wait: async () => {} }, {
+          runId: RUN_ID,
+          actor: "ai",
+          kind: "engineering",
+          title: `writer ${i}`,
+        }),
+      ),
+    );
+
+    expect(table.of(RUN_ID).map((row) => row.seq)).toEqual(
+      Array.from({ length: 20 }, (_, i) => i),
+    );
+    expect(new Set(written.map((entry) => entry.seq)).size).toBe(20);
+    // Each writer is told the seq its own row actually got.
+    for (const entry of written) {
+      expect(table.of(RUN_ID)[entry.seq]?.title).toBe(entry.title);
+    }
+    expect(stores.reduce((sum, store) => sum + store.stats.conflicts, 0)).toBeGreaterThan(0);
+  });
+
+  it("backs off with jitter instead of spinning on a lost race (Y-2)", async () => {
+    const waits: number[] = [];
+    let head = 0;
+    const store: JournalStore = {
+      maxSeq: async () => head,
+      insert: async (entry) => {
+        // Somebody else is committing faster than we can read.
+        head += 1;
+        throw new SeqTakenError(entry.runId, entry.seq);
+      },
+      list: async () => [],
+    };
+    await expect(
+      appendJournal(
+        { ...deps(store), maxAttempts: 12, wait: async (ms) => void waits.push(ms) },
+        { runId: RUN_ID, actor: "ai", kind: "other", title: "unlucky" },
+      ),
+    ).rejects.toBeInstanceOf(SeqAllocationError);
+
+    expect(waits.length).toBeGreaterThan(0);
+    // Growing, capped, and never twice the same value (jitter).
+    expect(waits[waits.length - 1]).toBeGreaterThan(waits[0] as number);
+    expect(Math.max(...waits)).toBeLessThanOrEqual(MAX_APPEND_BACKOFF_MS);
+    expect(new Set(waits).size).toBeGreaterThan(1);
+  });
+
+  it("has a retry budget wide enough for a realistic fan-out", () => {
+    expect(DEFAULT_MAX_APPEND_ATTEMPTS).toBeGreaterThanOrEqual(24);
   });
 
   it("keeps runs independent", async () => {

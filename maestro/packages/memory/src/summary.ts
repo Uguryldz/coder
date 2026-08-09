@@ -1,7 +1,8 @@
 import { LivingSummary, type JournalEntry } from "@maestro/contracts";
+import { keepNewest, renderBlocks, type TextBlock } from "./blocks.js";
 import { MemoryArgumentError } from "./errors.js";
 import type { JournalMasker } from "./masking.js";
-import { clip, digestLine, entryLine } from "./summary-format.js";
+import { digestLine, entryLine, utcInstant } from "./summary-format.js";
 
 /** `contracts.LivingSummary.text` is capped at 8000 characters (M30). */
 export const SUMMARY_MAX_CHARS = 8000;
@@ -48,10 +49,23 @@ export interface SummaryOptions {
   readonly guard?: Pick<JournalMasker, "assertClean">;
 }
 
+/**
+ * Share of the budget reserved for signed gate decisions (verifier O-5).
+ *
+ * Gate lines are the evidence half of the summary (M33/M34): who approved
+ * what, and when. Under the old ladder they competed with the event log and
+ * lost — 30 decisions came out as 3 lines. They now have a floor of their own
+ * and are the last section to give way; what does not fit is *counted*, never
+ * silently absent.
+ */
+const GATE_BUDGET_SHARE = 0.5;
+
+/** Section worth, cheapest first. Guaranteed sections use `Infinity`. */
+const VALUE = { earlier: 10, recent: 30, findings: 40, log: 10 } as const;
+
 interface Level {
   readonly mode: "full" | "sections";
   readonly recent: number;
-  readonly gates: number;
   readonly earlier: "full" | "digest" | "none";
   readonly lineChars: number;
 }
@@ -61,19 +75,20 @@ interface Level {
  * first result that fits the budget wins, which keeps the whole thing a pure
  * function of the journal: same entries in, same characters out.
  *
- * What is given up, in order: the full older log, then older gate lines, then
- * line width. The newest events, the newest gate decisions and the open
- * findings survive every level — that is the retention rule of M30.
+ * What is given up, in order: the full older log, then the number of recent
+ * events, then the compressed remainder, then line width. The newest events,
+ * the gate decisions and the open findings survive every level — that is the
+ * retention rule of M30.
  */
 function ladder(recent: number, lineChars: number): Level[] {
   const half = Math.max(3, Math.floor(recent / 2));
   return [
-    { mode: "full", recent, gates: Infinity, earlier: "full", lineChars },
-    { mode: "sections", recent, gates: Infinity, earlier: "digest", lineChars },
-    { mode: "sections", recent: half, gates: 12, earlier: "digest", lineChars },
-    { mode: "sections", recent: 3, gates: 6, earlier: "digest", lineChars: 120 },
-    { mode: "sections", recent: 3, gates: 3, earlier: "none", lineChars: 80 },
-    { mode: "sections", recent: 1, gates: 1, earlier: "none", lineChars: 60 },
+    { mode: "full", recent, earlier: "full", lineChars },
+    { mode: "sections", recent, earlier: "digest", lineChars },
+    { mode: "sections", recent: half, earlier: "digest", lineChars },
+    { mode: "sections", recent: 3, earlier: "digest", lineChars: 120 },
+    { mode: "sections", recent: 3, earlier: "none", lineChars: 80 },
+    { mode: "sections", recent: 1, earlier: "none", lineChars: 60 },
   ];
 }
 
@@ -101,18 +116,36 @@ function header(runId: string, entries: readonly JournalEntry[]): string[] {
   }
   return [
     `run ${runId} · journal #${first.seq}-#${last.seq} (${entries.length} entries)`,
-    `window ${first.at} → ${last.at}`,
+    `window ${utcInstant(first.at)} → ${utcInstant(last.at)}`,
   ];
 }
 
-function render(runId: string, entries: readonly JournalEntry[], level: Level): string {
-  const lines = header(runId, entries);
-  if (entries.length === 0) return lines.join("\n");
+/**
+ * One level of the ladder.
+ *
+ * `maxChars` is the caller's budget: the gate section is sized from it at
+ * every level, so signed decisions get their reserved share whether the
+ * summary is rendered wide or narrow. `fit` additionally makes the *other*
+ * sections give way until the whole thing fits — the last-resort path.
+ */
+function render(
+  runId: string,
+  entries: readonly JournalEntry[],
+  level: Level,
+  maxChars: number,
+  fit: boolean,
+): string {
+  const budget = fit ? maxChars : Infinity;
+  const blocks: TextBlock[] = [{ lines: header(runId, entries), value: Infinity }];
+  if (entries.length === 0) return renderBlocks(blocks, budget);
 
   if (level.mode === "full") {
-    lines.push("", "## log");
-    for (const entry of entries) lines.push(entryLine(entry, level.lineChars));
-    return lines.join("\n");
+    blocks.push({
+      heading: () => "## log",
+      lines: entries.map((entry) => entryLine(entry, level.lineChars)),
+      value: VALUE.log,
+    });
+    return renderBlocks(blocks, budget);
   }
 
   const recentFrom = Math.max(0, entries.length - level.recent);
@@ -128,32 +161,45 @@ function render(runId: string, entries: readonly JournalEntry[], level: Level): 
     .filter((entry) => entry.seq < (recent[0]?.seq ?? Infinity))
     .sort((a, b) => a.seq - b.seq);
 
+  // Gate decisions first, out of their own reserved budget, and never trimmed
+  // afterwards by a longer event log.
   const olderGates = older.filter((entry) => entry.kind === "gate");
-  const keptGates = olderGates.slice(Math.max(0, olderGates.length - level.gates));
-  const droppedGates = olderGates.length - keptGates.length;
-
-  if (keptGates.length > 0 || droppedGates > 0) {
-    lines.push("", "## gate decisions");
-    if (droppedGates > 0) lines.push(`(${droppedGates} earlier gate decisions omitted)`);
-    for (const entry of keptGates) lines.push(entryLine(entry, level.lineChars));
+  if (olderGates.length > 0) {
+    const gates = keepNewest(
+      olderGates.map((entry) => entryLine(entry, level.lineChars)),
+      Math.floor(maxChars * GATE_BUDGET_SHARE),
+    );
+    blocks.push({
+      heading: () => "## gate decisions",
+      lines: gates.kept,
+      value: Infinity,
+      ...(gates.dropped === 0
+        ? {}
+        : { note: `(${gates.dropped} earlier gate decisions omitted)` }),
+    });
   }
 
   if (findings.length > 0) {
-    lines.push("", "## open findings (latest per kind)");
-    for (const entry of findings) lines.push(entryLine(entry, level.lineChars));
+    blocks.push({
+      heading: () => "## open findings (latest per kind)",
+      lines: findings.map((entry) => entryLine(entry, level.lineChars)),
+      value: VALUE.findings,
+    });
   }
 
   if (recent.length > 0) {
-    lines.push("", `## recent (last ${recent.length})`);
-    for (const entry of recent) lines.push(entryLine(entry, level.lineChars));
+    blocks.push({
+      heading: (kept) => `## recent (last ${kept})`,
+      lines: recent.map((entry) => entryLine(entry, level.lineChars)),
+      value: VALUE.recent,
+    });
   }
 
   if (level.earlier !== "none" && older.length > 0) {
-    lines.push("", "## earlier");
-    lines.push(digestLine(older));
+    blocks.push({ heading: () => "## earlier", lines: [digestLine(older)], value: VALUE.earlier });
   }
 
-  return lines.join("\n");
+  return renderBlocks(blocks, budget);
 }
 
 /**
@@ -186,73 +232,21 @@ export function buildLivingSummary(
   const sorted = normalise(runId, entries);
   const upToSeq = sorted[sorted.length - 1]?.seq ?? 0;
 
+  // The ladder is the primary mechanism: the widest level that fits wins.
+  const levels = ladder(recentCount, lineChars);
   let text = "";
-  for (const level of ladder(recentCount, lineChars)) {
-    text = render(runId, sorted, level);
+  for (const level of levels) {
+    text = render(runId, sorted, level, maxChars, false);
     if (text.length <= maxChars) break;
   }
-  // Last resort: a journal of pathological single entries can still overflow
-  // the narrowest level. Truncating is preferable to failing — a clipped
-  // summary is context, an exception is context loss.
-  text = clip(text, maxChars);
+  // A journal of pathological single entries can overflow even the narrowest
+  // level. Then, and only then, the sections give way cheapest-first — the
+  // compressed remainder before the recent events, the oldest recent event
+  // before the newest, the gate decisions never (verifier D-14/O-5).
+  if (text.length > maxChars) {
+    text = render(runId, sorted, levels[levels.length - 1] as Level, maxChars, true);
+  }
 
   options.guard?.assertClean(text, "living-summary");
   return LivingSummary.parse({ runId, upToSeq, text });
-}
-
-/** Optional model pass over a finished summary. Never the source of truth. */
-export type SummaryEnricher = (input: {
-  readonly summary: LivingSummary;
-  readonly entries: readonly JournalEntry[];
-}) => Promise<string>;
-
-export interface EnrichOptions extends SummaryOptions {
-  /** Off by default: no enricher, no model call, no non-determinism. */
-  readonly enrich?: SummaryEnricher;
-  /** Masks the model's answer before it joins the record (M82). Required with `enrich`. */
-  readonly masker?: JournalMasker;
-  /** Told when a model pass was dropped, so the caller can journal it. */
-  readonly onEnrichFailed?: (error: unknown) => void;
-}
-
-const NOTES_HEADING = "\n\n## notes (model)\n";
-
-/**
- * Deterministic summary, optionally with a model-written note appended.
- *
- * The note is *appended*, never substituted: every guaranteed section is
- * already in the text before the model is asked anything, so a hallucinating,
- * failing or unreachable model can subtract nothing. A failed pass returns the
- * deterministic summary unchanged.
- */
-export async function enrichLivingSummary(
-  runId: string,
-  entries: readonly JournalEntry[],
-  options: EnrichOptions = {},
-): Promise<LivingSummary> {
-  const base = buildLivingSummary(runId, entries, options);
-  const { enrich, masker } = options;
-  if (enrich === undefined) return base;
-  if (masker === undefined) {
-    throw new MemoryArgumentError("enrichLivingSummary", "an enricher requires a masker (M82)");
-  }
-
-  const maxChars = Math.min(options.maxChars ?? SUMMARY_MAX_CHARS, SUMMARY_MAX_CHARS);
-  const room = maxChars - base.text.length - NOTES_HEADING.length;
-  if (room <= 0) return base;
-
-  let note: string;
-  try {
-    note = masker.text(await enrich({ summary: base, entries }));
-  } catch (error) {
-    options.onEnrichFailed?.(error);
-    return base;
-  }
-  const trimmed = clip(note.replace(/\s+$/, ""), room);
-  if (trimmed.length === 0) return base;
-  return LivingSummary.parse({
-    runId: base.runId,
-    upToSeq: base.upToSeq,
-    text: `${base.text}${NOTES_HEADING}${trimmed}`,
-  });
 }

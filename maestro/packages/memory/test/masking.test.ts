@@ -67,8 +67,27 @@ describe("createJournalMasker", () => {
 
   it("does not accept unmasked text where masked text is required", () => {
     const masker = testMasker();
-    // @ts-expect-error — a bare string is not `Journaled`; only the masker mints it.
-    expect(() => masker.seal(IDENTITY, { title: "raw", detail: "" })).not.toThrow();
+    // Two independent refusals: the brand keeps a bare object out at compile
+    // time, and `assertNoPii` keeps its contents out at runtime.
+    expect(() =>
+      // @ts-expect-error — a bare object is not `Journaled`; only the masker mints it.
+      masker.seal(IDENTITY, { title: `mail ${SAMPLE_EMAIL}`, detail: "" }),
+    ).toThrow(PiiLeakError);
+  });
+
+  it("keeps one masking session for its whole lifetime, not one per call", () => {
+    // The same value must carry the same token in every entry a run writes —
+    // that is what makes a ten-year journal readable — and re-masking an
+    // already-masked entry must be a no-op rather than a second round of
+    // tokens. Both follow from the session living as long as the masker.
+    const masker = testMasker();
+    const first = masker.prepare({ title: `a ${SAMPLE_EMAIL}`, detail: "" });
+    const second = masker.text(`later, ${SAMPLE_EMAIL} again`);
+    const token = /\[EMAIL_1\.[0-9a-f]+\]/.exec(first.title)?.[0] as string;
+    expect(second).toContain(token);
+    expect(masker.text(second)).toBe(second);
+    // A different masker is a different session, so its tokens differ.
+    expect(testMasker().text(`x ${SAMPLE_EMAIL}`)).not.toContain(token);
   });
 
   it("keeps the reverse map out of everything it returns (M20/M82)", () => {

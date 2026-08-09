@@ -1,12 +1,8 @@
 import type { JournalEntry } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import { MemoryArgumentError } from "../src/errors.js";
-import {
-  buildLivingSummary,
-  enrichLivingSummary,
-  SUMMARY_MAX_CHARS,
-} from "../src/summary.js";
-import { entry, RUN_ID, SAMPLE_EMAIL, testMasker } from "./fakes/support.js";
+import { buildLivingSummary, SUMMARY_MAX_CHARS } from "../src/summary.js";
+import { entry, RUN_ID } from "./fakes/support.js";
 
 /** A long-running ticket: 400 events with gates, scans and a CI verdict. */
 function bigJournal(): JournalEntry[] {
@@ -109,50 +105,93 @@ describe("buildLivingSummary", () => {
   });
 });
 
-describe("enrichLivingSummary", () => {
-  const entries = [entry({ seq: 0, kind: "intake", title: "ticket read" })];
+/** A ticket that went through 30 signed gate decisions (M33/M34 evidence). */
+function gateHeavyJournal(): JournalEntry[] {
+  const entries: JournalEntry[] = [];
+  for (let seq = 0; seq < 200; seq += 1) {
+    if (seq % 6 === 0 && seq < 180) {
+      entries.push(entry({ seq, kind: "gate", actor: "human", title: `gate ${seq} decided` }));
+    } else {
+      entries.push(entry({ seq, detail: "z".repeat(300) }));
+    }
+  }
+  return entries;
+}
 
-  it("returns the deterministic summary when no enricher is configured", async () => {
-    const enriched = await enrichLivingSummary(RUN_ID, entries);
-    expect(enriched.text).toBe(buildLivingSummary(RUN_ID, entries).text);
+const gateLines = (text: string): string[] =>
+  text.split("\n").filter((line) => line.includes("/gate: "));
+
+function omittedGates(text: string): number {
+  const note = /\((\d+) earlier gate decisions omitted\)/.exec(text);
+  return note === null ? 0 : Number(note[1]);
+}
+
+describe("gate decisions under a shrinking budget (M33/M34)", () => {
+  const budgets = [SUMMARY_MAX_CHARS, 4000, 2000, 1200, 900, 600];
+
+  it("keeps signed gate decisions at every level of the ladder, not just the widest", () => {
+    for (const maxChars of budgets) {
+      const text = buildLivingSummary(RUN_ID, gateHeavyJournal(), { maxChars }).text;
+      expect(text.length).toBeLessThanOrEqual(maxChars);
+      expect(text).toContain("## gate decisions");
+      // The newest decision is the one a reviewer is answering; it survives.
+      expect(text).toContain("gate 174 decided");
+    }
   });
 
-  it("appends the model note and masks it (M82)", async () => {
-    const enriched = await enrichLivingSummary(RUN_ID, entries, {
-      masker: testMasker(),
-      enrich: async () => `the reporter is ${SAMPLE_EMAIL}`,
-    });
-    expect(enriched.text).toContain("## notes (model)");
-    expect(enriched.text).toMatch(/\[EMAIL_1\.[0-9a-f]+\]/);
-    expect(enriched.text).not.toContain(SAMPLE_EMAIL);
-    // Everything the deterministic pass guaranteed is still there, first.
-    expect(enriched.text.startsWith(buildLivingSummary(RUN_ID, entries).text)).toBe(true);
+  it("accounts for every gate decision it could not print", () => {
+    for (const maxChars of budgets) {
+      const text = buildLivingSummary(RUN_ID, gateHeavyJournal(), { maxChars }).text;
+      // 30 gates in the journal; the newest ones may also be in `recent`.
+      const printed = new Set(gateLines(text).map((line) => line.split(" ")[0]));
+      expect(printed.size + omittedGates(text)).toBe(30);
+    }
   });
 
-  it("falls back to the deterministic summary when the model fails", async () => {
-    const failures: unknown[] = [];
-    const enriched = await enrichLivingSummary(RUN_ID, entries, {
-      masker: testMasker(),
-      enrich: async () => {
-        throw new Error("gateway queued");
-      },
-      onEnrichFailed: (error) => failures.push(error),
-    });
-    expect(enriched.text).toBe(buildLivingSummary(RUN_ID, entries).text);
-    expect(failures).toHaveLength(1);
+  it("spends a tight budget on gate decisions before anything else (O-5)", () => {
+    // The verifier's probe: a narrowing ladder printed a handful of gate lines
+    // out of 30 while leaving a third of the budget unused. Gate lines are the
+    // core of the approval evidence (M33/M34) and get a reserved share.
+    for (const [maxChars, atLeast] of [
+      [4000, 20],
+      [2000, 14],
+      [1200, 8],
+      [600, 4],
+    ] as const) {
+      const text = buildLivingSummary(RUN_ID, gateHeavyJournal(), { maxChars }).text;
+      expect(gateLines(text).length).toBeGreaterThanOrEqual(atLeast);
+      // …and the budget is actually spent, not left on the table.
+      expect(text.length).toBeGreaterThan(maxChars * 0.7);
+    }
   });
 
-  it("clips a rambling model answer to the remaining budget", async () => {
-    const enriched = await enrichLivingSummary(RUN_ID, entries, {
-      masker: testMasker(),
-      enrich: async () => "n".repeat(20000),
-    });
-    expect(enriched.text.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
+  it("gives the newest events up before it gives up the newest of them (D-14)", () => {
+    // Clipping used to eat the tail of the text, and the tail is the newest
+    // entry. Whatever else goes, the last thing that happened stays.
+    for (const maxChars of [900, 600, 450]) {
+      const entries = Array.from({ length: 60 }, (_, seq) =>
+        entry({ seq, title: `event ${seq} ${"q".repeat(200)}` }),
+      );
+      const text = buildLivingSummary(RUN_ID, entries, { maxChars }).text;
+      expect(text.length).toBeLessThanOrEqual(maxChars);
+      expect(text).toContain("#59");
+    }
   });
+});
 
-  it("refuses to run a model pass without a masker", async () => {
-    await expect(
-      enrichLivingSummary(RUN_ID, entries, { enrich: async () => "note" }),
-    ).rejects.toBeInstanceOf(MemoryArgumentError);
+describe("timestamps (O-8)", () => {
+  it("renders the same characters before and after a database round trip", () => {
+    // Postgres hands `at` back as UTC; the caller wrote `+03:00`. The summary
+    // is a deterministic artefact, so the same events must not produce two
+    // different summaries either side of a restart.
+    const local = [
+      entry({ seq: 0, at: "2026-08-08T12:00:00+03:00", title: "ticket read" }),
+      entry({ seq: 1, at: "2026-08-08T13:30:00+03:00", title: "patch written" }),
+    ];
+    const roundTripped = local.map((e) => ({ ...e, at: new Date(e.at).toISOString() }));
+    expect(buildLivingSummary(RUN_ID, roundTripped).text).toBe(
+      buildLivingSummary(RUN_ID, local).text,
+    );
+    expect(buildLivingSummary(RUN_ID, local).text).toContain("2026-08-08T09:00:00.000Z");
   });
 });

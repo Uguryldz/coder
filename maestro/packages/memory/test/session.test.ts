@@ -1,6 +1,6 @@
 import { ObjectNotFoundError } from "@maestro/storage";
 import { describe, expect, it } from "vitest";
-import { SESSION_KEY_BYTES, type RandomSource } from "../src/crypto.js";
+import { SESSION_KEY_BYTES } from "../src/crypto.js";
 import { SessionCryptoError } from "../src/errors.js";
 import {
   listSessionKeys,
@@ -17,10 +17,9 @@ import { RUN_ID, TICKET_KEY } from "./fakes/support.js";
 const KEY = new Uint8Array(SESSION_KEY_BYTES).fill(5);
 const AT = "2026-08-08T10:00:00+03:00";
 const SESSION = new TextEncoder().encode('{"sessionId":"s-1","turns":42}');
-const random: RandomSource = { bytes: (count: number) => new Uint8Array(count).fill(9) };
 
 function deps(): SessionArchiveDeps & { storage: ReturnType<typeof fakeStorage> } {
-  return { storage: fakeStorage(), key: KEY, random };
+  return { storage: fakeStorage(), key: KEY };
 }
 
 describe("session archive keys", () => {
@@ -76,6 +75,65 @@ describe("saveSessionFile / loadSessionFile", () => {
     const restored = await tryLoadSessionFile({ ...d, storage: d.storage }, saved.key);
     expect(restored).toEqual(SESSION);
   });
+
+  it("refuses a session copied onto another ticket's key (Y-1)", async () => {
+    const d = deps();
+    const mine = await saveSessionFile(
+      d,
+      { ticketKey: "UGURPAY-1111", runId: "run-UGURPAY-1111", at: AT },
+      SESSION,
+    );
+    // Anyone who can write to the bucket can copy the object; the seal is
+    // bound to the key, so the copy cannot be resumed into another ticket.
+    const stolen = `archive/2026/UGURPAY-2222/${sessionFileName("run-UGURPAY-2222")}`;
+    await d.storage.put(stolen, d.storage.objects.get(mine.key) as Uint8Array);
+
+    await expect(loadSessionFile(d, stolen)).rejects.toBeInstanceOf(SessionCryptoError);
+    await expect(tryLoadSessionFile(d, stolen)).rejects.toBeInstanceOf(SessionCryptoError);
+    // The original still opens: the binding is not a blanket refusal.
+    expect(await loadSessionFile(d, mine.key)).toEqual(SESSION);
+  });
+
+  it("asks for Object Lock when the caller wants the archive immutable (M5/M57)", async () => {
+    const calls: { key: string; opts: unknown }[] = [];
+    const storage = fakeStorage();
+    const spy = {
+      ...storage,
+      put: async (key: string, data: Uint8Array, opts?: unknown) => {
+        calls.push({ key, opts });
+        await storage.put(key, data);
+      },
+    };
+    await saveSessionFile(
+      { storage: spy, key: KEY, objectLock: true },
+      { ticketKey: TICKET_KEY, runId: RUN_ID, at: AT },
+      SESSION,
+    );
+    expect(calls[0]?.opts).toEqual({
+      contentType: "application/octet-stream",
+      objectLock: true,
+    });
+  });
+
+  it("does not ask for Object Lock unless the caller does", async () => {
+    const calls: unknown[] = [];
+    const storage = fakeStorage();
+    await saveSessionFile(
+      {
+        storage: {
+          ...storage,
+          put: async (key: string, data: Uint8Array, opts?: unknown) => {
+            calls.push(opts);
+            await storage.put(key, data);
+          },
+        },
+        key: KEY,
+      },
+      { ticketKey: TICKET_KEY, runId: RUN_ID, at: AT },
+      SESSION,
+    );
+    expect(calls[0]).toEqual({ contentType: "application/octet-stream" });
+  });
 });
 
 describe("listSessionKeys", () => {
@@ -100,5 +158,23 @@ describe("listSessionKeys", () => {
   it("is empty for a year with no archive", async () => {
     const d = deps();
     expect(await listSessionKeys(d.storage, TICKET_KEY, 2025)).toEqual([]);
+  });
+
+  it("scans a year range, so a ticket that went idle over new year is found (D-12)", async () => {
+    const d = deps();
+    await saveSessionFile(
+      d,
+      { ticketKey: TICKET_KEY, runId: RUN_ID, at: "2025-12-20T10:00:00+03:00" },
+      SESSION,
+    );
+    expect(await listSessionKeys(d.storage, TICKET_KEY, 2026)).toEqual([]);
+    expect(await listSessionKeys(d.storage, TICKET_KEY, 2025, 2026)).toEqual([
+      `archive/2025/${TICKET_KEY}/${sessionFileName(RUN_ID)}`,
+    ]);
+  });
+
+  it("refuses a range that runs backwards", async () => {
+    const d = deps();
+    await expect(listSessionKeys(d.storage, TICKET_KEY, 2026, 2025)).rejects.toThrow();
   });
 });

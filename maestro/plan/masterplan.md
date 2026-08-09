@@ -159,7 +159,7 @@ Jira'da açılan bir ticket, Temporal üzerinde koşan dayanıklı bir iş akı�
 ### Onay kapıları
 | # | Karar |
 |---|---|
-| M51 | **Risk-katmanlı kapı seti**: düşük→2 kapı (TL analiz + PR), orta→4 (+PO +QA), kritik→6 (tam set). Riski analiz belirler; PO yükseltebilir, DÜŞÜREMEZ; seçim audit'e yazılır. Onayların ana yolu **Jira yorumu** (`/approve`), Studio ikincil |
+| M51 | **Risk-katmanlı kapı seti**: düşük→2 **onay kapısı** (TL analiz + PR), orta→4 (+PO +QA sonuç), kritik→5 (+QA senaryo = tam set). *Netleştirme (2026-08-09, doğrulayıcı bulgusu Y4):* eski metindeki "kritik→6" clarification beklemesini (2b) de sayıyordu; 2b bir **onay kapısı değil**, süresiz insan beklemesidir ve her kademede vardır. Onay kapısı sayısı 2/4/5, insan teması sayısı 3/5/6. Riski analiz belirler; PO yükseltebilir, DÜŞÜREMEZ; seçim audit'e yazılır. Onayların ana yolu **Jira yorumu** (`/approve`), Studio ikincil |
 | M81 | **PO+TL paralel onay**; vekil = Studio'da tarih aralıklı **delegasyon kaydı** (audit'li); 7g otomatik delegasyon da bu kaydı kullanır |
 | M54 | **Takılma koruması**: aynı kapıdan 3 ret VEYA aynı CI hatası 3 kez → ai-assist'e düşer, tüm bağlam+journal ile insana devir + Jira özeti. N parametrik |
 | M73 | **Break-glass = insan-only**: acil işler Maestro DIŞINDA normal ADO yoluyla yapılır; Maestro yalnız olay sonrası retro-kayıt üretir. Tek-onaylı hızlı AI yolu reddedildi |

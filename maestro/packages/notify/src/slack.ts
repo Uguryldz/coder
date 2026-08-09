@@ -9,7 +9,11 @@ import { type WebhookDeps, WebhookNotifier } from "./webhook.js";
  */
 export function buildSlackMessage(_notification: Notification, subject: string, body: string): unknown {
   return {
-    text: subject,
+    // `text` is the notification/fallback line and Slack renders it with the
+    // same mrkdwn rules as a block, so it needs the same escaping: an
+    // unescaped `<https://evil|Onayla>` is a clickable link in a bank's
+    // approval alert.
+    text: escapeMrkdwn(subject),
     blocks: [{ type: "section", text: { type: "mrkdwn", text: escapeMrkdwn(body) } }],
   };
 }
@@ -23,11 +27,15 @@ export function escapeMrkdwn(text: string): string {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-/** Slack replies `ok` on success; anything else on a 2xx is a refusal. */
+/**
+ * Slack replies `ok` on success; ANYTHING else on a 2xx is a refusal. This is a
+ * whitelist on purpose — `channel_not_found` and `action_prohibited` carry none
+ * of the words a blacklist looks for, and were silently counted as delivered.
+ */
 export function slackBodyFailure(text: string): string | null {
   const trimmed = text.trim();
   if (trimmed.length === 0 || trimmed.toLowerCase() === "ok") return null;
-  return /fail|error|invalid|no_service|no_team/i.test(trimmed) ? trimmed : null;
+  return trimmed;
 }
 
 export function createSlackNotifier(config: WebhookDriverConfig, deps: WebhookDeps): WebhookNotifier {

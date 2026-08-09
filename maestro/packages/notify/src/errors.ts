@@ -79,6 +79,9 @@ export class NotifyPermanentError extends NotifyError {
  * Raised when every attempt failed. The caller (Temporal activity) MUST see
  * this: swallowing it is how a gate notification disappears and the work dies
  * in silence.
+ *
+ * `attempts` always means SEND ATTEMPTS MADE — never "how many targets failed".
+ * The fan-out case has its own subclass so the two counts cannot be confused.
  */
 export class NotifyDeliveryError extends NotifyError {
   constructor(
@@ -92,6 +95,37 @@ export class NotifyDeliveryError extends NotifyError {
         `${cause instanceof Error ? cause.message : String(cause)}`,
     );
     this.name = "NotifyDeliveryError";
+  }
+}
+
+/** One target's outcome inside a fan-out. `cause` is the driver's own error. */
+export interface TargetFailure {
+  target: string;
+  attempts: number;
+  cause: unknown;
+}
+
+/**
+ * Fan-out failure: some targets were not reached. The individual driver errors
+ * are kept as-is in `failures` instead of being wrapped a second time, so a
+ * caller can still ask "was this permanent?" without unwrapping two layers.
+ */
+export class NotifyFanoutError extends NotifyDeliveryError {
+  constructor(
+    driver: string,
+    event: string,
+    readonly failures: readonly TargetFailure[],
+    readonly targetCount: number,
+  ) {
+    const attempts = failures.reduce((total, failure) => total + failure.attempts, 0);
+    super(driver, event, attempts, failures[0]?.cause);
+    this.name = "NotifyFanoutError";
+    const summary = failures
+      .map((failure) => `${failure.target}: ${safeMessage(failure.cause, [])}`)
+      .join(" | ");
+    this.message =
+      `notify ${driver}: "${event}" not delivered — ${failures.length} of ${targetCount} ` +
+      `target(s) failed after ${attempts} attempt(s) — ${summary}`;
   }
 }
 

@@ -15,6 +15,8 @@ import { FakeFetch, FakeSocket, aNotification, fakeSecrets, fakeSleep, happyRela
 const TOKEN = "SUPERSECRETTOKEN";
 const WEBHOOK = `https://outlook.office.com/webhook/00000000/IncomingWebhook/${TOKEN}`;
 const PASSWORD = "sup3r-secret-relay-pw";
+/** What actually crosses the wire — and therefore what a relay quotes back. */
+const SASL_PLAIN = Buffer.from(`\0maestro-svc\0${PASSWORD}`, "utf8").toString("base64");
 
 /** Every surface an operator (or an exception logger) could print. */
 function surfaces(error: unknown): string {
@@ -59,7 +61,11 @@ describe("secret leak prevention (M80)", () => {
 
   it("masks the SMTP password when the relay echoes it", async () => {
     const replies = happyRelayReplies();
-    replies[4] = `535 authentication failed for ${PASSWORD}\r\n`;
+    // The realistic echo is the SASL token, not the raw password: a relay never
+    // sees the password in the clear, so asserting on the raw form was a test
+    // that could not fail. `smtp-hardening.test.ts` covers the wire forms in
+    // full; this case keeps the plain-text form covered too.
+    replies[4] = `535 authentication failed: ${SASL_PLAIN} (and ${PASSWORD} is not it)\r\n`;
     const notifier = createSmtpNotifier(
       SmtpDriverConfig.parse({
         host: "mail.bank.local",
@@ -80,6 +86,7 @@ describe("secret leak prevention (M80)", () => {
       .catch((caught: unknown) => caught);
     expect(String(error)).toContain("535");
     expect(surfaces(error)).not.toContain(PASSWORD);
+    expect(surfaces(error)).not.toContain(SASL_PLAIN);
   });
 
   it("masks a secret that a socket failure carries", async () => {

@@ -70,17 +70,26 @@ const HISTORY: DemoParamVersion[] = [
     },
   },
   // escalation.ladder — the mock's "24s jira → 72s teams+smtp → 7g delegasyon
-  // → 14g yönetici raporu" ladder, reached in two steps.
+  // → 14g yönetici raporu" ladder, reached in two steps. The 7-day step is a
+  // real delegation (`action`, plus the key that says so); it used to be a
+  // fourth escalation while the comment claimed otherwise.
   {
     key: "escalation.ladder",
     version: 2,
     at: ist("2026-08-03T16:05:00"),
     value: {
       steps: [
-        { afterHours: 24, channel: "jira", event: "gate_reminder" },
-        { afterHours: 72, channel: "teams", event: "escalation" },
-        { afterHours: 72, channel: "smtp", event: "escalation" },
-        { afterHours: 168, channel: "teams", event: "escalation" },
+        { id: "reminder-24h", afterHours: 24, channel: "jira", event: "gate_reminder" },
+        { id: "escalation-72h", afterHours: 72, channel: "teams", event: "escalation" },
+        { id: "escalation-72h-mail", afterHours: 72, channel: "smtp", event: "escalation" },
+        {
+          id: "delegate-7d",
+          afterHours: 168,
+          channel: "teams",
+          event: "escalation",
+          action: "delegate",
+          messageKey: "notify.delegated",
+        },
       ],
       businessHoursOnly: false,
     },
@@ -91,11 +100,19 @@ const HISTORY: DemoParamVersion[] = [
     at: ist("2026-08-07T09:45:00"),
     value: {
       steps: [
-        { afterHours: 24, channel: "jira", event: "gate_reminder" },
-        { afterHours: 72, channel: "teams", event: "escalation" },
-        { afterHours: 72, channel: "smtp", event: "escalation" },
-        { afterHours: 168, channel: "teams", event: "escalation" },
-        { afterHours: 336, channel: "smtp", event: "escalation" },
+        { id: "reminder-24h", afterHours: 24, channel: "jira", event: "gate_reminder" },
+        { id: "escalation-72h", afterHours: 72, channel: "teams", event: "escalation" },
+        { id: "escalation-72h-mail", afterHours: 72, channel: "smtp", event: "escalation" },
+        {
+          id: "delegate-7d",
+          afterHours: 168,
+          channel: "teams",
+          event: "escalation",
+          action: "delegate",
+          messageKey: "notify.delegated",
+        },
+        // 14 days: the management report. Still a notification, not a hand-off.
+        { id: "management-report-14d", afterHours: 336, channel: "smtp", event: "escalation" },
       ],
       businessHoursOnly: false,
     },

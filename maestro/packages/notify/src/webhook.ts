@@ -52,6 +52,15 @@ export class WebhookNotifier implements NotifyPort {
         `notification is addressed to channel "${notification.channel}"`,
       );
     }
+    // Checked before the fan-out, and without echoing the value: a caller that
+    // put a webhook URL in `to` handed us a bearer credential, and the fan-out
+    // report names every target it tried.
+    if (notification.to.some((target) => target.includes("://"))) {
+      throw new NotifyPermanentError(
+        this.spec.channel,
+        "`to` must carry configured target names, never a webhook URL",
+      );
+    }
     const { subject, body } = renderMessage(notification);
     const payload = JSON.stringify(this.spec.buildPayload(notification, subject, body));
 
@@ -109,10 +118,16 @@ export class WebhookNotifier implements NotifyPort {
    * — silently dropping it is how a gate notification vanishes.
    */
   private async resolveUrl(target: string): Promise<string> {
-    const ref = this.config.targets[target];
-    if (ref === undefined) {
+    // `Object.hasOwn`, not `targets[target]`: "__proto__", "constructor" and
+    // "toString" resolve on Object.prototype, which turned an unknown target
+    // into a bogus secret ref, a transient error and a pointless retry loop.
+    if (!Object.hasOwn(this.config.targets, target)) {
       const known = Object.keys(this.config.targets).sort().join(", ") || "(none configured)";
       throw new NotifyRecipientError(this.spec.channel, target, `not a configured target — known: ${known}`);
+    }
+    const ref = this.config.targets[target];
+    if (ref === undefined) {
+      throw new NotifyRecipientError(this.spec.channel, target, "configured target has no secret reference");
     }
     let url: string;
     try {

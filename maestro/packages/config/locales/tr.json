@@ -994,6 +994,7 @@
   "runner_agent.registered": "Runner ajanı platforma kaydoldu.",
   "runner_agent.sandbox_acquire_failed": "Sandbox ayrılamadı — bu makinede boş kapasite yok.",
   "runner_agent.shutdown": "Runner ajanı kapanıyor.",
+  "runner_agent.shutdown_forced": "Kapanma süresi doldu ve sandbox'lar iptal edildi; ajan daha fazla beklemeden durdu.",
   "runner_agent.signal": "{signal} sinyali alındı — yeni iş alınmayacak.",
   "runner_agent.stopped": "Runner ajanı durdu; kayıt düşürüldü.",
   "runners.accepted_risk.body": "Windows ve macOS'ta konteynır izolasyonu yok — Xcode ve MSBuild konteynıra sığmıyor. Telafi: tek kullanımlık kullanıcı, dar yetki, EDR ve aynı egress kuralları. Bu, planda kabul edilmiş risk olarak kayıtlıdır.",

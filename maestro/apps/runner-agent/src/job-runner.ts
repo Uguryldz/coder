@@ -1,6 +1,6 @@
 import type { RunJob, RunnerLease, RunnerPort, RunResult } from "@maestro/ports";
 import type { PlatformProfile } from "@maestro/contracts";
-import { LeaseLostError } from "./errors.js";
+import { JobAbortedError, LeaseLostError } from "./errors.js";
 import type { KillSwitchState } from "./kill-switch.js";
 import { createOutputMasker, jobSecrets, type OutputMasker } from "./masking.js";
 import type { LeasedJob } from "./protocol.js";
@@ -8,7 +8,7 @@ import type { LeasedJob } from "./protocol.js";
 /**
  * Runs ONE leased job inside a sandbox (tasks #4, #5, #6).
  *
- * Two invariants this file exists to hold:
+ * Three invariants this file exists to hold:
  *
  *  · **The sandbox is always torn down.** `release` runs in a `finally`, on
  *    every path — success, failure, kill switch, shutdown, a throw from the
@@ -16,7 +16,15 @@ import type { LeasedJob } from "./protocol.js";
  *    bank's source in it that nobody is watching.
  *
  *  · **The kill switch is checked at every step boundary**, not once at the
- *    top. Acquire, run, and collect are separate checkpoints.
+ *    top. Acquire, run, and collect are separate checkpoints — AND the running
+ *    session is aborted through an `AbortSignal`, because a checkpoint between
+ *    awaits cannot reach a job that is already inside `runSession`. Without the
+ *    signal `stop_all` merely relabelled a build it had let run to the end.
+ *
+ *  · **The lease is renewed FOR AS LONG AS the job runs**, not once before it.
+ *    A lease is what makes a double-run impossible; verified once and never
+ *    again, it stops being that the moment the job outlives it. A refused
+ *    renewal aborts the session through the same signal.
  */
 
 /** Named so a test can assert exactly which boundary stopped the job. */
@@ -45,9 +53,22 @@ export interface JobRunnerDeps {
   logSink: LogSink;
   /** The agent's own token, so it can never appear in streamed output. */
   agentToken: string;
-  /** Verifies the lease is still ours before the expensive step. */
+  /** Verifies the lease is still ours, renewing it when it nears expiry. */
   checkLease?: (leaseId: string) => Promise<void>;
+  /**
+   * How often `checkLease` is re-run WHILE the session is in flight. The
+   * renewal margin is the natural bound: polling at the margin means the lease
+   * is always re-asserted before it could lapse. `0` disables the loop, which
+   * only the unit tests that drive `checkLease` by hand use.
+   */
+  leaseRenewIntervalMs?: number;
+  /** Injected so the renewal loop is testable without real time passing. */
+  setTimer?: (fn: () => void, ms: number) => TimerHandle;
+  clearTimer?: (handle: TimerHandle) => void;
 }
+
+/** Whatever the injected timer returns; the agent passes Node's. */
+export type TimerHandle = ReturnType<typeof setInterval>;
 
 /** Turns the wire job into the `RunJob` the runner port takes. */
 export function toRunJob(job: LeasedJob): RunJob {
@@ -76,12 +97,17 @@ export class JobRunner {
     const startedAt = this.#deps.now().getTime();
     const masker = createOutputMasker({ secrets: jobSecrets(this.#deps.agentToken, job.env) });
 
+    // One controller per job. The kill switch, a refused renewal and shutdown
+    // all abort through it, and `runSession` is contractually required to tear
+    // the session down and reject when it fires — that is what turns "reported
+    // cancelled" into "actually stopped".
+    const control = new AbortController();
     let aborted: string | undefined;
-    const untrack = this.#deps.killSwitch.track({
-      abort: (reason) => {
-        aborted = reason;
-      },
-    });
+    const abort = (reason: string): void => {
+      aborted ??= reason;
+      if (!control.signal.aborted) control.abort(new JobAbortedError(reason));
+    };
+    const untrack = this.#deps.killSwitch.track({ abort });
 
     const elapsed = (): number => this.#deps.now().getTime() - startedAt;
     const cancelled = (step: JobStep, reasonKey: string): JobOutcome => ({
@@ -136,12 +162,26 @@ export class JobRunner {
           }
         }
 
-        const result = await this.#deps.runner.runSession(lease, toRunJob(job));
+        // The lease is re-asserted for as long as the session runs. A refused
+        // renewal aborts the signal, so the sandbox goes down instead of
+        // finishing work another agent has already been given.
+        const renewals = this.#startRenewals(job.leaseId, abort);
+        let result: RunResult;
+        try {
+          result = await this.#deps.runner.runSession(lease, toRunJob(job), control.signal);
+        } catch (error) {
+          // An abort is a cancellation, not a failure: the reason says which of
+          // the two hands pulled the cord.
+          if (aborted !== undefined) return cancelled("run", this.#reasonFor(aborted));
+          throw error;
+        } finally {
+          renewals();
+        }
 
         // ── checkpoint 3: output collected, before it is reported ───────
         await this.#stream(masker, result);
         if (aborted !== undefined || !this.#deps.killSwitch.mayContinueRunning()) {
-          return cancelled("collect", "runner_agent.cancelled_kill_switch");
+          return cancelled("collect", this.#reasonFor(aborted ?? "kill_switch_stop_all"));
         }
         return {
           outcome: result.exitCode === 0 ? "succeeded" : "failed",
@@ -164,6 +204,43 @@ export class JobRunner {
     } finally {
       untrack();
     }
+  }
+
+  /**
+   * Re-asserts the lease on a timer while the session runs, returning the
+   * canceller. A refused renewal (`LeaseLostError`) aborts the job; a renewal
+   * that could not be DELIVERED does not, because an unreachable platform is
+   * not a reassignment and the deadline still expires on its own.
+   */
+  #startRenewals(leaseId: string, abort: (reason: string) => void): () => void {
+    const intervalMs = this.#deps.leaseRenewIntervalMs ?? 0;
+    const check = this.#deps.checkLease;
+    if (intervalMs <= 0 || check === undefined) return () => undefined;
+
+    const setTimer = this.#deps.setTimer ?? ((fn, ms) => setInterval(fn, ms));
+    const clearTimer = this.#deps.clearTimer ?? ((handle) => clearInterval(handle));
+
+    let stopped = false;
+    const handle = setTimer(() => {
+      if (stopped) return;
+      void check(leaseId).catch((error: unknown) => {
+        if (stopped) return;
+        // Only a LOST lease stops the job. Anything else is a transport
+        // problem, and killing a good build over one would be its own outage.
+        if (error instanceof LeaseLostError) abort("lease_lost");
+      });
+    }, intervalMs);
+    handle.unref?.();
+
+    return () => {
+      stopped = true;
+      clearTimer(handle);
+    };
+  }
+
+  /** Maps an abort reason to the operator-facing catalogue key. */
+  #reasonFor(reason: string): string {
+    return reason === "lease_lost" ? "runner_agent.cancelled_lease_lost" : "runner_agent.cancelled_kill_switch";
   }
 
   /** Streams the collected tails, masked. */

@@ -145,7 +145,6 @@ yükseltilmiş PowerShell. `nssm` varsa kullanılır — durdurmayı gerçekten
 | `MAESTRO_AGENT_PLATFORM` | `platform` | ✔ | `macos-xcode` \| `windows-dotnet`. |
 | `MAESTRO_AGENT_VERSION` | `agentVersion` | ✔ | Ajan sürümü. |
 | `MAESTRO_AGENT_CAPACITY` | `capacity` | ✔ | Eşzamanlı sandbox sayısı (1-16). |
-| `MAESTRO_AGENT_WORK_DIR` | `workDir` | ✔ | Ajanın sahibi olduğu dizin. |
 | `MAESTRO_AGENT_TOKEN_SOURCE` | `tokenRef.source` | ✔ | `env` \| `secret-port`. |
 | `MAESTRO_AGENT_TOKEN_KEY` | `tokenRef.key` | ✔ | Değişken adı ya da `SecretPort` anahtarı. |
 | `MAESTRO_AGENT_LABELS` | `labels` | | Virgülle ayrık (`xcode-16,ios-18`). |
@@ -168,10 +167,18 @@ yükseltilmiş PowerShell. `nssm` varsa kullanılır — durdurmayı gerçekten
   "agentVersion": "0.1.0",
   "capacity": 2,
   "labels": ["xcode-16", "ios-18"],
-  "workDir": "/var/maestro/agent",
   "tokenRef": { "source": "env", "key": "MAESTRO_AGENT_TOKEN" }
 }
 ```
+
+> **`workDir` kaldırıldı.** Eskiden **zorunlu** bir alandı ama kodda hiçbir yerde
+> okunmuyordu: operatöre "bankanın kaynağı buraya iner" sözü veriyor, o sözü
+> tutmuyordu. Sandbox'ın deposu runner sürücüsünün işidir (linux'ta docker
+> volume'leri, win/mac'te ajanın kendi kurulumu). Dosyada kalmış eski bir
+> `workDir` alanı **yok sayılır**, hata vermez.
+
+> **`logLevel` artık gerçekten uygulanıyor.** `error` seçen operatör `info`
+> gürültüsü görmez; seviyesi tanınmayan bir satır **hiçbir zaman** elenmez.
 
 ## Zarif kapanma
 

@@ -280,6 +280,74 @@ describe("RunnerAgent — graceful shutdown (task #7)", () => {
   });
 });
 
+describe("RunnerAgent — logLevel is ENFORCED (not just validated)", () => {
+  function logHarness(logLevel: "debug" | "info" | "warn" | "error"): {
+    agent: RunnerAgent;
+    lines: { level: string; message: string }[];
+  } {
+    const platform = new FakePlatform();
+    const lines: { level: string; message: string }[] = [];
+    const agent = new RunnerAgent({
+      config: agentConfig({ logLevel }),
+      client: platform.client(),
+      runner: new FakeRunner(),
+      token: () => Promise.resolve("a".repeat(32)),
+      now: new FakeClock().now,
+      runnerPlatform: "macos-xcode",
+      log: (event) => lines.push({ level: event.level, message: event.message }),
+    });
+    return { agent, lines };
+  }
+
+  it("an operator who asks for `error` does not get info noise", async () => {
+    const quiet = logHarness("error");
+    await quiet.agent.start();
+
+    // `runner_agent.registered` is an info line; at `error` it must not appear.
+    expect(quiet.lines).toEqual([]);
+  });
+
+  it("the same run at `info` DOES emit those lines", async () => {
+    const chatty = logHarness("info");
+    await chatty.agent.start();
+
+    expect(chatty.lines.map((line) => line.message)).toContain("runner_agent.registered");
+  });
+});
+
+describe("RunnerAgent — stop_all reaches a RUNNING job (M58, end to end)", () => {
+  it("interrupts a build already in flight instead of relabelling it", async () => {
+    const h = harness();
+    await h.agent.start();
+
+    let finished = false;
+    let entered = (): void => undefined;
+    const hasEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    h.runner.onSession = async () => {
+      entered();
+      await new Promise<void>(() => undefined);
+      finished = true;
+    };
+
+    h.platform.queue = [leasedJob({ leaseExpiresAt: h.clock.isoIn(300) })];
+    await h.agent.tick();
+    await hasEntered;
+
+    // The operator throws the switch; the next pull carries it.
+    h.platform.killLevel = "stop_all";
+    await h.agent.tick();
+    await h.agent.settle();
+
+    expect(finished).toBe(false);
+    expect(h.runner.completed).toEqual([]);
+    expect(h.runner.released).toEqual(["sandbox-1"]);
+    const [completion] = h.platform.sent("/agent/job/complete");
+    expect(completion).toMatchObject({ outcome: "cancelled" });
+  });
+});
+
 describe("RunnerAgent — operator snapshot", () => {
   it("reports the states the runners view shows", async () => {
     const h = harness();

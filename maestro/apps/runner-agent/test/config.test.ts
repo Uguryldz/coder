@@ -17,7 +17,6 @@ const COMPLETE_ENV: Record<string, string> = {
   MAESTRO_AGENT_PLATFORM: "macos-xcode",
   MAESTRO_AGENT_VERSION: "0.1.0",
   MAESTRO_AGENT_CAPACITY: "2",
-  MAESTRO_AGENT_WORK_DIR: "/var/maestro/agent",
   MAESTRO_AGENT_TOKEN_SOURCE: "env",
   MAESTRO_AGENT_TOKEN_KEY: "MAESTRO_AGENT_TOKEN",
 };
@@ -52,6 +51,26 @@ describe("loadRunnerAgentConfig — fail-closed", () => {
       expect(() => loadRunnerAgentConfig({ env })).toThrow(RunnerAgentConfigError);
     });
   }
+
+  it("has no workDir: a MANDATORY setting nothing reads is a promise the agent cannot keep", () => {
+    // It used to be required, so an operator who set it believed they had
+    // chosen where the bank's source landed. Nothing read it. If it ever comes
+    // back, it has to come back with a consumer.
+    const config = loadRunnerAgentConfig({ env: COMPLETE_ENV });
+
+    expect(config).not.toHaveProperty("workDir");
+    // And a stale one left in a config file is ignored rather than honoured.
+    const path = writeConfigFile({
+      platformUrl: "https://maestro.internal",
+      agentId: "mac-mini-07",
+      platform: "macos-xcode",
+      agentVersion: "0.1.0",
+      capacity: 1,
+      workDir: "/var/maestro/agent",
+      tokenRef: { source: "env", key: "MAESTRO_AGENT_TOKEN" },
+    });
+    expect(loadRunnerAgentConfig({ env: {}, configPath: path })).not.toHaveProperty("workDir");
+  });
 
   it("refuses a capacity that is not an integer instead of coercing it to NaN", () => {
     expect(() =>

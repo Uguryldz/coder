@@ -186,6 +186,43 @@ describe("timeout (M23)", () => {
     });
   });
 
+  it("an ABORTED session kills the container and REJECTS — never a usable result", async () => {
+    const { runner, matching } = rig({ "/wait": hangingWait });
+    const lease = await runner.acquire("linux-node");
+    const control = new AbortController();
+
+    const pending = runner.runSession(lease, TEST_JOB, control.signal);
+    await until(() => matching("/start").length > 0, "the container to start");
+    control.abort(new Error("kill_switch_stop_all"));
+
+    // Rejecting is the contract. Returning a RunResult after an abort is what
+    // let a caller label a finished build "cancelled" instead of stopping it.
+    await expect(pending).rejects.toThrow(/kill_switch_stop_all/);
+    expect(matching("/kill")).toHaveLength(1);
+    // Ephemeral either way: an aborted session leaves nothing behind.
+    expect(matching("containers/" + FIXTURE_CONTAINER_ID).filter((r) => r.method === "DELETE")).toHaveLength(1);
+  });
+
+  it("refuses an ALREADY-aborted signal before it creates anything", async () => {
+    const { runner, matching } = rig();
+    const lease = await runner.acquire("linux-node");
+
+    await expect(runner.runSession(lease, TEST_JOB, AbortSignal.abort(new Error("too late")))).rejects.toThrow();
+    // Nothing was created, so there is nothing to leak.
+    expect(matching("/create")).toHaveLength(0);
+  });
+
+  it("a signal that never fires does not disturb the happy path", async () => {
+    const { runner } = rig();
+    const lease = await runner.acquire("linux-node");
+
+    const result = await runner.runSession(lease, TEST_JOB, new AbortController().signal);
+
+    // The fixture's exit code, passed straight through — an unfired signal
+    // changes nothing about the session.
+    expect(result.exitCode).toBe(7);
+  });
+
   it("cancels the timer when the job finishes first — no dangling handle", async () => {
     const { runner, timer } = rig();
     const lease = await runner.acquire("linux-node");

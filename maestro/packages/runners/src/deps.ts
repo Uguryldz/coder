@@ -31,6 +31,34 @@ export const systemTimer: Timer = (milliseconds) => {
   return { promise, cancel: () => clearTimeout(handle) };
 };
 
+/**
+ * An `AbortSignal` as a rejecting promise, so it can be raced against the
+ * container's exit. Returns the canceller alongside it: an abort listener left
+ * attached to a long-lived signal is a leak, and one left attached to a settled
+ * race can reject into nothing.
+ *
+ * The promise rejects with the signal's own `reason`, which is what carries the
+ * CAUSE (kill switch, lost lease, shutdown) back to the caller.
+ */
+export function abortRace(signal?: AbortSignal): { promise: Promise<never>; release: () => void } {
+  let onAbort: (() => void) | undefined;
+  const promise = new Promise<never>((_resolve, reject) => {
+    if (signal === undefined) return;
+    onAbort = () => reject(signal.reason as Error);
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+  // Nobody awaits this when another branch wins the race; without this the
+  // rejection would surface as an unhandled one.
+  promise.catch(() => undefined);
+  return {
+    promise,
+    release: () => {
+      if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
 /** Opaque unique ids (lease ids, container name suffixes). */
 export type IdSource = () => string;
 

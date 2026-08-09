@@ -6,6 +6,7 @@ import { KillSwitchState } from "./kill-switch.js";
 import { LeaseManager } from "./lease-manager.js";
 import type { PlatformClient } from "./platform-client.js";
 import type { LeasedJob } from "./protocol.js";
+import { settleWithin } from "./settle.js";
 import type { TokenResolver } from "./token.js";
 
 /**
@@ -27,6 +28,9 @@ export interface RunnerAgentDeps {
   /** Structured, already-safe log line sink. */
   log?: (event: { level: string; message: string; meta?: Record<string, unknown> }) => void;
 }
+
+/** Severity order behind `logLevel`. */
+const LOG_RANK: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 export interface AgentSnapshot {
   state: "starting" | "idle" | "busy" | "draining" | "stopped";
@@ -173,9 +177,10 @@ export class RunnerAgent {
     this.#draining = true;
 
     if (options.force === true) {
-      // No grace: abort the sandboxes so they cannot outlive the process.
-      this.#killSwitch.abortAll("shutdown");
-      await this.settle();
+      // No grace: abort the sandboxes so they cannot outlive the process. The
+      // wait is still bounded — this path is the operator's SECOND signal, the
+      // one that means "I am not willing to wait any longer".
+      await this.#settleWithin(0);
     } else {
       // Bounded grace. A job that will not finish inside it is aborted rather
       // than allowed to hold the process open for ever: a service manager that
@@ -215,33 +220,21 @@ export class RunnerAgent {
     this.#log("info", "runner_agent.stopped");
   }
 
-  /**
-   * Waits for the running jobs, but not for longer than the grace. On timeout
-   * the sandboxes are aborted and then awaited — the wait after the abort is
-   * what guarantees teardown actually ran before the process exits.
-   */
+  /** The bounded wait; see `settle.ts` for why every branch of it is finite. */
   async #settleWithin(graceMs: number): Promise<void> {
-    if (this.#active.size === 0) return;
-    if (graceMs <= 0) {
-      this.#killSwitch.abortAll("shutdown");
-      await this.settle();
-      return;
-    }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expired = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), graceMs);
-      timer.unref?.();
-    });
-    try {
-      const outcome = await Promise.race([this.settle().then(() => "settled" as const), expired]);
-      if (outcome === "timeout") {
-        this.#log("warn", "runner_agent.shutdown");
-        this.#killSwitch.abortAll("shutdown");
-        await this.settle();
-      }
-    } finally {
-      clearTimeout(timer);
-    }
+    await settleWithin(
+      {
+        settle: () => this.settle(),
+        activeJobs: () => this.#active.size,
+        abortAll: (reason) => {
+          this.#killSwitch.abortAll(reason);
+        },
+        log: (level, message, meta) => {
+          this.#log(level, message, meta);
+        },
+      },
+      graceMs,
+    );
   }
 
   /** Launches one job and keeps its promise so shutdown can wait for it. */
@@ -268,6 +261,9 @@ export class RunnerAgent {
         log: (level, message, meta) => {
           this.#log(level, message, meta);
         },
+        // Polling AT the renewal margin means the lease is always re-asserted
+        // one full margin before it could lapse.
+        leaseRenewIntervalMs: this.#deps.config.leaseRenewMarginSeconds * 1_000,
       },
       job,
     );
@@ -280,7 +276,14 @@ export class RunnerAgent {
     return { sessionId: this.#sessionId, leases: this.#leases };
   }
 
+  /**
+   * Emits a log line, honouring the configured `logLevel`. An unknown level is
+   * never filtered out: dropping a line because its severity was not recognised
+   * is how the one message that mattered goes missing.
+   */
   #log(level: string, message: string, meta?: Record<string, unknown>): void {
+    const rank = LOG_RANK[level];
+    if (rank !== undefined && rank < (LOG_RANK[this.#deps.config.logLevel] ?? 0)) return;
     this.#deps.log?.({ level, message, ...(meta === undefined ? {} : { meta }) });
   }
 }

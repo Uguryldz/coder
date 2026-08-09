@@ -31,6 +31,10 @@ export interface RecordedSession {
  * A `RunnerPort` double that RECORDS what it was asked to do. The point of the
  * recording is the negative assertion: "runSession was never called" is how a
  * cancellation test proves the job really did not run.
+ *
+ * It OBEYS the abort signal the way the port requires — tearing the session
+ * down and rejecting — so that a test asserting "the build was interrupted"
+ * cannot pass against a double that quietly ran to the end.
  */
 export class FakeRunner implements RunnerPort {
   readonly acquired: PlatformProfile[] = [];
@@ -47,6 +51,8 @@ export class FakeRunner implements RunnerPort {
   result: RunResult = { exitCode: 0, stdoutTail: "", stderrTail: "", durationMs: 5 };
   /** Runs while a session is in flight; lets a test flip the kill switch mid-job. */
   onSession?: () => void | Promise<void>;
+  /** Sessions that reached their end WITHOUT being aborted. */
+  readonly completed: string[] = [];
 
   #counter = 0;
 
@@ -61,10 +67,30 @@ export class FakeRunner implements RunnerPort {
     });
   }
 
-  async runSession(lease: RunnerLease, job: RunJob): Promise<RunResult> {
+  async runSession(lease: RunnerLease, job: RunJob, signal?: AbortSignal): Promise<RunResult> {
     this.sessions.push({ lease, job });
-    if (this.onSession !== undefined) await this.onSession();
+    signal?.throwIfAborted();
+    if (this.onSession !== undefined) {
+      // The work RACES the signal, exactly as a real driver's container wait
+      // does: whichever finishes first decides the session's fate.
+      const work = Promise.resolve(this.onSession());
+      work.catch(() => undefined);
+      let onAbort: (() => void) | undefined;
+      const aborted = new Promise<never>((_resolve, reject) => {
+        if (signal === undefined) return;
+        onAbort = () => reject(signal.reason as Error);
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      });
+      aborted.catch(() => undefined);
+      try {
+        await Promise.race([work, aborted]);
+      } finally {
+        if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort);
+      }
+    }
     if (this.sessionError !== undefined) throw this.sessionError;
+    this.completed.push(lease.leaseId);
     return this.result;
   }
 
@@ -102,8 +128,7 @@ export function agentConfig(overrides: Partial<RunnerAgentConfig> = {}): RunnerA
     capacity: 2,
     labels: ["xcode-16"],
     tokenRef: { source: "env", key: "MAESTRO_AGENT_TOKEN" },
-    workDir: "/tmp/maestro-agent",
-    logLevel: "info",
+    logLevel: "debug",
     pullIntervalSeconds: 5,
     leaseRenewMarginSeconds: 30,
     shutdownGraceSeconds: 60,

@@ -12,6 +12,20 @@ import { FakeClock, FakeRunner, leasedJob } from "./helpers.js";
  * implementation says after running the work to completion.
  */
 
+/**
+ * A promise the test resolves by hand. Used to wait until the session is
+ * genuinely in flight: the renewal timer is armed inside the `runSession` call,
+ * so a test that ticked before that point would fire an empty timer list and
+ * prove nothing.
+ */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 interface Harness {
   runner: FakeRunner;
   killSwitch: KillSwitchState;
@@ -137,19 +151,63 @@ describe("JobRunner — kill switch (task #5)", () => {
     expect(h.runner.sessions).toHaveLength(1);
   });
 
-  it("stop_all raised DURING the session aborts the tracked job", async () => {
+  it("stop_all raised DURING a long build INTERRUPTS it — the build never finishes", async () => {
     const h = harness();
-    h.runner.onSession = () => {
+    // A build that would never end on its own. If the kill switch could not
+    // reach into the session, this test would hang rather than pass — which is
+    // the point: the previous version of it asserted only the LABEL, and passed
+    // against an implementation that let the build run to completion first.
+    let finished = false;
+    h.runner.onSession = async () => {
       h.killSwitch.apply("stop_all");
+      await new Promise<void>(() => undefined);
+      finished = true;
     };
 
     const outcome = await h.jobRunner.run(leasedJob());
 
-    // The session had already been handed to the sandbox, so it ran; the agent
-    // refuses to report it as a success and tears the sandbox down.
     expect(outcome.outcome).toBe("cancelled");
-    expect(outcome.stoppedAt).toBe("collect");
+    expect(outcome.reasonKey).toBe("runner_agent.cancelled_kill_switch");
+    // The session was ENTERED and then cut short.
+    expect(h.runner.sessions).toHaveLength(1);
+    expect(finished).toBe(false);
+    expect(h.runner.completed).toEqual([]);
+    // Still torn down: an interrupted job must not leak its sandbox.
     expect(h.runner.released).toEqual(["sandbox-1"]);
+  });
+
+  it("stop_all reaches a build that is ALREADY running (the four-hour-build case)", async () => {
+    const h = harness();
+    let entered = (): void => undefined;
+    const hasEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finished = false;
+    h.runner.onSession = async () => {
+      entered();
+      await new Promise<void>(() => undefined);
+      finished = true;
+    };
+
+    const running = h.jobRunner.run(leasedJob());
+    // The operator hits the switch only once the build is well under way.
+    await hasEntered;
+    h.killSwitch.apply("stop_all");
+
+    const outcome = await running;
+
+    expect(outcome.outcome).toBe("cancelled");
+    expect(finished).toBe(false);
+    expect(h.runner.completed).toEqual([]);
+    expect(h.runner.released).toEqual(["sandbox-1"]);
+  });
+
+  it("a build the switch never touches runs to completion (the abort is not fired blindly)", async () => {
+    const h = harness();
+    const outcome = await h.jobRunner.run(leasedJob());
+
+    expect(outcome.outcome).toBe("succeeded");
+    expect(h.runner.completed).toEqual(["sandbox-1"]);
   });
 
   it("a job registered while stop_all is already down is aborted immediately", () => {
@@ -168,6 +226,193 @@ describe("JobRunner — kill switch (task #5)", () => {
     expect(killSwitch.runningCount).toBe(1);
     untrack();
     expect(killSwitch.runningCount).toBe(0);
+  });
+});
+
+describe("JobRunner — lease renewal WHILE the job runs (task #3)", () => {
+  it("re-asserts the lease repeatedly during a long session, not once before it", async () => {
+    const runner = new FakeRunner();
+    const checked: string[] = [];
+    const ticks: (() => void)[] = [];
+    const gate = deferred();
+    let finishBuild = (): void => undefined;
+    const build = new Promise<void>((resolve) => {
+      finishBuild = resolve;
+    });
+    runner.onSession = () => {
+      gate.resolve();
+      return build;
+    };
+
+    const jobRunner = new JobRunner({
+      runner,
+      killSwitch: new KillSwitchState(),
+      platform: "macos-xcode",
+      now: new FakeClock().now,
+      agentToken: "a".repeat(32),
+      logSink: async () => {
+        await Promise.resolve();
+      },
+      checkLease: async (leaseId) => {
+        checked.push(leaseId);
+        await Promise.resolve();
+      },
+      leaseRenewIntervalMs: 30_000,
+      setTimer: (fn) => {
+        ticks.push(fn);
+        return { unref: () => undefined } as never;
+      },
+      clearTimer: () => undefined,
+    });
+
+    const running = jobRunner.run(leasedJob());
+    await gate.promise;
+    // Three renewal ticks while the build is still going.
+    for (let i = 0; i < 3; i += 1) {
+      for (const tick of ticks) tick();
+      await Promise.resolve();
+    }
+    finishBuild();
+    const outcome = await running;
+
+    expect(outcome.outcome).toBe("succeeded");
+    // One check at the step boundary + three from the loop. The bug this
+    // guards was EXACTLY one, ever.
+    expect(checked.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("a REFUSED renewal mid-build interrupts the job instead of letting it finish", async () => {
+    const runner = new FakeRunner();
+    const ticks: (() => void)[] = [];
+    const gate = deferred();
+    let finished = false;
+    runner.onSession = async () => {
+      gate.resolve();
+      await new Promise<void>(() => undefined);
+      finished = true;
+    };
+
+    let calls = 0;
+    const jobRunner = new JobRunner({
+      runner,
+      killSwitch: new KillSwitchState(),
+      platform: "macos-xcode",
+      now: new FakeClock().now,
+      agentToken: "a".repeat(32),
+      logSink: async () => {
+        await Promise.resolve();
+      },
+      checkLease: async (leaseId) => {
+        calls += 1;
+        // The boundary check passes; the platform reassigns the lease later.
+        if (calls > 1) throw new LeaseLostError(leaseId, "revoked");
+        await Promise.resolve();
+      },
+      leaseRenewIntervalMs: 30_000,
+      setTimer: (fn) => {
+        ticks.push(fn);
+        return { unref: () => undefined } as never;
+      },
+      clearTimer: () => undefined,
+    });
+
+    const running = jobRunner.run(leasedJob());
+    await gate.promise;
+    for (const tick of ticks) tick();
+    const outcome = await running;
+
+    expect(outcome.outcome).toBe("cancelled");
+    expect(outcome.reasonKey).toBe("runner_agent.cancelled_lease_lost");
+    // The double-run this prevents: the job did NOT finish under a lease that
+    // had been handed to somebody else.
+    expect(finished).toBe(false);
+    expect(runner.completed).toEqual([]);
+    expect(runner.released).toEqual(["sandbox-1"]);
+  });
+
+  it("an UNREACHABLE platform does not kill a healthy build", async () => {
+    const runner = new FakeRunner();
+    const ticks: (() => void)[] = [];
+    const gate = deferred();
+    let finishBuild = (): void => undefined;
+    const build = new Promise<void>((resolve) => {
+      finishBuild = resolve;
+    });
+    runner.onSession = () => {
+      gate.resolve();
+      return build;
+    };
+
+    let calls = 0;
+    const jobRunner = new JobRunner({
+      runner,
+      killSwitch: new KillSwitchState(),
+      platform: "macos-xcode",
+      now: new FakeClock().now,
+      agentToken: "a".repeat(32),
+      logSink: async () => {
+        await Promise.resolve();
+      },
+      checkLease: async () => {
+        calls += 1;
+        if (calls > 1) throw new Error("platform unreachable");
+        await Promise.resolve();
+      },
+      leaseRenewIntervalMs: 30_000,
+      setTimer: (fn) => {
+        ticks.push(fn);
+        return { unref: () => undefined } as never;
+      },
+      clearTimer: () => undefined,
+    });
+
+    const running = jobRunner.run(leasedJob());
+    await gate.promise;
+    for (const tick of ticks) tick();
+    await Promise.resolve();
+    finishBuild();
+
+    // A transport failure is not a reassignment: killing the build over one
+    // would be an outage of its own.
+    expect((await running).outcome).toBe("succeeded");
+  });
+
+  it("stops renewing once the session has ended", async () => {
+    const runner = new FakeRunner();
+    const ticks: (() => void)[] = [];
+    let cleared = 0;
+    const checked: string[] = [];
+
+    const jobRunner = new JobRunner({
+      runner,
+      killSwitch: new KillSwitchState(),
+      platform: "macos-xcode",
+      now: new FakeClock().now,
+      agentToken: "a".repeat(32),
+      logSink: async () => {
+        await Promise.resolve();
+      },
+      checkLease: async (leaseId) => {
+        checked.push(leaseId);
+        await Promise.resolve();
+      },
+      leaseRenewIntervalMs: 30_000,
+      setTimer: (fn) => {
+        ticks.push(fn);
+        return { unref: () => undefined } as never;
+      },
+      clearTimer: () => {
+        cleared += 1;
+      },
+    });
+
+    await jobRunner.run(leasedJob());
+    const afterRun = checked.length;
+    // A timer that outlived its job would renew a lease nobody is using.
+    expect(cleared).toBe(1);
+    for (const tick of ticks) tick();
+    await Promise.resolve();
+    expect(checked.length).toBe(afterRun);
   });
 });
 

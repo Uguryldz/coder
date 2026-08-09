@@ -1,10 +1,16 @@
-import type { DockerRunnerConfig } from "./config.js";
+import type { RunJob } from "@maestro/ports";
+import type { DockerRunnerConfig, LinuxPlatform } from "./config.js";
 import type { DockerClient } from "./docker-client.js";
 import type { AuditSink, Clock, IdSource } from "./deps.js";
 import { RUNNER_ACTOR } from "./deps.js";
 import { RunnerConfigError } from "./errors.js";
-import { buildPrepareSpec, prepareContainerName } from "./sandbox.js";
-import { expiredWorkspaces, type WorkspaceRecord, workspaceVolumeName } from "./workspace.js";
+import { buildContainerSpec, buildPrepareSpec, containerName, prepareContainerName } from "./sandbox.js";
+import {
+  expiredWorkspaces,
+  WORKSPACE_MOUNT_PATH,
+  type WorkspaceRecord,
+  workspaceVolumeName,
+} from "./workspace.js";
 
 /**
  * The two preconditions a container spec cannot state, because they are facts
@@ -39,6 +45,13 @@ export interface ProvisionerDeps {
   audit: AuditSink;
 }
 
+export interface SessionContainerRequest {
+  job: RunJob;
+  leaseId: string;
+  platform: LinuxPlatform;
+  cacheKeys: readonly string[];
+}
+
 export interface VolumeRequest {
   name: string;
   labels: Record<string, string>;
@@ -56,6 +69,56 @@ export class SandboxProvisioner {
 
   constructor(deps: ProvisionerDeps) {
     this.#deps = deps;
+  }
+
+  /**
+   * Everything one session needs BEFORE its container may start: the egress
+   * check, the owned workspace volume, the container itself, and the audit
+   * record of what was built. Started by the caller, so the driver keeps the
+   * `finally` that guarantees removal.
+   */
+  async createSessionContainer(request: SessionContainerRequest): Promise<{ containerId: string; name: string }> {
+    const image = this.#deps.config.platforms[request.platform]?.image;
+    if (image === undefined) throw new RunnerConfigError(`platform "${request.platform}" has no image configured`);
+    // Fail-closed BEFORE anything is created: an unverified egress network is
+    // the difference between "the job talks through the audited proxy" and
+    // "the job opens a socket to wherever it likes" (M26).
+    await this.verifyEgressNetwork();
+    const labelPrefix = this.#deps.config.labelPrefix;
+    const name = containerName(this.#deps.config, request.job, request.leaseId);
+    const workspaceVolume = workspaceVolumeName(request.job.workspaceKey, this.#deps.config.workspace.volumePrefix);
+    // Created explicitly rather than left to the bind's auto-creation, so it
+    // lands on the configured (encrypted, M31) volume driver, carries the
+    // labels the M65 sweeper needs — and is OWNED by the sandbox uid, or the
+    // job cannot clone, build or write its Agent SDK session (M30).
+    await this.ensureVolume({
+      name: workspaceVolume,
+      labels: {
+        [`${labelPrefix}.workspace-key`]: request.job.workspaceKey,
+        [`${labelPrefix}.layer`]: "workspace",
+      },
+      image,
+      mountPath: WORKSPACE_MOUNT_PATH,
+      writable: true,
+    });
+    const spec = buildContainerSpec({
+      config: this.#deps.config,
+      image,
+      job: request.job,
+      leaseId: request.leaseId,
+      platform: request.platform,
+      cacheKeys: request.cacheKeys,
+    });
+    const containerId = await this.#deps.client.createContainer(name, spec);
+    this.#record("SANDBOX_CREATE", name, {
+      runId: request.job.runId,
+      platform: request.platform,
+      image,
+      networkMode: (spec["HostConfig"] as { NetworkMode: string }).NetworkMode,
+      workspaceVolume,
+      cacheKeys: [...request.cacheKeys],
+    });
+    return { containerId, name };
   }
 
   /**

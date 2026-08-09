@@ -23,6 +23,8 @@ export interface ExecuteJobDeps {
   now: () => Date;
   token: () => Promise<string>;
   log: (level: string, message: string, meta?: Record<string, unknown>) => void;
+  /** How often the lease is re-asserted while the session is in flight. */
+  leaseRenewIntervalMs: number;
 }
 
 export async function executeJob(deps: ExecuteJobDeps, job: LeasedJob): Promise<void> {
@@ -44,9 +46,11 @@ export async function executeJob(deps: ExecuteJobDeps, job: LeasedJob): Promise<
         at: deps.now().toISOString(),
       });
     },
-    // The lease is re-verified at the step boundary, and the renewal reply is
-    // also how a `stop_all` reaches a job that is already running.
+    // The lease is re-verified at the step boundary AND on a timer for as long
+    // as the session runs; the renewal reply is also how a `stop_all` reaches a
+    // job that is already running.
     checkLease: (leaseId) => deps.leases.assertHeld(leaseId),
+    leaseRenewIntervalMs: deps.leaseRenewIntervalMs,
   });
 
   let outcome: JobOutcome;

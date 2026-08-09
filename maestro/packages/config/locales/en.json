@@ -994,6 +994,7 @@
   "runner_agent.registered": "The runner agent registered with the platform.",
   "runner_agent.sandbox_acquire_failed": "Could not acquire a sandbox — no free capacity on this machine.",
   "runner_agent.shutdown": "The runner agent is shutting down.",
+  "runner_agent.shutdown_forced": "The shutdown grace expired and the sandboxes were aborted; the agent stopped without waiting further.",
   "runner_agent.signal": "Received {signal} — no new work will be taken.",
   "runner_agent.stopped": "The runner agent stopped and deregistered.",
   "runners.accepted_risk.body": "Windows and macOS have no container isolation — Xcode and MSBuild do not fit in a container. Compensating controls: ephemeral user, least privilege, EDR and the same egress rules. This is recorded in the plan as an accepted risk.",

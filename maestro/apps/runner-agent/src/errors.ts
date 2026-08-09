@@ -58,6 +58,18 @@ export class LeaseLostError extends RunnerAgentError {
   }
 }
 
+/**
+ * The reason carried by the `AbortSignal` handed to `RunnerPort.runSession`.
+ * Reaches the runner driver, so it names the CAUSE (kill switch, lost lease,
+ * shutdown) and nothing about the job itself.
+ */
+export class JobAbortedError extends RunnerAgentError {
+  constructor(readonly reason: string) {
+    super(`job aborted (reason: ${reason})`);
+    this.name = "JobAbortedError";
+  }
+}
+
 /** The token reference could not be resolved. Never quotes the value it looked for. */
 export class TokenResolutionError extends RunnerAgentError {
   constructor(reason: string) {

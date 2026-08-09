@@ -4,6 +4,7 @@ import { DOCKER_LINUX_DRIVER, type DockerRunnerConfig, LinuxPlatform } from "./c
 import { DockerClient } from "./docker-client.js";
 import { tail } from "./docker-client.js";
 import {
+  abortRace,
   type AuditSink,
   type Clock,
   type DockerTransport,
@@ -16,15 +17,8 @@ import {
 import { RunnerCapacityError, RunnerConfigError } from "./errors.js";
 import { RunnerPool } from "./pool.js";
 import { SandboxProvisioner, type SweepReport } from "./provision.js";
-import { buildContainerSpec, cacheIsWritable, containerName } from "./sandbox.js";
-import {
-  assertCacheKey,
-  cacheMountPath,
-  cacheVolumeName,
-  WORKSPACE_MOUNT_PATH,
-  type WorkspaceRecord,
-  workspaceVolumeName,
-} from "./workspace.js";
+import { cacheIsWritable } from "./sandbox.js";
+import { assertCacheKey, cacheMountPath, cacheVolumeName, type WorkspaceRecord } from "./workspace.js";
 
 /**
  * `RunnerPort` over ephemeral hardened containers (M21 `docker-linux`).
@@ -135,56 +129,27 @@ export class DockerLinuxRunner implements RunnerPort {
     this.#pool.attachCache(lease, keys);
   }
 
-  async runSession(lease: RunnerLease, job: RunJob): Promise<RunResult> {
+  async runSession(lease: RunnerLease, job: RunJob, signal?: AbortSignal): Promise<RunResult> {
     // Validated BEFORE the slot is marked busy: a rejected job must not leave
     // the lease stuck in "running" with nothing running.
     const timeoutMs = this.#timeoutMsOf(job);
+    // Refused before anything is created when the caller has already given up.
+    signal?.throwIfAborted();
     const slot = this.#pool.beginSession(lease);
     const startedAt = this.#clock().getTime();
     let containerId: string | undefined;
     try {
-      const image = this.#config.platforms[slot.platform]?.image;
-      if (image === undefined) throw new RunnerConfigError(`platform "${slot.platform}" has no image configured`);
-      // Fail-closed BEFORE anything is created: an unverified egress network is
-      // the difference between "the job talks through the audited proxy" and
-      // "the job opens a socket to wherever it likes" (M26).
-      await this.#provisioner.verifyEgressNetwork();
-      const name = containerName(this.#config, job, lease.leaseId);
-      const workspaceVolume = workspaceVolumeName(job.workspaceKey, this.#config.workspace.volumePrefix);
-      // Created explicitly rather than left to the bind's auto-creation, so it
-      // lands on the configured (encrypted, M31) volume driver, carries the
-      // labels the M65 sweeper needs — and is OWNED by the sandbox uid, or the
-      // job cannot clone, build or write its Agent SDK session (M30).
-      await this.#provisioner.ensureVolume({
-        name: workspaceVolume,
-        labels: {
-          [`${this.#config.labelPrefix}.workspace-key`]: job.workspaceKey,
-          [`${this.#config.labelPrefix}.layer`]: "workspace",
-        },
-        image,
-        mountPath: WORKSPACE_MOUNT_PATH,
-        writable: true,
-      });
-      const spec = buildContainerSpec({
-        config: this.#config,
-        image,
+      const created = await this.#provisioner.createSessionContainer({
         job,
         leaseId: lease.leaseId,
         platform: slot.platform,
         cacheKeys: slot.cacheKeys,
       });
-      containerId = await this.#client.createContainer(name, spec);
-      this.#record("SANDBOX_CREATE", name, {
-        runId: job.runId,
-        platform: slot.platform,
-        image,
-        networkMode: (spec["HostConfig"] as { NetworkMode: string }).NetworkMode,
-        workspaceVolume,
-        cacheKeys: [...slot.cacheKeys],
-      });
+      const name = created.name;
+      containerId = created.containerId;
       await this.#client.startContainer(containerId);
 
-      const { exitCode, timedOut } = await this.#awaitExit(containerId, timeoutMs);
+      const { exitCode, timedOut } = await this.#awaitExit(containerId, timeoutMs, signal);
       const tails = await this.#tails(containerId);
       const result: RunResult = {
         exitCode,
@@ -248,24 +213,43 @@ export class DockerLinuxRunner implements RunnerPort {
     return seconds * 1_000;
   }
 
-  /** Races the container's exit against the M23 budget; kills it if the budget wins. */
-  async #awaitExit(containerId: string, timeoutMs: number): Promise<{ exitCode: number; timedOut: boolean }> {
+  /**
+   * Races the container's exit against the M23 budget and the caller's abort;
+   * kills the container if either wins. The abort branch REJECTS rather than
+   * returning a result: a `RunResult` produced after an abort is
+   * indistinguishable from one the caller was still allowed to use, which is
+   * how `stop_all` once became a label on a build that had finished anyway.
+   */
+  async #awaitExit(
+    containerId: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<{ exitCode: number; timedOut: boolean }> {
     const delay = this.#timer(timeoutMs);
     // The transport gets the extra grace so a daemon that is slow to answer
     // does not look like a job that refused to die.
     const waited = this.#client.waitContainer(containerId, timeoutMs + this.#config.killGraceMs);
-    // Nobody awaits `waited` once the timeout wins the race; without this the
+    // Nobody awaits `waited` once another branch wins the race; without this the
     // rejection of an abandoned wait would surface as an unhandled rejection.
     waited.catch(() => undefined);
+
+    const aborted = abortRace(signal);
     try {
       const outcome = await Promise.race([
         waited.then((exitCode) => ({ exitCode, timedOut: false })),
         delay.promise.then(() => ({ exitCode: TIMEOUT_EXIT_CODE, timedOut: true })),
+        aborted.promise,
       ]);
       if (outcome.timedOut) await this.#client.killContainer(containerId);
       return outcome;
+    } catch (error) {
+      // The container is killed on the way out; the `finally` in `runSession`
+      // then removes it, so an aborted session leaves nothing behind.
+      if (signal?.aborted === true) await this.#client.killContainer(containerId).catch(() => undefined);
+      throw error;
     } finally {
       delay.cancel();
+      aborted.release();
     }
   }
 

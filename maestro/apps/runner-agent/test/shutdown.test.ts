@@ -47,6 +47,95 @@ describe("RunnerAgent — shutdown grace", () => {
     expect(runner.released).toEqual(["sandbox-1"]);
   });
 
+  it("a POSITIVE grace is a BOUND: shutdown returns even when the job never ends", async () => {
+    const platform = new FakePlatform();
+    const runner = new FakeRunner();
+    const clock = new FakeClock();
+    const agent = new RunnerAgent({
+      // A real (short) grace, so the TIMER path runs — the zero-grace test
+      // above takes the early-return branch and never exercises it. The bug
+      // this guards hung for ever here, which meant SIGKILL and a leaked
+      // sandbox.
+      config: agentConfig({ shutdownGraceSeconds: 1 }),
+      client: platform.client(),
+      runner,
+      token: () => Promise.resolve("a".repeat(32)),
+      now: clock.now,
+      runnerPlatform: "macos-xcode",
+    });
+
+    let finished = false;
+    runner.onSession = async () => {
+      // Never finishes on its own: only the abort can end it.
+      await new Promise<void>(() => undefined);
+      finished = true;
+    };
+
+    await agent.start();
+    platform.queue = [leasedJob({ leaseExpiresAt: clock.isoIn(300) })];
+    await agent.tick();
+    await Promise.resolve();
+
+    const startedAt = Date.now();
+    const outcome = await Promise.race([
+      agent.shutdown({ reasonKey: "runner_agent.shutdown" }).then(() => "returned" as const),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 4_000)),
+    ]);
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(outcome).toBe("returned");
+    // Bounded by the grace, not by the job.
+    expect(elapsedMs).toBeLessThan(3_000);
+    expect(finished).toBe(false);
+    expect(agent.snapshot().state).toBe("stopped");
+    // The three things a SIGKILL would have cost us.
+    expect(runner.released).toEqual(["sandbox-1"]);
+    expect(platform.sent("/agent/bye")).toHaveLength(1);
+    // The lease is handed back explicitly, so the platform can reschedule now
+    // instead of waiting out the TTL.
+    expect(platform.sent("/agent/job/complete")).not.toHaveLength(0);
+  });
+
+  it("a driver that IGNORES its abort signal still cannot hold shutdown open", async () => {
+    const platform = new FakePlatform();
+    const clock = new FakeClock();
+    const runner = new FakeRunner();
+    // A deliberately DISOBEDIENT driver: it never honours the signal, so the
+    // job promise never settles. This is the case the bounded teardown exists
+    // for — the previous code awaited that promise unconditionally and hung for
+    // ever, which in production means SIGKILL and an orphaned sandbox. A wait
+    // that is only bounded when the driver co-operates is not a bound at all.
+    runner.runSession = () => new Promise<never>(() => undefined);
+
+    const agent = new RunnerAgent({
+      config: agentConfig({ shutdownGraceSeconds: 1 }),
+      client: platform.client(),
+      runner,
+      token: () => Promise.resolve("a".repeat(32)),
+      now: clock.now,
+      runnerPlatform: "macos-xcode",
+    });
+
+    await agent.start();
+    platform.queue = [leasedJob({ leaseExpiresAt: clock.isoIn(300) })];
+    await agent.tick();
+    await Promise.resolve();
+
+    const startedAt = Date.now();
+    const outcome = await Promise.race([
+      agent.shutdown({ reasonKey: "runner_agent.shutdown" }).then(() => "returned" as const),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 12_000)),
+    ]);
+
+    expect(outcome).toBe("returned");
+    // Grace (1s) + the teardown window (5s), and no longer.
+    expect(Date.now() - startedAt).toBeLessThan(9_000);
+    expect(agent.snapshot().state).toBe("stopped");
+    // The lease is handed back and the session closed even though the job
+    // itself could not be reclaimed.
+    expect(platform.sent("/agent/bye")).toHaveLength(1);
+  }, 20_000);
+
   it("returns immediately when nothing is running", async () => {
     const platform = new FakePlatform();
     const agent = new RunnerAgent({

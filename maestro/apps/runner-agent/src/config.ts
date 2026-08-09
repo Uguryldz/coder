@@ -42,8 +42,17 @@ export const RunnerAgentConfig = z.object({
     .max(32)
     .default([]),
   tokenRef: TokenRef,
-  /** Absolute path the agent owns for workspaces and its own state. */
-  workDir: z.string().min(1),
+  /**
+   * Lowest level that reaches the log sink. Enforced in `agent.ts`; an operator
+   * who sets `error` sees errors only.
+   *
+   * There is deliberately NO `workDir` here. The agent does not own a working
+   * directory: the sandbox's storage is the runner driver's business (docker
+   * volumes for linux, the agent's own installation for win/mac), and this
+   * process never writes a file. It used to be a MANDATORY setting that nothing
+   * read, which promised the operator control over where the bank's source
+   * landed and delivered none of it.
+   */
   logLevel: LogLevel.default("info"),
   /** Seconds between work-pull attempts when the agent has spare capacity. */
   pullIntervalSeconds: z.number().int().min(1).max(300).default(5),
@@ -93,7 +102,6 @@ function fromEnv(source: Record<string, string | undefined>): Record<string, unk
     agentVersion: source[envName("VERSION")],
     capacity: readInt(source, "CAPACITY"),
     labels: readList(source, "LABELS"),
-    workDir: source[envName("WORK_DIR")],
     logLevel: source[envName("LOG_LEVEL")],
     pullIntervalSeconds: readInt(source, "PULL_INTERVAL_SECONDS"),
     leaseRenewMarginSeconds: readInt(source, "LEASE_RENEW_MARGIN_SECONDS"),

@@ -29,15 +29,34 @@ dayandığı güvenlik özelliği budur.
 Sandbox **yazılmadı**: `@maestro/runners`'ın `RunnerPort` API'si kullanıldı
 (`acquire` / `runSession` / `release`), talimat gereği.
 
-### Kill switch iki noktada (görev #5)
+### Kill switch üç noktada (görev #5)
 1. **İş çekiminde** — `pull` cevabındaki seviye, işler başlatılmadan **önce**.
 2. **Çalışan işin adım geçişlerinde** — `acquire`, `run`, `collect` sınırları.
-   `lease_renew` cevabı da seviyeyi taşır; uzun bir build ortasında durur.
+3. **Çalışan oturumun İÇİNDE** — `runSession`'a verilen `AbortSignal`.
+
+> **DÜZELTME (doğrulama turu 1).** Bu bölüm önceden "`lease_renew` cevabı da
+> seviyeyi taşır; uzun bir build ortasında durur" diyordu. **Yanlıştı.**
+> `runSession` bir iptal sinyali taşımadığı için, işe girmiş bir build'e
+> ulaşacak hiçbir mekanizma yoktu: bayrak yalnız `await`'ler *arasında*
+> okunuyordu, dolayısıyla dört saatlik bir build sonuna kadar koşuyor ve
+> yalnızca sonucu `cancelled` diye **etiketleniyordu**. Artık `RunnerPort`
+> sözleşmesi bir `AbortSignal` taşıyor; sürücü sinyalde oturumu **yıkar ve
+> reddeder**. Kanıt: `job-runner.test.ts` içindeki "asla bitmeyen build"
+> testleri — sinyal kaldırılırsa 5 test kırılır.
 
 ### Kiralama (görev #3)
 İş devredilmez, süreli kiralanır. Ajan çökerse kiralama **dolar** ve iş yeniden
-planlanır; yenilemesi **reddedilen** ajan işi bitiremeden durur. İkisi de test
-edildi.
+planlanır; yenilemesi **reddedilen** ajan işi bitiremeden durur.
+
+> **DÜZELTME (doğrulama turu 1).** Bu koruma yazılmıştı ama **çağrılmıyordu**:
+> `checkLease` yalnız `runSession`'dan *önce bir kez* koşuyordu, iş sırasında
+> periyodik yenileme yoktu. 60 sn'lik kiralamayla 10 dakikalık bir build
+> **sıfır** yenileme isteği üretiyor, kiralama 9 dakika önce ölmüşken iş
+> `succeeded` raporlanıyordu — yani kiralama modelinin engellemek için var
+> olduğu **çift koşumun** ta kendisi. Artık oturum sürdükçe `leaseRenewMargin`
+> aralığıyla yenileme yapılıyor; **reddedilen** yenileme (`LeaseLostError`)
+> işi sinyalle kesiyor. Ulaşılamayan platform işi kesmez (o bir yeniden
+> atama değil, taşıma arızasıdır).
 
 ### Maskeleme (görev #6)
 İki katman, **bu sırayla**: ① bilinen sırlar (ajan token'ı + iş ortam değerleri)
@@ -61,8 +80,19 @@ Testler yazılırken ortaya çıktı — hiçbiri "test yeşil olsun" diye gevş
    kapanışta geri veriyordu — iş, tam TTL dolana kadar öksüz kalıyordu. Sıra
    düzeltildi: önce raporla, sonra unut.
 3. **`shutdownGraceSeconds` yapılandırılıyor ama uygulanmıyordu** (ölü ayar).
-   Sınırlı bekleme eklendi: süre dolarsa sandbox'lar iptal edilip **beklenir**
-   (iptalden sonraki bekleme, yıkımın gerçekten koştuğunun garantisi).
+   Sınırlı bekleme eklendi.
+
+   > **DÜZELTME (doğrulama turu 1).** Bu maddenin parantezi —"iptalden sonraki
+   > bekleme, yıkımın gerçekten koştuğunun garantisi"— **tam tersiydi**: o
+   > koşulsuz `await settle()` sınırı **yok eden** şeydi. `abortAll()` yalnız
+   > bayrak kuruyordu, takılı `runSession`'ı bitirmiyordu; `settle()` aynı
+   > bitmeyen promise'i tekrar bekliyordu. `grace=1sn` ile kapanma **2507 ms
+   > sonra hâlâ asılıydı**, `released: []`, `bye: 0` — yani SIGKILL ve **sızan
+   > sandbox**. Artık iptalden *sonraki* bekleme de sınırlı
+   > (`TEARDOWN_WINDOW_MS`); süre dolarsa kapanma yine de kiralamaları geri
+   > verip `bye` göndererek tamamlanır. Sinyalini **yok sayan** bir sürücüyle
+   > test ediliyor, çünkü yalnızca sürücü işbirliği yaptığında geçerli olan
+   > bir sınır, sınır değildir.
 
 ---
 

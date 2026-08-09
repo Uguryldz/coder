@@ -92,8 +92,112 @@ export const AgentBye = z.object({
 });
 export type AgentBye = z.infer<typeof AgentBye>;
 
+/**
+ * Kill-switch level as the agent sees it (M58).
+ *
+ * The BFF models "nothing is stopped" as the absence of a broadcast; the agent
+ * needs it as an explicit value, because a reply has to be able to say "clear"
+ * as loudly as it says "stop". An agent that cannot distinguish "off" from "I
+ * did not hear" has to choose, and either choice is wrong.
+ */
+export const AgentKillLevel = z.enum(["off", "pause_intake", "stop_all"]);
+export type AgentKillLevel = z.infer<typeof AgentKillLevel>;
+
+/**
+ * A job the platform hands down, plus the lease that carries it.
+ *
+ * Work is LEASED, never assigned: an agent that dies mid-build must not take
+ * the job with it, and an agent whose lease expired must not still be running
+ * one. `leaseExpiresAt` is the absolute deadline past which the platform may
+ * hand the same job to somebody else — which is why the executing agent has to
+ * renew, and has to stop when a renewal is refused.
+ */
+export const LeasedJob = z.object({
+  leaseId: NonEmpty,
+  runId: NonEmpty,
+  workspaceKey: NonEmpty,
+  command: z.array(NonEmpty).min(1),
+  timeoutSeconds: z.number().int().min(1),
+  env: z.record(z.string(), z.string()).default({}),
+  leaseExpiresAt: IsoDateTime,
+});
+export type LeasedJob = z.infer<typeof LeasedJob>;
+
+/** agent → platform: "I have room for `max` jobs." Never more than free capacity. */
+export const AgentPull = z.object({
+  type: z.literal("pull"),
+  protocolVersion: z.number().int(),
+  sessionId: SessionId,
+  agentId: AgentId,
+  at: IsoDateTime,
+  max: z.number().int().min(1).max(16),
+});
+export type AgentPull = z.infer<typeof AgentPull>;
+
+/** agent → platform: extend a lease that is still being worked on. */
+export const AgentLeaseRenew = z.object({
+  type: z.literal("lease_renew"),
+  protocolVersion: z.number().int(),
+  sessionId: SessionId,
+  agentId: AgentId,
+  leaseId: NonEmpty,
+  at: IsoDateTime,
+});
+export type AgentLeaseRenew = z.infer<typeof AgentLeaseRenew>;
+
+/** Which pipe one chunk of streamed output came from. */
+export const LogStream = z.enum(["stdout", "stderr"]);
+export type LogStream = z.infer<typeof LogStream>;
+
+/**
+ * agent → platform: one chunk of sandbox output.
+ *
+ * `text` is MASKED before this object is built — known secrets first, then the
+ * institutional PII boundary. Order matters: a token that happens to look like
+ * an account number would otherwise become a REVERSIBLE `[ACCOUNT_n]` token
+ * rather than being destroyed. Nothing on this path may carry a raw secret,
+ * because the platform persists what it receives.
+ */
+export const AgentLogChunk = z.object({
+  type: z.literal("log_chunk"),
+  protocolVersion: z.number().int(),
+  sessionId: SessionId,
+  agentId: AgentId,
+  leaseId: NonEmpty,
+  runId: NonEmpty,
+  stream: LogStream,
+  text: z.string(),
+  at: IsoDateTime,
+});
+export type AgentLogChunk = z.infer<typeof AgentLogChunk>;
+
+/** agent → platform: terminal outcome of a leased job; releases the lease. */
+export const AgentJobCompleted = z.object({
+  type: z.literal("job_completed"),
+  protocolVersion: z.number().int(),
+  sessionId: SessionId,
+  agentId: AgentId,
+  leaseId: NonEmpty,
+  runId: NonEmpty,
+  outcome: z.enum(["succeeded", "failed", "cancelled", "abandoned"]),
+  exitCode: z.number().int().optional(),
+  durationMs: z.number().int().min(0),
+  /** Message-catalog key (M104) — never a rendered sentence, never a payload. */
+  reasonKey: NonEmpty.optional(),
+  at: IsoDateTime,
+});
+export type AgentJobCompleted = z.infer<typeof AgentJobCompleted>;
+
 /** Everything an agent may say. Outbound only. */
-export const AgentMessage = z.discriminatedUnion("type", [AgentRegister, AgentHeartbeat, AgentBye]);
+export const AgentMessage = z.discriminatedUnion("type", [
+  AgentRegister,
+  AgentHeartbeat,
+  AgentBye,
+  AgentPull,
+  AgentLeaseRenew,
+  AgentLogChunk,
+  AgentJobCompleted,
+]);
 export type AgentMessage = z.infer<typeof AgentMessage>;
 
 export const RegisterAccepted = z.object({
@@ -118,5 +222,51 @@ export const HeartbeatAck = z.object({
 });
 export type HeartbeatAck = z.infer<typeof HeartbeatAck>;
 
-export const PlatformReply = z.discriminatedUnion("type", [RegisterAccepted, HeartbeatAck]);
+/**
+ * platform → agent: the jobs granted, and the kill-switch level in the SAME
+ * reply.
+ *
+ * Bundling them is deliberate. A separate kill-switch poll can be the one
+ * request that fails, and an agent that keeps pulling work because it could not
+ * read the switch is exactly the failure M58 exists to prevent. Here the switch
+ * arrives on the only path that hands out work: no jobs can be granted without
+ * the level travelling beside them.
+ */
+export const PullGranted = z.object({
+  type: z.literal("pull_reply"),
+  protocolVersion: z.number().int(),
+  sessionId: SessionId,
+  jobs: z.array(LeasedJob).max(16).default([]),
+  killLevel: AgentKillLevel,
+  serverTime: IsoDateTime,
+});
+export type PullGranted = z.infer<typeof PullGranted>;
+
+/**
+ * platform → agent: whether the lease is still the agent's, and the current
+ * kill level.
+ *
+ * `granted: false` means STOP, not "retry": the platform has given the job to
+ * somebody else, and a second executor is a double-run — two sandboxes writing
+ * the same workspace, two PRs, two sets of comments. Carrying `killLevel` here
+ * as well is what stops a long build mid-flight; the level read at pull time is
+ * already stale by the time a twenty-minute compile finishes.
+ */
+export const LeaseRenewed = z.object({
+  type: z.literal("lease_renew_reply"),
+  protocolVersion: z.number().int(),
+  leaseId: NonEmpty,
+  granted: z.boolean(),
+  leaseExpiresAt: IsoDateTime.optional(),
+  killLevel: AgentKillLevel,
+  serverTime: IsoDateTime,
+});
+export type LeaseRenewed = z.infer<typeof LeaseRenewed>;
+
+export const PlatformReply = z.discriminatedUnion("type", [
+  RegisterAccepted,
+  HeartbeatAck,
+  PullGranted,
+  LeaseRenewed,
+]);
 export type PlatformReply = z.infer<typeof PlatformReply>;

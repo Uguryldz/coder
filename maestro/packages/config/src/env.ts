@@ -7,6 +7,14 @@ import { z } from "zod";
  */
 export const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /**
+   * Where the BFF listens. Studio is served on 7000 and calls 7001 (M7 port
+   * map). The default HOST is loopback on purpose: a service that binds
+   * 0.0.0.0 because nobody set a variable is exposed by omission, and inside a
+   * container the compose file sets this explicitly.
+   */
+  BFF_PORT: z.coerce.number().int().min(1).max(65535).default(7001),
+  BFF_HOST: z.string().min(1).default("127.0.0.1"),
   DATABASE_URL: z.url().optional(),
   TEMPORAL_ADDRESS: z.string().min(1).optional(),
   JIRA_BASE_URL: z.url().optional(),

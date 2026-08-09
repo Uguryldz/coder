@@ -30,32 +30,26 @@ WORKDIR /app
 # ── dependencies ─────────────────────────────────────────────────────────────
 FROM base AS deps
 # Manifests only. Their content is what Docker caches this layer on.
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/bff/package.json                 apps/bff/
-COPY apps/demo/package.json                apps/demo/
-COPY apps/deploy/package.json              apps/deploy/
-COPY packages/adapter-ado/package.json     packages/adapter-ado/
-COPY packages/adapter-jira/package.json    packages/adapter-jira/
-COPY packages/agent-roles/package.json     packages/agent-roles/
-COPY packages/audit/package.json           packages/audit/
-COPY packages/claude-driver/package.json   packages/claude-driver/
-COPY packages/config/package.json          packages/config/
-COPY packages/contracts/package.json       packages/contracts/
-COPY packages/db/package.json              packages/db/
-COPY packages/execution/package.json       packages/execution/
-COPY packages/llm-gateway/package.json     packages/llm-gateway/
-COPY packages/mcp-servers/package.json     packages/mcp-servers/
-COPY packages/memory/package.json          packages/memory/
-COPY packages/notify/package.json          packages/notify/
-COPY packages/pii/package.json             packages/pii/
-COPY packages/ports/package.json           packages/ports/
-COPY packages/publish/package.json         packages/publish/
-COPY packages/runners/package.json         packages/runners/
-COPY packages/scanners/package.json        packages/scanners/
-COPY packages/secrets/package.json         packages/secrets/
-COPY packages/storage/package.json         packages/storage/
-COPY packages/test-kit/package.json        packages/test-kit/
-COPY packages/workflows/package.json       packages/workflows/
+#
+# The whole tree is copied and then reduced to its manifests, rather than one
+# COPY line per package. The enumerated list was five packages out of date by
+# wave 5 (studio, runner-agent, demo-stack, cache, adapter-ldap), and the
+# failure that produced was not a missing COPY — it was
+# `ERR_PNPM_NO_OFFLINE_TARBALL` in the *runner* stage, because this layer had
+# never fetched the tarballs those packages need. A build that breaks in a
+# different stage than the one holding the mistake is a build nobody diagnoses
+# quickly, and any hand-maintained list goes stale on the next new package.
+#
+# `COPY --parents` would express this in one line but needs a newer BuildKit
+# than this repo builds with; the prune below is the portable equivalent.
+COPY . /src
+RUN set -eu; \
+    cd /src; \
+    find . -name node_modules -prune -o -name package.json -print \
+      | while read -r m; do install -D "$m" "/app/$m"; done; \
+    install -D pnpm-lock.yaml      /app/pnpm-lock.yaml; \
+    install -D pnpm-workspace.yaml /app/pnpm-workspace.yaml; \
+    rm -rf /src
 # Scripts are skipped here because `@maestro/db`'s postinstall runs
 # `prisma generate`, and the schema is not in this layer yet.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -76,6 +70,14 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 
 # An unprivileged user, and the image runs as it from here on. A compromised
 # dependency in a Node process must not also be root inside the container.
+#
+# The recursive chown is deliberate, and it costs ~850 MB in a layer that
+# duplicates node_modules. The cheap alternative — create the user first and
+# `COPY --chown` — was tried and reverted: the install above needs pnpm's
+# BuildKit cache mount, and running it as uid 10001 cannot read a store the
+# root-owned earlier stage wrote. Fixing that properly means giving the deps
+# stage the same uid, which is a change to the shared base; it is worth doing
+# and is NOT worth doing the night before an image is cut.
 RUN groupadd --system --gid 10001 maestro \
  && useradd  --system --uid 10001 --gid maestro --home-dir /app --shell /usr/sbin/nologin maestro \
  && chown -R maestro:maestro /app

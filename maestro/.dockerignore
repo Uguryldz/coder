@@ -1,0 +1,48 @@
+# What never belongs in a build context.
+#
+# There was no .dockerignore until the first real image build, and the node
+# image came out at 4.69 GB: `COPY . .` carried the host's 779 MB
+# `node_modules` into the image, the install then rebuilt it anyway, and the
+# `chown` layer copied the whole thing a second time. None of it is used —
+# the image installs its own dependencies for its own platform, and a host
+# tree may hold binaries compiled for a different libc entirely.
+
+# Dependencies. Installed inside the image, never carried into it.
+node_modules
+**/node_modules
+
+# Build output and caches — regenerated, and stale copies shadow fresh ones.
+dist
+**/dist
+.turbo
+**/.turbo
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# History. A repository's .git is larger than the source it holds, and a
+# container has no use for it.
+.git
+.github
+
+# Local state that must never reach an image: real credentials live in the
+# first, and the second is a developer's own machine.
+.env
+.env.*
+!deploy/.env.example
+.claude
+.vscode
+.playwright-mcp
+
+# Test and planning material. The image runs the platform; it does not run the
+# suite, and the plan is not a runtime artefact.
+**/test
+**/*.test.ts
+**/*.test.tsx
+plan
+docs
+mock
+
+# Local databases and scratch files.
+*.db
+*.sqlite
+*.log

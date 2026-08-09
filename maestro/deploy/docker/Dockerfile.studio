@@ -21,7 +21,13 @@ ENV PNPM_HOME=/pnpm \
 RUN corepack enable
 WORKDIR /app
 
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# `tsconfig.base.json` travels with the manifests, not with the sources.
+# Every package's tsconfig `extends` it, and a missing extends target does not
+# error — TypeScript falls back to its own defaults, so `resolveJsonModule` and
+# `module: ESNext` silently vanish and the build fails inside `@maestro/config`
+# on an import that is correct. The error names the wrong file, which is what
+# makes this worth a comment rather than a one-word fix.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps ./apps
 COPY packages ./packages
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \

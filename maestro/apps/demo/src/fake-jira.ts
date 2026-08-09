@@ -76,6 +76,9 @@ export interface FakeJiraComment {
   updated: string;
 }
 
+/** Jira's three workflow buckets — what colours the status lozenge. */
+export type JiraStatusCategory = "new" | "indeterminate" | "done";
+
 export interface FakeJiraIssue {
   id: string;
   key: string;
@@ -83,6 +86,11 @@ export interface FakeJiraIssue {
   summary: string;
   description: string;
   issueType: string;
+  /** Stock `priority` field name, e.g. "Yüksek". */
+  priority: string;
+  /** Stock `status` field name — the workflow step the issue sits on. */
+  status: string;
+  statusCategory: JiraStatusCategory;
   reporter: string;
   assignee: string | null;
   components: string[];
@@ -91,6 +99,21 @@ export interface FakeJiraIssue {
   updated: string;
 }
 
+/** Ids/colours DC ships with, so the UI can draw the same lozenge and icon. */
+const STATUS_CATEGORIES: Record<JiraStatusCategory, { id: number; colorName: string; name: string }> = {
+  new: { id: 2, colorName: "blue-gray", name: "To Do" },
+  indeterminate: { id: 4, colorName: "yellow", name: "In Progress" },
+  done: { id: 3, colorName: "green", name: "Done" },
+};
+
+const PRIORITY_IDS: Record<string, string> = {
+  "En yüksek": "1",
+  Yüksek: "2",
+  Orta: "3",
+  Düşük: "4",
+  "En düşük": "5",
+};
+
 export interface FakeJiraOptions {
   /** PAT the adapter must present as `Authorization: Bearer <pat>`. */
   pat: string;
@@ -98,7 +121,8 @@ export interface FakeJiraOptions {
   webhookSecret: string;
   /** Where webhooks go; a function so the target port may be bound later. */
   webhookUrl: () => string | null;
-  issue: Omit<FakeJiraIssue, "id" | "created" | "updated"> & { created?: string; updated?: string };
+  issue: Omit<FakeJiraIssue, "id" | "created" | "updated" | "priority" | "status" | "statusCategory"> &
+    Partial<Pick<FakeJiraIssue, "created" | "updated" | "priority" | "status" | "statusCategory">>;
   now?: () => Date;
   onError?: (error: unknown) => void;
 }
@@ -144,6 +168,9 @@ export function createFakeJira(options: FakeJiraOptions): FakeJira {
   const issue: FakeJiraIssue = {
     ...options.issue,
     id: "10501",
+    priority: options.issue.priority ?? "Yüksek",
+    status: options.issue.status ?? "Geliştirmede",
+    statusCategory: options.issue.statusCategory ?? "indeterminate",
     created: options.issue.created ?? nowText(),
     updated: options.issue.updated ?? nowText(),
   };
@@ -152,6 +179,28 @@ export function createFakeJira(options: FakeJiraOptions): FakeJira {
   let nextIssueId = 10688;
   let nextIssueNumber = 612;
   let base = "http://127.0.0.1";
+
+  const priorityJson = (): Record<string, unknown> => ({
+    self: `${base}${API}/priority/${PRIORITY_IDS[issue.priority] ?? "3"}`,
+    id: PRIORITY_IDS[issue.priority] ?? "3",
+    name: issue.priority,
+  });
+
+  const statusJson = (): Record<string, unknown> => {
+    const category = STATUS_CATEGORIES[issue.statusCategory];
+    return {
+      self: `${base}${API}/status/${category.id}`,
+      id: String(category.id),
+      name: issue.status,
+      statusCategory: {
+        self: `${base}${API}/statuscategory/${category.id}`,
+        id: category.id,
+        key: issue.statusCategory,
+        colorName: category.colorName,
+        name: category.name,
+      },
+    };
+  };
 
   const issueJson = (): Record<string, unknown> => ({
     expand: "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
@@ -168,6 +217,8 @@ export function createFakeJira(options: FakeJiraOptions): FakeJira {
         name: issue.issueType,
         subtask: false,
       },
+      priority: priorityJson(),
+      status: statusJson(),
       project: {
         self: `${base}${API}/project/10100`,
         id: "10100",
@@ -220,7 +271,8 @@ export function createFakeJira(options: FakeJiraOptions): FakeJira {
           issuetype: { id: "10001", name: issue.issueType, subtask: false },
           project: { id: "10100", key: issue.projectKey, name: "Ugur Payments" },
           labels: issue.labels,
-          status: { id: "3", name: "In Progress" },
+          priority: priorityJson(),
+          status: statusJson(),
         },
       },
     };
@@ -290,7 +342,13 @@ export function createFakeJira(options: FakeJiraOptions): FakeJira {
     // ---- demo-only surface: what the browser (i.e. "a person in Jira") uses.
     if (path === "/_demo/state" && method === "GET") {
       sendJson(res, 200, {
+        project: { key: issue.projectKey, name: "Ugur Payments" },
         issue,
+        // The browser draws a Jira issue screen, which names people rather
+        // than usernames — so the directory travels with the payload.
+        users: Object.fromEntries(
+          Object.entries(USERS).map(([name, user]) => [name, { name, displayName: user.displayName }]),
+        ),
         comments: comments.map((comment) => ({
           ...comment,
           displayName: userOrThrow(comment.author).displayName,

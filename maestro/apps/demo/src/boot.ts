@@ -82,8 +82,13 @@ export async function bootDemo(options: BootOptions = {}): Promise<DemoStage> {
       summary: options.summary ?? DEFAULT_SUMMARY,
       description: options.description ?? DEFAULT_DESCRIPTION,
       issueType: "Story",
+      priority: "Yüksek",
+      // Maestro never transitions the workflow (M102) — the status below is
+      // where the team left the ticket, and it stays there for the whole run.
+      status: "Geliştirmede",
+      statusCategory: "indeterminate",
       reporter: REPORTER,
-      assignee: null,
+      assignee: APPROVER,
       components: ["auth-service", "web-frontend"],
       labels: ["guvenlik"],
     },

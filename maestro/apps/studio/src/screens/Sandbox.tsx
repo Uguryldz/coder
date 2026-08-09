@@ -1,20 +1,110 @@
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { Placeholder } from "../app/Placeholder.tsx";
+import { useApi } from "../auth/AuthProvider.tsx";
+import { useT } from "../i18n/I18nProvider.tsx";
+import { Badge, Card, Table } from "../ui/index.ts";
+import type { BadgeTone, Column } from "../ui/index.ts";
+import type { Page, SandboxRecord, SandboxState } from "./common/index.ts";
+import { QueryState } from "./common/index.ts";
+import { ageLabel, byteSize } from "./shared/format.ts";
+
+const STATE_TONE: Readonly<Record<SandboxState, BadgeTone>> = {
+  active: "green",
+  resumable: "blue",
+  human_held: "orange",
+};
 
 /**
- * Screen: sandbox
+ * Live sandboxes and the workspaces they left behind (M31/M65).
  *
- * STUB — owned by the screen agent assigned to "sandbox".
- * Replace the body of this component with the real screen. Do not edit
- * src/app/screens.ts (the route table) or src/app/routes.tsx; your route,
- * title key and sidebar entry are already registered there.
- *
- * Rules that still apply to the finished screen:
- *  - every visible string comes from the catalog via useT() — no literals;
- *  - build from src/ui primitives (see src/ui/README.md);
- *  - fetch through useApi() + TanStack Query, never bare fetch();
- *  - keep this file under 300 lines, split into src/screens/sandbox/ if it grows.
+ * Two deliberate absences. There is no session TRANSCRIPT: a live agent's
+ * output can carry unmasked ticket text (PII, M18), the BFF exposes no log
+ * endpoint, and inventing one would be worse than omitting it. And there is no
+ * DELETE control: an idle workspace is archived by the retention job on its own
+ * schedule, while a delete button in an operator's hand is how somebody
+ * destroys the session a human was working in — which is why `human_held` is
+ * rendered as its own state rather than folded into "idle".
  */
 export function SandboxScreen(): ReactNode {
-  return <Placeholder id="sandbox" />;
+  const api = useApi();
+  const t = useT();
+
+  const sandboxes = useQuery({
+    queryKey: ["studio-sandboxes"],
+    queryFn: ({ signal }) => api.get<Page<SandboxRecord>>("/studio/sandboxes", { signal }),
+    refetchInterval: 30_000,
+  });
+
+  const rows = sandboxes.data?.items ?? [];
+
+  const columns: readonly Column<SandboxRecord>[] = [
+    {
+      key: "ticket",
+      header: t("sandbox.col.ticket"),
+      cell: (row) => <b className="scr-mono">{row.ticketKey}</b>,
+    },
+    {
+      key: "runner",
+      header: t("sandbox.col.runner"),
+      cell: (row) => <span className="scr-mono">{row.runnerId}</span>,
+    },
+    {
+      key: "state",
+      header: t("sandbox.col.session"),
+      cell: (row) => <Badge tone={STATE_TONE[row.state]}>{t(`sandbox.state.${row.state}`)}</Badge>,
+    },
+    {
+      key: "size",
+      header: t("sandbox.col.size"),
+      cell: (row) => {
+        const size = byteSize(row.sizeBytes);
+        return (
+          <span className="scr-mono">
+            {size.value} {t(size.key)}
+          </span>
+        );
+      },
+      align: "right",
+    },
+    {
+      key: "last",
+      header: t("sandbox.col.last_access"),
+      cell: (row) => {
+        const age = ageLabel(row.lastAccessAt);
+        return <span className="scr-mini">{age === null ? "—" : t(age.key, age.params)}</span>;
+      },
+      align: "right",
+    },
+  ];
+
+  return (
+    <div className="scr-stack">
+      <QueryState
+        isPending={sandboxes.isPending}
+        error={sandboxes.error}
+        isEmpty={rows.length === 0}
+        emptyTitle={t("sandbox.empty.title")}
+        emptyDescription={t("sandbox.empty.description")}
+        emptyIcon="▶"
+        onRetry={() => void sandboxes.refetch()}
+      >
+        <Card
+          title={t("sandbox.card.sessions")}
+          subtitle={t("sandbox.card.sessions_sub")}
+          padded={false}
+        >
+          <Table
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => `${row.ticketKey}:${row.runnerId}`}
+            emptyLabel={t("sandbox.empty.title")}
+            caption={t("sandbox.card.sessions")}
+          />
+        </Card>
+      </QueryState>
+
+      <div className="scr-note">{t("sandbox.note.no_transcript")}</div>
+      <div className="scr-note">{t("sandbox.note.no_delete")}</div>
+    </div>
+  );
 }

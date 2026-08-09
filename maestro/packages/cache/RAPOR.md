@@ -317,6 +317,35 @@ Ağ çağrısı yok. `socket-client.test.ts` 127.0.0.1'de kendi `net.createServe
 kurar — mock'lanmış bir taşıma katmanı, parçalı okuma/pipeline/yeniden
 bağlanma/timeout hakkında kodun değil kendimizin doğru olduğunu iddia ettirirdi.
 
+## Kapı durumu ve rastladığım iki mevcut flake
+
+`pnpm run gate` → **exit 0, 58/58 görev**. (56 değil 58: yeni paket bir
+`typecheck` ve bir `test` görevi ekliyor.)
+
+Kapıyı üç kez koşturdum. Üçüncüsü temiz geçti; ilk ikisinde **dokunmadığım iki
+pakette** birer test düştü. İkisi de yüke duyarlı, ikisi de tek başına koşunca
+geçiyor — `scripts/gate.mjs`'in başlığındaki "yüklü kapıda zamanlama varsayımı
+olan testler yarışı kaybediyor" notunun tarif ettiği şey:
+
+1. **`@maestro/pii` → `test/egress-gate.test.ts`** — "keeps raw PII the model
+   wrote out of the copy that is persisted". Hata `iban` tespiti, oysa test
+   TCKN üzerine. Maskeleme token'ı `[TCKN_2.<8 hex>]` biçiminde ve **rastgele**
+   hex üretiyor; bu hex ara sıra IBAN dedektörünü tetikliyor. Yani gerçek bir
+   flake, benimle ilgisiz. Tek başına 1/1 geçti.
+2. **`@maestro/storage` → `test/s3-response.test.ts`** — "stops at the page
+   ceiling instead of looping forever". 5 sn vitest timeout'unda düştü. Test
+   10.000'e kadar XML sayfası ayrıştırıyor ve **tek başına bile 2.3 sn** sürüyor;
+   yüklü kapıda 5 sn'yi aşıyor. Tek başına 12/12 geçti.
+
+İkisi de benim paketimde değil ve paralel ajanlar oralarda çalışıyor olabilir,
+bu yüzden **dokunmadım**. Sahiplerine not: (1) maskeleme token'ı dedektöre
+yakalanmayacak bir alfabe kullanmalı ya da `assertNoPii` maskelenmiş bölgeleri
+atlamalı; (2) o test için `testTimeout` yükseltilmeli ya da tavan 10.000'den
+küçük bir sayıyla kanıtlanmalı.
+
+Kendi paketimin determinizmi ayrıca ölçüldü: **Redis'siz 10/10 koşu**
+(147 passed | 21 skipped), **gerçek Redis'le 5/5 koşu** (168 passed). Sapma yok.
+
 ## Bulunan ve düzeltilen hata
 
 `SocketRedisClient.close()` uçuştaki komutları reddediyordu, ama `send`'in

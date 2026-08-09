@@ -11,9 +11,32 @@ export interface ParamEditorProps {
   readonly currentVersion: number;
   /** An open four-eyes proposal for this key, when one exists. */
   readonly pending: PendingParamChange | null;
+  /** The signed-in account, used ONLY to label the button honestly. */
+  readonly viewerUserId: string | null;
   readonly busy: boolean;
   readonly onClose: () => void;
   readonly onSubmit: (value: unknown) => void;
+}
+
+/**
+ * Is `proposedBy` the same PERSON as the viewer?
+ *
+ * Four-eyes counts people, not credentials: `ugur@corp` and `ai-via:ugur@corp`
+ * are one pair of eyes holding two tokens (M32/M101), so the delegate prefix is
+ * stripped before comparing — mirroring `humanBehind`/`samePerson` in
+ * apps/bff/src/params-service.ts:148.
+ *
+ * This is PRESENTATION ONLY. The server decides, and it decides again on every
+ * request; duplicating the rule here just stops the button from claiming an
+ * outcome the server will refuse. When identity is unknown the answer is `false`
+ * — "we cannot tell" must not silently become "this is a valid second pair of
+ * eyes", so an uncertain case shows the cautious label.
+ */
+function isSelfProposal(proposedBy: string, viewerUserId: string | null): boolean {
+  if (viewerUserId === null) return false;
+  const person = (actor: string): string => actor.replace(/^ai-via:/, "").trim().toLowerCase();
+  const viewer = person(viewerUserId);
+  return viewer !== "" && person(proposedBy) === viewer;
 }
 
 /**
@@ -30,6 +53,7 @@ export function ParamEditor({
   currentValue,
   currentVersion,
   pending,
+  viewerUserId,
   busy,
   onClose,
   onSubmit,
@@ -46,8 +70,17 @@ export function ParamEditor({
   if (definition === null) return null;
 
   const guarded = definition.guarded;
+  const ownProposal = pending !== null && isSelfProposal(pending.proposedBy, viewerUserId);
+  /**
+   * "Approve" is only truthful for a DIFFERENT person sending the SAME value.
+   * The proposer re-sending their own value is not an approval — the BFF treats
+   * it as an amendment and answers `status: "pending"` again
+   * (params-service.ts:82). Labelling that button "Approve the change" is how an
+   * operator walks away believing a guarded parameter is live when it is still
+   * waiting: the most dangerous possible misreading of the four-eyes rule.
+   */
   const confirming =
-    pending !== null && guarded && formatValue(pending.value) === draft.trim();
+    pending !== null && guarded && !ownProposal && formatValue(pending.value) === draft.trim();
 
   const submit = (): void => {
     const parsed = parseDraft(definition, draft);
@@ -97,7 +130,11 @@ export function ParamEditor({
           <Badge tone="amber">{t("params.badge.guarded")}</Badge>{" "}
           {pending === null
             ? t("params.guarded.explain")
-            : t("params.guarded.pending_explain", { by: pending.proposedBy })}
+            : ownProposal
+              ? // The proposer needs to know the wait is on someone else, not
+                // on them clicking again.
+                t("params.guarded.own_proposal")
+              : t("params.guarded.pending_explain", { by: pending.proposedBy })}
         </div>
       )}
 

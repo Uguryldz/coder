@@ -5,7 +5,8 @@ import { messageKeyOf } from "../api/errors.ts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Button, Card, useToast } from "../ui/index.ts";
-import { type DryRunResult, type OnboardingOptions, QueryState } from "./common/index.ts";
+import { type DryRunResult, type OnboardingOptions } from "./common/index.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 import { DryRunPanel } from "./onboard/DryRunPanel.tsx";
 import { type OnboardingDraft, OnboardingSteps } from "./onboard/OnboardingSteps.tsx";
 
@@ -101,7 +102,8 @@ export function OnboardScreen(): ReactNode {
         ))}
       </ol>
 
-      <QueryState
+      {/* `GET /onboarding/options` is not built yet — see MaybeUnwired. */}
+      <MaybeUnwired
         isPending={options.isPending}
         error={options.error}
         onRetry={() => void options.refetch()}
@@ -114,7 +116,7 @@ export function OnboardScreen(): ReactNode {
             onChange={update}
           />
         )}
-      </QueryState>
+      </MaybeUnwired>
 
       {step === 1 && (
         <DryRunPanel

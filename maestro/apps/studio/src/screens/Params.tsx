@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { messageKeyOf } from "../api/errors.ts";
-import { useApi } from "../auth/AuthProvider.tsx";
+import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
@@ -38,6 +38,7 @@ interface Row {
  */
 export function ParamsScreen(): ReactNode {
   const api = useApi();
+  const { session } = useAuth();
   const t = useT();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -163,6 +164,7 @@ export function ParamsScreen(): ReactNode {
           currentValue={editing.value}
           currentVersion={editing.version}
           pending={editing.pending}
+          viewerUserId={session?.userId ?? null}
           busy={save.isPending}
           onClose={() => setEditingKey(null)}
           onSubmit={(value) => save.mutate({ key: editing.definition.key, value })}

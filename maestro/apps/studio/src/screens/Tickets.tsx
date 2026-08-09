@@ -5,6 +5,7 @@ import { messageKeyOf } from "../api/errors.ts";
 import { useI18n, useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Select, Table, runStatusTone } from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { ageLabel, dateTimeLabel } from "./shared/format.ts";
 import { projectKeyOf, useRuns, type RunExecutionStatus, type RunSummary } from "./shared/runs.ts";
 import "./shared/screens.css";
@@ -48,6 +49,7 @@ export function TicketsScreen(): ReactNode {
   const t = useT();
   const { locale } = useI18n();
   const navigate = useNavigate();
+  const enumLabel = useEnumLabel();
   const [filter, setFilter] = useState<FilterId>("all");
   const [project, setProject] = useState<string>("all");
 
@@ -90,7 +92,9 @@ export function TicketsScreen(): ReactNode {
       key: "status",
       header: t("col.status"),
       cell: (run) => (
-        <Badge tone={runStatusTone(run.status)}>{t(statusKey(run.status))}</Badge>
+        <Badge tone={runStatusTone(run.status)}>
+          {enumLabel(RUN_STATUS_PREFIX, run.status).text}
+        </Badge>
       ),
     },
     {
@@ -165,7 +169,16 @@ export function TicketsScreen(): ReactNode {
   );
 }
 
-/** Catalog key for a Temporal-level execution status. */
+/**
+ * Catalog key for a Temporal-level execution status.
+ *
+ * The key prefix is exported separately so callers can go through
+ * `useEnumLabel`: `RunExecutionStatus` is a union in TypeScript but a plain
+ * string on the wire, and Temporal owns the vocabulary. An eighth status would
+ * otherwise throw out of `t()` and blank the whole ticket list.
+ */
+export const RUN_STATUS_PREFIX = "run.exec";
+
 export function statusKey(status: RunExecutionStatus): string {
-  return `run.exec.${status}`;
+  return `${RUN_STATUS_PREFIX}.${status}`;
 }

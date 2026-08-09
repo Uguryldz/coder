@@ -17,7 +17,19 @@ interface State {
  *
  * The message shown here is the ONE place raw English text is allowed: if the
  * catalog itself is broken, a catalog lookup cannot describe the problem.
+ *
+ * That licence is narrow, and the detail is now scoped to match it. A broken
+ * catalog needs the missing KEY on screen — that is the only way to act on it,
+ * and a key is a build-time identifier we wrote ourselves. Every other error
+ * reaching here shows its class and nothing more: an `ApiError`'s message is
+ * `api ${status} ${code}` (api/errors.ts), so a wrapped one used to put an HTTP
+ * status and a server error code in front of an end user who can do nothing
+ * with either. The full error still goes to the console for an operator with
+ * devtools open, which is where that detail belongs.
  */
+
+/** Names whose `message` is safe and necessary to show — see the note above. */
+const DETAILED_ERRORS: readonly string[] = ["MissingMessageError"];
 export class ErrorBoundary extends Component<Props, State> {
   override state: State = { error: null };
 
@@ -48,7 +60,7 @@ export class ErrorBoundary extends Component<Props, State> {
       >
         <strong>Studio failed to render this screen.</strong>
         <pre style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
-          {error.name}: {error.message}
+          {DETAILED_ERRORS.includes(error.name) ? `${error.name}: ${error.message}` : error.name}
         </pre>
       </div>
     );

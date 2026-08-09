@@ -8,10 +8,10 @@ import {
   type Connection,
   type ConnectionStatus,
   type NotifyDriver,
-  QueryState,
   type SettingsView,
 } from "./common/index.ts";
-import { useLabel } from "./common/label.ts";
+import { useEnumLabel, useLabel } from "./common/label.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 import { KillSwitchPanel } from "./settings/KillSwitchPanel.tsx";
 
 const STATUS_TONE: Readonly<Record<ConnectionStatus, BadgeTone>> = {
@@ -32,6 +32,7 @@ export function SettingsScreen(): ReactNode {
   const api = useApi();
   const t = useT();
   const label = useLabel();
+  const enumLabel = useEnumLabel();
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -52,11 +53,14 @@ export function SettingsScreen(): ReactNode {
     {
       key: "status",
       header: t("settings.col.status"),
-      cell: (row) => (
-        <Badge tone={STATUS_TONE[row.status]} icon="●">
-          {t(`settings.status.${row.status}`)}
-        </Badge>
-      ),
+      cell: (row) => {
+        const status = enumLabel("settings.status", row.status);
+        return (
+          <Badge tone={status.unknown ? "gray" : STATUS_TONE[row.status]} icon="●">
+            {status.text}
+          </Badge>
+        );
+      },
     },
     {
       key: "credential",
@@ -89,7 +93,12 @@ export function SettingsScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
-      <QueryState
+      {/*
+        `GET /settings` is not built yet. MaybeUnwired turns its 404 into
+        "not published yet" instead of "record not found" — the second is a lie
+        about a record, when the truth is about the endpoint.
+      */}
+      <MaybeUnwired
         isPending={settings.isPending}
         error={settings.error}
         onRetry={() => void settings.refetch()}
@@ -121,7 +130,7 @@ export function SettingsScreen(): ReactNode {
             caption={t("settings.card.notify")}
           />
         </Card>
-      </QueryState>
+      </MaybeUnwired>
 
       <KillSwitchPanel />
     </div>

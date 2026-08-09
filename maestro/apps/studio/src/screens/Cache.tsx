@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Kpi, Table } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 
 /**
@@ -46,6 +47,7 @@ function gib(bytes: number): string {
 export function CacheScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
 
   const query = useQuery({
     queryKey: ["cache"],
@@ -107,7 +109,7 @@ export function CacheScreen(): ReactNode {
                   header: t("cache.col.session"),
                   cell: (row) => (
                     <Badge tone={row.sessionState === "sleeping" ? "amber" : "gray"}>
-                      {t(`cache.session.${row.sessionState}`)}
+                      {enumLabel("cache.session", row.sessionState).text}
                     </Badge>
                   ),
                 },

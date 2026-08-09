@@ -7,7 +7,7 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Input } from "../ui/index.ts";
 import type { BadgeTone } from "../ui/index.ts";
 import type { DirectoryUser } from "./common/index.ts";
-import { KeyValue, QueryState } from "./common/index.ts";
+import { KeyValue, QueryState, useEnumLabel } from "./common/index.ts";
 
 const ROLE_TONE: Readonly<Record<Role, BadgeTone>> = {
   admin: "purple",
@@ -17,6 +17,23 @@ const ROLE_TONE: Readonly<Record<Role, BadgeTone>> = {
   developer: "green",
   viewer: "gray",
 };
+
+/**
+ * The tone for a role that arrived on the wire.
+ *
+ * `DirectoryUser.roles` is typed `readonly Role[]` here, but the BFF's own type
+ * is `readonly string[]` (apps/bff/src/deps.ts:95) and `GET /studio/users/:username`
+ * passes directory group names through unfiltered. So the closed union is a
+ * hope, not a guarantee: a corporate AD carrying a group outside the contract's
+ * six roles reaches this component as a plain string.
+ *
+ * A missing tone must not become `undefined` (which would render an unstyled
+ * badge) and must not borrow a known role's colour (which would imply an
+ * authority the platform never granted). Neutral grey is the honest answer.
+ */
+function roleTone(role: string): BadgeTone {
+  return Object.hasOwn(ROLE_TONE, role) ? ROLE_TONE[role as Role] : "gray";
+}
 
 /**
  * Separation-of-duty rules (M32/M92) as the platform enforces them. Static
@@ -137,6 +154,7 @@ export function UsersScreen(): ReactNode {
 
 function UserCard({ user }: { readonly user: DirectoryUser }): ReactNode {
   const t = useT();
+  const enumLabel = useEnumLabel();
 
   return (
     <Card
@@ -170,11 +188,29 @@ function UserCard({ user }: { readonly user: DirectoryUser }): ReactNode {
                 {user.roles.length === 0 ? (
                   <span className="scr-mini">{t("users.value.none")}</span>
                 ) : (
-                  user.roles.map((role) => (
-                    <Badge key={role} tone={ROLE_TONE[role]}>
-                      {t(`role.${role}`)}
-                    </Badge>
-                  ))
+                  // Roles come from the directory, so an unrecognised one is a
+                  // real possibility rather than a typo — it is shown, marked,
+                  // and never allowed to blank the card. See `roleTone`.
+                  //
+                  // On a DISABLED account the badges are struck through and
+                  // muted. The warning below already says the account is
+                  // revoked, but a purple `admin` badge in its normal register
+                  // says the opposite louder — and "does this account still
+                  // look privileged?" is the exact question this screen is
+                  // opened to answer. Colour and text must not disagree.
+                  user.roles.map((role) => {
+                    const label = enumLabel("role", role);
+                    const tone = label.unknown || !user.active ? "gray" : roleTone(role);
+                    return (
+                      <Badge key={role} tone={tone}>
+                        {user.active ? (
+                          label.text
+                        ) : (
+                          <s title={t("users.note.role_not_in_force")}>{label.text}</s>
+                        )}
+                      </Badge>
+                    );
+                  })
                 )}
               </span>
             ),

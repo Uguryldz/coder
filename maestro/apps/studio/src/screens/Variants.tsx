@@ -5,6 +5,7 @@ import type { LlmRole } from "@maestro/contracts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 
 /**
@@ -28,6 +29,7 @@ export interface AgentVariant {
 export function VariantsScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
   const navigate = useNavigate();
 
   const query = useQuery({
@@ -52,7 +54,11 @@ export function VariantsScreen(): ReactNode {
                 header: t("variants.col.variant"),
                 cell: (row: AgentVariant) => row.variantId,
               },
-              { key: "role", header: t("variants.col.role"), cell: (row) => t(`llm.role.${row.role}`) },
+              {
+                key: "role",
+                header: t("variants.col.role"),
+                cell: (row) => enumLabel("llm.role", row.role).text,
+              },
               { key: "platform", header: t("variants.col.platform"), cell: (row) => row.platform },
               {
                 key: "model",

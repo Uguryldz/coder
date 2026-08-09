@@ -6,6 +6,7 @@ import type { LlmRole } from "@maestro/contracts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, EmptyState, TabPanel, Table, Tabs } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 import { TextArea } from "./shared/TextArea.tsx";
 
@@ -50,6 +51,7 @@ interface VariantDetail {
 export function VariantScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
   const [params] = useSearchParams();
   const variantId = params.get("id");
   const [tab, setTab] = useState("persona");
@@ -78,7 +80,7 @@ export function VariantScreen(): ReactNode {
         data === undefined
           ? undefined
           : t("variant.subtitle", {
-              role: t(`llm.role.${data.role}`),
+              role: enumLabel("llm.role", data.role).text,
               platform: data.platform,
               version: String(data.activeVersion),
             })

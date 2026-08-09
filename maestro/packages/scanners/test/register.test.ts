@@ -43,6 +43,29 @@ describe("driver registration (M44)", () => {
     expect(registered.requests).toHaveLength(0);
   });
 
+  it("refuses a credential handed over through declarative config (B11)", () => {
+    const port = registry({ runner: stubRunner().runner });
+
+    expect(() =>
+      port.resolve<ScanPort>(SCAN_PORT, "gitleaks")({ ...configFor("gitleaks"), deps: { token: "leaked" } }),
+    ).toThrow(/credentials are runtime material/);
+    expect(() =>
+      port.resolve<ScanPort>(SCAN_PORT, "gitleaks")({ ...configFor("gitleaks"), deps: { tokens: { fortify: "x" } } }),
+    ).toThrow(ScanConfigError);
+  });
+
+  it("ignores anything in deps that is not a runtime collaborator (B11)", async () => {
+    const override = stubRunner({ stdout: "[]" });
+    const factory = registry().resolve<ScanPort>(SCAN_PORT, "gitleaks");
+
+    const port = factory({
+      ...configFor("gitleaks"),
+      deps: { runner: override.runner, blockLevel: "info", somethingElse: 1 },
+    });
+
+    expect((await port.run("gitleaks", WORKSPACE)).outcome).toBe("pass");
+  });
+
   it("refuses an unknown driver rather than silently doing nothing", () => {
     expect(() => registry().resolve(SCAN_PORT, "checkmarx")).toThrow(/no driver "checkmarx"/);
   });

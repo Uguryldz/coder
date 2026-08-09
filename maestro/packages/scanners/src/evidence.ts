@@ -22,6 +22,28 @@ export interface ScanGateDecision {
 }
 
 /**
+ * Two results for one tool must not become two evidence files with the same
+ * name and different content, and the summary must not describe a different run
+ * from the one the gate decided on. The most blocking result wins, so a retry
+ * can never bury the failure it retried.
+ */
+const OUTCOME_WEIGHT: Record<string, number> = { pass: 0, fail: 1, error: 2 };
+
+/** `isScanBlocking` stays the authority, so a future outcome outranks `pass` even unweighted. */
+function severityOfOutcome(result: ScanResult): number {
+  return (isScanBlocking(result.outcome) ? 10 : 0) + (OUTCOME_WEIGHT[result.outcome] ?? 0);
+}
+
+export function dedupeResults(results: readonly ScanResult[]): ScanResult[] {
+  const byTool = new Map<ScanTool, ScanResult>();
+  for (const result of results) {
+    const kept = byTool.get(result.tool);
+    if (!kept || severityOfOutcome(result) > severityOfOutcome(kept)) byTool.set(result.tool, result);
+  }
+  return [...byTool.values()];
+}
+
+/**
  * Whole-gate verdict (M27). A MISSING result blocks exactly like a failed one:
  * dropping a scanner from the wiring can never quietly open the gate.
  */
@@ -32,19 +54,34 @@ export function scanGateDecision(
   const missing: ScanTool[] = [];
   const blockingTools: ScanTool[] = [];
   const reasons: string[] = [];
+  const kept = dedupeResults(results);
+
+  // An empty required set is a broken lookup, not "nothing is required": it
+  // would open the gate with zero scans, which is exactly what M27 forbids.
+  if (required.length === 0) {
+    reasons.push("no required scan set was supplied — the gate cannot be evaluated");
+  }
+  if (kept.length === 0) {
+    reasons.push("no scan results at all — nothing was scanned");
+  }
 
   for (const tool of required) {
-    if (!results.some((result) => result.tool === tool)) {
+    if (!kept.some((result) => result.tool === tool)) {
       missing.push(tool);
       reasons.push(`${tool}: no result — a required scan did not run`);
     }
   }
   // Optional drivers (M77) are not required, but once they ran they count.
-  for (const result of results.filter((candidate) => isScanBlocking(candidate.outcome))) {
+  for (const result of kept.filter((candidate) => isScanBlocking(candidate.outcome))) {
     blockingTools.push(result.tool);
     reasons.push(`${result.tool}: ${result.outcome}${detailOf(result)}`);
   }
-  return { blocking: missing.length > 0 || blockingTools.length > 0, missing, blockingTools, reasons };
+  return {
+    blocking: reasons.length > 0,
+    missing,
+    blockingTools,
+    reasons,
+  };
 }
 
 /** One file per tool: the raw, contract-shaped result (M34). */
@@ -58,13 +95,16 @@ export function scanResultArtifact(result: ScanResult): EvidenceArtifact {
 
 /**
  * Summary sheet for the evidence package. Label-free on purpose: columns are
- * contract field names, so it needs no locale — prose is M104's job.
+ * contract field names, so it needs no locale — prose is M104's job. Rows come
+ * from the same de-duplicated set the gate decided on, so the sheet can never
+ * describe a passing run while the gate blocks on a failing one.
  */
 export function scanSummaryArtifact(
   results: readonly ScanResult[],
   required: readonly ScanTool[] = CORE_SCAN_TOOLS,
 ): EvidenceArtifact {
   const decision = scanGateDecision(results, required);
+  const kept = dedupeResults(results);
   const lines = [
     "# scan-summary (M27)",
     "",
@@ -74,8 +114,8 @@ export function scanSummaryArtifact(
     `|---|---|---|${SEVERITY_ORDER.map(() => "---").join("|")}|`,
   ];
 
-  for (const tool of [...required, ...results.map((r) => r.tool).filter((t) => !required.includes(t))]) {
-    const result = results.find((candidate) => candidate.tool === tool);
+  for (const tool of [...required, ...kept.map((r) => r.tool).filter((t) => !required.includes(t))]) {
+    const result = kept.find((candidate) => candidate.tool === tool);
     if (!result) {
       lines.push(`| ${tool} | MISSING | - | ${SEVERITY_ORDER.map(() => "-").join(" | ")} |`);
       continue;
@@ -96,7 +136,17 @@ export function scanEvidenceArtifacts(
   results: readonly ScanResult[],
   required: readonly ScanTool[] = CORE_SCAN_TOOLS,
 ): EvidenceArtifact[] {
-  return [...results.map(scanResultArtifact), scanSummaryArtifact(results, required)];
+  const artifacts = [
+    ...dedupeResults(results).map(scanResultArtifact),
+    scanSummaryArtifact(results, required),
+  ];
+  // A manifest with two entries called `scan/gitleaks.json` and different
+  // digests is not evidence of anything; fail loudly instead of shipping it.
+  const names = new Set(artifacts.map((artifact) => artifact.name));
+  if (names.size !== artifacts.length) {
+    throw new Error("scan evidence produced duplicate file names — refusing to build the package (M34)");
+  }
+  return artifacts;
 }
 
 function detailOf(result: ScanResult): string {

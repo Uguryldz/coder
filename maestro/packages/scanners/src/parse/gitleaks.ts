@@ -1,6 +1,6 @@
 import type { ScanFinding } from "@maestro/contracts";
 import { z } from "zod";
-import { messageOr, optionalLine, optionalText, parseJson, parseWith, type ParseContext, type ParsedScan } from "./common.js";
+import { messageOr, optionalLine, parseJson, parseWith, repoPath, type ParseContext, type ParsedScan } from "./common.js";
 
 /**
  * gitleaks v8 JSON report (`--report-format json`): a flat array with PascalCase
@@ -32,7 +32,7 @@ export function parseGitleaks(stdout: string, context: ParseContext): ParsedScan
     // hard that stops the flow is a configured decision (see secretSeverity).
     severity: context.secretSeverity,
     ruleId: entry.RuleID,
-    file: optionalText(entry.File),
+    file: repoPath(entry.File, context.mountPath),
     line: optionalLine(entry.StartLine),
     message: messageOr(`secret detected by rule ${entry.RuleID}`, entry.Description),
   }));

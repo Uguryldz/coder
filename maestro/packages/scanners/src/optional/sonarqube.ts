@@ -5,8 +5,7 @@ import { DEFAULT_BLOCK_LEVEL, SCAN_PORT } from "../config.js";
 import { ScanConfigError } from "../errors.js";
 import { messageOr, optionalLine, optionalText, parseJson, parseWith, type ParsedScan } from "../parse/common.js";
 import type { Clock } from "../runner.js";
-import { depsOf } from "./fortify.js";
-import { HttpScanPort, isUnconfigured, parseConfig, requireHttps, type FetchLike } from "./http-scan.js";
+import { HttpScanPort, depsOf, isUnconfigured, parseConfig, requireHttps, type FetchLike } from "./http-scan.js";
 
 /**
  * SonarQube driver (M77, optional): reads a project's open issues via
@@ -38,9 +37,14 @@ const SonarIssue = z.looseObject({
   message: z.string().optional(),
 });
 
+/**
+ * `issues` is REQUIRED (see fortify.ts for the same reasoning) and `total` is
+ * the server's count across all pages: `{"total":3000}` with 500 issues in the
+ * body means 2500 unread issues, not a clean project.
+ */
 const SonarIssueSearch = z.looseObject({
-  issues: z.array(SonarIssue).nullish(),
-  total: z.number().int().optional(),
+  issues: z.array(SonarIssue),
+  total: z.number().int().nonnegative().optional(),
 });
 
 const SONAR_SEVERITY: Record<string, ScanSeverity> =
@@ -49,7 +53,7 @@ const SONAR_SEVERITY: Record<string, ScanSeverity> =
 export function parseSonarQube(body: string): ParsedScan {
   const report = parseWith("sonarqube", SonarIssueSearch, parseJson("sonarqube", body));
 
-  const findings: ScanFinding[] = (report.issues ?? []).map((issue) => ({
+  const findings: ScanFinding[] = report.issues.map((issue) => ({
     tool: "sonarqube" as const,
     severity: SONAR_SEVERITY[issue.severity?.toUpperCase() ?? ""] ?? "high",
     ruleId: messageOr("sonarqube.issue", issue.rule, issue.key),
@@ -58,7 +62,7 @@ export function parseSonarQube(body: string): ParsedScan {
     line: optionalLine(issue.line),
     message: messageOr(messageOr("sonarqube issue", issue.rule), issue.message),
   }));
-  return { findings };
+  return { findings, total: report.total, pageItems: report.issues.length };
 }
 
 /** @throws CapabilityNotSupportedError when SonarQube is not configured (M77). */
@@ -77,9 +81,10 @@ export function createSonarQubeScanPort(input: unknown, deps: SonarQubeDeps = {}
       provenance: `sonarqube:${config.projectKey}`,
       blockLevel: config.blockLevel,
       timeoutMs: config.timeoutMs,
-      url: () =>
+      pageSize: config.pageSize,
+      url: (_target, page) =>
         `${baseUrl}/api/issues/search?componentKeys=${encodeURIComponent(config.projectKey)}` +
-        `&resolved=false&ps=${config.pageSize}&p=1`,
+        `&resolved=false&ps=${config.pageSize}&p=${page.index + 1}`,
       headers: () => ({ Authorization: `Bearer ${token}`, Accept: "application/json" }),
       parse: parseSonarQube,
     },

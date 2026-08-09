@@ -1,11 +1,12 @@
-export { CORE_SCAN_TOOLS, ContainerScanConfig, DEFAULT_BLOCK_LEVEL, SCAN_BLOCK_LEVEL_PARAM, SCAN_PORT, type CoreScanTool } from "./config.js";
+export { WRAPPER_EXIT, WRAPPER_EXIT_REASONS, reportPath, wrapCommand } from "./command.js";
+export { CORE_SCAN_TOOLS, ContainerScanConfig, DEFAULT_BLOCK_LEVEL, SCAN_BLOCK_LEVEL_PARAM, SCAN_PORT, forbiddenExtraArg, type CoreScanTool } from "./config.js";
 export { ContainerScanPort, type ContainerScanPortOptions } from "./container-driver.js";
 export { ScanConfigError, ScanParseError } from "./errors.js";
-export { SCAN_EVIDENCE_DIR, scanEvidenceArtifacts, scanGateDecision, scanResultArtifact, scanSummaryArtifact, toEvidenceFile } from "./evidence.js";
+export { SCAN_EVIDENCE_DIR, dedupeResults, scanEvidenceArtifacts, scanGateDecision, scanResultArtifact, scanSummaryArtifact, toEvidenceFile } from "./evidence.js";
 export type { EvidenceArtifact, ScanGateDecision } from "./evidence.js";
 export { parsePinnedImage, type PinnedImage } from "./image.js";
 export { FortifyConfig, createFortifyScanPort, parseFortify, type FortifyDeps } from "./optional/fortify.js";
-export { HttpScanPort, type FetchLike, type HttpScanSpec } from "./optional/http-scan.js";
+export { HttpScanPort, depsOf, type FetchLike, type HttpScanSpec, type PageCursor } from "./optional/http-scan.js";
 export { SonarQubeConfig, createSonarQubeScanPort, parseSonarQube, type SonarQubeDeps } from "./optional/sonarqube.js";
 export { createXrayScanPort } from "./optional/xray.js";
 export { parseGitleaks } from "./parse/gitleaks.js";

@@ -1,5 +1,6 @@
 import type { ScanResult, ScanTool } from "@maestro/contracts";
 import type { ScanPort, ScanTarget } from "@maestro/ports";
+import { WRAPPER_EXIT_REASONS } from "./command.js";
 import type { ContainerScanConfig, CoreScanTool } from "./config.js";
 import { parsePinnedImage, type PinnedImage } from "./image.js";
 import { completedResult, errorResult } from "./result.js";
@@ -48,7 +49,25 @@ export class ContainerScanPort implements ScanPort {
     return this.#image.digest;
   }
 
+  /**
+   * The invariant is "never throws", so even a collaborator that breaks its own
+   * contract — a clock that throws, a runner returning a hostile getter — has to
+   * come out as a result. The inner method does the work; this one guarantees
+   * the shape.
+   */
   async run(tool: ScanTool, target: ScanTarget): Promise<ScanResult> {
+    try {
+      return await this.#run(tool, target);
+    } catch (error) {
+      const epoch = new Date(0);
+      return errorResult({
+        tool: this.#spec.tool, imageDigest: this.#image.digest, startedAt: epoch, finishedAt: epoch,
+        reason: `scan driver failed outside the scan — ${reasonOf(error)}`,
+      });
+    }
+  }
+
+  async #run(tool: ScanTool, target: ScanTarget): Promise<ScanResult> {
     const startedAt = this.#clock();
     const base = { tool: this.#spec.tool, imageDigest: this.#image.digest, startedAt };
     const failed = (reason: string): ScanResult =>
@@ -57,7 +76,15 @@ export class ContainerScanPort implements ScanPort {
     if (tool !== this.#spec.tool) {
       return failed(`driver is wired for "${this.#spec.tool}" but was asked to run "${tool}"`);
     }
-    if (!target?.workspacePath?.trim()) return failed("target.workspacePath is empty");
+    const workspacePath = target?.workspacePath?.trim();
+    if (!workspacePath) return failed("target.workspacePath is empty");
+    // A relative path is a wiring bug: it resolves against whatever directory the
+    // runner happens to sit in, which is how a scan ends up mounting nothing.
+    // Whether the directory EXISTS and has content is checked inside the
+    // container (see command.ts) — the runner may not share this filesystem.
+    if (!workspacePath.startsWith("/")) {
+      return failed(`target.workspacePath "${workspacePath}" is not an absolute path`);
+    }
 
     let argv: string[];
     try {
@@ -71,7 +98,7 @@ export class ContainerScanPort implements ScanPort {
       output = await this.#runner.run({
         image: this.#image.ref,
         argv,
-        workspacePath: target.workspacePath,
+        workspacePath,
         workspaceMountPath: this.#config.workspaceMountPath,
         network: this.#config.networkMode,
         timeoutSeconds: this.#config.timeoutSeconds,
@@ -83,12 +110,17 @@ export class ContainerScanPort implements ScanPort {
 
     if (!output || typeof output.exitCode !== "number" || typeof output.stdout !== "string") return failed("runner returned an unusable result");
     if (output.timedOut) return failed(`timed out after ${this.#config.timeoutSeconds}s`);
+    const wrapper = WRAPPER_EXIT_REASONS[output.exitCode];
+    if (wrapper) return failed(wrapper);
     if (!this.#spec.okExitCodes.includes(output.exitCode)) {
       return failed(`exited with code ${output.exitCode}${this.#stderr(output)}`);
     }
 
     try {
-      const parsed = this.#spec.parse(output.stdout, this.#config);
+      const parsed = this.#spec.parse(output.stdout, {
+        secretSeverity: this.#config.secretSeverity,
+        mountPath: this.#config.workspaceMountPath,
+      });
       if (parsed.fatal) return failed(parsed.fatal);
       return completedResult({
         ...base,

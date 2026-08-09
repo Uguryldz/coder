@@ -1,10 +1,11 @@
 import type { ScanFinding, ScanSeverity } from "@maestro/contracts";
 import { z } from "zod";
-import { messageOr, optionalLine, optionalText, parseJson, parseWith, type ParsedScan } from "./common.js";
+import { messageOr, optionalLine, parseJson, parseWith, repoPath, type ParseContext, type ParsedScan } from "./common.js";
 
 /**
  * semgrep `--json`: `{ version, results[], errors[], paths, … }`; a result is
  * `{ check_id, path, start:{line,col}, end, extra:{ message, severity, … } }`.
+ * Shape captured from semgrep 1.171.0 (`fixtures/semgrep-results.json`).
  */
 const SemgrepResult = z.looseObject({
   check_id: z.string().min(1),
@@ -25,9 +26,16 @@ const SemgrepError = z.looseObject({
   type: z.unknown().optional(),
 });
 
+/**
+ * `paths.scanned` is semgrep's own record of WHAT it looked at. It is required
+ * here because it is the only proof of scope the report carries: an empty or
+ * wrong mount produces `{"results":[],"errors":[],"paths":{"scanned":[]}}` and
+ * exit 0 — a clean pass over nothing (verified live against 1.171.0).
+ */
 const SemgrepReport = z.looseObject({
   results: z.array(SemgrepResult),
   errors: z.array(SemgrepError).optional(),
+  paths: z.looseObject({ scanned: z.array(z.string()) }),
 });
 
 /** `extra.severity` — semgrep's own rule levels. */
@@ -53,7 +61,7 @@ export function semgrepSeverity(result: {
   return RESULT_SEVERITY[level] ?? UNKNOWN_SEVERITY;
 }
 
-export function parseSemgrep(stdout: string): ParsedScan {
+export function parseSemgrep(stdout: string, context: ParseContext): ParsedScan {
   const report = parseWith("semgrep", SemgrepReport, parseJson("semgrep", stdout));
 
   const findings: ScanFinding[] = report.results
@@ -62,7 +70,7 @@ export function parseSemgrep(stdout: string): ParsedScan {
       tool: "semgrep" as const,
       severity: semgrepSeverity(result),
       ruleId: result.check_id,
-      file: optionalText(result.path),
+      file: repoPath(result.path, context.mountPath),
       line: optionalLine(result.start?.line),
       message: messageOr(`semgrep rule ${result.check_id} matched`, result.extra.message),
     }));
@@ -72,8 +80,12 @@ export function parseSemgrep(stdout: string): ParsedScan {
   const fatal = (report.errors ?? [])
     .filter((error) => !NON_FATAL_LEVELS.has((error.level ?? "error").toLowerCase()))
     .map((error) => messageOr("semgrep reported an unlabelled error", error.message));
+  if (fatal.length > 0) {
+    return { findings, fatal: `semgrep reported ${fatal.length} error(s): ${fatal[0]}` };
+  }
 
-  return fatal.length > 0
-    ? { findings, fatal: `semgrep reported ${fatal.length} error(s): ${fatal[0]}` }
-    : { findings };
+  if (report.paths.scanned.length === 0) {
+    return { findings, fatal: "semgrep scanned 0 files — a scan with no scope is not a pass (M27)" };
+  }
+  return { findings };
 }

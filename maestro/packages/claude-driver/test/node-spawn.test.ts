@@ -144,13 +144,24 @@ describe("nodeSpawn — a child that dies before reading the prompt", () => {
 describe("nodeSpawn — timeout kills the whole process group", () => {
   it("stops a grandchild from touching the workspace after the turn was killed", async () => {
     const marker = join(workDir, "grandchild.txt");
-    const inner = `setTimeout(()=>{require("fs").writeFileSync(${JSON.stringify(marker)},"late")},1500)`;
+    const ready = join(workDir, "grandchild-ready.txt");
+    // The grandchild announces itself through the FILESYSTEM, not through the
+    // parent's stdout. Both this and the late write have to survive the kill
+    // question, and the parent's pipe is drained by the adapter we are testing.
+    // The grandchild's late write is far enough out that a slow start cannot
+    // push it before the kill. The old script paired a 300 ms timeout with a
+    // 1500 ms write, which only holds if Node boots in well under 300 ms; under
+    // the gate's four-way parallelism it does not, and the run was killed
+    // before the grandchild existed. The test then failed on its own liveness
+    // check — never on the behaviour it exists to prove. Widening both ends
+    // keeps the ordering (kill at ~1.5 s, write at 6 s) true on a loaded box.
+    const inner = [
+      `require("fs").writeFileSync(${JSON.stringify(ready)},"up");`,
+      `setTimeout(()=>{require("fs").writeFileSync(${JSON.stringify(marker)},"late")},6000);`,
+    ].join("");
     const parent = [
       'const {spawn}=require("child_process");',
       `spawn(process.execPath,["-e",${JSON.stringify(inner)}],{stdio:"ignore"});`,
-      // Prove the grandchild really was launched: without this the assertion
-      // below would pass even if the parent script had died on a syntax error.
-      'process.stdout.write("launched\\n");',
       "setInterval(()=>{},1000);",
     ].join("");
 
@@ -160,12 +171,18 @@ describe("nodeSpawn — timeout kills the whole process group", () => {
       cwd: workDir,
       stdin: "",
       env: {},
-      timeoutMs: 300,
+      timeoutMs: 1_500,
     });
-    expect(result.stdout).toContain("launched");
     expect(result.timedOut).toBe(true);
 
-    await sleep(2_000);
+    // Liveness through the FILESYSTEM rather than the parent's stdout: the
+    // grandchild has to have existed for the assertion below to mean anything,
+    // and a `ready` file survives the kill that a buffered pipe may not.
+    expect(existsSync(ready)).toBe(true);
+
+    // Well past the grandchild's 6 s timer: if the kill had reached only the
+    // direct child, the marker would exist by now.
+    await sleep(7_000);
     expect(existsSync(marker)).toBe(false);
-  }, 15_000);
+  }, 30_000);
 });

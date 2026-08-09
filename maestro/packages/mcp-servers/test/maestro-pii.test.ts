@@ -35,7 +35,7 @@ describe("maestro-mcp masks what it hands to an IDE (B9)", () => {
     const { runtime } = runtimeFor(
       maestroMcpServer({
         platform: platformReturning([
-          { id: "k1", title: "iade", snippet: `müşteri ${TCKN} iade istedi`, source: "jira", score: 0.9 },
+          { id: "k1", title: "iade", snippet: `müşteri ${TCKN} iade istedi`, source: "jira", score: 0.9, dataClass: "dahili" as const },
         ]),
         pii: { policy },
       }),
@@ -84,7 +84,7 @@ describe("maestro-mcp masks what it hands to an IDE (B9)", () => {
     const { runtime } = runtimeFor(
       maestroMcpServer({
         platform: platformReturning([
-          { id: "k1", title: "public note", snippet: "ordinary", source: "jira", score: 0.9 },
+          { id: "k1", title: "public note", snippet: "ordinary", source: "jira", score: 0.9, dataClass: "dahili" as const },
           {
             id: "k2",
             title: "risk memo",
@@ -115,7 +115,7 @@ describe("maestro-mcp masks what it hands to an IDE (B9)", () => {
       maestroMcpServer({
         platform: platformReturning([
           { id: "k1", title: "a", snippet: "x", source: "jira", score: 0.9, dataClass: "dahili" },
-          { id: "k2", title: "b", snippet: "y", source: "jira", score: 0.8 },
+          { id: "k2", title: "b", snippet: "y", source: "jira", score: 0.8, dataClass: "dahili" as const },
         ]),
         pii: { policy },
       }),
@@ -157,7 +157,7 @@ describe("maestro-mcp masks what it hands to an IDE (B9)", () => {
     const { runtime } = runtimeFor(
       maestroMcpServer({
         platform: platformReturning([
-          { id: "k1", title: "iade", snippet: `müşteri ${TCKN}`, source: "jira", score: 0.9 },
+          { id: "k1", title: "iade", snippet: `müşteri ${TCKN}`, source: "jira", score: 0.9, dataClass: "dahili" as const },
         ]),
       }),
     );
@@ -174,7 +174,7 @@ describe("maestro-mcp masks what it hands to an IDE (B9)", () => {
     const { runtime } = runtimeFor(
       maestroMcpServer({
         platform: platformReturning([
-          { id: "k1", title: "iade", snippet: `${TCKN} ve ${IBAN}`, source: "jira", score: 0.9 },
+          { id: "k1", title: "iade", snippet: `${TCKN} ve ${IBAN}`, source: "jira", score: 0.9, dataClass: "dahili" as const },
         ]),
         pii: { policy, onMasked: (counts) => seen.push({ occurrences: counts.occurrences }) },
       }),

@@ -204,7 +204,7 @@ export function fakePlatform(calls: PlatformCalls): MaestroPlatform {
     mode: "full_auto",
     pendingGate: { step: "4", ownerGroup: "product-owners", openedAt: AT, waitingDays: 16 },
   };
-  const hit: KnowledgeHit = { id: "k1", title: "repo card", snippet: "…", source: "knowledge", score: 0.9 };
+  const hit: KnowledgeHit = { id: "k1", title: "repo card", snippet: "…", source: "knowledge", score: 0.9, dataClass: "dahili" as const };
   const track = <T,>(user: string, value: T): Promise<T> => {
     calls.users.push(user);
     return Promise.resolve(value);

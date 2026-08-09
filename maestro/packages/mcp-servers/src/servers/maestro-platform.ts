@@ -70,12 +70,17 @@ export interface KnowledgeHit {
   readonly source: string;
   readonly score: number;
   /**
-   * The institution's own classification of the document (M18/M63). Optional
-   * because the knowledge index predates it; an unlabelled hit is treated as
-   * `dahili`. On the `maestro-mcp` channel a `gizli` hit is dropped rather than
-   * masked — see `src/ide-boundary.ts` (B9).
+   * The institution's own classification of the document (M18/M63).
+   *
+   * REQUIRED, deliberately: it used to be optional and an unlabelled hit was
+   * read as `dahili`, so an unlabelled confidential document reached the IDE
+   * channel. Guessing the safe answer is the adapter's job, not this
+   * interface's — an index that cannot say MUST report `gizli`, which is what
+   * every other unknown-class path in this system does (M18/M63 fail-closed).
+   * On the `maestro-mcp` channel a `gizli` hit is dropped rather than masked
+   * (`src/ide-boundary.ts`, B9).
    */
-  readonly dataClass?: DataClass;
+  readonly dataClass: DataClass;
 }
 
 /** A gate waiting on a human, as `list_pending_gates` reports it (M101 read). */

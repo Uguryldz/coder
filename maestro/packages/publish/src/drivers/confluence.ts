@@ -2,6 +2,7 @@ import { z } from "zod";
 import { NonEmpty, type PublishReceipt, type PublishRequest, type PublishTarget } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import { PublishConfigError, PublishHttpError, PublishRenderError, PublishResponseError } from "../errors.js";
+import { attachToPage, type AttachableFile } from "./confluence-attach.js";
 import { DOC_TITLE_KEY } from "../keys.js";
 import { label } from "../md.js";
 import { markdownToStorage } from "../storage-format.js";
@@ -209,6 +210,14 @@ export class ConfluencePublisher implements TargetPublisher {
   }
 
   /**
+   * Attach a generated `.docx`/`.pdf` to the ticket's living page (M103r).
+   * See `confluence-attach.ts` for why re-attaching updates in place.
+   */
+  attach(pageId: string, file: AttachableFile): Promise<{ attachmentId: string }> {
+    return attachToPage((method, path, query, body, allow404) => this.request(method, path, query, body, allow404), pageId, file);
+  }
+
+  /**
    * `allow404` turns "not found" into null — and ONLY the lookups in
    * `locate()` are allowed to ask for it. Translating 404 for every method
    * meant a PUT to a deleted page returned null, `update()` saw no exception
@@ -233,7 +242,13 @@ export class ConfluencePublisher implements TargetPublisher {
     }
     const headers: Record<string, string> = { authorization: `Bearer ${token}`, accept: "application/json" };
     const init: RequestInit = { method, headers, signal: AbortSignal.timeout(this.config.timeoutMs) };
-    if (body !== undefined) {
+    if (body instanceof FormData) {
+      // Confluence rejects an unmarked multipart POST as a cross-site request.
+      // `content-type` is deliberately NOT set: fetch has to add the multipart
+      // boundary itself, and a hand-written header loses it.
+      headers["x-atlassian-token"] = "nocheck";
+      init.body = body;
+    } else if (body !== undefined) {
       headers["content-type"] = "application/json";
       init.body = JSON.stringify(body);
     }

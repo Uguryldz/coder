@@ -165,6 +165,63 @@ export interface ParamStore {
   apply(change: ParamChange): Promise<void>;
 }
 
+// ── analysis template designer (M108 / M83) ───────────────────────────────────
+
+/** One designed section. Wire shape — what Studio sends and receives. */
+export interface TemplateSection {
+  /** Slug derived from the title; the key the generated Zod schema uses. */
+  key: string;
+  title: string;
+  description: string;
+  /** Instruction to the AI: HOW to fill this section. Goes into the prompt. */
+  aiInstruction: string;
+  /** Required sections fail closed — a missing one never reaches a gate. */
+  required: boolean;
+  format: "free_text" | "bullet_list" | "table" | "impact_matrix";
+  example: string;
+}
+
+/**
+ * A PUBLISHED template version. Immutable once written: a run pinned to
+ * version 4 must still be able to read exactly what version 4 asked for (M83).
+ */
+export interface TemplateVersionRecord {
+  name: string;
+  version: number;
+  sections: readonly TemplateSection[];
+  publishedBy: string;
+  publishedAt: string;
+}
+
+export interface TemplateHistoryEntry {
+  version: number;
+  at: string;
+  author: string;
+  summary: string;
+}
+
+export interface TemplateProjectBinding {
+  projectKey: string;
+  /** The version this project resolves to today. */
+  version: number;
+  /** Open runs still finishing on an older version (M83). */
+  pinnedRuns: number;
+}
+
+export interface TemplateStore {
+  /** Newest published version, or null before the first save. */
+  latest(): Promise<TemplateVersionRecord | null>;
+  /** A specific version — how a pinned run reads the template it started on. */
+  get(version: number): Promise<TemplateVersionRecord | null>;
+  history(): Promise<readonly TemplateHistoryEntry[]>;
+  projects(): Promise<readonly TemplateProjectBinding[]>;
+  /**
+   * Append a new version. MUST reject anything other than `latest + 1` so two
+   * authors saving at once cannot both publish version 5 and lose a draft.
+   */
+  publish(record: TemplateVersionRecord): Promise<void>;
+}
+
 // ── kill switch (M58) ─────────────────────────────────────────────────────────
 
 export type KillSwitchLevel = "off" | "intake_only" | "all";
@@ -252,6 +309,7 @@ export interface BffDeps {
   bindings: JiraProjectBindings;
   gates: GateDirectory;
   params: ParamStore;
+  templates: TemplateStore;
   killSwitch: KillSwitchStore;
   /**
    * Studio's read side (M7). Grouped rather than spread across `BffDeps` so it

@@ -4,11 +4,19 @@ import type { CiResultSignal, Locale, ParamDefinition } from "@maestro/contracts
 import type { FastifyInstance } from "fastify";
 import { InMemoryUserDirectory, LocalIdentityProvider } from "../src/auth/local-identity.js";
 import { InMemorySessionStore } from "../src/auth/sessions.js";
-import type { BffDeps, Clock, JiraBinding, MessageCatalog, ReadModels } from "../src/deps.js";
+import type {
+  BffDeps,
+  Clock,
+  JiraBinding,
+  MessageCatalog,
+  ReadModels,
+  TemplateVersionRecord,
+} from "../src/deps.js";
 import { buildServer } from "../src/server.js";
 import {
   InMemoryKillSwitchStore,
   InMemoryParamStore,
+  InMemoryTemplateStore,
   StaticGateDirectory,
   StaticJiraProjectBindings,
 } from "../src/stores/memory.js";
@@ -103,6 +111,7 @@ export interface Harness {
   users: InMemoryUserDirectory;
   identity: LocalIdentityProvider;
   params: InMemoryParamStore;
+  templates: InMemoryTemplateStore;
   killSwitch: InMemoryKillSwitchStore;
   bindings: StaticJiraProjectBindings;
   /** Studio's read side, as concrete stores the tests seed directly. */
@@ -142,6 +151,29 @@ export interface TestReadModels extends ReadModels {
   evidence: InMemoryEvidenceReader;
 }
 
+/**
+ * A published version 1, so the read endpoint has something to return and a
+ * save under test becomes version 2 — the interesting case, since publishing
+ * must never overwrite what a pinned run is still reading (M83).
+ */
+export const SEED_TEMPLATE: TemplateVersionRecord = {
+  name: "Analiz şablonu",
+  version: 1,
+  sections: [
+    {
+      key: "amac",
+      title: "Amaç",
+      description: "",
+      aiInstruction: "Ticket'ın çözdüğü iş problemini yaz.",
+      required: true,
+      format: "free_text",
+      example: "",
+    },
+  ],
+  publishedBy: "ayse.kaya@ugurbank.local",
+  publishedAt: "2026-08-01T09:00:00.000Z",
+};
+
 export const TEST_SERVICES: readonly ServiceHealth[] = [
   {
     service: "bff",
@@ -161,6 +193,8 @@ export interface HarnessOptions {
   /** Subscription pool (M55); empty by default — most tests do not exercise quota. */
   accounts?: ReadModels["quota"];
   services?: readonly ServiceHealth[];
+  /** Published template versions; defaults to a single seeded version 1. */
+  templates?: readonly TemplateVersionRecord[];
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -177,6 +211,9 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const { BcryptPasswordHasher } = await import("../src/auth/password.js");
   const identity = new LocalIdentityProvider(users, new BcryptPasswordHasher(4));
   const params = new InMemoryParamStore(PARAM_DEFINITIONS);
+  const templates = new InMemoryTemplateStore(options.templates ?? [SEED_TEMPLATE], [
+    { projectKey: "UGURPAY", version: 1, pinnedRuns: 0 },
+  ]);
   const killSwitch = new InMemoryKillSwitchStore();
   const bindings = new StaticJiraProjectBindings(options.bindings ?? [UGURPAY_BINDING]);
 
@@ -209,6 +246,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     bindings,
     gates: new StaticGateDirectory(),
     params,
+    templates,
     killSwitch,
     read,
     messages: testCatalog,
@@ -262,6 +300,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     users,
     identity,
     params,
+    templates,
     killSwitch,
     bindings,
     read,

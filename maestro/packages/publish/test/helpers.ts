@@ -222,6 +222,8 @@ export interface RecordedRequest {
   url: string;
   headers: Record<string, string>;
   body: unknown;
+  /** Multipart uploads (attachments) — the JSON `body` stays undefined. */
+  form?: { fileName?: string; fileType?: string; fileBytes?: number; fields: Record<string, string> };
 }
 
 /** Offline fetch double: a scripted responder plus a call log. */
@@ -229,7 +231,7 @@ export function fakeFetch(
   handler: (req: RecordedRequest) => { status: number; body?: unknown; text?: string },
 ): { fetchImpl: FetchLike; calls: RecordedRequest[] } {
   const calls: RecordedRequest[] = [];
-  const fetchImpl: FetchLike = (input, init) => {
+  const fetchImpl: FetchLike = async (input, init) => {
     const headers = (init?.headers ?? {}) as Record<string, string>;
     const bodyText = typeof init?.body === "string" ? init.body : undefined;
     const recorded: RecordedRequest = {
@@ -237,11 +239,26 @@ export function fakeFetch(
       url: input,
       headers,
       body: bodyText === undefined ? undefined : JSON.parse(bodyText),
+      form: init?.body instanceof FormData ? await readForm(init.body) : undefined,
     };
     calls.push(recorded);
     const result = handler(recorded);
     const text = result.text ?? (result.body === undefined ? "" : JSON.stringify(result.body));
-    return Promise.resolve(new Response(text, { status: result.status }));
+    return new Response(text, { status: result.status });
   };
   return { fetchImpl, calls };
+}
+
+/** Flatten a FormData so a test can assert on the uploaded file itself. */
+async function readForm(form: FormData): Promise<NonNullable<RecordedRequest["form"]>> {
+  const fields: Record<string, string> = {};
+  let file: { fileName?: string; fileType?: string; fileBytes?: number } = {};
+  for (const [key, value] of form.entries()) {
+    if (typeof value === "string") {
+      fields[key] = value;
+      continue;
+    }
+    file = { fileName: value.name, fileType: value.type, fileBytes: (await value.arrayBuffer()).byteLength };
+  }
+  return { ...file, fields };
 }

@@ -5,6 +5,7 @@ import {
   InMemoryKillSwitchStore,
   InMemoryParamStore,
   InMemorySessionStore,
+  InMemoryTemplateStore,
   LocalIdentityProvider,
   StaticGateDirectory,
   type BffDeps,
@@ -38,6 +39,12 @@ const VOLATILE_STORES: readonly StoreDurability[] = [
     name: "params",
     durable: false,
     onRestart: "M71 parameters fall back to defaults and pending four-eyes proposals are lost",
+  },
+  {
+    name: "templates",
+    durable: false,
+    onRestart:
+      "every published analysis template version is lost, and a run pinned to one (M83) can no longer read what it was judged against",
   },
   {
     name: "sessions",
@@ -107,6 +114,11 @@ export async function main(): Promise<void> {
     // rather than left as a comment: the prod profile refuses to boot on the
     // kill switch, and the dev profile prints what a restart would cost.
     params: new InMemoryParamStore(),
+    // Process-local like the two above, and declared in `VOLATILE_STORES` for
+    // the same reason: a template version is what an approved analysis was
+    // judged against (M83), so losing the history on a restart is a real cost
+    // an operator must read rather than discover.
+    templates: new InMemoryTemplateStore(),
     killSwitch: new InMemoryKillSwitchStore(),
     // Studio's read side, unwired (M7). Every one of the twelve read models
     // needs a Postgres store that does not exist yet, so each refuses by name

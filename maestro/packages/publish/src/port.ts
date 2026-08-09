@@ -18,9 +18,10 @@ export type PublishRedactor = (req: PublishRequest, markdownSource: string) => P
  * failing target fails the publish — partial success would hand a run a
  * receipt list that silently misses a target.
  *
- * docx/pdf (M103, Aşama 2) never reach this class: they are refused at
- * COMPOSITION time, so a `jira+pdf` project cannot post its Jira comment and
- * only then discover the second target does not exist.
+ * docx/pdf (M103r) are served like any other target, and the composition-time
+ * discipline is unchanged: a target that cannot be BUILT — a `pdf` with no
+ * storage sink — is refused while composing, so a `jira+pdf` project can never
+ * post its Jira comment and only then discover the second target is unusable.
  */
 export class MaestroPublishPort implements PublishPort {
   constructor(

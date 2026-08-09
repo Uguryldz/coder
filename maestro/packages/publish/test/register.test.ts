@@ -64,19 +64,24 @@ describe("publish port fan-out (M47)", () => {
     expect(receipts).toHaveLength(1);
   });
 
-  it("refuses docx and pdf at COMPOSITION time — before any target has a side effect (M103)", () => {
-    // The old behaviour let `jira+pdf` compose, post the Jira comment and only
-    // then fail: side effects done, no receipt, no way to tell what landed.
-    expect(() => createPublishPort(["docx"], {}, deps())).toThrow(CapabilityNotSupportedError);
-    expect(() => createPublishPort(["pdf"], {}, deps())).toThrow(CapabilityNotSupportedError);
-    expect(() => createPublishPort(["jira", "pdf"], {}, deps())).toThrow(CapabilityNotSupportedError);
+  it("builds docx and pdf when a sink is wired (M103r)", () => {
+    const port = createPublishPort(["docx", "pdf"], {}, deps({ sink: { put: () => Promise.resolve() } }));
+    expect(port.targets().sort()).toEqual(["docx", "pdf"]);
   });
 
-  it("does not touch a target when the set contains an unsupported one", () => {
+  it("refuses docx and pdf at COMPOSITION time when they cannot be built (M103r)", () => {
+    // The refusal moved from "this target does not exist" to "this target
+    // cannot store its file", but the MOMENT is the point and is unchanged: a
+    // `jira+pdf` project must not compose, post the Jira comment and only then
+    // fail — side effects done, no receipt, no way to tell what landed.
+    expect(() => createPublishPort(["docx"], {}, deps())).toThrow(PublishConfigError);
+    expect(() => createPublishPort(["pdf"], {}, deps())).toThrow(PublishConfigError);
+    expect(() => createPublishPort(["jira", "pdf"], {}, deps())).toThrow(PublishConfigError);
+  });
+
+  it("does not touch a target when another in the set cannot be built", () => {
     const work = new FakeWorkPort();
-    expect(() => createPublishPort(["jira", "docx"], {}, deps({ work: work.asPort() }))).toThrow(
-      CapabilityNotSupportedError,
-    );
+    expect(() => createPublishPort(["jira", "docx"], {}, deps({ work: work.asPort() }))).toThrow(PublishConfigError);
     expect(work.calls).toHaveLength(0);
   });
 

@@ -8,6 +8,8 @@ import type {
   TicketKey,
 } from "@maestro/contracts";
 import type { ScmPort, SecretPort, WorkPort } from "@maestro/ports";
+import type { DocumentSink, TemplateWarning } from "./doc-template.js";
+import type { DocTemplateSource } from "./drivers/binary-doc.js";
 import type { PublishPiiDeps } from "./pii.js";
 
 /**
@@ -117,6 +119,21 @@ export interface PublishDeps {
   fetchImpl?: FetchLike;
   /** Injected so the Confluence 409 retry is instant in tests. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Where `docx`/`pdf` park the file they generate (M103r). Structurally
+   * `StoragePort.put`; typed here so this package needs no storage dependency.
+   */
+  sink?: DocumentSink;
+  /** The institution's corporate `.docx` template (M103r/M108). */
+  docTemplates?: DocTemplateSource;
+  /** Injected clock — the künye date is otherwise not testable. */
+  now?: () => Date;
+  /**
+   * Called when a document was produced but not exactly as the template
+   * promised (no template, an appended section, a missing placeholder). These
+   * are surfaced, never swallowed: Studio's doc-template screen shows them.
+   */
+  onTemplateWarnings?: (warnings: readonly TemplateWarning[], req: PublishRequest) => void;
 }
 
 /** One target's publisher; the port fans out over `req.targets`. */

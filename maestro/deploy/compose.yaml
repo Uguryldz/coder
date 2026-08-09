@@ -89,7 +89,15 @@ x-node-env: &node-env
 services:
   # ── data ───────────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:17-alpine
+    # Pinnable by digest without editing this file: set POSTGRES_IMAGE in .env
+    # to `postgres@sha256:...`. The tag is the default rather than the rule
+    # because a digest cannot be resolved offline and a WRONG digest committed
+    # here would be worse than a tag — it would not pull at all. See D-1 in
+    # RAPOR-duzeltme.md: scanner images are digest-ONLY (M27) because their
+    # output is gate evidence; these carry data and an engine, so they are
+    # version-pinned by default and digest-pinnable by an operator who wants
+    # the stronger guarantee.
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-maestro}
@@ -116,7 +124,7 @@ services:
 
   # ── workflow engine ────────────────────────────────────────────────────────
   temporal:
-    image: temporalio/auto-setup:1.25.2
+    image: ${TEMPORAL_IMAGE:-temporalio/auto-setup:1.25.2}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -145,7 +153,7 @@ services:
       - "${TEMPORAL_PORT:-7233}:7233"
 
   temporal-ui:
-    image: temporalio/ui:2.32.0
+    image: ${TEMPORAL_UI_IMAGE:-temporalio/ui:2.32.0}
     restart: unless-stopped
     depends_on:
       temporal:

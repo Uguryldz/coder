@@ -24,5 +24,7 @@ export function bffPlatform(deps: ResolvedDeps): MaestroPlatform {
 }
 
 export { scopeOf, usernameOf } from "./actor-scope.js";
+export { OPERATE_METHODS, type OperateHalf } from "./operate.js";
 export { FOUR_EYES_GROUP, KILL_SWITCH_PROPOSAL_KEY } from "./propose.js";
 export { PLATFORM_MAX_LIMIT, clampLimit } from "./read.js";
+export { NO_RUN_NOTE, runOf } from "./run-lookup.js";

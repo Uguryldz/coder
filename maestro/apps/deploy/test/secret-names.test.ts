@@ -76,6 +76,54 @@ describe("secret reference → environment variable mapping", () => {
     }
   });
 
+  /**
+   * The comments have to be right too.
+   *
+   * `.env.example:178` documented `kv/jira#token → MAESTRO_SECRET_KV_JIRA_TOKEN`
+   * — single underscore, wrong — five lines above a note explaining that the
+   * name takes a DOUBLE underscore and that getting it wrong "looks set to an
+   * operator and unset to the driver". The file refuted itself, and the tests
+   * above missed it because they only looked at variable ASSIGNMENTS while the
+   * mistake was in prose. An operator following the wrong sentence lands in
+   * exactly the trap the right sentence describes.
+   *
+   * So: any `MAESTRO_SECRET_*` token anywhere in the file — assignment or
+   * comment — must be a name the driver would actually derive, UNLESS it is
+   * explicitly negated. The note deliberately quotes the wrong name after "and
+   * not", and a warning that cannot name the thing it warns about is a weaker
+   * warning; that is the one shape allowed to be wrong, and it has to say so.
+   */
+  it("spells every MAESTRO_SECRET_ name correctly, in prose as well as in assignments", () => {
+    const example = readFileSync(envExamplePath(), "utf8");
+    const wrong: string[] = [];
+
+    for (const line of example.split("\n")) {
+      for (const match of line.matchAll(/MAESTRO_SECRET_[A-Z0-9_]+/g)) {
+        const name = match[0];
+        // The bare prefix is the schema's own, not a secret name.
+        if (name === "MAESTRO_SECRET_") continue;
+        if (expectedNames.includes(name)) continue;
+        // A counter-example must be marked as one, on its own line.
+        if (/\band not\b/.test(line) || /\bnot\b\s*$/.test(line.slice(0, match.index))) continue;
+        wrong.push(`${name} (in: ${line.trim()})`);
+      }
+    }
+
+    expect(wrong, "a MAESTRO_SECRET_ name the driver would never look up").toEqual([]);
+  });
+
+  /**
+   * The negative example is load-bearing: it is what makes the double
+   * underscore visible. If it disappears the rule above silently gets easier.
+   */
+  it("keeps the wrong name in the file only as an explicit counter-example", () => {
+    const example = readFileSync(envExamplePath(), "utf8");
+    const lines = example.split("\n").filter((line) => line.includes("MAESTRO_SECRET_KV_JIRA_TOKEN"));
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/not/);
+  });
+
   it("keeps every *_REF default a pointer rather than a credential", () => {
     for (const [name, ref] of Object.entries(refs)) {
       // A reference has the shape mount/path#field and is safe to commit; a

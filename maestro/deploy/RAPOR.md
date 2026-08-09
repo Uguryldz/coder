@@ -129,16 +129,28 @@ string'e çevirir ve yığın yarı-yapılandırılmış kalkar.
 
 ## Testler
 
-**102 test** (`apps/deploy/test/`), tamamı gerçek — fake sürücü yok:
+**230 test** (`apps/deploy/test/`), tamamı gerçek — fake sürücü yok.
 
-| Dosya | Ne doğruluyor |
-|---|---|
-| `compose.test.ts` (20) | Gerçek sürücülerle gerçek kablolama; her portun **metotları** var mı; eksik env ile açılmayı reddetme; port adının hatada geçmesi |
-| `profile.test.ts` (23) | Profil literal'lerinin paketlerin **kendi sabitleriyle** eşleşmesi (rename drift'i yakalar); profil bütünlüğü |
-| `compose-file.test.ts` (37) | YAML parse (merge key'ler çözülerek); servis kümesi; healthcheck varlığı+retries; `service_healthy`/`service_completed_successfully`; root olmama; host networking yokluğu; docker soketi mount edilmemesi; Dockerfile iddiaları |
-| `migrate.test.ts` (8) | Advisory lock: ilk denemede alma, sahibi bekleme, timeout'ta pes etme (sonsuza dek asılmama), tek sabit lock id, bloklayan varyantın kullanılmaması; şema yolunun **var olan** bir dosyaya çıkması |
-| `secret-names.test.ts` (5) | Sır değişken adlarının sürücüden **türetilmesi** (elle yazılmıyor) ve compose/.env.example ile tutarlılığı |
-| `users.test.ts` (9) | Prisma UserDirectory; bozuk `groupsJson`'ın üyelik sayılmaması; off-boarding'in silme değil pasifleştirme olması; tanınmayan grubun rol vermemesi |
+> **Düzeltme (Y-2).** Bu bölüm daha önce **"102 test"** diyordu ve tablosunda
+> **`read-models.test.ts` hiç yoktu** — paketin en büyük test dosyası, 99 test.
+> `compose-file` (37→34) ve `users` (9→12) sayıları da tutmuyordu. Testler
+> gerçekti; yanlış olan raporun kendisiydi, ki bu denetimi yanıltır: "102"
+> bekleyip 201 bulan bir doğrulayıcı hangi sayının hangi iddiaya ait olduğunu
+> takip edemez. Aşağıdaki sayılar `pnpm test` çıktısından birebir alınmıştır ve
+> düzeltme dalgasının eklediği 29 testi de içerir.
+
+| Dosya | Test | Ne doğruluyor |
+|---|---|---|
+| `read-models.test.ts` | 99 | `unbridgedReadModels`: 12 okuma modelinin **her metodu** reddediyor mu; reddin model+metot+eksik store'u adıyla söylemesi; hata metninin sır/filtre sızdırmaması. Boş sayfa dönmemesi bu paketin en önemli fail-closed davranışı |
+| `compose-file.test.ts` | 34 | YAML parse (merge key'ler çözülerek); servis kümesi; healthcheck varlığı+retries; `service_healthy`/`service_completed_successfully`; root olmama; host networking yokluğu; docker soketi mount edilmemesi; Dockerfile iddiaları |
+| `profile.test.ts` | 23 | Profil literal'lerinin paketlerin **kendi sabitleriyle** eşleşmesi (rename drift'i yakalar); profil bütünlüğü |
+| `compose.test.ts` | 20 | Gerçek sürücülerle gerçek kablolama; her portun **metotları** var mı; eksik env ile açılmayı reddetme; port adının hatada geçmesi |
+| `bindings.test.ts` | 17 | **(yeni, O-1)** `PrismaJiraProjectBindings`: `dry_run`/`draft`/`paused` bağlamanın canlı sayılmaması; tanınmayan trigger'ın `opt_in`'e düşmesi; bozuk `defaultsJson`'ın `human_only`+`gizli`'ye düşmesi; literal sözlüklerin kontratla eşleşmesi |
+| `users.test.ts` | 12 | Prisma UserDirectory; bozuk `groupsJson`'ın üyelik sayılmaması; off-boarding'in silme değil pasifleştirme olması; tanınmayan grubun rol vermemesi |
+| `durability.test.ts` | 10 | **(yeni, K-1)** Bellek-içi kill switch'in yeniden başlatmada gerçekten `off`'a düşmesi; `prod` profilinin bunun üstüne **açılmayı reddetmesi**; `dev`'in izin verip uyarı basması |
+| `migrate.test.ts` | 8 | Advisory lock: ilk denemede alma, sahibi bekleme, timeout'ta pes etme (sonsuza dek asılmama), tek sabit lock id, bloklayan varyantın kullanılmaması; şema yolunun **var olan** bir dosyaya çıkması |
+| `secret-names.test.ts` | 7 | Sır değişken adlarının sürücüden **türetilmesi** (elle yazılmıyor) ve compose/.env.example ile tutarlılığı; **(yeni, O-2)** yorumlardaki adların da doğru yazılması |
+| **TOPLAM** | **230** | |
 
 **Testlerin yakaladığı gerçek hatalar** (yazarken değil, çalıştırırken):
 
@@ -158,7 +170,9 @@ string'e çevirir ve yığın yarı-yapılandırılmış kalkar.
 7. `dev` profilinde `pg-blob` sürücüsü `SqlExecutor` istiyordu ama hiçbir giriş
    noktası vermiyordu — worker/BFF elle çalıştırılınca çıktı (ölü yol).
 
-`pnpm run gate` → **exit 0**, 50/50 turbo görevi, repo genelinde **3000 test**.
+`pnpm run gate` → **exit 0**, **52/52** turbo görevi, repo genelinde **3467 test**
+(sayılar çalıştırılarak alındı; "3000" ve "50/50" yuvarlanmış değerlerdi —
+Y-2'nin aynı hatası, aynı yerde).
 
 Sır sızıntısı elle de doğrulandı: `VAULT_SECRET_ID` ve DB parolası ile açılış
 hatası tetiklendi, ikisi de çıktıda **geçmiyor** (`lifecycle.ts` yalnızca
@@ -261,12 +275,38 @@ değil. Build stage `apps/studio` yoksa **açık hata verir** — boş bir nginx
 `pnpm deploy:up` studio dışındaki her şeyi ayağa kaldırır; studio build'i
 uygulama gelene kadar başarısız olur.
 
-### BFF'in bazı store'ları hâlâ in-memory
+### BFF'in bazı store'ları hâlâ in-memory — ve hepsi aynı ağırlıkta değil
 
-`sessions`, `params`, `killSwitch`, `bindings`, `gates` şu an referans
-implementasyonlar. `users` **gerçek** (Prisma destekli, `PrismaUserDirectory`) —
-çünkü şemada `User` modeli var ve BFF onsuz kimseyi authenticate edemezdi.
-Diğerlerinin şemada karşılığı yok; onları uydurmak Dalga 4'ün işi değil.
+Bu bölüm daha önce `sessions`, `params`, `killSwitch`, `bindings`, `gates`'i tek
+bir liste hâlinde "henüz tamamlanmadı" diye sunuyordu. Doğrulayıcı haklı olarak
+buna itiraz etti: aynı listede **oturum kaybı** ile **acil durum freninin
+kendiliğinden bırakılması** yan yana duruyordu, oysa bunlar aynı tür eksik değil.
+Ayrım artık kodda da, burada da açık:
+
+| Store | Durum | Yeniden başlatmada |
+|---|---|---|
+| `users` | **Prisma** (`PrismaUserDirectory`) | kalıcı |
+| `bindings` | **Prisma** (`PrismaJiraProjectBindings`, O-1) | kalıcı |
+| `killSwitch` | bellek-içi | **fren `off`'a düşer** → `prod` profili **açılmayı reddeder** (K-1) |
+| `params` | bellek-içi | M71 parametreleri + bekleyen 4-göz önerileri kaybolur — açılışta uyarı basılır |
+| `sessions` | bellek-içi | herkes çıkış yapmış olur — kabul edilebilir |
+| `gates` | statik varsayılanlar | değişmez |
+
+**K-1 neydi:** `killSwitch` bellek-içiydi ve `KILL_SWITCH_OFF` ile başlıyordu;
+compose'da `bff` servisi `restart: unless-stopped` ile çalışıyor. İkisi bir
+araya gelince operatör olay anında switch'i `stop_all` yapıyor, konteyner
+herhangi bir sebeple yeniden başlıyor ve **fren kendiliğinden bırakılıyordu** —
+sessizce, yazma uçları yeniden açık. Bu, bu paketin kendi ilkesinin tersiydi:
+`unbridgedReadModels` "boş sayfa sakin sistem yalanıdır" diye özenle
+**reddetmeye** ayarlanmışken kill switch aynı özeni görmemişti. Artık
+`assertStoresDurable` `prod` profilinde soket açılmadan **adıyla reddediyor**;
+`dev` izin veriyor ama bunu açıkça yazıyor (`stores/durability.ts`).
+
+`params` bilinçli olarak uyarı seviyesinde: kaybı kötü ama telafi edilebilir
+(tanımların varsayılanı var, öneri tekrar açılabilir). Kill switch'in kaybı
+telafi edilemez, çünkü kimseye telafi gerektiği söylenmiyor.
+
+Kalanların şemada karşılığı yok; onları uydurmak bu dalganın işi değil.
 
 ### Docker imajları build edilmedi
 

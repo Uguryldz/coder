@@ -35,6 +35,12 @@ const STATUS_BY_NAME: Readonly<Record<string, RunExecutionStatus>> = {
   TIMED_OUT: "timed_out",
 };
 
+/**
+ * The shape of a run id Temporal mints. Used to refuse anything else BEFORE it
+ * reaches a visibility query — see `findByRunId`.
+ */
+export const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface TemporalGatewayOptions {
   readonly client: Client;
   readonly taskQueue?: string;
@@ -93,6 +99,42 @@ export class TemporalRunGateway implements RunGateway {
       if (summaries.length >= limit) break;
     }
     return summaries;
+  }
+
+  /**
+   * Resolve a `runId` to its execution — an exact lookup, not a scan.
+   *
+   * `RunId='...'` is a visibility predicate the server evaluates, so the cost
+   * and the correctness are independent of how many runs the namespace holds.
+   * The BFF used to answer this by listing a page of recent runs and looking
+   * through it, which quietly turned "which run is this" into "is this run
+   * among the most recent 200".
+   *
+   * The workflow type is still part of the query and the id is still checked
+   * against `ticketOf`, for the same reason `list` does it: the namespace may
+   * be shared, and an execution this deployment did not mint has no ticket.
+   */
+  async findByRunId(runId: string): Promise<RunSummary | null> {
+    // The id is interpolated into a visibility query and it arrives from an MCP
+    // tool argument, so it is checked against the shape Temporal actually mints
+    // — a UUID — rather than escaped. Anything else is not a run id this server
+    // could have issued, so "no such run" is the honest answer and there is
+    // nothing to quote. A caller must never be able to steer the predicate.
+    if (!RUN_ID.test(runId)) return null;
+    const query = `WorkflowType='${this.workflowType}' AND RunId='${runId}'`;
+    for await (const execution of this.client.workflow.list({ query, pageSize: 1 })) {
+      const ticketKey = ticketOf(execution.workflowId);
+      if (ticketKey === null) return null;
+      return {
+        workflowId: execution.workflowId,
+        ticketKey: ticketKey as TicketKey,
+        runId: execution.runId,
+        status: STATUS_BY_NAME[execution.status.name] ?? "running",
+        startedAt: execution.startTime.toISOString(),
+        closedAt: execution.closeTime?.toISOString() ?? null,
+      };
+    }
+    return null;
   }
 
   /** `null` rather than a throw: "no such run" is an answer the UI renders. */

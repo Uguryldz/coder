@@ -186,6 +186,30 @@ export function scriptedLlm(values: readonly unknown[]): ScriptedLlm {
   return { llm, prompts, requests };
 }
 
+/**
+ * A port that answers the first call (burning quota) and then falls into a
+ * non-ok outcome. This is the shape of the M55 accounting gap: the first call
+ * happened and must stay on the books even though the run cannot continue.
+ */
+export function twoPhaseLlm(first: unknown, then: LlmOutcome<never>): ScriptedLlm {
+  const prompts: string[] = [];
+  const requests: GenerateObjectRequest[] = [];
+  let calls = 0;
+  const llm: LlmPort = {
+    async generateObject<T>(req: GenerateObjectRequest): Promise<LlmOutcome<T>> {
+      prompts.push(String(req.input));
+      requests.push(req);
+      calls += 1;
+      if (calls === 1) return { status: "ok", value: first as T, log: log(req) };
+      return then as LlmOutcome<T>;
+    },
+    async agentSession(): Promise<LlmOutcome<AgentSessionResult>> {
+      throw new Error("two-phase-llm: agentSession not used");
+    },
+  };
+  return { llm, prompts, requests };
+}
+
 /** A port stuck in one of the non-ok outcomes (M18/M55). */
 export function outcomeLlm(outcome: LlmOutcome<never>): LlmPort {
   return {

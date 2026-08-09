@@ -14,12 +14,17 @@ import type { Validation } from "./validate.js";
  * a policy block are workflow decisions, not this package's business. Swallowing
  * them into an error here would turn "wait sixteen minutes" into "the run
  * failed".
+ *
+ * Every variant carries `logs`, including the non-ok ones: a first call that
+ * reached a backend BURNED quota even if the repair round then hit a full pool.
+ * Dropping that log would leave M55's window tracking and the evidence pack one
+ * call short of what actually happened. `logs` is empty when no call landed.
  */
 export type RoleResult<T> =
   | { status: "ok"; value: T; attempts: number; logs: LlmCallLog[] }
-  | { status: "queued"; resumeAt: string; reason: "subscription_quota" }
-  | { status: "degraded"; messageKey: string; dataClass: DataClass }
-  | { status: "blocked"; messageKey: string; dataClass: DataClass };
+  | { status: "queued"; resumeAt: string; reason: "subscription_quota"; logs: LlmCallLog[] }
+  | { status: "degraded"; messageKey: string; dataClass: DataClass; logs: LlmCallLog[] }
+  | { status: "blocked"; messageKey: string; dataClass: DataClass; logs: LlmCallLog[] };
 
 export interface RoleCall<T> {
   llm: LlmPort;
@@ -50,7 +55,7 @@ export interface RoleCall<T> {
 export async function runRole<T>(call: RoleCall<T>): Promise<RoleResult<T>> {
   const texts = call.texts ?? DEFAULT_PROMPT_TEXTS;
   const first = await generate(call, call.prompt);
-  if (first.status !== "ok") return first;
+  if (first.status !== "ok") return withLogs(first, []);
 
   const firstCheck = call.check(first.value);
   if (firstCheck.ok) {
@@ -59,7 +64,9 @@ export async function runRole<T>(call: RoleCall<T>): Promise<RoleResult<T>> {
 
   const repairPrompt = buildRepairPrompt(call.prompt, first.value, firstCheck.deficiencies, texts);
   const second = await generate(call, repairPrompt);
-  if (second.status !== "ok") return second;
+  // The first call already burned quota — its log travels with the non-ok
+  // outcome so nothing downstream sees a call that never happened (M55).
+  if (second.status !== "ok") return withLogs(second, [first.log]);
 
   const secondCheck = call.check(second.value);
   if (secondCheck.ok) {
@@ -72,11 +79,23 @@ export async function runRole<T>(call: RoleCall<T>): Promise<RoleResult<T>> {
   );
 }
 
-type Generated<T> =
-  | { status: "ok"; value: unknown; log: LlmCallLog }
-  | Exclude<RoleResult<T>, { status: "ok" }>;
+type NonOkResult = Exclude<RoleResult<never>, { status: "ok" }>;
 
-async function generate<T>(call: RoleCall<T>, prompt: string): Promise<Generated<T>> {
+/**
+ * `Omit` collapses a union into one object type, which would let a `queued`
+ * outcome be built without `resumeAt`. Distributing over the members keeps each
+ * variant's own fields required.
+ */
+type WithoutLogs<T> = T extends unknown ? Omit<T, "logs"> : never;
+
+type Generated = { status: "ok"; value: unknown; log: LlmCallLog } | WithoutLogs<NonOkResult>;
+
+/** Attach the calls that already landed to a non-ok outcome (M55 accounting). */
+function withLogs(outcome: WithoutLogs<NonOkResult>, logs: LlmCallLog[]): NonOkResult {
+  return { ...outcome, logs } as NonOkResult;
+}
+
+async function generate<T>(call: RoleCall<T>, prompt: string): Promise<Generated> {
   const outcome = await call.llm.generateObject<T>(
     {
       role: call.role,

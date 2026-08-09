@@ -7,6 +7,15 @@ import {
   buildAnalysisSchema,
 } from "./schema-builder.js";
 import {
+  findString,
+  isPlaceholder,
+  isTemplateEcho,
+  isTooShort,
+  type OveruseSignal,
+  overuse,
+  scansForPlaceholders,
+} from "./substance.js";
+import {
   type AnalysisTemplate,
   claimSections,
   sectionByKey,
@@ -21,9 +30,6 @@ export interface Deficiency {
 }
 
 export type Validation<T> = { ok: true; value: T } | { ok: false; deficiencies: Deficiency[] };
-
-/** Placeholder markers: text that looks written but says nothing. */
-const PLACEHOLDER = /(^|[\s(])(TODO|TBD|FIXME|XXX|N\/A|lorem ipsum|placeholder)([\s).:,]|$)/i;
 
 export interface ValidateAnalysisArgs {
   template: AnalysisTemplate;
@@ -49,7 +55,7 @@ export function validateAnalysis(args: ValidateAnalysisArgs): Validation<Analysi
 
   const deficiencies = [
     ...sourceDeficiencies(parsed.data, args.template, args.context, texts),
-    ...placeholderDeficiencies(parsed.data, args.template, texts),
+    ...contentDeficiencies(parsed.data, args.template, texts),
   ];
   return deficiencies.length === 0
     ? { ok: true, value: parsed.data }
@@ -151,37 +157,76 @@ function sourceDeficiencies(
   return out;
 }
 
-function placeholderDeficiencies(
+/**
+ * Content quality: three separate refusals, one section at a time (M43).
+ *
+ * A section can be shape-perfect and still be a non-answer — a Turkish evasion
+ * ("yukarıdaki gibi"), a body under the paragraph the template promised, or the
+ * template's own instruction copied back. Each gets its own code and its own
+ * Turkish sentence, because the repair round is only useful if the model can
+ * tell which of the three it committed.
+ */
+function contentDeficiencies(
   value: AnalysisOutput,
   template: AnalysisTemplate,
   texts: PromptTexts,
 ): Deficiency[] {
   const out: Deficiency[] = [];
   for (const section of template.sections) {
-    const hit = findPlaceholder(value.sections[section.key]);
-    if (hit === undefined) continue;
-    out.push({
-      code: "placeholder",
-      message: text(texts, "eksik.yerTutucu", { bolum: section.title, metin: hit }),
-    });
+    const body = value.sections[section.key];
+    if (body === undefined) continue;
+
+    // Echo is checked FIRST: a copied instruction is also short and may also
+    // look like a placeholder, and "you repeated the template" is the sentence
+    // that actually tells the model what to do differently.
+    const echo = findString(body, (s) => isTemplateEcho(section, s));
+    if (echo !== undefined) {
+      out.push({
+        code: "template_echo",
+        message: text(texts, "eksik.sablonKopyasi", { bolum: section.title, metin: echo }),
+      });
+      continue;
+    }
+
+    const placeholder = scansForPlaceholders(section)
+      ? findString(body, isPlaceholder)
+      : undefined;
+    if (placeholder !== undefined) {
+      out.push({
+        code: "placeholder",
+        message: text(texts, "eksik.yerTutucu", { bolum: section.title, metin: placeholder }),
+      });
+      continue;
+    }
+
+    if (isTooShort(section, body)) {
+      out.push({
+        code: "too_short",
+        message: text(texts, "eksik.cokKisa", {
+          bolum: section.title,
+          metin: String(body),
+        }),
+      });
+    }
   }
   return out;
 }
 
-function findPlaceholder(value: unknown): string | undefined {
-  if (typeof value === "string") return PLACEHOLDER.test(value) ? value : undefined;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const hit = findPlaceholder(item);
-      if (hit !== undefined) return hit;
-    }
-    return undefined;
-  }
-  if (typeof value === "object" && value !== null) {
-    for (const item of Object.values(value)) {
-      const hit = findPlaceholder(item);
-      if (hit !== undefined) return hit;
-    }
-  }
-  return undefined;
+/**
+ * References leaned on across too many sections — a WARNING, not a refusal.
+ *
+ * `validateAnalysis` proves every reference exists in the context; it never
+ * proves the reference is relevant to the claim beside it. A model that pins
+ * every section to one genuine file therefore passes, and always will. This is
+ * the cheap smell a reviewer can act on; the judgement stays human.
+ */
+export function overusedReferences(
+  template: AnalysisTemplate,
+  value: AnalysisOutput,
+): OveruseSignal[] {
+  const section = sourceSection(template);
+  if (!section) return [];
+  const entries = value.sections[section.key];
+  if (!Array.isArray(entries)) return [];
+  return overuse(template, entries as SourceEntry[]);
 }

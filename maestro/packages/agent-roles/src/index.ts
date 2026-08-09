@@ -10,6 +10,7 @@ export * from "./role-tests.js";
 export * from "./run.js";
 export * from "./schema-builder.js";
 export * from "./schemas.js";
+export * from "./substance.js";
 export * from "./template.js";
 export * from "./texts.js";
 export * from "./to-contract.js";

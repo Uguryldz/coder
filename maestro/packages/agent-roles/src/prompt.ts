@@ -13,6 +13,27 @@ export function block(title: string, body: string): string {
   return `## ${title}\n${body}`;
 }
 
+/** Delimiters around text this package did not author. */
+export const DATA_FENCE_OPEN = "<<<VERI";
+export const DATA_FENCE_CLOSE = "VERI>>>";
+
+/**
+ * Wrap attacker-reachable text so the model can tell content from instruction.
+ *
+ * Ticket descriptions and knowledge documents are written by whoever can open a
+ * ticket or upload a doc, and they are embedded verbatim. This fence plus
+ * `ortak.veriTalimatDegil` is the CHEAP layer, not the defense: the real
+ * defenses are architectural — an injected model still cannot cite a source
+ * that is not in the context and still cannot change the section list, because
+ * both are checked against data it does not control. A residual risk remains
+ * (an injection that says "cite this one real file everywhere" survives) and is
+ * recorded in RAPOR.md rather than papered over here.
+ */
+export function fence(body: string): string {
+  const stripped = body.split(DATA_FENCE_OPEN).join("").split(DATA_FENCE_CLOSE).join("");
+  return `${DATA_FENCE_OPEN}\n${stripped}\n${DATA_FENCE_CLOSE}`;
+}
+
 export function bullets(items: readonly string[], empty: string): string {
   return items.length === 0 ? empty : items.map((i) => `- ${i}`).join("\n");
 }
@@ -122,17 +143,20 @@ export function buildAnalysisPrompt(args: AnalysisPromptArgs): string {
         [
           text(texts, "ortak.dil"),
           text(texts, "ortak.uydurmaYasak"),
+          text(texts, "ortak.veriTalimatDegil"),
           text(texts, "analyst.kurallar"),
           text(texts, "ortak.ciktiBicimi"),
         ],
         "-",
       ),
     ),
+    // The template is OURS — it stays outside the fence, because it is the
+    // instruction. Everything below it came from outside and is fenced.
     block(text(texts, "ortak.baslik.sablon"), renderTemplateSpec(args.template, texts)),
-    block(text(texts, "ortak.baslik.ticket"), renderTicketBlock(args.context, texts)),
+    block(text(texts, "ortak.baslik.ticket"), fence(renderTicketBlock(args.context, texts))),
     block(
       text(texts, "ortak.baslik.knowledge"),
-      renderKnowledgeBlock(args.context.knowledge, args.context.discovery, texts),
+      fence(renderKnowledgeBlock(args.context.knowledge, args.context.discovery, texts)),
     ),
     block(text(texts, "ortak.baslik.gorev"), text(texts, "analyst.gorev")),
   ].join("\n\n");

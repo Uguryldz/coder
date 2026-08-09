@@ -5,7 +5,13 @@ import { runAnalyst } from "../src/role-analyst.js";
 import type { SourceEntry } from "../src/schema-builder.js";
 import { analysisSchemaName } from "../src/schema-builder.js";
 import { DEFAULT_ANALYSIS_TEMPLATE } from "../src/template.js";
-import { analysisContext, outcomeLlm, scriptedLlm, validAnalysis } from "./fixtures.js";
+import {
+  analysisContext,
+  outcomeLlm,
+  scriptedLlm,
+  twoPhaseLlm,
+  validAnalysis,
+} from "./fixtures.js";
 
 const template = DEFAULT_ANALYSIS_TEMPLATE;
 const context = analysisContext();
@@ -95,6 +101,7 @@ describe("runAnalyst", () => {
       status: "queued",
       resumeAt: "2026-01-01T01:00:00+00:00",
       reason: "subscription_quota",
+      logs: [],
     });
   });
 
@@ -110,6 +117,61 @@ describe("runAnalyst", () => {
       ...base,
     });
     expect(blocked.status).toBe("blocked");
+  });
+
+  it("keeps the first call's log when the repair round is queued (M55)", async () => {
+    // The first call BURNED quota. If the repair round hits a full pool, that
+    // burn must still be accounted for — the window tracker and the evidence
+    // pack cannot be one call short.
+    const { llm } = twoPhaseLlm(withoutSection("testApproach"), {
+      status: "queued",
+      resumeAt: "2026-01-01T01:00:00+00:00",
+      reason: "subscription_quota",
+    });
+    const result = await runAnalyst({ llm, ...base });
+    expect(result.status).toBe("queued");
+    if (result.status !== "queued") return;
+    expect(result.resumeAt).toBe("2026-01-01T01:00:00+00:00");
+    expect(result.logs).toHaveLength(1);
+    expect(result.logs[0]?.role).toBe("analyst");
+  });
+
+  it("keeps the first call's log when the repair round is degraded (M18)", async () => {
+    const { llm } = twoPhaseLlm(withoutSection("testApproach"), {
+      status: "degraded",
+      messageKey: "llm.degraded",
+      dataClass: "gizli",
+    });
+    const result = await runAnalyst({ llm, ...base });
+    expect(result.status).toBe("degraded");
+    if (result.status !== "degraded") return;
+    expect(result.logs).toHaveLength(1);
+  });
+
+  it("keeps the first call's log when the repair round is blocked (M97)", async () => {
+    const { llm } = twoPhaseLlm(withoutSection("testApproach"), {
+      status: "blocked",
+      messageKey: "llm.blocked",
+      dataClass: "gizli",
+    });
+    const result = await runAnalyst({ llm, ...base });
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") return;
+    expect(result.logs).toHaveLength(1);
+  });
+
+  it("reports no logs when the very first call never reached a backend", async () => {
+    const result = await runAnalyst({
+      llm: outcomeLlm({
+        status: "queued",
+        resumeAt: "2026-01-01T01:00:00+00:00",
+        reason: "subscription_quota",
+      }),
+      ...base,
+    });
+    expect(result.status).toBe("queued");
+    if (result.status !== "queued") return;
+    expect(result.logs).toEqual([]);
   });
 
   it("sends the pinned schema name and the caller's data class to the port", async () => {

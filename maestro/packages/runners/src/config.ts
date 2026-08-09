@@ -32,8 +32,8 @@ export type LinuxPlatform = z.infer<typeof LinuxPlatform>;
 export const ImageRef = z
   .string()
   .regex(
-    /^(?:[a-z0-9][a-z0-9._-]*(?::\d+)?(?:\/[a-z0-9][a-z0-9._-]*)*@)?sha256:[0-9a-f]{64}$/,
-    "image must be digest-pinned: 'repo@sha256:<64 hex>' or 'sha256:<64 hex>' (M27)",
+    /^(?:(?:[a-z0-9][a-z0-9._-]*(?::\d{1,5})?\/)?[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?@)?sha256:[0-9a-f]{64}$/,
+    "image must be digest-pinned: 'repo[:tag]@sha256:<64 hex>' or 'sha256:<64 hex>' (M27)",
   );
 
 /** Linux capability names an operator may add back, upper-case as Docker wants. */
@@ -50,23 +50,60 @@ export const UnsafeRelaxation = z.enum([
 export type UnsafeRelaxation = z.infer<typeof UnsafeRelaxation>;
 
 /**
- * Deployment stage. Read from the ambient process because the hardening gate
- * must not be talked out of production by a caller-supplied value; an
- * unrecognised value is treated as production (fail-closed), unlike
- * `@maestro/config` which parses a full env for startup.
+ * Deployment stage, following `@maestro/secrets`' `resolveStage` rule: the
+ * environment may only HARDEN the gate. Exactly two spellings name a
+ * non-production stage; unset, empty and unrecognised all mean production.
+ *
+ * "Unset means development" is the shape of this bug: a container image that
+ * never exports `NODE_ENV` would otherwise unlock every relaxation on a
+ * production host, silently.
  */
 export function isProductionStage(env: NodeJS.ProcessEnv = process.env): boolean {
-  const stage = env.NODE_ENV;
-  if (stage === undefined || stage === "") return false;
+  const stage = env.NODE_ENV?.trim().toLowerCase();
+  if (stage === undefined || stage === "") return true;
   return stage !== "development" && stage !== "test";
 }
+
+/**
+ * `uid:gid`, decimal, no leading zeros — because Docker resolves the field
+ * NUMERICALLY: `00`, `000000` and `0` are all root to the daemon, so a string
+ * comparison against "0:" is not a check, it is a suggestion. Zero itself is
+ * refused by the gate below (a schema cannot say "in production" but this
+ * grammar makes every remaining spelling of a uid unambiguous).
+ */
+export const SandboxUser = z
+  .string()
+  .regex(/^(?:0|[1-9]\d{0,6}):(?:0|[1-9]\d{0,6})$/, "user must be 'uid:gid' in plain decimal (M23)");
+
+/** Parsed halves of a validated `uid:gid`. */
+export function parseUserIds(user: string): { uid: number; gid: number } | undefined {
+  if (!SandboxUser.safeParse(user).success) return undefined;
+  const [uid = "", gid = ""] = user.split(":");
+  return { uid: Number.parseInt(uid, 10), gid: Number.parseInt(gid, 10) };
+}
+
+/**
+ * Egress network names. `host`, `none`, `bridge`, `default` and `container:<id>`
+ * are not networks the operator built — they are namespace selectors, and
+ * `NetworkMode: "host"` hands the job every service listening on the runner
+ * host's loopback. The grammar rejects the `container:` form outright (no
+ * colon) and the reserved words are named below.
+ */
+const RESERVED_NETWORK_NAMES = new Set(["host", "none", "bridge", "default"]);
+
+export const EgressNetworkName = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9_.-]{0,62}$/, "egress network must be a plain docker network name (M26)")
+  .refine((name) => !RESERVED_NETWORK_NAMES.has(name), {
+    message: "host/none/bridge/default are namespace selectors, not audited egress networks (M26)",
+  });
 
 export const SandboxProfile = z.object({
   /** M23: the container filesystem is immutable; writes go to the tmpfs + volumes. */
   readonlyRootfs: z.boolean().default(true),
   noNewPrivileges: z.boolean().default(true),
   /** `uid:gid`. Root is refused unconditionally — no escape hatch (M23). */
-  user: z.string().regex(/^\d+:\d+$/).default("10001:10001"),
+  user: SandboxUser.default("10001:10001"),
   /** ALL capabilities are dropped first; anything here is added back explicitly. */
   capAdd: z.array(CapName).default([]),
   seccomp: z.enum(["default", "unconfined"]).default("default"),
@@ -76,8 +113,12 @@ export const SandboxProfile = z.object({
   /** Writable scratch space; noexec/nosuid/nodev are not configurable. */
   tmpfsMb: z.number().int().min(16).max(65_536).default(512),
   openFilesLimit: z.number().int().min(64).max(1_048_576).default(4_096),
-  /** M23 stage 3: `runsc` (gVisor). Unset means the daemon default runtime. */
-  runtime: NonEmpty.optional(),
+  /**
+   * M23 stage 3: `runsc` (gVisor). Unset means the daemon default runtime.
+   * An allow-list, not free text: the runtime name selects which binary the
+   * daemon executes for this container.
+   */
+  runtime: z.enum(["runc", "runsc"]).optional(),
   allowUnsafeProfile: z.array(UnsafeRelaxation).default([]),
 });
 export type SandboxProfile = z.infer<typeof SandboxProfile>;
@@ -89,8 +130,14 @@ export type SandboxProfile = z.infer<typeof SandboxProfile>;
  * unmonitored direct route fails an audit silently.
  */
 export const EgressConfig = z.object({
-  /** Docker network that only routes to the egress proxy. */
-  networkName: NonEmpty.optional(),
+  /**
+   * Docker network that only routes to the egress proxy. It must exist and be
+   * `Internal: true`; the driver verifies that against the daemon before the
+   * first container starts (`provision.ts`), because injecting `HTTP_PROXY`
+   * only asks the job to use the proxy — an internal network is what stops it
+   * from opening a raw socket instead.
+   */
+  networkName: EgressNetworkName.optional(),
   proxyUrl: z.url().optional(),
   /** Hosts reachable inside the network without the proxy (registry mirror…). */
   noProxy: z.array(NonEmpty).default([]),
@@ -115,6 +162,20 @@ export const WorkspaceConfig = z.object({
    * only READ it by default; a poisoned cache would otherwise cross tickets.
    */
   cacheReadOnly: z.boolean().default(true),
+  /**
+   * The write path a read-only cache would otherwise lack: the keys a WARM-UP
+   * job may fill. Named one by one on purpose — a cache nobody can ever write
+   * stays empty forever, and a cache everybody can write is a cross-ticket
+   * supply chain. Empty by default; the warm-up runner is configured with it.
+   */
+  cacheWritableKeys: z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]*$/)).max(64).default([]),
+  /**
+   * Whether the driver hands a freshly created volume to the sandbox uid with
+   * a one-shot `chown` container (see `buildPrepareSpec`). Turn it off only for
+   * images that already ship `/workspace` owned by that uid — it can make a run
+   * fail, never escalate, so it is safe to expose.
+   */
+  prepareOwnership: z.boolean().default(true),
 });
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfig>;
 
@@ -172,8 +233,23 @@ export function profileIssues(
     issues.push({ path: ["platforms"], message: "at least one platform must be configured" });
   }
 
-  if (sandbox.user.startsWith("0:")) {
-    issues.push({ path: ["sandbox", "user"], message: "container uid 0 is never allowed (M23) — use a non-root uid" });
+  // Compared as NUMBERS, the way Docker reads the field: "00:0" and "000000:0"
+  // are root too, and an unparseable field is refused rather than guessed at.
+  const ids = parseUserIds(sandbox.user);
+  if (ids === undefined) {
+    issues.push({ path: ["sandbox", "user"], message: `user "${sandbox.user}" is not a plain decimal uid:gid (M23)` });
+  } else if (ids.uid === 0 || ids.gid === 0) {
+    issues.push({
+      path: ["sandbox", "user"],
+      message: "container uid/gid 0 is never allowed (M23) — use a non-root uid and gid",
+    });
+  }
+
+  if (egress.networkName !== undefined && !EgressNetworkName.safeParse(egress.networkName).success) {
+    issues.push({
+      path: ["egress", "networkName"],
+      message: `egress network "${egress.networkName}" is not an audited docker network (M26)`,
+    });
   }
 
   const relaxations: { on: boolean; key: UnsafeRelaxation; path: (string | number)[]; what: string }[] = [

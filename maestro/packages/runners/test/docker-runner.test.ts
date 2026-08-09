@@ -1,47 +1,17 @@
 import { CapabilityNotSupportedError } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
-import type { AuditRecord } from "../src/deps.js";
-import { DockerLinuxRunner, TIMEOUT_EXIT_CODE } from "../src/docker-runner.js";
+import { TIMEOUT_EXIT_CODE } from "../src/docker-runner.js";
 import { DockerHttpError, RunnerCapacityError, RunnerConfigError, RunnerLeaseError } from "../src/errors.js";
-import { createDockerLinuxRunner } from "../src/register.js";
 import {
-  dockerRoutes,
-  fakeClock,
-  fakeTransport,
   FIXTURE_CONTAINER_ID,
   FIXTURES,
   type Handler,
   httpResponse,
-  manualTimer,
-  sequentialIds,
+  runnerRig as rig,
   TEST_CONFIG,
   TEST_JOB,
   until,
 } from "./helpers.js";
-
-interface Rig {
-  runner: DockerLinuxRunner;
-  requests: ReturnType<typeof fakeTransport>["requests"];
-  matching: ReturnType<typeof fakeTransport>["matching"];
-  audit: AuditRecord[];
-  timer: ReturnType<typeof manualTimer>;
-  clock: ReturnType<typeof fakeClock>;
-}
-
-function rig(overrides: Partial<Record<string, Handler>> = {}, config: object = TEST_CONFIG): Rig {
-  const transport = fakeTransport(dockerRoutes(overrides));
-  const clock = fakeClock();
-  const timer = manualTimer();
-  const audit: AuditRecord[] = [];
-  const runner = createDockerLinuxRunner(config, {
-    transport: transport.transport,
-    clock: clock.clock,
-    timer: timer.timer,
-    newId: sequentialIds(),
-    audit: (record) => audit.push(record),
-  });
-  return { runner, requests: transport.requests, matching: transport.matching, audit, timer, clock };
-}
 
 describe("acquire (M21)", () => {
   it("leases a configured linux platform", async () => {
@@ -90,7 +60,8 @@ describe("runSession happy path", () => {
     const result = await runner.runSession(lease, TEST_JOB);
 
     expect(requests.map((request) => `${request.method} ${request.path.split("?")[0]}`)).toEqual([
-      "POST /v1.44/volumes/create",
+      "GET /v1.44/networks/maestro-egress",
+      "GET /v1.44/volumes/maestro-ws-ugurpay-1042-4e704206aec4",
       "POST /v1.44/containers/create",
       `POST /v1.44/containers/${FIXTURE_CONTAINER_ID}/start`,
       `POST /v1.44/containers/${FIXTURE_CONTAINER_ID}/wait`,
@@ -152,6 +123,7 @@ describe("runSession happy path", () => {
     await runner.runSession(lease, TEST_JOB);
 
     expect(audit.map((record) => record.action)).toEqual(["SANDBOX_CREATE", "SANDBOX_DESTROY"]);
+    expect(audit.every((record) => record.meta["purpose"] === undefined)).toBe(true);
     expect(audit[0]).toMatchObject({ actor: "maestro-runner", at: "2026-08-08T14:20:00.000Z" });
     expect(audit[0]?.meta).toMatchObject({ runId: TEST_JOB.runId, networkMode: "maestro-egress" });
     expect(audit[1]?.meta).toMatchObject({ exitCode: 7, timedOut: false });
@@ -310,116 +282,3 @@ describe("failure handling", () => {
   });
 });
 
-describe("mountCache (M31 layer ①)", () => {
-  it("creates the volume and mounts it into the next session", async () => {
-    const { runner, matching } = rig();
-    const lease = await runner.acquire("linux-node");
-
-    await runner.mountCache(lease, ["dep-linux-node-npm-abc123abc123"]);
-    await runner.runSession(lease, TEST_JOB);
-
-    const created = JSON.parse(matching("/volumes/create")[0]?.body ?? "{}");
-    expect(created.Name).toMatch(/^maestro-cache-dep-linux-node-npm-abc123abc123-[0-9a-f]{12}$/);
-    expect(created.Labels).toMatchObject({ "maestro.cache-key": "dep-linux-node-npm-abc123abc123" });
-
-    const spec = JSON.parse(matching("/containers/create")[0]?.body ?? "{}");
-    expect(spec.HostConfig.Binds).toHaveLength(2);
-    // The name the volume was CREATED under must be the name that gets bound:
-    // a mismatch here is a silently empty cache on every run.
-    expect(spec.HostConfig.Binds[1]).toBe(`${created.Name}:/cache/dep-linux-node-npm-abc123abc123:ro`);
-  });
-
-  it("provisions the workspace volume on the configured (encrypted) driver, and binds that name", async () => {
-    const { runner, matching } = rig({}, {
-      ...TEST_CONFIG,
-      workspace: { volumeDriver: "local", volumeOptions: { device: "/dev/mapper/maestro-crypt", type: "ext4" } },
-    });
-    const lease = await runner.acquire("linux-node");
-
-    await runner.runSession(lease, TEST_JOB);
-    const created = JSON.parse(matching("/volumes/create")[0]?.body ?? "{}");
-    const spec = JSON.parse(matching("/containers/create")[0]?.body ?? "{}");
-
-    expect(created).toMatchObject({
-      Driver: "local",
-      DriverOpts: { device: "/dev/mapper/maestro-crypt", type: "ext4" },
-      Labels: { "maestro.layer": "workspace", "maestro.workspace-key": TEST_JOB.workspaceKey },
-    });
-    expect(spec.HostConfig.Binds[0]).toBe(`${created.Name}:/workspace:rw`);
-  });
-
-  it("removes the volume it created when the workspace is swept", async () => {
-    const { runner, matching } = rig();
-    const lease = await runner.acquire("linux-node");
-
-    await runner.runSession(lease, TEST_JOB);
-    const created = JSON.parse(matching("/volumes/create")[0]?.body ?? "{}");
-    await runner.removeWorkspace(TEST_JOB.workspaceKey, "ticket-closed");
-
-    const deleted = matching("/volumes/").filter((request) => request.method === "DELETE");
-    expect(deleted[0]?.path).toBe(`/v1.44/volumes/${created.Name}?force=true`);
-  });
-
-  it("refuses an invalid cache key before any volume is created", async () => {
-    const { runner, requests } = rig();
-    const lease = await runner.acquire("linux-node");
-
-    await expect(runner.mountCache(lease, ["../escape"])).rejects.toThrow(/invalid runner key/);
-    expect(requests).toHaveLength(0);
-  });
-
-  it("bounds how many caches one job can mount", async () => {
-    const { runner } = rig();
-    const lease = await runner.acquire("linux-node");
-    const keys = Array.from({ length: 9 }, (_, index) => `dep-${index}`);
-
-    await expect(runner.mountCache(lease, keys)).rejects.toThrow(/at most 8/);
-  });
-
-  it("refuses to mount onto a lease that was never issued", async () => {
-    const { runner } = rig();
-
-    await expect(
-      runner.mountCache({ leaseId: "ghost", runnerId: "docker-linux/linux-node/0", platform: "linux-node" }, ["dep-a"]),
-    ).rejects.toThrow(RunnerLeaseError);
-  });
-});
-
-describe("release and workspace lifecycle", () => {
-  it("is idempotent and frees the slot", async () => {
-    const { runner } = rig({}, { ...TEST_CONFIG, platforms: { "linux-node": { image: TEST_CONFIG.platforms["linux-node"].image, capacity: 1 } } });
-    const lease = await runner.acquire("linux-node");
-
-    await runner.release(lease);
-    await expect(runner.release(lease)).resolves.toBeUndefined();
-    await expect(runner.acquire("linux-node")).resolves.toMatchObject({ runnerId: lease.runnerId });
-  });
-
-  it("removes a workspace volume with an audit record (M31/M65)", async () => {
-    const { runner, matching, audit } = rig();
-
-    await runner.removeWorkspace("UGURPAY-1042", "ticket-closed");
-
-    expect(matching("/volumes/")[0]?.path).toContain("force=true");
-    expect(audit[0]).toMatchObject({ action: "RETENTION_ARCHIVE", meta: { workspaceKey: "UGURPAY-1042", reason: "ticket-closed" } });
-  });
-
-  it("sweeps only the workspaces past the configured age", async () => {
-    const { runner, audit } = rig({}, { ...TEST_CONFIG, workspace: { maxAgeDays: 30 } });
-
-    const swept = await runner.sweepExpiredWorkspaces([
-      { workspaceKey: "UGURPAY-1", lastUsedAt: "2026-01-01T00:00:00.000Z" },
-      { workspaceKey: "UGURPAY-2", lastUsedAt: "2026-08-01T00:00:00.000Z" },
-    ]);
-
-    expect(swept).toEqual(["UGURPAY-1"]);
-    expect(audit).toHaveLength(1);
-    expect(audit[0]?.meta["reason"]).toBe("workspace-max-age");
-  });
-
-  it("pings the daemon through the same transport", async () => {
-    const { runner } = rig();
-
-    await expect(runner.ping()).resolves.toBe(true);
-  });
-});

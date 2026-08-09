@@ -112,12 +112,39 @@ export class DockerClient {
     await this.#send({ method: "POST", path: "/volumes/create", body }, "volumes/create");
   }
 
-  async removeVolume(name: string, force = false): Promise<void> {
-    await this.#send(
+  /** `undefined` for a volume that does not exist — 404 is an answer, not a failure. */
+  async inspectVolume(name: string): Promise<{ labels: Record<string, string> } | undefined> {
+    const response = await this.#send({ method: "GET", path: `/volumes/${encode(name)}` }, "volumes/inspect", {
+      tolerate: [404],
+    });
+    if (response.status === 404) return undefined;
+    return { labels: stringMap(asRecord(response, "volumes/inspect")["Labels"]) };
+  }
+
+  /** Reports whether the volume WAS there: the audit trail must not claim a deletion that never happened. */
+  async removeVolume(name: string, force = false): Promise<boolean> {
+    const response = await this.#send(
       { method: "DELETE", path: `/volumes/${encode(name)}${query({ force })}` },
       "volumes/remove",
       { tolerate: [404] },
     );
+    return response.status !== 404;
+  }
+
+  /**
+   * Network identity + isolation (M26). `Internal` is the field that decides
+   * whether a job can route anywhere except the proxy, and `Name` is checked by
+   * the caller because the daemon also resolves ID PREFIXES here.
+   */
+  async inspectNetwork(name: string): Promise<{ name: string; internal: boolean } | undefined> {
+    const response = await this.#send({ method: "GET", path: `/networks/${encode(name)}` }, "networks/inspect", {
+      tolerate: [404],
+    });
+    if (response.status === 404) return undefined;
+    const record = asRecord(response, "networks/inspect");
+    const found = record["Name"];
+    if (typeof found !== "string") throw new DockerResponseError("networks/inspect", "response has no Name");
+    return { name: found, internal: record["Internal"] === true };
   }
 
   /** Resolves a local image to its content-addressed id (M27 digest pinning). */
@@ -182,6 +209,16 @@ function asRecord(response: HttpResponse, endpoint: string): Record<string, unkn
 
 function encode(segment: string): string {
   return encodeURIComponent(segment);
+}
+
+/** Docker sends `null` for "no labels"; anything non-string is dropped rather than coerced. */
+function stringMap(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const map: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") map[key] = entry;
+  }
+  return map;
 }
 
 const FRAME_HEADER_BYTES = 8;

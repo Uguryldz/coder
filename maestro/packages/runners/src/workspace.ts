@@ -58,6 +58,20 @@ function sha256Hex(value: string): string {
 }
 
 /**
+ * Canonical form of a workspace key. The FIRST segment is the ticket id, which
+ * is case-insensitive by definition (Jira stores it upper-case), so
+ * "ugurpay-1042" and "UGURPAY-1042" must name one workspace — otherwise the
+ * same ticket resumes into two volumes and M30 loses the session that held its
+ * context. Everything after it is a branch path and stays case-SENSITIVE: git
+ * allows `feature/Foo` and `feature/foo` side by side, and folding those
+ * together would put two working trees in one workspace.
+ */
+export function canonicalWorkspaceKey(key: string): string {
+  const [ticket = "", ...rest] = key.split("/");
+  return [ticket.toUpperCase(), ...rest].join("/");
+}
+
+/**
  * Sanitised, length-capped prefix + a hash of the WHOLE key. The slug is for
  * humans reading `docker volume ls`; the hash is what makes the mapping
  * injective, so two tickets can never collide on one workspace.
@@ -74,7 +88,7 @@ function volumeName(prefix: string, key: string): string {
 /** Volume holding layer ② of M31: the ticket workspace (clone + build + session). */
 export function workspaceVolumeName(workspaceKey: string, prefix = "maestro-ws"): string {
   assertWorkspaceKey(workspaceKey);
-  return volumeName(prefix, workspaceKey);
+  return volumeName(prefix, canonicalWorkspaceKey(workspaceKey));
 }
 
 /** Volume holding layer ① of M31: the shared dependency cache. */

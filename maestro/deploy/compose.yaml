@@ -68,6 +68,18 @@ x-node-env: &node-env
   SCAN_IMAGE_TRIVY: ${SCAN_IMAGE_TRIVY}
   SCAN_IMAGE_SEMGREP: ${SCAN_IMAGE_SEMGREP}
   SCAN_IMAGE_GITLEAKS: ${SCAN_IMAGE_GITLEAKS}
+  # Identity (M8). `local` unless the deployment selects the LDAPS driver;
+  # none of these carry a credential — the service password is a REF below.
+  IDENTITY_DRIVER: ${IDENTITY_DRIVER:-local}
+  LDAP_URL: ${LDAP_URL}
+  LDAP_USER_BASE_DN: ${LDAP_USER_BASE_DN}
+  LDAP_GROUP_BASE_DN: ${LDAP_GROUP_BASE_DN}
+  LDAP_BIND_DN: ${LDAP_BIND_DN}
+  LDAP_CA_CERT_PATH: ${LDAP_CA_CERT_PATH}
+  LDAP_USER_FILTER: ${LDAP_USER_FILTER}
+  LDAP_GROUP_FILTER: ${LDAP_GROUP_FILTER}
+  LDAP_ROLE_MAPPINGS: ${LDAP_ROLE_MAPPINGS}
+  LDAP_ALLOW_INSECURE: ${LDAP_ALLOW_INSECURE:-false}
   # Secret REFERENCES, not values. The env-file driver maps each to a
   # MAESTRO_SECRET_* variable; the values come from `.env`, never from here.
   JIRA_TOKEN_REF: ${JIRA_TOKEN_REF:-kv/jira#token}
@@ -75,6 +87,7 @@ x-node-env: &node-env
   ADO_TOKEN_REF: ${ADO_TOKEN_REF:-kv/ado#token}
   ADO_WEBHOOK_SECRET_REF: ${ADO_WEBHOOK_SECRET_REF:-kv/ado#webhook}
   LLM_API_KEY_REF: ${LLM_API_KEY_REF:-kv/llm#api-key}
+  LDAP_BIND_PASSWORD_REF: ${LDAP_BIND_PASSWORD_REF:-kv/ldap#service-password}
   # The double underscore is the driver's encoding of `#`, not a typo:
   # `kv/jira#token` → MAESTRO_SECRET_KV_JIRA__TOKEN. `secret-names.test.ts`
   # derives these from the driver so the two cannot drift.
@@ -85,6 +98,8 @@ x-node-env: &node-env
   # `api-key`: the hyphen is not a legal environment-variable character, so the
   # driver escapes it as `__2D_` (its code point). Derived, never hand-written.
   MAESTRO_SECRET_KV_LLM__API__2D_KEY: ${MAESTRO_SECRET_KV_LLM__API__2D_KEY}
+  # `service-password`: same hyphen escaping as `api-key` above (M8 LDAPS).
+  MAESTRO_SECRET_KV_LDAP__SERVICE__2D_PASSWORD: ${MAESTRO_SECRET_KV_LDAP__SERVICE__2D_PASSWORD}
 
 services:
   # ── data ───────────────────────────────────────────────────────────────────

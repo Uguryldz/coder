@@ -40,6 +40,17 @@ export const DeployEnvSchema = z.object({
   ADO_TOKEN_REF: SecretRef.default("kv/ado#token"),
   ADO_WEBHOOK_SECRET_REF: SecretRef.default("kv/ado#webhook"),
   LLM_API_KEY_REF: SecretRef.default("kv/llm#api-key"),
+  /**
+   * The AD/LDAPS service-account password (M8).
+   *
+   * It lives here with the other pointers rather than in `@maestro/config`'s
+   * `EnvSchema` for the reason that schema's own comment gives: this file owns
+   * the secret REFERENCES, and `secret-names.test.ts` derives the
+   * `MAESTRO_SECRET_*` variable names from these defaults. A reference declared
+   * anywhere else is a reference that test cannot see — and the symptom would
+   * be the exact drift it exists to catch.
+   */
+  LDAP_BIND_PASSWORD_REF: SecretRef.default("kv/ldap#service-password"),
 
   // ── Vault AppRole (prod profile only) ───────────────────────────────────
   // The one bootstrap credential that cannot itself come from Vault. It is

@@ -24,6 +24,7 @@ const REFERENCE_VARS = [
   "ADO_TOKEN_REF",
   "ADO_WEBHOOK_SECRET_REF",
   "LLM_API_KEY_REF",
+  "LDAP_BIND_PASSWORD_REF",
 ] as const;
 
 /** The default reference for each pointer variable, from the schema itself. */

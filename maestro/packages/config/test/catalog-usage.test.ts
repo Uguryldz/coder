@@ -14,6 +14,13 @@ import { catalogKeys } from "../src/index.js";
  */
 const PACKAGES_DIR = join(import.meta.dirname, "..", "..");
 /**
+ * `apps/` is scanned too. The guard used to cover `packages/` alone, so an app
+ * emitting an unknown key — the runner agent emits `runner_agent.*` — would
+ * have thrown `MissingMessageError` in front of an operator with the suite
+ * still green.
+ */
+const APPS_DIR = join(import.meta.dirname, "..", "..", "..", "apps");
+/**
  * Every message-key namespace in the monorepo. A package whose namespace is
  * absent here is NOT protected: `publish.*` was missing while the package
  * emitted 39 keys the catalog did not have, so the guard passed and the first
@@ -21,7 +28,7 @@ const PACKAGES_DIR = join(import.meta.dirname, "..", "..");
  * Adding a namespace to a package means adding it here too.
  */
 const KEY_LITERAL =
-  /"((?:steps|notify|gate|command|match|params|run|evidence|llm|publish)\.[a-z0-9_.]+)"/g;
+  /"((?:steps|notify|gate|command|match|params|run|evidence|llm|publish|runner_agent)\.[a-z0-9_.]+)"/g;
 
 function sourceFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -35,7 +42,7 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 
 describe("message catalog usage (M104)", () => {
   const used = new Map<string, string>(); // key -> first file that emits it
-  for (const file of sourceFiles(PACKAGES_DIR)) {
+  for (const file of [...sourceFiles(PACKAGES_DIR), ...sourceFiles(APPS_DIR)]) {
     if (file.includes(join("config", "src"))) continue; // the catalog itself
     const text = readFileSync(file, "utf8");
     for (const match of text.matchAll(KEY_LITERAL)) {

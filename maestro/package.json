@@ -14,6 +14,8 @@
     "test": "turbo run test",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "gate": "pnpm lint && turbo run typecheck test --force --concurrency=4",
+    "demo:up": "pnpm --filter @maestro/demo-stack run start",
+    "demo:bff": "pnpm --filter @maestro/demo-stack run start:bff",
     "deploy:up": "make -C deploy up",
     "deploy:down": "make -C deploy down",
     "deploy:logs": "make -C deploy logs",

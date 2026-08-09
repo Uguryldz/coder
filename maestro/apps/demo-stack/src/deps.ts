@@ -1,0 +1,143 @@
+import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
+import type { BffDeps, Clock, ReadModels } from "@maestro/bff";
+import {
+  AuditStoreReader,
+  BcryptPasswordHasher,
+  InMemoryAppRegistry,
+  InMemoryCostReader,
+  InMemoryEvidenceReader,
+  InMemoryGateBoard,
+  InMemoryJournalReader,
+  InMemoryKillSwitchStore,
+  InMemoryKnowledgeIndex,
+  InMemoryParamStore,
+  InMemoryQuotaReader,
+  InMemoryRunCatalog,
+  InMemoryRunnerFleet,
+  InMemoryScanReader,
+  InMemorySessionStore,
+  InMemoryUserDirectory,
+  LocalIdentityProvider,
+  StaticGateDirectory,
+  StaticHealthReader,
+  StaticJiraProjectBindings,
+} from "@maestro/bff";
+import { loadEnv } from "@maestro/config";
+import { DemoCiPort, DemoWorkEventReader, DemoWorkPort } from "./fakes/work-port.js";
+import { InMemoryRunGateway } from "./fakes/run-gateway.js";
+import { DEMO_PARAMS } from "./seed/params.js";
+import { seedInto, type SeedSummary } from "./seed/index.js";
+import { gateMemberships } from "./seed/memberships.js";
+import { DEMO_ACCOUNTS, DEMO_ACTOR_DOMAIN } from "./seed/users.js";
+import { DEMO_BINDINGS, demoAccounts, demoServices } from "./seed/platform.js";
+
+/**
+ * The demo composition root.
+ *
+ * The rule this file follows: the BFF is REAL. `buildServer` is the shipped one,
+ * every route is the shipped one, the auth guard, the project scoping, the
+ * knowledge data-class filter and the gate decision path all run exactly as they
+ * do in production. What is swapped out is the layer BELOW the ports — no
+ * Postgres, no Temporal, no Jira, no ADO, no LLM — and the in-memory stores that
+ * replace them are the BFF's own reference implementations, not new ones written
+ * to be agreeable.
+ *
+ * This is the opposite of `apps/deploy/src/stores/read-models.ts`, and
+ * deliberately so. There, wiring the in-memory read models in would have been
+ * wrong: a composition root pointed at a real deployment that answered "no runs"
+ * would be indistinguishable from a quiet Friday. Here the store is SEEDED and
+ * the process announces itself as a demo, so an empty page would be a bug rather
+ * than a lie. Same code, opposite correct choice, because the context differs.
+ */
+
+export interface DemoStack {
+  readonly deps: BffDeps;
+  readonly runs: InMemoryRunGateway;
+  readonly read: ReadModels;
+  readonly summary: SeedSummary;
+  /** The instant the seed was built around; every stamp is relative to it. */
+  readonly seededAt: Date;
+}
+
+export interface DemoStackOptions {
+  /** Fixed clock for tests; defaults to the system clock. */
+  readonly clock?: Clock;
+  /**
+   * bcrypt work factor. Production cost (12) is right for the running demo and
+   * far too slow for a test suite that provisions seven accounts, so tests pass
+   * a lower one. It is a cost, not a behaviour: the login path is identical.
+   */
+  readonly bcryptRounds?: number;
+}
+
+export async function buildDemoStack(options: DemoStackOptions = {}): Promise<DemoStack> {
+  const clock: Clock = options.clock ?? { now: () => new Date() };
+  const seededAt = clock.now();
+
+  const auditStore = new InMemoryAuditStore();
+  const audit = new AuditChain({ store: auditStore, clock });
+  const users = new InMemoryUserDirectory();
+  const identity = new LocalIdentityProvider(
+    users,
+    new BcryptPasswordHasher(options.bcryptRounds ?? 12),
+  );
+
+  const runs = new InMemoryRunGateway([], clock);
+  const read: ReadModels = {
+    runs: new InMemoryRunCatalog(),
+    journal: new InMemoryJournalReader(),
+    gates: new InMemoryGateBoard(),
+    apps: new InMemoryAppRegistry(),
+    knowledge: new InMemoryKnowledgeIndex(),
+    runners: new InMemoryRunnerFleet(),
+    cost: new InMemoryCostReader(),
+    scans: new InMemoryScanReader(),
+    evidence: new InMemoryEvidenceReader(),
+    // These two take their rows at construction rather than through a `put`,
+    // so they are seeded here rather than in `seedInto`.
+    quota: new InMemoryQuotaReader(demoAccounts(seededAt)),
+    health: new StaticHealthReader(demoServices(seededAt)),
+    // The SAME store the chain appends to: a reader with its own copy would
+    // verify itself rather than the trail (M33).
+    audit: new AuditStoreReader(auditStore),
+  };
+
+  // Accounts first: the seeded audit trail records gate approvals, and the chain
+  // refuses a non-human actor for those actions (M32/M101). The trail therefore
+  // cannot be written before the people in it exist.
+  for (const account of DEMO_ACCOUNTS) {
+    await identity.provision({
+      username: account.username,
+      userId: `${account.username}@${DEMO_ACTOR_DOMAIN}`,
+      password: account.password,
+      groups: account.groups,
+      roles: account.roles,
+    });
+  }
+
+  const summary = await seedInto({ read, runs, audit, at: seededAt });
+
+  const deps: BffDeps = {
+    work: new DemoWorkPort(gateMemberships()),
+    workEvents: new DemoWorkEventReader(),
+    ci: new DemoCiPort(),
+    runs,
+    audit,
+    sessions: new InMemorySessionStore(),
+    identity,
+    users,
+    bindings: new StaticJiraProjectBindings(DEMO_BINDINGS),
+    gates: new StaticGateDirectory(),
+    params: new InMemoryParamStore(DEMO_PARAMS),
+    killSwitch: new InMemoryKillSwitchStore(),
+    read,
+    clock,
+    // `loadEnv` still runs: the demo is a development process (NODE_ENV is not
+    // `production`), so it validates and returns local defaults rather than
+    // demanding the six connection strings. A demo that bypassed the
+    // environment contract would not be running the real boot path.
+    config: { env: loadEnv(), actorDomain: DEMO_ACTOR_DOMAIN, locale: "tr" },
+  };
+
+  return { deps, runs, read, summary, seededAt };
+}

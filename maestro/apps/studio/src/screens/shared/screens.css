@@ -1,0 +1,290 @@
+/*
+ * Layout helpers shared by the flow screens, mirroring the mock's .grid/.kv/
+ * .issue/.bar. Colours come from tokens.css only — a literal here would break
+ * the dark theme silently, which is why src/ui/README.md forbids it.
+ */
+
+.screen-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.screen-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.screen-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.screen-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Detail's main column + sidebar. */
+.screen-grid--detail {
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .screen-grid--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .screen-grid--detail,
+  .screen-grid--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .screen-grid--2,
+  .screen-grid--4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.screen-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Mirrors .kv — a label column and a value column. */
+.screen-kv {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+  gap: 7px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.screen-kv dt {
+  color: var(--muted);
+}
+
+.screen-kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.screen-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.screen-note {
+  margin: 9px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.screen-mono {
+  font-family: var(--mono);
+}
+
+/* Mirrors .issue — an attention row that is also a link target. */
+.screen-issue {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: start;
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.screen-issue:hover {
+  border-color: var(--blue);
+}
+
+.screen-issue--alert {
+  border-color: var(--red);
+}
+
+.screen-issue__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Mirrors .bar — a capacity/progress meter. */
+.screen-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.screen-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+
+.screen-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Mirrors .chip — the filter pills above a list. */
+.screen-chip {
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.screen-chip[aria-pressed="true"] {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+/* Mirrors .jira — a comment card in the Jira transcript views. */
+.screen-comment {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px;
+  margin-bottom: 10px;
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.screen-comment__who {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.screen-comment__when {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Mirrors .flowbox — the horizontal step ribbon. */
+.screen-flow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.screen-flow__item {
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.screen-flow__item--on {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+/* Mirrors .steps — the vertical step list on the detail screen. */
+.screen-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.screen-step {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.screen-step:last-child {
+  border-bottom: none;
+}
+
+.screen-step__num {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 6px;
+  background: var(--border);
+  color: var(--muted);
+}
+
+.screen-step--now .screen-step__num {
+  background: var(--blue);
+  color: var(--panel);
+}
+
+.screen-step--done .screen-step__num {
+  color: var(--green);
+}
+
+.screen-step__title {
+  font-size: 13.5px;
+}
+
+.screen-step__state {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: end;
+}
+
+/* Journal rows. */
+.screen-journal {
+  display: flex;
+  flex-direction: column;
+}
+
+.screen-journal__row {
+  display: grid;
+  grid-template-columns: 132px 26px minmax(0, 1fr);
+  gap: 11px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border);
+  align-items: start;
+  font-size: 13px;
+}
+
+.screen-journal__row:last-child {
+  border-bottom: none;
+}
+
+.screen-file {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.screen-file:last-child {
+  border-bottom: none;
+}
+
+.screen-file__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}

@@ -1,20 +1,163 @@
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Placeholder } from "../app/Placeholder.tsx";
+import { useNavigate } from "react-router";
+import { messageKeyOf } from "../api/errors.ts";
+import { useT } from "../i18n/I18nProvider.tsx";
+import { Badge, Button, Card, Input, Table, useToast } from "../ui/index.ts";
+import type { Column } from "../ui/index.ts";
+import { QueryState } from "./shared/QueryState.tsx";
+import { useClarificationAnswer } from "./shared/signals.ts";
+import { ageLabel } from "./shared/format.ts";
+import { useRuns, type RunSummary } from "./shared/runs.ts";
+import "./shared/screens.css";
 
 /**
- * Screen: clarify
+ * Screen: clarify — step 2b, where intake found the ticket incomplete and is
+ * waiting on the reporter.
  *
- * STUB — owned by the screen agent assigned to "clarify".
- * Replace the body of this component with the real screen. Do not edit
- * src/app/screens.ts (the route table) or src/app/routes.tsx; your route,
- * title key and sidebar entry are already registered there.
+ * The wait is UNBOUNDED by design (M14): there is no auto-reject, because a
+ * timed-out ticket loses the flow context that makes the answer cheap. The
+ * reminder ladder (Jira 24h → Teams/mail 72h → delegation on day 7) is the
+ * pressure mechanism instead.
  *
- * Rules that still apply to the finished screen:
- *  - every visible string comes from the catalog via useT() — no literals;
- *  - build from src/ui primitives (see src/ui/README.md);
- *  - fetch through useApi() + TanStack Query, never bare fetch();
- *  - keep this file under 300 lines, split into src/screens/clarify/ if it grows.
+ * Answering sends the `clarificationAnswered` SIGNAL, the same channel a Jira
+ * comment takes. `GET /runs` cannot tell us which runs are parked on 2b — that
+ * needs `GET /runs/:ticket` per row, or the richer list requested in the report
+ * — so the operator picks the ticket and the BFF decides whether the signal is
+ * deliverable (404 `no_run` when nothing is listening).
  */
 export function ClarifyScreen(): ReactNode {
-  return <Placeholder id="clarify" />;
+  const t = useT();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const answer = useClarificationAnswer();
+
+  const [ticket, setTicket] = useState("");
+  const [text, setText] = useState("");
+  const [touched, setTouched] = useState(false);
+
+  const { data, isPending, error, refetch } = useRuns(200);
+  const open = useMemo(
+    () => (data?.runs ?? []).filter((run) => run.status === "running"),
+    [data],
+  );
+
+  const ticketMissing = ticket.trim() === "";
+  const textMissing = text.trim() === "";
+
+  function submit(): void {
+    setTouched(true);
+    if (ticketMissing || textMissing) return;
+    answer.mutate(
+      { ticket: ticket.trim(), text: text.trim() },
+      {
+        onSuccess: () => {
+          toast.show("success", t("clarify.toast.sent", { ticket: ticket.trim() }));
+          setText("");
+          setTouched(false);
+        },
+        onError: (mutationError) => toast.show("error", t(messageKeyOf(mutationError))),
+      },
+    );
+  }
+
+  const columns: readonly Column<RunSummary>[] = [
+    {
+      key: "ticket",
+      header: t("col.ticket"),
+      cell: (run) => <b className="screen-mono">{run.ticketKey}</b>,
+    },
+    {
+      key: "age",
+      header: t("col.age"),
+      align: "right",
+      cell: (run) => {
+        const age = ageLabel(run.startedAt);
+        return age === null ? "—" : t(age.key, age.params);
+      },
+    },
+    {
+      key: "pick",
+      header: t("col.action"),
+      align: "right",
+      cell: (run) => (
+        <Button size="sm" onClick={() => setTicket(run.ticketKey)}>
+          {t("clarify.action.pick")}
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <div className="screen-grid screen-grid--detail">
+      <div className="screen-stack">
+        <Card title={t("clarify.answer.title")} subtitle={t("clarify.answer.subtitle")}>
+          <Input
+            label={t("clarify.field.ticket")}
+            value={ticket}
+            onChange={(event) => setTicket(event.target.value)}
+            hint={t("clarify.field.ticket_hint")}
+            {...(touched && ticketMissing ? { error: t("error.invalid_ticket_key") } : {})}
+          />
+          <Input
+            label={t("clarify.field.answer")}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            hint={t("clarify.field.answer_hint")}
+            {...(touched && textMissing ? { error: t("clarify.error.answer_required") } : {})}
+          />
+          <div className="screen-actions">
+            <Button
+              variant="primary"
+              busy={answer.isPending}
+              disabled={ticketMissing || textMissing}
+              onClick={submit}
+            >
+              {t("clarify.action.send")}
+            </Button>
+          </div>
+          <p className="screen-note">{t("clarify.answer.channel")}</p>
+        </Card>
+
+        <Card title={t("clarify.open.title")} subtitle={t("clarify.open.subtitle")} padded={false}>
+          <QueryState
+            isPending={isPending}
+            error={error}
+            onRetry={() => void refetch()}
+            skeletonRows={4}
+          >
+            <Table
+              columns={columns}
+              rows={open}
+              rowKey={(run) => run.runId}
+              emptyLabel={t("clarify.open.empty")}
+              caption={t("clarify.open.caption")}
+              onRowClick={(run) => void navigate(`/detail/${run.ticketKey}`)}
+            />
+          </QueryState>
+        </Card>
+      </div>
+
+      <div className="screen-stack">
+        <Card title={t("clarify.loop.title")}>
+          <dl className="screen-kv">
+            <dt>{t("clarify.loop.step")}</dt>
+            <dd>
+              <Badge tone="amber">{t("steps.2b")}</Badge>
+            </dd>
+            <dt>{t("clarify.loop.wait")}</dt>
+            <dd>{t("clarify.loop.wait_value")}</dd>
+            <dt>{t("clarify.loop.reminders")}</dt>
+            <dd>{t("clarify.loop.reminders_value")}</dd>
+            <dt>{t("clarify.loop.after")}</dt>
+            <dd>{t("clarify.loop.after_value")}</dd>
+          </dl>
+        </Card>
+
+        <Card title={t("clarify.why.title")}>
+          <p className="screen-note">{t("clarify.why.body")}</p>
+        </Card>
+      </div>
+    </div>
+  );
 }

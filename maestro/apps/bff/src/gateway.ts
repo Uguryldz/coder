@@ -72,6 +72,21 @@ export interface RunGateway {
   /** `null` when no execution exists for that id. */
   queryRunState(workflowId: string): Promise<WorkflowRunState | null>;
   /**
+   * Resolve an execution's `runId` to the ticket that owns it, or `null`.
+   *
+   * `MaestroPlatform` is keyed by `runId` while every store here is keyed by
+   * ticket, so something has to bridge the two. This method exists because the
+   * obvious bridge — list a page of runs and look through it — is not a lookup
+   * but a SEARCH, and a search has a horizon: the first implementation scanned
+   * one 200-row page ordered by recency, so the 201st run in a caller's own
+   * project answered "no such run" and could not be paused. A run id is an
+   * exact key; resolving it must not depend on how recently the run was
+   * touched or on how many runs the bank has.
+   *
+   * The engine is the right place for it because the engine minted the id.
+   */
+  findByRunId(runId: string): Promise<RunSummary | null>;
+  /**
    * Signal an EXISTING run. Never creates one: a gate decision or a build
    * result for a ticket Maestro is not running is a mistake to report, not a
    * reason to invent a workflow (M14).

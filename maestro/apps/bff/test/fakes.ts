@@ -169,6 +169,27 @@ export class FakeRunGateway implements RunGateway {
     return Promise.resolve(this.states.get(workflowId) ?? null);
   }
 
+  /**
+   * An exact lookup over every execution, with no page limit — the property
+   * the real gateway's `RunId=` query has and the scan it replaced did not.
+   * A fake that only searched its first N entries would let the horizon bug
+   * back in through the test double.
+   */
+  findByRunId(runId: string): Promise<RunSummary | null> {
+    for (const [workflowId, state] of this.states) {
+      if (state.runId !== runId) continue;
+      return Promise.resolve({
+        workflowId,
+        ticketKey: state.ticketKey,
+        runId: state.runId,
+        status: state.status === "done" ? "completed" : "running",
+        startedAt: state.startedAt,
+        closedAt: null,
+      });
+    }
+    return Promise.resolve(null);
+  }
+
   signal(workflowId: string, name: string, arg: unknown): Promise<SignalOutcome> {
     if (!this.states.has(workflowId)) return Promise.resolve("no_run");
     this.signals.push({ workflowId, name, arg });

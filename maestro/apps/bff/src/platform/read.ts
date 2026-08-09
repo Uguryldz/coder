@@ -17,6 +17,7 @@ import { canSeeProject } from "../routes/access.js";
 import { visibleProjects } from "../routes/paging.js";
 import { waitingDays } from "../routes/studio-ops.js";
 import { scopeOf } from "./actor-scope.js";
+import { runOf } from "./run-lookup.js";
 
 /**
  * The read half of `MaestroPlatform` (M101). Every method resolves the acting
@@ -26,7 +27,22 @@ import { scopeOf } from "./actor-scope.js";
  * disagree about what a run's status is.
  */
 
-/** Ceiling on what a single tool call may pull back, whatever it asked for. */
+/**
+ * Ceiling on what a single tool call may pull back, whatever it asked for.
+ *
+ * This is a bound on ONE page, and on this interface it is also the last page:
+ * `listRuns` returns `readonly WorkflowRunState[]` with no cursor field, so a
+ * caller asking for more runs than this gets the first `PLATFORM_MAX_LIMIT` and
+ * no way to tell that more existed. That is a real gap and it is not fixable
+ * here — the return shape is in the frozen `MaestroPlatform`; see the interface
+ * request in `deploy/RAPOR-duzeltme.md`.
+ *
+ * What was fixable is everything keyed by an exact id. `runOf` and the
+ * `ticketKey` filter no longer search a page: they look the key up directly, so
+ * "which run is this" and "show me this ticket" stopped depending on how
+ * recently the run was touched. A truncated LIST is a smaller answer; a
+ * truncated LOOKUP was a wrong one.
+ */
 export const PLATFORM_MAX_LIMIT = 200;
 
 export function clampLimit(limit: number): number {
@@ -51,6 +67,22 @@ export function readHalf(deps: ResolvedDeps): ReadHalf {
   return {
     async listRuns(actingUser, filter): Promise<readonly WorkflowRunState[]> {
       const session = await scopeOf(deps, actingUser);
+
+      // A ticket key is an exact key, so it is answered by a lookup rather
+      // than by paging until the ticket turns up. Filtering a recency-ordered
+      // page AFTER fetching it made `ticketKey` mean "this ticket, if it is
+      // among the most recent runs" — an empty answer for an older ticket that
+      // exists, which reads as "no such run" and is not one.
+      if (filter.ticketKey !== undefined) {
+        const record = await deps.read.runs.get(filter.ticketKey);
+        if (record === null) return [];
+        if (!canSeeProject(session, projectKeyOf(record.ticketKey))) return [];
+        const state = await deps.runs.queryRunState(workflowIdFor(record.ticketKey));
+        if (state === null) return [];
+        if (filter.status !== undefined && state.status !== filter.status) return [];
+        return [state];
+      }
+
       const page = await deps.read.runs.list({
         limit: clampLimit(filter.limit),
         cursor: null,
@@ -60,7 +92,6 @@ export function readHalf(deps: ResolvedDeps): ReadHalf {
 
       const states: WorkflowRunState[] = [];
       for (const record of page.items) {
-        if (filter.ticketKey !== undefined && record.ticketKey !== filter.ticketKey) continue;
         const state = await deps.runs.queryRunState(workflowIdFor(record.ticketKey));
         if (state === null) continue;
         if (filter.status !== undefined && state.status !== filter.status) continue;
@@ -251,33 +282,4 @@ function assertRole(session: SessionRecord, roles: readonly string[]): void {
   if (!roles.some((role) => session.roles.includes(role))) {
     throw forbidden("role_required", { anyOf: roles });
   }
-}
-
-/**
- * Resolve a run id to its record, refusing one the caller may not see.
- *
- * `MaestroPlatform` is keyed by `runId` while the catalog is keyed by ticket,
- * so the lookup goes through the workflow state. The project check happens
- * before anything is returned and the refusal is the SAME for "not yours" and
- * "no such run" — a distinguishable 404 would make this a run-id oracle.
- */
-export async function runOf(
-  deps: ResolvedDeps,
-  session: SessionRecord,
-  runId: string,
-): Promise<{ record: NonNullable<Awaited<ReturnType<ResolvedDeps["read"]["runs"]["get"]>>>; state: WorkflowRunState }> {
-  const page = await deps.read.runs.list({
-    limit: PLATFORM_MAX_LIMIT,
-    cursor: null,
-    appId: null,
-    projectKeys: visibleProjects(session),
-  });
-
-  for (const record of page.items) {
-    const state = await deps.runs.queryRunState(workflowIdFor(record.ticketKey));
-    if (state?.runId !== runId) continue;
-    if (!canSeeProject(session, projectKeyOf(record.ticketKey))) break;
-    return { record, state };
-  }
-  throw notFound("no_run", { runId });
 }

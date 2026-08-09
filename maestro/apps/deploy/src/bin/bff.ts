@@ -7,18 +7,49 @@ import {
   InMemorySessionStore,
   LocalIdentityProvider,
   StaticGateDirectory,
-  StaticJiraProjectBindings,
   type BffDeps,
 } from "@maestro/bff";
 import { createDb } from "@maestro/db";
 import { bootPlatform } from "../boot.js";
 import { listenAddress } from "../env.js";
+import { PrismaJiraProjectBindings } from "../stores/bindings.js";
+import { assertStoresDurable, volatileStoreWarning, type StoreDurability } from "../stores/durability.js";
 import { unbridgedReadModels } from "../stores/read-models.js";
 import { prismaSqlExecutor } from "../stores/sql.js";
 import { PrismaUserDirectory } from "../stores/users.js";
 import { connectTemporal } from "../temporal-gateway.js";
 import { jiraWorkEventReader } from "../work-events.js";
 import { fail, install, isEntrypoint } from "./lifecycle.js";
+
+/**
+ * What each process-local store costs on a restart.
+ *
+ * `assertStoresDurable` turns the kill-switch entry into a refusal in the prod
+ * profile; the rest are printed. The list is data rather than prose so the boot
+ * path and the operator read the same thing.
+ */
+const VOLATILE_STORES: readonly StoreDurability[] = [
+  {
+    name: "killSwitch",
+    durable: false,
+    onRestart: "the emergency brake reverts to `off` with nobody told (M58)",
+  },
+  {
+    name: "params",
+    durable: false,
+    onRestart: "M71 parameters fall back to defaults and pending four-eyes proposals are lost",
+  },
+  {
+    name: "sessions",
+    durable: false,
+    onRestart: "every logged-in user is signed out",
+  },
+  {
+    name: "audit",
+    durable: false,
+    onRestart: "the hash chain restarts empty; a second replica would fork it (M33)",
+  },
+];
 
 /**
  * The BFF process — the platform's single data door (M7).
@@ -36,6 +67,14 @@ export async function main(): Promise<void> {
   const db = createDb(url);
 
   const { env, deployment } = await bootPlatform({ sql: prismaSqlExecutor(db) });
+
+  // Before Temporal, before the socket: a deployment whose emergency brake
+  // cannot survive a restart must not reach the point of accepting traffic.
+  // Refusing here costs an operator a start-up error; refusing later costs
+  // them an incident in which `stop_all` did not stop anything.
+  assertStoresDurable(env.profile, VOLATILE_STORES);
+  const warning = volatileStoreWarning(VOLATILE_STORES);
+  if (warning !== null) console.warn(warning);
 
   const temporal = await connectTemporal({
     address: required(env.base.TEMPORAL_ADDRESS, "TEMPORAL_ADDRESS"),
@@ -57,8 +96,16 @@ export async function main(): Promise<void> {
     sessions: new InMemorySessionStore(),
     identity: new LocalIdentityProvider(users, new BcryptPasswordHasher()),
     users,
-    bindings: new StaticJiraProjectBindings([]),
+    // Read from the `JiraProjectBinding` table rather than from a hard-coded
+    // empty list. An empty list resolved every project to `null`, so every
+    // webhook the bank delivered was accepted and dropped — fail-closed in
+    // direction and total in effect, with nothing for an operator to read.
+    // An unbound project is still dropped; it now means nobody bound it.
+    bindings: new PrismaJiraProjectBindings(db.jiraProjectBinding),
     gates: new StaticGateDirectory(),
+    // Both still process-local, and both declared in `VOLATILE_STORES` above
+    // rather than left as a comment: the prod profile refuses to boot on the
+    // kill switch, and the dev profile prints what a restart would cost.
     params: new InMemoryParamStore(),
     killSwitch: new InMemoryKillSwitchStore(),
     // Studio's read side, unwired (M7). Every one of the twelve read models

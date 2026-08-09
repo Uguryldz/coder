@@ -9,7 +9,7 @@ import { assertProjectAccess } from "../routes/access.js";
 import { SIGNALS } from "../signal-names.js";
 import { scopeOf } from "./actor-scope.js";
 import { assertWritable } from "./propose.js";
-import { runOf } from "./read.js";
+import { runOf } from "./run-lookup.js";
 
 /**
  * The operate half of `MaestroPlatform` (M101). These methods change something,
@@ -37,11 +37,67 @@ export type OperateHalf = Pick<
   | "notifyGateOwner"
 >;
 
+/**
+ * Every method the kill switch must stop, named once.
+ *
+ * `killSwitched` reads this list rather than each method remembering to call
+ * `assertWritable` itself. The first version of this file did it the other way
+ * — a call at the top of each body — and `notifyGateOwner` was written without
+ * one, so an AI could still post to the bank's Jira with the platform stopped.
+ * A per-method call is a rule you can comply with six times out of seven and a
+ * gate is a rule you cannot; the whole point of a kill switch is that the
+ * method somebody forgets is the method that runs during the incident.
+ *
+ * A new operate method is covered the moment it is added to `OperateHalf`:
+ * `Record<keyof OperateHalf, true>` fails to compile without an entry here.
+ */
+const KILL_SWITCHED: Record<keyof OperateHalf, true> = {
+  startWorkflow: true,
+  assignApp: true,
+  setWorkMode: true,
+  pauseRun: true,
+  resumeRun: true,
+  retryStep: true,
+  notifyGateOwner: true,
+};
+
+/** The operate method names, for the gate and for the test that audits it. */
+export const OPERATE_METHODS = Object.keys(KILL_SWITCHED) as readonly (keyof OperateHalf)[];
+
+/**
+ * Wrap every operate method in the kill-switch check.
+ *
+ * The check runs BEFORE the wrapped body, so a stopped platform costs a store
+ * read and nothing else: no session lookup, no read-model query and above all
+ * no outbound call. The wrapper is applied to the whole object rather than
+ * mapped by name, so a method that exists at runtime but was never listed
+ * cannot slip through un-gated.
+ */
+function killSwitched(deps: ResolvedDeps, half: OperateHalf): OperateHalf {
+  const gated: Record<string, unknown> = {};
+  for (const name of OPERATE_METHODS) {
+    const method = half[name] as (...args: readonly unknown[]) => Promise<unknown>;
+    gated[name] = async (...args: readonly unknown[]): Promise<unknown> => {
+      await assertWritable(deps);
+      return method(...args);
+    };
+  }
+  return gated as unknown as OperateHalf;
+}
+
 export function operateHalf(deps: ResolvedDeps): OperateHalf {
+  return killSwitched(deps, rawOperateHalf(deps));
+}
+
+/**
+ * The bodies, without the kill-switch check — `killSwitched` supplies it.
+ * Exported for no one: it exists so the gate has something to wrap, and a
+ * caller reaching for it directly would be reaching past the switch.
+ */
+function rawOperateHalf(deps: ResolvedDeps): OperateHalf {
   return {
     async startWorkflow(actingUser, args): Promise<{ runId: string; ticketKey: string }> {
       const session = await scopeOf(deps, actingUser);
-      await assertWritable(deps);
       const ticket = ticketOf(args.ticketKey);
       assertProjectAccess(session, ticket);
 
@@ -62,7 +118,6 @@ export function operateHalf(deps: ResolvedDeps): OperateHalf {
 
     async assignApp(actingUser, args): Promise<{ ticketKey: string; appId: string }> {
       const session = await scopeOf(deps, actingUser);
-      await assertWritable(deps);
       const ticket = ticketOf(args.ticketKey);
       assertProjectAccess(session, ticket);
 
@@ -92,7 +147,6 @@ export function operateHalf(deps: ResolvedDeps): OperateHalf {
 
     async setWorkMode(actingUser, args): Promise<{ runId: string; mode: WorkMode }> {
       const session = await scopeOf(deps, actingUser);
-      await assertWritable(deps);
       const { record } = await runOf(deps, session, args.runId);
 
       await signalMode(deps, record.ticketKey, args.mode, actingUser, args.reason);
@@ -107,7 +161,6 @@ export function operateHalf(deps: ResolvedDeps): OperateHalf {
      */
     async pauseRun(actingUser, args): Promise<{ runId: string; status: string }> {
       const session = await scopeOf(deps, actingUser);
-      await assertWritable(deps);
       const { record } = await runOf(deps, session, args.runId);
 
       await signalMode(deps, record.ticketKey, "human_only", actingUser, args.reason);
@@ -116,7 +169,6 @@ export function operateHalf(deps: ResolvedDeps): OperateHalf {
 
     async resumeRun(actingUser, args): Promise<{ runId: string; status: string }> {
       const session = await scopeOf(deps, actingUser);
-      await assertWritable(deps);
       const { record } = await runOf(deps, session, args.runId);
 
       // Back to the mode the run was matched with, not to `full_auto`: resuming
@@ -130,7 +182,6 @@ export function operateHalf(deps: ResolvedDeps): OperateHalf {
       args,
     ): Promise<{ runId: string; step: string; attempt: number }> {
       const session = await scopeOf(deps, actingUser);
-      await assertWritable(deps);
       const { record, state } = await runOf(deps, session, args.runId);
 
       // Only the step the run is actually on. Retrying a step it has moved past

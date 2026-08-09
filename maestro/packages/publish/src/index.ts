@@ -7,6 +7,7 @@ export * from "./errors.js";
 export * from "./keys.js";
 export * from "./md.js";
 export * from "./parse.js";
+export * from "./pii.js";
 export * from "./port.js";
 export * from "./register.js";
 export * from "./storage-format.js";

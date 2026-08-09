@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AdfDoc } from "../src/adf.js";
 import { JiraPublisher } from "../src/drivers/jira.js";
-import { PublishConfigError } from "../src/errors.js";
+import { PublishConfigError, PublishRenderError } from "../src/errors.js";
 import { InMemoryPublishState } from "../src/types.js";
 import { FakeWorkPort, TICKET, request, runContext } from "./helpers.js";
 
@@ -84,5 +84,15 @@ describe("jira publish driver (M47)", () => {
           runContext: runContext(),
         }),
     ).toThrow(PublishConfigError);
+  });
+
+  it("refuses a document that renders to an empty ADF comment", async () => {
+    const { work, driver } = publisher();
+
+    // `{ content: [] }` is not a valid ADF document; it used to be POSTed as a
+    // blank Jira comment under a success receipt. One stray unterminated
+    // comment in model output was enough to produce it.
+    await expect(driver.publish(request(), "<!-- kapanmamis yorum")).rejects.toThrow(PublishRenderError);
+    expect(work.calls).toHaveLength(0);
   });
 });

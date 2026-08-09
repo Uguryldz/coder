@@ -10,6 +10,8 @@
  * parse, and because the package takes no new runtime dependency.
  */
 
+import { stripUnsafeChars } from "./md.js";
+
 export type Inline =
   | { kind: "text"; text: string }
   | { kind: "strong"; text: string }
@@ -30,7 +32,10 @@ const COMMENT_OPEN = /^\s*<!--/;
 
 export function parseMarkdown(source: string): Block[] {
   const blocks: Block[] = [];
-  const lines = source.split(/\r\n?|\n/);
+  // Both renderers read from this parse, so the character filter belongs here
+  // as well: a `markdownSource` the port was handed by someone else never saw
+  // the writer's escape chain (F3/F11).
+  const lines = stripUnsafeChars(source).split(/\r\n?|\n/);
   let paragraph: string[] = [];
   let list: { ordered: boolean; items: string[] } | null = null;
 
@@ -64,9 +69,17 @@ export function parseMarkdown(source: string): Block[] {
 
     // HTML comments carry our own markers (M83 template pin); they are metadata
     // for the file, not content for a Jira comment or a Confluence page.
+    //
+    // An UNTERMINATED `<!--` ends at its own line. Scanning to the end of the
+    // document instead swallowed everything below it, and the drivers then
+    // published an empty ADF/an empty page while reporting success — a single
+    // stray `<!--` in model output was enough (F5).
     if (COMMENT_OPEN.test(line)) {
       flush();
-      while (i < lines.length && !(lines[i] ?? "").includes("-->")) i += 1;
+      if (line.includes("-->")) continue;
+      let close = i + 1;
+      while (close < lines.length && !(lines[close] ?? "").includes("-->")) close += 1;
+      if (close < lines.length) i = close;
       continue;
     }
 

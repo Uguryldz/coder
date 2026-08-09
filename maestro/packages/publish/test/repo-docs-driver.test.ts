@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RepoDocsPublisher, RepoDocsPublishConfig } from "../src/drivers/repo-docs.js";
 import { PublishConfigError } from "../src/errors.js";
-import { InMemoryPublishState, type PublishStateStore } from "../src/types.js";
+import { InMemoryPublishState, type PublishStateStore, type RepoWorkspace } from "../src/types.js";
 import { APP, FakeScmPort, FakeWorkspace, request, runContext } from "./helpers.js";
 
 const CONFIG = RepoDocsPublishConfig.parse({});
@@ -9,7 +9,10 @@ const DOC = "# Analiz\n\nmetin";
 const PATH = "docs/maestro/UGURPAY-123/analysis.md";
 const BRANCH = "docs/maestro/UGURPAY-123-analysis";
 
-function build(state: PublishStateStore = new InMemoryPublishState(), workspace = new FakeWorkspace()) {
+function build<W extends RepoWorkspace = FakeWorkspace>(
+  state: PublishStateStore = new InMemoryPublishState(),
+  workspace: W = new FakeWorkspace() as unknown as W,
+) {
   const scm = new FakeScmPort();
   const driver = new RepoDocsPublisher(CONFIG, {
     scm: scm.asPort(),
@@ -67,6 +70,57 @@ describe("repo-docs publish driver (M47)", () => {
     expect(second.ref).not.toBe(workspace.commits[0]);
   });
 
+  it("opens a NEW branch and PR once the previous one was merged (M54 rejection loop)", async () => {
+    // Routine sequence: analysis published → PR merged → branch deleted →
+    // analysis rejected at the gate → revised analysis published. The driver
+    // used to commit the revision to the deleted branch and report success,
+    // so the revised document never reached main.
+    const { driver, scm, workspace } = build();
+    await driver.publish(request({ targets: ["repo-docs"] }), DOC);
+    const [prId] = [...scm.prStates.keys()];
+    scm.merge(prId ?? 0, BRANCH);
+
+    const receipt = await driver.publish(request({ targets: ["repo-docs"] }), `${DOC}\n\nrevizyon`);
+
+    const revised = "docs/maestro/UGURPAY-123-analysis-r1";
+    expect(scm.branches.has(revised)).toBe(true);
+    expect(workspace.commits[1]?.branch).toBe(revised);
+    expect(workspace.files.get(`${revised}:${PATH}`)).toBe(`${DOC}\n\nrevizyon`);
+    expect(scm.calls.filter((call) => call.method === "openPr")).toHaveLength(2);
+    expect(receipt.ref).toBe(workspace.shas.get(`${revised}:${PATH}`));
+  });
+
+  it("stays on the branch while its PR is still open", async () => {
+    const { driver, scm, workspace } = build();
+    await driver.publish(request({ targets: ["repo-docs"] }), DOC);
+    await driver.publish(request({ targets: ["repo-docs"] }), `${DOC}\n\nek`);
+
+    expect(scm.calls.filter((call) => call.method === "createBranch")).toHaveLength(1);
+    expect(scm.calls.filter((call) => call.method === "openPr")).toHaveLength(1);
+    expect(workspace.commits.every((commit) => commit.branch === BRANCH)).toBe(true);
+  });
+
+  it("does not open a second PR when the first publish died between commit and PR", async () => {
+    // The state write used to happen once, at the very end: a failure after
+    // the commit erased every trace of it, and the retry opened a duplicate PR
+    // for the same document.
+    const state = new InMemoryPublishState();
+    const workspace = new FakeWorkspace();
+    const { driver, scm } = build(state, workspace);
+    scm.openPr = () => Promise.reject(new Error("ADO unavailable"));
+
+    await expect(driver.publish(request({ targets: ["repo-docs"] }), DOC)).rejects.toThrow("ADO unavailable");
+
+    const retry = build(state, workspace);
+    retry.scm.branches.add(BRANCH); // the branch the first attempt created
+    const receipt = await retry.driver.publish(request({ targets: ["repo-docs"] }), DOC);
+
+    expect(workspace.commits).toHaveLength(1); // the commit was remembered
+    expect(retry.scm.calls.filter((call) => call.method === "openPr")).toHaveLength(1);
+    expect(retry.scm.calls.filter((call) => call.method === "createBranch")).toHaveLength(0);
+    expect(receipt.ref).toBe(workspace.shas.get(`${BRANCH}:${PATH}`));
+  });
+
   it("keeps one file per document kind", async () => {
     const { driver, workspace } = build();
     await driver.publish(request({ targets: ["repo-docs"] }), DOC);
@@ -80,15 +134,37 @@ describe("repo-docs publish driver (M47)", () => {
 
   it("does not re-commit identical bytes even when the bookkeeping was lost", async () => {
     const workspace = new FakeWorkspace();
-    await build(new InMemoryPublishState(), workspace).driver.publish(request({ targets: ["repo-docs"] }), DOC);
+    const first = await build(new InMemoryPublishState(), workspace).driver.publish(
+      request({ targets: ["repo-docs"] }),
+      DOC,
+    );
 
     // Fresh state store: the run's memory is gone, the repository is not.
     const recovered = build(new InMemoryPublishState(), workspace);
     const receipt = await recovered.driver.publish(request({ targets: ["repo-docs"] }), DOC);
 
     expect(workspace.commits).toHaveLength(1);
-    expect(receipt.ref).toBe(PATH);
+    // The receipt is the COMMIT, recovered from the workspace — a file path in
+    // a `ref` field reads as a commit in an evidence package and is not one.
+    expect(receipt.ref).toBe(first.ref);
     expect(recovered.scm.calls.map((call) => call.method)).toEqual(["resolveRepo", "openPr"]);
+  });
+
+  it("refuses to receipt a file path when the workspace cannot name the commit", async () => {
+    const workspace = new FakeWorkspace();
+    await build(new InMemoryPublishState(), workspace).driver.publish(request({ targets: ["repo-docs"] }), DOC);
+
+    // A workspace implementation that cannot answer "which commit is this".
+    const blind: RepoWorkspace = {
+      readFile: (branch, path) => workspace.readFile(branch, path),
+      commitFile: (args) => workspace.commitFile(args),
+    };
+    const recovered = build(new InMemoryPublishState(), blind);
+
+    await expect(recovered.driver.publish(request({ targets: ["repo-docs"] }), DOC)).rejects.toThrow(
+      PublishConfigError,
+    );
+    expect(workspace.commits).toHaveLength(1);
   });
 
   it("refuses to publish when the run has no application to write to", async () => {

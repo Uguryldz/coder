@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { PublishTarget } from "@maestro/contracts";
-import type { PortRegistry } from "@maestro/ports";
+import { CapabilityNotSupportedError, type PortRegistry } from "@maestro/ports";
 import { ConfluencePublisher, ConfluencePublishConfig } from "./drivers/confluence.js";
 import { JiraPublisher } from "./drivers/jira.js";
 import { RepoDocsPublisher, RepoDocsPublishConfig } from "./drivers/repo-docs.js";
 import { PublishConfigError } from "./errors.js";
-import { MaestroPublishPort, PUBLISH_PORT, UnsupportedTargetPublisher } from "./port.js";
+import { createPublishRedactor } from "./pii.js";
+import { MaestroPublishPort, PUBLISH_PORT } from "./port.js";
 import type { PublishDeps, TargetPublisher } from "./types.js";
 
 /** Driver name that serves the project's whole target set at once (M47). */
@@ -36,7 +37,7 @@ export function createPublishPort(targets: PublishTarget[], config: unknown, dep
   assertDeps(deps);
   const publishers = new Map<PublishTarget, TargetPublisher>();
   for (const target of targets) publishers.set(target, buildPublisher(target, parsed.data, deps));
-  return new MaestroPublishPort(publishers);
+  return new MaestroPublishPort(publishers, createPublishRedactor(deps.pii, deps.runContext));
 }
 
 function buildPublisher(target: PublishTarget, config: PublishDriverConfig, deps: PublishDeps): TargetPublisher {
@@ -67,7 +68,11 @@ function buildPublisher(target: PublishTarget, config: PublishDriverConfig, deps
     }
     case "docx":
     case "pdf":
-      return new UnsupportedTargetPublisher(target); // M103, Aşama 2
+      // M103 (Aşama 2), refused HERE rather than at publish time: a `jira+pdf`
+      // project used to compose happily, post its Jira comment and only then
+      // fail on the second target — side effects done, no receipt to show for
+      // them. Composition is the last moment a refusal costs nothing.
+      throw new CapabilityNotSupportedError(PUBLISH_PORT, target);
   }
 }
 
@@ -80,6 +85,11 @@ function assertDeps(deps: PublishDeps): void {
   }
   if (typeof deps.state?.get !== "function" || typeof deps.state.set !== "function") {
     throw new PublishConfigError("deps.state is required — idempotent publishing needs bookkeeping");
+  }
+  if (typeof deps.pii?.policy !== "object" || deps.pii.policy === null) {
+    throw new PublishConfigError(
+      "deps.pii.policy is required — every published document is an artefact (M20/M82) and is masked before egress",
+    );
   }
 }
 

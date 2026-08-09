@@ -7,28 +7,28 @@ import type { TargetPublisher } from "./types.js";
 export const PUBLISH_PORT = "publish";
 
 /**
- * docx/pdf are in the contract but belong to Aşama 2 (M103). They fail LOUDLY:
- * a target silently dropped from `req.targets` would leave a run believing the
- * board got its file.
+ * Masks the document before any target sees it (M20/M82). Required rather than
+ * optional: an artefact port whose PII gate can be left unwired has no gate.
  */
-export class UnsupportedTargetPublisher implements TargetPublisher {
-  constructor(readonly target: PublishTarget) {}
-
-  publish(): Promise<PublishReceipt> {
-    return Promise.reject(new CapabilityNotSupportedError(PUBLISH_PORT, this.target));
-  }
-}
+export type PublishRedactor = (req: PublishRequest, markdownSource: string) => Promise<string>;
 
 /**
  * `PublishPort` implementation that fans a request out over its targets
  * (M47: "hepsi olsun, esnek ve modüler"). Targets run in request order and one
  * failing target fails the publish — partial success would hand a run a
  * receipt list that silently misses a target.
+ *
+ * docx/pdf (M103, Aşama 2) never reach this class: they are refused at
+ * COMPOSITION time, so a `jira+pdf` project cannot post its Jira comment and
+ * only then discover the second target does not exist.
  */
 export class MaestroPublishPort implements PublishPort {
-  constructor(private readonly publishers: Map<PublishTarget, TargetPublisher>) {}
+  constructor(
+    private readonly publishers: Map<PublishTarget, TargetPublisher>,
+    private readonly redact: PublishRedactor,
+  ) {}
 
-  /** Targets this instance can actually serve (docx/pdf included, and refusing). */
+  /** Targets this instance can actually serve. */
   targets(): PublishTarget[] {
     return [...this.publishers.keys()];
   }
@@ -38,12 +38,14 @@ export class MaestroPublishPort implements PublishPort {
     if (typeof markdownSource !== "string" || markdownSource.trim().length === 0) {
       throw new PublishRenderError("refusing to publish an empty document");
     }
+    // Masked once, here: every driver below writes to an artefact store.
+    const source = await this.redact(request, markdownSource);
 
     const receipts: PublishReceipt[] = [];
     for (const target of new Set(request.targets)) {
       const publisher = this.publishers.get(target);
       if (!publisher) throw new CapabilityNotSupportedError(PUBLISH_PORT, target);
-      receipts.push(PublishReceipt.parse(await publisher.publish(request, markdownSource)));
+      receipts.push(PublishReceipt.parse(await publisher.publish(request, source)));
     }
     return receipts;
   }

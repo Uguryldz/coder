@@ -13,7 +13,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "gate": "pnpm lint && turbo run typecheck test --force"
+    "gate": "pnpm lint && turbo run typecheck test --force --concurrency=4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

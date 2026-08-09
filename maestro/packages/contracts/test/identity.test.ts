@@ -34,14 +34,37 @@ describe("the role set is closed (M8)", () => {
     for (const role of ROLES) expect(Role.safeParse(role).success).toBe(true);
   });
 
-  it("rejects a session carrying an undefined role, rather than dropping it", () => {
+  it("carries a directory role it has never heard of, verbatim", () => {
     const parsed = SessionRecord.safeParse({
       ...session(),
       token: "t".repeat(43),
-      roles: ["tech-lead", "wizard"],
+      roles: ["tech-lead", "release-manager"],
     });
-    // Dropping the unknown entry would silently downgrade the person; the
-    // caller has to be told the directory mapping is wrong.
+    // The bank's directory owns these names and may grant one this platform
+    // does not model. Dropping it would make the person appear to hold fewer
+    // roles than they were granted, with nothing recording the discard —
+    // exactly the kind of silent difference an audit cannot reconstruct.
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.roles).toEqual(["tech-lead", "release-manager"]);
+  });
+
+  it("grants nothing for a role outside the union", () => {
+    const outsider = session({ roles: ["release-manager", "wizard"] });
+    // Carried, yes. Authoritative, no: every gate still refuses.
+    for (const step of Object.keys(GATE_OWNER_ROLE)) {
+      expect(canDecideGate(outsider, step)).toBe(false);
+    }
+    for (const role of ROLES) expect(hasRole(outsider, role)).toBe(false);
+  });
+
+  it("still rejects a role that is not a string at all", () => {
+    const parsed = SessionRecord.safeParse({
+      ...session(),
+      token: "t".repeat(43),
+      roles: ["tech-lead", 42],
+    });
+    // Open to unknown NAMES is not open to unknown SHAPES: a number here is a
+    // mapping bug in the identity driver, not a role the directory granted.
     expect(parsed.success).toBe(false);
   });
 });

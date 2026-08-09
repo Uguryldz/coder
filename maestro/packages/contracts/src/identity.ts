@@ -55,14 +55,34 @@ export const GATE_OWNER_ROLE: Readonly<Record<"4" | "5" | "9" | "11" | "12", Rol
   "12": "tech-lead",
 };
 
-/** An authenticated person, before a session is minted for them. */
+/**
+ * An authenticated person, before a session is minted for them.
+ *
+ * `roles` is `string[]` and NOT `Role[]`, deliberately (orchestrator decision,
+ * 2026-08-09). The bank's directory is the source of these names and it is free
+ * to carry one this platform has never heard of — `release-manager`,
+ * `internal-audit`, a team-specific label. Two ways to handle that, and the
+ * difference matters at an audit:
+ *
+ *   - Parse them into the closed `Role` union: an unknown name is DROPPED. The
+ *     person then appears to hold fewer roles than the directory granted, and
+ *     nothing anywhere records that a name was discarded. Silent.
+ *   - Carry them verbatim, and let `Role` govern only the AUTHORITY decisions
+ *     (`hasRole`, `canDecideGate`). An unknown name grants nothing — it simply
+ *     never matches — but it is still visible, still logged, still auditable.
+ *
+ * The second is what this contract does. `Role` remains closed for deciding;
+ * this field remains open for describing. A UI rendering a role name it has no
+ * label for must show the raw value rather than blank it (or worse, throw).
+ */
 export const AuthenticatedUser = z.object({
   /** Audit actor in `user@corp` form (M33) — the same string the trail records. */
   userId: NonEmpty,
   username: NonEmpty,
   /** Directory groups, verbatim from the identity driver. Free text by nature. */
   groups: z.array(NonEmpty).readonly(),
-  roles: z.array(Role).readonly(),
+  /** Verbatim from the directory; see the note above on why this is not `Role[]`. */
+  roles: z.array(NonEmpty).readonly(),
 });
 export type AuthenticatedUser = z.infer<typeof AuthenticatedUser>;
 
@@ -92,7 +112,13 @@ export type SessionRecord = z.infer<typeof SessionRecord>;
 export const SessionView = SessionRecord.omit({ token: true });
 export type SessionView = z.infer<typeof SessionView>;
 
-/** Does this session carry the role? Written once so no caller re-spells it. */
+/**
+ * Does this session carry the role? Written once so no caller re-spells it.
+ *
+ * `role` is a `Role`, so the QUESTION is always one of the six; `session.roles`
+ * is free text, so the ANSWER tolerates whatever the directory sent. A name
+ * outside the union simply never matches — it cannot grant, and it cannot throw.
+ */
 export function hasRole(session: Pick<SessionView, "roles">, role: Role): boolean {
   return session.roles.includes(role);
 }

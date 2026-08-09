@@ -71,6 +71,30 @@ export class InMemoryRunGateway implements RunGateway {
   }
 
   /**
+   * Resolve a run id to its run — an exact lookup, not a search.
+   *
+   * Temporal answers this with a visibility query on `RunId=`; here the map is
+   * small enough to walk. What matters is that it walks ALL of it: the real
+   * gateway's first implementation scanned one page of recent runs, so a run
+   * that had not been touched lately answered "no such run" and could not be
+   * paused. A demo that reproduced that horizon would hide the same bug.
+   */
+  findByRunId(runId: string): Promise<RunSummary | null> {
+    for (const [workflowId, state] of this.states) {
+      if (state.runId !== runId) continue;
+      return Promise.resolve({
+        workflowId,
+        ticketKey: state.ticketKey,
+        runId: state.runId,
+        status: executionStatusOf(state),
+        startedAt: state.startedAt,
+        closedAt: isOpen(state.status) ? null : state.updatedAt,
+      });
+    }
+    return Promise.resolve(null);
+  }
+
+  /**
    * Deliver a signal to an EXISTING run, and apply the state change the workflow
    * would have applied. Never creates a run: a decision for a ticket nobody is
    * running is a mistake to report, not a reason to invent a workflow.

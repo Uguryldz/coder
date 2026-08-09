@@ -1,10 +1,11 @@
 import type { ScanTarget } from "@maestro/ports";
+import { reportPath, wrapCommand } from "./command.js";
 import type { ContainerScanConfig, CoreScanTool } from "./config.js";
 import { ScanConfigError } from "./errors.js";
 import { parseGitleaks } from "./parse/gitleaks.js";
 import { parseSemgrep } from "./parse/semgrep.js";
 import { parseTrivy } from "./parse/trivy.js";
-import type { ParsedScan } from "./parse/common.js";
+import type { ParseContext, ParsedScan } from "./parse/common.js";
 
 export interface ToolSpec {
   tool: CoreScanTool;
@@ -15,7 +16,7 @@ export interface ToolSpec {
   okExitCodes: readonly number[];
   /** Throws `ScanConfigError` for a target the tool cannot be pointed at. */
   argv(config: ContainerScanConfig, target: ScanTarget): string[];
-  parse(stdout: string, config: ContainerScanConfig): ParsedScan;
+  parse(stdout: string, context: ParseContext): ParsedScan;
   /** Factory-time check; runs before any container is started. */
   validate(config: ContainerScanConfig): void;
 }
@@ -32,28 +33,43 @@ function gitRef(target: ScanTarget): string | undefined {
 
 const gitleaks: ToolSpec = {
   tool: "gitleaks",
-  // 0 = clean, 1 = leaks found (gitleaks' default --exit-code), 2 = tool error.
+  // Verified against v8.30.1: 0 = clean, 1 = leaks found, 2 = tool error.
   okExitCodes: [0, 1],
   argv(config, target) {
     const ref = gitRef(target);
-    const scope = ref ? ["--log-opts", `${ref}..HEAD`] : ["--no-git"];
-    return ["gitleaks", "detect", "--source", config.workspaceMountPath, ...scope,
-      "--report-format", "json", "--report-path", "/dev/stdout", ...config.extraArgs];
+    // `dir` / `git` replaced the (now undocumented) `detect` in v8.19+.
+    const scope = ref
+      ? ["git", config.workspaceMountPath, "--log-opts", `${ref}..HEAD`]
+      : ["dir", config.workspaceMountPath];
+    const report = reportPath("gitleaks");
+    return wrapCommand(
+      config.workspaceMountPath,
+      ["gitleaks", ...scope, "--report-format", "json", "--report-path", report, ...config.extraArgs],
+      { readReport: report },
+    );
   },
-  parse: (stdout, config) => parseGitleaks(stdout, { secretSeverity: config.secretSeverity }),
+  parse: (stdout, context) => parseGitleaks(stdout, context),
   validate: () => undefined,
 };
 
 const semgrep: ToolSpec = {
   tool: "semgrep",
-  // 0 = no findings, 1 = findings, 2 = fatal error.
+  // Verified against 1.171.0: findings alone do NOT change the exit code (3
+  // findings still exited 0); 1 only appears with `--error`, 7 is a config
+  // failure. The verdict comes from the report, never from the code.
   okExitCodes: [0, 1],
   argv(config, target) {
     const ref = gitRef(target);
-    return ["semgrep", "scan", "--json", "--quiet", "--metrics=off", "--config", config.rulesRef ?? "",
-      ...(ref ? ["--baseline-commit", ref] : []), ...config.extraArgs, config.workspaceMountPath];
+    return wrapCommand(config.workspaceMountPath, [
+      // `--disable-version-check` is not cosmetic: measured against 1.171.0 on
+      // an offline runner, semgrep spends 120 SECONDS on its version ping
+      // before printing a report that took 0.8s to produce (4s with the flag).
+      "semgrep", "scan", "--json", "--quiet", "--metrics=off", "--disable-version-check",
+      "--config", config.rulesRef ?? "",
+      ...(ref ? ["--baseline-commit", ref] : []), ...config.extraArgs, config.workspaceMountPath,
+    ]);
   },
-  parse: (stdout) => parseSemgrep(stdout),
+  parse: (stdout, context) => parseSemgrep(stdout, context),
   validate(config) {
     if (!config.rulesRef) {
       throw new ScanConfigError("semgrep: rulesRef is required — rules are pinned locally, never fetched at scan time");
@@ -63,14 +79,16 @@ const semgrep: ToolSpec = {
 
 const trivy: ToolSpec = {
   tool: "trivy",
-  // trivy exits 0 whatever it finds unless --exit-code is passed; anything else
-  // is a failed run.
+  // Verified against 0.73.0: exits 0 whatever it finds unless `--exit-code` is
+  // passed (which `extraArgs` refuses); a DB failure exits 1 with empty stdout.
   okExitCodes: [0],
   argv(config) {
-    return ["trivy", "fs", "--format", "json", "--quiet", "--scanners", "vuln",
-      ...config.extraArgs, config.workspaceMountPath];
+    return wrapCommand(config.workspaceMountPath, [
+      "trivy", "fs", "--format", "json", "--quiet", "--scanners", "vuln",
+      ...config.extraArgs, config.workspaceMountPath,
+    ]);
   },
-  parse: (stdout) => parseTrivy(stdout),
+  parse: (stdout, context) => parseTrivy(stdout, context),
   validate: () => undefined,
 };
 

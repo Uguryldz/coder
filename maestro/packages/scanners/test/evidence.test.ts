@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { EvidenceFile, ScanResult, type ScanOutcome, type ScanTool } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import {
   SCAN_ERROR_RULE_ID,
+  dedupeResults,
   scanEvidenceArtifacts,
   scanGateDecision,
   scanResultArtifact,
@@ -107,8 +107,52 @@ describe("evidence package output (M34)", () => {
     const file = toEvidenceFile(artifact);
 
     expect(EvidenceFile.safeParse(file).success).toBe(true);
-    expect(file.sha256).toBe(createHash("sha256").update(artifact.body, "utf8").digest("hex"));
     expect(file.bytes).toBe(Buffer.byteLength(artifact.body, "utf8"));
     expect(file.name).toBe("scan/summary.md");
+  });
+
+  it("hashes the exact bytes — against digests computed outside this package (B15)", () => {
+    // Recomputing the implementation's own expression proves nothing; these two
+    // come from `printf '…' | sha256sum`.
+    const file = toEvidenceFile({ name: "scan/x.txt", contentType: "text/plain", body: "maestro" });
+
+    expect(file.sha256).toBe("233e1cded61ace811d7a930947b06acb18cda1dc7b67e215941e1830fdec3b7c");
+    expect(file.bytes).toBe(7);
+    expect(toEvidenceFile({ name: "scan/y.txt", contentType: "text/plain", body: "" }).sha256).toBe(
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
+  });
+});
+
+describe("two results for one tool cannot become two evidence files (B7)", () => {
+  const retried = [
+    result("gitleaks", "pass"),
+    result("gitleaks", "error", [
+      { tool: "gitleaks", severity: "critical", ruleId: SCAN_ERROR_RULE_ID, message: "produced no output" },
+    ]),
+    CLEAN[1]!,
+    CLEAN[2]!,
+  ];
+
+  it("keeps the most blocking result per tool", () => {
+    expect(dedupeResults(retried).map((r) => [r.tool, r.outcome])).toEqual([
+      ["gitleaks", "error"], ["semgrep", "pass"], ["trivy", "pass"],
+    ]);
+  });
+
+  it("never emits the same evidence file name twice", () => {
+    const names = scanEvidenceArtifacts(retried).map((artifact) => artifact.name);
+
+    expect(names).toEqual(["scan/gitleaks.json", "scan/semgrep.json", "scan/trivy.json", "scan/summary.md"]);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("summarises the result the gate decided on, not whichever came first", () => {
+    const body = scanSummaryArtifact(retried).body;
+
+    expect(body).toContain("blocking: yes");
+    expect(body).toContain("| gitleaks | error |");
+    expect(body).not.toContain("| gitleaks | pass |");
+    expect(scanGateDecision(retried).blockingTools).toEqual(["gitleaks"]);
   });
 });

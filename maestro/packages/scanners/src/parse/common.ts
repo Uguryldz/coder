@@ -6,11 +6,34 @@ export interface ParsedScan {
   findings: ScanFinding[];
   /** The tool reported it could not complete — the driver makes it `error` (M27). */
   fatal?: string;
+  /**
+   * Paged HTTP reports only (M77): how many items the server says exist in
+   * total, and how many this page carried. Without them a driver that reads
+   * page 1 of 25 reports a clean project because the Criticals were on page 2.
+   */
+  total?: number;
+  pageItems?: number;
 }
 
 /** Everything a parser needs from configuration. */
 export interface ParseContext {
   secretSeverity: ScanSeverity;
+  /**
+   * Where the workspace is mounted inside the container. Real tools report
+   * container-absolute paths (`/workspace/src/settings.js`, verified live), and
+   * an evidence package that mixes those with repo-relative paths is unreadable
+   * to a reviewer — so the prefix is stripped here, in one place.
+   */
+  mountPath: string;
+}
+
+/** `/workspace/src/a.js` → `src/a.js`; anything outside the mount is left alone. */
+export function repoPath(value: string | undefined, mountPath: string): string | undefined {
+  const text = optionalText(value);
+  if (text === undefined) return undefined;
+  const prefix = mountPath.replace(/\/+$/, "");
+  if (prefix === "" || !text.startsWith(`${prefix}/`)) return text === prefix ? undefined : text;
+  return optionalText(text.slice(prefix.length + 1));
 }
 
 /**

@@ -25,6 +25,35 @@ describe("digest pinning (M27)", () => {
     expect(() => parsePinnedImage(`aquasec/trivy:main@${DIGEST}`)).toThrow(/mutable tag/);
   });
 
+  it("refuses a moving tag whatever its case, and the release-channel names (B10)", () => {
+    for (const tag of ["LATEST", "Latest", "MAIN", "prod", "PROD", "release", "Production", "HEAD"]) {
+      expect(() => parsePinnedImage(`aquasec/trivy:${tag}@${DIGEST}`)).toThrow(/mutable tag/);
+    }
+  });
+
+  it("refuses an image NAME that a container runtime would read as an option (B9)", () => {
+    // These were accepted before: the digest is valid, so nothing looked at the
+    // name — and a DB-held config could inject runtime flags (M71).
+    const hostile = [
+      "--privileged", "--entrypoint=sh", "-v/etc:/etc", "--network=host",
+      "--user=0", "-", "tool;rm -rf /", "tool|cat", "tool$(id)", "TOOL", "tool/", "/tool",
+    ];
+
+    for (const name of hostile) {
+      expect(() => parsePinnedImage(`${name}@${DIGEST}`)).toThrow(ScanConfigError);
+    }
+  });
+
+  it("still accepts the reference shapes a bank registry actually produces", () => {
+    const valid = [
+      "trivy", "aquasec/trivy", "registry.bank.example:5000/security/trivy",
+      "registry.bank.example/team_sec/sub.path/trivy", "ghcr.io/gitleaks/gitleaks:v8.30.1",
+      "registry.bank.example:5000/security/semgrep:1.171.0",
+    ];
+
+    for (const name of valid) expect(parsePinnedImage(`${name}@${DIGEST}`).name).toBe(name);
+  });
+
   it("keeps an immutable tag next to the digest", () => {
     expect(parsePinnedImage(`aquasec/trivy:0.53.0@${DIGEST}`).digest).toBe(DIGEST);
   });
@@ -68,5 +97,23 @@ describe("container configuration defaults", () => {
   it("refuses a relative mount path and a hostile env key", () => {
     expect(ContainerScanConfig.safeParse({ image: IMAGES.trivy, workspaceMountPath: "ws" }).success).toBe(false);
     expect(ContainerScanConfig.safeParse({ image: IMAGES.trivy, env: { "bad-key": "x" } }).success).toBe(false);
+  });
+
+  it("refuses env vars that are the forbidden flags by another name (B8)", () => {
+    const forbidden = [
+      { TRIVY_SEVERITY: "NONE" }, { TRIVY_IGNORE_UNFIXED: "true" }, { TRIVY_EXIT_CODE: "0" },
+      { TRIVY_SKIP_DIRS: "/workspace" }, { GITLEAKS_CONFIG: "/tmp/empty.toml" },
+      { GITLEAKS_CONFIG_TOML: "[rules]" }, { SEMGREP_RULES: "p/none" }, { SEMGREP_BASELINE_COMMIT: "HEAD" },
+    ];
+
+    for (const env of forbidden) {
+      expect(ContainerScanConfig.safeParse({ image: IMAGES.trivy, env }).success).toBe(false);
+    }
+  });
+
+  it("still allows env vars that only say where to fetch from", () => {
+    const allowed = { TRIVY_DB_REPOSITORY: "registry.bank.example:5000/trivy-db:2", HTTPS_PROXY: "http://proxy:3128" };
+
+    expect(ContainerScanConfig.safeParse({ image: IMAGES.trivy, env: allowed }).success).toBe(true);
   });
 });

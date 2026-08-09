@@ -81,4 +81,9 @@ export class InMemoryUserDirectory implements UserDirectory {
     this.users.set(normalize(record.username), { ...record });
     return Promise.resolve();
   }
+
+  remove(username: string): Promise<void> {
+    this.users.delete(normalize(username));
+    return Promise.resolve();
+  }
 }

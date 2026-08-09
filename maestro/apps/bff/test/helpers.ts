@@ -18,13 +18,14 @@ import { FakeCiPort, FakeRunGateway, FakeWorkEventReader, FakeWorkPort, WEBHOOK_
  * Catalog keys `packages/config` does not carry yet; the tr+en wording is in
  * RAPOR.md for the orchestrator to add. Once they land, this table empties and
  * `messages.test.ts` says so.
+ *
+ * The original five have since shipped. `command.unknown_actor` is the one this
+ * hardening packet added: it is written to a ticket whose comment author cannot
+ * be attributed to a corporate account (M33).
  */
 export const PENDING_CATALOG_TEXT: Record<string, string> = {
-  "command.accepted": "{command} komutu alındı.",
-  "command.no_run": "{ticket} için çalışan bir Maestro akışı yok.",
-  "command.no_open_gate": "{ticket} şu anda açık bir onay kapısında değil.",
-  "command.run_status": "{ticket} · adım: {step} · durum: {status}",
-  "command.unsupported": "{command} komutu bu sürümde desteklenmiyor.",
+  "command.unknown_actor":
+    "{command} komutu işlenemedi: yorumu yazan hesap kurumsal bir kullanıcıya eşlenemedi.",
 };
 
 /** The shipped catalog, plus the keys still awaiting an orchestrator edit. */

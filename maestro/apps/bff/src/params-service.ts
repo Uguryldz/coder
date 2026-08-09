@@ -1,13 +1,19 @@
-import { canonicalize } from "@maestro/audit";
+import { canonicalize, humanBehind, isHumanActor } from "@maestro/audit";
 import { ParamChange, type ParamDefinition } from "@maestro/contracts";
 import type { PendingParamChange, ResolvedDeps } from "./deps.js";
-import { badRequest, conflict, notFound } from "./errors.js";
+import { badRequest, conflict, forbidden, notFound } from "./errors.js";
 
 /**
  * Operational parameters live in the database and are edited from Studio,
  * versioned and audited (M71). Some of them decide who may approve what and
  * when the flow stops; those are `guarded` and take four eyes (M32/M78) — one
  * person proposes, a DIFFERENT person confirms the exact same value.
+ *
+ * "Different person" counts PEOPLE, not tokens. `ugur@corp` and
+ * `ai-via:ugur@corp` are one pair of eyes holding two credentials, so every
+ * comparison below runs through `humanBehind` (M32/M101). An AI delegate may
+ * leave the first signature — M101 grants the MCP surface "admin-öneri" — but
+ * approving is a human channel, the same rule that governs gates.
  */
 
 export interface ParamPutRequest {
@@ -70,12 +76,20 @@ export async function putParam(
   }
 
   // The proposer confirming their own proposal is one pair of eyes, however
-  // many times they press the button. Re-proposing a different value simply
-  // replaces the pending entry — it still waits for somebody else.
-  if (open.proposedBy === request.actor) {
+  // many times they press the button and whichever token they hold. Re-proposing
+  // a different value simply replaces the pending entry — it still waits for
+  // somebody else.
+  if (samePerson(open.proposedBy, request.actor)) {
     const proposal: PendingParamChange = { ...open, value: request.value, at: deps.clock.now().toISOString() };
     await deps.params.putPending(proposal);
     return { status: "pending", pending: proposal };
+  }
+
+  // A different person, but not a person: an AI delegate proposes, never
+  // approves (M101). Refused here rather than at the audit chain so the caller
+  // gets a 403 with a reason instead of a 500.
+  if (!isHumanActor(request.actor)) {
+    throw forbidden("human_channel_only", { key: request.key });
   }
 
   // The second approver confirms a value, not a key: if the two do not agree
@@ -124,6 +138,17 @@ async function apply(
     },
   });
   return change;
+}
+
+/**
+ * Same human behind two actor strings, seeing through `ai-via:` delegation
+ * (M32/M101). System actors have no human behind them and never match, so a
+ * `maestro-worker` proposal cannot be confirmed by another `maestro-worker`.
+ */
+function samePerson(left: string, right: string): boolean {
+  const leftHuman = humanBehind(left);
+  const rightHuman = humanBehind(right);
+  return leftHuman !== null && leftHuman === rightHuman;
 }
 
 /** `null` when the value fits the definition, otherwise the reason it does not. */

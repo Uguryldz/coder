@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { projectGroupFor } from "../src/routes/runs.js";
 import { auth, harness } from "./helpers.js";
 
 const TICKET = "UGURPAY-123";
+/** The group that membership of the UGURPAY project is read from (M86). */
+const PROJECT_GROUP = projectGroupFor("UGURPAY");
 
 describe("REST /runs", () => {
   it("lists runs for an authenticated caller", async () => {
     const h = await harness();
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "5");
     const token = await h.login("ayse.kaya");
 
@@ -18,7 +21,7 @@ describe("REST /runs", () => {
 
   it("reads the run state through the workflow query", async () => {
     const h = await harness();
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "5");
     const token = await h.login("ayse.kaya");
 
@@ -33,7 +36,7 @@ describe("REST /runs", () => {
 
   it("404s for a ticket Maestro is not running", async () => {
     const h = await harness();
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     const token = await h.login("ayse.kaya");
 
     const response = await h.app.inject({
@@ -49,7 +52,7 @@ describe("REST /runs", () => {
 describe("POST /runs/:ticket/signals/:name", () => {
   it("closes a gate from Studio for a member of the owning group", async () => {
     const h = await harness({ groups: { "tech-leads": ["ayse.kaya"] } });
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "5");
     const token = await h.login("ayse.kaya");
 
@@ -71,7 +74,7 @@ describe("POST /runs/:ticket/signals/:name", () => {
 
   it("refuses a gate decision from outside the owning group", async () => {
     const h = await harness({ groups: { "tech-leads": ["baskasi"] } });
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "5");
     const token = await h.login("ayse.kaya");
 
@@ -88,7 +91,7 @@ describe("POST /runs/:ticket/signals/:name", () => {
 
   it("refuses a gate decision from a delegated AI token (M32/M101)", async () => {
     const h = await harness({ groups: { "tech-leads": ["ayse.kaya"] } });
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "5");
     const token = await h.delegatedToken("ayse.kaya");
 
@@ -106,7 +109,7 @@ describe("POST /runs/:ticket/signals/:name", () => {
 
   it("takes the approver from the session, never from the body", async () => {
     const h = await harness({ groups: { "tech-leads": ["ayse.kaya"] } });
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "5");
     const token = await h.login("ayse.kaya");
 
@@ -125,7 +128,7 @@ describe("POST /runs/:ticket/signals/:name", () => {
 
   it("demands a reason for a rejection", async () => {
     const h = await harness({ groups: { "tech-leads": ["ayse.kaya"] } });
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "5");
     const token = await h.login("ayse.kaya");
 
@@ -175,7 +178,7 @@ describe("POST /runs/:ticket/signals/:name", () => {
 
   it("delivers a clarification answer and records it", async () => {
     const h = await harness();
-    await h.addUser({ username: "reporter.kisi" });
+    await h.addUser({ username: "reporter.kisi", groups: [PROJECT_GROUP] });
     h.runs.openGate(TICKET, "2b");
     const token = await h.login("reporter.kisi");
 
@@ -194,7 +197,7 @@ describe("POST /runs/:ticket/signals/:name", () => {
 
   it("404s when the signal has no run to reach", async () => {
     const h = await harness();
-    await h.addUser({ username: "ayse.kaya" });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
     const token = await h.login("ayse.kaya");
 
     const response = await h.app.inject({

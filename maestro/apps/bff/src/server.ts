@@ -22,6 +22,16 @@ export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
   optInLabel: "maestro",
 };
 
+/**
+ * Maximum request body, chosen rather than inherited (M15). Fastify defaults to
+ * 1 MB, which a real Jira delivery can exceed: a ticket with a long Turkish
+ * description, a pasted stack trace and a dozen comments is not unusual, and
+ * losing those deliveries would look like an outage nobody configured. 8 MB is
+ * comfortably above a plausible ticket and far below anything that threatens
+ * the process — the raw body is held in memory to verify its signature.
+ */
+export const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
+
 export function resolveDeps(deps: BffDeps): ResolvedDeps {
   const { messages, clock, config, ...rest } = deps;
   return {
@@ -57,7 +67,9 @@ export async function buildServer(
   const resolved = resolveDeps(deps);
   assertCatalog(resolved.messages, resolved.config.locale);
 
-  const app = Fastify({ logger: false, ...options.fastify });
+  // `options.fastify` may override the limit deliberately, but it is never
+  // absent: an unset bodyLimit silently becomes Fastify's 1 MB.
+  const app = Fastify({ logger: false, bodyLimit: BODY_LIMIT_BYTES, ...options.fastify });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof HttpError) {

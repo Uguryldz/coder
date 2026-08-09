@@ -7,13 +7,37 @@ import type { ResolvedDeps, SessionRecord } from "../deps.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { decideGate } from "../gate-decision.js";
 import { workflowIdFor } from "../gateway.js";
+import { projectKeyOf } from "../jira-intake.js";
 import { isStudioSignal, SIGNALS, STUDIO_SIGNALS } from "../signal-names.js";
+
+/**
+ * Roles that see every project. An admin operates the platform and a tech lead
+ * carries the gates across teams (M86); everyone else sees the projects they
+ * belong to.
+ */
+export const CROSS_PROJECT_ROLES = ["admin", "tech-lead"] as const;
+
+/**
+ * The directory group that grants access to a project's runs. Membership lives
+ * in AD (M8) and the naming convention is the seam: `UGURPAY` → `maestro-ugurpay`.
+ * A per-project mapping belongs in the bindings once M102's onboarding wizard
+ * owns it; until then the convention is explicit and testable rather than
+ * implied.
+ */
+export function projectGroupFor(projectKey: string): string {
+  return `maestro-${projectKey.toLowerCase()}`;
+}
 
 /**
  * Run visibility and Studio's secondary decision path (M51: Jira is the main
  * one). Everything here is authenticated, and the signal endpoint is an
  * allow-list rather than a passthrough — a generic "send any signal" route
  * would let a logged-in user forge a build result or a kill switch.
+ *
+ * Authentication is not authorisation (M86). A session says who you are; it
+ * does not say that this ticket is any of your business. Without the project
+ * check below, any account with a login could drive a stranger's run to
+ * full_auto or answer a requirement in their name.
  */
 export async function runRoutes(app: FastifyInstance, deps: ResolvedDeps): Promise<void> {
   const preHandler = authGuard(deps);
@@ -23,14 +47,20 @@ export async function runRoutes(app: FastifyInstance, deps: ResolvedDeps): Promi
       .object({ limit: z.coerce.number().int().positive().max(500).optional() })
       .safeParse(request.query);
     if (!query.success) throw badRequest("invalid_query");
+    const session = sessionOf(request);
     const runs = await deps.runs.list(
       query.data.limit === undefined ? {} : { limit: query.data.limit },
     );
-    return reply.code(200).send({ runs });
+    // Filtered rather than refused: a list is "your work", not an error.
+    const visible = runs.filter((run) => canSeeProject(session, projectKeyOf(run.ticketKey)));
+    return reply.code(200).send({ runs: visible });
   });
 
   app.get("/runs/:ticket", { preHandler }, async (request, reply) => {
     const ticket = ticketParam(request.params);
+    // Checked BEFORE the run is looked up: answering 404 for a project the
+    // caller cannot see would turn this route into a ticket oracle.
+    assertProjectAccess(sessionOf(request), ticket);
     const state = await deps.runs.queryRunState(workflowIdFor(ticket));
     if (state === null) throw notFound("no_run", { ticket });
     return reply.code(200).send(state);
@@ -40,6 +70,7 @@ export async function runRoutes(app: FastifyInstance, deps: ResolvedDeps): Promi
     const ticket = ticketParam(request.params);
     const name = signalParam(request.params);
     const session = sessionOf(request);
+    assertProjectAccess(session, ticket);
 
     if (name === SIGNALS.gateDecision) {
       return reply.code(200).send(await studioGateDecision(deps, ticket, session, request.body));
@@ -49,6 +80,23 @@ export async function runRoutes(app: FastifyInstance, deps: ResolvedDeps): Promi
     }
     return reply.code(202).send(await studioModeChange(deps, ticket, session, request.body));
   });
+}
+
+/** True when the session may see this project at all (M86). */
+function canSeeProject(session: SessionRecord, projectKey: string): boolean {
+  if (CROSS_PROJECT_ROLES.some((role) => session.roles.includes(role))) return true;
+  return session.groups.includes(projectGroupFor(projectKey));
+}
+
+/**
+ * Fail-closed project membership. The gate decision keeps its own, stricter
+ * check (`verifyMembership` against the gate's owning group) — this one only
+ * establishes that the caller has any business with the ticket at all.
+ */
+function assertProjectAccess(session: SessionRecord, ticket: TicketKey): void {
+  if (!canSeeProject(session, projectKeyOf(ticket))) {
+    throw forbidden("project_access", { ticket });
+  }
 }
 
 const GateBody = z.object({

@@ -242,3 +242,31 @@ export function unbridgedScanRunner(): ContainerRunner {
  * a run that loses its context on the first restart.
  */
 export const MISSING_CORE_DEPS: readonly string[] = [];
+
+/**
+ * Capabilities this image does NOT have, though it starts cleanly.
+ *
+ * `MISSING_CORE_DEPS` is a start-up precondition: anything in it stops the
+ * worker from polling at all. This list is the other half of the same honesty
+ * and needs to exist separately, because an entry here must NOT stop the
+ * worker — twelve of the nineteen steps need nothing from it, and refusing to
+ * boot would take those down to protect a step they never reach.
+ *
+ * What it prevents is a quieter failure than a crash: an image tagged "wave 5
+ * done, worker running" that accepts a ticket, works through intake and
+ * analysis, opens the approval gate, and only then stops at the turn that
+ * would write the code. The worker IS running. The run still cannot finish.
+ * An operator reading a green start-up log has no way to tell, so the log says
+ * it at boot instead, and `bootWorker`'s caller prints it.
+ *
+ * An entry leaves this list when its capability is implemented, not when
+ * somebody decides the message is noisy.
+ */
+export const DEGRADED_CAPABILITIES: readonly string[] = [
+  "AgentTurnRunner (M30/M52/M54): the engineering turn — the code-writing and " +
+    "verification loop at packages/workflows/src/impl/engineering.ts:107 and :220 — " +
+    "REFUSES with a named error. `AgentExecution` needs a WorkspaceProbe, a " +
+    "VerificationRunner and a StrikeLedger over the runner fleet; none of the three is " +
+    "implemented. Intake, analysis, gates, the escalation ladder, notification and " +
+    "publication all work; a run that reaches the engineering turn stops there.",
+];

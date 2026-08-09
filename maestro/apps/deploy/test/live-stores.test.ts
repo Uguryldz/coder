@@ -2,7 +2,7 @@ import { AuditChain } from "@maestro/audit";
 import { createDb, type Db } from "@maestro/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { postgresChainLock, PrismaAuditStore } from "../src/stores/audit.js";
-import { PrismaGateStore } from "../src/stores/gates.js";
+import { PrismaGateStore, sqlGateClaim } from "../src/stores/gates.js";
 import { PrismaIdempotencyGuard, sqlClaimExecutor } from "../src/stores/idempotency.js";
 import { PrismaRunContextStore } from "../src/stores/run-context.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../src/stores/sql.js";
@@ -81,33 +81,88 @@ live("stores against a live database", () => {
 
   describe("GateStore", () => {
     /**
-     * The primary key, doing the work. Two clients on two pools open the same
-     * gate at the same moment; one row must exist and `openedAt` — the
-     * escalation ladder's anchor — must not have moved.
+     * THE gate test, and it is written the hard way on purpose.
+     *
+     * The version this replaces made three mistakes that together hid a real
+     * production defect (a Prisma `upsert` that compiles to `SELECT`-then-
+     * `INSERT` on a composite key, not to `ON CONFLICT`):
+     *
+     *  1. It called `Promise.all` and asserted only on the ROWS. A racer that
+     *     threw `P2002` failed the whole `Promise.all`, but the surviving
+     *     assertions — one row, equal anchors — were still true of the row that
+     *     did get written, so the failure had to be read out of a stack trace
+     *     rather than out of a count. `allSettled` plus an explicit `rejected`
+     *     count is what turns "a worker could not open the gate" into an
+     *     assertion.
+     *  2. It ran ONCE. A lost race is probabilistic; a single attempt that
+     *     happens to serialise proves nothing.
+     *  3. It reused one run id, so by the time it ran the row was usually
+     *     already there — and the race exists ONLY on the first open. Against
+     *     the old code a warm row failed 0 times out of 6 and a cold row 94
+     *     times out of 120. Each round now seeds a fresh run.
+     *
+     * Six writers on six pools, twenty rounds, cold every time. Every call must
+     * succeed, one row must exist, and all six must report the SAME `openedAt`
+     * — the M88 escalation ladder's anchor, which the losers must read rather
+     * than set from the instant they happened to carry.
      */
-    it("opens exactly one gate when two workers race the same signal", async () => {
-      await seedRun(db, "PAY-210", "run-210");
-      const a = new PrismaGateStore(db.gate, db.auditLog, () => Promise.resolve("PAY-210"));
-      const b = new PrismaGateStore(other.gate, other.auditLog, () => Promise.resolve("PAY-210"));
+    it("opens one gate with no failed caller when six cold workers race", async () => {
+      const pools = [db, other, ...Array.from({ length: 4 }, () => createDb(url as string))];
+      const extra = pools.slice(2);
+      try {
+        let rejections = 0;
+        let calls = 0;
 
-      const first = "2026-08-01T09:00:00.000Z";
-      const later = "2026-08-04T09:00:00.000Z";
-      const [ra, rb] = await Promise.all([
-        a.open("run-210", "4", "product-owners", first),
-        b.open("run-210", "4", "product-owners", later),
-      ]);
+        for (let round = 0; round < 20; round += 1) {
+          const runId = `run-race-${round}`;
+          await seedRun(db, `PAY-9${round}`, runId);
 
-      const rows = await db.gate.findMany({ where: { runId: "run-210" } });
-      expect(rows).toHaveLength(1);
-      // Both callers saw the same anchor, whichever of them inserted it.
-      expect(ra.openedAt).toBe(rb.openedAt);
-      expect(rows[0]?.openedAt.toISOString()).toBe(ra.openedAt);
+          const stores = pools.map(
+            (pool) =>
+              new PrismaGateStore(pool.gate, pool.auditLog, () => Promise.resolve(`PAY-9${round}`),
+                sqlGateClaim(prismaSqlExecutor(pool))),
+          );
+          // Deliberately DIFFERENT instants: a loser that wrote its own would
+          // move the anchor and silently restart the ladder.
+          const settled = await Promise.allSettled(
+            stores.map((store, index) =>
+              store.open(
+                runId,
+                "4",
+                "product-owners",
+                new Date(Date.UTC(2026, 7, 1 + index, 9)).toISOString(),
+              ),
+            ),
+          );
+
+          calls += settled.length;
+          rejections += settled.filter((result) => result.status === "rejected").length;
+
+          const rows = await db.gate.findMany({ where: { runId } });
+          expect(rows).toHaveLength(1);
+
+          const anchors = new Set(
+            settled.flatMap((r) => (r.status === "fulfilled" ? [r.value.openedAt] : [])),
+          );
+          // One anchor, and it is the one the table holds.
+          expect([...anchors]).toEqual([rows[0]?.openedAt.toISOString()]);
+        }
+
+        expect(calls).toBe(120);
+        // The assertion the old test could not make. Against the shipped
+        // `upsert` this was 94.
+        expect(rejections).toBe(0);
+      } finally {
+        await Promise.all(extra.map((pool) => pool.$disconnect()));
+      }
     });
 
     it("appends fired ladder steps without losing a concurrent one", async () => {
       await seedRun(db, "PAY-211", "run-211");
-      const a = new PrismaGateStore(db.gate, db.auditLog, () => Promise.resolve("PAY-211"));
-      const b = new PrismaGateStore(other.gate, other.auditLog, () => Promise.resolve("PAY-211"));
+      const a = new PrismaGateStore(db.gate, db.auditLog, () => Promise.resolve("PAY-211"),
+        sqlGateClaim(prismaSqlExecutor(db)));
+      const b = new PrismaGateStore(other.gate, other.auditLog, () => Promise.resolve("PAY-211"),
+        sqlGateClaim(prismaSqlExecutor(other)));
       await a.open("run-211", "4", "product-owners", "2026-08-01T09:00:00.000Z");
 
       await Promise.all([
@@ -124,7 +179,8 @@ live("stores against a live database", () => {
     });
 
     it("refuses to close a gate that the database does not have", async () => {
-      const store = new PrismaGateStore(db.gate, db.auditLog, () => Promise.resolve("PAY-212"));
+      const store = new PrismaGateStore(db.gate, db.auditLog, () => Promise.resolve("PAY-212"),
+        sqlGateClaim(prismaSqlExecutor(db)));
       await expect(store.close("run-missing", "4", "2026-08-02T10:00:00.000Z")).rejects.toThrow(
         /no gate/,
       );

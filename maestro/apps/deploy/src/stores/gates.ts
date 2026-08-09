@@ -32,21 +32,51 @@ export interface GateDelegate {
   findUnique(args: {
     where: { runId_step: { runId: string; step: string } };
   }): Promise<GateRow | null>;
-  upsert(args: {
-    where: { runId_step: { runId: string; step: string } };
-    create: {
-      runId: string;
-      step: string;
-      ownerGroup: string;
-      openedAt: Date;
-      firedStepIds: string[];
-    };
-    update: Record<string, never>;
-  }): Promise<GateRow>;
   update(args: {
     where: { runId_step: { runId: string; step: string } };
     data: { firedStepIds?: { push: string[] }; closedAt?: Date };
   }): Promise<unknown>;
+}
+
+/**
+ * The insert half of `open`, kept behind a seam.
+ *
+ * Prisma's query builder cannot express `ON CONFLICT DO NOTHING` on a composite
+ * key (that is the whole of K-1), so this one statement is raw SQL — and raw
+ * SQL is exactly what the offline suite must be able to substitute, which is
+ * why it is an interface rather than a private method.
+ */
+export interface GateClaim {
+  /** Inserts the gate if `(runId, step)` is free. Resolves either way. */
+  insertIfAbsent(runId: string, step: string, ownerGroup: string, openedAt: Date): Promise<void>;
+}
+
+/**
+ * `GateClaim` over raw SQL — the same statement shape as `sqlClaimExecutor`.
+ *
+ * `firedStepIds` is written as an explicit empty `text[]`: the column is NOT
+ * NULL with no default, and a gate is born with no ladder step fired.
+ *
+ * Values go through `$1..$5`, so a step id never reaches the SQL text.
+ */
+export function sqlGateClaim(sql: {
+  query<R>(text: string, params: readonly unknown[]): Promise<R[]>;
+}): GateClaim {
+  return {
+    async insertIfAbsent(
+      runId: string,
+      step: string,
+      ownerGroup: string,
+      openedAt: Date,
+    ): Promise<void> {
+      await sql.query(
+        `INSERT INTO "Gate" ("runId", "step", "ownerGroup", "openedAt", "firedStepIds", "closedAt")
+         VALUES ($1, $2, $3, $4, ARRAY[]::text[], NULL)
+         ON CONFLICT ("runId", "step") DO NOTHING`,
+        [runId, step, ownerGroup, openedAt],
+      );
+    },
+  };
 }
 
 /**
@@ -91,23 +121,43 @@ export class PrismaGateStore implements GateStore {
     private readonly audit: AuditDelegate,
     /** Resolves the run a decision belongs to; the audit row keys by ticket. */
     private readonly ticketOfRun: (runId: string) => Promise<string>,
+    /** The insert, as ONE statement Postgres resolves. See `open`. */
+    private readonly claim: GateClaim,
   ) {}
 
   /**
-   * Idempotent by primary key.
+   * Idempotent at the DATABASE level: one statement, resolved by Postgres.
    *
-   * `upsert` with an EMPTY update is the whole trick: two workers racing the
-   * same signal both issue it, one inserts, the other's update writes nothing
-   * and returns the existing row. A read-then-insert would let both read "no
-   * gate" and both insert, and a `findFirst`-then-`create` would make the
-   * ladder's anchor depend on which one lost.
+   * This used to be a Prisma `upsert` with an empty `update`, on the theory
+   * that the loser's update would write nothing and hand back the existing
+   * row. That theory was wrong, and a live database said so: on a composite
+   * primary key Prisma does NOT compile `upsert` into `ON CONFLICT`. It issues
+   * a `SELECT` and then a bare `INSERT` — the read-then-write race the shape
+   * was chosen to avoid. Measured on a cold row (the gate's FIRST open, which
+   * is the only moment the race exists), six workers over twenty rounds: 94 of
+   * 120 calls failed with `P2002`.
+   *
+   * What that costs in the bank is not a loud crash. `openedAt` is the M88
+   * escalation ladder's anchor, so the call that raises the gate is the call
+   * that starts the ladder. A worker whose `open` throws never notifies the
+   * approver group, the ladder never begins, and the run sits waiting for an
+   * approval nobody was asked for — silence, not a page.
+   *
+   * `INSERT ... ON CONFLICT DO NOTHING` is the same instrument
+   * `sqlClaimExecutor` uses in `idempotency.ts`, and for the same reason: the
+   * conflict is settled inside one statement, so there is no window between
+   * the look and the write. The follow-up read is unconditional rather than
+   * "only if I lost" — the winner's own row is the row every caller must
+   * return, and reading it back keeps all racers on ONE anchor instead of the
+   * instant each of them happened to pass in.
    */
   async open(runId: string, step: StepId, ownerGroup: string, at: string): Promise<GateRecord> {
-    const row = await this.gates.upsert({
-      where: { runId_step: { runId, step } },
-      create: { runId, step, ownerGroup, openedAt: new Date(at), firedStepIds: [] },
-      update: {},
-    });
+    await this.claim.insertIfAbsent(runId, step, ownerGroup, new Date(at));
+    const row = await this.gates.findUnique({ where: { runId_step: { runId, step } } });
+    // The row cannot be absent: the statement above either inserted it or found
+    // it already there. If it IS absent something deleted a gate mid-open, and
+    // a caller that continued would escalate a gate that no longer exists.
+    if (row === null) throw new GateNotFoundError(runId, step);
     return toRecord(row);
   }
 

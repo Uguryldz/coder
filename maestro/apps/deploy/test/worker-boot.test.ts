@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MISSING_CORE_DEPS } from "../src/boot.js";
+import { DEGRADED_CAPABILITIES, MISSING_CORE_DEPS } from "../src/boot.js";
 import { buildCoreStores } from "../src/stores/core.js";
 import { unwiredAgentTurnRunner } from "../src/stores/execution.js";
 
@@ -55,6 +55,39 @@ describe("the worker's core dependencies", () => {
     ).rejects.toThrow(/AgentTurnRunner|WorkspaceProbe/);
     expect(() => runner.endRun("run-1")).not.toThrow();
   });
+
+  /**
+   * The refusal above is correct but INVISIBLE at start-up, and that is its own
+   * problem: the worker logs "polling", an operator reads a healthy image, and
+   * the gap only appears when a real ticket reaches the engineering turn. This
+   * pair keeps the declaration and the refusal tied together.
+   */
+  describe("declared degraded capabilities", () => {
+    it("declares the turn runner, so a started worker is not read as a working one", () => {
+      expect(DEGRADED_CAPABILITIES.length).toBe(1);
+      const [entry = ""] = DEGRADED_CAPABILITIES;
+      // Named precisely enough that an operator can tell what will not run.
+      expect(entry).toMatch(/AgentTurnRunner/);
+      expect(entry).toMatch(/engineering turn/);
+      expect(entry).toMatch(/engineering\.ts:107/);
+    });
+
+    /**
+     * The anti-drift assertion. If somebody wires a real `AgentTurnRunner` and
+     * forgets this list, the image would keep announcing a gap it no longer
+     * has — and a warning that is wrong once is ignored forever after.
+     */
+    it("declares it only for as long as the seam actually refuses", async () => {
+      const declared = DEGRADED_CAPABILITIES.some((entry) => entry.includes("AgentTurnRunner"));
+      const refuses = await unwiredAgentTurnRunner()
+        .runTurn({ context: {} as never, dataClass: "dahili", variantId: "v1", verification: [] })
+        .then(
+          () => false,
+          () => true,
+        );
+      expect(declared).toBe(refuses);
+    });
+  });
 });
 
 /** Just enough shape for `buildCoreStores`; nothing here is called. */
@@ -64,7 +97,7 @@ function stubDb(): Parameters<typeof buildCoreStores>[0] {
   };
   return {
     workflowRun: { findFirst: never, update: never, findUnique: never },
-    gate: { findUnique: never, upsert: never, update: never },
+    gate: { findUnique: never, update: never },
     auditLog: { findFirst: never, findMany: never, create: never },
     paramVersion: { findMany: never },
     routingRule: { findMany: never },

@@ -123,9 +123,10 @@ const semaphoreRenew: Mirror = (keys, argv, host) => {
   const leaseMs = Number(argv[2]);
 
   host.command("ZREMRANGEBYSCORE", [key, "-inf", String(now)]);
+  // The sweep above is what refuses an expired permit; see SEMAPHORE_RENEW_LUA.
   if (host.command("ZSCORE", [key, token]) === null) return [0, 0];
   const expiry = now + leaseMs;
-  host.command("ZADD", [key, "XX", String(expiry), token]);
+  host.command("ZADD", [key, String(expiry), token]);
   host.command("PEXPIRE", [key, String(leaseMs)]);
   return [1, expiry];
 };

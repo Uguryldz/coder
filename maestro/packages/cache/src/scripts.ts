@@ -158,9 +158,22 @@ return {removed, redis.call('ZCARD', key)}
  * Renewal is what lets the lease be SHORT. A lease sized for the longest
  * possible job (a 40-minute sandbox) would leave a crashed holder's permit
  * stranded for 40 minutes; a 30-second lease that the holder heartbeats
- * recovers in 30. `ZADD ... XX` is the load-bearing flag — it refuses to
- * re-create a member that expired, so a holder that stalled past its lease
- * cannot resurrect a permit the semaphore has already given away.
+ * recovers in 30.
+ *
+ * The refusal to resurrect an expired permit is carried by the two lines
+ * BEFORE the write, and by them alone. `ZREMRANGEBYSCORE ... '-inf', now` is
+ * inclusive of `now`, so every member whose expiry has arrived is gone before
+ * `ZSCORE` looks; a token that survives to the `ZSCORE` is therefore live, and
+ * one that does not returns `{0, 0}` here.
+ *
+ * This carried a `ZADD ... XX` for a while, described in this comment as "the
+ * load-bearing flag". It was not load-bearing — it was unreachable. By the
+ * time control reaches the write, `ZSCORE` has already proved the member
+ * exists, so `XX` ("only update an existing member") can never change the
+ * outcome. Removing it changed no test, which is the same thing as saying it
+ * never decided anything. It is gone, and the guard that does the work is
+ * named here instead: a comment that credits the wrong line teaches the next
+ * reader to protect the wrong line.
  */
 export const SEMAPHORE_RENEW_LUA = `
 local key     = KEYS[1]
@@ -168,12 +181,13 @@ local now     = tonumber(ARGV[1])
 local token   = ARGV[2]
 local leaseMs = tonumber(ARGV[3])
 
+-- Inclusive of now: a permit whose lease has just arrived is already expired.
 redis.call('ZREMRANGEBYSCORE', key, '-inf', now)
 if redis.call('ZSCORE', key, token) == false then
   return {0, 0}
 end
 local expiry = now + leaseMs
-redis.call('ZADD', key, 'XX', expiry, token)
+redis.call('ZADD', key, expiry, token)
 redis.call('PEXPIRE', key, leaseMs)
 return {1, expiry}
 `;

@@ -1,20 +1,102 @@
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { Placeholder } from "../app/Placeholder.tsx";
+import { useApi } from "../auth/AuthProvider.tsx";
+import { useT } from "../i18n/I18nProvider.tsx";
+import { Badge, Card, Input, Table } from "../ui/index.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
+import { bySeverity, severityTone, toSeverity } from "./shared/severity.ts";
 
 /**
- * Screen: issues
+ * Screen: issues — the decision ledger (karar defteri).
  *
- * STUB — owned by the screen agent assigned to "issues".
- * Replace the body of this component with the real screen. Do not edit
- * src/app/screens.ts (the route table) or src/app/routes.tsx; your route,
- * title key and sidebar entry are already registered there.
- *
- * Rules that still apply to the finished screen:
- *  - every visible string comes from the catalog via useT() — no literals;
- *  - build from src/ui primitives (see src/ui/README.md);
- *  - fetch through useApi() + TanStack Query, never bare fetch();
- *  - keep this file under 300 lines, split into src/screens/issues/ if it grows.
+ * Every open question and its resolution, most-severe first, nothing hidden.
+ * The filter box narrows what is shown, but the unfiltered total stays visible
+ * so a narrow filter can never be mistaken for "there is nothing else".
  */
+
+interface Decision {
+  readonly decisionId: string;
+  /** Masterplan reference, e.g. "M44". */
+  readonly ref: string;
+  readonly question: string;
+  readonly decision: string;
+  readonly severity: string;
+  readonly status: string;
+  readonly decidedAt: string;
+}
+
 export function IssuesScreen(): ReactNode {
-  return <Placeholder id="issues" />;
+  const t = useT();
+  const api = useApi();
+  const [filter, setFilter] = useState("");
+
+  const query = useQuery({
+    queryKey: ["issues"],
+    queryFn: ({ signal }) => api.get<{ decisions: readonly Decision[] }>("/decisions", { signal }),
+  });
+
+  const all = query.data?.decisions ?? [];
+  const needle = filter.trim().toLowerCase();
+  const matched =
+    needle === ""
+      ? all
+      : all.filter(
+          (d) =>
+            d.ref.toLowerCase().includes(needle) ||
+            d.question.toLowerCase().includes(needle) ||
+            d.decision.toLowerCase().includes(needle),
+        );
+  const rows = bySeverity(matched, (d) => d.severity);
+
+  return (
+    <>
+      <Card
+        title={t("issues.ledger")}
+        subtitle={t("issues.counts", { shown: String(rows.length), total: String(all.length) })}
+        actions={
+          <Input
+            label={t("issues.filter")}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        }
+        padded={false}
+      >
+        <MaybeUnwired
+          isPending={query.isPending}
+          error={query.error}
+          isEmpty={rows.length === 0}
+          emptyTitle={needle === "" ? t("issues.empty") : t("issues.no_match")}
+          onRetry={() => void query.refetch()}
+        >
+          <Table
+            columns={[
+              {
+                key: "ref",
+                header: t("issues.col.ref"),
+                cell: (row: Decision) => <Badge tone="blue">{row.ref}</Badge>,
+              },
+              {
+                key: "severity",
+                header: t("issues.col.severity"),
+                cell: (row) => (
+                  <Badge tone={severityTone(row.severity)}>
+                    {t(`severity.${toSeverity(row.severity)}`)}
+                  </Badge>
+                ),
+              },
+              { key: "question", header: t("issues.col.question"), cell: (row) => row.question },
+              { key: "decision", header: t("issues.col.decision"), cell: (row) => row.decision },
+              { key: "status", header: t("issues.col.status"), cell: (row) => row.status },
+              { key: "at", header: t("issues.col.at"), cell: (row) => row.decidedAt },
+            ]}
+            rows={rows}
+            rowKey={(row) => row.decisionId}
+            emptyLabel={t("issues.empty")}
+          />
+        </MaybeUnwired>
+      </Card>
+    </>
+  );
 }

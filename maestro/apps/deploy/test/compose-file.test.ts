@@ -27,6 +27,7 @@ interface ComposeService {
   volumes?: string[];
   environment?: Record<string, string>;
   restart?: string;
+  command?: string[];
 }
 
 /**
@@ -49,7 +50,7 @@ const NODE_SERVICES = ["bff", "worker", "migrate"] as const;
 describe("compose: shape", () => {
   it("parses as YAML and declares the whole stack", () => {
     expect(Object.keys(compose.services).sort()).toEqual(
-      ["bff", "migrate", "postgres", "studio", "temporal", "temporal-ui", "worker"].sort(),
+      ["bff", "migrate", "postgres", "redis", "studio", "temporal", "temporal-ui", "worker"].sort(),
     );
   });
 
@@ -113,6 +114,55 @@ describe("compose: health and ordering", () => {
 
   it("serves studio only once the BFF it talks to is healthy", () => {
     expect(compose.services["studio"]?.depends_on?.["bff"]?.condition).toBe("service_healthy");
+  });
+
+  it.each(["bff", "worker"])("holds %s back until redis answers", (name) => {
+    // A service that starts before its coordination store falls back to a
+    // process-local limiter, or throws on its first take. Either way the
+    // failure looks like an application bug rather than a startup ordering one.
+    expect(compose.services[name]?.depends_on?.["redis"]?.condition).toBe("service_healthy");
+  });
+});
+
+describe("compose: redis (M4 coordination)", () => {
+  const redis = (): ComposeService | undefined => compose.services["redis"];
+
+  it("answers a real healthcheck, not just a TCP probe", () => {
+    expect(JSON.stringify(redis()?.healthcheck?.test)).toContain("ping");
+  });
+
+  it("keeps no data on disk, because everything it holds is derivable", () => {
+    // Token buckets refill, permits expire, cache entries have a TTL. A disk
+    // write per rate-limit check would be the slowest thing in the request
+    // path, for data whose worst-case loss is one refilled bucket.
+    const command = JSON.stringify(redis()?.command ?? []);
+    expect(command).toContain("--appendonly");
+    expect(command).toContain("--save");
+    expect(compose.volumes ?? {}).not.toHaveProperty("redis-data");
+  });
+
+  it("evicts by TTL rather than refusing writes when it fills up", () => {
+    // The default `noeviction` turns a full Redis into a rate limiter that
+    // errors instead of limiting. Every key here carries a TTL, so evicting
+    // the nearest-to-expiry is the right answer under pressure.
+    const command = JSON.stringify(redis()?.command ?? []);
+    expect(command).toContain("volatile-ttl");
+    expect(command).toContain("--maxmemory");
+  });
+
+  it("is not published to the host", () => {
+    // An unauthenticated Redis on a host port is a well-known way to lose a box.
+    expect(redis()?.ports).toBeUndefined();
+  });
+
+  it("drops every capability and gains no privileges", () => {
+    expect(redis()?.security_opt).toContain("no-new-privileges:true");
+    expect(redis()?.cap_drop).toContain("ALL");
+  });
+
+  it("is reachable by the services that need it, by service name", () => {
+    const composeText = readFileSync(composePath(), "utf8");
+    expect(composeText).toContain("REDIS_URL: redis://redis:6379");
   });
 });
 

@@ -22,6 +22,23 @@ export const EnvSchema = z.object({
   VAULT_ADDR: z.url().optional(),
   STORAGE_ENDPOINT: z.url().optional(),
   EGRESS_PROXY_URL: z.url().optional(),
+  /**
+   * Redis, for cross-process coordination (M4): the atomic token bucket
+   * (M19), the capacity semaphore, the distributed lock and the cache layer.
+   *
+   * `z.string()` rather than `z.url()`, unlike every other endpoint above:
+   * Zod's URL check demands a scheme it recognises, and `redis://` /
+   * `rediss://` are refused by it. `parseRedisUrl` in `@maestro/cache` does
+   * the real validation — scheme, host, database index — and it does it at
+   * boot, so a malformed value still fails in front of an operator rather
+   * than at the first rate-limit check.
+   *
+   * Required in production, and the reason is not tidiness: without it every
+   * replica runs a process-local token bucket, so N replicas grant N times the
+   * configured LLM rate and N times the sandbox capacity. That is a bill and an
+   * outage, not a degradation, which is why it sits in REQUIRED_IN_PROD below.
+   */
+  REDIS_URL: z.string().min(1).optional(),
 });
 export type Env = z.infer<typeof EnvSchema>;
 

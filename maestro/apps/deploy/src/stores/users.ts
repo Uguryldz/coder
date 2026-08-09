@@ -1,0 +1,174 @@
+import type { UserDirectory, UserRecord } from "@maestro/bff";
+
+/**
+ * The Postgres-backed `UserDirectory` (M8).
+ *
+ * `apps/bff` ships `InMemoryUserDirectory` as the reference implementation and
+ * says in so many words that the production one is Prisma-backed behind the
+ * same interface. This is that one — and it lives here rather than in the BFF
+ * because the BFF must not import Prisma: every one of its tests runs offline
+ * against the same interface.
+ *
+ * The delegate is structural on purpose. Taking `PrismaClient["user"]` by
+ * shape rather than by import keeps this file testable with a plain object and
+ * keeps `@maestro/db`'s generated client out of the type surface, which is
+ * what lets the whole package typecheck before `prisma generate` has run.
+ */
+
+/**
+ * The `User` row as READ back. `groupsJson` is a JSON column, so what comes
+ * out is genuinely unknown — `parseGroups` is what narrows it.
+ */
+export interface UserRow {
+  id: string;
+  email: string;
+  displayName: string;
+  passwordHash: string;
+  groupsJson: unknown;
+  active: boolean;
+}
+
+/**
+ * The same row as WRITTEN. Prisma's generated input types reject `unknown` for
+ * a JSON column — reasonably, since it is the one place a caller could smuggle
+ * a non-serialisable value in — so the write shape names `string[]`, which is
+ * all this store ever stores there.
+ */
+export interface UserWriteRow {
+  id: string;
+  email: string;
+  displayName: string;
+  passwordHash: string;
+  groupsJson: string[];
+  active: boolean;
+}
+
+/**
+ * The three `PrismaClient.user` methods this store uses, and nothing more.
+ *
+ * The delegate is structural rather than `PrismaClient["user"]`: Prisma's
+ * generated delegate is generic over its own argument types, which would drag
+ * the whole generated surface into this file and make it uncompilable before
+ * `prisma generate` has run. Narrowing to three methods also documents exactly
+ * how much of the table this store may touch.
+ */
+export interface UserDelegate {
+  findUnique(args: { where: { email: string } }): Promise<UserRow | null>;
+  upsert(args: {
+    where: { email: string };
+    create: UserWriteRow;
+    update: Omit<UserWriteRow, "id" | "email">;
+  }): Promise<unknown>;
+  update(args: { where: { email: string }; data: { active: boolean } }): Promise<unknown>;
+}
+
+/**
+ * Directory groups mapped to platform roles.
+ *
+ * The `User` model has a `groupsJson` column and no roles column: group
+ * membership is what the bank's directory actually owns, and a role is this
+ * platform's reading of it. Doing that reading in ONE place is the point —
+ * `tech-lead`, `tech-leads`, `tl` and `yonetici` were all in the tree at once
+ * before the role set was closed, and each spelling was a different answer to
+ * "may this person approve".
+ *
+ * The values are exactly `@maestro/contracts`'s `Role` union. They are written
+ * as literals rather than imported so this file keeps compiling before that
+ * module lands; `users.test.ts` asserts each one against `ROLES`, so a value
+ * that is not a real role fails the suite rather than the deployment.
+ */
+export const ROLE_BY_GROUP: Readonly<Record<string, string>> = {
+  "maestro-admins": "admin",
+  "tech-leads": "tech-lead",
+  "product-owners": "product-owner",
+  qa: "qa",
+  developers: "developer",
+  "internal-audit": "viewer",
+};
+
+/**
+ * A user's roles, from their groups.
+ *
+ * An unrecognised group contributes NOTHING — it does not become a role of its
+ * own name. That is what keeps the role set closed: a directory group added
+ * next quarter cannot silently become an authorisation the platform honours.
+ *
+ * `viewer` is the floor rather than a role nobody has: everyone who can log in
+ * can read, and the routes that matter check for more than that.
+ */
+export function rolesOf(groups: readonly string[]): string[] {
+  const roles = new Set<string>(["viewer"]);
+  for (const group of groups) {
+    const role = ROLE_BY_GROUP[group];
+    if (role !== undefined) roles.add(role);
+  }
+  return [...roles];
+}
+
+export class PrismaUserDirectory implements UserDirectory {
+  constructor(private readonly users: UserDelegate) {}
+
+  async find(username: string): Promise<UserRecord | null> {
+    const row = await this.users.findUnique({ where: { email: normalize(username) } });
+    return row === null ? null : toRecord(row);
+  }
+
+  async upsert(record: UserRecord): Promise<void> {
+    const email = normalize(record.username);
+    const groups = [...record.groups];
+    await this.users.upsert({
+      where: { email },
+      create: {
+        id: record.userId,
+        email,
+        displayName: record.username,
+        passwordHash: record.passwordHash,
+        groupsJson: groups,
+        active: record.active,
+      },
+      update: {
+        displayName: record.username,
+        passwordHash: record.passwordHash,
+        groupsJson: groups,
+        active: record.active,
+      },
+    });
+  }
+
+  /**
+   * Off-boarding deactivates rather than deletes.
+   *
+   * A departed approver's row is evidence: their name is on closed gates, and
+   * `UserDirectory.find` is what resolves it. Deleting the row would leave the
+   * audit trail pointing at nobody, so the account is made unusable instead —
+   * which `LocalIdentityProvider` treats exactly like a missing one (M8/M33).
+   */
+  async remove(username: string): Promise<void> {
+    await this.users.update({ where: { email: normalize(username) }, data: { active: false } });
+  }
+}
+
+function toRecord(row: UserRow): UserRecord {
+  const groups = parseGroups(row.groupsJson);
+  return {
+    username: row.email,
+    userId: row.id,
+    passwordHash: row.passwordHash,
+    groups,
+    roles: rolesOf(groups),
+    active: row.active,
+  };
+}
+
+/**
+ * `groupsJson` is a JSON column, so its contents are whatever was written.
+ * Anything that is not an array of strings reads as "no groups": a malformed
+ * value must not become a membership, because membership is what opens gates.
+ */
+function parseGroups(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function normalize(username: string): string {
+  return username.trim().toLowerCase();
+}

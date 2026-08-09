@@ -1,0 +1,95 @@
+# syntax=docker/dockerfile:1.7
+#
+# The Node service image: BFF, Temporal worker, and the migration job.
+#
+# One Dockerfile with an `ENTRYPOINT_SCRIPT` argument rather than three nearly
+# identical ones. The three services share every layer that matters — the same
+# workspace, the same dependency graph, the same Prisma client — so building
+# them separately would triple the build time and, worse, let them drift: a
+# dependency bump applied to two of three Dockerfiles is a bug that only shows
+# up in production, in whichever service was forgotten.
+#
+# Stages:
+#   base    the toolchain
+#   deps    dependency install ALONE — this layer changes only when a manifest
+#           does, so editing a .ts file reuses a 450-package install
+#   runner  what ships: non-root, no pnpm store, no build cache
+#
+# `--frozen-lockfile` throughout: a build that would have to change the
+# lockfile is a build whose dependency graph nobody reviewed.
+
+ARG NODE_IMAGE=node:24-bookworm-slim
+
+FROM ${NODE_IMAGE} AS base
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    CI=true
+RUN corepack enable
+WORKDIR /app
+
+# ── dependencies ─────────────────────────────────────────────────────────────
+FROM base AS deps
+# Manifests only. Their content is what Docker caches this layer on.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/bff/package.json                 apps/bff/
+COPY apps/demo/package.json                apps/demo/
+COPY apps/deploy/package.json              apps/deploy/
+COPY packages/adapter-ado/package.json     packages/adapter-ado/
+COPY packages/adapter-jira/package.json    packages/adapter-jira/
+COPY packages/agent-roles/package.json     packages/agent-roles/
+COPY packages/audit/package.json           packages/audit/
+COPY packages/claude-driver/package.json   packages/claude-driver/
+COPY packages/config/package.json          packages/config/
+COPY packages/contracts/package.json       packages/contracts/
+COPY packages/db/package.json              packages/db/
+COPY packages/execution/package.json       packages/execution/
+COPY packages/llm-gateway/package.json     packages/llm-gateway/
+COPY packages/mcp-servers/package.json     packages/mcp-servers/
+COPY packages/memory/package.json          packages/memory/
+COPY packages/notify/package.json          packages/notify/
+COPY packages/pii/package.json             packages/pii/
+COPY packages/ports/package.json           packages/ports/
+COPY packages/publish/package.json         packages/publish/
+COPY packages/runners/package.json         packages/runners/
+COPY packages/scanners/package.json        packages/scanners/
+COPY packages/secrets/package.json         packages/secrets/
+COPY packages/storage/package.json         packages/storage/
+COPY packages/test-kit/package.json        packages/test-kit/
+COPY packages/workflows/package.json       packages/workflows/
+# Scripts are skipped here because `@maestro/db`'s postinstall runs
+# `prisma generate`, and the schema is not in this layer yet.
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts
+
+# ── runner ───────────────────────────────────────────────────────────────────
+FROM base AS runner
+ENV NODE_ENV=production
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# The source COPY shadows the workspace symlinks under node_modules/@maestro,
+# so the install is repeated (offline, from the same store) to restore them —
+# then the Prisma client is generated now that the schema is present.
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --offline --ignore-scripts \
+ && pnpm --filter @maestro/db exec prisma generate --schema prisma/schema.prisma
+
+# An unprivileged user, and the image runs as it from here on. A compromised
+# dependency in a Node process must not also be root inside the container.
+RUN groupadd --system --gid 10001 maestro \
+ && useradd  --system --uid 10001 --gid maestro --home-dir /app --shell /usr/sbin/nologin maestro \
+ && chown -R maestro:maestro /app
+USER 10001:10001
+
+# Which entrypoint this image runs. Passed at build time so the three services
+# share every layer above and differ only in this line.
+ARG ENTRYPOINT_SCRIPT=apps/deploy/src/bin/bff.ts
+ENV MAESTRO_ENTRYPOINT=${ENTRYPOINT_SCRIPT}
+
+EXPOSE 7001
+
+# `sh -c` so ${MAESTRO_ENTRYPOINT} expands, and `exec` so the Node process
+# REPLACES the shell and becomes PID 1. Without the exec, SIGTERM would go to
+# the shell, the drain in `lifecycle.ts` would never run, and a rolling deploy
+# would drop in-flight webhooks — which Jira does not redeliver.
+ENTRYPOINT ["/bin/sh", "-c", "exec node --import tsx \"${MAESTRO_ENTRYPOINT}\" \"$@\"", "--"]

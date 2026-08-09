@@ -13,6 +13,7 @@ import {
 import { createDb } from "@maestro/db";
 import { bootPlatform } from "../boot.js";
 import { listenAddress } from "../env.js";
+import { unbridgedReadModels } from "../stores/read-models.js";
 import { prismaSqlExecutor } from "../stores/sql.js";
 import { PrismaUserDirectory } from "../stores/users.js";
 import { connectTemporal } from "../temporal-gateway.js";
@@ -60,6 +61,13 @@ export async function main(): Promise<void> {
     gates: new StaticGateDirectory(),
     params: new InMemoryParamStore(),
     killSwitch: new InMemoryKillSwitchStore(),
+    // Studio's read side, unwired (M7). Every one of the twelve read models
+    // needs a Postgres store that does not exist yet, so each refuses by name
+    // instead of returning an empty page. The BFF's in-memory read models
+    // would boot cleanly and render "no runs, no open gates, nothing to
+    // approve" — indistinguishable from a quiet Friday, and wrong. See
+    // `MISSING_READ_MODELS` and the note in stores/read-models.ts.
+    read: unbridgedReadModels(),
     config: { env: env.base },
   };
 

@@ -168,6 +168,40 @@ tr.click:hover{background:var(--panel2);cursor:pointer}
 .wiz .w.on{border-color:var(--blue);color:var(--text);font-weight:650}
 .wiz .w.done{border-color:var(--green);color:var(--green)}
 
+/* şablon tasarımcısı (M108) */
+.seclist .row{display:flex;align-items:center;gap:7px;padding:8px 9px;border:1px solid var(--border);border-radius:9px;
+ margin-bottom:7px;background:var(--panel2);cursor:pointer}
+.seclist .row:hover{border-color:var(--border2)}
+.seclist .row.sel{border-color:var(--blue);background:var(--blue-bg)}
+.seclist .row .gr{color:var(--faint);cursor:grab;font-size:13px;flex:none}
+.seclist .row .tt{font-size:13px;font-weight:600;line-height:1.35}
+.seclist .row.sel .tt{color:var(--blue)}
+.iconb{border:1px solid var(--border2);background:var(--panel);border-radius:6px;width:22px;height:22px;
+ display:grid;place-items:center;font-size:11px;color:var(--muted);padding:0;flex:none;line-height:1}
+.iconb:hover{border-color:var(--muted);color:var(--text)}
+.iconb.dl:hover{border-color:var(--red);color:var(--red)}
+
+/* doküman şablonu (M103r) — A4 oranlı kağıt önizlemesi */
+.drop{border:2px dashed var(--border2);border-radius:11px;padding:20px;text-align:center;background:var(--panel2)}
+.drop:hover{border-color:var(--blue)}
+.paper{background:#fff;color:#111827;border:1px solid #cbd5e1;border-radius:3px;box-shadow:0 6px 20px rgba(15,23,42,.20);
+ padding:20px 22px;font-family:"Times New Roman",Georgia,serif;font-size:10.5px;line-height:1.6;
+ aspect-ratio:1/1.414;overflow:hidden;display:flex;flex-direction:column}
+.paper .ph{border-bottom:1px solid #d1d5db;padding-bottom:5px;margin-bottom:10px;display:flex;justify-content:space-between;
+ font-size:8.5px;color:#6b7280;font-family:system-ui,sans-serif}
+.paper .pf{border-top:1px solid #d1d5db;padding-top:5px;margin-top:auto;display:flex;justify-content:space-between;
+ font-size:8.5px;color:#6b7280;font-family:system-ui,sans-serif}
+.paper h4{font-size:15px;font-weight:700;margin:0 0 5px;color:#111827}
+.paper h5{font-size:10.5px;font-weight:700;margin:9px 0 3px;color:#111827}
+.paper p{margin:0 0 5px}
+.paper table{border-collapse:collapse;width:100%;margin-top:4px}
+.paper th,.paper td{border:1px solid #9ca3af;padding:3px 5px;font-size:8.5px;color:#111827;
+ text-transform:none;letter-spacing:0;font-weight:400;font-family:system-ui,sans-serif;text-align:left}
+.paper th{background:#f1f5f9;font-weight:700}
+.paper .logo-slot{width:74px;height:40px;border:1px dashed #94a3b8;display:grid;place-items:center;
+ font-size:8px;color:#94a3b8;font-family:system-ui,sans-serif}
+.slot{background:#eff6ff;outline:1px dashed #93c5fd;border-radius:2px;padding:0 3px;color:#1d4ed8;
+ font-family:ui-monospace,monospace;font-size:8.5px}
 </style>
 </head>
 <body>
@@ -373,11 +407,14 @@ const NEWDECISIONS=[
  ["M59+M60","Dil","Analiz+Jira Türkçe, kod+commit İngilizce; Studio iki dilli (TR/EN)."],
  ["M77","Kurum araçları","SonarQube, Fortify (kurumda var), Artifactory/Nexus, Xray/Zephyr → opsiyonel sürücüler, ilk aşamada zorunlu değil."],
  ["M79+M94","Pilot & ritim","Pilot: ugurpay+ugurweb, 1 gerçek sprint. Sürüm: 2 haftada bir, mesai dışı."],
- ["M90+M91","Üretkenlik ekleri","Maestro kendi starter setini getirir; merge sonrası release-notu taslağı otomatik."]
+ ["M90+M91","Üretkenlik ekleri","Maestro kendi starter setini getirir; merge sonrası release-notu taslağı otomatik."],
+ ["M108","Analiz şablonu Studio'da TASARLANIR","Şablon artık yüklenen bir dosya değil: Studio'daki <b>şablon tasarımcısı</b> ile kurulur — bölüm ekle/çıkar/sırala, her bölüme başlık + açıklama + AI'ye talimat + zorunlu/opsiyonel + beklenen biçim (serbest metin / madde listesi / tablo / matris) + örnek metin (few-shot). Şablon versiyonlu (M83 pin aynen geçerli), önizlemeli, proje bazında seçilebilir. Analyst çıktısı bu tanımdan üretilen şemayla doğrulanır — <b>yeni bölüm eklemek kod değişikliği gerektirmez</b>."],
+ ["M103r","Analiz Word/PDF olarak teslim edilir","\"İleride\" değil, birinci sınıf gereksinim: kurum <b>kendi .docx şablonunu yükler</b> (kapak, antet/altbilgi, logo, stiller, onay tablosu); Maestro analizi o şablonun içine yerleştirip <code>.docx</code> + <code>.pdf</code> üretir. Şablon Studio'dan yüklenir, versiyonlu ve önizlenebilir. Çıktı Jira + kanıt paketine ek olarak dosya indirme ve PublishPort <code>docx</code>/<code>pdf</code> hedefleriyle dağıtılır. Şablon yoksa sade varsayılan kapakla üretilir — üretim durmaz, Studio uyarır."]
 ];
 
 /* ============ YARDIMCI ============ */
 const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const stTag=s=>({running:'<span class="tag t-blue">● çalışıyor</span>',gate:'<span class="tag t-amber">⏳ kapıda</span>',
  fail:'<span class="tag t-red">✕ hata</span>',done:'<span class="tag t-green">✓ tamam</span>',
  queued:'<span class="tag t-gray">⏸ kuyrukta</span>'}[s]||'');
@@ -395,7 +432,7 @@ function toggleTheme(){const r=document.documentElement;r.dataset.theme=r.datase
 const NAV=[
  ["Operasyon",[["dash","Panel","▦"],["help","Yardım — nasıl kullanılır?","📖"],["live","Canlı demo (vibe)","🎬"],["tickets","İş akışları","≡",TICKETS.length],["fanout","Ana ticket (fan-out)","⑂"],["clarify","Clarification (2b)","❓"],["workmode","Work mode & devir","⇋"],["greenfield","Yeni proje sihirbazı","✦"],["jira","Jira'da görünüm","💬"],["commands","Jira komut seti","⌨"]]],
  ["Yürütme",[["runners","Runner havuzları","🖥"],["sandbox","Canlı sandbox oturumu","▶"],["cache","Cache & çalışma alanı","🗄"],["yaml",".maestro.yaml","📄"]]],
- ["Ajanlar",[["variants","Variant'lar","🤖",9],["variant","Variant detayı","⚙"],["eval","Eval / golden ticket","🎯"],["knowledge","Knowledge kütüphanesi","📚"],["template","Analiz şablonu","📋"]]],
+ ["Ajanlar",[["variants","Variant'lar","🤖",9],["variant","Variant detayı","⚙"],["eval","Eval / golden ticket","🎯"],["knowledge","Knowledge kütüphanesi","📚"],["template","Analiz şablonu","📋"],["doctemplate","Doküman şablonu (Word)","📄"]]],
  ["Yönetişim",[["llm","LLM Gateway","⚡"],["pii","PII maskeleme","🔏"],["cost","Maliyet & kota","₺"],["audit","Denetim izi","🔒"],["evidence","Kanıt paketi","📦"],["security","Güvenlik bulguları","🛡"],["notify","Bildirim & eskalasyon","🔔"]]],
  ["Sistem",[["routing","Jira bağlantısı & eşleme","⇄"],["params","Parametreler (DB)","🎛"],["mcp","Maestro MCP","🔌"],["onboard","Uygulama ekle","➕"],["users","Kullanıcılar & roller","👥"],["settings","Ayarlar & bağlantılar","⚙"],["health","Sistem sağlığı","💚"],["login","Giriş ekranı","🔑"],["issues","✓ Karar defteri","✔"]]]
 ];
@@ -889,33 +926,316 @@ ${[["analiz-sablonu.md","rules","9 variant","v3","Ayşe K. · 3 gün önce"],
 </tbody></table></div>
 <div class="hint" style="margin-top:12px"><b>✓ Karar (M83):</b> her akış başladığı şablon sürümüyle biter (pin); sürüm no ticket'a ve kanıt paketine yazılır; "hangi ticket hangi sürümle" raporu Studio'da hazır.</div>`});
 
-V.template=()=>({t:"Analiz şablonu",s:"Kurum dokümantasyon standardı · analyst çıktısı buna göre doğrulanır",h:`
-<div class="grid" style="grid-template-columns:1fr 380px;align-items:start">
-<div class="card"><div class="hd"><h3>analiz-sablonu.md · v3</h3><span class="sub">knowledge/rules · 9 variant'a bağlı</span></div><div class="bd">
-${[["1. Amaç / iş değeri","zorunlu","serbest metin · en az 2 cümle"],
-   ["2. Kapsam (dahil / hariç)","zorunlu","iki liste"],
-   ["3. Etki analizi","zorunlu","platform × modül matrisi — alt ticket'lar buradan açılır"],
-   ["4. Kabul kriterleri","zorunlu","ölçülebilir madde listesi (min 3)"],
-   ["5. Ekran / API değişiklikleri","koşullu","UI veya API dokunuluyorsa zorunlu"],
-   ["6. Test yaklaşımı","zorunlu","birim / entegrasyon / uçtan uca dağılımı"],
-   ["7. Risk ve geri dönüş planı","zorunlu","risk + etki + geri alma adımı"]]
- .map(([t,z,d])=>`<div style="display:flex;gap:11px;padding:9px 0;border-bottom:1px dashed var(--border)">
-  <div style="flex:1"><b style="font-size:13.5px">${t}</b><div class="mini">${d}</div></div>
-  <span class="tag ${z==='zorunlu'?'t-red':'t-amber'}">${z}</span></div>`).join("")}
-</div></div>
-<div>
- <div class="card" style="margin-bottom:12px"><div class="hd"><h3>Doğrulama</h3></div><div class="bd">
-  <div class="note" style="margin-bottom:11px">Analyst çıktısı bu bölümlere göre şema ile doğrulanır. Eksik zorunlu bölüm varsa <b>analiz insan kapısına hiç gelmez</b> — ajan tekrar üretir (fail-closed).</div>
+/* ============ ANALİZ ŞABLONU TASARIMCISI (M108) ============ */
+const TFMT=["serbest metin","madde listesi","tablo","etki matrisi"];
+const TFMTHINT={
+ "serbest metin":"düz paragraf olarak beklenir · şema: metin (en az 2 cümle)",
+ "madde listesi":"numaralı/işaretli madde listesi olarak beklenir · şema: metin dizisi (en az 3 madde)",
+ "tablo":"başlıklı tablo olarak beklenir · şema: satır nesneleri — Word çıktısında gerçek tabloya dönüşür",
+ "etki matrisi":"platform × modül matrisi olarak beklenir · şema: {platform, modül, etki, alt ticket} — <b>fan-out alt ticket'ları bu bölümden açılır</b>"};
+let TNAME="Kurumsal analiz şablonu";
+let TVER=3, TSEL=1, TSEQ=8;
+let TSECS=[
+ {id:1,t:"Amaç / iş değeri",d:"İşin neden yapıldığı ve ölçülebilir iş faydası",req:1,fmt:"serbest metin",
+  ai:"Ticket'ı ve reporter yanıtlarını oku. İşi 2-4 cümlede İŞ diliyle özetle — teknik terim kullanma. Sonuna ölçülebilir bir fayda cümlesi ekle (hedef oran, süre veya adet). Ticket'ta yoksa uydurma, 'ölçüt belirtilmemiş' yaz.",
+  ex:"Müşteri, şube onayı beklemeden kredi limitini risk ekibince tanımlanan üst sınıra kadar artırabilmeli. Şubeye gelen limit taleplerinin %60'ının self-servise kayması hedefleniyor."},
+ {id:2,t:"Kapsam (dahil / hariç)",d:"Bu işin sınırı — neye dokunuluyor, neye dokunulmuyor",req:1,fmt:"madde listesi",
+  ai:"İki liste üret: DAHİL ve HARİÇ. Hariç listesini boş bırakma — kapsam dışı bıraktığın her şeyi tek tek yaz, çünkü PO'nun onayladığı sınır budur.",
+  ex:"Dahil: /api/credit/limit ucu · web limit artırma formu · limit doğrulama kuralları.\nHariç: mobil ve masaüstü ekranları (ayrı alt ticket) · risk skorlama motoru (değişmiyor)."},
+ {id:3,t:"Etki analizi",d:"Hangi platform ve modül etkileniyor — alt ticket'lar buradan açılır",req:1,fmt:"etki matrisi",
+  ai:"Repo keşfi çıktısını ve Uygulama Kayıtları'nı (M100) kullan. Her uygulama için etkilenip etkilenmediğine KARAR VER; etkilenmiyorsa da satır aç ve gerekçesini yaz. 'Belki' yazma.",
+  ex:"linux-node · ugurpay api+web · yeni uç + form · UGURPAY-501\nmacos-xcode · ugurmobil-ios Kredi · limit ekranı · UGURPAY-502\nrisk skorlama motoru · etkilenmiyor (analist doğruladı)"},
+ {id:4,t:"Kabul kriterleri",d:"Ölçülebilir, test edilebilir kabul maddeleri (en az 3)",req:1,fmt:"madde listesi",
+  ai:"Her madde tek bir doğrulanabilir davranış olsun ve bir testle karşılanabilsin. 'İyi çalışmalı' gibi ölçülemez ifade yasak. Geriye uyum maddesini unutma.",
+  ex:"1) Limit üst sınırı konfigürasyondan okunur, sabit kodlanmaz.\n2) Üst sınırı aşan talep 422 ile reddedilir ve yerelleştirilmiş mesaj döner.\n3) Başarılı artırım audit'e yazılır.\n4) Mevcut limit sorgusu değişmez (geriye uyum)."},
+ {id:5,t:"Ekran / API değişiklikleri",d:"Kullanıcıya ve entegrasyona görünen yüzey",req:0,fmt:"tablo",
+  ai:"UI veya API'ye dokunulmuyorsa 'değişiklik yok' yaz ve bölümü geç. Dokunuluyorsa her uç için: metot, yol, yeni mi değişti mi, geriye uyumlu mu.",
+  ex:"POST /api/credit/limit · yeni · —\nGET /api/credit/limit · değişmedi · geriye uyumlu\nEkran: Hesabım → Kredi → 'Limit artır' formu (yeni)"},
+ {id:6,t:"Test yaklaşımı",d:"Birim / entegrasyon / uçtan uca dağılımı ve kapsam eşiği",req:1,fmt:"serbest metin",
+  ai:"Test piramidine uy (knowledge: test-piramidi.md). Yaklaşık test adedi ver ve kapsam eşiğini yaz. Bu bölüm test-designer'ın (adım 7) girdisi olur — ona göre yaz.",
+  ex:"Birim: doğrulama kuralları + konfig okuma (≈20). Entegrasyon: uç + eşzamanlılık (≈6). Uçtan uca: form akışı (2). Kapsam eşiği %70, ratchet düşmez (M70)."},
+ {id:7,t:"Risk ve geri dönüş planı",d:"Ne ters gidebilir, nasıl geri alınır",req:1,fmt:"serbest metin",
+  ai:"En az bir gerçek risk yaz (etkisiyle birlikte), azaltma önlemini ve GERİ DÖNÜŞ adımını ayrı ayrı belirt. Şema/veri göçü varsa geri alınabilirliğini açıkça değerlendir — denetim bu bölüme bakar.",
+  ex:"Risk: üst sınır yanlış konfigüre edilirse fazla limit verilebilir (yüksek etki). Azaltma: konfig değeri açılışta doğrulanır, aşım denemeleri loglanır. Geri dönüş: özellik bayrağı kapatılır, uç 404 döner; şema değişikliği yok."}
+];
+const TPROJ=[["UGURPAY","v3"],["UGURWEB","v3"],["UGURMOB","v3"],["UGURDESK","v2 (pinli · 2 açık akış)"],["UGURKREDI","onboarding'de"]];
+V.template=()=>({t:"Analiz şablonu — tasarımcı",s:"Şablon Studio'da TASARLANIR (M108) · analyst çıktısı bu tanımdan üretilen şemayla doğrulanır",h:`
+<div class="card" style="margin-bottom:14px">
+ <div class="bd" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+  <div><label class="mini" style="display:block;margin-bottom:3px">Şablon adı</label><input class="inp" style="width:240px" value="${esc(TNAME)}" oninput="TNAME=this.value"></div>
+  <div style="display:flex;gap:7px;align-items:center;padding-bottom:7px">
+   <span class="tag t-blue" id="tverbadge">sürüm v${TVER}</span><span class="tag t-green">aktif</span>
+   <span class="mini">son değişiklik: Ayşe K. · 3 gün önce</span></div>
+  <span class="spacer" style="flex:1"></span>
+  <button class="btn" onclick="tPreview()">👁 Önizle</button>
+  <button class="btn" onclick="location.hash='doctemplate'">📄 Word çıktısı</button>
+  <button class="btn p" onclick="tSaveVersion()">Yeni sürüm olarak kaydet</button>
+ </div>
+ <div class="bd" style="border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <span class="mini">Bu şablonu kullanan projeler:</span>
+  ${TPROJ.map(([p,v])=>`<span class="chip${v.startsWith("v"+TVER)?" on":""}">${p} · ${v}</span>`).join("")}
+ </div>
+</div>
+<div class="grid" style="grid-template-columns:330px 1fr;align-items:start">
+ <div class="card">
+  <div class="hd"><h3>Bölümler (<span id="tcount">${TSECS.length}</span>)</h3>
+   <span class="spacer" style="flex:1"></span>
+   <button class="btn sm p" onclick="tAdd()">+ Bölüm ekle</button></div>
+  <div class="bd">
+   <div class="seclist" id="tsecs"></div>
+   <div class="mini" style="margin-top:4px">⠿ ile sürükle ya da ↑ ↓ ile sırala. Sıra, dokümandaki bölüm sırasıdır.</div>
+  </div>
+ </div>
+ <div class="card" id="teditor"></div>
+</div>
+<div class="grid g2" style="margin-top:14px">
+ <div class="card"><div class="hd"><h3>Doğrulama</h3><span class="sub">tasarımdan üretilen şema · fail-closed</span></div><div class="bd">
+  <div class="note" style="margin-bottom:11px">Analyst çıktısı bu bölüm tanımlarından üretilen şemayla doğrulanır. Eksik <b>zorunlu</b> bölüm varsa analiz insan kapısına <b>hiç gelmez</b> — ajan tekrar üretir. Yeni bölüm eklemek <b>kod değişikliği gerektirmez</b> (M108).</div>
   <div class="kv"><span class="k">Son 30 gün</span><span>142 analiz</span>
   <span class="k">İlk seferde geçen</span><span class="tag t-green">%88</span>
   <span class="k">1 tekrarla geçen</span><span>%11</span>
   <span class="k">İnsana düşen</span><span>%1 (2 analiz)</span></div>
  </div></div>
- <div class="card"><div class="hd"><h3>Örnek analizler (few-shot)</h3></div><div class="bd">
-  <div class="mini" style="line-height:2">📄 ornek-analiz-1.md — basit ek geliştirme<br>📄 ornek-analiz-2.md — çok platformlu<br>📄 ornek-analiz-3.md — greenfield</div>
-  <div class="note" style="margin-top:9px">Şablonla birlikte ajana verilir; "iyi analiz" ölçüsünü kurum belirler.</div>
+ <div class="card"><div class="hd"><h3>Sürüm geçmişi</h3></div><div class="bd">
+  ${[["v3","3 Ağu","Ayşe K.","'Risk ve geri dönüş' bölümüne geri alma adımı zorunluluğu eklendi"],
+     ["v2","21 Tem","Ayşe K.","Etki analizi biçimi matrise çevrildi — fan-out buradan okunuyor"],
+     ["v1","12 Tem","kurulum","7 bölümlü kurum standardı"]]
+   .map(r=>`<div style="display:grid;grid-template-columns:40px 56px 1fr;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px">
+    <b class="mono">${r[0]}</b><span class="mini">${r[1]}</span><div>${r[3]}<div class="mini">${r[2]}</div></div></div>`).join("")}
  </div></div>
+</div>
+<div class="hint" style="margin-top:14px"><b>Sürüm pinleme (M83):</b> her akış <b>başladığı sürümle biter</b>. Bugün v${TVER+1} yayınlasan bile dün v${TVER} ile başlamış 2 açık akış v${TVER} ile tamamlanır; kullanılan sürüm no ticket'a ve kanıt paketine yazılır. "Hangi ticket hangi sürümle" raporu denetime hazır.</div>`});
+function tRender(){tList();tEditor()}
+function tList(){const el=$("#tsecs");if(!el)return;
+ el.innerHTML=TSECS.map((s,i)=>`<div class="row ${s.id===TSEL?'sel':''}" onclick="tSel(${s.id})" title="düzenlemek için tıkla">
+  <span class="gr" title="sürükleyerek sırala">⠿</span><span class="mini mono">${i+1}</span>
+  <div style="flex:1;min-width:0">
+   <div class="tt">${esc(s.t)}</div>
+   <div class="mini"><span style="color:var(--${s.req?'red':'amber'});font-weight:600">${s.req?'zorunlu':'opsiyonel'}</span> · ${esc(s.fmt)}</div>
+  </div>
+  <div style="display:flex;gap:4px;flex:none">
+   <button class="iconb" title="yukarı taşı" onclick="event.stopPropagation();tMove(${s.id},-1)">↑</button>
+   <button class="iconb" title="aşağı taşı" onclick="event.stopPropagation();tMove(${s.id},1)">↓</button>
+   <button class="iconb dl" title="bölümü sil" onclick="event.stopPropagation();tDel(${s.id})">✕</button>
+  </div>
+ </div>`).join("");
+ const c=$("#tcount");if(c)c.textContent=TSECS.length}
+function tEditor(){const el=$("#teditor");if(!el)return;
+ const s=TSECS.find(x=>x.id===TSEL);
+ if(!s){el.innerHTML=`<div class="bd"><div class="note">Soldan bir bölüm seç ya da yeni bölüm ekle.</div></div>`;return}
+ const i=TSECS.indexOf(s);
+ el.innerHTML=`<div class="hd"><h3>Bölüm ${i+1} · ${esc(s.t)}</h3><span class="sub">bu tanım ajana talimat, çıktı da buna göre doğrulanır</span></div>
+ <div class="bd">
+  <div class="grid g2" style="margin-bottom:12px">
+   <div><label class="mini">Bölüm başlığı</label>
+    <input class="inp" value="${esc(s.t)}" oninput="tSet(${s.id},'t',this.value);tList()"></div>
+   <div><label class="mini">Beklenen biçim</label>
+    <select class="sel" onchange="tSet(${s.id},'fmt',this.value);tEditor()">
+     ${TFMT.map(f=>`<option${f===s.fmt?" selected":""}>${f}</option>`).join("")}</select></div>
+  </div>
+  <label class="mini">Açıklama — insanlar için (Studio'da ve dokümanda bölüm altında görünür)</label>
+  <input class="inp" style="margin:4px 0 12px" value="${esc(s.d)}" oninput="tSet(${s.id},'d',this.value)">
+  <label class="mini">🤖 AI'ye talimat — bu bölümü <b>nasıl</b> doldursun?</label>
+  <textarea class="inp" style="height:100px;margin:4px 0 12px;line-height:1.6" oninput="tSet(${s.id},'ai',this.value)">${esc(s.ai)}</textarea>
+  <div style="display:flex;align-items:center;gap:11px;margin-bottom:12px">
+   <button class="switch ${s.req?'on':''}" onclick="tToggleReq(${s.id},this)"><i></i></button>
+   <div><b style="font-size:13px">Zorunlu bölüm</b>
+    <div class="mini">${s.req?'Eksikse analiz insan kapısına hiç gelmez — ajan tekrar üretir (fail-closed).':'Opsiyonel: ajan konuyla ilgisizse "değişiklik yok" yazıp geçebilir.'}</div></div>
+  </div>
+  <label class="mini">Örnek metin (few-shot) — ajana "iyi cevap" ölçüsü olarak verilir</label>
+  <textarea class="inp" style="height:92px;margin-top:4px;line-height:1.6" oninput="tSet(${s.id},'ex',this.value)">${esc(s.ex)}</textarea>
+  <div class="note" style="margin-top:12px">Biçim <b>${esc(s.fmt)}</b> → ${TFMTHINT[s.fmt]||"—"}</div>
+  <div class="mini" style="margin-top:9px">Word çıktısında bu bölümün yer tutucusu: <code>{{bolum:${i+1}}}</code> — yerleşimi <a style="color:var(--blue);cursor:pointer" onclick="location.hash='doctemplate'">Doküman şablonu</a> ekranından.</div>
+ </div>`}
+function tSel(id){TSEL=id;tRender()}
+function tSet(id,k,v){const s=TSECS.find(x=>x.id===id);if(s)s[k]=v}
+function tToggleReq(id,btn){const s=TSECS.find(x=>x.id===id);if(!s)return;s.req=s.req?0:1;if(btn)btn.classList.toggle("on");tRender()}
+function tMove(id,d){const i=TSECS.findIndex(x=>x.id===id);const j=i+d;
+ if(i<0||j<0||j>=TSECS.length)return;
+ const [s]=TSECS.splice(i,1);TSECS.splice(j,0,s);TSEL=id;tRender()}
+function tDel(id){if(TSECS.length<=1){toast("Şablonda en az bir bölüm kalmalı","err");return}
+ const s=TSECS.find(x=>x.id===id);TSECS=TSECS.filter(x=>x.id!==id);
+ if(TSEL===id)TSEL=TSECS[0].id;
+ tRender();toast('🗑 "'+s.t+'" bölümü çıkarıldı — kaydedince v'+(TVER+1)+' olarak yayınlanır',"warn")}
+function tAdd(){const s={id:TSEQ++,t:"Yeni bölüm",d:"",req:0,fmt:"serbest metin",
+  ai:"Bu bölümü nasıl dolduracağını ajana buradan anlat.",ex:""};
+ TSECS.push(s);TSEL=s.id;tRender();toast("+ Bölüm eklendi — başlığı ve AI talimatını sağdan doldur")}
+function tSaveVersion(){TVER++;
+ toast("✓ "+TNAME+" v"+TVER+" yayınlandı · "+TSECS.length+" bölüm · açık akışlar eski sürümle biter (M83)");
+ route()}
+function tPreview(){openModal(`<div class="bd">
+ <h3 style="margin-top:0">Önizleme — ${esc(TNAME)} v${TVER}</h3>
+ <div class="mini" style="margin-bottom:11px">UGURPAY-501 analizi bu şablonla böyle görünür (bölüm örnek metinleriyle üretildi)</div>
+ <div style="border:1px solid var(--border);border-radius:9px;padding:14px;background:var(--panel2);max-height:50vh;overflow:auto">
+ ${TSECS.map((s,i)=>`<div style="margin-bottom:13px">
+   <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
+    <b style="font-size:13.5px">${i+1}. ${esc(s.t)}</b>
+    <span class="tag ${s.req?'t-red':'t-amber'}">${s.req?'zorunlu':'ops.'}</span>
+    <span class="tag t-gray">${esc(s.fmt)}</span></div>
+   ${s.d?`<div class="mini" style="margin-bottom:3px">${esc(s.d)}</div>`:""}
+   <div style="font-size:12.5px;color:var(--muted);line-height:1.6;white-space:pre-line">${esc(s.ex)||"<i>— örnek metin girilmedi; ajan yalnız talimatla üretir</i>"}</div>
+  </div>`).join("")}
+ </div>
+ <div class="note" style="margin:12px 0">Bu, doğrulamanın çalıştığı <b>yapı</b>. Kuruma teslim edilen hali kurumsal .docx şablonunun içinde — kapak, antet ve onay tablosuyla (M103r).</div>
+ <div style="display:flex;gap:8px"><button class="btn p" onclick="closeModal();location.hash='doctemplate'">📄 Word çıktısını gör</button>
+ <button class="btn" onclick="closeModal()">Kapat</button></div>
+</div>`)}
+
+/* ============ DOKÜMAN ŞABLONU — Word/PDF (M103r) ============ */
+const DOCPH=[
+ ["{{ticket_key}}","Ticket numarası","UGURPAY-501","kapak + üstbilgi","ok"],
+ ["{{baslik}}","Ticket başlığı","Kredi limiti — API + web UI","kapak","ok"],
+ ["{{tarih}}","Analiz tarihi","6 Ağustos 2026","kapak + altbilgi","ok"],
+ ["{{analist}}","Üreten ajan + sürümü","analyst-web v7 (Maestro)","kapak","ok"],
+ ["{{sablon_surumu}}","Analiz şablonu sürümü (M83 pin)","Kurumsal analiz şablonu v3","kapak","ok"],
+ ["{{onay_tablosu}}","Kapı onayları: rol · kişi · tarih · imza no","3 satır (PO · TL · QA)","kapak tablosu","ok"],
+ ["{{bolum:1}}","Amaç / iş değeri","serbest metin","içerik s.1","ok"],
+ ["{{bolum:2}}","Kapsam (dahil / hariç)","madde listesi","içerik s.1","ok"],
+ ["{{bolum:3}}","Etki analizi","etki matrisi → Word tablosu","içerik s.2","ok"],
+ ["{{bolum:4}}","Kabul kriterleri","madde listesi","içerik s.2","ok"],
+ ["{{bolum:5}}","Ekran / API değişiklikleri","tablo → Word tablosu","içerik s.2","ok"],
+ ["{{bolum:6}}","Test yaklaşımı","serbest metin","içerik s.3","ok"],
+ ["{{bolum:7}}","Risk ve geri dönüş planı","serbest metin","içerik s.3","ok"],
+ ["{{icindekiler}}","Otomatik içindekiler","bölüm başlıklarından","kapak","ok"],
+ ["{{kanit_linki}}","Kanıt paketi bağlantısı","arşiv URL'i","altbilgi","warn"]
+];
+const DOCPHCARD=()=>`<div class="card"><div class="hd"><h3>Tanınan yer tutucular</h3><span class="sub">şablondaki hangi alan hangi içerikle dolacak</span></div>
+<div class="bd scroll"><table><thead><tr><th>Yer tutucu</th><th>Ne yazılır</th><th>Örnek / biçim</th><th>Şablondaki yeri</th><th>Durum</th></tr></thead><tbody>
+${DOCPH.map(([p,n,e,w,st])=>`<tr><td><code>${esc(p)}</code></td><td>${n}</td><td class="mini">${e}</td><td class="mini">${w}</td>
+ <td>${st==='ok'?'<span class="tag t-green">✓ bulundu</span>':'<span class="tag t-amber">⚠ şablonda yok</span>'}</td></tr>`).join("")}
+</tbody></table>
+<div class="hint" style="margin-top:11px"><code>{{kanit_linki}}</code> kurumsal şablonda bulunamadı — kanıt paketi bağlantısı belgenin sonuna ek paragraf olarak eklenecek. Şablona altbilgi eklersen oraya taşınır.</div>
+<div class="note" style="margin-top:10px">Analiz şablonundaki (M108) her bölüm <code>{{bolum:N}}</code> ile eşlenir. Şablon tasarımcısında yeni bölüm eklersen, .docx'te karşılığı yoksa bölüm sona sırayla eklenir — <b>doküman üretimi asla durmaz</b>.</div>
+</div></div>`;
+V.doctemplate=()=>({t:"Doküman şablonu (Word / PDF)",s:"Analiz, kurumun KENDİ .docx şablonunun içine yerleşir (M103r) · çıktı: .docx + .pdf",h:`
+<div class="grid" style="grid-template-columns:1fr 340px;align-items:start;margin-bottom:14px">
+ <div>
+ <div class="card" style="margin-bottom:14px"><div class="hd"><h3>Kurumsal .docx şablonu</h3><span class="sub">kapak · antet/altbilgi · logo · stil tanımları · onay tablosu</span></div><div class="bd">
+  <div style="display:flex;gap:12px;align-items:center;padding:11px 13px;border:1px solid var(--border);border-radius:9px;background:var(--panel2);margin-bottom:12px">
+   <span style="font-size:22px">📄</span>
+   <div style="flex:1"><b class="mono" style="font-size:13px">kurumsal-analiz-sablonu.docx</b>
+    <div class="mini">v2 · 14 Tem 2026 · 186 KB · yükleyen: Ayşe K. · <b>14 yer tutucu tanındı</b></div></div>
+   <span class="tag t-green">✓ doğrulandı</span>
+   <button class="btn sm" onclick="toast('Sürüm geçmişi: v2 (14 Tem · onay tablosu eklendi) · v1 (2 Tem · ilk yükleme)')">Sürümler</button>
+  </div>
+  <div class="drop" onclick="docUpload()">
+   <div style="font-size:22px">⬆</div>
+   <div style="font-size:13px;font-weight:600;margin-top:4px">Yeni sürüm yükle — .docx dosyasını buraya sürükle</div>
+   <div class="mini" style="margin-top:3px">yüklendiğinde yer tutucular taranır, tanınmayanlar uyarı olarak listelenir · en fazla 10 MB</div>
+  </div>
+  <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:12px">
+   <span class="mini">Şablondan okunan stiller:</span>
+   ${["Baslik1","Baslik2","GovdeMetni","TabloStili","Antet","Altbilgi","KapakBaslik"].map(s=>`<span class="chip">${s}</span>`).join("")}
+  </div>
+  <div class="note" style="margin-top:12px"><b>Şablon yüklenmemişse ne olur?</b> Üretim <b>durmaz</b>: analiz Maestro'nun sade varsayılan kapağıyla (ticket no · başlık · tarih · onay tablosu) üretilir. Studio bu durumda "kurumsal şablon tanımlı değil" uyarısı gösterir — sessizce geçmez.</div>
+ </div></div>
+ ${DOCPHCARD()}
+ </div>
+ <div>
+  <div class="card" style="margin-bottom:12px"><div class="hd"><h3>Çıktı</h3></div><div class="bd">
+   <div class="kv" style="grid-template-columns:110px 1fr">
+    <span class="k">Biçimler</span><span><span class="tag t-blue">.docx</span> <span class="tag t-red">.pdf</span></span>
+    <span class="k">Dosya adı</span><span class="mono mini">UGURPAY-501-analiz.docx</span>
+    <span class="k">Nereye</span><span>indirme · Jira eki · kanıt paketi</span>
+    <span class="k">PublishPort</span><span class="tag t-green">docx + pdf sürücüleri açık</span>
+    <span class="k">Şablon sürümü</span><span>çıktıya yazılır (M83)</span>
+   </div>
+   <div style="display:flex;gap:8px;margin-top:13px;flex-wrap:wrap">
+    <button class="btn p" onclick="docExport('UGURPAY-501','docx')">📄 Word olarak indir</button>
+    <button class="btn" onclick="docExport('UGURPAY-501','pdf')">🅿 PDF olarak indir</button>
+   </div>
+   <div class="mini" style="margin-top:9px">Bu makette dosya üretilmez — gerçekte docx render sürücüsü çalışır.</div>
+  </div></div>
+  <div class="card"><div class="hd"><h3>Son üretilenler</h3></div><div class="bd">
+   ${[["UGURPAY-501-analiz.docx","6 Ağu 14:20 · v2 şablon"],["UGURPAY-123-analiz.pdf","5 Ağu 09:11 · v2 şablon"],
+      ["UGURMOB-188-analiz.docx","4 Ağu 16:02 · v2 şablon"],["UGURDESK-52-analiz.docx","3 Ağu 11:47 · v1 şablon"]]
+    .map(([f,d])=>`<div style="display:flex;gap:9px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--border)">
+     <span>📄</span><div style="flex:1"><b class="mono" style="font-size:12px">${f}</b><div class="mini">${d}</div></div></div>`).join("")}
+  </div></div>
+ </div>
+</div>
+
+<div class="card"><div class="hd"><h3>Önizleme — UGURPAY-501 analizi</h3><span class="sub">kurumsal-analiz-sablonu.docx v2 ile · mavi alanlar yer tutucudan gelen içerik</span>
+ <span class="spacer" style="flex:1"></span>
+ <button class="btn sm" onclick="docExport('UGURPAY-501','docx')">📄 Word</button>
+ <button class="btn sm" onclick="docExport('UGURPAY-501','pdf')">🅿 PDF</button></div>
+<div class="bd">
+<div class="grid g2">
+ <div>
+  <div class="mini" style="margin-bottom:6px">Sayfa 1 — kapak</div>
+  <div class="paper">
+   <div class="ph"><span>Uğur Bank · Bilgi Teknolojileri</span><span>Gizlilik: Kuruma Özel</span></div>
+   <div class="logo-slot">[logo]</div>
+   <div style="margin-top:26px">
+    <div style="font-size:9px;letter-spacing:1.4px;color:#6b7280;font-family:system-ui,sans-serif">DEĞİŞİKLİK ANALİZ DOKÜMANI</div>
+    <h4 style="margin-top:7px;font-size:17px"><span class="slot">{{baslik}}</span></h4>
+    <div style="margin-top:4px;font-size:12px">Kredi limiti — API + web UI</div>
+   </div>
+   <table style="margin-top:20px">
+    <tr><th style="width:38%">Ticket</th><td><span class="slot">{{ticket_key}}</span> UGURPAY-501</td></tr>
+    <tr><th>Tarih</th><td><span class="slot">{{tarih}}</span> 6 Ağustos 2026</td></tr>
+    <tr><th>Hazırlayan</th><td><span class="slot">{{analist}}</span> analyst-web v7 (Maestro)</td></tr>
+    <tr><th>Şablon sürümü</th><td><span class="slot">{{sablon_surumu}}</span> Kurumsal analiz şablonu v3</td></tr>
+   </table>
+   <div style="margin-top:16px">
+    <h5><span class="slot">{{onay_tablosu}}</span></h5>
+    <table><thead><tr><th>Rol</th><th>Onaylayan</th><th>Tarih</th><th>İmza</th></tr></thead><tbody>
+     <tr><td>Ürün sahibi</td><td>Ayşe K.</td><td>31.07.2026</td><td>#81390</td></tr>
+     <tr><td>Teknik lider</td><td>Mert D.</td><td>01.08.2026</td><td>#81402</td></tr>
+     <tr><td>Test (QA)</td><td>Deniz Y.</td><td>01.08.2026</td><td>#81409</td></tr>
+    </tbody></table>
+   </div>
+   <div style="margin-top:18px">
+    <h5>İçindekiler <span class="slot">{{icindekiler}}</span></h5>
+    <p style="color:#374151">1. Amaç / iş değeri · 2. Kapsam · 3. Etki analizi · 4. Kabul kriterleri · 5. Ekran / API değişiklikleri · 6. Test yaklaşımı · 7. Risk ve geri dönüş planı</p>
+   </div>
+   <div style="margin-top:14px;border:1px solid #d1d5db;padding:6px 8px;font-size:9px;color:#374151;font-family:system-ui,sans-serif">
+    Bu doküman Maestro tarafından üretilmiş, onay zinciri tamamlanmıştır. Dağıtım: Kuruma Özel. Kanıt paketi ve imza kayıtları denetim izinde saklanır.</div>
+   <div class="pf"><span>UGURPAY-501-analiz.docx</span><span>Sayfa 1 / 4</span></div>
+  </div>
+ </div>
+ <div>
+  <div class="mini" style="margin-bottom:6px">Sayfa 2 — içerik</div>
+  <div class="paper">
+   <div class="ph"><span>UGURPAY-501 · Değişiklik Analiz Dokümanı</span><span>Kuruma Özel</span></div>
+   <h5 style="margin-top:0">1. Amaç / iş değeri <span class="slot">{{bolum:1}}</span></h5>
+   <p>Müşteri, şube onayı beklemeden kredi limitini risk ekibince tanımlanan üst sınıra kadar artırabilmeli. Şubeye gelen limit taleplerinin %60'ının self-servise kayması hedefleniyor.</p>
+   <h5>2. Kapsam (dahil / hariç) <span class="slot">{{bolum:2}}</span></h5>
+   <p><b>Dahil:</b> /api/credit/limit ucu · web limit artırma formu · limit doğrulama kuralları.<br>
+   <b>Hariç:</b> mobil ve masaüstü ekranları (ayrı alt ticket) · risk skorlama motoru (değişmiyor).</p>
+   <h5>3. Etki analizi <span class="slot">{{bolum:3}}</span></h5>
+   <table><thead><tr><th>Platform</th><th>Modül</th><th>Etki</th><th>Alt ticket</th></tr></thead><tbody>
+    <tr><td>linux-node</td><td>ugurpay · api + web</td><td>Yeni uç + form</td><td>UGURPAY-501</td></tr>
+    <tr><td>macos-xcode</td><td>ugurmobil-ios · Kredi</td><td>Limit ekranı</td><td>UGURPAY-502</td></tr>
+    <tr><td>linux-android</td><td>ugurmobil-android · Kredi</td><td>Limit ekranı</td><td>UGURPAY-503</td></tr>
+    <tr><td>windows-dotnet</td><td>ugurmasaüstü · Şube</td><td>Onay ekranı</td><td>UGURPAY-504</td></tr>
+   </tbody></table>
+   <h5>4. Kabul kriterleri <span class="slot">{{bolum:4}}</span></h5>
+   <p>1) Limit üst sınırı konfigürasyondan okunur, sabit kodlanmaz.<br>
+   2) Üst sınırı aşan talep 422 ile reddedilir ve yerelleştirilmiş mesaj döner.<br>
+   3) Başarılı artırım audit'e yazılır.<br>
+   4) Mevcut limit sorgusu değişmez (geriye uyum).</p>
+   <h5>5. Ekran / API değişiklikleri <span class="slot">{{bolum:5}}</span></h5>
+   <p>POST /api/credit/limit (yeni) · GET /api/credit/limit (değişmedi, geriye uyumlu).<br>
+   Ekran: Hesabım → Kredi → "Limit artır" formu (yeni).</p>
+   <h5>6. Test yaklaşımı <span class="slot">{{bolum:6}}</span></h5>
+   <p>Birim ≈20 · entegrasyon ≈6 · uçtan uca 2. Kapsam eşiği %70, ratchet düşmez.</p>
+   <div class="pf"><span>Kanıt paketi: arsiv/UGURPAY-501 <span class="slot">{{kanit_linki}}</span></span><span>Sayfa 2 / 4</span></div>
+  </div>
+ </div>
+</div>
+<div class="note" style="margin-top:13px">Belge kurumun kendi stilleriyle üretilir — yazı tipi, başlık numaralandırması, antet ve altbilgi şablondan gelir. Maestro yalnız içeriği yerleştirir; kurumsal format kuruma ait kalır.</div>
 </div></div>`});
+function docUpload(){openModal(`<div class="bd">
+ <h3 style="margin-top:0">Şablon yükle — yeni sürüm</h3>
+ <div class="drop" style="margin:12px 0"><div style="font-size:22px">📄</div>
+  <div style="font-size:13px;font-weight:600;margin-top:4px">kurumsal-analiz-sablonu-v3.docx</div>
+  <div class="mini">192 KB · sürükle-bırak (makette temsilî)</div></div>
+ <div class="note" style="margin-bottom:12px">Yüklemede: yer tutucular taranır · makrolar ve gömülü nesneler temizlenir · dosya değişmez arşive yazılır ve <b>v3</b> olarak sürümlenir. Eski sürümle başlamış akışlar eski şablonla biter (M83).</div>
+ <div style="display:flex;gap:8px"><button class="btn p" onclick="closeModal();toast('✓ kurumsal-analiz-sablonu.docx v3 yüklendi · 14 yer tutucu tanındı · 1 uyarı')">Yükle ve tara</button>
+ <button class="btn" onclick="closeModal()">Vazgeç</button></div></div>`)}
+function docExport(k,f){
+ toast("✓ <b>kurumsal-analiz-sablonu v2</b> ile <b>"+k+"-analiz."+f+"</b> üretildi — indirildi · kanıt paketine eklendi")}
 
 V.llm=()=>({t:"LLM Gateway",s:"Tüm model trafiği tek kapıdan · abonelik havuzu + API sürücüleri + on-prem · politika ile yönlendirme",h:`
 <div class="card" style="margin-bottom:14px"><div class="hd"><h3>Abonelik havuzu (M55)</h3><span class="sub">birincil yol — token API'den ucuz · kota/pencere takibi · dolan hesap pas geçilir</span></div><div class="bd">
@@ -1002,7 +1322,9 @@ ${AUDIT.map(a=>`<tr><td class="mono mini">${a.i}</td><td class="mono mini">${a.t
 V.evidence=()=>({t:"Kanıt paketi",s:"UGURPAY-123 · tamamlanan iş akışının denetim dosyası",h:`
 <div class="grid" style="grid-template-columns:1fr 320px;align-items:start">
 <div class="card"><div class="hd"><h3>Paket içeriği</h3><span class="sub">tek arşiv · değişmez · Jira'ya link olarak düşer</span></div><div class="bd">
-${[["01-analiz.md","Şablon v3'e uygun analiz + etki matrisi","28 KB"],
+${[["01-analiz.md","Şablon v3'e uygun analiz + etki matrisi (ham)","28 KB"],
+   ["01a-analiz.docx","Kurumsal Word belgesi — kurumsal-analiz-sablonu v2 · kapak + onay tablosu (M103r)","96 KB"],
+   ["01b-analiz.pdf","Aynı belgenin PDF hali — kurula/denetime teslim kopyası","148 KB"],
    ["02-teknik-tasarim.md","Analyst teknik tasarımı","14 KB"],
    ["03-degisiklik.diff","9 dosya · +412/−87","41 KB"],
    ["04-sandbox-kosum.log","lint · build · 27 test · coverage %83","220 KB"],
@@ -1015,7 +1337,10 @@ ${[["01-analiz.md","Şablon v3'e uygun analiz + etki matrisi","28 KB"],
  .map(([f,d,s])=>`<div style="display:flex;gap:11px;padding:9px 0;border-bottom:1px dashed var(--border);align-items:center">
   <span style="font-size:15px">📄</span><div style="flex:1"><b class="mono" style="font-size:12.5px">${f}</b><div class="mini">${d}</div></div>
   <span class="mini">${s}</span></div>`).join("")}
-<div style="display:flex;gap:8px;margin-top:14px"><button class="btn p">📦 Paketi indir (.zip)</button><button class="btn">Jira'ya link ekle</button></div>
+<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn p">📦 Paketi indir (.zip)</button>
+<button class="btn" onclick="docExport('UGURPAY-123','docx')">📄 Analizi Word olarak indir</button>
+<button class="btn" onclick="docExport('UGURPAY-123','pdf')">🅿 PDF</button>
+<button class="btn">Jira'ya link ekle</button></div>
 </div></div>
 <div><div class="card"><div class="hd"><h3>Denetim özeti</h3></div><div class="bd"><div class="kv">
  <span class="k">Ticket</span><span class="mono">UGURPAY-123</span>
@@ -1025,9 +1350,11 @@ ${[["01-analiz.md","Şablon v3'e uygun analiz + etki matrisi","28 KB"],
  <span class="k">AI katkısı</span><span>kod %100 · testler %100</span>
  <span class="k">İnsan katkısı</span><span>5 onay · 1 PR yorumu</span>
  <span class="k">PII</span><span>maskelendi · arşivde maskeli</span>
+ <span class="k">Analiz şablonu</span><span>v3 <span class="tag t-gray">pinli (M83)</span></span>
+ <span class="k">Doküman şablonu</span><span class="mini">kurumsal-analiz-sablonu v2</span>
  <span class="k">Hash</span><span class="mono mini">e91c…40ab</span>
 </div>
-<div class="note" style="margin-top:12px">Bu paket kurumun değişiklik kaydına Jira üzerinden bağlanır (M34).</div>
+<div class="note" style="margin-top:12px">Bu paket kurumun değişiklik kaydına Jira üzerinden bağlanır (M34). Analiz belgesi pakette hem ham (<code>.md</code>) hem kurumsal <code>.docx</code>/<code>.pdf</code> olarak durur — denetime dosya olarak teslim edilebilir (M103r).</div>
 </div></div></div></div>`});
 
 V.security=()=>({t:"Güvenlik bulguları",s:"6b taraması · fail-closed · dijest-pinli imajlar",h:`
@@ -1419,7 +1746,10 @@ const DTAB={
   <div class="note" style="margin-top:12px">Append-only: kayıtlar değiştirilemez, silinemez. Kanıt paketinin hammaddesi ve ajanın "yaşayan özet"inin kaynağı budur.</div>`,
  _a501:()=>`<div style="display:flex;gap:9px;align-items:center;margin-bottom:13px;flex-wrap:wrap">
    <span class="tag t-green">✓ Şablon v3 doğrulaması geçti (7/7 bölüm)</span><span class="mini">analyst-web v7 · 31 Tem 11:58 · $1.12</span>
-   <span class="spacer" style="flex:1"></span><button class="btn sm">Jira'daki ADF halini gör</button></div>
+   <span class="spacer" style="flex:1"></span>
+   <span style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn sm">Jira'daki ADF halini gör</button>
+   <button class="btn sm" onclick="docExport('UGURPAY-501','docx')" title="kurumsal .docx şablonuyla üretilir (M103r)">📄 Word olarak indir</button>
+   <button class="btn sm" onclick="docExport('UGURPAY-501','pdf')">🅿 PDF</button></span></div>
   ${[["1. Amaç / iş değeri","Müşteri, şube onayı beklemeden kredi limitini risk ekibince tanımlanan üst sınıra kadar artırabilmeli. Şubeye gelen limit taleplerinin %60'ının self-servise kayması hedefleniyor."],
      ["2. Kapsam","<b>Dahil:</b> /api/credit/limit ucu, web limit artırma formu, limit doğrulama kuralları.<br><b>Hariç:</b> mobil ve masaüstü ekranları (ayrı alt ticket'lar), risk skorlama motoru (değişmiyor)."],
      ["3. Etki analizi","platform × modül matrisi — aşağıdaki tabloda"],
@@ -1541,7 +1871,11 @@ function genAnalysis(t){
  if(typeof t.step==='number'&&t.step<4)return `<div class="note">Analiz henüz üretilmedi — akış ${typeof t.step==='number'?STEPS[t.step][1]:'koordinasyon'} adımında.</div>`;
  const ap=APPS[t.app]||{name:t.app};
  return `<div style="display:flex;gap:9px;align-items:center;margin-bottom:13px;flex-wrap:wrap">
-  <span class="tag t-green">✓ Şablon v3 doğrulaması geçti (7/7 bölüm)</span><span class="mini">analyst-${t.app==='ios'||t.app==='android'?'mobile':t.app==='desktop'?'desktop':'web'} · risk: ${t.risk}</span></div>
+  <span class="tag t-green">✓ Şablon v3 doğrulaması geçti (7/7 bölüm)</span><span class="mini">analyst-${t.app==='ios'||t.app==='android'?'mobile':t.app==='desktop'?'desktop':'web'} · risk: ${t.risk}</span>
+  <span class="spacer" style="flex:1"></span>
+  <span style="display:flex;gap:7px;flex-wrap:wrap">
+  <button class="btn sm" onclick="docExport('${t.k}','docx')" title="kurumsal .docx şablonuyla üretilir (M103r)">📄 Word olarak indir</button>
+  <button class="btn sm" onclick="docExport('${t.k}','pdf')">🅿 PDF</button></span></div>
  ${[["1. Amaç / iş değeri",`"${t.t}" — ${t.bug?"mevcut hatanın giderilmesi; müşteri etkisi ve tekrarı önleme":"kullanıcı deneyimi/iş süreci iyileştirmesi"} (${ap.name}).`],
     ["2. Kapsam",`<b>Dahil:</b> ${ap.name} ilgili modül değişiklikleri.<br><b>Hariç:</b> diğer platformlar, altyapı değişiklikleri.`],
     ["3. Etki analizi",`Birincil uygulama: ${ap.name} (${matchInfo(t).via} eşleşmesi). Diğer 4 uygulama repo kartlarından değerlendirildi (M100) → etkilenmiyor, fan-out gerekmedi.`],
@@ -1996,6 +2330,7 @@ function route(){
   const a=$("#nav-"+(id==="detail"?"tickets":id)); if(a)a.classList.add("active");
   window.scrollTo(0,0);
   if(id==="sandbox") streamLog();
+  if(id==="template") tRender();
   if(id!=="live"&&window.LVT){clearTimeout(window.LVT)}
 }
 const LOGLINES=[

@@ -1,25 +1,24 @@
 import { createDb } from "@maestro/db";
-import { MAESTRO_TASK_QUEUE } from "@maestro/workflows";
+import { MAESTRO_TASK_QUEUE, startMaestroWorker } from "@maestro/workflows";
 import { bootPlatform, MISSING_CORE_DEPS } from "../boot.js";
-import { prismaSqlExecutor } from "../stores/sql.js";
+import { unwiredAgentTurnRunner } from "../stores/execution.js";
+import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
+import { buildWorkerCore } from "../stores/worker-core.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
 
 /**
  * The Temporal worker process.
  *
- * The ports are composed here for real — `bootPlatform` resolves all eight and
- * throws on the first one that cannot be built, so a misconfigured worker dies
- * at start-up rather than at a gate. What it cannot yet do is RUN: the
- * activities need run-scoped state that nothing implements.
+ * Through wave 4 this entrypoint composed the ports and then refused to poll:
+ * the activities need run-scoped state, and nothing implemented it. Starting
+ * anyway would have meant a worker that takes tickets and loses every run's
+ * context on the first restart — silently, with a Jira comment already posted.
  *
- * Refusing is the point. `@maestro/workflows` would accept in-memory stubs
- * without complaint and the worker would start, poll the task queue, and take
- * tickets — losing every run's context on the first restart, silently, with a
- * Jira comment already posted. A worker that never started is a page at
- * 09:00; a worker that started and forgot is a corrupted audit trail.
- *
- * `startMaestroWorker` from `@maestro/workflows` is the one call this
- * entrypoint is missing, and it is a two-line change once `CoreDeps` exists.
+ * Dalga 5 built those stores (`src/stores/`, all Postgres-backed), so the
+ * refusal is gone and this process polls for real. `MISSING_CORE_DEPS` stays
+ * as the precondition: if a future dependency arrives half-built it goes in
+ * that list, and the worker refuses again — at start-up, in front of an
+ * operator, rather than mid-ticket.
  */
 export async function main(): Promise<void> {
   // The dev profile stores blobs in Postgres, so the database is a dependency
@@ -28,24 +27,52 @@ export async function main(): Promise<void> {
   if (url === undefined) {
     throw new Error("DATABASE_URL: required — the worker's storage port writes through it (M6)");
   }
+  const address = process.env["TEMPORAL_ADDRESS"];
+  if (address === undefined) {
+    throw new Error("TEMPORAL_ADDRESS: required — the worker polls the task queue through it");
+  }
+
   const db = createDb(url);
 
   try {
-    const { env, deployment } = await bootPlatform({ sql: prismaSqlExecutor(db) });
+    // Built BEFORE the ports: `publish`'s deps need the run context store and
+    // the receipt store, and `bootPlatform` wires them into the port at
+    // registration time (see `buildPublishDeps`).
+    const { core, publishRunDeps } = buildWorkerCore(db, {
+      sql: prismaSqlExecutor(db),
+      transactions: prismaTransactionRunner(db),
+      execution: unwiredAgentTurnRunner(),
+    });
 
+    const { env, deployment } = await bootPlatform({
+      sql: prismaSqlExecutor(db),
+      publishRunDeps,
+    });
+
+    if (MISSING_CORE_DEPS.length > 0) {
+      throw new Error(
+        "worker: the ports compose, but a run-scoped dependency is missing, so the worker " +
+          "refuses to poll rather than accept tickets it would lose on restart (M33). Missing:\n  - " +
+          MISSING_CORE_DEPS.join("\n  - "),
+      );
+    }
+
+    const taskQueue = env.TEMPORAL_TASK_QUEUE ?? MAESTRO_TASK_QUEUE;
     console.info(
       `[maestro] worker: composed ${Object.keys(deployment.selection).length} ports on profile ` +
-        `${env.profile}, task queue ${env.TEMPORAL_TASK_QUEUE ?? MAESTRO_TASK_QUEUE}`,
+        `${env.profile}, polling ${taskQueue}`,
     );
+
+    await startMaestroWorker({
+      address,
+      taskQueue,
+      registry: deployment.registry,
+      ports: deployment.selection,
+      core,
+    });
   } finally {
     await db.$disconnect();
   }
-
-  throw new Error(
-    "worker: the ports compose, but the run-scoped stores do not exist yet, so the worker " +
-      "refuses to poll rather than accept tickets it would lose on restart (M33). Missing:\n  - " +
-      MISSING_CORE_DEPS.join("\n  - "),
-  );
 }
 
 if (isEntrypoint(import.meta.url)) {

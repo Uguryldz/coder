@@ -40,6 +40,22 @@ export interface BootOptions {
    * pass one and a deployment that does not gets the refusing default.
    */
   readonly containerRunner?: ContainerRunner;
+  /**
+   * The two run-scoped collaborators the publisher cannot invent.
+   *
+   * Supplied by the service that owns the database pool (the worker does;
+   * `compose.test.ts` deliberately does not). Absent, `buildPublishDeps` keeps
+   * its refusing stubs — a publisher that cannot name the run must not post a
+   * document to a bank's Jira ticket under an invented key, and it must not
+   * skip the M75 idempotency check either.
+   */
+  readonly publishRunDeps?: PublishRunDeps;
+}
+
+/** What the publisher needs that only a database-owning service can supply. */
+export interface PublishRunDeps {
+  readonly runContext: PublishDeps["runContext"];
+  readonly state: PublishDeps["state"];
 }
 
 export interface BootedPlatform {
@@ -83,7 +99,7 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
         maskOutbound(payload, { policy, dataClass: context.dataClass, boundary: context.boundary }),
     },
     notify: { secrets, work },
-    publish: { ...buildPublishDeps(secrets, policy), work },
+    publish: { ...buildPublishDeps(secrets, policy, options.publishRunDeps), work },
     scan: { runner: options.containerRunner ?? unbridgedScanRunner() },
   });
 
@@ -117,26 +133,33 @@ function buildWorkPort(env: DeployEnv, secrets: SecretPort): WorkPort {
 /**
  * `PublishDeps` demands four collaborators the port cannot invent, and two of
  * them are run-scoped: the publisher needs to know which ticket a document
- * belongs to, and where the last receipt for it was written. Both come from
- * the run stores the worker's `CoreDeps` also needs — see `MISSING_CORE_DEPS`.
+ * belongs to, and where the last receipt for it was written.
  *
- * `translate` and `pii.policy` are real: the catalog and the PII policy exist
- * today. The two run-scoped ones refuse instead of guessing. A publisher that
- * cannot name the run must not post a document to a bank's Jira ticket under
- * an invented key, and it must not silently skip the M75 idempotency check
- * either — republishing would then mean a second comment, every time.
+ * A service that owns the database pool passes both in (`publishRunDeps`), and
+ * they are the real Postgres-backed ones — `PrismaRunContextStore` and
+ * `PrismaPublishState`. A service that does not still COMPOSES, and gets stubs
+ * that refuse: a publisher that cannot name the run must not post a document
+ * to a bank's Jira ticket under an invented key, and it must not silently skip
+ * the M75 idempotency check either — republishing would then mean a second
+ * comment, every time.
+ *
+ * `translate` and `pii.policy` are always real.
  */
-function buildPublishDeps(secrets: SecretPort, policy: LoadedPiiPolicy): PublishDeps {
+function buildPublishDeps(
+  secrets: SecretPort,
+  policy: LoadedPiiPolicy,
+  runDeps: PublishRunDeps | undefined,
+): PublishDeps {
   const unavailable = (what: string): never => {
     throw new Error(
-      `publish: ${what} is not wired — the run-scoped stores are not implemented yet ` +
-        `(missing: ${MISSING_CORE_DEPS.join("; ")})`,
+      `publish: ${what} is not wired — this process did not supply publishRunDeps, so it has ` +
+        `no database-backed run context or receipt store (M47/M75)`,
     );
   };
   return {
     translate: t,
-    runContext: () => unavailable("runContext"),
-    state: {
+    runContext: runDeps?.runContext ?? ((): never => unavailable("runContext")),
+    state: runDeps?.state ?? {
       get: () => unavailable("state.get"),
       set: () => unavailable("state.set"),
     },
@@ -195,17 +218,27 @@ export function unbridgedScanRunner(): ContainerRunner {
  * The stores a full worker still needs, named so the gap is a documented
  * refusal rather than a surprise.
  *
- * `@maestro/workflows`'s `CoreDeps` requires these, and no package implements
- * any of them yet: they are all Postgres-backed run state, which is the next
- * wave's work. `bootWorker` refuses with this list rather than starting a
- * worker on in-memory stubs — a worker that accepts tasks and then loses a
- * run's context on restart is worse than a worker that never started.
+ * Six entries stood here through wave 4 and the worker refused to poll because
+ * of them. Dalga 5 implemented all six against Postgres — they live in
+ * `src/stores/` (M44: `@maestro/workflows` declares the interfaces and never
+ * imports Prisma) and are assembled by `buildCoreStores`:
+ *
+ *   RunContextStore  → stores/run-context.ts   (WorkflowRun + its new columns)
+ *   GateStore        → stores/gates.ts         (Gate table; decisions from the chain)
+ *   ParamReader      → stores/params.ts        (ParamVersion, scope-resolved)
+ *   DirectoryReader  → stores/directory.ts     (User.groupsJson; LDAPS pluggable)
+ *   IdempotencyGuard → stores/idempotency.ts   (IdempotencyKey, cross-process)
+ *   AuditStore       → stores/audit.ts         (AuditLog + pg advisory lock)
+ *
+ * The seventh dependency, the run journal, was never missing: `@maestro/memory`
+ * has shipped `journalStoreFromDb` — Postgres-backed, append-only, keyed by
+ * `(runId, seq)` — since wave 1. It is wired in `buildWorkerCore` alongside
+ * the six above.
+ *
+ * The list is therefore EMPTY, and the worker polls. It stays in the code
+ * rather than being deleted because it is the worker's start-up precondition:
+ * `bootWorker` refuses while anything is in it, so a future dependency that
+ * arrives half-built is a refusal at 09:00 in front of an operator rather than
+ * a run that loses its context on the first restart.
  */
-export const MISSING_CORE_DEPS = [
-  "RunContextStore (packages/workflows: run row — ticket, app, branch, workspace)",
-  "GateStore (approval gates + escalation ladder state, M88)",
-  "ParamReader (operational parameters from the DB, M71)",
-  "DirectoryReader (AD group → corporate addresses)",
-  "IdempotencyGuard (table-backed; InMemoryIdempotency is single-worker only, M33)",
-  "AuditStore (Postgres-backed; only InMemoryAuditStore ships, M33)",
-] as const;
+export const MISSING_CORE_DEPS: readonly string[] = [];

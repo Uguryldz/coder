@@ -23,6 +23,7 @@
     "@maestro/contracts": "workspace:*",
     "@maestro/db": "workspace:*",
     "@maestro/llm-gateway": "workspace:*",
+    "@maestro/memory": "workspace:*",
     "@maestro/notify": "workspace:*",
     "@maestro/pii": "workspace:*",
     "@maestro/ports": "workspace:*",

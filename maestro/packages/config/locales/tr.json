@@ -831,6 +831,7 @@
   "params.description.merge_mode": "Merge modu: insan-merge (varsayılan) veya otomatik merge",
   "params.description.notify_routing": "Hangi olay hangi bildirim kanallarına gider",
   "params.description.output_language": "AI çıktı dili (analiz, Jira yorumları)",
+  "params.description.publish_targets": "Üretilen belgelerin hangi hedeflere yayınlanacağı",
   "params.description.quota_warn_pct": "Abonelik kota penceresinde uyarı eşiği (%)",
   "params.description.reminder_channel": "Hatırlatıcı ve eskalasyon bildirim kanalı",
   "params.description.scan_block_level": "Hangi güvenlik bulgusu seviyesi akışı durdurur",

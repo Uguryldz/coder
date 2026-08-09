@@ -59,7 +59,7 @@ describe("recordGateDecision", () => {
     // keeps the gate open on this verdict instead of dying.
     const verdict = await recordGateDecision(fakes.deps, "PAY-101", decision());
     expect(verdict.accepted).toBe(false);
-    expect(fakes.deps.gates.closed ?? []).toEqual([]);
+    expect((await fakes.gateStore.get("run-pay-101-0001", "5"))?.closedAt ?? null).toBeNull();
   });
 
   it("refuses a group that does not own the gate, even if the person exists", async () => {

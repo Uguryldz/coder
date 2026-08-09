@@ -1,8 +1,8 @@
 import type { AgentRunInput } from "@maestro/llm-gateway";
 import { describe, expect, it } from "vitest";
 import { ClaudeSubRunner, type ClaudeSubRunnerOptions } from "../src/claude-sub.js";
-import { OAUTH_TOKEN_ENV } from "../src/cli.js";
-import { ClaudeCliError, ClaudeCliProtocolError, ExecutionConfigError } from "../src/errors.js";
+import { CONFIG_DIR_ENV, OAUTH_TOKEN_ENV } from "../src/cli.js";
+import { ClaudeCliError, ClaudeCliProtocolError, ClaudeConfigError } from "../src/errors.js";
 import { initLine, OTHER_SESSION_ID, resultLine, SESSION_ID, stream, stubSpawn } from "./helpers.js";
 
 function runnerOptions(over: Partial<ClaudeSubRunnerOptions> = {}): ClaudeSubRunnerOptions {
@@ -11,9 +11,14 @@ function runnerOptions(over: Partial<ClaudeSubRunnerOptions> = {}): ClaudeSubRun
     basePath: "/usr/bin",
     home: "/home/seat1",
     permissionMode: "acceptEdits",
+    tools: ["Read", "Edit", "Bash"],
     mcpConfigPath: "/etc/maestro/mcp.json",
     timeoutMs: 60_000,
-    resolveSeat: (ref) => Promise.resolve({ oauthToken: ref === null ? null : `token-for-${ref}`, configDir: null }),
+    resolveSeat: (ref) =>
+      Promise.resolve({
+        oauthToken: ref === null ? null : `token-for-${ref}`,
+        configDir: `/var/lib/maestro/seats/${ref ?? "own"}`,
+      }),
     newSessionId: () => SESSION_ID,
     ...over,
   };
@@ -52,6 +57,16 @@ describe("ClaudeSubRunner", () => {
     expect(spawn.calls[0]?.env["ANTHROPIC_API_KEY"]).toBeUndefined();
   });
 
+  it("carries the repo-containment flags into every real invocation", async () => {
+    const spawn = stubSpawn([{ stdout: stream(resultLine()) }]);
+    await new ClaudeSubRunner(spawn.fn, runnerOptions()).run(input());
+    const args = spawn.calls[0]?.args ?? [];
+    expect(args).toContain("--safe-mode");
+    expect(args).toContain("--strict-mcp-config");
+    expect(args[args.indexOf("--setting-sources") + 1]).toBe("user");
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read");
+  });
+
   it("resumes the vendor session on the second turn (M30)", async () => {
     const spawn = stubSpawn([{ stdout: stream(resultLine()) }]);
     await new ClaudeSubRunner(spawn.fn, runnerOptions()).run(input({ vendorSessionId: SESSION_ID }));
@@ -67,11 +82,38 @@ describe("ClaudeSubRunner", () => {
     ).rejects.toThrow(/previous context was lost/);
   });
 
+  // D1 — the check used to run on the resume leg only.
+  it("fails when a pinned NEW session comes back under a different id", async () => {
+    const spawn = stubSpawn([{ stdout: stream(resultLine({ session_id: OTHER_SESSION_ID })) }]);
+    await expect(new ClaudeSubRunner(spawn.fn, runnerOptions()).run(input())).rejects.toThrow(
+      /was pinned with --session-id/,
+    );
+  });
+
+  // O4 — pooled seats sharing one ~/.claude share one transcript store.
+  it("refuses a seat with no config dir: pooled seats must not share a session store", async () => {
+    const spawn = stubSpawn([{ stdout: stream(resultLine()) }]);
+    const seatless = runnerOptions({
+      resolveSeat: () => Promise.resolve({ oauthToken: "tok", configDir: "" }),
+    });
+    await expect(new ClaudeSubRunner(spawn.fn, seatless).run(input())).rejects.toThrow(/configDir/);
+    expect(spawn.calls).toEqual([]);
+  });
+
+  it("gives each seat its own CLAUDE_CONFIG_DIR", async () => {
+    const spawn = stubSpawn([{ stdout: stream(resultLine()) }, { stdout: stream(resultLine()) }]);
+    const runner = new ClaudeSubRunner(spawn.fn, runnerOptions());
+    await runner.run(input({ credentialRef: "seat-1" }));
+    await runner.run(input({ credentialRef: "seat-2" }));
+    expect(spawn.calls[0]?.env[CONFIG_DIR_ENV]).toBe("/var/lib/maestro/seats/seat-1");
+    expect(spawn.calls[1]?.env[CONFIG_DIR_ENV]).toBe("/var/lib/maestro/seats/seat-2");
+  });
+
   it("refuses any driver other than claude-sub instead of guessing", async () => {
     const spawn = stubSpawn([]);
     await expect(
       new ClaudeSubRunner(spawn.fn, runnerOptions()).run(input({ driver: "anthropic-direct" })),
-    ).rejects.toThrow(ExecutionConfigError);
+    ).rejects.toThrow(ClaudeConfigError);
   });
 
   it("turns a non-zero exit into an error carrying the CLI's own reason", async () => {
@@ -104,6 +146,14 @@ describe("ClaudeSubRunner", () => {
     await expect(new ClaudeSubRunner(spawn.fn, runnerOptions()).run(input())).rejects.toThrow(ClaudeCliProtocolError);
   });
 
+  // D3 — the parser counted these and the runner threw the count away.
+  it("does not accept a turn whose stream carried lines it could not read", async () => {
+    const spawn = stubSpawn([{ stdout: stream("Warning: profile is stale", resultLine()) }]);
+    await expect(new ClaudeSubRunner(spawn.fn, runnerOptions()).run(input())).rejects.toThrow(
+      /1 stdout line\(s\) were not JSON/,
+    );
+  });
+
   it("streams stdout lines onward while the turn runs", async () => {
     const seen: string[] = [];
     const spawn = stubSpawn([{ stdout: stream(resultLine()) }]);
@@ -114,6 +164,6 @@ describe("ClaudeSubRunner", () => {
   });
 
   it("rejects a non-positive timeout at construction", () => {
-    expect(() => new ClaudeSubRunner(stubSpawn([]).fn, runnerOptions({ timeoutMs: 0 }))).toThrow(ExecutionConfigError);
+    expect(() => new ClaudeSubRunner(stubSpawn([]).fn, runnerOptions({ timeoutMs: 0 }))).toThrow(ClaudeConfigError);
   });
 });

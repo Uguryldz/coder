@@ -2,10 +2,11 @@ import type { DataClass } from "@maestro/contracts";
 import type { LoadedPiiPolicy, OutboundCall, PiiBoundaryResult } from "@maestro/pii";
 import type { LlmPort } from "@maestro/ports";
 import { type BootstrapContext, type BootstrapLimits, composeTurnPrompt } from "./bootstrap.js";
+import { ciFingerprint } from "./ci-fingerprint.js";
 import { createReportJournal, runVerification, type SessionReport, summarizeDiff, verificationFailures } from "./collect.js";
-import { WorkspaceProbeError } from "./errors.js";
+import { DataClassChangedError, WorkspaceProbeError } from "./errors.js";
 import { createProtectedPathMatcher, findProtectedViolations, type ProtectedPathViolation } from "./protected-paths.js";
-import { ciFingerprint, handoverDecision, type HandoverDecision, type StrikeKey, type StrikeLedger, type StrikeState } from "./strikes.js";
+import { handoverDecision, type HandoverDecision, type StrikeKey, type StrikeLedger, type StrikeState } from "./strikes.js";
 import type { ChangedFile, CommandResult, CommandSpec, VerificationRunner, WorkspaceProbe } from "./types.js";
 
 export interface AgentTurnRequest {
@@ -42,7 +43,22 @@ export interface AgentExecutionDeps {
   readonly journalSink: OutboundCall<SessionReport, unknown>;
   readonly now: () => Date;
   readonly bootstrapLimits?: BootstrapLimits;
+  /**
+   * How many runs may hold an open journal writer at once. Each writer keeps a
+   * masking session — and with it a ReverseMap of real values — alive, so this
+   * is a memory-of-secrets bound, not a performance knob.
+   */
+  readonly maxOpenRuns?: number;
 }
+
+type JournalWriter = (report: SessionReport) => Promise<PiiBoundaryResult<unknown>>;
+
+interface RunJournal {
+  readonly dataClass: DataClass;
+  readonly write: JournalWriter;
+}
+
+export const DEFAULT_MAX_OPEN_RUNS = 8;
 
 /**
  * One doing-role turn, end to end: bootstrap or resume → agent session →
@@ -52,12 +68,15 @@ export interface AgentExecutionDeps {
  */
 export class AgentExecution {
   /**
-   * One journal writer — and therefore one masking session — per data class,
-   * for this execution's lifetime. Building a writer per turn gave every turn
-   * a fresh token vocabulary, so turn 2's report, which quotes turn 1's masked
-   * text, had its tokens de-fanged on the way into the journal.
+   * One journal writer — and therefore one masking session — per RUN.
+   *
+   * Per run, not per data class: the writer's session is the token vocabulary,
+   * and its ReverseMap holds the real values behind every token it minted. Two
+   * tickets that happen to share a data class used to share the writer, so
+   * ticket A's IBAN and ticket B's got the same token in their journals — and
+   * A's real values stayed reachable, in memory, for as long as B kept running.
    */
-  private readonly journals = new Map<DataClass, (report: SessionReport) => Promise<PiiBoundaryResult<unknown>>>();
+  private readonly journals = new Map<string, RunJournal>();
 
   constructor(private readonly deps: AgentExecutionDeps) {}
 
@@ -85,6 +104,9 @@ export class AgentExecution {
     }
 
     const changed = await this.inspect(ctx.workspace.path);
+    // The repo's list only ever ADDS to the M52 floor — see
+    // `DEFAULT_PROTECTED_PATHS`. An empty list means "nothing extra", never
+    // "nothing at all".
     const violations = findProtectedViolations(changed, createProtectedPathMatcher(ctx.protectedPaths));
     // M52 is fail-closed: stop here, do not spend a build on an illegal diff.
     const commands =
@@ -107,12 +129,34 @@ export class AgentExecution {
     await this.publish(report, req.dataClass);
 
     if (verdict === null) return { status: "ok", report };
+    // A handover ends the run's AI-led life; nothing more will be journalled
+    // under it, so its masking session (and its ReverseMap) goes now.
+    if (verdict.handover.handover) this.endRun(ctx.runId);
     return { status: "failed", reason: verdict.reason, report, handover: verdict.handover };
   }
 
+  /**
+   * Drops a run's journal writer, and with it the map of real values behind its
+   * tokens. Wave 3's workflow calls this when a ticket leaves the doing role;
+   * a handover calls it on its own.
+   */
+  endRun(runId: string): void {
+    this.journals.delete(runId);
+  }
+
+  /**
+   * Everything the session left behind, INCLUDING `.git/` — which `git status`
+   * cannot report on, so a probe that only ran `git status` would hand the M52
+   * gate a clean sheet while `.git/hooks/post-checkout` sat there waiting to
+   * run on the bank's own runner.
+   */
   private async inspect(workspacePath: string): Promise<readonly ChangedFile[]> {
     try {
-      return await this.deps.probe.changedFiles(workspacePath);
+      const [tracked, internal] = await Promise.all([
+        this.deps.probe.changedFiles(workspacePath),
+        this.deps.probe.internalChangedFiles(workspacePath),
+      ]);
+      return [...tracked, ...internal];
     } catch (cause) {
       throw new WorkspaceProbeError(workspacePath, cause instanceof Error ? cause.message : String(cause));
     }
@@ -131,8 +175,10 @@ export class AgentExecution {
     }
     const failures = verificationFailures(commands);
     if (failures.length > 0) {
-      const digest = failures.map((f) => `${f.name}#${f.exitCode}\n${f.stderrTail}\n${f.stdoutTail}`).join("\n");
-      const key: StrikeKey = { runId, scope: "ci", ref: ciFingerprint(digest) };
+      const ref = ciFingerprint(
+        failures.map((f) => ({ name: f.name, exitCode: f.exitCode, output: `${f.stderrTail}\n${f.stdoutTail}` })),
+      );
+      const key: StrikeKey = { runId, scope: "ci", ref };
       const state = this.deps.strikes.record(key, failures.map((f) => `${f.name} exited ${f.exitCode}`).join(", "));
       return { reason: "verification", state, handover: handoverDecision(state) };
     }
@@ -141,17 +187,34 @@ export class AgentExecution {
   }
 
   private async publish(report: SessionReport, dataClass: DataClass): Promise<void> {
-    let write = this.journals.get(dataClass);
-    if (write === undefined) {
-      // Per data class, never shared: two classes resolve to two profiles, and
-      // a session belongs to exactly one profile.
-      write = createReportJournal({
-        policy: this.deps.piiPolicy,
-        dataClass,
-        sink: this.deps.journalSink,
-      });
-      this.journals.set(dataClass, write);
+    const existing = this.journals.get(report.runId);
+    if (existing !== undefined) {
+      if (existing.dataClass !== dataClass) {
+        throw new DataClassChangedError(report.runId, existing.dataClass, dataClass);
+      }
+      // Refresh recency so the LRU below evicts genuinely idle runs.
+      this.journals.delete(report.runId);
+      this.journals.set(report.runId, existing);
+      await existing.write(report);
+      return;
     }
-    await write(report);
+
+    const entry: RunJournal = {
+      dataClass,
+      write: createReportJournal({ policy: this.deps.piiPolicy, dataClass, sink: this.deps.journalSink }),
+    };
+    this.journals.set(report.runId, entry);
+    this.evictIdleRuns();
+    await entry.write(report);
+  }
+
+  /** Insertion order is recency order; the oldest run's secrets go first. */
+  private evictIdleRuns(): void {
+    const limit = this.deps.maxOpenRuns ?? DEFAULT_MAX_OPEN_RUNS;
+    while (this.journals.size > limit) {
+      const oldest = this.journals.keys().next();
+      if (oldest.done === true) return;
+      this.journals.delete(oldest.value);
+    }
   }
 }

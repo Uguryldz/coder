@@ -1,4 +1,6 @@
 import {
+  compiledProfileFor,
+  guardEgress,
   withPiiBoundary,
   type LoadedPiiPolicy,
   type OutboundCall,
@@ -92,6 +94,14 @@ export const JOURNAL_BOUNDARY = "execution/session-report";
  * their brackets and the row stops recording that a value was removed there.
  * Keep one writer per run and per data class, which is what `AgentExecution`
  * does.
+ *
+ * The sink is additionally wrapped in `guardEgress`, so the tripwire sits at
+ * the LAST hop before the journal rather than at this package's boundary. The
+ * type alone (`Masked<SessionReport>`) stops a caller inside this package from
+ * writing a raw report; it does nothing about the sink itself being handed a
+ * payload that was sealed elsewhere, or about a masker that let something
+ * through. `guardEgress` re-checks both, against the same compiled profile the
+ * masker used, immediately before the row is written.
  */
 export function createReportJournal<TOut>(
   opts: ReportJournalOptions<TOut>,
@@ -99,6 +109,17 @@ export function createReportJournal<TOut>(
   const boundary = opts.boundary ?? JOURNAL_BOUNDARY;
   return withPiiBoundary<SessionReport, TOut>(
     { policy: opts.policy, dataClass: opts.dataClass, boundary, sessionScope: "boundary" },
-    opts.sink,
+    guardedJournalSink(opts),
   );
+}
+
+/**
+ * The last hop before the row is written. Split out from `createReportJournal`
+ * so the tripwire is reachable on its own: it is the half that has to hold when
+ * something OTHER than this package's boundary produced the payload.
+ */
+export function guardedJournalSink<TOut>(opts: ReportJournalOptions<TOut>): OutboundCall<SessionReport, TOut> {
+  const boundary = opts.boundary ?? JOURNAL_BOUNDARY;
+  const { profile } = compiledProfileFor(opts.policy, opts.dataClass);
+  return guardEgress<SessionReport, TOut>({ profile, boundary: `${boundary} (egress)` }, opts.sink);
 }

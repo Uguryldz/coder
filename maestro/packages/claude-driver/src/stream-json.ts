@@ -34,13 +34,29 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return ok ? (value as Record<string, unknown>) : null;
 }
 
-function nonNegativeInt(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function usageTokens(usage: unknown): { tokensIn: number; tokensOut: number } {
+function nonNegativeInt(value: unknown): number {
+  return isCount(value) ? Math.round(value) : 0;
+}
+
+/**
+ * M55 accounts in quota, not dollars, so the token counts ARE the meter. A
+ * `success` result with no readable `usage` used to yield 0/0, which does not
+ * read as "unknown" anywhere downstream — it reads as a free turn, and a seat
+ * that is actually exhausted keeps being handed work. Unreadable usage on a
+ * successful turn is therefore a protocol break.
+ */
+function usageTokens(usage: unknown, strict: boolean): { tokensIn: number; tokensOut: number } {
   const u = asRecord(usage);
-  if (u === null) return { tokensIn: 0, tokensOut: 0 };
+  if (u === null || !isCount(u["input_tokens"]) || !isCount(u["output_tokens"])) {
+    if (!strict) return { tokensIn: 0, tokensOut: 0 };
+    throw new ClaudeCliProtocolError(
+      "a successful result carries no readable usage block; M55 quota accounting would count the turn as free",
+    );
+  }
   const cached = nonNegativeInt(u["cache_read_input_tokens"]) + nonNegativeInt(u["cache_creation_input_tokens"]);
   return { tokensIn: nonNegativeInt(u["input_tokens"]) + cached, tokensOut: nonNegativeInt(u["output_tokens"]) };
 }
@@ -56,6 +72,53 @@ export function splitLines(stdout: string): string[] {
   return stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "");
 }
 
+interface Scanned {
+  unparsedLines: number;
+  progressMessages: number;
+  initSessionId: string | null;
+  results: Record<string, unknown>[];
+}
+
+function scan(stdout: string): Scanned {
+  const out: Scanned = { unparsedLines: 0, progressMessages: 0, initSessionId: null, results: [] };
+  for (const line of splitLines(stdout)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      out.unparsedLines += 1;
+      continue;
+    }
+    const message = asRecord(parsed);
+    if (message === null) {
+      out.unparsedLines += 1;
+      continue;
+    }
+    if (message["type"] === "result") {
+      out.results.push(message);
+      continue;
+    }
+    if (message["type"] === "system" && message["subtype"] === "init") {
+      const id = message["session_id"];
+      if (typeof id === "string" && id !== "") out.initSessionId = id;
+    }
+    out.progressMessages += 1;
+  }
+  return out;
+}
+
+function sessionIdOf(result: Record<string, unknown>, initSessionId: string | null): string {
+  const raw = result["session_id"];
+  const sessionId = typeof raw === "string" && raw !== "" ? raw : initSessionId;
+  if (sessionId === null) {
+    throw new ClaudeCliProtocolError("result message carries no session_id; the turn could never be resumed (M30)");
+  }
+  if (initSessionId !== null && initSessionId !== sessionId) {
+    throw new ClaudeCliProtocolError(`init announced session ${initSessionId} but the result belongs to ${sessionId}`);
+  }
+  return sessionId;
+}
+
 /**
  * Parse a completed turn. Fail-closed: no `result` message means we cannot say
  * what the agent did, which is an error rather than an empty answer; two of
@@ -63,34 +126,7 @@ export function splitLines(stdout: string): string[] {
  * resolved by picking one.
  */
 export function parseStreamJson(stdout: string): AgentStreamResult {
-  let unparsedLines = 0;
-  let progressMessages = 0;
-  let initSessionId: string | null = null;
-  const results: Record<string, unknown>[] = [];
-
-  for (const line of splitLines(stdout)) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      unparsedLines += 1;
-      continue;
-    }
-    const message = asRecord(parsed);
-    if (message === null) {
-      unparsedLines += 1;
-      continue;
-    }
-    if (message["type"] === "result") {
-      results.push(message);
-      continue;
-    }
-    if (message["type"] === "system" && message["subtype"] === "init") {
-      const id = message["session_id"];
-      if (typeof id === "string" && id !== "") initSessionId = id;
-    }
-    progressMessages += 1;
-  }
+  const { unparsedLines, progressMessages, initSessionId, results } = scan(stdout);
 
   if (results.length === 0) {
     const seen = `${progressMessages} stream messages (${unparsedLines} unparsable lines)`;
@@ -100,27 +136,19 @@ export function parseStreamJson(stdout: string): AgentStreamResult {
     throw new ClaudeCliProtocolError(`expected exactly one result message, found ${results.length}`);
   }
   const result = results[0] as Record<string, unknown>;
-
-  const resultSessionId = result["session_id"];
-  const sessionId = typeof resultSessionId === "string" && resultSessionId !== "" ? resultSessionId : initSessionId;
-  if (sessionId === null || sessionId === undefined) {
-    throw new ClaudeCliProtocolError("result message carries no session_id; the turn could never be resumed (M30)");
-  }
-  if (initSessionId !== null && initSessionId !== sessionId) {
-    throw new ClaudeCliProtocolError(`init announced session ${initSessionId} but the result belongs to ${sessionId}`);
-  }
+  const isError = result["is_error"] === true || result["subtype"] !== "success";
 
   const finalText = typeof result["result"] === "string" ? result["result"] : "";
-  const { tokensIn, tokensOut } = usageTokens(result["usage"]);
+  const { tokensIn, tokensOut } = usageTokens(result["usage"], !isError);
   const cost = result["total_cost_usd"];
 
   return {
-    sessionId,
+    sessionId: sessionIdOf(result, initSessionId),
     finalText,
     tokensIn,
     tokensOut,
     numTurns: nonNegativeInt(result["num_turns"]),
-    isError: result["is_error"] === true || result["subtype"] !== "success",
+    isError,
     errors: errorList(result),
     totalCostUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
     unparsedLines,

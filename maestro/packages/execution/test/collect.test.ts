@@ -1,7 +1,8 @@
-import { assertNoPii, compileProfile, defaultPiiPolicy, type Masked } from "@maestro/pii";
+import { assertNoPii, compileProfile, defaultPiiPolicy, PiiLeakError, type Masked } from "@maestro/pii";
 import { describe, expect, it } from "vitest";
 import {
   createReportJournal,
+  guardedJournalSink,
   JOURNAL_BOUNDARY,
   runVerification,
   type SessionReport,
@@ -194,5 +195,43 @@ describe("createReportJournal", () => {
 
   it("names the boundary it guards, so a leak error says where it happened", () => {
     expect(JOURNAL_BOUNDARY).toBe("execution/session-report");
+  });
+});
+
+/**
+ * D4 — the type brand stops a caller INSIDE this package from writing a raw
+ * report, and stops there. `guardEgress` is the runtime half: it is the last
+ * thing that runs before the row is written, and it does not take the caller's
+ * word for the payload having been masked.
+ */
+describe("guardedJournalSink", () => {
+  const guarded = <T,>(sink: (payload: Masked<SessionReport>) => Promise<T>) =>
+    guardedJournalSink<T>({ policy: defaultPiiPolicy(), dataClass: "gizli", sink });
+
+  it("refuses a payload that never went through the boundary", async () => {
+    let reached = false;
+    const send = guarded(() => {
+      reached = true;
+      return Promise.resolve(undefined);
+    });
+    // A cast, a spread or a JSON round-trip typed `any` all produce exactly
+    // this: an object shaped like the envelope but not minted by the boundary.
+    const forged = { value: report({ finalText: `iban ${SAMPLE_IBAN}` }) } as unknown as Masked<SessionReport>;
+    await expect(send(forged)).rejects.toBeInstanceOf(PiiLeakError);
+    expect(reached).toBe(false);
+  });
+
+  it("is wired into the writer, so an ordinary masked report still gets through", async () => {
+    const stored: SessionReport[] = [];
+    const write = createReportJournal<void>({
+      policy: defaultPiiPolicy(),
+      dataClass: "gizli",
+      sink: (payload: Masked<SessionReport>) => {
+        stored.push(payload.value);
+        return Promise.resolve();
+      },
+    });
+    await write(report({ finalText: `iban ${SAMPLE_IBAN}` }));
+    expect(stored[0]?.finalText).toMatch(IBAN_TOKEN);
   });
 });

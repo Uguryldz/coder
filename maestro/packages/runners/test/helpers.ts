@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { Clock, DockerTransport, IdSource, Timer } from "../src/deps.js";
+import type { AuditRecord, Clock, DockerTransport, IdSource, Timer } from "../src/deps.js";
+import type { DockerLinuxRunner } from "../src/docker-runner.js";
 import { decodeResponse } from "../src/http.js";
+import { createDockerLinuxRunner } from "../src/register.js";
 
 /**
  * Offline test rig. Every byte the driver sees comes either from a fixture
@@ -21,12 +23,21 @@ export const FIXTURES = {
   create: () => fixture("containers-create.http"),
   start: () => fixture("containers-start.http"),
   wait: () => fixture("containers-wait.http"),
+  /** A container that exited 0 — what a successful workspace preparation looks like. */
+  waitZero: () => fixture("containers-wait-zero.http"),
   logs: () => fixture("containers-logs.http"),
   remove: () => fixture("containers-remove.http"),
   notFound: () => fixture("containers-notfound.http"),
   imageInspect: () => fixture("images-inspect.http"),
   volumeCreate: () => fixture("volumes-create.http"),
+  volumeInspect: () => fixture("volumes-inspect.http"),
+  volumeNotFound: () => fixture("volumes-notfound.http"),
   volumeRemove: () => fixture("volumes-remove.http"),
+  /** `docker network create --internal maestro-egress` — the M26 shape. */
+  networkInternal: () => fixture("networks-inspect-internal.http"),
+  /** An ordinary bridge network: routes to the world without touching a proxy. */
+  networkOpen: () => fixture("networks-inspect-open.http"),
+  networkNotFound: () => fixture("networks-notfound.http"),
   /** Engine 29.4 refusing `SecurityOpt: seccomp=default` — see sandbox.ts. */
   badSeccompStart: () => fixture("containers-start-bad-seccomp.http"),
 };
@@ -115,7 +126,14 @@ export function httpResponse(
  * (`"DELETE /containers/"`).
  */
 export function dockerRoutes(overrides: Partial<Record<string, Handler>> = {}): Handler {
+  // The daemon answers `wait` per container; the fake has one recorded id for
+  // every container, so it remembers whether the last thing CREATED was a
+  // workspace-preparation container and answers its wait with the recorded
+  // "exited 0". Without this the preparation would inherit the job fixture's
+  // exit code 7 and every test would fail for the wrong reason.
+  let preparing = false;
   return async (request) => {
+    if (request.path.includes("/containers/create")) preparing = request.path.includes("-prep-");
     for (const [key, handler] of Object.entries(overrides)) {
       if (handler === undefined) continue;
       const [head = "", tail] = key.split(" ");
@@ -127,14 +145,46 @@ export function dockerRoutes(overrides: Partial<Record<string, Handler>> = {}): 
     if (request.path === "/_ping") return FIXTURES.ping();
     if (request.path.includes("/containers/create")) return FIXTURES.create();
     if (request.path.includes("/start")) return FIXTURES.start();
-    if (request.path.includes("/wait")) return FIXTURES.wait();
+    if (request.path.includes("/wait")) return preparing ? FIXTURES.waitZero() : FIXTURES.wait();
     if (request.path.includes("/logs")) return FIXTURES.logs();
+    if (request.path.includes("/networks/")) return FIXTURES.networkInternal();
     if (request.path.includes("/volumes/create")) return FIXTURES.volumeCreate();
+    if (request.method === "GET" && request.path.includes("/volumes/")) return FIXTURES.volumeNotFound();
     if (request.method === "DELETE" && request.path.includes("/volumes/")) return FIXTURES.volumeRemove();
     if (request.method === "DELETE" && request.path.includes("/containers/")) return FIXTURES.remove();
     if (request.path.includes("/images/")) return FIXTURES.imageInspect();
     return FIXTURES.notFound();
   };
+}
+
+export interface RunnerRig {
+  runner: DockerLinuxRunner;
+  requests: RecordedRequest[];
+  matching: (needle: string) => RecordedRequest[];
+  audit: AuditRecord[];
+  timer: ManualTimer;
+  clock: FakeClock;
+}
+
+/**
+ * A driver wired to the recorded fixtures. Unless a test says otherwise the
+ * workspace volume already exists AND already belongs to the sandbox uid, so no
+ * preparation container runs and the test sees the job path alone; the
+ * preparation path itself is nailed down in `provision.test.ts`.
+ */
+export function runnerRig(overrides: Partial<Record<string, Handler>> = {}, config: object = TEST_CONFIG): RunnerRig {
+  const transport = fakeTransport(dockerRoutes({ "GET /volumes/": () => FIXTURES.volumeInspect(), ...overrides }));
+  const clock = fakeClock();
+  const timer = manualTimer();
+  const audit: AuditRecord[] = [];
+  const runner = createDockerLinuxRunner(config, {
+    transport: transport.transport,
+    clock: clock.clock,
+    timer: timer.timer,
+    newId: sequentialIds(),
+    audit: (record) => audit.push(record),
+  });
+  return { runner, requests: transport.requests, matching: transport.matching, audit, timer, clock };
 }
 
 export interface FakeClock {

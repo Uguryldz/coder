@@ -45,6 +45,20 @@ describe("volume naming", () => {
     expect(a.startsWith("maestro-ws-ugurpay-1042-feature-x-")).toBe(true);
   });
 
+  /**
+   * The ticket id is case-insensitive (Jira upper-cases it), so "UGURPAY-1042"
+   * and "ugurpay-1042" are the SAME ticket and must resume into the same
+   * workspace (M30) — while the branch part stays case-sensitive, because git
+   * lets `feature/Foo` and `feature/foo` both exist and sharing one workspace
+   * between them would mix two working trees.
+   */
+  it("folds the ticket segment's case but not the branch's", () => {
+    expect(workspaceVolumeName("ugurpay-1042")).toBe(workspaceVolumeName("UGURPAY-1042"));
+    expect(workspaceVolumeName("UgurPay-1042/feature/Foo")).toBe(workspaceVolumeName("UGURPAY-1042/feature/Foo"));
+    expect(workspaceVolumeName("UGURPAY-1042/feature/Foo")).not.toBe(workspaceVolumeName("UGURPAY-1042/feature/foo"));
+    expect(workspaceVolumeName("UGURPAY-1042")).not.toBe(workspaceVolumeName("UGURPAY-1043"));
+  });
+
   it("always produces a valid docker object name", () => {
     for (const key of ["UGURPAY-1042", "a".repeat(199), "X0", "app.core/T-1"]) {
       expect(workspaceVolumeName(key)).toMatch(DOCKER_NAME);

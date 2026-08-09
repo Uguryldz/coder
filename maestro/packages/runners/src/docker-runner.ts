@@ -15,11 +15,13 @@ import {
 } from "./deps.js";
 import { RunnerCapacityError, RunnerConfigError } from "./errors.js";
 import { RunnerPool } from "./pool.js";
-import { buildContainerSpec, containerName } from "./sandbox.js";
+import { SandboxProvisioner, type SweepReport } from "./provision.js";
+import { buildContainerSpec, cacheIsWritable, containerName } from "./sandbox.js";
 import {
   assertCacheKey,
+  cacheMountPath,
   cacheVolumeName,
-  expiredWorkspaces,
+  WORKSPACE_MOUNT_PATH,
   type WorkspaceRecord,
   workspaceVolumeName,
 } from "./workspace.js";
@@ -57,6 +59,7 @@ export class DockerLinuxRunner implements RunnerPort {
   readonly #clock: Clock;
   readonly #timer: Timer;
   readonly #audit: AuditSink;
+  readonly #provisioner: SandboxProvisioner;
 
   constructor(config: DockerRunnerConfig, deps: DockerRunnerDeps) {
     this.#config = config;
@@ -68,7 +71,17 @@ export class DockerLinuxRunner implements RunnerPort {
       apiVersion: config.apiVersion,
       requestTimeoutMs: config.requestTimeoutMs,
     });
-    this.#pool = new RunnerPool(config.platforms, deps.newId ?? defaultIdSource());
+    const newId = deps.newId ?? defaultIdSource();
+    this.#pool = new RunnerPool(config.platforms, newId);
+    this.#provisioner = new SandboxProvisioner({
+      client: this.#client,
+      config,
+      clock: this.#clock,
+      newId,
+      audit: (record) => {
+        this.#audit(record);
+      },
+    });
   }
 
   /** Liveness of the daemon behind the injected transport (used by the smoke test). */
@@ -98,14 +111,25 @@ export class DockerLinuxRunner implements RunnerPort {
    */
   async mountCache(lease: RunnerLease, keys: string[]): Promise<void> {
     const slot = this.#pool.slotOf(lease);
-    if (keys.length + slot.cacheKeys.length > MAX_CACHE_MOUNTS) {
+    // Counted over the UNION: mounting the same key twice is one mount, and a
+    // limit that says otherwise refuses work it could have done.
+    const union = new Set([...slot.cacheKeys, ...keys]);
+    if (union.size > MAX_CACHE_MOUNTS) {
       throw new RunnerConfigError(`at most ${MAX_CACHE_MOUNTS} dependency caches may be mounted into one job`);
     }
+    const image = this.#config.platforms[slot.platform]?.image;
+    if (image === undefined) throw new RunnerConfigError(`platform "${slot.platform}" has no image configured`);
     for (const key of keys) {
       assertCacheKey(key);
-      await this.#volume(cacheVolumeName(key, this.#config.workspace.cachePrefix), {
-        [`${this.#config.labelPrefix}.cache-key`]: key,
-        [`${this.#config.labelPrefix}.layer`]: "dependency",
+      await this.#provisioner.ensureVolume({
+        name: cacheVolumeName(key, this.#config.workspace.cachePrefix),
+        labels: {
+          [`${this.#config.labelPrefix}.cache-key`]: key,
+          [`${this.#config.labelPrefix}.layer`]: "dependency",
+        },
+        image,
+        mountPath: cacheMountPath(key),
+        writable: cacheIsWritable(this.#config, key),
       });
     }
     this.#pool.attachCache(lease, keys);
@@ -121,14 +145,25 @@ export class DockerLinuxRunner implements RunnerPort {
     try {
       const image = this.#config.platforms[slot.platform]?.image;
       if (image === undefined) throw new RunnerConfigError(`platform "${slot.platform}" has no image configured`);
+      // Fail-closed BEFORE anything is created: an unverified egress network is
+      // the difference between "the job talks through the audited proxy" and
+      // "the job opens a socket to wherever it likes" (M26).
+      await this.#provisioner.verifyEgressNetwork();
       const name = containerName(this.#config, job, lease.leaseId);
       const workspaceVolume = workspaceVolumeName(job.workspaceKey, this.#config.workspace.volumePrefix);
       // Created explicitly rather than left to the bind's auto-creation, so it
-      // lands on the configured (encrypted, M31) volume driver and carries the
-      // labels the M65 sweeper needs to find it again.
-      await this.#volume(workspaceVolume, {
-        [`${this.#config.labelPrefix}.workspace-key`]: job.workspaceKey,
-        [`${this.#config.labelPrefix}.layer`]: "workspace",
+      // lands on the configured (encrypted, M31) volume driver, carries the
+      // labels the M65 sweeper needs — and is OWNED by the sandbox uid, or the
+      // job cannot clone, build or write its Agent SDK session (M30).
+      await this.#provisioner.ensureVolume({
+        name: workspaceVolume,
+        labels: {
+          [`${this.#config.labelPrefix}.workspace-key`]: job.workspaceKey,
+          [`${this.#config.labelPrefix}.layer`]: "workspace",
+        },
+        image,
+        mountPath: WORKSPACE_MOUNT_PATH,
+        writable: true,
       });
       const spec = buildContainerSpec({
         config: this.#config,
@@ -182,17 +217,6 @@ export class DockerLinuxRunner implements RunnerPort {
     }
   }
 
-  /** Provisions one volume on the configured (encrypted, M31) driver. */
-  #volume(name: string, labels: Record<string, string>): Promise<void> {
-    const { volumeDriver, volumeOptions } = this.#config.workspace;
-    return this.#client.createVolume(
-      name,
-      { [`${this.#config.labelPrefix}.managed`]: "true", ...labels },
-      volumeDriver,
-      volumeOptions,
-    );
-  }
-
   /** Idempotent by contract: releasing an already-released lease is a no-op. */
   async release(lease: RunnerLease): Promise<void> {
     this.#pool.release(lease);
@@ -204,19 +228,13 @@ export class DockerLinuxRunner implements RunnerPort {
    * + journal through StoragePort first; this deletes the disk copy and leaves
    * a record that says which ticket lost which volume, and why.
    */
-  async removeWorkspace(workspaceKey: string, reason: string): Promise<void> {
-    const volume = workspaceVolumeName(workspaceKey, this.#config.workspace.volumePrefix);
-    await this.#client.removeVolume(volume, true);
-    this.#record("RETENTION_ARCHIVE", volume, { workspaceKey, reason });
+  removeWorkspace(workspaceKey: string, reason: string): Promise<boolean> {
+    return this.#provisioner.removeWorkspace(workspaceKey, reason);
   }
 
   /** M65 sweeper: removes every workspace dormant past the configured age. */
-  async sweepExpiredWorkspaces(records: readonly WorkspaceRecord[]): Promise<string[]> {
-    const expired = expiredWorkspaces(records, this.#clock(), this.#config.workspace.maxAgeDays);
-    for (const record of expired) {
-      await this.removeWorkspace(record.workspaceKey, "workspace-max-age");
-    }
-    return expired.map((record) => record.workspaceKey);
+  sweepExpiredWorkspaces(records: readonly WorkspaceRecord[]): Promise<SweepReport> {
+    return this.#provisioner.sweepExpiredWorkspaces(records);
   }
 
   #timeoutMsOf(job: RunJob): number {

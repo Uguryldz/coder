@@ -128,6 +128,11 @@ describe("egress (M26)", () => {
   it("refuses a job that tries to redirect its own egress", () => {
     expect(() => sandboxEnv(config, { ...TEST_JOB, env: { HTTP_PROXY: "http://attacker" } })).toThrow(/egress policy/);
     expect(() => sandboxEnv(config, { ...TEST_JOB, env: { no_proxy: "*" } })).toThrow(/egress policy/);
+    // curl, git and the Go toolchain all honour ALL_PROXY too, so leaving it
+    // out of the reserved list left the job one variable away from its own
+    // (unaudited) route out.
+    expect(() => sandboxEnv(config, { ...TEST_JOB, env: { ALL_PROXY: "socks5://attacker" } })).toThrow(/egress policy/);
+    expect(() => sandboxEnv(config, { ...TEST_JOB, env: { all_proxy: "socks5://attacker" } })).toThrow(/egress policy/);
   });
 
   it("refuses loader variables that would run code before the command", () => {
@@ -200,5 +205,29 @@ describe("container naming", () => {
 
   it("separates two leases of the same run", () => {
     expect(containerName(config, TEST_JOB, "lease-1")).not.toBe(containerName(config, TEST_JOB, "lease-2"));
+  });
+
+  /**
+   * O1: the name used to be `prefix + runId + leaseId` cut to 63 characters,
+   * so two long run ids sharing a prefix produced ONE name — and the second
+   * `containers/create` came back 409 while the audit trail pointed both runs
+   * at the same container.
+   */
+  it("keeps long run ids apart instead of truncating them onto one name", () => {
+    const long = `run-${"a".repeat(80)}`;
+    const alsoLong = `run-${"a".repeat(79)}b`;
+
+    const first = containerName(config, { ...TEST_JOB, runId: long }, "lease-00000001");
+    const second = containerName(config, { ...TEST_JOB, runId: alsoLong }, "lease-00000001");
+
+    expect(first).not.toBe(second);
+    expect(first.length).toBeLessThanOrEqual(63);
+    expect(second.length).toBeLessThanOrEqual(63);
+    expect(first).toMatch(/^[a-z0-9][a-z0-9_.-]*$/);
+    expect(second).toMatch(/^[a-z0-9][a-z0-9_.-]*$/);
+  });
+
+  it("stays a legal docker name when the run id contributes nothing readable", () => {
+    expect(containerName(config, { ...TEST_JOB, runId: "///" }, "***")).toMatch(/^maestro-[0-9a-f]{12}$/);
   });
 });

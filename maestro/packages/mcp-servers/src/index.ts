@@ -20,7 +20,7 @@
 
 export { McpDefinitionError, ScopeDeniedError, ToolAuditError, ToolInputError, ToolPolicyError, UnknownToolError } from "./errors.js";
 
-export { grantedScopes, hasScope, TOOL_SCOPES, ToolScope } from "./scopes.js";
+export { grantedScopes, hasScope, sealCaller, TOOL_SCOPES, ToolScope } from "./scopes.js";
 export type { CallerIdentity } from "./scopes.js";
 
 export {
@@ -44,8 +44,13 @@ export type { ToolAuditRecord, ToolAuditSink, ToolOutcome } from "./audit.js";
 export { McpServerRuntime, UNRESOLVED_SUBJECT } from "./runtime.js";
 export type { ServerRuntimeDeps, ToolCallResult, ToolDenialReason, ToolListing } from "./runtime.js";
 
-export { guardWorkspacePath, workspaceMatcher } from "./workspace-path.js";
+export { guardWorkspacePath, isUnreadablePath, unreadablePatterns, workspaceMatcher } from "./workspace-path.js";
 export type { ProtectedPathMatcher } from "./workspace-path.js";
+
+export { assertSearchGlob, redactSearchHits } from "./workspace-glob.js";
+
+export { allowedOnIdeChannel, maskForIde } from "./ide-boundary.js";
+export type { IdeMaskedHook, IdePiiOptions, MaybeClassified } from "./ide-boundary.js";
 
 export { bindMcpServer, toCallToolResult } from "./transport.js";
 export { serveStdio, serveStreamableHttp } from "./transports.js";
@@ -56,7 +61,11 @@ export type { JiraComment, JiraMcpDeps, JiraReadAccess, RelatedTicket } from "./
 export { adoMcpServer } from "./servers/ado.js";
 export type { AdoDiffAccess, AdoMcpDeps, ApplicationLookup, PrDiff } from "./servers/ado.js";
 
-export { workspaceMcpServer, workspaceProtectedPatterns } from "./servers/workspace.js";
+export {
+  workspaceMcpServer,
+  workspaceProtectedPatterns,
+  workspaceUnreadablePatterns,
+} from "./servers/workspace.js";
 export type {
   WorkspaceEntry,
   WorkspaceFileContent,
@@ -68,9 +77,14 @@ export type {
 export { maestroMcpServer } from "./servers/maestro.js";
 export type { MaestroMcpDeps } from "./servers/maestro.js";
 export type {
+  KillSwitchLevel,
+  KillSwitchProposal,
   KnowledgeHit,
   MaestroPlatform,
   ParamChangeProposal,
   ParamView,
+  PendingGate,
+  QuotaStatus,
   RunDetail,
+  RunnerHealth,
 } from "./servers/maestro-platform.js";

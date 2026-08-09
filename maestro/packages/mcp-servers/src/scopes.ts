@@ -40,6 +40,27 @@ export function hasScope(caller: CallerIdentity, scope: ToolScope): boolean {
 }
 
 /**
+ * A caller whose scope set cannot change afterwards (verifier B2).
+ *
+ * `readonly ToolScope[]` is a compile-time promise and nothing more: the
+ * runtime held the array the BFF handed it BY REFERENCE, so whoever still had
+ * that array could `scopes.push("operate")` and a `read` session became an
+ * operating session mid-conversation — with the binding, the tool list and the
+ * audit actor all already fixed. The code most likely to keep a handle on that
+ * array is precisely the code that built it from a token claim.
+ *
+ * Copy, then freeze. The copy defeats the aliasing; the freeze turns a later
+ * `push` into a visible failure in strict mode instead of a silent no-op that
+ * leaves the author believing it worked.
+ */
+export function sealCaller(caller: CallerIdentity): CallerIdentity {
+  return Object.freeze({
+    user: caller.user,
+    scopes: Object.freeze([...caller.scopes]) as readonly ToolScope[],
+  });
+}
+
+/**
  * The scopes a caller may actually exercise on a server: their RBAC ∩ the
  * scopes that server's tools declare. Used for listings and diagnostics; the
  * gate itself is `hasScope`, checked per call.

@@ -43,9 +43,15 @@ describe("scope enforcement (M101)", () => {
     const readOnly = runtime.listTools(caller(["read"])).map((tool) => tool.name);
 
     expect(readOnly).toContain("get_run");
+    expect(readOnly).toContain("list_pending_gates");
+    expect(readOnly).toContain("quota_status");
     expect(readOnly).not.toContain("start_workflow");
+    expect(readOnly).not.toContain("set_workmode");
+    expect(readOnly).not.toContain("notify_gate_owner");
     expect(readOnly).not.toContain("propose_param_change");
-    expect(runtime.allTools()).toHaveLength(9);
+    expect(readOnly).not.toContain("propose_killswitch");
+    expect(runtime.allTools()).toHaveLength(18);
+    expect(readOnly).toHaveLength(9);
   });
 
   it("hiding a tool is not the control — a hidden tool called directly is still refused", async () => {

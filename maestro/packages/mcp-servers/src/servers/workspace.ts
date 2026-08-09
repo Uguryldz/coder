@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { defineServer, defineTool, type ServerDefinition } from "../tool.js";
-import { guardWorkspacePath, workspaceMatcher } from "../workspace-path.js";
+import { assertSearchGlob, redactSearchHits } from "../workspace-glob.js";
+import { guardWorkspacePath, unreadablePatterns, workspaceMatcher } from "../workspace-path.js";
 
 export interface WorkspaceEntry {
   readonly path: string;
@@ -35,6 +36,22 @@ export interface WorkspaceFs {
   readFile(path: string, maxBytes: number): Promise<WorkspaceFileContent>;
   writeFile(path: string, content: string): Promise<{ bytes: number }>;
   listDir(path: string): Promise<readonly WorkspaceEntry[]>;
+  /**
+   * `glob` has already been validated as workspace-relative and free of `..`,
+   * absolute prefixes and control characters — join it to the sandbox root and
+   * nothing else. Two obligations remain the DRIVER's, because only it touches
+   * the disk (verifier B5):
+   *
+   *  · resolve the glob under the root and refuse anything that leaves it after
+   *    symlink resolution — the same duty the path tools carry;
+   *  · never return a hit whose path is on the read-deny list
+   *    (`unreadablePatterns()`): a hit carries the matched LINE, so a match
+   *    inside `tls/server.key` is the key material itself.
+   *
+   * The second is enforced again on the way out (`redactSearchHits`); it is
+   * stated here because a driver that shells out to `grep -r` will otherwise
+   * read those files even when the boundary drops the result.
+   */
   search(query: { text: string; glob: string | undefined; limit: number }): Promise<readonly WorkspaceMatch[]>;
 }
 
@@ -105,7 +122,16 @@ export function workspaceMcpServer(deps: WorkspaceMcpDeps): ServerDefinition {
           limit: z.number().int().positive().max(MAX_SEARCH_HITS).default(50),
         }),
         subject: (args) => args.glob ?? "(workspace)",
-        handler: async (args) => deps.fs.search({ text: args.text, glob: args.glob, limit: args.limit }),
+        // B5: this tool used to reach the driver with no path check at all, so
+        // `glob: "../../**/*.pem"` answered `ok`. The glob is validated first,
+        // and the hits are filtered afterwards — the driver owes the filter as
+        // well (see `WorkspaceFs`), but a boundary that trusts its driver is
+        // not a boundary.
+        handler: async (args) => {
+          const glob = args.glob === undefined ? undefined : assertSearchGlob("search_workspace", args.glob);
+          const hits = await deps.fs.search({ text: args.text, glob, limit: args.limit });
+          return redactSearchHits(hits);
+        },
       }),
       defineTool({
         name: "write_file",
@@ -127,7 +153,16 @@ export function workspaceMcpServer(deps: WorkspaceMcpDeps): ServerDefinition {
   });
 }
 
-/** The deny-list this server will actually apply — used by bootstrap prompts and tests. */
+/** The write deny-list this server will actually apply — for bootstrap prompts and tests. */
 export function workspaceProtectedPatterns(deps: WorkspaceMcpDeps): readonly string[] {
   return workspaceMatcher(deps.protectedPaths ?? []).patterns;
+}
+
+/**
+ * The stricter half: paths denied on BOTH legs (B6). A repo cannot add to this
+ * one — it is a platform floor, and "my source is unreadable to the agent" is
+ * not a policy a repo gets to declare.
+ */
+export function workspaceUnreadablePatterns(): readonly string[] {
+  return unreadablePatterns();
 }

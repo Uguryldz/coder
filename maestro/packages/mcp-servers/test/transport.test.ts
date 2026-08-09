@@ -33,10 +33,11 @@ describe("bindMcpServer over a real MCP session", () => {
 
     const names = (await client.listTools()).tools.map((tool) => tool.name);
 
-    expect(names).toHaveLength(9);
+    expect(names).toHaveLength(18);
     for (const forbidden of FORBIDDEN_TOOL_NAMES) {
       expect(names).not.toContain(forbidden);
     }
+    expect(names).not.toContain("toggle_killswitch");
     await client.close();
   });
 
@@ -92,7 +93,8 @@ describe("bindMcpServer over a real MCP session", () => {
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toMatch(/protected path/);
     expect(result._meta).toMatchObject({ "maestro/denialReason": "policy" });
-    expect(audit.all()[0]).toMatchObject({ outcome: "denied", meta: { rule: "protected_path" } });
+    expect(audit.all().map((entry) => entry.outcome)).toEqual(["attempted", "denied"]);
+    expect(audit.all()[1]).toMatchObject({ outcome: "denied", meta: { rule: "protected_path" } });
     await client.close();
   });
 });

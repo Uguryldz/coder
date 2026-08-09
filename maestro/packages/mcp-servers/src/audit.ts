@@ -22,7 +22,19 @@ export function aiViaActor(caller: CallerIdentity): string {
   return actor;
 }
 
-export type ToolOutcome = "ok" | "denied" | "error";
+/**
+ * `attempted` is the first half of the two-phase record every state-changing
+ * call now carries (verifier B1).
+ *
+ * The chain used to be written after the handler, so a sink that was down let
+ * the effect land and then threw: the CALL failed, the WORK did not, and the
+ * run existed with no row naming it. `attempted` is written before the handler
+ * and, crucially, the handler does not run if that write fails — which turns
+ * an unrecordable effect into an effect that never happens. It is closed by an
+ * `ok` or `error` row on the same tool and subject, so gap detection (M33) sees
+ * a dangling `attempted` as the anomaly it is.
+ */
+export type ToolOutcome = "attempted" | "ok" | "denied" | "error";
 
 /**
  * One audited MCP tool call.

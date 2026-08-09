@@ -8,7 +8,7 @@ import {
   UnknownToolError,
 } from "./errors.js";
 import { assertNoGateDecisionTools } from "./forbidden-tools.js";
-import { type CallerIdentity, hasScope, type ToolScope } from "./scopes.js";
+import { type CallerIdentity, hasScope, sealCaller, type ToolScope } from "./scopes.js";
 import { defineServer, type ServerDefinition, type ToolDefinition } from "./tool.js";
 
 export type ToolDenialReason = "unknown_tool" | "scope" | "invalid_input" | "policy";
@@ -71,11 +71,16 @@ export class McpServerRuntime {
    * planning around it, and a listing is not a place to advertise privilege.
    * Hiding is not the control, though — `call` re-checks the scope.
    */
-  listTools(caller: CallerIdentity): ToolListing[] {
+  listTools(rawCaller: CallerIdentity): ToolListing[] {
+    const caller = sealCaller(rawCaller);
     return this.definition.tools.filter((tool) => hasScope(caller, tool.scope)).map(toListing);
   }
 
-  async call(toolName: string, rawArgs: unknown, caller: CallerIdentity): Promise<ToolCallResult> {
+  async call(toolName: string, rawArgs: unknown, rawCaller: CallerIdentity): Promise<ToolCallResult> {
+    // B2 — the scope set is copied and frozen before anything reads it, so the
+    // decision this call makes cannot be changed by whoever still holds the
+    // array the identity was built from.
+    const caller = sealCaller(rawCaller);
     // Throws when the token does not belong to a corporate account — before
     // any tool runs, because an unattributable call must not happen at all.
     const actor = aiViaActor(caller);
@@ -114,6 +119,15 @@ export class McpServerRuntime {
     const subject = tool.subject(args);
     const ctx = { caller, server: this.definition.name, tool: tool.name };
 
+    // B1 — two-phase for anything that changes state. The `attempted` row goes
+    // in FIRST and, if it cannot be written, the handler never runs: an effect
+    // the chain cannot account for simply does not happen. A read keeps the
+    // single-row form; there is no effect to strand, and doubling the chain's
+    // volume for every `get_run` would cost more than it buys.
+    if (tool.scope !== "read") {
+      await this.write(actor, tool.name, tool.scope, null, subject, "attempted", { reason: "attempted" });
+    }
+
     let value: unknown;
     try {
       value = await tool.handler(args, ctx);
@@ -137,12 +151,15 @@ export class McpServerRuntime {
   }
 
   /**
-   * Writes the record. A refusal is recorded BEFORE the call would have run;
-   * a result is recorded after, because until the handler returns there is no
-   * outcome to record. That ordering leaves one honest gap: an `operate` tool
-   * whose effect lands and whose audit write then fails. It surfaces as a
-   * thrown `ToolAuditError` — loudly, to the caller — rather than as a silent
-   * success, and the chain's own gap detection (M33) sees the missing row.
+   * Writes the record.
+   *
+   * A refusal is recorded before the call would have run. A state-changing
+   * call is BRACKETED: `attempted` before the handler, `ok`/`error` after — see
+   * B1 in `src/audit.ts`. The remaining gap is the closing row of a successful
+   * effect, and it is a gap that cannot be closed by ordering: the effect has
+   * happened by then. It surfaces as a thrown `ToolAuditError`, loudly, to the
+   * caller; the `attempted` row is already in the chain, so gap detection (M33)
+   * sees an attempt with no outcome rather than nothing at all.
    */
   private async write(
     actor: string,

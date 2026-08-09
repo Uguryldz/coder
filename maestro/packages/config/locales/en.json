@@ -110,5 +110,10 @@
   "publish.impact_source.repo_card": "repo card",
   "publish.decision.approve": "approved",
   "publish.decision.reject": "rejected",
-  "runner.session_timeout": "The agent session did not finish within {minutes} minutes — the sandbox was stopped"
+  "runner.session_timeout": "The agent session did not finish within {minutes} minutes — the sandbox was stopped",
+  "command.accepted": "Command {command} accepted.",
+  "command.no_run": "There is no running Maestro flow for {ticket}.",
+  "command.no_open_gate": "{ticket} is not standing at an open approval gate.",
+  "command.run_status": "{ticket} · step: {step} · status: {status}",
+  "command.unsupported": "The {command} command is not supported in this release."
 }

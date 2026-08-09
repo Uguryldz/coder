@@ -110,5 +110,10 @@
   "publish.impact_source.repo_card": "repo kartı",
   "publish.decision.approve": "onaylandı",
   "publish.decision.reject": "reddedildi",
-  "runner.session_timeout": "Ajan oturumu {minutes} dakikada tamamlanamadı — sandbox durduruldu"
+  "runner.session_timeout": "Ajan oturumu {minutes} dakikada tamamlanamadı — sandbox durduruldu",
+  "command.accepted": "{command} komutu alındı.",
+  "command.no_run": "{ticket} için çalışan bir Maestro akışı yok.",
+  "command.no_open_gate": "{ticket} şu anda açık bir onay kapısında değil.",
+  "command.run_status": "{ticket} · adım: {step} · durum: {status}",
+  "command.unsupported": "{command} komutu bu sürümde desteklenmiyor."
 }

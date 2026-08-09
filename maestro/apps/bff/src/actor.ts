@@ -1,0 +1,38 @@
+import { AI_VIA_PREFIX, assertActor } from "@maestro/audit";
+import type { SessionRecord } from "./deps.js";
+
+/**
+ * Audit actors (M33/M101). The trail refuses anything it cannot classify, so
+ * the BFF normalises here rather than at each call site: a Jira username is a
+ * bare login on Data Center, and an unattributable approval is worse than none.
+ */
+
+/** The one system actor the frozen `packages/audit` contract accepts (see RAPOR). */
+export const SYSTEM_ACTOR = "maestro-worker";
+
+/** `mert.demir` + `ugurbank.local` → `mert.demir@ugurbank.local`; already-qualified names pass through. */
+export function toActor(username: string, domain: string): string {
+  const trimmed = username.trim();
+  const actor = trimmed.includes("@") ? trimmed : `${trimmed}@${domain}`;
+  assertActor(actor);
+  return actor;
+}
+
+/**
+ * The actor a session writes as. An AI tool using a personal token keeps the
+ * human it borrowed from in the record — "the AI did it" is never an answer an
+ * auditor has to accept (M101).
+ */
+export function sessionActor(session: SessionRecord): string {
+  return session.delegated ? `${AI_VIA_PREFIX}${session.userId}` : session.userId;
+}
+
+/**
+ * Only a person acting directly may close a gate (M32/M101): maestro-mcp lists
+ * pending gates but must never decide one, and the audit chain would refuse the
+ * record anyway. Checked here so the refusal is an HTTP 403 with a reason
+ * rather than a 500 from the trail.
+ */
+export function isHumanChannel(session: SessionRecord): boolean {
+  return !session.delegated;
+}

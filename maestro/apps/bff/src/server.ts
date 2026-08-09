@@ -1,0 +1,98 @@
+import { loadEnv } from "@maestro/config";
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from "fastify";
+import { commandDiagnosticsOf, type BffConfig, type BffDeps, type ResolvedDeps } from "./deps.js";
+import { HttpError } from "./errors.js";
+import { assertCatalog, defaultCatalog } from "./messages.js";
+import { SESSION_TTL_MS } from "./auth/sessions.js";
+import { authRoutes } from "./routes/auth.js";
+import { healthRoutes } from "./routes/health.js";
+import { killSwitchRoutes } from "./routes/killswitch.js";
+import { paramRoutes } from "./routes/params.js";
+import { runRoutes } from "./routes/runs.js";
+import { webhookRoutes } from "./routes/webhooks.js";
+
+export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
+  actorDomain: "corp",
+  locale: "tr",
+  sessionTtlMs: SESSION_TTL_MS,
+  optInLabel: "maestro",
+};
+
+export function resolveDeps(deps: BffDeps): ResolvedDeps {
+  const { messages, clock, config, ...rest } = deps;
+  return {
+    ...rest,
+    messages: messages ?? defaultCatalog,
+    clock: clock ?? { now: () => new Date() },
+    // `loadEnv` throws in production when a connection value is missing (M6);
+    // reading it here means the process cannot come up half-configured.
+    config: { env: config?.env ?? loadEnv(), ...DEFAULT_CONFIG, ...config },
+    diagnostics: commandDiagnosticsOf(deps.work),
+    counters: { droppedUnbound: 0, droppedKillSwitch: 0, invalidCommands: 0 },
+  };
+}
+
+export interface BuildServerOptions {
+  fastify?: FastifyServerOptions;
+}
+
+/**
+ * The single data door (M7). Studio never touches the database; everything it
+ * knows arrives through these routes, and every one of them authenticates —
+ * the REST surface with a session token, the webhooks with the delivery
+ * signature their port verifies.
+ *
+ * The catalog is checked before a socket is opened (M6/M104): a service that
+ * cannot render the sentence it owes a user must not accept traffic, because
+ * the failure would otherwise surface as a raw key inside a bank's Jira ticket.
+ */
+export async function buildServer(
+  deps: BffDeps,
+  options: BuildServerOptions = {},
+): Promise<FastifyInstance> {
+  const resolved = resolveDeps(deps);
+  assertCatalog(resolved.messages, resolved.config.locale);
+
+  const app = Fastify({ logger: false, ...options.fastify });
+
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    if (error instanceof HttpError) {
+      const body: Record<string, unknown> = { error: error.code };
+      if (error.details !== undefined) body["details"] = error.details;
+      void reply.code(error.status).send(body);
+      return;
+    }
+    if (typeof error.statusCode === "number" && error.statusCode < 500) {
+      void reply.code(error.statusCode).send({ error: error.code ?? "bad_request" });
+      return;
+    }
+    request.log.error({ err: error }, "unhandled error");
+    void reply.code(500).send({ error: "internal_error" });
+  });
+
+  app.setNotFoundHandler((_request, reply) => {
+    void reply.code(404).send({ error: "not_found" });
+  });
+
+  await app.register(async (scope) => healthRoutes(scope, resolved));
+  // Own encapsulation context: the raw-body parser must not reach the JSON API.
+  await app.register(async (scope) => webhookRoutes(scope, resolved));
+  await app.register(async (scope) => authRoutes(scope, resolved));
+  await app.register(async (scope) => runRoutes(scope, resolved));
+  await app.register(async (scope) => paramRoutes(scope, resolved));
+  await app.register(async (scope) => killSwitchRoutes(scope, resolved));
+
+  app.decorate("maestro", resolved);
+  return app;
+}
+
+declare module "fastify" {
+  interface FastifyInstance {
+    /** The resolved container, for tests and for the composition root. */
+    maestro: ResolvedDeps;
+  }
+}

@@ -13,16 +13,25 @@ import { renderScreen, stubFetch } from "./harness.tsx";
 
 function runner(overrides: Record<string, unknown>) {
   return {
-    id: "lnx-01",
-    host: "lnx-01.ugurbank.local",
+    runnerId: "lnx-01",
     pool: "docker-linux",
     platform: "linux-node",
+    state: "idle",
+    capacity: 4,
+    activeSandboxes: 2,
+    lastHeartbeatAt: "2026-08-08T12:00:00.000Z",
+    note: null,
+    ...overrides,
+  };
+}
+
+function pool(overrides: Record<string, unknown>) {
+  return {
+    pool: "docker-linux",
     capacity: 4,
     busy: 2,
-    jobs: [],
-    status: "ok",
-    messageKey: null,
-    lastSeenAt: "2026-08-08T12:00:00.000Z",
+    machines: 1,
+    unhealthy: 0,
     ...overrides,
   };
 }
@@ -31,12 +40,14 @@ describe("runners screen", () => {
   it("puts an unreachable machine at the top and raises an alert", async () => {
     const { fetchImpl } = stubFetch([
       {
-        path: "/runners",
+        path: "/studio/runners",
         body: {
-          runners: [
-            runner({ id: "aaa-healthy", status: "ok" }),
-            runner({ id: "zzz-dead", status: "unreachable", busy: 0 }),
+          items: [
+            runner({ runnerId: "aaa-healthy", state: "idle" }),
+            runner({ runnerId: "zzz-dead", state: "unreachable", activeSandboxes: 0 }),
           ],
+          nextCursor: null,
+          pools: [pool({ machines: 2, capacity: 8, busy: 2 })],
         },
       },
     ]);
@@ -44,88 +55,93 @@ describe("runners screen", () => {
 
     expect(await screen.findByText(/1 makineye ulaşılamıyor/)).toBeInTheDocument();
 
-    // Worst news first: the dead machine must precede the healthy one, even
-    // though it sorts last alphabetically.
+    // Worst news first: the dead machine precedes the healthy one even though
+    // it sorts last alphabetically.
     const rows = screen.getAllByRole("row").slice(1);
     expect(within(rows[0] as HTMLElement).getByText("zzz-dead")).toBeInTheDocument();
   });
 
-  it("excludes an unreachable machine's slots from the pool capacity", async () => {
+  it("says how many of a pool's machines are dark beside the server's totals", async () => {
     const { fetchImpl } = stubFetch([
       {
-        path: "/runners",
+        path: "/studio/runners",
         body: {
-          runners: [
-            runner({ id: "a", capacity: 4, busy: 2, status: "ok" }),
-            runner({ id: "b", capacity: 4, busy: 4, status: "unreachable" }),
+          items: [
+            runner({ runnerId: "a", state: "busy" }),
+            runner({ runnerId: "b", state: "unreachable" }),
           ],
+          nextCursor: null,
+          // The BFF sums capacity; the screen must render ITS number, not a
+          // second opinion computed here.
+          pools: [pool({ machines: 2, capacity: 8, busy: 4, unhealthy: 1 })],
         },
       },
     ]);
     renderScreen(<RunnersScreen />, { fetchImpl });
 
-    // The pool tile counts the reachable node only — 2/4, never 6/8.
-    await screen.findByText(/1 ulaşılamıyor/);
-    const tile = screen.getByText(/1 ulaşılamıyor/).closest("section") as HTMLElement;
-    expect(within(tile).getByText("2/4")).toBeInTheDocument();
-    expect(screen.queryByText("6/8")).not.toBeInTheDocument();
+    const note = await screen.findByText(/1 ulaşılamıyor/);
+    const tile = note.closest("section") as HTMLElement;
+    expect(within(tile).getByText("4/8")).toBeInTheDocument();
   });
 
   it("shows a translated failure instead of the server code", async () => {
     const { fetchImpl } = stubFetch([
-      { path: "/runners", status: 500, body: { error: "internal_error" } },
+      { path: "/studio/runners", status: 500, body: { error: "internal_error" } },
     ]);
     renderScreen(<RunnersScreen />, { fetchImpl });
 
-    expect(await screen.findByText("Sunucuda bir hata oluştu.")).toBeInTheDocument();
+    expect(await screen.findByText("Veri alınamadı")).toBeInTheDocument();
+    expect(screen.getByText("Sunucuda bir hata oluştu.")).toBeInTheDocument();
     expect(screen.queryByText(/internal_error/)).not.toBeInTheDocument();
   });
 });
 
 describe("sandbox screen", () => {
   it("shows an empty state rather than inventing a session", async () => {
-    const { fetchImpl } = stubFetch([{ path: "/sandbox", body: { sessions: [] } }]);
+    const { fetchImpl } = stubFetch([
+      { path: "/studio/sandboxes", body: { items: [], nextCursor: null } },
+    ]);
     renderScreen(<SandboxScreen />, { fetchImpl });
 
     expect(await screen.findByText("Açık sandbox oturumu yok")).toBeInTheDocument();
   });
 
-  it("renders the session envelope and its limits", async () => {
+  it("renders a workspace a human is holding as its own state, and offers no delete", async () => {
     const { fetchImpl } = stubFetch([
       {
-        path: "/sandbox",
+        path: "/studio/sandboxes",
         body: {
-          sessions: [
+          items: [
             {
-              sessionId: "s1",
-              ticketKey: "UGURPAY-501",
-              runnerId: "lnx-01",
-              pool: "docker-linux",
-              image: "node:24-bookworm",
-              workspaceMounted: true,
-              resumed: true,
-              turn: 4,
-              memoryMb: 4096,
-              cpus: 2,
-              pids: 512,
-              timeoutMinutes: 20,
-              egressTargets: 3,
-              startedAt: "2026-08-08T12:00:00.000Z",
-              tools: [{ name: "jira-mcp", scope: "read" }],
+              ticketKey: "UGURPAY-503",
+              runnerId: "lnx-02",
+              state: "human_held",
+              sizeBytes: 2_306_867,
+              lastAccessAt: "2026-08-08T11:00:00.000Z",
             },
           ],
+          nextCursor: null,
         },
       },
     ]);
     renderScreen(<SandboxScreen />, { fetchImpl });
 
-    // Listed in the table AND named as the subject of the detail card.
-    expect(await screen.findAllByText("UGURPAY-501")).toHaveLength(2);
-    expect(screen.getByText("4096 MB · 2 vCPU · 512 pid")).toBeInTheDocument();
-    expect(screen.getByText("jira-mcp")).toBeInTheDocument();
+    expect(await screen.findByText("UGURPAY-503")).toBeInTheDocument();
+    expect(screen.getByText("insan çalışıyor")).toBeInTheDocument();
+    // A delete control here is how somebody destroys the session a human is
+    // mid-way through; the retention job owns removal (M65).
+    expect(screen.queryByRole("button", { name: /[Ss]il/ })).not.toBeInTheDocument();
+  });
+
+  it("never renders a session transcript, and says why", async () => {
+    const { fetchImpl } = stubFetch([
+      { path: "/studio/sandboxes", body: { items: [], nextCursor: null } },
+    ]);
+    renderScreen(<SandboxScreen />, { fetchImpl });
+
+    expect(await screen.findByText(/maskelenmemiş ticket metni/)).toBeInTheDocument();
   });
 });
-
 describe("yaml screen", () => {
   const POLICY = {
     appId: "ugurpay",
@@ -211,57 +227,36 @@ describe("mcp screen", () => {
 });
 
 describe("health screen", () => {
-  const BASE = {
-    services: [
-      { id: "postgres", status: "ok", version: "16.4", uptimeSeconds: 5_270_400, noteKey: null },
-    ],
-    workflows: { open: 9, longestDays: 16, continueAsNew: 2, failedActivities: 3 },
-    audit: { queued: 0, lastShippedAt: "14:12", lastAnchorAt: "03:00" },
+  const SERVICE = {
+    service: "postgres",
+    state: "healthy",
+    version: "16.4",
+    checkedAt: "2026-08-08T12:00:00.000Z",
+    note: null,
   };
 
-  it("flags a restore drill that has never been run", async () => {
+  it("renders the overall state the server decided, not one recomputed here", async () => {
     const { fetchImpl } = stubFetch([
       {
-        path: "/health",
+        path: "/studio/health",
         body: {
-          ...BASE,
-          backup: { databaseAt: "03:00", vaultAt: "03:10", restoreDrillAt: null },
+          state: "degraded",
+          services: [SERVICE, { ...SERVICE, service: "redis", state: "degraded" }],
         },
       },
     ]);
     renderScreen(<HealthScreen />, { fetchImpl });
 
-    expect(await screen.findByText("yapılmadı")).toBeInTheDocument();
-    expect(screen.getByText(/geri dönebilmek demek değildir/i)).toBeInTheDocument();
-  });
-
-  it("drops the warning once a drill has happened", async () => {
-    const { fetchImpl } = stubFetch([
-      {
-        path: "/health",
-        body: {
-          ...BASE,
-          backup: { databaseAt: "03:00", vaultAt: "03:10", restoreDrillAt: "2026-07-01" },
-        },
-      },
-    ]);
-    renderScreen(<HealthScreen />, { fetchImpl });
-
-    expect(await screen.findByText("2026-07-01")).toBeInTheDocument();
-    expect(screen.queryByText(/geri dönebilmek demek değildir/i)).not.toBeInTheDocument();
+    expect(await screen.findByText("Bazı servisler sorunlu")).toBeInTheDocument();
   });
 
   it("shows an unknown service by its id instead of blanking the page", async () => {
     const { fetchImpl } = stubFetch([
       {
-        path: "/health",
+        path: "/studio/health",
         body: {
-          ...BASE,
-          services: [
-            ...BASE.services,
-            { id: "brand_new_thing", status: "down", version: null, uptimeSeconds: null, noteKey: null },
-          ],
-          backup: { databaseAt: null, vaultAt: null, restoreDrillAt: "2026-07-01" },
+          state: "down",
+          services: [SERVICE, { ...SERVICE, service: "brand_new_thing", state: "down" }],
         },
       },
     ]);
@@ -269,11 +264,23 @@ describe("health screen", () => {
 
     // The catalogued one still renders...
     expect(await screen.findByText("PostgreSQL")).toBeInTheDocument();
-    // ...and the uncatalogued one appears rather than throwing.
+    // ...and the uncatalogued one appears rather than throwing behind the
+    // error boundary and taking the whole page with it.
     expect(screen.getByText("brand_new_thing")).toBeInTheDocument();
   });
-});
 
+  it("declares the backup panel unavailable rather than inventing a drill date", async () => {
+    const { fetchImpl } = stubFetch([
+      { path: "/studio/health", body: { state: "healthy", services: [SERVICE] } },
+    ]);
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    await screen.findByText("PostgreSQL");
+    // A made-up "restore drill: never run" would look like a tracked finding.
+    expect(screen.getByText(/uydurma bir/i)).toBeInTheDocument();
+    expect(screen.queryByText("yapılmadı")).not.toBeInTheDocument();
+  });
+});
 describe("commands screen", () => {
   it("states that a comment with extra text is not an approval", async () => {
     const { fetchImpl } = stubFetch([

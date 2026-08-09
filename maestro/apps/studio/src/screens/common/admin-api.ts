@@ -53,122 +53,96 @@ export interface KillSwitchResult {
   readonly stopped: readonly string[];
 }
 
-// ── /users (REQUESTED) ────────────────────────────────────────────────────────
+// ── /studio/users/:username (LIVE — single lookup only) ───────────────────────
 
-export interface ManagedUser {
-  readonly userId: string;
+/**
+ * What `GET /studio/users/:username` returns. Deliberately thin: the directory
+ * is the source of truth and this is a window onto it, so there is no password
+ * material and no session inventory.
+ *
+ * There is NO list endpoint and no mutation. Roles are granted in the directory
+ * (M8), not in Studio, which is why the users screen is a lookup rather than a
+ * table with edit buttons — see the note in Users.tsx.
+ */
+export interface DirectoryUser {
   readonly username: string;
-  readonly displayName: string;
-  readonly groups: readonly string[];
+  readonly userId: string;
   readonly roles: readonly Role[];
-  /**
-   * False means the account is revoked. It is a first-class field rather than
-   * an absence so a disabled account still LISTS — an account that vanishes
-   * from the table looks deleted, and the operator stops checking whether its
-   * sessions actually died.
-   */
+  readonly groups: readonly string[];
+  /** False when the directory has revoked the account. */
   readonly active: boolean;
-  /** Live sessions still bearing a token for this account, if any. */
-  readonly activeSessions: number;
-  readonly lastLoginAt: string | null;
 }
 
-export interface UsersView {
-  readonly users: readonly ManagedUser[];
-  /** Separation-of-duty rules and whether each is enforced (M92). */
-  readonly sod: readonly SodRule[];
-  readonly serviceAccount: ServiceAccountView | null;
+// ── paging (LIVE: every /studio list endpoint) ────────────────────────────────
+
+/**
+ * Every list endpoint is bounded (M7): a page plus an opaque cursor.
+ * `nextCursor: null` means "that was the last page", which is not the same as
+ * a short page — a full final page is not a signal.
+ */
+export interface Page<T> {
+  readonly items: readonly T[];
+  readonly nextCursor: string | null;
 }
 
-export interface SodRule {
-  readonly id: string;
-  readonly enforced: boolean;
-}
+// ── /studio/runners, /studio/sandboxes (LIVE) ─────────────────────────────────
 
-export interface ServiceAccountView {
-  readonly account: string;
-  readonly jira: string;
-  readonly ado: string;
-  readonly commitSignature: string;
-  readonly credentialTtlMinutes: number;
-}
+export type RunnerState = "idle" | "busy" | "draining" | "unreachable";
 
-// ── /runners, /sandbox (REQUESTED) ────────────────────────────────────────────
-
-export type RunnerStatus = "ok" | "warn" | "unreachable";
-
-export interface RunnerNode {
-  readonly id: string;
-  readonly host: string;
-  readonly pool: string;
-  readonly platform: string;
-  readonly capacity: number;
-  readonly busy: number;
-  readonly jobs: readonly string[];
-  readonly status: RunnerStatus;
-  /** Catalog key describing the warning; never prose from the server. */
-  readonly messageKey: string | null;
-  readonly lastSeenAt: string;
-}
-
-export interface RunnersView {
-  readonly runners: readonly RunnerNode[];
-}
-
-export interface SandboxSession {
-  readonly sessionId: string;
-  readonly ticketKey: string;
+/** A row of `GET /studio/runners` (BFF `RunnerRecord`). */
+export interface RunnerRecord {
   readonly runnerId: string;
   readonly pool: string;
-  readonly image: string;
-  readonly workspaceMounted: boolean;
-  readonly resumed: boolean;
-  readonly turn: number;
-  readonly memoryMb: number;
-  readonly cpus: number;
-  readonly pids: number;
-  readonly timeoutMinutes: number;
-  readonly egressTargets: number;
-  readonly startedAt: string;
-  readonly tools: readonly { readonly name: string; readonly scope: string }[];
+  readonly platform: string;
+  readonly state: RunnerState;
+  readonly capacity: number;
+  readonly activeSandboxes: number;
+  readonly lastHeartbeatAt: string;
+  /** Why a runner is not fully healthy; `null` when it is. */
+  readonly note: string | null;
 }
 
-export interface SandboxView {
-  readonly sessions: readonly SandboxSession[];
+/** Per-pool capacity, summed by the BFF so client and server never disagree. */
+export interface PoolSummary {
+  readonly pool: string;
+  readonly capacity: number;
+  readonly busy: number;
+  readonly machines: number;
+  readonly unhealthy: number;
 }
 
-// ── /health (REQUESTED; /healthz + /readyz exist but carry no detail) ─────────
+export interface RunnersResponse extends Page<RunnerRecord> {
+  readonly pools: readonly PoolSummary[];
+}
 
-export type ServiceStatus = "ok" | "degraded" | "down";
+export type SandboxState = "active" | "resumable" | "human_held";
 
+/** A row of `GET /studio/sandboxes` (BFF `SandboxRecord`). */
+export interface SandboxRecord {
+  readonly ticketKey: string;
+  readonly runnerId: string;
+  readonly state: SandboxState;
+  readonly sizeBytes: number;
+  readonly lastAccessAt: string;
+}
+
+// ── /studio/health (LIVE) ─────────────────────────────────────────────────────
+
+export type ServiceState = "healthy" | "degraded" | "down";
+
+/** A row of `GET /studio/health` (BFF `ServiceHealth`). */
 export interface ServiceHealth {
-  readonly id: string;
-  readonly status: ServiceStatus;
-  readonly version: string | null;
-  readonly uptimeSeconds: number | null;
-  /** Catalog key for the note column, with optional interpolation params. */
-  readonly noteKey: string | null;
-  readonly noteParams?: Readonly<Record<string, string>>;
+  readonly service: string;
+  readonly state: ServiceState;
+  readonly version: string;
+  readonly checkedAt: string;
+  readonly note: string | null;
 }
 
-export interface HealthView {
+export interface HealthResponse {
+  /** Worst state across the services, computed by the BFF. */
+  readonly state: ServiceState;
   readonly services: readonly ServiceHealth[];
-  readonly workflows: {
-    readonly open: number;
-    readonly longestDays: number;
-    readonly continueAsNew: number;
-    readonly failedActivities: number;
-  };
-  readonly backup: {
-    readonly databaseAt: string | null;
-    readonly vaultAt: string | null;
-    readonly restoreDrillAt: string | null;
-  };
-  readonly audit: {
-    readonly queued: number;
-    readonly lastShippedAt: string | null;
-    readonly lastAnchorAt: string | null;
-  };
 }
 
 // ── /settings (REQUESTED) ─────────────────────────────────────────────────────

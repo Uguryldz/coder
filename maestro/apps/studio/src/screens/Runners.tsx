@@ -5,24 +5,30 @@ import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Kpi, Table } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
-import { QueryState, type RunnerNode, type RunnersView, type RunnerStatus } from "./common/index.ts";
+import type { PoolSummary, RunnerRecord, RunnersResponse, RunnerState } from "./common/index.ts";
+import { QueryState } from "./common/index.ts";
 import { useLabel } from "./common/label.ts";
 
-const STATUS_TONE: Readonly<Record<RunnerStatus, BadgeTone>> = {
-  ok: "green",
-  warn: "amber",
+const STATE_TONE: Readonly<Record<RunnerState, BadgeTone>> = {
+  idle: "green",
+  busy: "blue",
+  draining: "amber",
   unreachable: "red",
 };
 
 /**
- * Runner pools: where the agents' sandboxes actually execute.
+ * The runner fleet (M60): where the agents' sandboxes actually execute.
  *
- * `unreachable` machines are sorted to the TOP and counted in a dedicated tile.
- * A node that stopped answering is not a node with no problems — it is the one
- * whose jobs are silently not running, and the natural alphabetical ordering
- * would bury it under healthy hosts. Capacity numbers exclude it too: counting
- * the slots of a machine nobody can reach is how a pool looks like it has
- * headroom it does not have.
+ * `unreachable` machines are sorted to the TOP and called out in a banner. A
+ * node that stopped answering is not a node with no problems — it is the one
+ * whose jobs are silently not running, and the natural ordering would bury it
+ * under healthy hosts.
+ *
+ * The BFF already sums per-pool capacity in `/studio/runners`, and this screen
+ * renders those numbers rather than recomputing them: two different totals for
+ * the same fleet is worse than either one. It adds only what the server does
+ * not send — how many of a pool's machines are unreachable — so a tile reading
+ * "4/16" cannot look like spare capacity while half the fleet is dark.
  */
 export function RunnersScreen(): ReactNode {
   const api = useApi();
@@ -30,28 +36,31 @@ export function RunnersScreen(): ReactNode {
   const label = useLabel();
 
   const runners = useQuery({
-    queryKey: ["runners"],
-    queryFn: ({ signal }) => api.get<RunnersView>("/runners", { signal }),
+    queryKey: ["studio-runners"],
+    queryFn: ({ signal }) => api.get<RunnersResponse>("/studio/runners", { signal }),
     refetchInterval: 30_000,
   });
 
-  const nodes = useMemo(() => sortByUrgency(runners.data?.runners ?? []), [runners.data]);
-  const pools = useMemo(() => summarise(nodes), [nodes]);
-  const unreachable = nodes.filter((node) => node.status === "unreachable").length;
+  const nodes = useMemo(() => sortByUrgency(runners.data?.items ?? []), [runners.data]);
+  const pools = useMemo(
+    () => withUnreachable(runners.data?.pools ?? [], nodes),
+    [runners.data, nodes],
+  );
+  const unreachable = nodes.filter((node) => node.state === "unreachable").length;
 
-  const columns: readonly Column<RunnerNode>[] = [
+  const columns: readonly Column<RunnerRecord>[] = [
     {
       key: "id",
       header: t("runners.col.machine"),
       cell: (row) => (
         <div>
-          <b className="scr-mono">{row.id}</b>
-          <div className="scr-mini">{row.host}</div>
+          <b className="scr-mono">{row.runnerId}</b>
+          <div className="scr-mini">{row.pool}</div>
         </div>
       ),
     },
     {
-      key: "pool",
+      key: "platform",
       header: t("runners.col.pool"),
       cell: (row) => <Badge tone="blue">{label(`platform.${row.platform}`, row.platform)}</Badge>,
     },
@@ -60,29 +69,20 @@ export function RunnersScreen(): ReactNode {
       header: t("runners.col.slots"),
       cell: (row) => (
         <span className="scr-mono">
-          {row.busy}/{row.capacity}
+          {row.activeSandboxes}/{row.capacity}
         </span>
       ),
       align: "right",
     },
     {
-      key: "jobs",
-      header: t("runners.col.jobs"),
-      cell: (row) => (
-        <span className="scr-mini">{row.jobs.length === 0 ? "—" : row.jobs.join(", ")}</span>
-      ),
-    },
-    {
-      key: "status",
+      key: "state",
       header: t("runners.col.status"),
       cell: (row) => (
         <div>
-          <Badge tone={STATUS_TONE[row.status]} icon="●">
-            {t(`runners.status.${row.status}`)}
+          <Badge tone={STATE_TONE[row.state]} icon="●">
+            {label(`runners.state.${row.state}`, row.state)}
           </Badge>
-          {row.messageKey !== null && (
-            <div className="scr-mini">{label(row.messageKey, row.id)}</div>
-          )}
+          {row.note !== null && <div className="scr-mini">{label(row.note, row.runnerId)}</div>}
         </div>
       ),
     },
@@ -93,6 +93,9 @@ export function RunnersScreen(): ReactNode {
       <QueryState
         isPending={runners.isPending}
         error={runners.error}
+        isEmpty={nodes.length === 0}
+        emptyTitle={t("runners.empty")}
+        emptyIcon="🖥"
         onRetry={() => void runners.refetch()}
       >
         {unreachable > 0 && (
@@ -119,11 +122,15 @@ export function RunnersScreen(): ReactNode {
           ))}
         </div>
 
-        <Card title={t("runners.card.machines")} subtitle={t("runners.card.machines_sub")} padded={false}>
+        <Card
+          title={t("runners.card.machines")}
+          subtitle={t("runners.card.machines_sub")}
+          padded={false}
+        >
           <Table
             columns={columns}
             rows={nodes}
-            rowKey={(row) => row.id}
+            rowKey={(row) => row.runnerId}
             emptyLabel={t("runners.empty")}
             caption={t("runners.card.machines")}
           />
@@ -149,36 +156,28 @@ export function RunnersScreen(): ReactNode {
   );
 }
 
-interface PoolSummary {
-  readonly pool: string;
-  readonly machines: number;
-  readonly capacity: number;
-  readonly busy: number;
-  readonly unreachable: number;
-}
-
-/** Unreachable first, then warnings, then healthy — worst news at the top. */
-function sortByUrgency(nodes: readonly RunnerNode[]): readonly RunnerNode[] {
-  const rank: Readonly<Record<RunnerStatus, number>> = { unreachable: 0, warn: 1, ok: 2 };
+/** Unreachable first, then draining, then the working machines. */
+function sortByUrgency(nodes: readonly RunnerRecord[]): readonly RunnerRecord[] {
+  const rank: Readonly<Record<RunnerState, number>> = {
+    unreachable: 0,
+    draining: 1,
+    busy: 2,
+    idle: 3,
+  };
   return [...nodes].sort((left, right) => {
-    const byStatus = rank[left.status] - rank[right.status];
-    return byStatus !== 0 ? byStatus : left.id.localeCompare(right.id);
+    const byState = rank[left.state] - rank[right.state];
+    return byState !== 0 ? byState : left.runnerId.localeCompare(right.runnerId);
   });
 }
 
-function summarise(nodes: readonly RunnerNode[]): readonly PoolSummary[] {
-  const pools = new Map<string, { machines: number; capacity: number; busy: number; unreachable: number }>();
-  for (const node of nodes) {
-    const entry = pools.get(node.pool) ?? { machines: 0, capacity: 0, busy: 0, unreachable: 0 };
-    entry.machines += 1;
-    if (node.status === "unreachable") {
-      entry.unreachable += 1;
-    } else {
-      // Only reachable machines contribute usable slots.
-      entry.capacity += node.capacity;
-      entry.busy += node.busy;
-    }
-    pools.set(node.pool, entry);
-  }
-  return [...pools.entries()].map(([pool, entry]) => ({ pool, ...entry }));
+/** The server's pool totals plus the count of machines nobody can reach. */
+function withUnreachable(
+  pools: readonly PoolSummary[],
+  nodes: readonly RunnerRecord[],
+): readonly (PoolSummary & { unreachable: number })[] {
+  return pools.map((pool) => ({
+    ...pool,
+    unreachable: nodes.filter((node) => node.pool === pool.pool && node.state === "unreachable")
+      .length,
+  }));
 }

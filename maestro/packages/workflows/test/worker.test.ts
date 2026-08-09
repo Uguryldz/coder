@@ -17,6 +17,7 @@ import {
   composeActivityDeps,
   resolvePorts,
   runMaestroWorker,
+  warnIfGuardIsProcessLocal,
   workflowsPath,
 } from "../src/worker.js";
 import { makeFakes } from "./fakes.js";
@@ -195,5 +196,25 @@ describe("InMemoryIdempotency", () => {
     expect(await guard.once("a", async () => 1)).toBe(1);
     expect(await guard.once("b", async () => 2)).toBe(2);
     expect(guard.size).toBe(2);
+  });
+
+  /**
+   * D6: the process-local guard is correct for one worker and silently wrong for
+   * two. A deployment mistake must not be discovered from duplicated evidence.
+   */
+  it("warns when the guard is process-local, and stays quiet otherwise", () => {
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (message: string) => void warnings.push(message);
+    try {
+      warnIfGuardIsProcessLocal(new InMemoryIdempotency());
+      // A table-backed guard satisfies the same interface and must NOT warn.
+      warnIfGuardIsProcessLocal({ once: async (_key, fn) => fn() });
+    } finally {
+      console.warn = original;
+    }
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("SINGLE");
   });
 });

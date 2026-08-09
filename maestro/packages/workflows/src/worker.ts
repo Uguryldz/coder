@@ -13,6 +13,7 @@ import type {
 } from "@maestro/ports";
 import { NativeConnection, Worker, type WorkerOptions } from "@temporalio/worker";
 import type { ActivityDeps } from "./impl/deps.js";
+import { InMemoryIdempotency } from "./impl/idempotency.js";
 import { createActivities } from "./impl/index.js";
 
 /**
@@ -127,6 +128,7 @@ export interface MaestroWorkerOptions {
  */
 export async function createMaestroWorker(opts: MaestroWorkerOptions): Promise<Worker> {
   const ports = resolvePorts(opts.registry, opts.ports);
+  warnIfGuardIsProcessLocal(opts.core.idempotency);
   return Worker.create({
     connection: opts.connection,
     namespace: opts.namespace ?? "default",
@@ -136,6 +138,25 @@ export async function createMaestroWorker(opts: MaestroWorkerOptions): Promise<W
     shutdownGraceTime: "5 minutes",
     ...opts.workerOptions,
   });
+}
+
+/**
+ * D6: say so, loudly, when the deployment's duplicate protection is only as
+ * wide as this process.
+ *
+ * `InMemoryIdempotency` is correct for M33's "the worker is the single writer",
+ * and silently wrong the moment a second worker joins the task queue: two
+ * processes retrying the same activity would each believe they were the first,
+ * and the ticket would get two Jira comments and two audit records claiming the
+ * same predecessor. That is a deployment mistake, not a code one — so this
+ * cannot throw — but it must never be discovered from duplicated evidence.
+ */
+export function warnIfGuardIsProcessLocal(guard: ActivityDeps["idempotency"]): void {
+  if (!(guard instanceof InMemoryIdempotency)) return;
+  console.warn(
+    "[maestro] idempotency guard is process-local (InMemoryIdempotency): safe for a SINGLE " +
+      "worker only. Wire a table-backed IdempotencyGuard before running more than one.",
+  );
 }
 
 /** Signals a long-running worker treats as "drain and stop". */

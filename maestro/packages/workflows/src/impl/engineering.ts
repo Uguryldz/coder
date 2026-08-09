@@ -1,7 +1,6 @@
 import { NonEmpty, type TicketKey } from "@maestro/contracts";
 import type { AgentTurnResult, SessionReport } from "@maestro/execution";
 import { buildLivingSummary } from "@maestro/memory";
-import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { EngineeringResult, ReviewResult, TestRunResult } from "../activities.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
@@ -70,12 +69,13 @@ async function finishTurn(
     case "queued":
       throw quotaWait(outcome.resumeAt, deps.now());
     case "blocked":
+      // O4: the handover is real and fully recorded, so it must be REPORTED as
+      // a handover. Throwing here instead closed the run as a failure, and the
+      // ticket showed up in Studio as "başarısız" while it was in fact sitting
+      // correctly in a human's queue. The compliance decision is on the record
+      // either way; what changes is that the workflow can now act on it.
       await handOver(deps, run, `${what}: ${outcome.messageKey}`, `blocked:${what}`);
-      throw ApplicationFailure.create({
-        message: `LLM policy blocked ${what}`,
-        type: "LlmBlocked",
-        nonRetryable: true,
-      });
+      return { handoverReason: `${what}: ${outcome.messageKey}` };
     case "degraded":
       await deps.runs.patch(run.ticket, { mode: "ai_assist" });
       return { handoverReason: `ai_assist (M97): ${outcome.messageKey}` };
@@ -101,6 +101,7 @@ export async function runEngineering(
   ticket: TicketKey,
   resumeToken: string | null,
   task: string,
+  attempt = 1,
 ): Promise<EngineeringResult> {
   const run = await deps.runs.get(ticket);
   const outcome = await deps.execution.runTurn({
@@ -124,7 +125,7 @@ export async function runEngineering(
     actor: "ai",
     title: "geliştirme turu",
     detail: `${report.diff.files} dosya · +${report.diff.insertions} -${report.diff.deletions}`,
-    key: `engineering:${report.at}`,
+    key: `engineering:${attempt}:${report.at}`,
   });
   const ok = finished.handoverReason === undefined && report.protectedViolations.length === 0;
   return {
@@ -142,6 +143,7 @@ async function review(
   ticket: TicketKey,
   role: "dev_reviewer" | "test_reviewer",
   schemaName: string,
+  attempt: number,
 ): Promise<ReviewResult> {
   const run = await deps.runs.get(ticket);
   const outcome = await deps.llm.generateObject(
@@ -157,20 +159,29 @@ async function review(
     actor: "ai",
     title: resolved.value.approved ? "inceleme onaylandı" : "inceleme bulguları",
     detail: resolved.value.findings.join("\n"),
-    key: `${role}:${resolved.value.approved}:${resolved.value.findings.length}`,
+    // Keyed on the ROUND, not on the verdict: two rounds that both came back
+    // with the same two findings are two events, and the journal must show both.
+    key: `${role}:${attempt}`,
   });
   return { approved: resolved.value.approved, findings: [...resolved.value.findings] };
 }
 
-export const reviewDiff = (deps: ActivityDeps, ticket: TicketKey): Promise<ReviewResult> =>
-  review(deps, ticket, "dev_reviewer", "diff-review");
+export const reviewDiff = (
+  deps: ActivityDeps,
+  ticket: TicketKey,
+  attempt = 1,
+): Promise<ReviewResult> => review(deps, ticket, "dev_reviewer", "diff-review", attempt);
 
-export const reviewTests = (deps: ActivityDeps, ticket: TicketKey): Promise<ReviewResult> =>
-  review(deps, ticket, "test_reviewer", "test-review");
+export const reviewTests = (
+  deps: ActivityDeps,
+  ticket: TicketKey,
+  attempt = 1,
+): Promise<ReviewResult> => review(deps, ticket, "test_reviewer", "test-review", attempt);
 
 export async function designTests(
   deps: ActivityDeps,
   ticket: TicketKey,
+  attempt = 1,
 ): Promise<{ scenarios: number }> {
   const run = await deps.runs.get(ticket);
   const outcome = await deps.llm.generateObject(
@@ -190,7 +201,7 @@ export async function designTests(
     actor: "ai",
     title: "test senaryoları",
     detail: `${scenarios} senaryo`,
-    key: `test-design:${scenarios}`,
+    key: `test-design:${attempt}`,
   });
   return { scenarios };
 }
@@ -200,7 +211,11 @@ export async function designTests(
  * model is asked only to count what it sees, and a summariser that says
  * "passed" over a red build must not be able to open the PR.
  */
-export async function runTests(deps: ActivityDeps, ticket: TicketKey): Promise<TestRunResult> {
+export async function runTests(
+  deps: ActivityDeps,
+  ticket: TicketKey,
+  attempt = 1,
+): Promise<TestRunResult> {
   const run = await deps.runs.get(ticket);
   const outcome = await deps.execution.runTurn({
     context: await turnContext(deps, run, deps.translate(run.locale, "agent.test_task", { ticket })),
@@ -234,13 +249,13 @@ export async function runTests(deps: ActivityDeps, ticket: TicketKey): Promise<T
   await audit(deps, run, {
     action: "TEST_RUN_COMPLETE",
     meta: { passed, failedCommands: red.length },
-    key: `tests:${report.at}`,
+    key: `tests:${attempt}:${report.at}`,
   });
   await record(deps, run, {
     kind: "test_run",
     title: passed ? "testler yeşil" : "testler kırmızı",
     detail: `${counted.failed}/${counted.total} · kapsam %${counted.coveragePct}`,
-    key: `tests:${report.at}`,
+    key: `tests:${attempt}:${report.at}`,
   });
   return { passed, total: counted.total, failed: counted.failed, coveragePct: counted.coveragePct };
 }

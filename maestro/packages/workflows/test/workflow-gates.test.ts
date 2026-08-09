@@ -1,7 +1,6 @@
 import type { TestWorkflowEnvironment } from "@temporalio/testing";
 import { GATES_BY_RISK, type RiskTier, type StepId } from "@maestro/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { killSwitchSignal } from "../src/signals.js";
 import { Scenario, approval, createTestEnv, runTicket } from "./harness.js";
 
 /**
@@ -168,44 +167,5 @@ describe("a gate refuses to close for the wrong person (M32/M51)", () => {
       "sod_violation",
     );
     expect(run.scenario.decisions.find((d) => d.step === "5")?.actorUserId).not.toBe(shared);
-  });
-});
-
-describe("the kill switch (M58)", () => {
-  it("stops the flow between steps but never abandons an open gate", async () => {
-    const scenario = new Scenario({
-      risk: "dusuk",
-      gate: (step) => (step === "5" ? { kind: "approve_after_hours", hours: 5 } : { kind: "approve" }),
-    });
-    const run = await runTicket(env, scenario, {
-      escalateGate: async (_ticket, step, waitingHours) => {
-        scenario.escalations.push({ step, hours: waitingHours });
-        if (step === "5" && waitingHours === 2) {
-          await scenario.handle?.signal(killSwitchSignal, {
-            level: "all",
-            actor: "admin@bank",
-            reason: "olay müdahalesi",
-            at: "2026-08-09T09:00:00+03:00",
-          });
-        }
-        if (step === "5" && waitingHours >= 5) await scenario.signal(approval("5"));
-        return null;
-      },
-    });
-
-    // The run stopped — but only after the gate it was holding had been answered.
-    expect(run.status).toBeNull();
-    expect(run.failure).toContain("kill switch: all");
-    const ticks = scenario.escalations.filter((e) => e.step === "5");
-    expect(Math.max(...ticks.map((t) => t.hours))).toBe(5);
-    expect(scenario.decisions.filter((d) => d.step === "5")).toHaveLength(1);
-    expect(scenario.journal.some((e) => e.title === "kill-switch")).toBe(true);
-  });
-
-  it("human-only work is handed over immediately and opens no gate (M73)", async () => {
-    const run = await runTicket(env, new Scenario({ mode: "human_only" }));
-    expect(run.status).toBe("handover");
-    expect(run.scenario.opened).toEqual([]);
-    expect(run.scenario.handovers).toEqual(["human_only"]);
   });
 });

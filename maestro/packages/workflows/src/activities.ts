@@ -81,12 +81,23 @@ export interface MaestroActivities {
   escalateGate(ticket: TicketKey, step: StepId, waitingHours: number): Promise<string | null>;
 
   // ── step 6-10: engineering, scanning, review, tests ──────────────────────
-  runEngineering(ticket: TicketKey, resumeToken: string | null, task: string): Promise<EngineeringResult>;
-  runScans(ticket: TicketKey): Promise<ScanResult[]>;
-  reviewDiff(ticket: TicketKey): Promise<ReviewResult>;
-  designTests(ticket: TicketKey): Promise<{ scenarios: number }>;
-  reviewTests(ticket: TicketKey): Promise<ReviewResult>;
-  runTests(ticket: TicketKey): Promise<TestRunResult>;
+  runEngineering(
+    ticket: TicketKey,
+    resumeToken: string | null,
+    task: string,
+    attempt?: number,
+  ): Promise<EngineeringResult>;
+  /**
+   * `attempt` distinguishes one lap of the M54 loop from the next. Without it
+   * the idempotency key would have to come from the results, and three rounds
+   * that failed identically would collapse into a single record — the evidence
+   * package would then under-report what was actually run.
+   */
+  runScans(ticket: TicketKey, attempt?: number): Promise<ScanResult[]>;
+  reviewDiff(ticket: TicketKey, attempt?: number): Promise<ReviewResult>;
+  designTests(ticket: TicketKey, attempt?: number): Promise<{ scenarios: number }>;
+  reviewTests(ticket: TicketKey, attempt?: number): Promise<ReviewResult>;
+  runTests(ticket: TicketKey, attempt?: number): Promise<TestRunResult>;
 
   // ── step 10b-13: PR, CI, closure ─────────────────────────────────────────
   openPullRequest(ticket: TicketKey): Promise<PrRef>;

@@ -628,6 +628,9 @@ importers:
       '@maestro/storage':
         specifier: workspace:*
         version: link:../storage
+      '@temporalio/activity':
+        specifier: ^1.11.0
+        version: 1.22.0
       '@temporalio/common':
         specifier: ^1.11.0
         version: 1.22.0

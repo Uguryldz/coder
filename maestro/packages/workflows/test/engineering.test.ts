@@ -132,6 +132,24 @@ describe("runEngineering (step 6a)", () => {
     expect(result.handoverReason).toContain("M97");
     expect(result.resumeToken).toBe("session-1");
   });
+
+  /**
+   * O4: a policy block DOES hand the ticket to a human, and the handover is
+   * fully recorded — but the activity then throws, so the run closes as a
+   * failure and Studio shows "başarısız" for a ticket that is sitting in
+   * somebody's queue, correctly handed over. The two facts must agree.
+   */
+  it("a policy block is reported as a handover, not a bare failure (O4)", async () => {
+    const fakes = makeFakes({
+      runTurn: () => ({ status: "blocked", messageKey: "llm.blocked", dataClass: "gizli" }),
+    });
+    const result = await runEngineering(fakes.deps, "PAY-101", "session-1", "t");
+
+    expect(result.ok).toBe(false);
+    expect(result.handoverReason).toContain("llm.blocked");
+    // The handover itself was recorded before the decision came back.
+    expect(fakes.journalStore.entries.some((e) => e.kind === "handover")).toBe(true);
+  });
 });
 
 describe("the AI reviews (steps 6c and 8)", () => {

@@ -8,6 +8,7 @@ import {
 import { PrismaDirectoryReader, type DirectoryUserDelegate } from "./directory.js";
 import {
   PrismaGateStore,
+  sqlGateClaim,
   type AuditDelegate as GateAuditDelegate,
   type GateDelegate,
 } from "./gates.js";
@@ -87,7 +88,14 @@ export interface BuiltCoreStores {
 }
 
 export interface CoreStoreOptions {
-  /** Raw SQL, for the idempotency claim. */
+  /**
+   * Raw SQL, for the two `INSERT ... ON CONFLICT DO NOTHING` claims.
+   *
+   * Both the idempotency key and the gate row need a conflict settled INSIDE
+   * one statement, and Prisma's query builder emits `ON CONFLICT` for neither
+   * (on a composite key it falls back to `SELECT`-then-`INSERT`, which is the
+   * race itself). These are the only two places the stores leave the ORM.
+   */
   readonly sql: SqlExecutor;
   /** Runs a callback inside one transaction — the audit chain lock needs it. */
   readonly transactions: TransactionRunner;
@@ -130,7 +138,7 @@ export function buildCoreStores(db: CoreStoreDb, options: CoreStoreOptions): Bui
 
   return {
     runs: new PrismaRunContextStore(db.workflowRun),
-    gates: new PrismaGateStore(db.gate, db.auditLog, ticketOfRun),
+    gates: new PrismaGateStore(db.gate, db.auditLog, ticketOfRun, sqlGateClaim(options.sql)),
     params: new PrismaParamReader(db.paramVersion, db.routingRule, scopeOf),
     directory: new PrismaDirectoryReader(db.user),
     idempotency: new PrismaIdempotencyGuard(db.idempotencyKey, sqlClaimExecutor(options.sql)),

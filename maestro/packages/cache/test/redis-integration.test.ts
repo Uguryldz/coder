@@ -96,6 +96,49 @@ describe.skipIf(REDIS_URL === undefined)("real Redis", () => {
       expect((await bucket.take("k")).allowed).toBe(true);
     });
 
+    /**
+     * `if elapsed < 0 then elapsed = 0` — the monotonic-refill guard, pinned.
+     *
+     * An NTP step backwards, or a replica whose clock trails the one that last
+     * wrote the bucket, makes `now - last` negative. Without the clamp the
+     * refill term goes negative too... and `math.min(capacity, tokens + neg)`
+     * quietly LOWERS the count rather than raising it, which is why deleting
+     * the line left every existing test green: the visible effect is not "more
+     * tokens" but "the stored timestamp walks backwards", and each later call
+     * then measures its elapsed time from that stale instant and mints the same
+     * tokens twice.
+     *
+     * So this asserts the invariant directly. The bucket is drained at a late
+     * clock, then hammered at an EARLIER one: a limit of 5 must stay a limit of
+     * 5, no matter which direction the clock moved.
+     */
+    it("mints no tokens when the clock goes backwards", async () => {
+      const key = `${runId}:rl-backwards`;
+      let clock = 3_000_000;
+      const bucket = new RedisTokenBucket(
+        client,
+        { capacity: 5, refillPerSecond: 1, keyPrefix: key },
+        () => new Date(clock),
+      );
+
+      // Drain it at the later instant.
+      for (let i = 0; i < 5; i += 1) expect((await bucket.take("k")).allowed).toBe(true);
+      expect((await bucket.take("k")).allowed).toBe(false);
+
+      // The clock steps back a full minute — 60 tokens' worth of refill.
+      clock -= 60_000;
+
+      const admitted = [];
+      for (let i = 0; i < 10; i += 1) admitted.push((await bucket.take("k")).allowed);
+      expect(admitted.filter(Boolean)).toEqual([]);
+
+      // And time moving FORWARD again must still not pay out the rewind.
+      clock += 2_000;
+      expect((await bucket.take("k")).allowed).toBe(true);
+      expect((await bucket.take("k")).allowed).toBe(true);
+      expect((await bucket.take("k")).allowed).toBe(false);
+    });
+
     it("sets a TTL on the bucket key, so abandoned buckets do not accumulate", async () => {
       const bucket = new RedisTokenBucket(client, {
         capacity: 5,
@@ -142,15 +185,75 @@ describe.skipIf(REDIS_URL === undefined)("real Redis", () => {
       expect(await sem.release(result.permit)).toBe(true);
     });
 
-    it("refuses to renew an expired permit (ZADD XX), so it cannot resurrect one", async () => {
-      const sem = new RedisSemaphore(client, { capacity: 1, leaseMs: 1_000, keyPrefix: `${runId}:sem-xx` });
+    /**
+     * Renamed, because the old name credited the wrong line.
+     *
+     * It read "refuses to renew an expired permit (ZADD XX)", and it passed
+     * with `XX` deleted — the flag was unreachable behind the `ZSCORE` guard,
+     * so the test never exercised what its name claimed. What actually refuses
+     * the resurrection is the sweep plus that guard, and that is what is named
+     * and asserted here.
+     */
+    it("refuses to renew a permit whose lease expired, and leaves the successor alone", async () => {
+      const key = `${runId}:sem-expired-renew`;
+      let clock = 2_000_000;
+      const sem = new RedisSemaphore(
+        client,
+        { capacity: 1, leaseMs: 1_000, keyPrefix: key },
+        () => new Date(clock),
+      );
       const first = await sem.acquire("host");
       if (!first.granted) throw new Error("expected a permit");
-      await new Promise((resolve) => setTimeout(resolve, 1_200));
+
+      clock += 5_000;
       const successor = await sem.acquire("host");
       expect(successor.granted).toBe(true);
+
+      // The stalled holder comes back and tries to keep going.
       expect(await sem.renew(first.permit)).toBe(false);
+      // Its renewal must not have re-added it beside the successor.
       expect(await sem.holders("host")).toBe(1);
+      expect(await client.send(["ZCARD", `${key}:host`])).toBe(1);
+      if (!successor.granted) throw new Error("unreachable");
+      expect(await client.send(["ZSCORE", `${key}:host`, successor.permit.token])).not.toBeNull();
+      expect(await client.send(["ZSCORE", `${key}:host`, first.permit.token])).toBeNull();
+    });
+
+    /**
+     * The expired-holder sweep, pinned against the REAL Lua.
+     *
+     * `ZREMRANGEBYSCORE` at the top of the acquire script is what returns a
+     * crashed holder's permit to the pool. The suite already had a test for
+     * that, but it proved the permit came back after a real 1.2s sleep — and a
+     * lease that has expired is ALSO gone from `ZCOUNT`, so the same green
+     * appears whether the sweep ran or the member merely aged out of the count.
+     * Deleting the sweep left the whole 168-test suite passing.
+     *
+     * This drives the clock instead of the wall, and asserts on the zset's
+     * membership (`ZCARD`, which counts expired members too) rather than on a
+     * live-holder gauge. Without the sweep the dead token is still a member,
+     * `count >= capacity` holds, and the successor is refused — capacity that
+     * never comes back.
+     */
+    it("sweeps an expired holder out of the zset, not merely out of the count", async () => {
+      const key = `${runId}:sem-sweep`;
+      let clock = 1_000_000;
+      const sem = new RedisSemaphore(
+        client,
+        { capacity: 1, leaseMs: 1_000, keyPrefix: key },
+        () => new Date(clock),
+      );
+
+      expect((await sem.acquire("host")).granted).toBe(true);
+      expect(await client.send(["ZCARD", `${key}:host`])).toBe(1);
+
+      // The holder crashes; time passes well beyond its lease.
+      clock += 5_000;
+
+      const successor = await sem.acquire("host");
+      expect(successor.granted).toBe(true);
+      // Exactly one member: the dead token was REMOVED, not just outscored.
+      expect(await client.send(["ZCARD", `${key}:host`])).toBe(1);
     });
 
     it("never exceeds capacity under a churn of acquire/release", async () => {

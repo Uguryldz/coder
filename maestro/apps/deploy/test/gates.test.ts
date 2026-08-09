@@ -4,6 +4,7 @@ import {
   PrismaGateStore,
   type AuditDelegate,
   type AuditRow,
+  type GateClaim,
   type GateDelegate,
   type GateRow,
 } from "../src/stores/gates.js";
@@ -12,28 +13,33 @@ import {
  * The gate store, against a fake that enforces the same primary key the table
  * does — `(runId, step)`. That key IS the idempotency of `open`, so a double
  * that let two rows exist would be testing a different store.
+ *
+ * `claim` models `INSERT ... ON CONFLICT DO NOTHING`: it inserts when the key
+ * is free and does NOTHING — no error, no overwrite — when it is taken. A
+ * double that threw on a taken key would make the second `open` look like a
+ * failure the real statement does not produce, and one that overwrote would
+ * move `openedAt`, the escalation ladder's anchor.
  */
 function fakeGates(initial: GateRow[] = []): {
   delegate: GateDelegate;
+  claim: GateClaim;
   rows: Map<string, GateRow>;
-  upserts: number;
+  inserts: number;
 } {
   const rows = new Map<string, GateRow>(initial.map((row) => [`${row.runId}:${row.step}`, row]));
-  const state = { upserts: 0 };
+  const state = { inserts: 0 };
+  const claim: GateClaim = {
+    insertIfAbsent: (runId, step, ownerGroup, openedAt) => {
+      const key = `${runId}:${step}`;
+      if (rows.has(key)) return Promise.resolve();
+      state.inserts += 1;
+      rows.set(key, { runId, step, ownerGroup, openedAt, firedStepIds: [], closedAt: null });
+      return Promise.resolve();
+    },
+  };
   const delegate: GateDelegate = {
     findUnique: ({ where }) =>
       Promise.resolve(rows.get(`${where.runId_step.runId}:${where.runId_step.step}`) ?? null),
-    upsert: ({ where, create }) => {
-      state.upserts += 1;
-      const key = `${where.runId_step.runId}:${where.runId_step.step}`;
-      const existing = rows.get(key);
-      // The empty `update` of the real call: an existing row is returned
-      // untouched, which is what keeps `openedAt` from moving.
-      if (existing !== undefined) return Promise.resolve(existing);
-      const row: GateRow = { ...create, closedAt: null };
-      rows.set(key, row);
-      return Promise.resolve(row);
-    },
     update: ({ where, data }) => {
       const key = `${where.runId_step.runId}:${where.runId_step.step}`;
       const existing = rows.get(key);
@@ -50,9 +56,10 @@ function fakeGates(initial: GateRow[] = []): {
   };
   return {
     delegate,
+    claim,
     rows,
-    get upserts(): number {
-      return state.upserts;
+    get inserts(): number {
+      return state.inserts;
     },
   };
 }
@@ -78,7 +85,7 @@ const ticketOf = (): Promise<string> => Promise.resolve("PAY-101");
 describe("PrismaGateStore.open", () => {
   it("creates a gate and reports it open", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
 
     const record = await store.open("run-1", "4", "product-owners", OPENED);
     expect(record).toEqual({
@@ -98,7 +105,7 @@ describe("PrismaGateStore.open", () => {
    */
   it("is idempotent: re-opening returns the existing record and does not move the anchor", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
 
     const first = await store.open("run-1", "4", "product-owners", OPENED);
     const second = await store.open("run-1", "4", "product-owners", "2026-08-04T09:00:00.000Z");
@@ -109,7 +116,7 @@ describe("PrismaGateStore.open", () => {
 
   it("keeps the ladder state of a gate that is re-opened", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
 
     await store.open("run-1", "4", "product-owners", OPENED);
     await store.markFired("run-1", "4", ["reminder-24h"]);
@@ -120,7 +127,7 @@ describe("PrismaGateStore.open", () => {
 
   it("keeps gates of different steps and different runs apart", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
 
     await store.open("run-1", "4", "product-owners", OPENED);
     await store.open("run-1", "5", "tech-leads", OPENED);
@@ -133,7 +140,7 @@ describe("PrismaGateStore.open", () => {
 describe("PrismaGateStore.markFired", () => {
   it("appends rather than replacing, so a step is never re-sent", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
 
     await store.open("run-1", "4", "product-owners", OPENED);
     await store.markFired("run-1", "4", ["reminder-24h"]);
@@ -145,7 +152,7 @@ describe("PrismaGateStore.markFired", () => {
 
   it("writes nothing when there is nothing to record", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
     await store.open("run-1", "4", "product-owners", OPENED);
     await store.markFired("run-1", "4", []);
     expect((await store.get("run-1", "4"))?.firedStepIds).toEqual([]);
@@ -157,7 +164,7 @@ describe("PrismaGateStore.markFired", () => {
    */
   it("refuses to mark a step fired on a gate that does not exist", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
     await expect(store.markFired("run-1", "4", ["reminder-24h"])).rejects.toBeInstanceOf(
       GateNotFoundError,
     );
@@ -167,7 +174,7 @@ describe("PrismaGateStore.markFired", () => {
 describe("PrismaGateStore.close", () => {
   it("records the closing instant", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
 
     await store.open("run-1", "4", "product-owners", OPENED);
     await store.close("run-1", "4", "2026-08-02T10:00:00.000Z");
@@ -177,13 +184,13 @@ describe("PrismaGateStore.close", () => {
 
   it("refuses to close a gate that was never opened", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
     await expect(store.close("run-1", "4", OPENED)).rejects.toBeInstanceOf(GateNotFoundError);
   });
 
   it("returns null for a gate that does not exist rather than inventing one", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
     expect(await store.get("run-1", "4")).toBeNull();
   });
 });
@@ -210,7 +217,7 @@ describe("PrismaGateStore.decisions", () => {
 
   it("rebuilds a decision, taking the signature from the record's own seq", async () => {
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([approval]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([approval]), ticketOf, gates.claim);
 
     const [decision] = await store.decisions("run-1");
     expect(decision).toEqual({
@@ -233,7 +240,7 @@ describe("PrismaGateStore.decisions", () => {
       metaJson: { ...(approval.metaJson as object), reason: "kapsam eksik" },
     };
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([rejection]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([rejection]), ticketOf, gates.claim);
 
     const [decision] = await store.decisions("run-1");
     expect(decision?.decision).toBe("reject");
@@ -251,7 +258,7 @@ describe("PrismaGateStore.decisions", () => {
       metaJson: { ticketKey: "PAY-101", step: "4", source: "jira" },
     };
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([incomplete]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([incomplete]), ticketOf, gates.claim);
     await expect(store.decisions("run-1")).rejects.toThrow();
   });
 
@@ -262,7 +269,7 @@ describe("PrismaGateStore.decisions", () => {
       metaJson: { ...(approval.metaJson as object) },
     };
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([bad]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([bad]), ticketOf, gates.claim);
     await expect(store.decisions("run-1")).rejects.toThrow();
   });
 
@@ -277,7 +284,7 @@ describe("PrismaGateStore.decisions", () => {
       },
     };
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([unverified]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([unverified]), ticketOf, gates.claim);
     const [decision] = await store.decisions("run-1");
     expect(decision?.sodVerified).toBe(false);
   });
@@ -291,7 +298,7 @@ describe("PrismaGateStore.decisions", () => {
       metaJson: { ticketKey: "PAY-101" },
     };
     const gates = fakeGates();
-    const store = new PrismaGateStore(gates.delegate, fakeAudit([noise, approval]), ticketOf);
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([noise, approval]), ticketOf, gates.claim);
     expect(await store.decisions("run-1")).toHaveLength(1);
   });
 });

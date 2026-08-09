@@ -1,6 +1,6 @@
 import { createDb } from "@maestro/db";
 import { MAESTRO_TASK_QUEUE, startMaestroWorker } from "@maestro/workflows";
-import { bootPlatform, MISSING_CORE_DEPS } from "../boot.js";
+import { bootPlatform, DEGRADED_CAPABILITIES, MISSING_CORE_DEPS } from "../boot.js";
 import { unwiredAgentTurnRunner } from "../stores/execution.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
@@ -62,6 +62,24 @@ export async function main(): Promise<void> {
       `[maestro] worker: composed ${Object.keys(deployment.selection).length} ports on profile ` +
         `${env.profile}, polling ${taskQueue}`,
     );
+
+    /**
+     * Printed AFTER the "polling" line, at warn level, on purpose.
+     *
+     * "The worker started" and "the worker can finish a run" are different
+     * claims, and only the first one is proved by getting this far. An
+     * operator who sees the success line and nothing else will reasonably
+     * assume the second. This says otherwise, in the same place they are
+     * already looking.
+     */
+    if (DEGRADED_CAPABILITIES.length > 0) {
+      console.warn(
+        `[maestro] worker: RUNNING WITH ${DEGRADED_CAPABILITIES.length} DEGRADED CAPABILITY` +
+          `${DEGRADED_CAPABILITIES.length === 1 ? "" : "IES"} — it polls, but a run that reaches ` +
+          "one of these stops there with a named error:\n  - " +
+          DEGRADED_CAPABILITIES.join("\n  - "),
+      );
+    }
 
     await startMaestroWorker({
       address,

@@ -36,8 +36,18 @@ function fakeVersions(rows: ParamVersionRow[]): {
     delegate: {
       findMany: (args) => {
         queries.push(args);
-        // The database's job only: filter, and order by version descending.
-        // Scope precedence is the reader's, and is asserted separately.
+        // The database's job only: filter and order. Scope precedence is the
+        // reader's, and is asserted separately.
+        //
+        // This sorts descending unconditionally, and that is safe for a
+        // narrower reason than it looks: `ParamVersionDelegate` types
+        // `orderBy.version` as the LITERAL `"desc"`, so a reader that asked
+        // for `asc` — "the oldest parameter version wins", a silent downgrade
+        // of every tuned limit to its first draft — does not compile. The
+        // direction is pinned by the type, not by this sort, which is why the
+        // sort does not need to branch on an argument that has one value.
+        // Asserting the argument anyway keeps that reasoning checked here.
+        expect(args.orderBy).toEqual({ version: "desc" });
         const candidates = rows
           .filter((row) => row.key === args.where.key)
           .filter((row) => args.where.scopeRef.in.includes(row.scopeRef));

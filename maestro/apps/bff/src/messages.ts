@@ -59,7 +59,7 @@ export const REQUIRED_MESSAGE_KEYS: readonly string[] = [
  * text is in RAPOR.md for the orchestrator to add to
  * `packages/config/locales`; once it lands, this list empties again.
  */
-export const REQUESTED_MESSAGE_KEYS: readonly string[] = [BFF_MESSAGE_KEYS.commandUnknownActor];
+export const REQUESTED_MESSAGE_KEYS: readonly string[] = [];
 
 /** The catalog shipped with `@maestro/config`. */
 export const defaultCatalog: MessageCatalog = {

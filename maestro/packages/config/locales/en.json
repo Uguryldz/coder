@@ -115,5 +115,6 @@
   "command.no_run": "There is no running Maestro flow for {ticket}.",
   "command.no_open_gate": "{ticket} is not standing at an open approval gate.",
   "command.run_status": "{ticket} · step: {step} · status: {status}",
-  "command.unsupported": "The {command} command is not supported in this release."
+  "command.unsupported": "The {command} command is not supported in this release.",
+  "command.unknown_actor": "Could not process {command}: the comment's author could not be matched to a corporate account."
 }

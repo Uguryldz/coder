@@ -1,6 +1,7 @@
 import type { StoragePort } from "@maestro/ports";
 import { archiveKey, ObjectNotFoundError } from "@maestro/storage";
-import { nodeRandom, openSessionBytes, sealSessionBytes, type RandomSource } from "./crypto.js";
+import { openSessionBytes, sealSessionBytes } from "./crypto.js";
+import { MemoryArgumentError } from "./errors.js";
 
 /** Session files are recognised by name inside the M65 archive prefix. */
 export const SESSION_FILE_PREFIX = "session-";
@@ -35,7 +36,16 @@ export interface SessionArchiveDeps {
   readonly storage: StoragePort;
   /** 32-byte content key, injected from SecretPort at wiring time (M80). */
   readonly key: Uint8Array;
-  readonly random?: RandomSource;
+  /**
+   * Ask the driver for a WORM lock on the written object (M5/M57).
+   *
+   * Off by default because only some buckets support it. Without it a second
+   * `put` on the same key silently replaces the archived session — the key is
+   * `(year, ticket, run)`, so that only happens when the same run is archived
+   * twice, and the newer file is then the right one. With it, the first
+   * archive of a run is the one an auditor gets back.
+   */
+  readonly objectLock?: boolean;
 }
 
 export interface SavedSession {
@@ -48,7 +58,9 @@ export interface SavedSession {
  * Archive an Agent SDK session file (M30/M31/M65).
  *
  * The plaintext never reaches the port: sealing happens here, so a
- * misconfigured or third-party bucket receives ciphertext only.
+ * misconfigured or third-party bucket receives ciphertext only. The seal is
+ * bound to the storage key, so the object cannot be replayed under another
+ * ticket's or another run's key.
  */
 export async function saveSessionFile(
   deps: SessionArchiveDeps,
@@ -56,17 +68,23 @@ export async function saveSessionFile(
   contents: Uint8Array,
 ): Promise<SavedSession> {
   const key = sessionArchiveKey(ref);
-  const sealed = sealSessionBytes(deps.key, contents, deps.random ?? nodeRandom);
-  await deps.storage.put(key, sealed, { contentType: SESSION_CONTENT_TYPE });
+  const sealed = sealSessionBytes(deps.key, contents, key);
+  await deps.storage.put(key, sealed, {
+    contentType: SESSION_CONTENT_TYPE,
+    ...(deps.objectLock === true ? { objectLock: true } : {}),
+  });
   return { key, bytes: sealed.length };
 }
 
-/** Restore a session file. Throws when the object exists but cannot be opened. */
+/**
+ * Restore a session file. Throws when the object exists but cannot be opened —
+ * including when it is a valid session sealed for a *different* key.
+ */
 export async function loadSessionFile(
   deps: SessionArchiveDeps,
   key: string,
 ): Promise<Uint8Array> {
-  return openSessionBytes(deps.key, await deps.storage.get(key));
+  return openSessionBytes(deps.key, await deps.storage.get(key), key);
 }
 
 /**
@@ -89,16 +107,10 @@ export async function tryLoadSessionFile(
     if (error instanceof ObjectNotFoundError) return null;
     throw error;
   }
-  return openSessionBytes(deps.key, sealed);
+  return openSessionBytes(deps.key, sealed, key);
 }
 
-/**
- * Session-file keys archived for one ticket in one year, sorted.
- *
- * The fallback path for a resume whose stored key was lost: the archive
- * prefix is listable, and only this package's own file names are returned.
- */
-export async function listSessionKeys(
+async function keysOfYear(
   storage: StoragePort,
   ticketKey: string,
   year: number,
@@ -111,10 +123,33 @@ export async function listSessionKeys(
   });
   const prefix = sample.slice(0, sample.lastIndexOf("/") + 1);
   const keys = await storage.list(prefix);
-  return keys
-    .filter((key) => {
-      const name = key.slice(prefix.length);
-      return name.startsWith(SESSION_FILE_PREFIX) && name.endsWith(SESSION_FILE_SUFFIX);
-    })
-    .sort((a, b) => a.localeCompare(b));
+  return keys.filter((key) => {
+    const name = key.slice(prefix.length);
+    return name.startsWith(SESSION_FILE_PREFIX) && name.endsWith(SESSION_FILE_SUFFIX);
+  });
+}
+
+/**
+ * Session-file keys archived for one ticket, sorted.
+ *
+ * The fallback path for a resume whose stored key was lost. A range is
+ * accepted because the archive year comes from the run's last activity while
+ * the resume happens whenever it happens: 60 idle days routinely straddle new
+ * year, and scanning a single year would report "no session" for a ticket
+ * whose session is one directory away (verifier D-12).
+ */
+export async function listSessionKeys(
+  storage: StoragePort,
+  ticketKey: string,
+  fromYear: number,
+  throughYear: number = fromYear,
+): Promise<string[]> {
+  if (!Number.isInteger(fromYear) || !Number.isInteger(throughYear) || throughYear < fromYear) {
+    throw new MemoryArgumentError("listSessionKeys", "years must be integers and ordered");
+  }
+  const found: string[] = [];
+  for (let year = fromYear; year <= throughYear; year += 1) {
+    found.push(...(await keysOfYear(storage, ticketKey, year)));
+  }
+  return found.sort((a, b) => a.localeCompare(b));
 }

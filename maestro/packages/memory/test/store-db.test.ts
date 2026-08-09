@@ -150,6 +150,35 @@ describe("journalStoreFromDb", () => {
     });
   });
 
+  it("cannot reach a mutating method even when handed a wider client (D-13)", async () => {
+    // `AppendOnlyDelegate` is a structural type, so a full Prisma delegate is
+    // assignable to it — the type stops the *store* from naming `update`, not
+    // a caller from passing one. The store therefore takes a snapshot of the
+    // three methods it may use and never touches the object again.
+    const update = vi.fn();
+    const deleteMany = vi.fn();
+    const fake = fakeDelegate({});
+    const wide = { ...(fake.delegate as object), update, deleteMany } as unknown as JournalDelegate;
+    const store = journalStoreFromDb(wide);
+
+    expect(Object.keys(store).sort()).toEqual(["insert", "list", "maxSeq"]);
+    expect((store as unknown as Record<string, unknown>).update).toBeUndefined();
+    expect((store as unknown as Record<string, unknown>).delete).toBeUndefined();
+
+    // Swapping a method in afterwards changes nothing for this store.
+    (wide as unknown as Record<string, unknown>).create = deleteMany;
+    const masker = testMasker();
+    await store.insert(
+      masker.seal(
+        { runId: RUN_ID, seq: 0, at: AT, actor: "ai", kind: "intake" },
+        masker.prepare({ title: "read", detail: "" }),
+      ),
+    );
+    expect(fake.create).toHaveBeenCalledTimes(1);
+    expect(update).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
   it("drives appendJournal end to end over the delegate", async () => {
     const rows: FakeRow[] = [];
     let maxSeq: number | null = null;

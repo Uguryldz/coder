@@ -110,6 +110,40 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0)(lightningcss@1.33.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
 
+  apps/demo-stack:
+    dependencies:
+      '@maestro/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@maestro/bff':
+        specifier: workspace:*
+        version: link:../bff
+      '@maestro/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@maestro/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@maestro/ports':
+        specifier: workspace:*
+        version: link:../../packages/ports
+      fastify:
+        specifier: ^5.2.0
+        version: 5.11.3
+      tsx:
+        specifier: ^4.23.11
+        version: 4.23.11
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0)(lightningcss@1.33.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
+
   apps/deploy:
     dependencies:
       '@maestro/adapter-ado':

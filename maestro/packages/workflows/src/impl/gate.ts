@@ -1,6 +1,5 @@
 import { type GateDecision, JournalKind, type StepId, type TicketKey } from "@maestro/contracts";
 import { planEscalation, type ResolvedStep } from "@maestro/notify";
-import { ApplicationFailure } from "@temporalio/common";
 import type { GateVerdict } from "../activities.js";
 import { GATE_OWNER } from "../gates.js";
 import type { ActivityDeps } from "./deps.js";

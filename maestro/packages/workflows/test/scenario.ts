@@ -82,12 +82,30 @@ export const PASS_SCAN: ScanResult = {
 export type GatePolicy =
   | { kind: "approve" }
   | { kind: "approve_after_hours"; hours: number }
-  | { kind: "reject_once"; reason: string };
+  | { kind: "reject_once"; reason: string }
+  /** Rejects on every visit — the M54 counter's test subject. */
+  | { kind: "reject_always"; reason: string }
+  /**
+   * Two decisions delivered back to back, before the workflow has processed the
+   * first. A real Jira user typing `/approve` and then `/reject` produces this,
+   * and so does a webhook batch.
+   */
+  | { kind: "burst"; decisions: readonly GateDecision[] };
 
 export interface ScenarioOptions {
   risk?: RiskTier;
   mode?: TicketWorkflowInput["mode"];
   gate?: (step: StepId, visit: number) => GatePolicy;
+  /**
+   * Decisions sent the moment the workflow ANNOUNCES it is heading for a gate
+   * (the `adım <step>` journal line), which happens before `openGate` runs.
+   *
+   * This is the race a Jira comment wins routinely: the approver is already
+   * looking at the ticket and answers as the gate is being opened. A stub that
+   * can only speak from inside `openGate` can never reproduce it, so a workflow
+   * that drops early decisions would look correct forever.
+   */
+  earlyDecision?: (step: StepId, visit: number) => GateDecision | null;
   /** Lets a scenario make the directory refuse a decision (gate stays open). */
   directory?: (decision: GateDecision) => { accepted: true } | { accepted: false; reason: string };
   /**
@@ -108,10 +126,14 @@ export class Scenario {
   readonly handovers: string[] = [];
   readonly ciSignals: CiResultSignal[] = [];
   readonly visits = new Map<StepId, number>();
+  /** Visits counted for the pre-gate hook, kept apart from `visits`. */
+  readonly earlyVisits = new Map<StepId, number>();
   handle: WorkflowHandle | null = null;
   /** True while the run is parked at 10b waiting for a build result. */
   ciGateOpen = false;
   private consumedCi = 0;
+  /** Which build index the driver has already sent; -1 = nothing sent yet. */
+  private sentForBuild = -1;
   private readonly ciQueue: CiResultSignal[];
 
   constructor(readonly options: ScenarioOptions = {}) {
@@ -138,6 +160,17 @@ export class Scenario {
     this.consumedCi += 1;
   }
 
+  /**
+   * One send per build. The latch re-arms only when a NEW build result becomes
+   * current (the workflow looked at the last one and asked engineering for a
+   * fix), which is precisely when a real pipeline would run again and report.
+   */
+  takeCiSend(): boolean {
+    if (this.sentForBuild === this.consumedCi) return false;
+    this.sentForBuild = this.consumedCi;
+    return true;
+  }
+
   get risk(): RiskTier {
     return this.options.risk ?? "dusuk";
   }
@@ -150,6 +183,20 @@ export class Scenario {
 
   async signal(decision: GateDecision): Promise<void> {
     await this.handle?.signal(gateDecisionSignal, decision);
+  }
+
+  /**
+   * Fires the pre-gate hook for a step the workflow has just announced.
+   * Returns whether anything was sent, so the caller can tell "nobody answered
+   * early" from "an early answer was delivered and then lost".
+   */
+  async signalEarly(step: StepId): Promise<boolean> {
+    const visit = (this.earlyVisits.get(step) ?? 0) + 1;
+    this.earlyVisits.set(step, visit);
+    const decision = this.options.earlyDecision?.(step, visit) ?? null;
+    if (decision === null) return false;
+    await this.signal(decision);
+    return true;
   }
 }
 
@@ -171,8 +218,13 @@ export function makeActivities(
       scenario.opened.push(step);
       const policy = scenario.policy(step);
       if (policy.kind === "approve") await scenario.signal(approval(step));
-      if (policy.kind === "reject_once") {
+      if (policy.kind === "reject_once" || policy.kind === "reject_always") {
         await scenario.signal({ ...approval(step), decision: "reject", reason: policy.reason });
+      }
+      if (policy.kind === "burst") {
+        // Deliberately NOT awaited one-by-one with a gap: the point is that both
+        // land before the workflow gets a chance to process either.
+        for (const decision of policy.decisions) await scenario.signal(decision);
       }
     },
     recordGateDecision: async (_ticket, decision) => {
@@ -221,6 +273,12 @@ export function makeActivities(
       // The workflow announces the step it has moved to; 10b is where a build
       // result is expected, and a re-entry after 12b opens the gate again.
       if (title === "adım 10b") scenario.ciGateOpen = true;
+      // The announcement is the last thing before `openGate`, which is what
+      // makes it the seam an early decision can be delivered through.
+      const announced = title.startsWith("adım ") ? (title.slice(5) as StepId) : null;
+      if (announced !== null && scenario.options.earlyDecision !== undefined) {
+        await scenario.signalEarly(announced);
+      }
     },
     handOverToHuman: async (_ticket, reason) => {
       scenario.handovers.push(reason);

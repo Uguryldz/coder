@@ -1,15 +1,6 @@
-import {
-  condition,
-  proxyActivities,
-  setHandler,
-  workflowInfo,
-  ApplicationFailure,
-} from "@temporalio/workflow";
+import { condition, continueAsNew, proxyActivities, setHandler, workflowInfo } from "@temporalio/workflow";
 import type {
-  AnalysisDoc,
-  CiResultSignal,
   DataClass,
-  GateDecision,
   RiskTier,
   StepId,
   TicketKey,
@@ -18,7 +9,10 @@ import type {
   WorkflowRunStatus,
 } from "@maestro/contracts";
 import type { EngineeringResult, MaestroActivities, PrRef } from "./activities.js";
-import { canCloseGate, GATE_OWNER, gatesFor, isApprovalGate } from "./gates.js";
+import { awaitGreenBuild, runEngineeringLoop } from "./engineering-loop.js";
+import { answerModeRequests, assertNotKilled, awaitGate } from "./gate-loop.js";
+import { gatesFor } from "./gates.js";
+import { countRejection, emptyInbox, initialRunState, rejectionCounts } from "./run-state.js";
 import {
   ciResultSignal,
   clarificationAnsweredSignal,
@@ -40,17 +34,17 @@ import {
  *     not a poll. Nothing is auto-approved, ever, and nothing times out into a
  *     decision — only reminders escalate (M88).
  *  2. **Context survives.** Engineering resumes the SAME agent session after a
- *     rejection, a CI failure or a PR thread (M30). The resume token is
- *     workflow state, so a redeploy does not lose it.
+ *     rejection, a CI failure or a PR thread (M30), and the resume token is
+ *     carried across `continueAsNew` in the input — a rejection loop is a
+ *     continuation, not a restart (M29).
  *  3. **It fails closed.** Scans, CI origin, gate authority and the kill switch
  *     all stop the flow rather than let it through. The only way forward is a
  *     positive result.
  *
- * Determinism: no Date.now(), no Math.random(), no I/O. Everything real is an
- * activity; every decision is a pure function in `gates.ts`.
+ * Determinism: no `Math.random()`, no `process.env`, no I/O, and the only clock
+ * reading is `workflowNow()` below. Everything real is an activity; every
+ * decision is a pure function in `gates.ts`.
  */
-
-const HOUR = 60 * 60 * 1000;
 
 const acts = proxyActivities<MaestroActivities>({
   startToCloseTimeout: "30 minutes",
@@ -60,13 +54,24 @@ const acts = proxyActivities<MaestroActivities>({
 /**
  * Thinking roles get a patient proxy. `queued` (M55: the subscription pool is
  * full) comes back as a retryable failure, and waiting for a quota window is a
- * legitimate hour-long wait — a three-attempt budget would drop the run instead.
- * Real faults still stop: they are non-retryable and surface on the first try.
+ * legitimate hours-long wait — a three-attempt budget would drop the run.
+ *
+ * The budget is UNLIMITED rather than fifty, because fifty attempts on the
+ * ladder below tops out around fifty hours, and a WEEKLY subscription quota can
+ * legitimately be spent for longer than that: a run told "come back on Monday"
+ * must not be dropped on Saturday. This is not an infinite-retry hazard — a
+ * quota failure carries `nextRetryDelay` naming the moment the window reopens,
+ * so the run sleeps until then and costs nothing, and every non-quota fault
+ * here is non-retryable and still stops on the first attempt.
+ *
+ * `POSITIVE_INFINITY` is the SDK's spelling of "no limit": it drops the field,
+ * which is the protocol's default. A literal `0` does NOT mean unlimited here —
+ * `compileRetryPolicy` rejects it, and the run fails on its first thinking call.
  */
 const thinkActs = proxyActivities<MaestroActivities>({
   startToCloseTimeout: "30 minutes",
   retry: {
-    maximumAttempts: 50,
+    maximumAttempts: Number.POSITIVE_INFINITY,
     initialInterval: "1 minute",
     maximumInterval: "1 hour",
     backoffCoefficient: 2,
@@ -79,327 +84,205 @@ const longActs = proxyActivities<MaestroActivities>({
   retry: { maximumAttempts: 1 },
 });
 
+/**
+ * The workflow clock, as an ISO string.
+ *
+ * Inside the Temporal sandbox `Date.now()` is replaced by the SDK with the
+ * deterministic workflow time, so this replays identically. It is wrapped here,
+ * once, so the rule the rest of this file follows — no ambient time anywhere
+ * else — stays mechanically checkable.
+ */
+function workflowNow(): string {
+  return new Date(Date.now()).toISOString();
+}
+
 export interface TicketWorkflowInput {
   ticket: TicketKey;
   appId: string;
   mode: WorkMode;
   dataClass: DataClass;
+  /**
+   * State that must OUTLIVE a `continueAsNew` (M29). A rejection loop starts a
+   * new execution with a fresh history, so anything held in a local is gone:
+   * the strike counter would reset (M54 never fires) and the agent session
+   * would be lost on the second rejection (M30). Carrying it in the input is
+   * what makes the continuation a continuation rather than a restart.
+   */
+  rejectionCounts?: Record<string, number>;
+  /** The agent session to resume; `null`/absent starts a fresh one. */
+  resumeToken?: string | null;
+  /** The tier the analysis established, so a continuation reuses its gate set. */
+  risk?: RiskTier;
 }
 
 export async function ticketWorkflow(input: TicketWorkflowInput): Promise<WorkflowRunStatus> {
-  const started = new Date(workflowInfo().startTime).toISOString();
-
-  // ── mutable run state, all of it workflow state (survives redeploys) ──────
-  let step: StepId = "0";
-  let status: WorkflowRunStatus = "running";
-  let mode: WorkMode = input.mode;
-  let risk: RiskTier = "orta";
-  let analysis: AnalysisDoc | undefined;
-  let resumeToken: string | null = null;
-
-  let killed: "intake_only" | "all" | null = null;
-
-  const approvers = new Map<StepId, string>();
-  /**
-   * Signal state lives on an object, not in `let`s: a handler mutates it from
-   * outside the main flow, and TypeScript's narrowing would otherwise conclude
-   * the variable is still `undefined` after we set it to `undefined` ourselves.
-   */
-  const inbox: {
-    decision?: GateDecision;
-    clarified: boolean;
-    ci?: CiResultSignal;
-    changesRequested?: string;
-  } = { clarified: false };
-
-  /**
-   * Signal state is read through these, never directly. A `const x = inbox.y`
-   * would be narrowed by TypeScript to whatever the last assignment in this
-   * function put there (`undefined`), because property narrowing is not reset
-   * across the `condition()` call that actually waits for the handler to run.
-   * A function call result carries the declared type instead.
-   */
-  const takeDecision = (): GateDecision | undefined => inbox.decision;
-  const takeCi = (): CiResultSignal | undefined => inbox.ci;
+  const ticket = input.ticket;
+  const state = initialRunState({
+    startedAt: new Date(workflowInfo().startTime).toISOString(),
+    mode: input.mode,
+    risk: input.risk ?? "orta",
+    resumeToken: input.resumeToken ?? null,
+    rejectionCounts: input.rejectionCounts,
+  });
+  const inbox = emptyInbox();
 
   setHandler(runStateQuery, (): WorkflowRunState => ({
-    runId: workflowInfo().workflowId,
-    ticketKey: input.ticket,
-    step,
-    status,
-    risk,
-    startedAt: started,
-    updatedAt: started,
+    runId: workflowInfo().runId,
+    ticketKey: ticket,
+    step: state.step,
+    status: state.status,
+    risk: state.risk,
+    startedAt: state.startedAt,
+    updatedAt: state.updatedAt,
   }));
 
-  setHandler(gateDecisionSignal, (d) => {
-    inbox.decision = d;
-  });
-  setHandler(clarificationAnsweredSignal, () => {
-    inbox.clarified = true;
-  });
-  setHandler(ciResultSignal, (s) => {
-    inbox.ci = s;
-  });
-  setHandler(prChangesRequestedSignal, (t) => {
-    inbox.changesRequested = t.text;
-  });
-  setHandler(modeChangeSignal, (m) => {
-    mode = m.mode;
-  });
-  setHandler(killSwitchSignal, (k) => {
-    killed = k.level;
-  });
+  // Handlers only ever PUSH. Nothing here consumes, decides or clears — the
+  // loops below do that, which is what stops a signal from being overwritten
+  // between arriving and being read.
+  setHandler(gateDecisionSignal, (d) => void inbox.decisions.push(d));
+  setHandler(clarificationAnsweredSignal, () => void (inbox.clarified = true));
+  setHandler(ciResultSignal, (s) => void inbox.ciResults.push(s));
+  setHandler(prChangesRequestedSignal, (t) => void (inbox.changesRequested = t.text));
+  setHandler(modeChangeSignal, (m) => void inbox.modeRequests.push(m));
+  setHandler(killSwitchSignal, (k) => void (state.killed = k.level));
 
-  /** Every step transition goes through here so the journal never has holes. */
-  const goto = async (next: StepId, note: string): Promise<void> => {
-    step = next;
-    await acts.journal(input.ticket, "other", `adım ${next}`, note);
-  };
+  const gate = (at: StepId) => awaitGate(acts, state, inbox, ticket, at);
+  const stopIfKilled = () => assertNotKilled(acts, state, ticket);
 
   /**
-   * Wait at a human gate until somebody decides. Reminders fire on the
-   * parameterised ladder; they never decide anything themselves (M88).
-   * Returns the decision — approve continues, reject sends the flow back.
+   * Every step transition goes through here, which is what makes this the one
+   * place the kill switch has to be checked. Guarding individual loops instead
+   * left whole chains of steps running after the stop — scans, reviews and test
+   * runs are all new sandbox work — because each loop only looked once, at its
+   * own top.
    */
-  const awaitGate = async (at: StepId): Promise<GateDecision> => {
-    const owner = GATE_OWNER[at as keyof typeof GATE_OWNER] ?? "tech-leads";
-    status = "gate";
-    inbox.decision = undefined;
-    await acts.openGate(input.ticket, at, owner);
-
-    let waited = 0;
-    for (;;) {
-      await condition(() => inbox.decision !== undefined, HOUR);
-      const closed = takeDecision();
-      if (closed !== undefined) {
-        const verdict = canCloseGate(closed, at, approvers);
-        if (!verdict.ok) {
-          // Refused, not ignored: the person is told why and the gate stays open.
-          await acts.journal(
-            input.ticket,
-            "gate",
-            "karar reddedildi",
-            `${closed.actorUserId} · ${verdict.reason}`,
-          );
-          inbox.decision = undefined;
-          continue;
-        }
-        const recorded = await acts.recordGateDecision(input.ticket, closed);
-        if (!recorded.accepted) {
-          // The directory disagreed with what the payload claimed. The gate
-          // stays open and the person is told; the run does not die over it.
-          await acts.journal(input.ticket, "gate", "karar reddedildi", recorded.reason);
-          inbox.decision = undefined;
-          continue;
-        }
-        if (closed.decision === "approve") approvers.set(at, closed.actorUserId);
-        status = "running";
-        return closed;
-      }
-      waited += 1;
-      await acts.escalateGate(input.ticket, at, waited);
-    }
-  };
-
-  /** The kill switch stops work between steps; it never abandons an open gate. */
-  const assertNotKilled = async (): Promise<void> => {
-    if (killed === "all") {
-      status = "cancelled";
-      await acts.journal(input.ticket, "other", "kill-switch", "tüm işler durduruldu (M58)");
-      throw ApplicationFailure.nonRetryable("kill switch: all", "KillSwitch");
-    }
+  const goto = async (next: StepId, note: string): Promise<void> => {
+    await stopIfKilled();
+    await answerModeRequests(acts, state, inbox, ticket);
+    state.step = next;
+    // D1: this used to report `startedAt` forever, so a run that had been
+    // working for six hours looked untouched in Studio.
+    state.updatedAt = workflowNow();
+    await acts.journal(ticket, "other", `adım ${next}`, note);
   };
 
   const handOver = async (reason: string): Promise<WorkflowRunStatus> => {
-    status = "handover";
-    await acts.handOverToHuman(input.ticket, reason);
-    return status;
+    state.status = "handover";
+    await acts.handOverToHuman(ticket, reason);
+    return state.status;
   };
 
+  const continueRun = (): Promise<never> =>
+    continueAsNew<typeof ticketWorkflow>({
+      ...input,
+      risk: state.risk,
+      resumeToken: state.resumeToken,
+      rejectionCounts: rejectionCounts(state),
+    });
+
   // ── 0 · work mode ────────────────────────────────────────────────────────
-  await goto("0", `work mode: ${mode} · veri sınıfı: ${input.dataClass}`);
-  if (mode === "human_only") {
+  await goto("0", `work mode: ${state.mode} · veri sınıfı: ${input.dataClass}`);
+  if (state.mode === "human_only") {
     // M73: the humans do the work; Maestro only keeps the record.
-    await acts.journal(input.ticket, "other", "human-only", "Maestro yalnız kanıt topluyor");
+    await acts.journal(ticket, "other", "human-only", "Maestro yalnız kanıt topluyor");
     return handOver("human_only");
   }
 
   // ── 2 · intake, 2b · clarification ───────────────────────────────────────
-  await assertNotKilled();
   await goto("2", "ticket tamlık kontrolü");
-  const intake = await thinkActs.runIntake(input.ticket);
+  const intake = await thinkActs.runIntake(ticket);
   if (!intake.complete) {
     await goto("2b", "reporter'a soru soruldu");
-    status = "gate";
-    await acts.askClarification(input.ticket, intake.question ?? "");
+    state.status = "gate";
+    await acts.askClarification(ticket, intake.question ?? "");
     // Unbounded on purpose (M61): no auto-reject, no timeout into a decision.
     await condition(() => inbox.clarified);
-    status = "running";
+    state.status = "running";
   }
 
   // ── 3ö · discovery, 3 · analysis ─────────────────────────────────────────
-  await assertNotKilled();
   await goto("3o", "salt-okunur repo keşfi");
-  await acts.discoverRepo(input.ticket, input.appId);
+  await acts.discoverRepo(ticket, input.appId);
 
   await goto("3", "analiz üretiliyor");
-  const written = await thinkActs.writeAnalysis(input.ticket, input.appId);
-  analysis = written.analysis;
-  risk = written.risk;
-  await acts.publishAnalysis(input.ticket, analysis);
-  const children = await acts.fanOutChildren(input.ticket, analysis);
+  const written = await thinkActs.writeAnalysis(ticket, input.appId);
+  state.analysis = written.analysis;
+  state.risk = written.risk;
+  await acts.publishAnalysis(ticket, state.analysis);
+  const children = await acts.fanOutChildren(ticket, state.analysis);
   if (children.length > 0) {
-    await acts.journal(input.ticket, "analysis", "fan-out", `${children.length} alt ticket açıldı`);
+    await acts.journal(ticket, "analysis", "fan-out", `${children.length} alt ticket açıldı`);
   }
 
   // ── 4-5 · analysis gates, with the rejection loop ────────────────────────
-  const required = gatesFor(risk);
-  for (const gate of required.filter((g) => g === "4" || g === "5")) {
-    await assertNotKilled();
-    await goto(gate, "insan onayı bekleniyor");
-    const verdict = await awaitGate(gate);
+  const required = gatesFor(state.risk);
+  for (const at of required.filter((g) => g === "4" || g === "5")) {
+    await goto(at, "insan onayı bekleniyor");
+    const verdict = await gate(at);
     if (verdict.decision === "reject") {
-      // Back to analysis with the reason — the agent keeps its context (M54).
+      const strike = countRejection(state, at);
+      if (strike.exhausted) return handOver(`${at} kapısında ${strike.count} ret (M54)`);
+
+      // Back to analysis with the reason — the agent keeps its context (M30).
       await goto("3", `ret: ${verdict.reason ?? ""} — analiz yeniden yazılıyor`);
-      const redone = await thinkActs.writeAnalysis(input.ticket, input.appId);
-      analysis = redone.analysis;
-      await acts.publishAnalysis(input.ticket, analysis);
-      approvers.clear();
-      return ticketWorkflowContinue(input, { step: "4", risk });
+      const redone = await thinkActs.writeAnalysis(ticket, input.appId);
+      state.analysis = redone.analysis;
+      // The rewrite may have re-tiered the ticket; keeping the old value would
+      // send the continuation through the wrong gate set.
+      state.risk = redone.risk;
+      await acts.publishAnalysis(ticket, state.analysis);
+      return continueRun();
     }
   }
 
   // ── 6a-10 · engineering loop ─────────────────────────────────────────────
-  let attempt = 0;
-  for (;;) {
-    await assertNotKilled();
-    attempt += 1;
-    if (attempt > 3) return handOver("3 tur ilerleme yok (M54)");
-
-    await goto("6a", `geliştirme turu ${attempt}`);
-    const task = inbox.changesRequested ?? "analizdeki kabul kriterlerini karşıla";
-    inbox.changesRequested = undefined;
-    const eng: EngineeringResult = await longActs.runEngineering(input.ticket, resumeToken, task);
-    resumeToken = eng.resumeToken;
-    if (!eng.ok) {
-      if (eng.handoverReason !== undefined) return handOver(eng.handoverReason);
-      continue;
-    }
-
-    // 6b · scans — fail-closed: anything but a clean pass goes back (M27).
-    await goto("6b", "güvenlik taraması");
-    const scans = await acts.runScans(input.ticket);
-    if (scans.some((s) => s.outcome !== "pass")) {
-      await acts.journal(input.ticket, "scan", "tarama bloke etti", "bulgularla 6a'ya dönüldü");
-      continue;
-    }
-
-    // 6c · dev-reviewer
-    await goto("6c", "diff incelemesi");
-    const review = await acts.reviewDiff(input.ticket);
-    if (!review.approved) {
-      inbox.changesRequested = review.findings.join("\n");
-      continue;
-    }
-
-    // 7-8 · test design and its four-eyes review
-    await goto("7", "test senaryoları");
-    await acts.designTests(input.ticket);
-    await goto("8", "senaryo denetimi");
-    const testReview = await acts.reviewTests(input.ticket);
-    if (!testReview.approved) {
-      inbox.changesRequested = testReview.findings.join("\n");
-      continue;
-    }
-
-    // 9 · QA scenario gate (only in the tiers that require it)
-    if (required.includes("9")) {
-      await assertNotKilled();
-      await goto("9", "QA senaryo onayı");
-      const qa = await awaitGate("9");
-      if (qa.decision === "reject") {
-        inbox.changesRequested = qa.reason ?? "";
-        continue;
-      }
-    }
-
-    // 10 · the tests actually run
-    await goto("10", "testler koşuyor");
-    const run = await acts.runTests(input.ticket);
-    if (!run.passed) {
-      await acts.journal(input.ticket, "test_run", "testler kırmızı", `${run.failed}/${run.total}`);
-      continue;
-    }
-    break;
-  }
+  const built = await runEngineeringLoop({ acts, longActs, goto, gate }, state, inbox, ticket, required);
+  if (built.kind === "handover") return handOver(built.reason);
+  const attempt = built.attempts;
 
   // ── 10b · PR and the CI gate ─────────────────────────────────────────────
-  await assertNotKilled();
-  const pr: PrRef = await acts.openPullRequest(input.ticket);
-  await acts.activatePullRequest(input.ticket, pr);
+  await stopIfKilled();
+  const pr: PrRef = await acts.openPullRequest(ticket);
+  await acts.activatePullRequest(ticket, pr);
   await goto("10b", `PR #${pr.prId} · build validation bekleniyor`);
 
-  for (;;) {
-    inbox.ci = undefined;
-    await condition(() => inbox.ci !== undefined);
-    const signal = takeCi();
-    if (signal === undefined) continue;
-    // M106: a signal whose origin is not this run's repo is not evidence.
-    if (!(await acts.verifyCiOrigin(input.ticket, signal))) {
-      await acts.journal(input.ticket, "ci", "yabancı CI sinyali reddedildi", signal.adoRepo ?? "?");
-      continue;
-    }
-    if (signal.status === "succeeded") break;
-    await acts.journal(input.ticket, "ci", "CI kırmızı", "6a'ya dönülüyor");
-    const fix: EngineeringResult = await longActs.runEngineering(
-      input.ticket,
-      resumeToken,
-      "CI hatasını düzelt",
-    );
-    resumeToken = fix.resumeToken;
-    if (!fix.ok && fix.handoverReason !== undefined) return handOver(fix.handoverReason);
-  }
+  const green = await awaitGreenBuild({ acts, longActs }, state, inbox, ticket, attempt);
+  if (green.kind === "handover") return handOver(green.reason);
 
   // ── 11-12 · QA result and PR approval ────────────────────────────────────
-  for (const gate of required.filter((g) => g === "11" || g === "12")) {
-    await assertNotKilled();
-    await goto(gate, "insan onayı bekleniyor");
-    const verdict = await awaitGate(gate);
+  for (const at of required.filter((g) => g === "11" || g === "12")) {
+    await goto(at, "insan onayı bekleniyor");
+    const verdict = await gate(at);
     if (verdict.decision === "reject") {
+      const strike = countRejection(state, at);
+      if (strike.exhausted) return handOver(`${at} kapısında ${strike.count} ret (M54)`);
+
       inbox.changesRequested = verdict.reason ?? "";
       await goto("12b", "PR yorum döngüsü — aynı oturum devam");
       const fix: EngineeringResult = await longActs.runEngineering(
-        input.ticket,
-        resumeToken,
+        ticket,
+        state.resumeToken,
         inbox.changesRequested,
+        // A round of its own: the 12b fix is neither the last 6a turn nor the
+        // last CI fix repeated, and each must leave its own record.
+        green.attempts + strike.count,
       );
-      resumeToken = fix.resumeToken;
+      state.resumeToken = fix.resumeToken;
       if (!fix.ok && fix.handoverReason !== undefined) return handOver(fix.handoverReason);
-      return ticketWorkflowContinue(input, { step: gate, risk });
+      return continueRun();
     }
   }
 
   // ── 13 · merge, evidence, closure ────────────────────────────────────────
-  await acts.mergePullRequest(input.ticket, pr);
+  // The last gate is closed and everything below is irreversible. This check
+  // cannot be skipped: an emergency stop that does not stop the MERGE has not
+  // stopped the only thing in this system that cannot be undone.
+  await stopIfKilled();
+  await acts.mergePullRequest(ticket, pr);
   await goto("13", "kanıt paketi");
-  const evidence = await acts.buildEvidencePackage(input.ticket);
-  await acts.journal(input.ticket, "closure", "kanıt paketi", `${evidence.files} dosya`);
-  await acts.closeTicket(input.ticket);
-  status = "done";
-  return status;
+  const evidence = await acts.buildEvidencePackage(ticket);
+  await acts.journal(ticket, "closure", "kanıt paketi", `${evidence.files} dosya`);
+  await acts.closeTicket(ticket);
+  state.status = "done";
+  return state.status;
 }
-
-/**
- * Re-entry after a rejection loop. Kept as a named seam rather than a `goto`
- * so the history stays readable: wave 3's integration step replaces it with
- * `continueAsNew` once the activity set is wired, and the tests pin the shape.
- */
-async function ticketWorkflowContinue(
-  input: TicketWorkflowInput,
-  _from: { step: StepId; risk: RiskTier },
-): Promise<WorkflowRunStatus> {
-  return ticketWorkflow(input);
-}
-
-export { isApprovalGate };

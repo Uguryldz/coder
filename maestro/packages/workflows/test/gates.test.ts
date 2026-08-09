@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { STEP_IDS, type GateDecision, type StepId } from "@maestro/contracts";
-import { canCloseGate, gatesFor, isApprovalGate, nextStep } from "../src/gates.js";
+import type { GateDecision, StepId } from "@maestro/contracts";
+import { canCloseGate, gatesFor, isApprovalGate } from "../src/gates.js";
 
 const base: Omit<GateDecision, "step" | "decision"> = {
   actorUserId: "ayse.kaya@bank",
@@ -14,41 +14,22 @@ const base: Omit<GateDecision, "step" | "decision"> = {
 const approve = (step: StepId, over: Partial<GateDecision> = {}): GateDecision =>
   ({ ...base, step, decision: "approve", ...over }) as GateDecision;
 
-describe("nextStep — the risk tier decides which gates exist", () => {
-  it("a low-risk run never opens the PO gate", () => {
-    let step: StepId = "3";
-    const seen: StepId[] = [];
-    for (let i = 0; i < 25; i += 1) {
-      const next = nextStep(step, "dusuk");
-      if (next === null) break;
-      seen.push(next);
-      step = next;
-    }
-    expect(seen).not.toContain("4");
-    expect(seen).not.toContain("9");
-    expect(seen).toContain("5");
-    expect(seen).toContain("12");
-  });
-
-  it("a critical run opens every approval gate", () => {
+describe("the gate set per risk tier (M51)", () => {
+  it("a critical run opens every approval gate, and exactly the full set", () => {
     for (const gate of gatesFor("kritik")) {
       expect(isApprovalGate(gate)).toBe(true);
     }
+    // Five approval gates, not six: step 2b is an unbounded human WAIT, not a
+    // gate, and it exists at every tier (M51, clarified 2026-08-09).
     expect(gatesFor("kritik")).toEqual(["4", "5", "9", "11", "12"]);
   });
 
-  it("never goes backwards and ends at the last step", () => {
-    let step: StepId = "0";
-    let previous = -1;
-    for (;;) {
-      const next = nextStep(step, "orta");
-      if (next === null) break;
-      const index = STEP_IDS.indexOf(next);
-      expect(index).toBeGreaterThan(previous);
-      previous = index;
-      step = next;
+  it("each tier is a prefix-free subset of the critical set", () => {
+    expect(gatesFor("dusuk")).toEqual(["5", "12"]);
+    expect(gatesFor("orta")).toEqual(["4", "5", "11", "12"]);
+    for (const tier of ["dusuk", "orta", "kritik"] as const) {
+      for (const gate of gatesFor(tier)) expect(isApprovalGate(gate)).toBe(true);
     }
-    expect(step).toBe(STEP_IDS[STEP_IDS.length - 1]);
   });
 });
 

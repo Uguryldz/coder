@@ -3,8 +3,138 @@
 Dal: `wave3/workflows-activities` · Kapsam: `MaestroActivities` arayüzünün gerçeklenmesi,
 Temporal worker kompozisyon kökü ve zaman-atlatmalı workflow testleri.
 
-**Orkestratörün yazdığı dört dosyaya (`src/gates.ts`, `src/signals.ts`, `src/activities.ts`,
-`src/ticket-workflow.ts`) dokunulmadı** — `git diff main` bu dört dosya için boş.
+> **Bölüm 0 (aşağıda) bu raporun en güncel kısmıdır.** Bağımsız doğrulama turu
+> `src/ticket-workflow.ts`'te dört kritik bulgu çıkardı; o tur kapatıldı ve
+> workflow dosyası artık orkestratörün ilk hâli değil. 1-6. bölümler ilk teslimi
+> anlatıyor ve tarihsel kayıt olarak duruyor.
+
+---
+
+## 0. Doğrulama turu — 20 bulgu kapatıldı (2026-08-09)
+
+Bulguların çoğu **workflow'un kendisindeydi**, aktivitelerde değil. Hepsi canlı
+`TestWorkflowEnvironment` koşumuyla doğrulandı: her düzeltmenin **önce kırılan bir
+testi** yazıldı ve düzeltmeden önce eski kodda gerçekten kırıldığı ölçüldü.
+
+### K1-K4 · Kritik
+
+| # | Neydi | Ne yapıldı |
+|---|---|---|
+| **K1** | Kill-switch **merge'i durdurmuyordu**: son kapı onayı alındıktan sonra `mergePullRequest` → `buildEvidencePackage` → `closeTicket` kontrolsüz koşuyordu. Sistemdeki tek geri alınamaz eylem acil durdurmayı dinlemiyordu. | 13. adımdan **hemen önce** `assertNotKilled()`. Negatif iddialı test: kill gate-12 kararı yazılırken gönderiliyor, `mergePullRequest` sahtesi **hiç çağrılmıyor**. |
+| **K2** | Kill sonrası **tüm adım zinciri** koşmaya devam ediyordu (taramalar, inceleme, testler) çünkü kontrol yalnız döngü başlarındaydı. | Kontrol `goto()` **içine** taşındı — her adım geçişinde koşuyor. Merkezî ve tek noktadan. Test: kill 6a sırasında geliyor, `calls === ["ENGINEERING"]` (sonrası hiç başlamıyor). |
+| **K3** | `intake_only` (M58 seviye ①) **tamamen ölüydü** — yazılıyor, hiç okunmuyordu. Sessiz fail-open. | Artık okunuyor: adım 0'daysa koşu **durur**; başlamış koşuda **deftere yazılır** ("seviye ① — başlamış koşu etkilenmez"). Sessizlik yok (M14). |
+| **K4** | `ticketWorkflowContinue` → `ticketWorkflow(input)` **aynı execution içinde özyineleme**. Tüm yerel durum sıfırlanıyordu: kapı sayacı (M54 hiç ateşlenmiyordu — 5 ret → kapı 6 kez açıldı), `resumeToken` (**M30 ikinci rette kayboluyordu**), geçmiş 703 olaya şişiyordu. | Gerçek **`continueAsNew`** (M29). Ayrıntı için aşağıdaki bölüm. |
+
+### `continueAsNew` geçişinde tam olarak ne değişti
+
+Özyineleme iki ayrı şeyi aynı anda bozuyordu ve ikisi de sessizdi:
+
+1. **Tek execution, şişen geçmiş.** Her ret aynı koşunun geçmişine ekleniyordu.
+   Temporal'ın olay limiti sert; uzun yaşayan bir ticket burada istisna değil kural.
+2. **Durum yeniden doğuyordu.** Özyineleme `input`'la giriyordu, dolayısıyla her yerel
+   `let` varsayılanına dönüyordu — sayaç sıfır (M54 ölü), `resumeToken` `null`
+   (M30 ölü), `risk` yeniden `"orta"`.
+
+Çözüm, taşınması gereken durumu **açıkça input'a** koymak:
+
+```ts
+export interface TicketWorkflowInput {
+  ticket: TicketKey; appId: string; mode: WorkMode; dataClass: DataClass;
+  rejectionCounts?: Record<string, number>;  // M54 sayacı
+  resumeToken?: string | null;               // M30 oturumu
+  risk?: RiskTier;                           // analizin belirlediği kademe
+}
+```
+
+- **Sayaç** `run-state.ts`'teki `countRejection()` ile kapı bazında tutuluyor; aynı
+  kapıda 3 rette `handOver` (M54). Analiz kapıları (4/5) ve PR kapıları (11/12) için
+  ayrı ayrı sayılıyor, ikisi de test edildi.
+- **`resumeToken`** her devirde taşınıyor: artık **yalnız bir** tur `resumeToken === null`
+  ile başlıyor (ilk tur), sonrası hep aynı oturum.
+- **`risk`** ret sonrası yeniden yazılan analizden **güncelleniyor** (eski kod
+  `redone.risk`'i atıyordu — O3) ve devre taşınıyor, yoksa devam eden koşu yanlış kapı
+  setinden geçerdi.
+- **CI döngüsü de sınırlandı**: aynı kırmızı build 3 kez düzeltilemezse devir (M54).
+  Eskiden sınırsızdı.
+
+**Testlerdeki etki:** ret senaryolarında artık iki ayrı execution var. `runTicket`
+`handle.result()` beklediği için devir zinciri şeffaf — testler koşunun *sonucunu*
+görüyor, `opened` gibi sayaçlar ise sahte aktivitede biriktiği için devirden etkilenmiyor.
+
+### Y1-Y5, O1-O4 · Yüksek ve orta
+
+| # | Neydi | Ne yapıldı |
+|---|---|---|
+| **Y1** | Kapı açılmadan **önce** gelen karar sessizce siliniyordu (`inbox.decision = undefined`). Onaylayan `/approve` yazıyordu, kapı yine 30 hatırlatıcı bekliyordu. Onayların ana yolu Jira yorumu (M51) olduğu için **sık** yaşanacaktı. | **Kuyruk**: `decisions: GateDecision[]`. Handler `push`, döngü `shift`. Toplu temizleme kaldırıldı. Yanlış kapıya ait karar zaten `canCloseGate`'in `wrong_step` kontrolüyle reddediliyor. |
+| **Y2** | Aynı kapıya arka arkaya iki karar → koşu **kilitleniyordu** (test 180 sn timeout'a düşüyordu). | Aynı kuyruk düzeltmesi + döngü **bir turda kuyruğu boşaltıyor**. Test: reddedilecek karar + geçerli karar aynı kuşakta → koşu `done`, **sıfır hatırlatıcı**. |
+| **O1** | CI döngüsü başındaki `inbox.ci = undefined`, saatler süren `runEngineering` sırasında gelen **yeşil sonucu siliyordu**. Gerçek ADO bir kez gönderir. | `ciResults` kuyruğu, döngü başında temizleme yok. Test harness'ı da düzeltildi (aşağıda). |
+| **Y3** | Idempotency anahtarları **sonuçtan** türetiliyordu (`scan:gitleaks=fail,...`). Üç tarama turu → **1 defter kaydı**. Denetim ekibine sunulan kanıt paketi eksik oluyordu. | Anahtarlara **tur ayırt edicisi** eklendi: `runScans/reviewDiff/reviewTests/designTests/runTests/runEngineering` artık `attempt` alıyor (`MaestroActivities` imzasında opsiyonel). İçerikten türeyen `journal` ve `writeAnalysis` anahtarları ise **`Activity.info().activityId`** kullanıyor — bir aktivitenin *yeniden denemesi* aynı id'yi taşır (çakışır, doğru), *sonraki tur* yeni id alır (ayrı kayıt, doğru). |
+| **Y5** | `modeChangeSignal` ölüydü; BFF `/ai-takeover` ucu **200 dönüyor**, workflow yok sayıyordu. Halüsinasyon entegrasyon. | **Açıkça reddediliyor** (M14): mod ilk `await`'ten önce okunduğu için koşu ortasında değiştirilemez, ve bu karar deftere yazılıyor ("mod değişikliği reddedildi · … koşu ortasında değiştirilemez (M46)"). *Seçim gerekçesi:* modu gerçekten değiştirmek `human_lead` dalının tüm adımlarını yeniden tanımlamayı gerektiriyor — bu bir **ürün kararı**, sessizce kod düzeltmesi değil. Sessiz kalmak kabul edilemezdi; yanlış yönlendirmek de. |
+| **O2** | `thinkActs` üst sınırı ~50 saat; **haftalık** kotası dolmuş hesapta koşu düşerdi. | `maximumAttempts: Number.POSITIVE_INFINITY` (sınırsız). Sonsuz retry riski yok: kota hatası `nextRetryDelay` ile pencerenin gerçek açılma anını taşıyor, koşu o ana kadar uyuyor ve hiçbir maliyeti yok; kota dışı hatalar zaten `nonRetryable`. **Dikkat:** doğrulayıcının önerdiği `maximumAttempts: 0` bu SDK'da sınırsız *demek değil* — `compileRetryPolicy` onu reddediyor ve koşu **ilk düşünme çağrısında** (`runIntake`, adım 2) ölüyor. Bunu uçtan uca test yakaladı; SDK'nın "sınırsız" yazımı `POSITIVE_INFINITY` (alanı düşürüyor). |
+| **O3** | Ret sonrası `redone.risk` atılıyordu; özyineleme yüzünden 3. adım boşuna koşuyordu (ölü iş). | K4 ile birlikte: `state.risk` güncelleniyor ve devre taşınıyor. |
+| **O4** | `blocked` dalında kalıcı hata atıldığı için `status="handover"` **hiç atanmıyordu**; devir kayıtları yazılmış olmasına rağmen koşu `fail` kapanıyor, Studio "başarısız" gösteriyordu. | `finishTurn`'ün `blocked` dalı artık **`handoverReason` döndürüyor**. Uyumluluk kararı yine kayıt altında (`handOver` çağrısı duruyor), ama workflow karar verebiliyor ve ticket doğru şekilde `handover` kapanıyor. |
+
+### D1-D7 · Düşük
+
+- **D1** `updatedAt` artık her adım geçişinde ilerliyor (eskiden hep `startedAt`'ti).
+- **D2** Sorgu `workflowInfo().runId` döndürüyor (eskiden `workflowId`'yi runId diye raporluyordu).
+- **D3** `ticket-workflow.ts`'teki gereksiz `export { isApprovalGate }` kaldırıldı (`index.ts` zaten `gates.js`'i re-export ediyor).
+- **D4** Ölü `nextStep`/`blocksOnHuman` **silindi**; onları canlı gösteren testler de. Yerine risk kademesi kapı setini doğrudan doğrulayan testler kondu.
+- **D5** `secrets` hâlâ kullanılmıyor ama **neden durduğu** yazıldı (push credential dikişi).
+- **D6** `createMaestroWorker` artık süreç-içi idempotency guard'ıyla ayağa kalkarken **uyarıyor**: çok worker'lı dağıtımda tablo destekli guard gerekiyor. Atmıyor — bu bir dağıtım hatası, kod hatası değil — ama sessiz de kalmıyor.
+- **D7** `GATE_OWNER`'ın parametrik **olmadığı** ve ne zaman olması gerektiği (ikinci proje onboard edilmeden önce, `ParamReader.gateOwners`) dosyada yazılı.
+
+### Y4 · M51 netleştirmesi (orkestratör kararı)
+
+`kritik` kapı seti **5 doğru**: `["4","5","9","11","12"]`. Eski masterplan metnindeki "6"
+clarification beklemesini (2b) de sayıyordu; **2b bir onay kapısı değil**, her kademede
+bulunan süresiz insan beklemesidir. Onay kapısı sayısı 2/4/5, insan teması 3/5/6.
+`packages/contracts` **değişmedi** ve değişmeyecek.
+
+### Test kalitesi — yapısal kör noktalar kapatıldı
+
+Doğrulayıcının işaret ettiği dördü de düzeltildi; her biri bir bulguyu **görünmez
+kılıyordu**:
+
+1. **`test/scenario.ts` — `openGate` stub'ı kararı yalnız kendi içinden gönderiyordu**,
+   yani her zaman kapı açıldıktan *sonra*. Y1'in yarışı bu tasarımla test edilemez
+   hâldeydi. Artık `earlyDecision` kancası var: workflow adımı **duyurduğu anda**
+   (`adım <step>` defter satırı, `openGate`'ten önce) karar gönderilebiliyor.
+2. **`test/workflow-loops.test.ts` tarama kayıtlarını sahte aktivitenin kendi
+   listesinden sayıyordu**, gerçek `record()` çağrısından değil — Y3 bu yüzden
+   görünmüyordu. Y3 testi artık `fakes.journalStore.entries` üzerinden, yani gerçek
+   idempotency guard'ından geçerek sayıyor.
+3. **Kill-sonrası-merge için negatif iddia yoktu** (K1 bu yüzden görünmedi). Eklendi.
+4. **`test/harness.ts` `ciGateOpen` iken sinyali sonsuz döngüde yeniden gönderiyordu**;
+   gerçek ADO bir kez gönderir, bu O1'i maskeliyordu. Artık **build başına tek gönderim**
+   (`takeCiSend()` mandalı), ve mandal yalnız yeni bir build sonucu güncel olduğunda
+   yeniden kuruluyor.
+
+### Sayılar
+
+**122 test, 10 dosya, tamamı yeşil** (tur öncesi 111/9). Eklenen 11 testin
+**7'si düzeltmeden önceki kodda gerçekten kırıldı** ve bu ölçüldü — üçü
+(Y1, O1, K4-sayaç) 180 sn timeout'a düşerek, yani doğrulayıcının bildirdiği
+kilitlenme semptomunu birebir üreterek. Kalan dördü (Y3 ×2, O4, D6) aktivite
+seviyesinde yeni davranışı pinliyor.
+
+İlk yazımda iki test eski kodda da geçiyordu, yani hiçbir şey kanıtlamıyordu;
+ikisi de **bulguyu gerçekten hedefleyecek şekilde sertleştirildi**: Y2 artık önce
+reddedilecek bir karar gönderiyor (tek yuvalı kod bunu işlerken arkasındaki
+geçerli kararı siliyordu), M30 testi ise reti **12. kapıya** taşıyıp devrin
+`resumeToken`'ı taşıdığını doğruluyor.
+
+### Dosya bölünmesi
+
+`ticket-workflow.ts` düzeltmelerle 585 satıra çıkmıştı (≤300 kuralı). Anlamlı sınırlardan
+bölündü — davranış değişmeden:
+
+| Dosya | Sorumluluk |
+|---|---|
+| `src/ticket-workflow.ts` (288) | Adım dizisi ve devir kararı. |
+| `src/run-state.ts` (118) | Koşunun hatırladığı her şey + sinyal kuyrukları + M54 sayacı. Temporal'a bağımlı değil. |
+| `src/gate-loop.ts` (136) | Kapı bekleme döngüsü, kill-switch, mod isteği yanıtı. |
+| `src/engineering-loop.ts` (155) | 6a-10 döngüsü ve 10b CI bekleme döngüsü. |
 
 ---
 
@@ -82,6 +212,11 @@ bu ikilinin konması gerekiyor — **operasyon maddesi, kod maddesi değil.**
 
 ## 4. Arayüz talepleri (orkestratör karar verir)
 
+> **Güncelleme (doğrulama turu):** 1, 2, 4 ve 6 numaralı maddeler **kapatıldı** —
+> sırasıyla O2 (sınırsız kota proxy'si), verdict dönen `recordGateDecision`
+> (zaten kapanmıştı), O4 (`blocked` artık `handoverReason` döndürüyor) ve K4
+> (gerçek `continueAsNew`). 3 ve 5 hâlâ açık.
+
 1. **`proxyActivities` retry bütçesi kotayı taşımıyor.** `ticket-workflow.ts` `maximumAttempts: 3`
    diyor. M55'te kota beklemesi aktiviteyi *yeniden denenebilir* hatayla bitiriyor
    (`nextRetryDelay` = kotanın açılma anı), ama 3 denemede pencere açılmazsa koşu düşüyor.
@@ -122,8 +257,11 @@ uygulamanın (Dalga 3 `bff`/`apps/worker`).
 
 ## 6. Dosya/satır durumu
 
-Tüm dosyalar ≤ 300 satır (en büyüğü `src/impl/engineering.ts`, 246). Üretim kodu
-`src/impl/*` + `src/worker.ts` ≈ 1265 satır; testler ≈ 1500. Paket, inşa planındaki
-"~1200 satır üretim kodu" tavanının biraz üstünde — 23 aktivitenin tamamı burada olduğu
-için bölmedim; istenirse `impl/` iki pakete ayrılabilir (`workflow-activities-core` /
-`-delivery`).
+Tüm dosyalar ≤ 300 satır (en büyüğü `test/workflow-gates.test.ts`, 288 · üretimde
+`src/ticket-workflow.ts`, 288). Doğrulama turunda `ticket-workflow.ts` 585 satıra
+çıkmıştı; yukarıdaki tabloya göre dört dosyaya bölündü ve `workflow-gates.test.ts`'ten
+kill-switch testleri `workflow-kill-switch.test.ts`'e ayrıldı.
+
+Paket, inşa planındaki "~1200 satır üretim kodu" tavanının biraz üstünde — 23 aktivitenin
+tamamı burada olduğu için bölmedim; istenirse `impl/` iki pakete ayrılabilir
+(`workflow-activities-core` / `-delivery`).

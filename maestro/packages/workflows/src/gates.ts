@@ -1,8 +1,6 @@
 import {
   APPROVAL_GATE_STEPS,
   GATES_BY_RISK,
-  STEP_IDS,
-  STEP_META,
   type GateDecision,
   type RiskTier,
   type StepId,
@@ -16,7 +14,20 @@ import {
  * exercised by ordinary unit tests. The workflow file only sequences them.
  */
 
-/** Who owns each approval gate. The group name is resolved per project (M71). */
+/**
+ * Who owns each approval gate — the DEFAULT mapping.
+ *
+ * D7: M71 says the concrete group is a per-project parameter, and this constant
+ * is not yet parameterised. It is a deliberate two-part story, not an oversight:
+ * these names are the fallback, and the layer that resolves a group to actual
+ * people (`DirectoryReader.membersOf`) is already a seam, so a project that
+ * calls its tech leads something else is served by pointing that seam at its own
+ * directory. What is NOT yet possible is a project that routes gate 5 to a
+ * different KIND of owner; that needs a `gateOwners(runId)` reader on
+ * `ParamReader`, and it must land before the second project is onboarded.
+ * Until then this is the single source of truth, and `recordGateDecision`
+ * re-checks against it so a forged `actorGroup` cannot slip past.
+ */
 export const GATE_OWNER: Record<(typeof APPROVAL_GATE_STEPS)[number], string> = {
   "4": "product-owners",
   "5": "tech-leads",
@@ -32,21 +43,6 @@ export function isApprovalGate(step: StepId): boolean {
 /** The gate set this run must pass, in flow order (M51). */
 export function gatesFor(risk: RiskTier): readonly StepId[] {
   return GATES_BY_RISK[risk];
-}
-
-/**
- * The next step after `step`, skipping approval gates the risk tier does not
- * require. A gate that is not in the tier's set is not "auto-approved" — it is
- * never opened, which is why skipping happens here and not at decision time.
- */
-export function nextStep(step: StepId, risk: RiskTier): StepId | null {
-  const required = new Set(gatesFor(risk));
-  for (let i = STEP_IDS.indexOf(step) + 1; i < STEP_IDS.length; i += 1) {
-    const candidate = STEP_IDS[i]!;
-    if (isApprovalGate(candidate) && !required.has(candidate)) continue;
-    return candidate;
-  }
-  return null;
 }
 
 export type GateRejection =
@@ -85,10 +81,4 @@ export function canCloseGate(
     return { ok: false, reason: "sod_violation" };
   }
   return { ok: true };
-}
-
-/** Human gates block on a person; a wait gate blocks on an answer (2b). */
-export function blocksOnHuman(step: StepId): boolean {
-  const kind = STEP_META[step].kind;
-  return kind === "human_gate" || kind === "human_wait";
 }

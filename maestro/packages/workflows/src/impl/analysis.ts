@@ -10,7 +10,7 @@ import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { resolveOutcome } from "./outcome.js";
-import { audit, record } from "./record.js";
+import { activitySeq, audit, record } from "./record.js";
 
 /**
  * Steps 3ö and 3: read-only repo discovery and the analysis document.
@@ -138,7 +138,10 @@ export async function writeAnalysis(
     actor: "ai",
     title: "analiz yazıldı",
     detail: `risk: ${analysis.riskTier} — ${analysis.riskReason}`,
-    key: `analysis:${analysis.riskTier}:${analysis.acceptanceCriteria.length}`,
+    // A rewrite after a rejection can legitimately land on the same tier and
+    // the same criteria count; keying on the document's shape would hide the
+    // second version behind the first.
+    key: `analysis:${activitySeq()}`,
   });
   return { analysis, risk: analysis.riskTier };
 }

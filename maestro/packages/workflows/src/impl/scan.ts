@@ -34,7 +34,21 @@ export function scannerErrorResult(tool: ScanTool, at: string, message: string):
   };
 }
 
-export async function runScans(deps: ActivityDeps, ticket: TicketKey): Promise<ScanResult[]> {
+/**
+ * `attempt` is what makes a round distinguishable.
+ *
+ * The idempotency key used to be derived from the RESULTS, so three laps of the
+ * M54 loop that failed the same way collapsed into a single journal entry and a
+ * single audit record — the evidence package then showed one scan where three
+ * had run, which is exactly the artefact an auditor is handed. Keying on the
+ * round instead keeps a genuine Temporal retry of the SAME round collapsed
+ * (which is the guard's real job) while letting a new round write its own.
+ */
+export async function runScans(
+  deps: ActivityDeps,
+  ticket: TicketKey,
+  attempt = 1,
+): Promise<ScanResult[]> {
   const run = await deps.runs.get(ticket);
   const results: ScanResult[] = [];
 
@@ -56,13 +70,13 @@ export async function runScans(deps: ActivityDeps, ticket: TicketKey): Promise<S
       tools: results.map((r) => `${r.tool}:${r.outcome}`),
       findings: results.reduce((sum, r) => sum + r.findings.length, 0),
     },
-    key: `scan:${results.map((r) => `${r.tool}=${r.outcome}`).join(",")}`,
+    key: `scan:${attempt}`,
   });
   await record(deps, run, {
     kind: "scan",
     title: blocking.length === 0 ? "tarama temiz" : "tarama bloke etti",
     detail: results.map((r) => `${r.tool}: ${r.outcome} (${r.findings.length})`).join(" · "),
-    key: `scan:${results.map((r) => `${r.tool}=${r.outcome}`).join(",")}`,
+    key: `scan:${attempt}`,
   });
   return results;
 }

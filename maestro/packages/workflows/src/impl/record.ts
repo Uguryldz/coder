@@ -1,6 +1,7 @@
 import type { AuditAction, JournalActor, JournalKind, NotifyEventKey } from "@maestro/contracts";
 import { appendJournal } from "@maestro/memory";
 import { routeNotification } from "@maestro/notify";
+import { activityInfo } from "@temporalio/activity";
 import { type ActivityDeps, type RunContext, WORKER_ACTOR } from "./deps.js";
 
 /**
@@ -12,6 +13,29 @@ import { type ActivityDeps, type RunContext, WORKER_ACTOR } from "./deps.js";
  * is answerable by reading one file, and so a retry cannot write the journal
  * twice: every caller passes an idempotency key.
  */
+
+/**
+ * A discriminator that is stable across RETRIES of one activity invocation and
+ * different between two invocations.
+ *
+ * `activityId` is exactly that: Temporal holds it fixed while it retries an
+ * activity and issues a new one for the next scheduling. It is what lets the
+ * idempotency guard tell "the same write, attempted twice" — which must
+ * collapse — from "the same text, written on a later lap of the M54 loop",
+ * which must not. Keys derived from the RESULT could not tell those apart, so
+ * three identical scan rounds left one record and the evidence package
+ * under-reported what had run.
+ *
+ * Outside an activity context (a unit test calling the function directly) there
+ * is no id and the caller's own key is the whole discriminator.
+ */
+export function activitySeq(): string {
+  try {
+    return activityInfo().activityId;
+  } catch {
+    return "local";
+  }
+}
 
 /**
  * Append one journal entry. `appendJournal` masks the text before it is sealed

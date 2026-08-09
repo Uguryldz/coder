@@ -101,7 +101,10 @@ async function drive(
   for (let turn = 0; turn < MAX_TURNS; turn += 1) {
     await delay(SETTLE_MS);
     if (await isClosed(handle)) return;
-    if (scenario.ciGateOpen) {
+    if (scenario.ciGateOpen && scenario.takeCiSend()) {
+      // Exactly ONE signal per build, like the real pipeline: ADO reports a
+      // finished build once and never repeats it. Re-sending on every turn
+      // would paper over a workflow that discarded the result it was given.
       await handle.signal(ciResultSignal, scenario.nextCi());
       continue;
     }

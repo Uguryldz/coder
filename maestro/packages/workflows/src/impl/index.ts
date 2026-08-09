@@ -38,13 +38,13 @@ export function createActivities(deps: ActivityDeps): MaestroActivities {
     recordGateDecision: (ticket, decision) => gate.recordGateDecision(deps, ticket, decision),
     escalateGate: (ticket, step, waitingHours) => gate.escalateGate(deps, ticket, step, waitingHours),
 
-    runEngineering: (ticket, resumeToken, task) =>
-      engineering.runEngineering(deps, ticket, resumeToken, task),
-    runScans: (ticket) => scan.runScans(deps, ticket),
-    reviewDiff: (ticket) => engineering.reviewDiff(deps, ticket),
-    designTests: (ticket) => engineering.designTests(deps, ticket),
-    reviewTests: (ticket) => engineering.reviewTests(deps, ticket),
-    runTests: (ticket) => engineering.runTests(deps, ticket),
+    runEngineering: (ticket, resumeToken, task, attempt) =>
+      engineering.runEngineering(deps, ticket, resumeToken, task, attempt),
+    runScans: (ticket, attempt) => scan.runScans(deps, ticket, attempt),
+    reviewDiff: (ticket, attempt) => engineering.reviewDiff(deps, ticket, attempt),
+    designTests: (ticket, attempt) => engineering.designTests(deps, ticket, attempt),
+    reviewTests: (ticket, attempt) => engineering.reviewTests(deps, ticket, attempt),
+    runTests: (ticket, attempt) => engineering.runTests(deps, ticket, attempt),
 
     openPullRequest: (ticket) => delivery.openPullRequest(deps, ticket),
     activatePullRequest: (ticket, pr) => delivery.activatePullRequest(deps, ticket, pr),

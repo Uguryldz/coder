@@ -138,6 +138,13 @@ export interface ActivityDeps {
   readonly llm: LlmPort;
   readonly scan: ScanPort;
   readonly storage: StoragePort;
+  /**
+   * D5: resolved and wired, but no activity in this package reads it yet. It
+   * stays because the push credential the engineering turn needs (`scm`'s
+   * `getPushCredential`) is issued through it, and the seam is what keeps that
+   * a composition-root decision rather than a driver import. Delete it only
+   * together with that plan.
+   */
   readonly secrets: SecretPort;
   readonly notify: NotifyPort;
   readonly publish: PublishPort;

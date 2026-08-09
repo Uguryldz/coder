@@ -4,7 +4,7 @@ import type { GateVerdict } from "../activities.js";
 import { GATE_OWNER } from "../gates.js";
 import type { ActivityDeps } from "./deps.js";
 import { handOver } from "./outcome.js";
-import { audit, notifyEvent, record } from "./record.js";
+import { activitySeq, audit, notifyEvent, record } from "./record.js";
 
 /** Milliseconds in one hour — the unit the workflow counts its waiting in. */
 const HOUR_MS = 60 * 60 * 1000;
@@ -172,14 +172,20 @@ export async function journal(
   const run = await deps.runs.get(ticket);
   const parsed = JournalKind.safeParse(kind);
   const resolved = parsed.success ? parsed.data : "other";
+  // Temporal's own attempt number is the discriminator, and it is exactly the
+  // right one: a RETRY of this activity repeats the attempt and is collapsed,
+  // while a second lap of the M54 loop is a new activity with a new sequence
+  // and writes its own line. A purely content-derived key made "adım 6a" on
+  // round three indistinguishable from round one, so the ledger lost the laps.
+  const seq = activitySeq();
   await record(deps, run, {
     kind: resolved,
     title,
     detail,
-    key: `flow:${resolved}:${title}:${detail}`,
+    key: `flow:${seq}:${resolved}:${title}:${detail}`,
   });
   if (resolved === "gate" || resolved === "handover") {
-    await deps.idempotency.once(`${run.runId}:comment:${resolved}:${title}:${detail}`, () =>
+    await deps.idempotency.once(`${run.runId}:comment:${seq}:${resolved}:${title}:${detail}`, () =>
       deps.work.addComment(ticket, `${title}${detail === "" ? "" : ` — ${detail}`}`),
     );
   }

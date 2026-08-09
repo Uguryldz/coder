@@ -70,6 +70,39 @@ describe("runScans (step 6b, M27 fail-closed)", () => {
     expect(result.outcome).toBe("error");
     expect(result.findings[0]?.severity).toBe("critical");
   });
+
+  /**
+   * Y3: the M54 loop scans up to three times, and the evidence package must
+   * show three scans. A key derived from the RESULT collapses identical rounds
+   * into one record — the auditor is then shown one scan where three happened.
+   */
+  it("every scan round leaves its own record (Y3)", async () => {
+    const fakes = makeFakes({
+      scan: (tool) => ({ ...PASS, tool: tool as ScanResult["tool"], outcome: "fail" }),
+    });
+
+    // Three rounds with identical findings, exactly as a repeated 6a→6b lap
+    // produces them.
+    await runScans(fakes.deps, "PAY-101", 1);
+    await runScans(fakes.deps, "PAY-101", 2);
+    await runScans(fakes.deps, "PAY-101", 3);
+
+    const scanEntries = fakes.journalStore.entries.filter((e) => e.kind === "scan");
+    expect(scanEntries).toHaveLength(3);
+    const events = await fakes.chain.verify();
+    expect(events.ok).toBe(true);
+  });
+
+  /** A genuine retry of the SAME round must still collapse to one record. */
+  it("a retry of the same round is still written once (Y3)", async () => {
+    const fakes = makeFakes({
+      scan: (tool) => ({ ...PASS, tool: tool as ScanResult["tool"], outcome: "fail" }),
+    });
+    await runScans(fakes.deps, "PAY-101", 1);
+    await runScans(fakes.deps, "PAY-101", 1);
+
+    expect(fakes.journalStore.entries.filter((e) => e.kind === "scan")).toHaveLength(1);
+  });
 });
 
 describe("the pull request", () => {

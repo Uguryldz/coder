@@ -13,7 +13,14 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "gate": "pnpm lint && turbo run typecheck test --force --concurrency=4"
+    "gate": "pnpm lint && turbo run typecheck test --force --concurrency=4",
+    "deploy:up": "make -C deploy up",
+    "deploy:down": "make -C deploy down",
+    "deploy:logs": "make -C deploy logs",
+    "deploy:ps": "make -C deploy ps",
+    "deploy:build": "make -C deploy build",
+    "deploy:migrate": "make -C deploy migrate",
+    "deploy:config": "make -C deploy config"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

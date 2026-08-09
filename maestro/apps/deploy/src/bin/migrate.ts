@@ -1,0 +1,158 @@
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { assertPostgresUrl, createDb, PRISMA_SCHEMA_RELATIVE_PATH } from "@maestro/db";
+import { loadDeployEnv } from "../env.js";
+import { fail, isEntrypoint } from "./lifecycle.js";
+
+/**
+ * Apply the schema, exactly once, whoever starts first.
+ *
+ * Every service container runs this before its own entrypoint, which means N
+ * replicas can reach it at the same moment. `prisma migrate deploy` is not
+ * safe to run concurrently — two processes applying the same migration race on
+ * the `_prisma_migrations` bookkeeping and can leave it marked failed — so the
+ * run is serialised behind a Postgres ADVISORY lock.
+ *
+ * An advisory lock rather than a table: it is held by the SESSION and released
+ * when the connection drops, so a container killed mid-migration cannot leave
+ * the lock held forever. A lock row in a table would need a lease, a clock and
+ * a recovery path; the database already solved this.
+ */
+
+/**
+ * Lock id. Any constant works as long as every replica agrees on it; this one
+ * is a fixed arbitrary value chosen to be unlikely to collide with an
+ * application's own advisory locks in a shared database.
+ */
+export const MIGRATION_LOCK_ID = 8_274_591_003_112n;
+
+/** How long to wait for the holder before giving up. */
+export const LOCK_TIMEOUT_MS = 120_000;
+const POLL_INTERVAL_MS = 1_000;
+
+export async function main(): Promise<void> {
+  const env = loadDeployEnv();
+  const url = env.base.DATABASE_URL;
+  if (url === undefined) {
+    throw new Error("DATABASE_URL: required to apply migrations (M6)");
+  }
+  assertPostgresUrl(url);
+
+  const db = createDb(url);
+  try {
+    const acquired = await acquireLock(db);
+    if (!acquired) {
+      throw new Error(
+        `migrate: another process has held the migration lock for more than ${LOCK_TIMEOUT_MS}ms — ` +
+          "not applying migrations concurrently",
+      );
+    }
+    console.info("[maestro] migration lock acquired, applying migrations");
+    await runPrismaDeploy(url);
+    console.info("[maestro] migrations applied");
+  } finally {
+    // Releasing explicitly rather than relying on disconnect keeps the window
+    // short when the client is pooled; `$disconnect` would do it anyway.
+    await releaseLock(db);
+    await db.$disconnect();
+  }
+}
+
+/**
+ * `pg_try_advisory_lock` in a poll loop rather than the blocking
+ * `pg_advisory_lock`: a blocking call would hang forever behind a wedged
+ * holder, and a container that hangs forever never reports anything. Polling
+ * turns that into a timeout with a message.
+ */
+export async function acquireLock(
+  db: { $queryRawUnsafe: (sql: string) => Promise<unknown> },
+  timeoutMs: number = LOCK_TIMEOUT_MS,
+  sleep: (ms: number) => Promise<void> = defaultSleep,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await db.$queryRawUnsafe(`SELECT pg_try_advisory_lock(${MIGRATION_LOCK_ID}) AS locked`);
+    if (firstBoolean(rows)) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(POLL_INTERVAL_MS);
+  }
+}
+
+export async function releaseLock(db: {
+  $queryRawUnsafe: (sql: string) => Promise<unknown>;
+}): Promise<void> {
+  // A failure to release is not worth failing the process over: the session is
+  // about to close, which releases it regardless.
+  try {
+    await db.$queryRawUnsafe(`SELECT pg_advisory_unlock(${MIGRATION_LOCK_ID})`);
+  } catch {
+    /* released on disconnect */
+  }
+}
+
+function firstBoolean(rows: unknown): boolean {
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+  const first: unknown = rows[0];
+  if (typeof first !== "object" || first === null) return false;
+  return Object.values(first as Record<string, unknown>)[0] === true;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve_) => setTimeout(resolve_, ms));
+}
+
+/**
+ * `prisma migrate deploy` — the deploy-time command, not `migrate dev`.
+ *
+ * `deploy` applies committed migrations and nothing else: it never generates a
+ * migration, never resets, and refuses a drifted database instead of "fixing"
+ * it. That refusal is the behaviour worth having in a bank; `migrate dev`
+ * would offer to drop the schema.
+ *
+ * `DATABASE_URL` is passed through the child's environment because that is
+ * where Prisma reads it from — never on the command line, where it would be
+ * visible in `ps` to every user on the host.
+ */
+export function runPrismaDeploy(url: string): Promise<void> {
+  const schemaPath = resolveSchemaPath();
+  return new Promise((resolve_, reject) => {
+    const child = spawn(
+      process.execPath,
+      [prismaBin(), "migrate", "deploy", "--schema", schemaPath],
+      { stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, DATABASE_URL: url } },
+    );
+    child.on("error", (error) => reject(new Error(`prisma could not be started: ${error.message}`)));
+    child.on("exit", (code) => {
+      if (code === 0) resolve_();
+      else reject(new Error(`prisma migrate deploy exited with code ${code ?? "unknown"}`));
+    });
+  });
+}
+
+const require_ = createRequire(import.meta.url);
+
+/**
+ * The schema inside `@maestro/db`, found through the package rather than by a
+ * relative path out of this file.
+ *
+ * Resolved from the package's ENTRY point (`src/index.ts`) rather than from its
+ * `package.json`: the manifest is not in the package's `exports` map, so asking
+ * for it throws. The entry sits at `<pkg>/src/index.ts`, so the package root is
+ * two directories up — and `PRISMA_SCHEMA_RELATIVE_PATH` is the package's own
+ * constant for the rest, which keeps this in step if the schema ever moves.
+ */
+export function resolveSchemaPath(): string {
+  const entry = require_.resolve("@maestro/db");
+  return resolve(dirname(entry), "..", PRISMA_SCHEMA_RELATIVE_PATH);
+}
+
+function prismaBin(): string {
+  return require_.resolve("prisma/build/index.js");
+}
+
+// Only when this file IS the process, not when a test imports it for the lock
+// helpers. Without the guard, importing this module would try to migrate.
+if (isEntrypoint(import.meta.url)) {
+  await main().catch(fail);
+}

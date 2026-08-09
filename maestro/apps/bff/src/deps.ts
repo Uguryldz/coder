@@ -69,6 +69,8 @@ export interface UserRecord {
 export interface UserDirectory {
   find(username: string): Promise<UserRecord | null>;
   upsert(record: UserRecord): Promise<void>;
+  /** Off-boarding. A missing account is indistinguishable from a deactivated one at the guard. */
+  remove(username: string): Promise<void>;
 }
 
 export interface SessionRecord {
@@ -91,6 +93,14 @@ export interface SessionStore {
   create(record: SessionRecord): Promise<void>;
   get(token: string): Promise<SessionRecord | null>;
   delete(token: string): Promise<void>;
+  /**
+   * Every session this user holds, newest last. Logout and role changes act on
+   * the ACCOUNT, not on the one token that happened to make the request: a
+   * stolen token is not going to log itself out (M8/M32).
+   */
+  listByUser(userId: string): Promise<readonly SessionRecord[]>;
+  /** Drop all of this user's sessions; returns how many were live. */
+  deleteByUser(userId: string): Promise<number>;
 }
 
 // ── Jira project bindings (M102) ──────────────────────────────────────────────

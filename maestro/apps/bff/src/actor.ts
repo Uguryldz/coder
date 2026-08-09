@@ -1,4 +1,4 @@
-import { AI_VIA_PREFIX, assertActor } from "@maestro/audit";
+import { AI_VIA_PREFIX, assertActor, parseActor } from "@maestro/audit";
 import type { SessionRecord } from "./deps.js";
 
 /**
@@ -16,6 +16,23 @@ export function toActor(username: string, domain: string): string {
   const actor = trimmed.includes("@") ? trimmed : `${trimmed}@${domain}`;
   assertActor(actor);
   return actor;
+}
+
+/**
+ * The same normalisation, for input that arrives from OUTSIDE: the `author` on
+ * a Jira webhook is whatever the instance sent, and nothing has validated it.
+ *
+ * `toActor` throws, which on a webhook route becomes a 500 — and Jira RETRIES a
+ * 5xx delivery, so a single unparseable login turns into an endless redelivery
+ * storm while the status difference leaks whether the parser accepted the name.
+ * Returning `null` lets the caller answer 202 and tell the person instead.
+ */
+export function toActorOrNull(username: string, domain: string): string | null {
+  if (typeof username !== "string") return null;
+  const trimmed = username.trim();
+  if (trimmed.length === 0) return null;
+  const actor = trimmed.includes("@") ? trimmed : `${trimmed}@${domain}`;
+  return parseActor(actor) === null ? null : actor;
 }
 
 /**

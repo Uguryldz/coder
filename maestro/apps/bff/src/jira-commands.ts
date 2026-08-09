@@ -1,26 +1,33 @@
 import type { CommandEnvelope, CommandName, TicketKey, WorkMode } from "@maestro/contracts";
-import { toActor } from "./actor.js";
+import { toActorOrNull } from "./actor.js";
 import type { ResolvedDeps } from "./deps.js";
 import { decideGate, type GateResult } from "./gate-decision.js";
 import { workflowIdFor } from "./gateway.js";
-import { runIntake, type IntakeOutcome } from "./jira-intake.js";
+import { projectKeyOf, runIntake, type IntakeOutcome } from "./jira-intake.js";
 import { BFF_MESSAGE_KEYS, stepTitleKey } from "./messages.js";
 import { SIGNALS } from "./signal-names.js";
 
 /**
- * Jira comment commands (M46/M105). Two rules shape everything below:
+ * Jira comment commands (M46/M105). Three rules shape everything below:
  *
  *  · the grammar is the driver's business — by the time a `CommandEnvelope`
  *    reaches here, "/approve etmiyorum" has already been refused as a command
  *    with trailing text, and an edited comment has already been discarded;
- *  · nothing fails quietly. Every refusal is written back to the ticket with a
- *    catalog key, because a comment that vanishes is indistinguishable from a
- *    platform that is down (M14).
+ *  · an unbound or paused project is dropped in SILENCE (M102). This is the one
+ *    place where not answering is the correct behaviour: the single global
+ *    webhook sees every project in the instance, and a reply — even a refusal —
+ *    would tell the author that Maestro is watching a project it was never
+ *    bound to. `/status` would hand them the run's step on top of that;
+ *  · otherwise nothing fails quietly. Every refusal on a BOUND project is
+ *    written back to the ticket with a catalog key, because a comment that
+ *    vanishes is indistinguishable from a platform that is down (M14).
  */
 
 export type CommandOutcome =
   | { accepted: true; command: CommandName; workflowId?: string }
-  | { accepted: false; command: CommandName; reason: string };
+  | { accepted: false; command: CommandName; reason: string }
+  /** Dropped before the command was interpreted; carries no command name to leak. */
+  | { accepted: false; reason: "unbound" | "kill_switch" };
 
 async function reply(
   deps: ResolvedDeps,
@@ -31,12 +38,73 @@ async function reply(
   await deps.work.addComment(ticket, deps.messages.t(deps.config.locale, key, params));
 }
 
+/**
+ * A reply whose catalog key may not have shipped yet (see
+ * `REQUESTED_MESSAGE_KEYS`). Used only on the invalid-actor path, where the
+ * whole point is to answer 202 instead of a 5xx that Jira would retry forever —
+ * failing to render the explanation must not resurrect the very error the
+ * explanation exists to avoid.
+ */
+async function replyIfRenderable(
+  deps: ResolvedDeps,
+  ticket: TicketKey,
+  key: string,
+  params: Record<string, string> = {},
+): Promise<void> {
+  let text: string;
+  try {
+    text = deps.messages.t(deps.config.locale, key, params);
+  } catch {
+    return;
+  }
+  await deps.work.addComment(ticket, text);
+}
+
+/** Gate decisions survive the kill switch; everything else waits (M58). */
+function isGateDecision(name: CommandName): boolean {
+  return name === "approve" || name === "reject";
+}
+
 export async function handleCommand(
   deps: ResolvedDeps,
   envelope: CommandEnvelope,
 ): Promise<CommandOutcome> {
   const { ticketKey: ticket, author, at, command } = envelope;
-  const actor = toActor(author, deps.config.actorDomain);
+
+  // M102, before anything else and before any reply: a project Maestro was
+  // never bound to, or one an admin paused, gets no answer at all. `runIntake`
+  // has always done this; the command path used to skip it and answered on
+  // tickets the platform had no business knowing about.
+  const binding = await deps.bindings.resolve(projectKeyOf(ticket));
+  if (binding === null || !binding.active) {
+    deps.counters.droppedUnbound += 1;
+    return { accepted: false, reason: "unbound" };
+  }
+
+  // M58: `all` stops the platform, but an open gate still closes. Stranding
+  // every pending approval would make the recovery worse than the incident,
+  // and a decision is a human's judgement, not new work for Maestro to do.
+  const killSwitch = await deps.killSwitch.get();
+  if (killSwitch.level === "all" && !isGateDecision(command.name)) {
+    deps.counters.droppedKillSwitch += 1;
+    await reply(deps, ticket, BFF_MESSAGE_KEYS.killSwitch, {
+      level: killSwitch.level,
+      reason: killSwitch.reason,
+    });
+    return { accepted: false, command: command.name, reason: "kill_switch" };
+  }
+
+  // The author is unvalidated input from the Jira instance. An actor the audit
+  // trail cannot classify must not reach it — an unattributable approval is
+  // worse than none (M33) — but it must not become a 5xx either, because Jira
+  // retries those forever. The person is told; the delivery is accepted.
+  const actor = toActorOrNull(author, deps.config.actorDomain);
+  if (actor === null) {
+    await replyIfRenderable(deps, ticket, BFF_MESSAGE_KEYS.commandUnknownActor, {
+      command: `/${command.name}`,
+    });
+    return { accepted: false, command: command.name, reason: "unknown_actor" };
+  }
 
   switch (command.name) {
     case "approve":

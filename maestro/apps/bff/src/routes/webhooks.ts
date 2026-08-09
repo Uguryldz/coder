@@ -1,10 +1,11 @@
+import type { TicketKey } from "@maestro/contracts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { SYSTEM_ACTOR } from "../actor.js";
-import type { ResolvedDeps } from "../deps.js";
+import type { ResolvedDeps, WorkEvent } from "../deps.js";
 import { badRequest, WebhookRejected } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
 import { handleCommand } from "../jira-commands.js";
-import { runIntake } from "../jira-intake.js";
+import { projectKeyOf, runIntake } from "../jira-intake.js";
 import { SIGNALS } from "../signal-names.js";
 
 /**
@@ -44,16 +45,34 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
       throw badRequest("malformed_payload");
     }
 
-    const envelope = await deps.work.parseCommand(payload);
+    // A VERIFIED delivery whose contents the driver cannot make sense of — an
+    // author with no identifiable account, a shape this version does not know —
+    // is Jira's problem, not a reason to fail. Jira retries a 5xx, so throwing
+    // here turns one malformed comment into an endless redelivery storm, and
+    // the 500-vs-202 difference tells whoever posted it what the parser choked
+    // on. Unreadable is simply "nothing to do" (M14).
+    let envelope: Awaited<ReturnType<typeof deps.work.parseCommand>>;
+    try {
+      envelope = await deps.work.parseCommand(payload);
+    } catch {
+      return reply.code(202).send({ accepted: false, reason: "unreadable_event" });
+    }
+
     if (envelope !== null) {
       const outcome = await handleCommand(deps, envelope);
       return reply.code(202).send(outcome);
     }
 
-    const refusal = await answerInvalidCommand(deps, payload);
+    let refusal: { accepted: false; reason: string } | null;
+    let event: WorkEvent;
+    try {
+      refusal = await answerInvalidCommand(deps, payload);
+      event = deps.workEvents.read(payload);
+    } catch {
+      return reply.code(202).send({ accepted: false, reason: "unreadable_event" });
+    }
     if (refusal !== null) return reply.code(202).send(refusal);
 
-    const event = deps.workEvents.read(payload);
     if (event.kind !== "issue" || event.ticketKey === undefined) {
       return reply.code(202).send({ accepted: false, reason: "not_intake" });
     }
@@ -118,6 +137,11 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
  * Tell the author why their comment did nothing (M14/M105). Needs a driver
  * capability the port does not declare; without it the BFF can only count the
  * event, which is why the gap is written up in RAPOR rather than papered over.
+ *
+ * The correction is still bound by M102: a typo on a project Maestro was never
+ * bound to gets no reply either. Otherwise "/aprove" becomes a probe for which
+ * projects the platform is watching — the same leak the command path closes,
+ * reached through the helpful-error-message door.
  */
 async function answerInvalidCommand(
   deps: ResolvedDeps,
@@ -129,13 +153,26 @@ async function answerInvalidCommand(
 
   deps.counters.invalidCommands += 1;
   const event = deps.workEvents.read(payload);
-  if (event.ticketKey !== undefined) {
+  if (event.ticketKey !== undefined && (await isBound(deps, event.ticketKey))) {
     await deps.work.addComment(
       event.ticketKey,
       deps.messages.t(deps.config.locale, diagnosis.invalid.messageKey, diagnosis.invalid.messageParams),
     );
   }
   return { accepted: false, reason: "invalid_command" };
+}
+
+/** True when the ticket's project is bound AND active (M102). */
+async function isBound(deps: ResolvedDeps, ticket: TicketKey): Promise<boolean> {
+  let projectKey: string;
+  try {
+    projectKey = projectKeyOf(ticket);
+  } catch {
+    // A ticket key the contract does not recognise belongs to no binding.
+    return false;
+  }
+  const binding = await deps.bindings.resolve(projectKey);
+  return binding !== null && binding.active;
 }
 
 function rawBody(request: FastifyRequest): Buffer {

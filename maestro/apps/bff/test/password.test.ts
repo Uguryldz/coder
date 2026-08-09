@@ -120,3 +120,66 @@ describe("local identity provider", () => {
     expect(record?.passwordHash.startsWith("$2")).toBe(true);
   });
 });
+
+/** `$2b$12$…` → 12. The cost is the work factor bcrypt actually performs. */
+function costOf(hash: string): number {
+  const cost = /^\$2[aby]?\$(\d{2})\$/.exec(hash)?.[1];
+  if (cost === undefined) throw new Error(`not a bcrypt hash: ${hash}`);
+  return Number(cost);
+}
+
+/**
+ * The unknown-account path burns a hash so that "no such user" and "wrong
+ * password" take the same time (M8/M32 — a departed approver is a live risk).
+ * That only works if it burns the SAME work: a dummy pinned to a lower cost
+ * than production does not close the oracle, it inverts it, and the response
+ * time then says "this account exists" more loudly than doing nothing would.
+ */
+describe("BcryptPasswordHasher.burn (timing oracle)", () => {
+  it.each([4, 6, 10, 12])("burns at the configured cost of %i", async (rounds) => {
+    const hasher = new BcryptPasswordHasher(rounds);
+    const real = await hasher.hash("Maestro!Test-2026");
+
+    expect(costOf(real)).toBe(rounds);
+    expect(costOf(hasher.equaliserHash)).toBe(rounds);
+  });
+
+  /**
+   * The regression guard the finding asks for: changing `rounds` must not be
+   * able to leave the dummy behind. A hard-coded constant passes the assertion
+   * above for exactly one value of `rounds`; this one pins the relationship.
+   */
+  it("keeps the dummy in step when the cost is raised", async () => {
+    const before = new BcryptPasswordHasher(4);
+    const after = new BcryptPasswordHasher(12);
+
+    expect(costOf(before.equaliserHash)).toBe(4);
+    expect(costOf(after.equaliserHash)).toBe(12);
+    expect(costOf(after.equaliserHash)).not.toBe(costOf(before.equaliserHash));
+  });
+
+  it("burns comparable work to a real verification", async () => {
+    const hasher = new BcryptPasswordHasher(6);
+    const stored = await hasher.hash("Maestro!Test-2026");
+
+    const realStart = process.hrtime.bigint();
+    await hasher.verify("Definitely-Not-It-1!", stored);
+    const realMs = Number(process.hrtime.bigint() - realStart) / 1e6;
+
+    const burnStart = process.hrtime.bigint();
+    await hasher.burn();
+    const burnMs = Number(process.hrtime.bigint() - burnStart) / 1e6;
+
+    // Generous bounds: this asserts the same ORDER of work, not a stopwatch
+    // match, so it does not turn into a flaky test on a loaded CI box.
+    expect(burnMs).toBeGreaterThan(realMs / 4);
+    expect(burnMs).toBeLessThan(realMs * 4);
+  });
+
+  it("compares against a real hash rather than short-circuiting", async () => {
+    const hasher = new BcryptPasswordHasher(4);
+
+    // A malformed dummy would make `compare` return early and burn nothing.
+    expect(hasher.equaliserHash).toMatch(/^\$2[aby]?\$\d{2}\$[./A-Za-z0-9]{53}$/);
+  });
+});

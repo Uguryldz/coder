@@ -2,10 +2,17 @@ import { ParamKey } from "@maestro/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { sessionActor } from "../actor.js";
-import { authGuard, sessionOf } from "../auth/guard.js";
+import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest } from "../errors.js";
 import { putParam, readParams } from "../params-service.js";
+
+/**
+ * Who may see and edit operational parameters (M86). The gate sets, SoD keys
+ * and escalation ladders live behind these routes (M71), so neither reading
+ * nor writing them is open to every account with a session.
+ */
+export const PARAM_ROLES = ["admin", "tech-lead"] as const;
 
 const PutBody = z.object({
   value: z.unknown(),
@@ -21,7 +28,7 @@ const PutBody = z.object({
  * "applied" — so Studio never has to guess whether the change is live.
  */
 export async function paramRoutes(app: FastifyInstance, deps: ResolvedDeps): Promise<void> {
-  const preHandler = authGuard(deps);
+  const preHandler = [authGuard(deps), requireAnyRole(...PARAM_ROLES)];
 
   app.get("/params", { preHandler }, async (_request, reply) => {
     return reply.code(200).send(await readParams(deps));

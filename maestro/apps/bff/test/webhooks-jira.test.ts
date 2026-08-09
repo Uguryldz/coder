@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { BODY_LIMIT_BYTES } from "../src/server.js";
 import { FakeWorkPort } from "./fakes.js";
-import { harness, UGURPAY_BINDING } from "./helpers.js";
+import { auth, harness, UGURPAY_BINDING } from "./helpers.js";
 import { commentEvent, issueEvent, signed } from "./payloads.js";
 
 describe("POST /webhooks/jira", () => {
@@ -206,5 +207,67 @@ describe("POST /webhooks/jira", () => {
 
     expect(response.json()).toEqual({ accepted: false, reason: "not_intake" });
     expect(h.work.comments).toHaveLength(0);
+  });
+});
+
+/**
+ * The body limit is a deliberate number, not whatever the framework happens to
+ * default to. Jira tickets carry long Turkish descriptions and pasted logs, and
+ * a real delivery that silently exceeds an accidental 1 MB would look like an
+ * outage nobody configured.
+ */
+describe("request body limit", () => {
+  /** A signed delivery whose comment body is `size` bytes of filler. */
+  function bulkyDelivery(size: number) {
+    return signed(
+      commentEvent({ ticket: "UGURPAY-4", author: "mert.demir", body: "a".repeat(size) }),
+    );
+  }
+
+  it("accepts a delivery larger than Fastify's 1 MB default", async () => {
+    const h = await harness();
+    const delivery = bulkyDelivery(2 * 1024 * 1024);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.statusCode).toBe(202);
+  });
+
+  it("refuses a delivery past the configured limit, and does not 500", async () => {
+    const h = await harness();
+    const delivery = bulkyDelivery(BODY_LIMIT_BYTES + 1024);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.statusCode).toBe(413);
+  });
+
+  it("applies the same limit to the REST surface", async () => {
+    const h = await harness();
+    await h.addUser({ username: "ayse.kaya", roles: ["admin"] });
+    const token = await h.login("ayse.kaya");
+
+    const response = await h.app.inject({
+      method: "PUT",
+      url: "/params/reminder.channel",
+      headers: { ...auth(token), "content-type": "application/json" },
+      payload: JSON.stringify({ value: "a".repeat(BODY_LIMIT_BYTES + 1024) }),
+    });
+
+    expect(response.statusCode).toBe(413);
+  });
+
+  it("is an explicit number rather than an inherited default", () => {
+    expect(BODY_LIMIT_BYTES).toBeGreaterThan(1024 * 1024);
   });
 });

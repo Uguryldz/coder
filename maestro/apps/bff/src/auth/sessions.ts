@@ -4,6 +4,15 @@ import type { AuthenticatedUser, Clock, SessionRecord, SessionStore } from "../d
 /** Eight hours (M8). */
 export const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
+/**
+ * How many sessions one account may hold at once. A person works from a
+ * desktop and maybe a laptop; a hundred live tokens for one login is a stolen
+ * credential being replayed, not a way of working. When the cap is reached the
+ * OLDEST session is evicted, so the cap can never lock a real user out of their
+ * own account by filling their quota with stale tokens.
+ */
+export const MAX_SESSIONS_PER_USER = 5;
+
 /** 256 bits from the CSPRNG; the token is the whole credential. */
 export function newSessionToken(): string {
   return randomBytes(32).toString("base64url");
@@ -56,6 +65,25 @@ export class InMemorySessionStore implements SessionStore {
   delete(token: string): Promise<void> {
     this.sessions.delete(token);
     return Promise.resolve();
+  }
+
+  /** Insertion order is issue order, so the oldest session is the first match. */
+  listByUser(userId: string): Promise<readonly SessionRecord[]> {
+    const owned = [...this.sessions.values()]
+      .filter((record) => record.userId === userId)
+      .map((record) => ({ ...record }));
+    return Promise.resolve(owned);
+  }
+
+  deleteByUser(userId: string): Promise<number> {
+    let removed = 0;
+    for (const [token, record] of this.sessions) {
+      if (record.userId === userId) {
+        this.sessions.delete(token);
+        removed += 1;
+      }
+    }
+    return Promise.resolve(removed);
   }
 
   /** Housekeeping for the reference implementation; the real store uses a TTL. */

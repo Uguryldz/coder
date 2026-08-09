@@ -129,6 +129,109 @@ describe("PUT /params/:key (M71, four eyes)", () => {
   });
 });
 
+/**
+ * Four eyes counts PEOPLE, not tokens (M32/M101). `ai-via:ugur` and `ugur` are
+ * the same pair of eyes; comparing the raw actor strings let one person hold a
+ * normal session in one hand and their own MCP token in the other and close
+ * their own proposal.
+ */
+describe("PUT /params/:key — delegation cannot supply the second pair of eyes", () => {
+  it("does NOT apply when the proposer confirms through their own ai-via token", async () => {
+    const h = await harness();
+    await h.addUser({ username: "ayse.kaya", roles: ["admin"] });
+    const human = await h.login("ayse.kaya");
+    const delegated = await h.delegatedToken("ayse.kaya");
+    const value = { kritik: ["4", "5"] };
+
+    const proposal = await put(h, human, "gate.set", value);
+    expect(proposal.statusCode).toBe(202);
+
+    const confirmation = await put(h, delegated, "gate.set", value);
+
+    expect(confirmation.statusCode).not.toBe(200);
+    expect(await h.params.values()).toHaveLength(0);
+    const events = await h.auditStore.read();
+    expect(events.map((event) => event.action)).not.toContain("PARAM_CHANGED");
+  });
+
+  it("does NOT apply when an ai-via proposal is confirmed by the same human", async () => {
+    const h = await harness();
+    await h.addUser({ username: "ayse.kaya", roles: ["admin"] });
+    const human = await h.login("ayse.kaya");
+    const delegated = await h.delegatedToken("ayse.kaya");
+    const value = { kritik: ["4", "5"] };
+
+    await put(h, delegated, "gate.set", value);
+    const confirmation = await put(h, human, "gate.set", value);
+
+    expect(confirmation.statusCode).not.toBe(200);
+    expect(await h.params.values()).toHaveLength(0);
+  });
+
+  /**
+   * M101 gives the MCP surface "admin-öneri": a proposal, never an approval.
+   * A delegated token may leave the first signature and nothing more.
+   */
+  it("lets an ai-via token propose but never approve", async () => {
+    const h = await harness();
+    await h.addUser({ username: "ayse.kaya", roles: ["admin"] });
+    await h.addUser({ username: "mert.demir", roles: ["admin"] });
+    const proposer = await h.login("ayse.kaya");
+    const delegated = await h.delegatedToken("mert.demir");
+    const value = { kritik: ["4", "5"] };
+
+    await put(h, proposer, "gate.set", value);
+    const confirmation = await put(h, delegated, "gate.set", value);
+
+    expect(confirmation.statusCode).toBe(403);
+    expect(await h.params.values()).toHaveLength(0);
+    expect(await h.params.pending()).toHaveLength(1);
+  });
+
+  it("still applies for two genuinely different humans", async () => {
+    const h = await harness();
+    const { first, second } = await twoAdmins(h);
+    const value = { kritik: ["4", "5"] };
+
+    await put(h, first, "gate.set", value);
+
+    expect((await put(h, second, "gate.set", value)).statusCode).toBe(200);
+  });
+});
+
+/** M86: settings screens are admin+TL, not "anybody with a session". */
+describe("PUT /params/:key — authorisation (M86)", () => {
+  it("refuses a roleless account on an UNGUARDED parameter", async () => {
+    const h = await harness();
+    await h.addUser({ username: "stajyer", roles: [] });
+    const token = await h.login("stajyer");
+
+    const response = await put(h, token, "reminder.channel", "smtp");
+
+    expect(response.statusCode).toBe(403);
+    expect(await h.params.values()).toHaveLength(0);
+  });
+
+  it("refuses a roleless account on a guarded parameter", async () => {
+    const h = await harness();
+    await h.addUser({ username: "stajyer", roles: [] });
+    const token = await h.login("stajyer");
+
+    const response = await put(h, token, "gate.set", { kritik: ["4"] });
+
+    expect(response.statusCode).toBe(403);
+    expect(await h.params.pending()).toHaveLength(0);
+  });
+
+  it("accepts a tech-lead", async () => {
+    const h = await harness();
+    await h.addUser({ username: "tl", roles: ["tech-lead"] });
+    const token = await h.login("tl");
+
+    expect((await put(h, token, "reminder.channel", "smtp")).statusCode).toBe(200);
+  });
+});
+
 describe("GET /params", () => {
   it("returns definitions, values and the pending queue", async () => {
     const h = await harness();
@@ -141,5 +244,16 @@ describe("GET /params", () => {
     expect(body.definitions).toHaveLength(2);
     expect(body.values).toHaveLength(0);
     expect(body.pending).toHaveLength(1);
+  });
+
+  /** The SoD keys live here (M71); a roleless account has no business reading them. */
+  it("refuses a roleless account", async () => {
+    const h = await harness();
+    await h.addUser({ username: "stajyer", roles: [] });
+    const token = await h.login("stajyer");
+
+    const response = await h.app.inject({ method: "GET", url: "/params", headers: auth(token) });
+
+    expect(response.statusCode).toBe(403);
   });
 });

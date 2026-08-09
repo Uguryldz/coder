@@ -22,14 +22,32 @@ describe("message catalog (M104)", () => {
     expect(missingKeys(defaultCatalog, "en").sort()).toEqual([...REQUESTED_MESSAGE_KEYS].sort());
   });
 
-  // The five keys the RAPOR requested are now in the shipped catalog, so the
-  // pending list is empty; the wording lives in @maestro/config and is checked
-  // there. What matters here is that nothing is left outstanding.
-  it("has no outstanding catalog request", () => {
-    expect(REQUESTED_MESSAGE_KEYS).toEqual([]);
-    for (const key of Object.keys(PENDING_CATALOG_TEXT)) {
-      expect(missingKeys(defaultCatalog, "tr", [key])).toEqual([]);
+  // The original five have shipped. Every key still outstanding must have its
+  // wording staged in the test catalog and written up in RAPOR, so a request
+  // cannot be forgotten by being invisible.
+  it("stages wording for every outstanding catalog request", () => {
+    for (const key of REQUESTED_MESSAGE_KEYS) {
+      expect(Object.keys(PENDING_CATALOG_TEXT)).toContain(key);
+      expect(missingKeys(testCatalog, "tr", [key])).toEqual([]);
     }
+  });
+
+  /**
+   * The exemption is narrow ON PURPOSE: only keys named in
+   * `REQUESTED_MESSAGE_KEYS` may be missing at boot. Anything else must still
+   * stop the service (M6), which is what keeps the escape hatch from becoming a
+   * way to ship unrenderable text.
+   */
+  it("exempts only the requested keys from the boot gate", () => {
+    expect(() => assertCatalog(defaultCatalog, "tr")).not.toThrow();
+
+    const alsoMissingOne: typeof defaultCatalog = {
+      t: (locale, key, params) => {
+        if (key === BFF_MESSAGE_KEYS.commandNoRun) throw new Error(`missing ${key}`);
+        return defaultCatalog.t(locale, key, params);
+      },
+    };
+    expect(() => assertCatalog(alsoMissingOne, "tr")).toThrow(MissingCatalogKeysError);
   });
 
   it("covers the driver's command diagnosis keys", () => {

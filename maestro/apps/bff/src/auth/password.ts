@@ -1,4 +1,4 @@
-import { compare, hash } from "bcryptjs";
+import { compare, hash, hashSync } from "bcryptjs";
 import { HttpError } from "../errors.js";
 
 /**
@@ -92,12 +92,22 @@ export interface PasswordHasher {
  * to be compiled there. See RAPOR for the dependency justification.
  */
 export class BcryptPasswordHasher implements PasswordHasher {
-  /** A real bcrypt hash of a value no one can present; cost is irrelevant to it. */
-  private readonly dummy: string;
+  /**
+   * A real bcrypt hash of a value nobody can present, at THIS instance's cost.
+   *
+   * The cost is the entire point. A dummy pinned to a constant lower than
+   * `rounds` does not close the timing oracle — it inverts it and makes it
+   * louder: the unknown-account path returns in a fraction of the time the real
+   * one takes, so a single request tells an attacker whether an account exists.
+   * Deriving it from `rounds` means raising the work factor can never quietly
+   * leave the equaliser behind (see `password.test.ts`).
+   */
+  readonly equaliserHash: string;
 
   constructor(private readonly rounds = 12) {
-    // Pre-computed at cost 10 for "…"; only its shape and cost matter.
-    this.dummy = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+    // Computed once per instance, at construction rather than per request:
+    // the burn must cost what a verification costs, not twice that.
+    this.equaliserHash = hashSync("maestro-timing-equaliser", this.rounds);
   }
 
   hash(password: string): Promise<string> {
@@ -109,6 +119,9 @@ export class BcryptPasswordHasher implements PasswordHasher {
   }
 
   async burn(): Promise<void> {
-    await compare("maestro-timing-equaliser", this.dummy);
+    // A value that does NOT match the equaliser hash: bcrypt derives the key
+    // either way, but comparing against a known-wrong input keeps this on the
+    // same path a failed login takes.
+    await compare("maestro-timing-equaliser-miss", this.equaliserHash);
   }
 }

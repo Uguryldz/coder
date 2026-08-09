@@ -27,6 +27,74 @@ describe("loadEnv (M6 fail-closed)", () => {
   });
 });
 
+describe("LDAPS identity configuration (M8)", () => {
+  const PROD = {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgresql://maestro:x@db:5432/maestro",
+    TEMPORAL_ADDRESS: "temporal:7233",
+    JIRA_BASE_URL: "https://jira.corp.local",
+    ADO_BASE_URL: "https://tfs.corp.local/Collection",
+    VAULT_ADDR: "https://vault.corp.local",
+    STORAGE_ENDPOINT: "https://s3.corp.local",
+  };
+  const LDAP = {
+    IDENTITY_DRIVER: "ldaps-bind",
+    LDAP_URL: "ldaps://ad.bank.local:636",
+    LDAP_USER_BASE_DN: "OU=Users,DC=bank,DC=local",
+    LDAP_BIND_DN: "CN=svc-maestro,OU=Service,DC=bank,DC=local",
+  };
+
+  it("defaults to the local driver so existing deployments are unaffected", () => {
+    expect(loadEnv({}).IDENTITY_DRIVER).toBe("local");
+  });
+
+  it("does not require LDAP settings while the local driver is selected", () => {
+    expect(() => loadEnv({ IDENTITY_DRIVER: "local" })).not.toThrow();
+  });
+
+  it("requires the directory coordinates as soon as the LDAPS driver is selected", () => {
+    // Checked outside production too: a half-configured directory should fail
+    // at boot, not at the first login attempt.
+    expect(() => loadEnv({ IDENTITY_DRIVER: "ldaps-bind" })).toThrow(/LDAP_URL/);
+    expect(() => loadEnv({ IDENTITY_DRIVER: "ldaps-bind" })).toThrow(/LDAP_USER_BASE_DN/);
+    expect(() => loadEnv({ IDENTITY_DRIVER: "ldaps-bind" })).toThrow(/LDAP_BIND_DN/);
+  });
+
+  it("accepts a fully configured LDAPS deployment", () => {
+    const env = loadEnv({ ...PROD, ...LDAP });
+    expect(env.IDENTITY_DRIVER).toBe("ldaps-bind");
+  });
+
+  it("does not own the service-account reference — that belongs to DeployEnvSchema", () => {
+    // The `*_REF` pointers live in apps/deploy, where secret-names.test.ts can
+    // derive the MAESTRO_SECRET_* names from them. Declaring one here too would
+    // give the same variable two schemas that could disagree.
+    expect(loadEnv({ ...PROD, ...LDAP })).not.toHaveProperty("LDAP_BIND_PASSWORD_REF");
+  });
+
+  it("refuses plain ldap:// in production", () => {
+    expect(() => loadEnv({ ...PROD, ...LDAP, LDAP_URL: "ldap://ad.bank.local:389" })).toThrow(
+      /must be ldaps:\/\//,
+    );
+  });
+
+  it("refuses LDAP_ALLOW_INSECURE in production", () => {
+    expect(() => loadEnv({ ...PROD, ...LDAP, LDAP_ALLOW_INSECURE: "true" })).toThrow(
+      /LDAP_ALLOW_INSECURE/,
+    );
+  });
+
+  it("defaults LDAP_ALLOW_INSECURE to false", () => {
+    expect(loadEnv({ ...PROD, ...LDAP }).LDAP_ALLOW_INSECURE).toBe(false);
+  });
+
+  it("carries a secret REFERENCE, never a password field", () => {
+    const env = loadEnv({ ...PROD, ...LDAP });
+    // There is deliberately no LDAP_BIND_PASSWORD in the schema.
+    expect(env).not.toHaveProperty("LDAP_BIND_PASSWORD");
+  });
+});
+
 describe("message catalog (M104)", () => {
   it("all locales share the exact same key set", () => {
     const keySets = Locale.options.map((l) => catalogKeys(l));

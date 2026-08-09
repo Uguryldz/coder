@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PublishTarget } from "@maestro/contracts";
-import { CapabilityNotSupportedError, type PortRegistry } from "@maestro/ports";
+import type { PortRegistry } from "@maestro/ports";
+import { BinaryDocPublisher, BinaryDocPublishConfig } from "./drivers/binary-doc.js";
 import { ConfluencePublisher, ConfluencePublishConfig } from "./drivers/confluence.js";
 import { JiraPublisher } from "./drivers/jira.js";
 import { RepoDocsPublisher, RepoDocsPublishConfig } from "./drivers/repo-docs.js";
@@ -18,6 +19,8 @@ export const PublishDriverConfig = z
     targets: z.array(PublishTarget).min(1).optional(),
     confluence: ConfluencePublishConfig.optional(),
     repoDocs: RepoDocsPublishConfig.optional(),
+    /** Shared by the `docx` and `pdf` targets (M103r). */
+    binaryDoc: BinaryDocPublishConfig.optional(),
   })
   .strict();
 export type PublishDriverConfig = z.infer<typeof PublishDriverConfig>;
@@ -67,12 +70,23 @@ function buildPublisher(target: PublishTarget, config: PublishDriverConfig, deps
       });
     }
     case "docx":
-    case "pdf":
-      // M103 (Aşama 2), refused HERE rather than at publish time: a `jira+pdf`
-      // project used to compose happily, post its Jira comment and only then
-      // fail on the second target — side effects done, no receipt to show for
-      // them. Composition is the last moment a refusal costs nothing.
-      throw new CapabilityNotSupportedError(PUBLISH_PORT, target);
+    case "pdf": {
+      // M103r. These targets are served now, but the discipline that used to
+      // live here as a blanket refusal is kept exactly: a missing sink is an
+      // error at COMPOSITION time, so a `jira+pdf` project cannot post its Jira
+      // comment and only then discover the second target cannot store a file.
+      if (!deps.sink) {
+        throw new PublishConfigError(`the ${target} target needs deps.sink (StoragePort) to store the generated file`);
+      }
+      return new BinaryDocPublisher(target, config.binaryDoc ?? BinaryDocPublishConfig.parse({}), {
+        ...shared,
+        sink: deps.sink,
+        translate: deps.translate,
+        templates: deps.docTemplates,
+        now: deps.now,
+        onWarnings: deps.onTemplateWarnings,
+      });
+    }
   }
 }
 

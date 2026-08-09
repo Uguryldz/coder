@@ -16,6 +16,7 @@ import { killSwitchRoutes } from "./routes/killswitch.js";
 import { paramRoutes } from "./routes/params.js";
 import { runRoutes } from "./routes/runs.js";
 import { studioCatalogRoutes } from "./routes/studio-catalog.js";
+import { templateRoutes } from "./routes/template.js";
 import { studioOpsRoutes } from "./routes/studio-ops.js";
 import { studioRunRoutes } from "./routes/studio-runs.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -101,6 +102,7 @@ export async function buildServer(
   await app.register(async (scope) => authRoutes(scope, resolved));
   await app.register(async (scope) => runRoutes(scope, resolved));
   await app.register(async (scope) => paramRoutes(scope, resolved));
+  await app.register(async (scope) => templateRoutes(scope, resolved));
   await app.register(async (scope) => killSwitchRoutes(scope, resolved));
   // Studio's read surface (M86/M7): the 37 screens read through these, and
   // through the same guards and the same project scoping as everything above.

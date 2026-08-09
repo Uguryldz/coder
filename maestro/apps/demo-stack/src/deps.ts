@@ -16,6 +16,7 @@ import {
   InMemoryRunnerFleet,
   InMemoryScanReader,
   InMemorySessionStore,
+  InMemoryTemplateStore,
   InMemoryUserDirectory,
   LocalIdentityProvider,
   StaticGateDirectory,
@@ -26,6 +27,7 @@ import { loadEnv } from "@maestro/config";
 import { DemoCiPort, DemoWorkEventReader, DemoWorkPort } from "./fakes/work-port.js";
 import { InMemoryRunGateway } from "./fakes/run-gateway.js";
 import { DEMO_PARAMS } from "./seed/params.js";
+import { DEMO_TEMPLATE_BINDINGS, DEMO_TEMPLATE_VERSIONS } from "./seed/template.js";
 import { seedInto, type SeedSummary } from "./seed/index.js";
 import { gateMemberships } from "./seed/memberships.js";
 import { DEMO_ACCOUNTS, DEMO_ACTOR_DOMAIN } from "./seed/users.js";
@@ -129,6 +131,7 @@ export async function buildDemoStack(options: DemoStackOptions = {}): Promise<De
     bindings: new StaticJiraProjectBindings(DEMO_BINDINGS),
     gates: new StaticGateDirectory(),
     params: new InMemoryParamStore(DEMO_PARAMS),
+    templates: new InMemoryTemplateStore(DEMO_TEMPLATE_VERSIONS, DEMO_TEMPLATE_BINDINGS),
     killSwitch: new InMemoryKillSwitchStore(),
     read,
     clock,

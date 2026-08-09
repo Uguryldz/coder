@@ -41,10 +41,6 @@ export interface AnalysisContext {
   clarifications: ClarificationRound[];
 }
 
-export function emptyKnowledgePack(): KnowledgePack {
-  return { repoCards: [], knowledgeDocs: [], codingStandards: [], exampleAnalyses: [] };
-}
-
 export type ReferenceIndex = Record<SourceKind, Set<string>>;
 
 /**
@@ -62,8 +58,16 @@ export function buildReferenceIndex(context: AnalysisContext): ReferenceIndex {
     }
   }
 
+  // Example analyses belong here because the prompt SHOWS them. Indexing only
+  // what the model may cite while showing it more is a false-positive machine:
+  // a citation of the example document in front of the analyst would be refused
+  // as a fabrication, and the repair round could not explain why.
   const knowledgeDoc = new Set<string>();
-  for (const doc of [...context.knowledge.knowledgeDocs, ...context.knowledge.codingStandards]) {
+  for (const doc of [
+    ...context.knowledge.knowledgeDocs,
+    ...context.knowledge.codingStandards,
+    ...context.knowledge.exampleAnalyses,
+  ]) {
     knowledgeDoc.add(doc.name);
   }
 

@@ -1,6 +1,6 @@
 import type { DataClass, TicketSnapshot } from "@maestro/contracts";
 import type { LlmPort } from "@maestro/ports";
-import { block, bullets } from "./prompt.js";
+import { block, bullets, fence } from "./prompt.js";
 import { type RoleResult, runRole } from "./run.js";
 import { IntakeOutput } from "./schemas.js";
 import { DEFAULT_PROMPT_TEXTS, type PromptTexts, text } from "./texts.js";
@@ -36,13 +36,15 @@ export function buildIntakePrompt(
         [
           text(texts, "ortak.dil"),
           text(texts, "ortak.uydurmaYasak"),
+          text(texts, "ortak.veriTalimatDegil"),
           text(texts, "intake.kurallar"),
           text(texts, "ortak.ciktiBicimi"),
         ],
         "-",
       ),
     ),
-    block(text(texts, "ortak.baslik.ticket"), ticketLines),
+    // Reporter-authored text: fenced, same reasoning as the analyst prompt.
+    block(text(texts, "ortak.baslik.ticket"), fence(ticketLines)),
     block(text(texts, "ortak.baslik.gorev"), text(texts, "intake.gorev")),
   ].join("\n\n");
 }

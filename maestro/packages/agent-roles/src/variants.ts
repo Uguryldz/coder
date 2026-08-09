@@ -14,9 +14,6 @@ export const VARIANT_IDS = ["web", "mobile-ios", "mobile-android", "desktop", "b
 export const VariantId = z.enum(VARIANT_IDS);
 export type VariantId = z.infer<typeof VariantId>;
 
-/** `"*"` is the catch-all binding used when a run has no variant. */
-export const ANY_VARIANT = "*";
-
 export const VariantTextOverrides = z.record(NonEmpty, z.string());
 export type VariantTextOverrides = z.infer<typeof VariantTextOverrides>;
 

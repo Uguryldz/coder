@@ -16,7 +16,7 @@ import {
  * being loud, attributable and quiet about secrets.
  */
 
-/** The twelve keys `BffDeps.read` requires, spelled out rather than derived from the object. */
+/** The keys `BffDeps.read` requires, spelled out rather than derived from the object. */
 const EXPECTED_MODELS = [
   "runs",
   "journal",
@@ -30,6 +30,8 @@ const EXPECTED_MODELS = [
   "evidence",
   "audit",
   "health",
+  "onboarding",
+  "repoPolicy",
 ] as const satisfies readonly (keyof ReadModels)[];
 
 /** Every method the BFF's read interfaces declare, per model. */
@@ -46,6 +48,8 @@ const METHODS: Record<keyof ReadModels, readonly string[]> = {
   evidence: ["get"],
   audit: ["list", "verify"],
   health: ["services"],
+  onboarding: ["options", "recentTickets", "binding"],
+  repoPolicy: ["list", "get"],
 };
 
 function methodOf(read: ReadModels, model: keyof ReadModels, method: string): () => Promise<unknown> {
@@ -86,9 +90,14 @@ describe("unbridgedReadModels: shape", () => {
     }
   });
 
-  it("covers all twelve read models", () => {
-    expect(EXPECTED_MODELS).toHaveLength(12);
-    expect(ALL_METHODS.length).toBeGreaterThanOrEqual(12);
+  it("covers every read model `BffDeps.read` declares", () => {
+    // Derived rather than a literal count. The number grew from twelve to
+    // fourteen when onboarding and repoPolicy landed, and a hard-coded 12 makes
+    // that growth look like a failure — while `EXPECTED_MODELS` is already
+    // pinned to `keyof ReadModels` by `satisfies`, so a model added upstream
+    // without an entry there still breaks the build.
+    expect(EXPECTED_MODELS.length).toBeGreaterThanOrEqual(12);
+    expect(ALL_METHODS.length).toBeGreaterThanOrEqual(EXPECTED_MODELS.length);
   });
 
   it("exposes every declared method as a function", () => {
@@ -166,7 +175,7 @@ describe("unbridgedReadModels: the refusal is attributable", () => {
   });
 
   it("lists every unwired read model for the boot banner", () => {
-    expect(MISSING_READ_MODELS).toHaveLength(12);
+    expect(MISSING_READ_MODELS).toHaveLength(EXPECTED_MODELS.length);
     for (const model of EXPECTED_MODELS) {
       expect(MISSING_READ_MODELS.some((line) => line.startsWith(`${model} (`))).toBe(true);
     }

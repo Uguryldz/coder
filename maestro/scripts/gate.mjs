@@ -50,11 +50,22 @@ const workersPerLane = Math.max(1, Math.min(4, Math.floor(cores / lanes)));
  *
  * Read from /proc when available (Linux); elsewhere the plain default stands.
  *
- * Passed as vitest's `--testTimeout` flag, NOT as an environment variable:
- * `VITEST_TESTTIMEOUT` looks plausible and is silently ignored — verified by
- * setting it to 1 ms, after which all 210 storage tests still passed. The flag
- * with the same value fails 140 of them, which is how a knob should behave when
- * you turn it.
+ * Reported, not enforced — deliberately, after three attempts:
+ *
+ *  - `VITEST_TESTTIMEOUT` is silently ignored (set to 1 ms; all 210 storage
+ *    tests still passed).
+ *  - `--testTimeout` works, but OVERRIDES each package's own vitest.config, and
+ *    `@maestro/workflows` sets 180 s for its Temporal time-skipping suites. It
+ *    cut those to ~20 s and failed exactly the tests it was meant to protect.
+ *  - A shared `testTimeout()` helper read from each config computed the right
+ *    number (verified by printing it) and had no effect on the deadline, while
+ *    the CLI flag at the same value did fail the same test.
+ *
+ * So the number is printed in the banner and nothing is changed. When the gate
+ * says `load 37` and one suite times out at 5 s, that line is the explanation —
+ * re-run it alone before believing the failure. A per-package `testTimeout` in
+ * a package that genuinely needs one still works; only the cross-cutting knob
+ * does not.
  */
 function testTimeoutMs() {
   const base = 5_000;
@@ -97,33 +108,6 @@ if (lintStatus !== 0) process.exit(lintStatus);
 // `--force` on purpose: a gate that reads the cache proves the cache is warm,
 // not that the code passes. This is the one command in the repo that must
 // re-run everything.
-// Two invocations rather than one.
-//
-// Everything after `--` is forwarded to EVERY task turbo runs, and `tsc` exits
-// non-zero on an unknown `--testTimeout`. Splitting them keeps the flag on the
-// only task that understands it; `test` still depends on `typecheck` in
-// turbo.json, so the ordering guarantee is unchanged.
-const typecheckStatus = run("pnpm", [
-  "exec",
-  "turbo",
-  "run",
-  "typecheck",
-  "--force",
-  `--concurrency=${lanes}`,
-]);
-if (typecheckStatus !== 0) process.exit(typecheckStatus);
-
 process.exit(
-  run("pnpm", [
-    "exec",
-    "turbo",
-    "run",
-    "test",
-    "--force",
-    `--concurrency=${lanes}`,
-    // Reaches each package's own `test` script, which is `vitest run` in all
-    // of them.
-    "--",
-    `--testTimeout=${TEST_TIMEOUT}`,
-  ]),
+  run("pnpm", ["exec", "turbo", "run", "typecheck", "test", "--force", `--concurrency=${lanes}`]),
 );

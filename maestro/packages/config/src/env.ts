@@ -5,6 +5,22 @@ import { z } from "zod";
  * connection value must be present — the process refuses to start rather
  * than run half-configured. Dev gets local defaults.
  */
+/**
+ * An optional setting that treats "" as absent.
+ *
+ * Docker Compose interpolates an unset variable to an EMPTY STRING, not to
+ * nothing — `LDAP_URL: ${LDAP_URL:-}` reaches the process as `LDAP_URL=""`. A
+ * plain `.optional()` accepts `undefined` and rejects `""`, so a deployment
+ * that simply does not use LDAP failed to boot with seven "expected string to
+ * have >=1 characters" errors. Blank means unset; a value that is present is
+ * still held to its minimum.
+ */
+const OptionalText = z
+  .string()
+  .transform((value) => (value.trim() === "" ? undefined : value))
+  .pipe(z.string().min(1).optional())
+  .optional();
+
 export const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /**
@@ -34,13 +50,13 @@ export const EnvSchema = z.object({
    */
   IDENTITY_DRIVER: z.enum(["local", "ldaps-bind"]).default("local"),
   /** `ldaps://ad.bank.local:636`. Plain `ldap://` is refused in production. */
-  LDAP_URL: z.string().min(1).optional(),
+  LDAP_URL: OptionalText,
   /** Where user search starts, e.g. `OU=Users,DC=bank,DC=local`. */
-  LDAP_USER_BASE_DN: z.string().min(1).optional(),
+  LDAP_USER_BASE_DN: OptionalText,
   /** Where group search starts. Falls back to the user base when unset. */
-  LDAP_GROUP_BASE_DN: z.string().min(1).optional(),
+  LDAP_GROUP_BASE_DN: OptionalText,
   /** Service account DN used for the SEARCH bind — never for a user's bind. */
-  LDAP_BIND_DN: z.string().min(1).optional(),
+  LDAP_BIND_DN: OptionalText,
   /**
    * The service-account password is a secret REFERENCE and lives in
    * `apps/deploy`'s `DeployEnvSchema` with every other `*_REF`, NOT here.
@@ -49,11 +65,11 @@ export const EnvSchema = z.object({
    * in this schema would be invisible to that check.
    */
   /** PEM path for the bank's own CA. Corporate roots are not publicly trusted. */
-  LDAP_CA_CERT_PATH: z.string().min(1).optional(),
+  LDAP_CA_CERT_PATH: OptionalText,
   /** User search filter carrying `{{username}}`; the driver escapes the value. */
-  LDAP_USER_FILTER: z.string().min(1).optional(),
+  LDAP_USER_FILTER: OptionalText,
   /** Group membership filter carrying `{{dn}}`. */
-  LDAP_GROUP_FILTER: z.string().min(1).optional(),
+  LDAP_GROUP_FILTER: OptionalText,
   /**
    * Group → role mapping, as `group:role1|role2` entries separated by commas:
    *
@@ -62,7 +78,7 @@ export const EnvSchema = z.object({
    * The bank's AD naming is a deployment fact, not a platform convention — this
    * is what replaces the hardcoded `maestro-<projectkey>` rule.
    */
-  LDAP_ROLE_MAPPINGS: z.string().optional(),
+  LDAP_ROLE_MAPPINGS: OptionalText,
   /**
    * Escape hatch for a local test directory with no TLS. Refused outright when
    * `NODE_ENV=production`, whatever this says. Named for what it does: the
@@ -88,7 +104,7 @@ export const EnvSchema = z.object({
    * configured LLM rate and N times the sandbox capacity. That is a bill and an
    * outage, not a degradation, which is why it sits in REQUIRED_IN_PROD below.
    */
-  REDIS_URL: z.string().min(1).optional(),
+  REDIS_URL: OptionalText,
 });
 export type Env = z.infer<typeof EnvSchema>;
 

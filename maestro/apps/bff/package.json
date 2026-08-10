@@ -15,6 +15,7 @@
     "@maestro/audit": "workspace:*",
     "@maestro/config": "workspace:*",
     "@maestro/contracts": "workspace:*",
+    "@maestro/execution": "workspace:*",
     "@maestro/mcp-servers": "workspace:*",
     "@maestro/ports": "workspace:*",
     "bcryptjs": "^3.0.2",

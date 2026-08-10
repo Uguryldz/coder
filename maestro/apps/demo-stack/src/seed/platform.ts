@@ -6,6 +6,8 @@ import type {
 import type {
   JiraBinding,
   KnowledgeDoc,
+  OnboardingOptionsRecord,
+  RepoPolicyRecord,
   RunnerRecord,
   SandboxRecord,
   ScanRecord,
@@ -280,4 +282,52 @@ export function demoServices(now: Date): readonly ServiceHealth[] {
     down("worker"),
     down("runner"),
   ];
+}
+
+/**
+ * The onboarding wizard's lists, derived from the demo's OWN inventory rather
+ * than typed out again (M93/M102).
+ *
+ * Derived on purpose: a second hand-written copy of the applications would
+ * drift from `DEMO_APPS` the first time somebody added one, and the wizard
+ * would then offer a repository the registry does not have.
+ */
+export function demoOnboardingOptions(): OnboardingOptionsRecord {
+  const repos = DEMO_APPS.map((app) => ({
+    appId: app.appId,
+    repo: `${app.adoProject}/_git/${app.adoRepo}`,
+    platform: app.platform,
+  }));
+  return {
+    // `JiraBinding.active` is a boolean here, so the state is spelled the way
+    // the binding table would: the wizard refuses `active` and allows `draft`.
+    projects: DEMO_BINDINGS.map((binding) => ({
+      projectKey: binding.projectKey,
+      state: binding.active ? "active" : "draft",
+    })),
+    repos,
+    platforms: [...new Set(repos.map((repo) => repo.platform))].sort(),
+  };
+}
+
+/**
+ * One policy per demo application (M52/M71). `ugurdesk` has no `.maestro.yaml`
+ * and keeps that property here: the screen must show "never observed" for it
+ * rather than a plausible-looking empty document.
+ */
+export function demoRepoPolicies(now: Date): readonly RepoPolicyRecord[] {
+  return DEMO_APPS.map((app) => ({
+    appId: app.appId,
+    platform: app.platform,
+    repo: `${app.adoProject}/_git/${app.adoRepo}`,
+    yamlPresent: app.maestroYamlPresent,
+    repoAdditions: app.appId === "ugurpay" ? ["src/payment-core/**"] : [],
+    verification: app.maestroYamlPresent
+      ? [
+          { name: "lint", command: ["pnpm", "lint"] },
+          { name: "test", command: ["pnpm", "test"] },
+        ]
+      : [],
+    observedAt: app.maestroYamlPresent ? stampBefore(now, 24) : null,
+  }));
 }

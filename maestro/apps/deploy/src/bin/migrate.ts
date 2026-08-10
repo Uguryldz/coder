@@ -147,8 +147,21 @@ export function resolveSchemaPath(): string {
   return resolve(dirname(entry), "..", PRISMA_SCHEMA_RELATIVE_PATH);
 }
 
+/**
+ * The Prisma CLI, resolved FROM `@maestro/db` rather than from this file.
+ *
+ * pnpm gives each workspace package its own `node_modules`, and `prisma` is a
+ * dependency of `@maestro/db` — not of this app. Resolving it from here works
+ * on a developer's machine, where the root store happens to hoist it, and
+ * fails inside the image, where it does not: the migration container exited 1
+ * with "Cannot find module 'prisma/build/index.js'" while the binary sat in
+ * `packages/db/node_modules/prisma`. Resolving through the package that
+ * actually declares it works in both places, and is the same trick
+ * `schemaPath()` above already uses for the schema.
+ */
 function prismaBin(): string {
-  return require_.resolve("prisma/build/index.js");
+  const dbEntry = require_.resolve("@maestro/db");
+  return createRequire(dbEntry).resolve("prisma/build/index.js");
 }
 
 // Only when this file IS the process, not when a test imports it for the lock

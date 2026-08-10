@@ -10,8 +10,10 @@ import {
   InMemoryJournalReader,
   InMemoryKillSwitchStore,
   InMemoryKnowledgeIndex,
+  InMemoryOnboardingReader,
   InMemoryParamStore,
   InMemoryQuotaReader,
+  InMemoryRepoPolicyReader,
   InMemoryRunCatalog,
   InMemoryRunnerFleet,
   InMemoryScanReader,
@@ -31,7 +33,13 @@ import { DEMO_TEMPLATE_BINDINGS, DEMO_TEMPLATE_VERSIONS } from "./seed/template.
 import { seedInto, type SeedSummary } from "./seed/index.js";
 import { gateMemberships } from "./seed/memberships.js";
 import { DEMO_ACCOUNTS, DEMO_ACTOR_DOMAIN } from "./seed/users.js";
-import { DEMO_BINDINGS, demoAccounts, demoServices } from "./seed/platform.js";
+import {
+  DEMO_BINDINGS,
+  demoAccounts,
+  demoOnboardingOptions,
+  demoRepoPolicies,
+  demoServices,
+} from "./seed/platform.js";
 
 /**
  * The demo composition root.
@@ -102,6 +110,12 @@ export async function buildDemoStack(options: DemoStackOptions = {}): Promise<De
     // The SAME store the chain appends to: a reader with its own copy would
     // verify itself rather than the trail (M33).
     audit: new AuditStoreReader(auditStore),
+    // The onboarding wizard and the `.maestro.yaml` screen (M93/M102/M52),
+    // over the demo's own inventory. The dry run has no run history to replay
+    // in the demo, so it answers `sampled: 0` — which the screen renders as
+    // "this proved nothing", the honest answer for a stack with no past.
+    onboarding: new InMemoryOnboardingReader(demoOnboardingOptions()),
+    repoPolicy: new InMemoryRepoPolicyReader(demoRepoPolicies(seededAt)),
   };
 
   // Accounts first: the seeded audit trail records gate approvals, and the chain

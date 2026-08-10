@@ -21,6 +21,15 @@ import {
   StaticJiraProjectBindings,
 } from "../src/stores/memory.js";
 import {
+  InMemoryOnboardingReader,
+  InMemoryRepoPolicyReader,
+} from "../src/stores/onboarding-memory.js";
+import type {
+  OnboardingOptionsRecord,
+  OnboardingSampleTicket,
+  RepoPolicyRecord,
+} from "../src/onboarding-models.js";
+import {
   AuditStoreReader,
   InMemoryAppRegistry,
   InMemoryCostReader,
@@ -149,6 +158,8 @@ export interface TestReadModels extends ReadModels {
   cost: InMemoryCostReader;
   scans: InMemoryScanReader;
   evidence: InMemoryEvidenceReader;
+  onboarding: InMemoryOnboardingReader;
+  repoPolicy: InMemoryRepoPolicyReader;
 }
 
 /**
@@ -195,6 +206,12 @@ export interface HarnessOptions {
   services?: readonly ServiceHealth[];
   /** Published template versions; defaults to a single seeded version 1. */
   templates?: readonly TemplateVersionRecord[];
+  /** Onboarding options (M93); empty by default, so a test seeds what it asserts on. */
+  onboarding?: OnboardingOptionsRecord;
+  /** Per-project run history the dry run replays (M102), keyed by project key. */
+  samples?: ReadonlyMap<string, readonly OnboardingSampleTicket[]>;
+  /** `.maestro.yaml` records per application (M52). */
+  policies?: readonly RepoPolicyRecord[];
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -232,6 +249,8 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // verify itself rather than the trail.
     audit: new AuditStoreReader(auditStore),
     health: new StaticHealthReader(options.services ?? TEST_SERVICES),
+    onboarding: new InMemoryOnboardingReader(options.onboarding, options.samples),
+    repoPolicy: new InMemoryRepoPolicyReader(options.policies),
   };
 
   const app = await buildServer({

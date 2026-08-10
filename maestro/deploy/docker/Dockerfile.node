@@ -24,6 +24,15 @@ FROM ${NODE_IMAGE} AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true
+# OpenSSL, for Prisma's query engine.
+#
+# `node:24-bookworm-slim` does not carry it, and Prisma then warns that it
+# "failed to detect the libssl/openssl version to use" and falls back to a
+# guess. The guess happened to work here; a wrong guess is a runtime failure in
+# the engine rather than a build error, which is the worst place to find out.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /app
 
@@ -94,4 +103,13 @@ EXPOSE 7001
 # REPLACES the shell and becomes PID 1. Without the exec, SIGTERM would go to
 # the shell, the drain in `lifecycle.ts` would never run, and a rolling deploy
 # would drop in-flight webhooks — which Jira does not redeliver.
-ENTRYPOINT ["/bin/sh", "-c", "exec node --import tsx \"${MAESTRO_ENTRYPOINT}\" \"$@\"", "--"]
+# `cd` into the entrypoint's own package first.
+#
+# pnpm's workspace layout puts each package's dependencies under
+# `<package>/node_modules`, NOT at the root — the root holds five build tools
+# and nothing else. Node resolves `--import tsx` from the working directory, so
+# running this from `/app` failed with ERR_MODULE_NOT_FOUND even though
+# `apps/deploy/node_modules/tsx` was right there in the image. It surfaced as
+# the migration container exiting 1 on `docker compose up`, which reads like a
+# database problem and is not one.
+ENTRYPOINT ["/bin/sh", "-c", "cd \"$(dirname \"${MAESTRO_ENTRYPOINT}\")/../..\" && exec node --import tsx \"./${MAESTRO_ENTRYPOINT#*/*/}\" \"$@\"", "--"]

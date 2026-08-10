@@ -13,7 +13,9 @@ import { bffPlatform } from "./platform/index.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { killSwitchRoutes } from "./routes/killswitch.js";
+import { onboardingRoutes } from "./routes/onboarding.js";
 import { paramRoutes } from "./routes/params.js";
+import { repoPolicyRoutes } from "./routes/repo-policy.js";
 import { runRoutes } from "./routes/runs.js";
 import { studioCatalogRoutes } from "./routes/studio-catalog.js";
 import { templateRoutes } from "./routes/template.js";
@@ -143,6 +145,11 @@ export async function buildServer(
   await app.register(async (scope) => studioVariantRoutes(scope, resolved));
   await app.register(async (scope) => studioGovernanceRoutes(scope, resolved));
   await app.register(async (scope) => studioSurfaceRoutes(scope, resolved));
+  // Onboarding a project and reading a repo's `.maestro.yaml` (M93/M102/M52).
+  // Both are admin/tech-lead surfaces, and the onboarding write files a
+  // proposal rather than a binding — see `routes/onboarding.ts`.
+  await app.register(async (scope) => onboardingRoutes(scope, resolved));
+  await app.register(async (scope) => repoPolicyRoutes(scope, resolved));
 
   app.decorate("maestro", resolved);
   // The MCP surface reads the platform through the SAME container, so an AI and

@@ -43,6 +43,10 @@ const MISSING: Record<keyof ReadModels, string> = {
   evidence: "no evidence package store (M56)",
   audit: "no Postgres-backed AuditStore; only InMemoryAuditStore ships (M33)",
   health: "no service health probe is wired (M6)",
+  onboarding:
+    "no Postgres implementation for the onboarding reader (bindings + application registry, M93/M102)",
+  repoPolicy:
+    "no Postgres implementation for the repo policy reader (.maestro.yaml as observed by a run, M52/M71)",
 };
 
 /**
@@ -126,6 +130,12 @@ export function unbridgedReadModels(): ReadModels {
     evidence: { get: refuse("evidence", "get") },
     audit: { list: refuse("audit", "list"), verify: refuse("audit", "verify") },
     health: { services: refuse("health", "services") },
+    onboarding: {
+      options: refuse("onboarding", "options"),
+      recentTickets: refuse("onboarding", "recentTickets"),
+      binding: refuse("onboarding", "binding"),
+    },
+    repoPolicy: { list: refuse("repoPolicy", "list"), get: refuse("repoPolicy", "get") },
   };
 }
 

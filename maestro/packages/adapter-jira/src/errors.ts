@@ -130,7 +130,7 @@ export class JiraLinkFailedError extends Error {
 export class JiraMembershipUnresolvedError extends Error {
   constructor(
     readonly group: string,
-    readonly reason: "incomplete_page_bean" | "too_many_pages",
+    readonly reason: "incomplete_page_bean" | "too_many_pages" | "contradictory_page",
     detail: string,
   ) {
     super(`Jira group "${group}" membership could not be resolved (${reason}): ${detail}`);

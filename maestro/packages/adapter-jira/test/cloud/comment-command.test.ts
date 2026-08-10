@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  codeBlock,
   commandFromCloudPayload,
   doc,
+  heading,
+  inlineCode,
   JiraArgumentError,
   JiraResponseError,
+  link,
   paragraph,
   parseCommandFromComment,
+  strong,
   text,
   type AdfDoc,
   type AdfNode,
@@ -66,11 +71,33 @@ describe("parseCommandFromComment", () => {
     expect(result.invalid?.messageKey).toBe("command.takes_no_argument");
   });
 
-  it("rejects an /approve riding with invisible content (a mention)", () => {
+  it("never reads a command out of quoted, code or styled text (ADF M105)", () => {
+    const none = { envelope: null, invalid: null };
+    const quoted = { type: "blockquote", content: [paragraph("/approve")] } as unknown as AdfNode;
+    expect(parseCommandFromComment("OPS-6", comment(doc(quoted)))).toEqual(none);
+    expect(parseCommandFromComment("OPS-6", comment(doc(codeBlock("/approve"))))).toEqual(none);
+    expect(parseCommandFromComment("OPS-6", comment(doc(paragraph([inlineCode("/approve")]))))).toEqual(none);
+    expect(parseCommandFromComment("OPS-6", comment(doc(paragraph([link("/approve", "https://x.example")]))))).toEqual(none);
+    expect(parseCommandFromComment("OPS-6", comment(doc(paragraph([strong("/approve")]))))).toEqual(none);
+    expect(parseCommandFromComment("OPS-6", comment(doc(heading(2, "/approve"))))).toEqual(none);
+  });
+
+  it("still blocks a plain /approve trailed by quoted or code content", () => {
+    const trailedByCode = parseCommandFromComment("OPS-6", comment(doc(paragraph("/approve"), codeBlock("kanıt"))));
+    expect(trailedByCode.envelope).toBeNull();
+    expect(trailedByCode.invalid?.messageKey).toBe("command.takes_no_argument");
+
+    const quote = { type: "blockquote", content: [paragraph("önceki yorum")] } as unknown as AdfNode;
+    const trailedByQuote = parseCommandFromComment("OPS-6", comment(doc(paragraph("/approve"), quote)));
+    expect(trailedByQuote.envelope).toBeNull();
+    expect(trailedByQuote.invalid?.messageKey).toBe("command.takes_no_argument");
+  });
+
+  it("does not honour an /approve riding with invisible content (a mention)", () => {
     const mention = { type: "mention", attrs: { id: "abc" } } as unknown as AdfNode;
     const result = parseCommandFromComment("OPS-6", comment(doc({ type: "paragraph", content: [text("/approve "), mention] })));
     expect(result.envelope).toBeNull();
-    expect(result.invalid?.messageKey).toBe("command.takes_no_argument");
+    expect(result.invalid).toBeNull(); // the styled/mixed line is not command text at all
   });
 
   it("keeps the rest of the line for commands with arguments", () => {
@@ -91,6 +118,15 @@ describe("parseCommandFromComment", () => {
   it("ignores an edited comment — created and updated disagree", () => {
     const edited = comment("/approve", { updated: "2026-08-10T15:00:00.000+0300" });
     expect(parseCommandFromComment("OPS-6", edited)).toEqual({ envelope: null, invalid: null });
+  });
+
+  it("fails loudly when the updated timestamp is missing — unprovably unedited", () => {
+    // A poller that maps fields and drops `updated` must not reopen the
+    // edited-comment hole: without the timestamp the command is unprovable.
+    const stripped = comment("/approve");
+    delete stripped["updated"];
+    expect(() => parseCommandFromComment("OPS-6", stripped)).toThrowError(JiraResponseError);
+    expect(() => parseCommandFromComment("OPS-6", stripped)).toThrowError(/updated/);
   });
 
   it("flags an unknown command instead of silently ignoring it", () => {

@@ -1,10 +1,13 @@
 import { TicketSnapshot } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  adfToCommandLines,
   adfToPlainText,
   cloudDescriptionText,
   cloudUserIdOf,
+  codeBlock,
   doc,
+  inlineCode,
   JiraResponseError,
   mapCloudIssueToSnapshot,
   paragraph,
@@ -98,6 +101,17 @@ describe("adfToPlainText", () => {
     const mention = { type: "mention", attrs: { id: "abc" } } as unknown as AdfNode;
     const document = doc({ type: "paragraph", content: [text("/approve "), mention] });
     expect(adfToPlainText(document)).toBe("/approve ￼");
+  });
+
+  it("tags only plain top-level paragraph text as command-capable", () => {
+    const lines = adfToCommandLines(
+      doc(paragraph("/approve"), codeBlock("/reject örnek"), paragraph([inlineCode("/status")])),
+    );
+    expect(lines).toEqual([
+      { text: "/approve", commandCapable: true },
+      { text: "/reject örnek", commandCapable: false }, // visible, but never a command
+      { text: "/status", commandCapable: false },
+    ]);
   });
 
   it("flattens the recorded comment body including the code-marked run", () => {

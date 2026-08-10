@@ -141,6 +141,17 @@ describe("JiraCloudWorkPort", () => {
     });
   });
 
+  it("refuses fan-out labels Jira would reject, before any request", async () => {
+    const stub = stubFetch([]);
+    await expect(
+      port(stub).createLinkedIssue("OPS-6", { summary: "x", description: "y", labels: ["iki kelime"] }),
+    ).rejects.toThrow(/whitespace/);
+    await expect(
+      port(stub).createLinkedIssue("OPS-6", { summary: "x", description: "y", labels: [" "] }),
+    ).rejects.toBeInstanceOf(JiraArgumentError);
+    expect(stub.calls).toHaveLength(0); // no half-created, unlabeled child
+  });
+
   it("keeps the orphan key when linking the child fails", async () => {
     const stub = stubFetch([{ status: 201, body: { id: "10020", key: "OPS-9" } }, { status: 404, body: {} }]);
     const error = await port(stub)
@@ -185,6 +196,19 @@ describe("JiraCloudWorkPort", () => {
     await expect(port(stub).verifyMembership(ACCOUNT_ID, "gate-approvers")).rejects.toBeInstanceOf(
       JiraMembershipUnresolvedError,
     );
+  });
+
+  it("raises on a page that claims more members but carries none — no silent deny", async () => {
+    const contradictory = stubFetch([{ body: { isLast: false, values: [] } }]);
+    const error = await port(contradictory)
+      .verifyMembership(ACCOUNT_ID, "gate-approvers")
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JiraMembershipUnresolvedError);
+    expect((error as JiraMembershipUnresolvedError).reason).toBe("contradictory_page");
+
+    // …while a legitimately empty last page still answers false, not an error.
+    const emptyGroup = stubFetch([{ body: { isLast: true, values: [] } }]);
+    await expect(port(emptyGroup).verifyMembership(ACCOUNT_ID, "gate-approvers")).resolves.toBe(false);
   });
 
   it("lists an issue's comments from the recorded page shape", async () => {

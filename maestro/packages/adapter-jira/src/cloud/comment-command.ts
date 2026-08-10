@@ -1,5 +1,5 @@
 import { CommandEnvelope, TicketKey } from "@maestro/contracts";
-import { adfToPlainText, isAdfDoc } from "../adf.js";
+import { adfToCommandLines, isAdfDoc } from "../adf.js";
 import { parseCommandBody, type CommandParseResult } from "../commands.js";
 import { normalizeJiraDateTime } from "../datetime.js";
 import { JiraArgumentError, JiraResponseError } from "../errors.js";
@@ -43,17 +43,20 @@ export function parseCommandFromComment(ticketKey: string, comment: unknown): Cl
   const resource = record(comment);
   if (!resource) throw new JiraResponseError("cloud comment", ["payload is not an object"]);
 
-  // Cloud comment bodies are ADF; a plain string is tolerated defensively.
-  const body = resource["body"];
-  const text = isAdfDoc(body) ? adfToPlainText(body) : typeof body === "string" ? body : "";
-
-  const parsed = parseCommandBody(text);
+  const parsed = parseCloudCommentBody(resource["body"]);
   if (parsed.status === "none") return NO_COMMAND;
 
   const created = resource["created"];
   const updated = resource["updated"];
   if (typeof created !== "string") throw new JiraResponseError("cloud comment", ["comment has no created timestamp"]);
-  if (typeof updated === "string" && updated !== created) return NO_COMMAND;
+  // Symmetric with the created guard, fail-closed: without an updated
+  // timestamp the comment cannot PROVE it was never edited, and an edited
+  // comment must never carry a command (the DC K-2 rule). A poller that
+  // strips fields gets a loud error, not a silently honoured approval.
+  if (typeof updated !== "string") {
+    throw new JiraResponseError("cloud comment", ["comment has no updated timestamp — cannot prove it is unedited"]);
+  }
+  if (updated !== created) return NO_COMMAND;
 
   if (parsed.status === "invalid") return { envelope: null, invalid: parsed };
 
@@ -69,6 +72,25 @@ export function parseCommandFromComment(ticketKey: string, comment: unknown): Cl
     }),
     invalid: null,
   };
+}
+
+/**
+ * M105 over ADF: the command grammar runs only when the FIRST visible line is
+ * plain, unstyled TOP-LEVEL paragraph text. A blockquote reply, a codeBlock
+ * sample or a code/link-styled "/approve" quotes a command instead of giving
+ * one — none of them may open a gate (the ADF face of the DC K-1 finding).
+ * Non-paragraph content still counts as visible lines, so a plain "/approve"
+ * followed by a quote or a code block stays a takes-no-argument rejection.
+ */
+function parseCloudCommentBody(body: unknown): CommandParseResult {
+  // A plain string body (legacy/defensive) has no styling to hide behind.
+  if (typeof body === "string") return parseCommandBody(body);
+  if (!isAdfDoc(body)) return { status: "none" };
+
+  const lines = adfToCommandLines(body);
+  const first = lines.find((line) => line.text.trim().length > 0);
+  if (first === undefined || !first.commandCapable) return { status: "none" };
+  return parseCommandBody(lines.map((line) => line.text).join("\n"));
 }
 
 /**

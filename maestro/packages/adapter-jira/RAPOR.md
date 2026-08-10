@@ -233,3 +233,20 @@ Aynı `WorkPort` arayüzünü uygulayan ikinci sürücü: **Jira Cloud**, REST v
 - Donmuş `packages/ports`/`contracts`'ta değişiklik istenmedi. Not (bloklamıyor): `WorkPort.parseCommand(rawBody)`
   webhook zarfı varsayar; yoklama modelinde Cloud sürücüsü bunu `{ticketKey|issue.key, comment}` zarfıyla
   karşılıyor — BFF yoklayıcısının bu zarfı kurması ya da doğrudan `parseCommandFromComment` çağırması yeterli.
+
+## doğrulayıcı düzeltmeleri
+
+Bağımsız doğrulayıcının jira-cloud turundaki 1, 2, 4 ve 6 numaralı bulguları kapatıldı
+(3, 5, 7 orkestratörde). Her düzeltmenin negatif testi var; paket kapısı yeşil
+(**13 dosya / 160 test**, +6).
+
+| # | Bulgu | Ne yapıldı | Negatif test |
+|---|---|---|---|
+| **1 — KRİTİK** | M105 ADF bypass: blockquote/codeBlock içindeki ya da code/link mark'lı `/approve` gerçek onay üretiyordu (DC K-1'in ADF hali) | `adf.ts`: yeni `adfToCommandLines` — her görünür satır `commandCapable` etiketiyle döner. Yalnız **top-level paragraph'ın marksız düz text düğümleri** komut-taşıyabilir; heading/codeBlock/panel/blockquote/liste/bilinmeyen kapsayıcı içeriği ve HERHANGİ bir mark (code/link/strong…) taşıyan ya da text-olmayan inline (mention…) içeren satırlar görünür kalır ama `commandCapable:false`. `comment-command.ts / parseCloudCommentBody`: ilk dolu satır komut-taşıyabilir değilse `none`; taşıyabilirse gramer tüm görünür satırlar üzerinde çalışır — düz `/approve` + arkasında alıntı/kod bloğu hâlâ `takes_no_argument` (tek-yorum kuralı bozulmadı). Düz string gövde eskisi gibi doğrudan gramere gider. | `comment-command.test.ts`: "never reads a command out of quoted, code or styled text" (blockquote'lu · codeBlock'lu · inline-code'lu · link-mark'lı · strong'lu · heading'li `/approve` → hepsi `none`), "still blocks a plain /approve trailed by quoted or code content" (→ `takes_no_argument`), "does not honour an /approve riding with invisible content" (mention'lı satır artık komut metni değil → `none`); `mapping.test.ts`: "tags only plain top-level paragraph text as command-capable". Düz paragraf `/approve` pozitifi aynen yeşil. |
+| **2 — ORTA** | `updated` alanı yoksa edited-comment kontrolü sessizce atlanıyordu (fail-open) | `comment-command.ts`: `created` muhafızıyla simetrik — komut taşıyan yorumda `updated` string değilse `JiraResponseError` ("cannot prove it is unedited"). Alanları map/filter eden bir poller K-2 deliğini sessizce geri açamaz; hata yüksek sesli. | `comment-command.test.ts`: "fails loudly when the updated timestamp is missing — unprovably unedited" (`updated` silinmiş `/approve` → throw, mesaj `updated` içerir; komut asla üretilmez). |
+| **4 — KÜÇÜK** | `values:[] · isLast:false` çelişkili üyelik sayfasında sessiz `false` (paketin O-6 kuralına aykırı) | `cloud/work-port.ts / verifyMembership`: `hasMorePages` kontrolü boş-sayfa kısa devresinin ÖNÜNE alındı; "sayfa devam var diyor ama üye taşımıyor" durumu `JiraMembershipUnresolvedError` (yeni `contradictory_page` nedeni, `errors.ts` union'ına eklendi) ile fail-loud. Meşru boş son sayfa (`isLast:true`) hâlâ `false`. | `work-port.test.ts`: "raises on a page that claims more members but carries none — no silent deny" (çelişkili sayfa → `contradictory_page` hatası; `isLast:true` boş sayfa → `false`). |
+| **6 — KÜÇÜK** | `createLinkedIssue` label'ları `setLabels`'ın boşluk/boş ön-kontrolünden geçmiyordu | Ortak `requireCleanLabels` yardımcısı çıkarıldı; `setLabels` VE `createLinkedIssue` aynı ön-kontrolü kullanıyor — hatalı label, çocuk issue yaratılmadan `JiraArgumentError` ile durur (yarım fan-out yok). | `work-port.test.ts`: "refuses fan-out labels Jira would reject, before any request" (`"iki kelime"` · `" "` → hata, sıfır istek). |
+
+Davranış notu (çağıranlar için): mark'lı/karışık satırdaki komut artık `invalid` değil `none`
+döner — güvenlik yönü aynı (onay üretilmez), yalnız BFF'in "hatalı komut" geri bildirimi
+düz-paragraf komutlarıyla sınırlıdır. `adfToPlainText` (açıklama düzleştirme) değişmedi.

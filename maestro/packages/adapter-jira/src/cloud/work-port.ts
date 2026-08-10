@@ -88,11 +88,7 @@ export class JiraCloudWorkPort implements WorkPort {
    */
   async setLabels(key: TicketKey, labels: string[]): Promise<void> {
     const issueKey = requireTicketKey(key, "key");
-    const desired = labels.map((label) => label.trim());
-    for (const label of desired) {
-      if (label.length === 0) throw new JiraArgumentError("labels", "empty label");
-      if (/\s/.test(label)) throw new JiraArgumentError("labels", `Jira labels cannot contain whitespace: "${label}"`);
-    }
+    const desired = requireCleanLabels(labels);
 
     const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}`, { fields: "labels" });
     const current = currentLabelsOf(raw);
@@ -131,6 +127,9 @@ export class JiraCloudWorkPort implements WorkPort {
     const projectKey = parentKey.split("-")[0];
     if (!projectKey) throw new JiraArgumentError("parent", "cannot derive project key");
     if (fields.summary.trim().length === 0) throw new JiraArgumentError("summary", "empty");
+    // Same pre-flight as setLabels — a label Jira would reject must not fail
+    // the whole create halfway through the fan-out.
+    const labels = fields.labels === undefined ? [] : requireCleanLabels(fields.labels);
 
     const created = await this.client.post<unknown>(`${API}/issue`, {
       fields: {
@@ -139,7 +138,7 @@ export class JiraCloudWorkPort implements WorkPort {
         // v3 wants ADF here too; plain text is wrapped into paragraphs.
         description: toAdfDocument(fields.description),
         issuetype: { name: this.config.childIssueTypeName },
-        ...(fields.labels && fields.labels.length > 0 ? { labels: fields.labels } : {}),
+        ...(labels.length > 0 ? { labels } : {}),
       },
     });
 
@@ -186,9 +185,18 @@ export class JiraCloudWorkPort implements WorkPort {
           .map((c) => c.trim().toLowerCase());
         if (candidates.includes(needle)) return true;
       }
-      if (values.length === 0) return false;
+      // Decide continuation from the page bean FIRST: an empty page that
+      // still claims more members is contradictory, and short-circuiting it
+      // to `false` would be a silent deny (the O-6 rule).
       startAt += values.length;
       if (!hasMorePages(body, startAt, group)) return false;
+      if (values.length === 0) {
+        throw new JiraMembershipUnresolvedError(
+          group,
+          "contradictory_page",
+          "the page claims more members but carries none — refusing a silent deny",
+        );
+      }
     }
     throw new JiraMembershipUnresolvedError(
       group,
@@ -272,6 +280,16 @@ function requireKey(value: unknown, context: string): TicketKey {
   const parsed = typeof key === "string" ? TicketKey.safeParse(key) : null;
   if (!parsed?.success) throw new JiraResponseError(context, ["response carries no usable issue key"]);
   return parsed.data;
+}
+
+/** Pre-flight shared by setLabels and createLinkedIssue: trim, refuse what Jira would reject. */
+function requireCleanLabels(labels: string[]): string[] {
+  const clean = labels.map((label) => label.trim());
+  for (const label of clean) {
+    if (label.length === 0) throw new JiraArgumentError("labels", "empty label");
+    if (/\s/.test(label)) throw new JiraArgumentError("labels", `Jira labels cannot contain whitespace: "${label}"`);
+  }
+  return clean;
 }
 
 function currentLabelsOf(raw: unknown): string[] {

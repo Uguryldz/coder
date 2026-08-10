@@ -142,6 +142,55 @@ function flattenNode(node: AdfNode): string {
 }
 
 /**
+ * One visible line of an ADF document, tagged with whether its text may carry
+ * a comment command (M105). Only the plain, unstyled text of a TOP-LEVEL
+ * paragraph is command-capable: a blockquote reply, a code sample, a heading
+ * or a code/link-styled "/approve" QUOTES a command instead of giving one.
+ * The quoted text still comes back as a visible line, so the "bare command
+ * must be the whole comment" check keeps seeing it as trailing content.
+ */
+export interface AdfLine {
+  text: string;
+  commandCapable: boolean;
+}
+
+export function adfToCommandLines(document: AdfDoc): AdfLine[] {
+  const lines: AdfLine[] = [];
+  for (const node of document.content) {
+    if (node.type === "paragraph") {
+      lines.push(...paragraphLines(node));
+      continue;
+    }
+    // Any other block — heading, codeBlock, panel, blockquote, lists, unknown
+    // containers — is context, never command text.
+    for (const text of flattenNode(node).split("\n")) lines.push({ text, commandCapable: false });
+  }
+  return lines;
+}
+
+function paragraphLines(node: AdfBlock): AdfLine[] {
+  const lines: AdfLine[] = [{ text: "", commandCapable: true }];
+  for (const child of node.content ?? []) {
+    if ((child.type as string) === "hardBreak") {
+      lines.push({ text: "", commandCapable: true });
+      continue;
+    }
+    const current = lines[lines.length - 1]!;
+    if (child.type === "text") {
+      current.text += child.text;
+      // Styled text — code, link, strong, ANY mark — is never command text.
+      if (child.marks && child.marks.length > 0) current.commandCapable = false;
+      continue;
+    }
+    // Non-text inline content (mention, emoji, media…): visible placeholder,
+    // and the line can no longer be a bare command.
+    current.text += flattenNode(child);
+    current.commandCapable = false;
+  }
+  return lines;
+}
+
+/**
  * Render ADF to Jira wiki markup, the only rich format REST v2 (DC) accepts.
  * Unknown node types degrade to their plain text rather than throwing — a
  * comment must never be lost because of a decoration we do not model.

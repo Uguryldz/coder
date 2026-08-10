@@ -81,6 +81,17 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   conflict: "error.conflict",
   // 500
   internal_error: "error.internal_error",
+  /**
+   * 503 — the route exists, the capability behind it does not.
+   *
+   * Distinct from 404 on purpose. `MaybeUnwired` reads a 404 as "this screen is
+   * not published yet", which is the wrong sentence for `/eval`, `/cache` and
+   * `/greenfield`: those endpoints ARE published and answer honestly that
+   * nothing writes the data they would read. Without this line the screen falls
+   * back to the generic `error.unexpected` and the distinction is lost on the
+   * one person it was made for.
+   */
+  capability_not_wired: "error.capability_not_wired",
 };
 
 export function errorMessageKey(code: string): string {

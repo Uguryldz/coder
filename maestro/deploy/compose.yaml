@@ -74,6 +74,14 @@ x-node-env: &node-env
   SCAN_IMAGE_TRIVY: ${SCAN_IMAGE_TRIVY}
   SCAN_IMAGE_SEMGREP: ${SCAN_IMAGE_SEMGREP}
   SCAN_IMAGE_GITLEAKS: ${SCAN_IMAGE_GITLEAKS}
+  # The engineering turn's sandbox image (M21/M27). Optional and empty by
+  # default: unset, the worker keeps a NARROW refusal for step 6a rather than
+  # inventing a fleet. It was missing from this anchor entirely, so a pilot
+  # team could set it in `.env`, see it accepted, and still get "no sandbox
+  # fleet is configured" — the variable never reached the container.
+  RUNNER_IMAGE_LINUX: ${RUNNER_IMAGE_LINUX:-}
+  RUNNER_COMMAND_TIMEOUT_SECONDS: ${RUNNER_COMMAND_TIMEOUT_SECONDS:-1800}
+  DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
   # Identity (M8). `local` unless the deployment selects the LDAPS driver;
   # none of these carry a credential — the service password is a REF below.
   IDENTITY_DRIVER: ${IDENTITY_DRIVER:-local}

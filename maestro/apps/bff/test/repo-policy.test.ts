@@ -87,9 +87,15 @@ describe("GET /repo-policy", () => {
     const { policies } = response.json();
     expect(policies[0].yaml).toContain("pnpm");
     expect(policies[0].yaml).toContain("lint");
-    // The app whose file was never read renders an explanation, not an empty
-    // but valid-looking document with invented build commands.
-    expect(policies[1].yaml).toContain("has not been observed");
+    expect(policies[0].yamlPresent).toBe(true);
+
+    // The app whose file was never read sends the FACT, not an explanation.
+    // It used to render six lines of English YAML comments, which landed
+    // untranslated on a Turkish screen; the screen now writes that sentence
+    // from its own catalog (`yaml.absent.*`). Empty is not "we invented an
+    // empty config" — `yamlPresent: false` is what says which it is.
+    expect(policies[1].yamlPresent).toBe(false);
+    expect(policies[1].yaml).toBe("");
     expect(policies[1].yaml).not.toContain("pnpm");
   });
 

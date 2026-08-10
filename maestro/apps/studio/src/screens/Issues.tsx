@@ -5,6 +5,7 @@ import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Input, Table } from "../ui/index.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
+import { useEnumLabel } from "./common/label.ts";
 import { bySeverity, severityTone, toSeverity } from "./shared/severity.ts";
 
 /**
@@ -20,7 +21,9 @@ interface Decision {
   /** Masterplan reference, e.g. "M44". */
   readonly ref: string;
   readonly question: string;
-  readonly decision: string;
+  /** The audit action and who took it; the sentence is composed here. */
+  readonly action: string;
+  readonly actor: string;
   readonly severity: string;
   readonly status: string;
   readonly decidedAt: string;
@@ -29,6 +32,7 @@ interface Decision {
 export function IssuesScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
   const [filter, setFilter] = useState("");
 
   const query = useQuery({
@@ -43,9 +47,14 @@ export function IssuesScreen(): ReactNode {
       ? all
       : all.filter(
           (d) =>
-            d.ref.toLowerCase().includes(needle) ||
-            d.question.toLowerCase().includes(needle) ||
-            d.decision.toLowerCase().includes(needle),
+            // Matched against what the operator can SEE. Filtering on the raw
+            // action while the column shows "Kapı onaya açıldı" would make a
+            // search for the visible words return nothing; the raw enum is
+            // still matched so an engineer's `GATE_OPEN` keeps working.
+            enumLabel("audit.action", d.action).text.toLowerCase().includes(needle) ||
+            d.action.toLowerCase().includes(needle) ||
+            d.actor.toLowerCase().includes(needle) ||
+            d.question.toLowerCase().includes(needle),
         );
   const rows = bySeverity(matched, (d) => d.severity);
 
@@ -75,7 +84,10 @@ export function IssuesScreen(): ReactNode {
               {
                 key: "ref",
                 header: t("issues.col.ref"),
-                cell: (row: Decision) => <Badge tone="blue">{row.ref}</Badge>,
+                cell: (row: Decision) => {
+                  const label = enumLabel("audit.action", row.ref);
+                  return <Badge tone={label.unknown ? "gray" : "blue"}>{label.text}</Badge>;
+                },
               },
               {
                 key: "severity",
@@ -87,8 +99,23 @@ export function IssuesScreen(): ReactNode {
                 ),
               },
               { key: "question", header: t("issues.col.question"), cell: (row) => row.question },
-              { key: "decision", header: t("issues.col.decision"), cell: (row) => row.decision },
-              { key: "status", header: t("issues.col.status"), cell: (row) => row.status },
+              {
+                key: "decision",
+                header: t("issues.col.decision"),
+                // Composed HERE, from two machine fields, rather than received
+                // pre-joined: that is what let `GATE_OPEN · maestro-worker`
+                // reach an auditor untranslated.
+                cell: (row) =>
+                  t("issues.decision_by", {
+                    action: enumLabel("audit.action", row.action).text,
+                    actor: row.actor,
+                  }),
+              },
+              {
+                key: "status",
+                header: t("issues.col.status"),
+                cell: (row) => enumLabel("issues.status", row.status).text,
+              },
               { key: "at", header: t("issues.col.at"), cell: (row) => row.decidedAt },
             ]}
             rows={rows}

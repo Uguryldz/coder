@@ -73,7 +73,23 @@ export function YamlScreen(): ReactNode {
                     }
                   >
                     <p className="scr-mini">{t("yaml.read_only")}</p>
-                    <pre className="scr-code">{policy.yaml}</pre>
+                    {/*
+                      No file observed: say so in the operator's language rather
+                      than rendering the empty string, and rather than printing
+                      the block of English YAML comments the server used to
+                      send. `yamlPresent === false` is the explicit signal; a
+                      build talking to an older BFF (field absent) falls back to
+                      showing whatever `yaml` carried, which is what it did
+                      before.
+                    */}
+                    {policy.yamlPresent === false ? (
+                      <div className="scr-note scr-note--warn">
+                        <strong>{t("yaml.absent.title")}</strong>
+                        <p className="scr-mini">{t("yaml.absent.body")}</p>
+                      </div>
+                    ) : (
+                      <pre className="scr-code">{policy.yaml}</pre>
+                    )}
                   </Card>
 
                   <ProtectedPaths policy={policy} />

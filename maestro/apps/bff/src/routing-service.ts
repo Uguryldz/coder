@@ -52,8 +52,16 @@ export type RoutingUpdate = z.infer<typeof RoutingUpdate>;
  */
 export interface PolicyRuleView {
   ruleId: string;
-  /** The condition in words, resolved server-side so the screen renders one string. */
-  condition: string;
+  /**
+   * The condition as a CATALOG KEY plus its substitutions (M104).
+   *
+   * It used to be the finished sentence (`dataClass = gizli`), rendered here
+   * "so the same sentence appears identically on the cost and llm screens".
+   * One place still decides what it says — it now decides in keys, so the
+   * sentence is identical AND readable in the operator's language.
+   */
+  conditionKey: string;
+  conditionParams?: Readonly<Record<string, string>>;
   backend: string;
   model: string;
   /** `ok` | `queued` | `degraded` | `blocked` — the shared outcome vocabulary. */
@@ -110,7 +118,8 @@ export async function updateRouting(
 function policyRules(policy: DataClassPolicy): readonly PolicyRuleView[] {
   const rules: PolicyRuleView[] = DATA_CLASSES.map((dataClass) => ({
     ruleId: `dataclass:${dataClass}`,
-    condition: `dataClass = ${dataClass}`,
+    conditionKey: "routing.policy.condition.data_class",
+    conditionParams: { dataClass },
     backend: policy.backendByClass[dataClass],
     model: policy.backendByClass[dataClass],
     // A class that resolves to a backend is served. `gizli` on `onprem` is
@@ -121,7 +130,8 @@ function policyRules(policy: DataClassPolicy): readonly PolicyRuleView[] {
 
   rules.push({
     ruleId: "dataclass:onprem_missing",
-    condition: `backend = ${policy.backendByClass.gizli} unavailable`,
+    conditionKey: "routing.policy.condition.backend_unavailable",
+    conditionParams: { backend: policy.backendByClass.gizli },
     backend: policy.backendByClass.gizli,
     model: policy.backendByClass.gizli,
     outcome: fallbackOutcome(policy.whenOnpremMissing, policy.backendByClass.gizli),

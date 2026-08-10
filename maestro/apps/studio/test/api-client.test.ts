@@ -105,6 +105,58 @@ describe("ApiClient", () => {
     expect(errorMessageKey("something_the_bff_invented")).toBe("error.unexpected");
   });
 
+  /**
+   * Every code the BFF can THROW has an entry — read from the BFF's source.
+   *
+   * The test above cannot catch a missing code: `knownErrorCodes()` returns the
+   * keys of the very table it checks, so it iterates the table to test the
+   * table and passes no matter what the server does. That tautology is how
+   * `project_already_bound` reached a bank operator as "Beklenmeyen bir hata
+   * oluştu" while the BFF was answering with the project key and its state.
+   *
+   * This one greps the actual `throw` sites, so a new code added to the BFF
+   * without a catalog entry fails HERE rather than in front of an operator.
+   */
+  it("covers every error code the BFF actually throws", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const bffSrc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "bff", "src");
+
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (full.endsWith(".ts")) files.push(full);
+      }
+    };
+    walk(bffSrc);
+    // Guard the guard: a wrong path would make this test pass by finding
+    // nothing at all, which is the failure mode of every grep-based check.
+    expect(files.length).toBeGreaterThan(20);
+
+    // `badRequest("code")`, `conflict("code")`, `notFound("code")`, … — the
+    // helpers in apps/bff/src/errors.ts. Only literal first arguments are
+    // matched; a computed code cannot be enumerated statically and none exist.
+    const thrower = /\b(?:badRequest|conflict|notFound|forbidden|unauthenticated|unavailable)\(\s*"([a-z0-9_]+)"/g;
+
+    const thrown = new Set<string>();
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const match of source.matchAll(thrower)) {
+        if (match[1] !== undefined) thrown.add(match[1]);
+      }
+    }
+    expect(thrown.size).toBeGreaterThan(20);
+
+    const known = new Set(knownErrorCodes());
+    const uncovered = [...thrown].filter((code) => !known.has(code)).sort();
+
+    expect(uncovered, `BFF codes with no Studio catalog entry: ${uncovered.join(", ")}`).toEqual([]);
+  });
+
   it("never leaks a server body as prose", async () => {
     // A proxy error page, not JSON: must become a code, not HTML on screen.
     const fetchImpl = vi.fn(

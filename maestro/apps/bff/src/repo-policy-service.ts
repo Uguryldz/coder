@@ -118,27 +118,29 @@ export function removeRepoAddition(
  * build commands would be the platform inventing a repo's configuration and
  * showing it back as fact.
  *
- * When no run has ever read the file, the body says so in a comment rather than
- * rendering an empty-but-valid document. M52 stops the flow when the file is
- * missing; the screen has to show the same thing.
+ * When no run has ever read the file this returns "" and the WIRE says so
+ * separately (`yamlPresent`). It used to return a six-line English comment
+ * block explaining the absence, which put untranslated prose on a Turkish
+ * screen — the BFF does not send sentences (M104). The explanation is the
+ * screen's to render, from its own catalog, in the operator's language. M52
+ * still stops the flow when the file is missing; the screen still shows it.
  */
 export function renderPolicyYaml(record: RepoPolicyRecord): string {
-  if (!record.yamlPresent) {
-    return [
-      `# .maestro.yaml has not been observed in ${record.repo}.`,
-      "#",
-      "# No run has read this repository's policy file yet, or the file is absent.",
-      "# Nothing is rendered here because the platform does not have a copy —",
-      "# the file is the team's, and inventing build commands would be a guess",
-      "# an agent would then execute (M52).",
-    ].join("\n");
-  }
+  if (!record.yamlPresent) return "";
 
   const lines: string[] = [`platform: ${record.platform}`, ""];
 
+  // The KEYS below are the repository's own YAML vocabulary and stay verbatim
+  // — `verification:` is what the file says, not a label this platform chose,
+  // and translating it would show an operator a document that does not match
+  // what is checked in. The explanatory COMMENTS that used to trail each empty
+  // list were this platform's prose, not the repo's, so they moved to the
+  // screen's catalog (`yaml.empty_*`, `yaml.note.defaults`) where they can be
+  // read in Turkish. An empty `[]` still renders, because "the file declares
+  // none" is a fact about the file.
   lines.push("verification:");
   if (record.verification.length === 0) {
-    lines.push("  [] # the file declares no verification commands");
+    lines.push("  []");
   } else {
     for (const spec of record.verification) {
       lines.push(`  - name: ${spec.name}`);
@@ -148,15 +150,10 @@ export function renderPolicyYaml(record: RepoPolicyRecord): string {
 
   lines.push("", "protected_paths:");
   if (record.repoAdditions.length === 0) {
-    lines.push("  [] # this repo adds nothing to the platform deny-list");
+    lines.push("  []");
   } else {
     for (const path of record.repoAdditions) lines.push(`  - ${JSON.stringify(path)}`);
   }
 
-  lines.push(
-    "",
-    `# ${PLATFORM_DEFAULT_PATHS.length} platform defaults apply on top of this list`,
-    "# and cannot be removed by a repository (M52).",
-  );
   return lines.join("\n");
 }

@@ -333,14 +333,31 @@ export interface RoutingProjectView {
    * browser opened it. The screens own these names.
    */
   apps: readonly string[];
-  /** Catalog-free note built from the binding's own state. */
-  note: string;
+  /**
+   * What the binding's state means for tickets arriving now, as a CATALOG KEY
+   * (`routing.note.active_auto`, `routing.note.draft`, …) plus the parameters
+   * the sentence needs.
+   *
+   * It used to be the finished English sentence. That put "every ticket starts
+   * a run" and `draft: not yet bound` verbatim into the NOT column of a Turkish
+   * screen — the BFF does not send sentences (M104). The key travels; the
+   * screen renders it in the operator's language, the same way the `mode` and
+   * `run.status` columns beside it already do.
+   */
+  noteKey: string;
+  /** Substitutions for `noteKey` — the trigger label, or the unknown state. */
+  noteParams?: Readonly<Record<string, string>>;
 }
 
 export interface RoutingRuleView {
   ruleId: string;
-  /** The condition, already rendered readable by the store that owns the shape. */
-  condition: string;
+  /**
+   * The condition as a CATALOG KEY (`routing.condition.always`,
+   * `routing.condition.component`, …) plus its substitutions — same reason as
+   * `noteKey` above: this column used to arrive as English prose.
+   */
+  conditionKey: string;
+  conditionParams?: Readonly<Record<string, string>>;
   /** Where the rule sends the ticket: an application id, or the queue. */
   effect: string;
   priority: number;

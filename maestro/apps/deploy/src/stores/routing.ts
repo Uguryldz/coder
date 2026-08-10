@@ -77,6 +77,7 @@ export class PrismaRoutingReader implements RoutingReader {
         if (appId !== null) apps.add(appId);
       }
 
+      const note = notePhrase(row);
       return {
         projectKey: row.projectKey,
         // The screen's vocabulary is `auto` | `label` | `command`, which is the
@@ -85,7 +86,11 @@ export class PrismaRoutingReader implements RoutingReader {
         // screen needs to know WHICH opt-in gesture their project uses.
         trigger: TRIGGERS.includes(row.trigger) ? row.trigger : "command",
         apps: [...apps].sort(),
-        note: noteOf(row),
+        noteKey: note.key,
+        // Omitted rather than sent as `undefined`: the wire schema marks it
+        // optional, and a present-but-undefined field serialises as `null`,
+        // which the screen would have to special-case.
+        ...(note.params === undefined ? {} : { noteParams: note.params }),
       };
     });
   }
@@ -94,16 +99,20 @@ export class PrismaRoutingReader implements RoutingReader {
     const rows = await this.ruleRows.findMany({
       orderBy: [{ priority: "asc" }, { ruleId: "asc" }],
     });
-    return rows.map((row) => ({
-      ruleId: row.ruleId,
-      condition: conditionText(row.conditionJson),
-      effect: appIdOf(row.effectJson) ?? "assignment queue",
-      priority: row.priority,
-      // `"*"` is how the contract spells the org-wide scope the column stores
-      // as NULL. The translation happens once, here, so no caller invents a
-      // second sentinel.
-      projectKey: row.projectKey ?? "*",
-    }));
+    return rows.map((row) => {
+      const condition = conditionPhrase(row.conditionJson);
+      return {
+        ruleId: row.ruleId,
+        conditionKey: condition.key,
+        ...(condition.params === undefined ? {} : { conditionParams: condition.params }),
+        effect: appIdOf(row.effectJson) ?? "assignment queue",
+        priority: row.priority,
+        // `"*"` is how the contract spells the org-wide scope the column stores
+        // as NULL. The translation happens once, here, so no caller invents a
+        // second sentinel.
+        projectKey: row.projectKey ?? "*",
+      };
+    });
   }
 }
 
@@ -117,27 +126,42 @@ function appIdOf(value: unknown): string | null {
   return typeof appId === "string" && appId.length > 0 ? appId : null;
 }
 
+/** A catalog key plus the substitutions its sentence needs (M104). */
+interface Phrase {
+  key: string;
+  params?: Readonly<Record<string, string>>;
+}
+
 /**
- * `RuleCondition` in words.
+ * `RuleCondition` as a catalog key.
  *
- * Rendered server-side so the same rule reads identically wherever it appears,
- * and so an unknown condition type says so instead of rendering as an empty
- * cell — a blank condition looks like a rule that matches nothing, when a
- * condition type this code does not recognise may well match everything.
+ * This used to return the finished English sentence, with a comment arguing it
+ * was "rendered server-side so the same rule reads identically wherever it
+ * appears". That is true and it is also how `component = odeme` and `every
+ * ticket` ended up untranslated in a Turkish table: identical everywhere
+ * includes identically English. Sending the key keeps the single source of
+ * truth AND lets each screen render it in the reader's language.
+ *
+ * An unrecognised type still says so rather than rendering an empty cell — a
+ * blank condition looks like a rule that matches nothing, when a condition type
+ * this code does not recognise may well match everything.
  */
-function conditionText(value: unknown): string {
-  if (typeof value !== "object" || value === null) return "unreadable condition";
+function conditionPhrase(value: unknown): Phrase {
+  if (typeof value !== "object" || value === null) return { key: "routing.condition.unreadable" };
   const record = value as Record<string, unknown>;
   const type = record["type"];
 
-  if (type === "always") return "every ticket";
+  if (type === "always") return { key: "routing.condition.always" };
   if (type === "component" && typeof record["component"] === "string") {
-    return `component = ${record["component"]}`;
+    return { key: "routing.condition.component", params: { value: record["component"] } };
   }
   if (type === "label" && typeof record["label"] === "string") {
-    return `label = ${record["label"]}`;
+    return { key: "routing.condition.label", params: { value: record["label"] } };
   }
-  return `unknown condition type: ${typeof type === "string" ? type : "(none)"}`;
+  return {
+    key: "routing.condition.unknown_type",
+    params: { value: typeof type === "string" ? type : "(none)" },
+  };
 }
 
 /**
@@ -148,22 +172,22 @@ function conditionText(value: unknown): string {
  * who reads that as "broken" will go looking for a fault, while one who reads
  * it as "active" will wonder why no run started.
  */
-function noteOf(row: RoutingBindingRow): string {
+function notePhrase(row: RoutingBindingRow): Phrase {
   switch (row.state) {
     case "active":
       return row.trigger === "auto"
-        ? "every ticket starts a run"
-        : `waits for the "${row.triggerLabel}" label or /ai-start`;
+        ? { key: "routing.note.active_auto" }
+        : { key: "routing.note.active_label", params: { label: row.triggerLabel } };
     case "dry_run":
-      return "dry run: matched, recorded, no run started";
+      return { key: "routing.note.dry_run" };
     case "paused":
-      return "paused: deliveries are accepted and dropped";
+      return { key: "routing.note.paused" };
     case "draft":
-      return "draft: not yet bound";
+      return { key: "routing.note.draft" };
     case "unbound":
-      return "unbound: deliveries are dropped";
+      return { key: "routing.note.unbound" };
     default:
-      return `unrecognised binding state "${row.state}" — treated as not live`;
+      return { key: "routing.note.unrecognised", params: { state: row.state } };
   }
 }
 

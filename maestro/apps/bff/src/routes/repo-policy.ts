@@ -30,7 +30,23 @@ const PolicyBody = z.object({
   appId: z.string(),
   platform: z.string(),
   repo: z.string(),
+  /**
+   * The rendered file, or "" when no run has observed one.
+   *
+   * Empty rather than a comment block explaining the absence: that explanation
+   * is a SENTENCE to a user, and the BFF does not send sentences (M104). The
+   * screen renders it from its own catalog, in the operator's language —
+   * previously this string arrived in English on a Turkish screen.
+   */
   yaml: z.string(),
+  /**
+   * Whether a run has ever read this repository's `.maestro.yaml`.
+   *
+   * Carried explicitly instead of being inferred from `yaml === ""`: a file
+   * that exists but declares nothing is a real and different state from a file
+   * nobody has seen, and M52 stops the flow only for the second.
+   */
+  yamlPresent: z.boolean(),
   protectedPaths: z.object({
     platformDefaults: z.array(z.string()),
     repoAdditions: z.array(z.string()),
@@ -226,6 +242,7 @@ function toWire(record: RepoPolicyRecord): z.input<typeof PolicyBody> {
     platform: record.platform,
     repo: record.repo,
     yaml: renderPolicyYaml(record),
+    yamlPresent: record.yamlPresent,
     protectedPaths: {
       platformDefaults: [...PLATFORM_DEFAULT_PATHS],
       repoAdditions: [...record.repoAdditions],

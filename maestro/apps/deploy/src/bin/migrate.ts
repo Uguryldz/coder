@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { assertPostgresUrl, createDb, PRISMA_SCHEMA_RELATIVE_PATH } from "@maestro/db";
+import {
+  assertPostgresUrl,
+  createDb,
+  PRISMA_SCHEMA_RELATIVE_PATH,
+  seedAnalysisTemplate,
+} from "@maestro/db";
 import { loadDeployEnv } from "../env.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
 
@@ -51,6 +56,26 @@ export async function main(): Promise<void> {
     console.info("[maestro] migration lock acquired, applying migrations");
     await runPrismaDeploy(url);
     console.info("[maestro] migrations applied");
+
+    /**
+     * Publish version 1 of the analysis template if nobody has published one.
+     *
+     * Here rather than in the seed CLI because this is the path EVERY
+     * deployment runs — the seed CLI is opt-in and the demo half of it must
+     * never touch a bank's database. Inside the advisory lock for the same
+     * reason the migration is: N replicas start at once, and this writes.
+     *
+     * A platform with no template answers `GET /template` with 404 and renders
+     * a designer screen that says "henüz yayında değil", which is what a pilot
+     * team saw. Seeding is skipped the moment a template exists, so a bank on
+     * version 4 stays on version 4 (M83).
+     */
+    const template = await seedAnalysisTemplate(db);
+    console.info(
+      template.seeded
+        ? `[maestro] analysis template v1 published (${String(template.sections)} sections)`
+        : "[maestro] analysis template already published, leaving it alone",
+    );
   } finally {
     // Releasing explicitly rather than relying on disconnect keeps the window
     // short when the client is pooled; `$disconnect` would do it anyway.

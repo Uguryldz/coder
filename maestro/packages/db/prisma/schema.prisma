@@ -638,6 +638,32 @@ model DocTemplateOutputRow {
   @@index([at])
 }
 
+/// A published ANALYSIS template version (M108), one row per publish.
+///
+/// Not to be confused with `DocTemplateVersion` above: that one is the Word
+/// file an analysis is RENDERED into, this one is the set of questions the
+/// analysis is asked to ANSWER. They version independently — a bank may
+/// restyle its document without changing what an analyst must write.
+///
+/// Append-only for the same reason as every other versioned table here: the
+/// template is what an approved analysis was JUDGED against (M83). Rewriting
+/// version 4 would silently restate a question a human already signed off on,
+/// and a run pinned to version 4 must keep reading version 4 after 5 lands.
+/// `version` is the primary key, so "two authors cannot both publish version
+/// 5 with one draft silently lost" is the database's rule, not the app's.
+model AnalysisTemplateVersion {
+  version     Int      @id
+  name        String   @db.VarChar(200)
+  /// The designed sections, in author order — TemplateSection[]. Stored as one
+  /// document rather than a child table on purpose: a version is read whole,
+  /// never queried by section, and the section list IS the unit that must stay
+  /// immutable together. A child table would let a stray DELETE remove one
+  /// question from a version an auditor already accepted.
+  sectionsJson Json
+  publishedBy String   @db.VarChar(128)
+  publishedAt DateTime @db.Timestamptz(3)
+}
+
 // MVP local users (M8); AD/LDAP arrives in Aşama 2.
 model User {
   id           String  @id @db.VarChar(64)

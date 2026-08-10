@@ -15,8 +15,26 @@ prod pilotu (analiz → onay → Word/PDF → Jira) uçtan uca çalışsın.
 - Canlı doğrulanan zincir: yanlış parola→401 · webhook imzasız→401 · `/studio/runs`→22 kayıt ·
   `/studio/audit/verification`→`{"ok":true,"checked":76}` · viewer→admin ucu 403 · `limit=5000`→400.
 
+## Son dalga (prod pilotu öncesi dört eksik) — BİTTİ
+`RAPOR-son-eksikler.md`'ye bak. Özet:
+1. **Analiz şablonu kalıcı.** Migration **0007** (`AnalysisTemplateVersion`, append-only trigger),
+   `PrismaTemplateStore`, ve installer'ın yayınladığı **v1 varsayılan şablonu** (8 bölüm).
+   `templates` artık `VOLATILE_STORES`'ta DEĞİL.
+2. **Türkçe sızıntıları kapandı.** BFF artık cümle değil **katalog anahtarı** gönderiyor
+   (`routing.note.*`, `routing.condition.*`, decisions `action`+`actor` ayrı alanlar,
+   `yamlPresent` bayrağı). `mode.*` katalogda ham enum'du → düzeltildi. Yeni aileler:
+   `audit.action.*` (26), `pii.kind/strategy.*`, `issues.status.*`. tr+en **1523 anahtar, parite**.
+3. **Hata kataloğu.** Studio `ERROR_KEYS`'e **51 kod** eklendi. Eski test kendi tablosunu
+   kendisiyle doğruluyordu (totoloji); yerine BFF'in `throw` noktalarını tarayan **gerçek** test.
+4. **Prod imajı.** `.env.example`'a `RUNNER_IMAGE_LINUX` bölümü; compose anchor'ında
+   **yoktu** — set edilse bile worker'a ulaşmıyordu, eklendi. `deploy/SURUM-NOTU.md` yazıldı.
+
+**Yol boyunca bulunan gerçek hata:** compose `${VAR:-}` **boş string** yollar, `.min(1)` bunu
+reddediyordu → `RUNNER_IMAGE_LINUX` set edilmeyince **worker boot'ta çökerdi**. `optionalSetting()`
+eklendi (scanner imajları da aynı tuzaktaydı).
+
 ## Devam eden
-Yok. Son iş: eksik uç envanteri çıkarıldı (aşağıda), kullanıcıya sunuldu, **onay bekleniyor**.
+Yok.
 
 ## Sıradaki adım
 Kullanıcı onay verirse: 14 ucu paralel ajanlarla yaz. Öncelik sırası —

@@ -268,14 +268,16 @@ export const TEST_ROUTING_PROJECTS: readonly RoutingProjectView[] = [
     projectKey: "UGURPAY",
     trigger: "label",
     apps: ["odeme-api"],
-    note: 'waits for the "maestro" label or /ai-start',
+    noteKey: "routing.note.active_label",
+    noteParams: { label: "maestro" },
   },
 ];
 
 export const TEST_ROUTING_RULES: readonly RoutingRuleView[] = [
   {
     ruleId: "pay-component",
-    condition: "component = odeme",
+    conditionKey: "routing.condition.component",
+    conditionParams: { value: "odeme" },
     effect: "odeme-api",
     priority: 10,
     projectKey: "UGURPAY",

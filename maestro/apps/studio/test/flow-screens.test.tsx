@@ -293,7 +293,11 @@ describe("tickets", () => {
     // step 6a on the running row, translated from the contract's step table
     expect(screen.getAllByText("6a").length).toBeGreaterThan(0);
     expect(screen.getAllByText("orta").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("ai_assist").length).toBeGreaterThan(0);
+    // TRANSLATED, not `ai_assist`. This assertion used to require the raw
+    // enum, which is how the same table came to show a Turkish risk ("orta")
+    // beside an English mode — two languages in two adjacent columns.
+    expect(screen.getAllByText("AI destekli").length).toBeGreaterThan(0);
+    expect(screen.queryByText("ai_assist")).not.toBeInTheDocument();
   });
 
   /**
@@ -754,12 +758,29 @@ describe("workmode", () => {
     });
   });
 
-  it("renders every mode from the frozen WorkMode enum", () => {
+  /**
+   * Every mode is rendered, and rendered TRANSLATED.
+   *
+   * The enum drives the loop — that is the part worth keeping, because it is
+   * what fails when `WorkMode` gains a member nobody wired up. What changed is
+   * the expected text: asserting the raw `full_auto` was appearing on screen
+   * had frozen the leak into the suite, so the bug could not be fixed without
+   * a test going red. It went red; this is the corrected expectation.
+   */
+  it("renders every mode from the frozen WorkMode enum, translated", () => {
     const stub = stubFetch({});
     renderScreen(<WorkmodeScreen />, { fetchImpl: stub.fetchImpl });
 
-    for (const mode of ["full_auto", "ai_assist", "human_lead", "human_only"]) {
-      expect(screen.getAllByText(mode).length).toBeGreaterThan(0);
+    const translated: Readonly<Record<string, string>> = {
+      full_auto: "Tam otomatik",
+      ai_assist: "AI destekli",
+      human_lead: "İnsan öncülüğünde",
+      human_only: "Yalnız insan",
+    };
+
+    for (const [mode, label] of Object.entries(translated)) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+      expect(screen.queryByText(mode)).not.toBeInTheDocument();
     }
   });
 });

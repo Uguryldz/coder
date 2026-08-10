@@ -233,12 +233,35 @@ describe("GET /routing", () => {
       rules: Record<string, unknown>[];
     };
 
-    for (const field of ["projectKey", "trigger", "apps", "note"]) {
+    for (const field of ["projectKey", "trigger", "apps", "noteKey"]) {
       expect(body.projects[0]).toHaveProperty(field);
     }
-    for (const field of ["ruleId", "condition", "backend", "model", "outcome"]) {
+    for (const field of ["ruleId", "conditionKey", "backend", "model", "outcome"]) {
       expect(body.rules[0]).toHaveProperty(field);
     }
+  });
+
+  /**
+   * The leak that produced these keys: `note` and `condition` used to be
+   * finished English sentences, printed verbatim into a Turkish table
+   * ("every ticket starts a run", `draft: not yet bound`). The BFF does not
+   * send sentences (M104) — it sends the key and the screen renders it.
+   */
+  it("sends catalog KEYS for the note and the condition, never prose", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    await seedPolicy(h);
+
+    const body = (await get(h, "/routing", token)).json() as {
+      projects: { noteKey: string }[];
+      rules: { conditionKey: string }[];
+    };
+
+    expect(body.projects[0]?.noteKey).toMatch(/^routing\.note\./);
+    expect(body.rules[0]?.conditionKey).toMatch(/^routing\.policy\.condition\./);
+    // No whitespace: a key is an identifier, a sentence has spaces in it.
+    expect(body.projects[0]?.noteKey).not.toMatch(/\s/);
+    expect(body.rules[0]?.conditionKey).not.toMatch(/\s/);
   });
 
   it("refuses rather than inventing a policy when the parameter is not seeded", async () => {

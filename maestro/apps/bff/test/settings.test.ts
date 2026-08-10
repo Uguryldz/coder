@@ -307,6 +307,30 @@ describe("GET /routing", () => {
       "degraded",
     );
   });
+
+  /**
+   * The raw policy round-trips VERBATIM, so the editor never has to reconstruct
+   * a fallback from a rendered outcome.
+   *
+   * `degrade_ai_assist` and `masked_cloud` both render as the SAME `degraded`
+   * outcome, so a screen guessing the fallback from a rule would be unable to
+   * tell them apart — and a guessed value PUT back on an untouched save
+   * silently downgrades the stored policy, past two approvers who only ever saw
+   * the fabricated value. The screen depends on this raw field; a regression on
+   * either side must fail here, not in a browser.
+   */
+  it("exposes the stored whenOnpremMissing verbatim, not just the lossy outcome", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    await seedPolicy(h, { whenOnpremMissing: "block" });
+
+    const body = (await get(h, "/routing", token)).json() as {
+      policy: { backendByClass: Record<string, string>; whenOnpremMissing: string };
+    };
+
+    expect(body.policy.whenOnpremMissing).toBe("block");
+    expect(body.policy.backendByClass.gizli).toBe("onprem");
+  });
 });
 
 describe("PUT /routing", () => {

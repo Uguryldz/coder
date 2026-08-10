@@ -323,6 +323,14 @@ describe("notify screen", () => {
               lastActionKey: null,
             },
           ],
+          routing: { default: ["teams"], byEvent: {} },
+          ladderRaw: {
+            steps: [
+              { id: "reminder-24h", afterHours: 24, channel: "jira", event: "gate_reminder", action: "notify" },
+            ],
+            businessHoursOnly: false,
+            calendar: {},
+          },
         },
       },
     ]);

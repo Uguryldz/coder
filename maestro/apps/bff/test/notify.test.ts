@@ -227,6 +227,8 @@ describe("GET /notify (M45/M88)", () => {
       ladder: Record<string, unknown>[];
       delegations: Record<string, unknown>[];
       waiting: Record<string, unknown>[];
+      routing: Record<string, unknown>;
+      ladderRaw: { steps: Record<string, unknown>[]; businessHoursOnly: unknown };
     };
 
     for (const field of ["afterHours", "channels", "kind"]) {
@@ -237,6 +239,14 @@ describe("GET /notify (M45/M88)", () => {
     }
     for (const field of ["ticketKey", "step", "waitingHours", "lastActionKey"]) {
       expect(body.waiting[0]).toHaveProperty(field);
+    }
+    // The routing map and the RAW ladder round-trip to the editor. The raw
+    // ladder must carry the per-step `id` — a projected rung has none, and the
+    // editor needs it to change a threshold without re-escalating open gates.
+    expect(body.routing).toHaveProperty("default");
+    expect(body.ladderRaw).toHaveProperty("businessHoursOnly");
+    for (const field of ["id", "afterHours", "channel", "event"]) {
+      expect(body.ladderRaw.steps[0]).toHaveProperty(field);
     }
   });
 

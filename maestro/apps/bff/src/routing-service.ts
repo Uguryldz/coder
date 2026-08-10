@@ -71,6 +71,20 @@ export interface PolicyRuleView {
 export interface RoutingView {
   projects: readonly RoutingProjectView[];
   rules: readonly PolicyRuleView[];
+  /**
+   * The stored policy verbatim, so the editor round-trips it EXACTLY.
+   *
+   * The rendered `rules` above are lossy: both `degrade_ai_assist` and
+   * `masked_cloud` collapse to the `degraded` outcome, so an editor that
+   * reconstructed `whenOnpremMissing` from a rule would guess. A screen that
+   * PUTs a guessed fallback for a field the operator never touched silently
+   * downgrades the stored policy — e.g. a strict `block` on the `gizli` class
+   * becomes `degrade_ai_assist`, and four-eyes does NOT catch it because
+   * `putParam` compares the two proposals to each other, not to the live value.
+   * The raw policy is the only safe thing to edit against (symmetric with
+   * `ladderRaw` on the notify view).
+   */
+  policy: DataClassPolicy;
 }
 
 /**
@@ -83,7 +97,7 @@ export interface RoutingView {
  */
 export async function readRouting(deps: ResolvedDeps): Promise<RoutingView> {
   const [projects, policy] = await Promise.all([deps.routing.projects(), readPolicy(deps)]);
-  return { projects, rules: policyRules(policy) };
+  return { projects, rules: policyRules(policy), policy };
 }
 
 /**

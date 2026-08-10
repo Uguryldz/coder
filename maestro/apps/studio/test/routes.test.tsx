@@ -18,13 +18,22 @@ const MOCK_VIEW_IDS = [
   "variants", "eval", "cache", "greenfield", "help", "login",
 ] as const;
 
+/**
+ * Screens added AFTER the mock froze. `pilot` (Dalga D) is Studio's face for
+ * the pilot's real-Jira flow — it has no mock view because the mock predates
+ * the pilot engine. Listed explicitly so the coverage check stays honest: a
+ * dropped or accidental screen still fails, an intentional addition is named.
+ */
+const POST_MOCK_VIEW_IDS = ["pilot"] as const;
+const EXPECTED_VIEW_IDS = [...MOCK_VIEW_IDS, ...POST_MOCK_VIEW_IDS];
+
 describe("route table", () => {
-  it("covers every screen in the mock", () => {
-    expect([...ALL_SCREEN_IDS].sort()).toEqual([...MOCK_VIEW_IDS].sort());
+  it("covers every screen in the mock, plus the intentional post-mock additions", () => {
+    expect([...ALL_SCREEN_IDS].sort()).toEqual([...EXPECTED_VIEW_IDS].sort());
   });
 
-  it("declares exactly 37 screens", () => {
-    expect(ALL_SCREEN_IDS).toHaveLength(37);
+  it("declares exactly the mock screens plus the post-mock additions", () => {
+    expect(ALL_SCREEN_IDS).toHaveLength(EXPECTED_VIEW_IDS.length);
   });
 
   it("has no duplicate id or path", () => {

@@ -473,7 +473,23 @@ export interface BffConfig {
   sessionTtlMs: number;
   /** Label that opts a ticket into Maestro in `opt_in` projects (M48a). */
   optInLabel: string;
+  /**
+   * Base URL of the pilot flow engine the Studio "Canlı akış / Pilot" screen is
+   * proxied to (Dalga D). A CONFIG value (from `PILOT_BASE_URL`), never taken
+   * from a request — the proxy at `/studio/pilot/*` builds every upstream URL
+   * from this, so it cannot be pointed at an arbitrary host. Defaults to the
+   * loopback the pilot listens on.
+   */
+  pilotBaseUrl: string;
 }
+
+/**
+ * The fetch the pilot proxy uses to reach the pilot (Dalga D). Injected so an
+ * OFFLINE test can stub the pilot with no network, and so the proxy never
+ * reaches for a global. Deliberately narrow — a string URL the proxy builds
+ * from config, never a caller-supplied `Request`.
+ */
+export type PilotFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface BffDeps {
   work: WorkPort;
@@ -517,6 +533,12 @@ export interface BffDeps {
   messages?: MessageCatalog;
   clock?: Clock;
   config?: Partial<BffConfig>;
+  /**
+   * How the `/studio/pilot/*` proxy reaches the pilot (Dalga D). Optional so a
+   * deployment gets the real `fetch` and a test injects a stub with no network.
+   * The internal service call NEVER carries the Studio user's token.
+   */
+  pilotFetch?: PilotFetch;
 }
 
 /** The injected read side; see `read-models.ts` for what each one owes Studio. */
@@ -539,12 +561,15 @@ export interface ReadModels {
   repoPolicy: RepoPolicyReader;
 }
 
-export interface ResolvedDeps extends Omit<BffDeps, "messages" | "clock" | "config" | "studio"> {
+export interface ResolvedDeps
+  extends Omit<BffDeps, "messages" | "clock" | "config" | "studio" | "pilotFetch"> {
   messages: MessageCatalog;
   clock: Clock;
   config: BffConfig;
   /** Always present after `resolveDeps`; individual models stay optional. */
   studio: StudioReadModels;
+  /** Resolved to the real `fetch` when a deployment injects none (Dalga D). */
+  pilotFetch: PilotFetch;
   diagnostics: CommandDiagnostics | null;
   /** Deliveries dropped because their project is unbound or paused (M102 counter). */
   counters: { droppedUnbound: number; droppedKillSwitch: number; invalidCommands: number };

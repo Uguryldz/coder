@@ -17,6 +17,7 @@ import { IssuesScreen } from "../screens/Issues.tsx";
 import { JiraScreen } from "../screens/Jira.tsx";
 import { KnowledgeScreen } from "../screens/Knowledge.tsx";
 import { LiveScreen } from "../screens/Live.tsx";
+import { PilotScreen } from "../screens/Pilot.tsx";
 import { LlmScreen } from "../screens/Llm.tsx";
 import { McpScreen } from "../screens/Mcp.tsx";
 import { NotifyScreen } from "../screens/Notify.tsx";
@@ -47,6 +48,7 @@ export const SCREEN_COMPONENTS: Readonly<Record<string, ComponentType>> = {
   dash: DashScreen,
   help: HelpScreen,
   live: LiveScreen,
+  pilot: PilotScreen,
   tickets: TicketsScreen,
   fanout: FanoutScreen,
   clarify: ClarifyScreen,

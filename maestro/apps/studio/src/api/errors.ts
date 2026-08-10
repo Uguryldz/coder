@@ -178,6 +178,10 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
    * one person it was made for.
    */
   capability_not_wired: "error.capability_not_wired",
+  // Pilot proxy (Dalga D)
+  invalid_doc_kind: "error.invalid_doc_kind",
+  pilot_unreachable: "error.pilot_unreachable",
+  pilot_bad_response: "error.pilot_bad_response",
 };
 
 export function errorMessageKey(code: string): string {

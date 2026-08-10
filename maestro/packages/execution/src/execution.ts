@@ -6,7 +6,7 @@ import { ciFingerprint } from "./ci-fingerprint.js";
 import { createReportJournal, runVerification, type SessionReport, summarizeDiff, verificationFailures } from "./collect.js";
 import { DataClassChangedError, WorkspaceProbeError } from "./errors.js";
 import { createProtectedPathMatcher, findProtectedViolations, type ProtectedPathViolation } from "./protected-paths.js";
-import { handoverDecision, type HandoverDecision, type StrikeKey, type StrikeLedger, type StrikeState } from "./strikes.js";
+import { handoverDecision, type HandoverDecision, type StrikeKey, type StrikeLedgerPort, type StrikeState } from "./strikes.js";
 import type { ChangedFile, CommandResult, CommandSpec, VerificationRunner, WorkspaceProbe } from "./types.js";
 
 export interface AgentTurnRequest {
@@ -32,11 +32,25 @@ export type AgentTurnResult =
   | { readonly status: "degraded"; readonly messageKey: string }
   | { readonly status: "blocked"; readonly messageKey: string };
 
+/**
+ * The two collaborators that are bound to ONE turn's workspace and signal.
+ *
+ * Passed to `runTurn` rather than held on the instance so a runner can build
+ * them per turn — a probe carries the run's workspace volume and the
+ * `AbortSignal` a `stop_all` fires, and one built at construction would hold
+ * the first run's copy of both. Omitted, the instance's own are used, which is
+ * what every in-memory test does.
+ */
+export interface TurnCollaborators {
+  readonly probe: WorkspaceProbe;
+  readonly verifier: VerificationRunner;
+}
+
 export interface AgentExecutionDeps {
   readonly llm: LlmPort;
   readonly probe: WorkspaceProbe;
   readonly verifier: VerificationRunner;
-  readonly strikes: StrikeLedger;
+  readonly strikes: StrikeLedgerPort;
   /** Must have been through `loadPiiPolicy` — `defaultPiiPolicy()` has. */
   readonly piiPolicy: LoadedPiiPolicy;
   /** Masked report sink (journal row + StoragePort body). */
@@ -80,8 +94,10 @@ export class AgentExecution {
 
   constructor(private readonly deps: AgentExecutionDeps) {}
 
-  async runTurn(req: AgentTurnRequest): Promise<AgentTurnResult> {
+  async runTurn(req: AgentTurnRequest, turn?: TurnCollaborators): Promise<AgentTurnResult> {
     const ctx = req.context;
+    const probe = turn?.probe ?? this.deps.probe;
+    const verifier = turn?.verifier ?? this.deps.verifier;
     const isResume = req.resumeToken !== undefined;
     const outcome = await this.deps.llm.agentSession({
       workspacePath: ctx.workspace.path,
@@ -103,14 +119,14 @@ export class AgentExecution {
         break;
     }
 
-    const changed = await this.inspect(ctx.workspace.path);
+    const changed = await this.inspect(probe, ctx.workspace.path);
     // The repo's list only ever ADDS to the M52 floor — see
     // `DEFAULT_PROTECTED_PATHS`. An empty list means "nothing extra", never
     // "nothing at all".
     const violations = findProtectedViolations(changed, createProtectedPathMatcher(ctx.protectedPaths));
     // M52 is fail-closed: stop here, do not spend a build on an illegal diff.
     const commands =
-      violations.length > 0 ? [] : await runVerification(this.deps.verifier, ctx.workspace.path, req.verification);
+      violations.length > 0 ? [] : await runVerification(verifier, ctx.workspace.path, req.verification);
     const verdict = this.judge(ctx.runId, violations, commands);
 
     const report: SessionReport = {
@@ -150,11 +166,11 @@ export class AgentExecution {
    * gate a clean sheet while `.git/hooks/post-checkout` sat there waiting to
    * run on the bank's own runner.
    */
-  private async inspect(workspacePath: string): Promise<readonly ChangedFile[]> {
+  private async inspect(probe: WorkspaceProbe, workspacePath: string): Promise<readonly ChangedFile[]> {
     try {
       const [tracked, internal] = await Promise.all([
-        this.deps.probe.changedFiles(workspacePath),
-        this.deps.probe.internalChangedFiles(workspacePath),
+        probe.changedFiles(workspacePath),
+        probe.internalChangedFiles(workspacePath),
       ]);
       return [...tracked, ...internal];
     } catch (cause) {

@@ -255,6 +255,9 @@ importers:
       '@maestro/audit':
         specifier: workspace:*
         version: link:../../packages/audit
+      '@maestro/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -267,6 +270,9 @@ importers:
       '@maestro/ports':
         specifier: workspace:*
         version: link:../../packages/ports
+      '@maestro/publish':
+        specifier: workspace:*
+        version: link:../../packages/publish
       '@maestro/secrets':
         specifier: workspace:*
         version: link:../../packages/secrets

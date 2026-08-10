@@ -26,6 +26,8 @@ h1{font-size:19px;margin:0}
 .top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
 .spacer{flex:1}
 .btn{border:1px solid var(--border2);background:var(--panel);color:var(--text);border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+.dlbtn{display:inline-block;border:1px solid var(--border2);background:var(--panel2);color:var(--text);border-radius:8px;padding:6px 12px;font-size:13px;text-decoration:none}
+.dlbtn:hover{border-color:#2563eb}
 .btn:hover{background:var(--panel2)}
 .btn.p{background:var(--blue);border-color:var(--blue);color:#fff}
 .btn:disabled{opacity:.5;cursor:not-allowed}
@@ -110,6 +112,14 @@ code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px
     <div class="kpi"><div class="l">Maskelenen alan</div><div class="v" id="k-masked">0</div></div>
     <div class="kpi"><div class="l">Denetim kaydı</div><div class="v" id="k-audit">0</div></div>
   </div>
+
+  <div class="card docs" id="docs-card" style="margin-bottom:14px;display:none"><div class="bd">
+    <b>📄 Analiz belgesi hazır</b> — model analizini gerçek dosya olarak indirin (aynı analiz, kurumsal biçimde):
+    <span style="display:inline-flex;gap:8px;margin-left:8px">
+      <a class="dlbtn" id="dl-pdf" href="/api/doc/pdf">📄 Analizi PDF indir</a>
+      <a class="dlbtn" id="dl-docx" href="/api/doc/docx">📝 Word indir</a>
+    </span>
+  </div></div>
 
   <div class="grid">
     <div class="card pane jira-pane">
@@ -229,6 +239,17 @@ function renderJira(state) {
   };
 }
 
+// Once the analysis step has produced the files, reveal the two download
+// buttons. The links carry the ticket key as a nice filename hint; the actual
+// attachment name is set by the server's Content-Disposition header.
+function renderDocs(state) {
+  const card = $("docs-card");
+  card.style.display = state.docsReady ? "block" : "none";
+  const key = state.ticketKey ? String(state.ticketKey) : null;
+  $("dl-pdf").setAttribute("download", key ? `${key}-analiz.pdf` : "analiz.pdf");
+  $("dl-docx").setAttribute("download", key ? `${key}-analiz.docx` : "analiz.docx");
+}
+
 function renderState(state) {
   STATE = state;
   $("k-ticket").textContent = state.ticketKey ?? "—";
@@ -240,6 +261,7 @@ function renderState(state) {
   renderSteps(state);
   renderLog(state);
   renderJira(state);
+  renderDocs(state);
   $("footer").innerHTML = state.failure
     ? `<span class="err">✗ Akış durdu: ${esc(state.failure)}</span> — bu ekranda hata gizlenmez.`
     : "Sol taraf gerçek Jira'dır: Maestro yorumları oraya yazar, onayı oradaki yorumları <b>yoklayarak</b> alır. Sağ taraf Maestro'nun adımlarıdır.";

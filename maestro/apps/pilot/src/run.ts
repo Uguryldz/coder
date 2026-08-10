@@ -30,6 +30,7 @@ import {
   PILOT_DATA_CLASS,
   PILOT_VARIANT,
 } from "./config.js";
+import { analysisToDocs, type DocStore } from "./docs.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
 import type { StateStore } from "./state.js";
 import {
@@ -105,6 +106,8 @@ export interface PilotRunDeps {
   audit: AuditChain;
   piiPolicy: LoadedPiiPolicy;
   store: StateStore;
+  /** Holds the generated .docx/.pdf so the download route can stream them. */
+  docs: DocStore;
   /** Stands in for the human who presses "Complete" in the ADO PR screen. */
   completePullRequest: (prId: number) => boolean;
   /** Called whenever the Jira side changed, so the UI can refresh its pane. */
@@ -141,6 +144,7 @@ export class PilotRun {
     this.repo = null;
     this.branch = "";
     this.abort = new AbortController();
+    this.deps.docs.clear();
     store.update((state) => {
       state.running = true;
       state.finished = false;
@@ -149,6 +153,7 @@ export class PilotRun {
       state.ticketKey = ticketKey;
       state.browseUrl = `${state.jiraSite}/browse/${ticketKey}`;
       state.awaitingGate = null;
+      state.docsReady = false;
       state.log = [];
       state.llmCalls = 0;
       state.tokens = 0;
@@ -275,8 +280,38 @@ export class PilotRun {
     await this.updateProgress("analiz hazır — onay bekleniyor");
     await work.addComment(ticketKey, analysisComment(analysis.display));
     this.deps.onJiraChanged?.();
+
+    await this.generateAnalysisDocs(analysis.display);
+
     store.step("2", "tamam");
     return analysis.display;
+  }
+
+  /**
+   * Render the analysis to a real `.docx` and `.pdf` and park them for download.
+   *
+   * This is the same analysis the reviewer reads in the Jira comment, rendered
+   * through the publish package's real drivers — not a second summary. It runs
+   * AFTER the comment so a rendering hiccup never blocks the delivery flow: the
+   * files are a convenience, and the page simply does not show the buttons if
+   * generation failed (the failure is logged, not swallowed into a stack trace).
+   */
+  private async generateAnalysisDocs(analysis: AnalysisDoc): Promise<void> {
+    const { store, docs } = this.deps;
+    const ticketKey = this.requireTicket();
+    try {
+      const generated = await analysisToDocs(analysis, ticketKey, this.runId);
+      docs.put(this.runId, generated);
+      store.update((state) => {
+        state.docsReady = true;
+      });
+      store.log(
+        "ok",
+        `✓ analiz belgesi üretildi: ${generated.pdf.fileName} (${generated.pdf.bytes.byteLength} B) · ${generated.docx.fileName} (${generated.docx.bytes.byteLength} B)`,
+      );
+    } catch (error) {
+      store.log("warn", `! analiz belgesi üretilemedi (akış etkilenmedi): ${String(error)}`);
+    }
   }
 
   /** ③ human gate on the analysis (M51 gate "5") — resolved by polling comments. */

@@ -1,4 +1,4 @@
-import { JournalActor, TicketKey } from "@maestro/contracts";
+import { JournalActor, TicketKey, type WorkflowRunState } from "@maestro/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authGuard, sessionOf } from "../auth/guard.js";
@@ -87,7 +87,12 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
 
     const record = await deps.read.runs.get(ticket);
     if (record === null) throw notFound("no_run", { ticket });
-    const state = await deps.runs.queryRunState(workflowIdFor(ticket));
+    // Same guard as the list above, and for the same reason: a query that
+    // FAILS is not a run with no state. Six executions left behind by an older
+    // build made this route answer 500 for six of twenty-two tickets — the
+    // first row of the list among them, so the first click a reviewer made
+    // landed on an error page for a run whose record was right there.
+    const state = await queryStateOrNull(deps, request, ticket);
     const app_ = record.appId === null ? null : await deps.read.apps.get(record.appId);
 
     return reply.code(200).send({ run: record, state, application: app_ });
@@ -184,9 +189,35 @@ function totalsOf(
  * one run's journal under another's name.
  */
 async function runIdOf(deps: ResolvedDeps, ticket: string): Promise<string> {
-  const state = await deps.runs.queryRunState(workflowIdFor(ticket));
+  // Unreadable is NOT the same as absent, but here both end the request: the
+  // journal and the evidence package are keyed by run id, and serving them
+  // under a guessed id would attribute one run's history to another. A 404
+  // says "no run id to work from", which is true either way — and unlike a
+  // 500, it is a sentence the screen already knows how to render.
+  const state = await deps.runs.queryRunState(workflowIdFor(ticket)).catch(() => null);
   if (state === null) throw notFound("no_run", { ticket });
   return state.runId;
+}
+
+/**
+ * The run's live state, or `null` when the engine cannot answer for it.
+ *
+ * Written once and used by both the list and the detail route so the two can
+ * never drift: the list already treated an unreadable execution as `state:
+ * null`, the detail route threw, and the same ticket therefore appeared in the
+ * list and 500'd when clicked.
+ */
+async function queryStateOrNull(
+  deps: ResolvedDeps,
+  request: { log: { warn: (obj: unknown, msg: string) => void } },
+  ticket: string,
+): Promise<WorkflowRunState | null> {
+  try {
+    return await deps.runs.queryRunState(workflowIdFor(ticket));
+  } catch (error) {
+    request.log.warn({ err: error, ticket }, "run state unreadable; answering without it");
+    return null;
+  }
 }
 
 function ticketParam(params: unknown): string {

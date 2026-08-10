@@ -1,3 +1,4 @@
+import { unavailable } from "@maestro/bff";
 import type { ReadModels } from "@maestro/bff";
 
 /**
@@ -59,11 +60,34 @@ const MISSING: Record<keyof ReadModels, string> = {
  * not something to echo into a shared log either.
  */
 export function unbridgedReadError(model: keyof ReadModels, method: string): Error {
-  return new Error(
+  /**
+   * A 503, not a plain Error.
+   *
+   * A plain `Error` reaches the client as 500 `internal_error`, which says "the
+   * platform broke" about a platform that is working exactly as designed. The
+   * screen-by-screen sweep caught the inconsistency: `/cache` and `/eval` —
+   * unwired for the same reason, through `routes/unwired.ts` — answered 503
+   * `capability_not_wired`, while `/studio/runners` and `/studio/scans`
+   * answered 500. Same situation, two stories, and only one of them true.
+   *
+   * The message carries the model, the method and the missing store — and
+   * nothing else. It reaches a log aggregator and an HTTP error body, so it
+   * must never grow a connection string, a credential or a caller's filter.
+   */
+  const explanation =
     `read model ${model}.${method}: not wired — ${MISSING[model]} (M7). Nothing in this ` +
-      `platform writes that data yet, so this refuses rather than answering "nothing found", ` +
-      `which reads as a calm system when the truth is a store that was never filled.`,
-  );
+    `platform writes that data yet, so this refuses rather than answering "nothing found", ` +
+    `which reads as a calm system when the truth is a store that was never filled.`;
+  const error = unavailable("capability_not_wired", {
+    capability: `${model}.${method}`,
+    missing: explanation,
+  });
+  // `HttpError`'s own message is just the code, which is the right thing on the
+  // wire and the wrong thing in a log line. The full sentence goes here too so
+  // an operator reading the aggregator sees which model, which method and what
+  // is missing — the property the tests below pin.
+  error.message = explanation;
+  return error;
 }
 
 /**

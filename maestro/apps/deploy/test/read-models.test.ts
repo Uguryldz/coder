@@ -219,8 +219,21 @@ describe("unbridgedReadModels: the refusal leaks nothing", () => {
   });
 
   it("keeps the same guarantees when the error is built directly", () => {
-    const message = unbridgedReadError("audit", "verify").message;
-    expect(message).toContain("audit.verify");
-    expect(message).not.toMatch(/postgres(ql)?:\/\//i);
+    const error = unbridgedReadError("audit", "verify") as unknown as {
+      status: number;
+      code: string;
+      details: { capability: string; missing: string };
+      message: string;
+    };
+    // 503, not 500: an unwired capability is not a broken platform. The
+    // screen-by-screen sweep found `/cache` answering 503 and `/studio/runners`
+    // answering 500 for the identical reason.
+    expect(error.status).toBe(503);
+    expect(error.code).toBe("capability_not_wired");
+    expect(error.details.capability).toBe("audit.verify");
+    // The leak guarantee still holds, now across every field a client or a log
+    // aggregator can read.
+    const everything = JSON.stringify(error.details) + error.message;
+    expect(everything).not.toMatch(/postgres(ql)?:\/\//i);
   });
 });

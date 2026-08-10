@@ -150,3 +150,103 @@ pnpm typecheck                            # ✓ (kökten turbo, 10 paket)
 2. Düzenlenmiş yorumlar komut üretmez. Bir TL yorumunu düzelterek onay veremez; yeni yorum yazmalı.
    Maketteki "Jira komut seti" yardım metni bunu söylemeli.
 3. `fixtures/webhook-comment-created.json` gövdesi `/approve` (eskiden `/approve` + açıklama satırı).
+
+## jira-cloud sürücüsü
+
+Aynı `WorkPort` arayüzünü uygulayan ikinci sürücü: **Jira Cloud**, REST v3, HTTP Basic
+(e-posta + Atlassian API token'ı). Yanıt ayrıştırma **belleğe değil, canlı siteden
+(uyildiz.atlassian.net / OPS) kaydedilmiş `fixtures/cloud/*.json` dosyalarına** göre yazıldı.
+
+### Ne yapıldı
+
+| Dosya | İçerik |
+|---|---|
+| `src/cloud/config.ts` | Zod'lu `JiraCloudConfig` (`baseUrl` · `email` · `apiTokenRef` + DC ile aynı varsayılanlar: `childIssueTypeName`/`linkTypeName`/`requestTimeoutMs`/`groupPageSize`), fail-closed; `JIRA_CLOUD_DRIVER = "jira-cloud"`. |
+| `src/cloud/client.ts` | `JiraCloudClient` — Basic auth (`base64(email:token)`), JSON in/out, `errors.ts`'teki tipli hatalar. **Süreç içi retry YOK**: 429 → `JiraRateLimitError` (+`retryAfterMs`), 5xx → yeni `JiraRetryableError`; ikisi de yalnız SINIFLANDIRMA — dayanıklı tekrar Temporal'ın işi. Boş token/e-posta'da istek gönderilmez (anonim düşüş yok, DC'deki O-5 ile aynı kural). |
+| `src/errors.ts` (ek) | `JiraRetryableError` (5xx) + `isRetryableJiraError()` yardımcısı. Yeni dosya değil, mevcut hata ailesine iki ek. |
+| `src/adf.ts` (ek) | `adfToPlainText` — Cloud açıklamaları ve yorumları ADF geldiği için düz metne indirger. Blok araları `\n\n`, `hardBreak` → `\n`; **bilinmeyen yaprak düğümler (mention/emoji/media) kaybolmaz, `￼` yer tutucusu olur** — görünmez içerik `/approve @kisi`'yi çıplak `/approve` sanılmaktan alıkoyar (M105 fail-closed). |
+| `src/cloud/mapping.ts` | `mapCloudIssueToSnapshot` (`issue-get.json` şekli → `TicketSnapshot`): ADF açıklama düz metne, kimlikler `accountId` (e-posta yedek, `displayName` asla), `+0300` ofseti mevcut `normalizeJiraDateTime` ile normalize, team-managed projelerin boş/eksik `components`'ı tolere edilir, `parent.key` → `parentKey`. `ISSUE_FIELDS` DC'den aynen kullanılır. |
+| `src/cloud/search.ts` | `searchIssues({jql, maxResults, fields, pageToken})` → `GET /rest/api/3/search/jql`. Eski `/rest/api/3/search` KALDIRILDIĞI için (CHANGE-2046) hiç çağrılmaz. **Sınırsız JQL muhafızı** (`assertBoundedJql`): boş sorgu ya da yalnız `ORDER BY` süreçten çıkmadan `JiraArgumentError` — canlıda görülen "Burada sınırsız JQL'lere izin verilmez" hatası tipli hale getirildi. Sayfalama fikstürdeki gerçek alanlarla: `issues` + `isLast` (+ varsa `nextPageToken` imleci); `total` yok, uydurulmadı. |
+| `src/cloud/comment-command.ts` | `parseCommandFromComment(ticketKey, comment)` — pilot webhook değil YOKLAMA yaptığı için komutlar `comments-list.json`'daki yorum kaynağından ayrıştırılır. ADF gövde düz metne indirgenir, `commands.ts` grameri aynen kullanılır (M105: çıplak komut yorumun tamamı olmalı; "/approve etmiyorum" komut DEĞİL). **`created !== updated` olan yorum komut üretmez** — yoklamada olay ayrımı yok, kanıt zaman damgaları (DC'deki K-2 ile aynı SoD gerekçesi). `commandFromCloudPayload` hem `{ticketKey, comment}` hem `{issue:{key}, comment}` zarfını kabul eder. |
+| `src/cloud/work-port.ts` | `JiraCloudWorkPort implements WorkPort`: `getTicket` · `addComment`/`updateComment` (ADF gövde OLDUĞU GİBİ gönderilir — wiki markup yok; kayıtlı 201 yanıtından `id`) · `setLabels` (**fark tabanlı**: önce `fields=labels` okunur, yalnız `{update:{labels:[{add},{remove}]}}` deltası yazılır — kayıtlı 204; fark yoksa yazma hiç yapılmaz) · `assign` (`accountId`, `null` = atamayı kaldır) · `createLinkedIssue` · `verifyMembership` · `searchIssues` · `listComments` · `parseCommand(FromComment)` · `verifyWebhook`/`transition` → `CapabilityNotSupportedError`. |
+| `src/register.ts` (ek) | `createJiraCloudWorkPort` fabrikası + `registerJiraDrivers` artık `work` portuna **iki** sürücü kaydeder: `jira-dc`, `jira-cloud`. Aynı `deps.secrets` deseni; Cloud'un webhook sırrı yok. |
+
+### Kararlar ve varsayımlar
+
+- **Fan-out bağlantısı `issuelink` ile, `parent` alanıyla DEĞİL.** Team-managed projede `parent`
+  bir üst hiyerarşi katmanı (Epik) ister; görev altına görev açılamazdı. `POST /rest/api/3/issueLink`
+  (`linkTypeName`, varsayılan `Relates`) her seviyede çalışır ve DC sürücüsüyle birebir aynı
+  telafi sözleşmesini korur (`JiraLinkFailedError` öksüz `childKey` taşır). Açıklama alanı v3'te
+  ADF istediği için düz metin `toAdfDocument` ile sarılır.
+- **`verifyWebhook` → `CapabilityNotSupportedError`.** Pilot yorumları YOKLUYOR; kayıtlı bir Cloud
+  imza şeması yok. Fail-closed: bu sürücünün doğrulayamadığı bir teslimat asla "doğrulanmış"
+  sayılamaz. Cloud webhook'ları ileride eklenirse imza fikstürü kaydedilerek açılmalı.
+- **`parseCommandFromComment` imzası `(ticketKey, comment)`.** Görev tanımı `(comment)` diyordu ama
+  yorum kaynağı issue ANAHTARI taşımıyor (yalnız `self` URL'sinde issue id'si var) ve
+  `CommandEnvelope.ticketKey` zorunlu; yorumları yoklayan çağıran anahtarı zaten biliyor.
+- **`verifyMembership` teslimat listesinde yoktu ama uygulandı** — `WorkPort` zorunlu kılıyor ve
+  M32/M51 kapı yetkisi buna dayanıyor. `GET /rest/api/3/group/member` için canlı fikstür
+  kaydedilmedi; standart Cloud sayfa bean'i (`values`/`isLast`/`total`, `project-search.json`'da
+  görülen şekil) varsayıldı, DC'deki fail-closed sayfalama kuralları aynen taşındı
+  (`JiraMembershipUnresolvedError`, pasif üye atlanır, eşleşme yalnız `accountId`/e-posta).
+  **Doğrulayıcı bu ucu canlı kayıtla teyit etmeli.**
+- **`listComments` eklendi** (teslimat listesinde yoktu): yoklama modelinde
+  `parseCommandFromComment`'i besleyen kaynak; `comments-list.json` fikstürü bu uçtan kaydedilmişti.
+  Tek sayfa döner — pilot tek "▶ durum" yorumu + az sayıda komutla çalışıyor; sayfalama gerekirse
+  fikstürle birlikte eklenmeli.
+- `email` config'te açık değer (kimlik, sır değil); token `apiTokenRef` ile SecretPort'tan çözülür
+  (M44: sır referansı, sır değeri asla).
+
+### Testler
+
+`pnpm -F @maestro/adapter-jira typecheck` ✅ · `test` ✅ (**13 dosya / 154 test**, DC 90 + Cloud
+**64 yeni**) · repo eslint'i paket üzerinde ✅. Tamamı çevrimdışı, ağ yok — `fetch` sahtesi
+`test/helpers.ts`'ten, yanıtlar `fixtures/cloud/*.json`'dan.
+
+- `test/cloud/mapping.test.ts` (12): kayıtlı issue → sözleşmeden geçen snapshot (Türkçe metin
+  bozulmadan: "Ödeme Onayı", ADF açıklama düz metin, `+03:00` normalize), eksik `components`,
+  `null` açıklama, `accountId` kimliği, `adfToPlainText` (blok birleşimi, `hardBreak`, mention
+  yer tutucusu, kayıtlı yorum gövdesi).
+- `test/cloud/search.test.ts` (6): kayıtlı sayfanın ayrıştırılması (6 issue, `isLast:true`),
+  yeni uç yolunun doğrulanması, sınırsız JQL reddi (istek çıkmadan), `ordering = broken` gibi
+  gerçek koşulların kabulü, `nextPageToken` gidiş-dönüşü, bozuk yanıtta `JiraResponseError`.
+- `test/cloud/client.test.ts` (7): Basic auth başlığı, boş token/e-posta reddi, 204, 401/403/404,
+  **429'un TEK istekle** sınıflandırılması (+`retryAfterMs`), 5xx → `JiraRetryableError`,
+  400'ün retryable OLMAMASI, `isRetryableJiraError`.
+- `test/cloud/comment-command.test.ts` (14): kayıtlı düz yazı yorumun komut olmaması, çıplak
+  `/approve` zarfı, **M105 negatifleri** ("/approve etmiyorum" · ikinci paragraf · `hardBreak`
+  arkası metin · mention'lı `/approve` — hepsi `command.takes_no_argument`), argümanlı komutlar,
+  **düzenlenmiş yorumun yok sayılması**, bilinmeyen komut, yazarı olmayan komutta hata, iki zarf
+  biçimi, anahtarsız zarf reddi.
+- `test/cloud/work-port.test.ts` (20): her port metodu istek gövdesiyle; ADF'nin OLDUĞU GİBİ
+  gidişi; **label farkı** (yalnız `{add:"yeni"},{remove:"eski"}`; fark yoksa yazma yok);
+  `accountId` ataması; fan-out + issuelink + öksüz key; üyelik (kimlik/e-posta, pasif atlama,
+  sayfalama, çözülemeyen sayfada hata); `listComments`; port üzerinden komut; `verifyWebhook` ve
+  `transition` yetenek hatası; sınırsız JQL muhafızının portta da işlemesi.
+- `test/cloud/register.test.ts` (5): iki sürücülü kayıt, SecretPort'tan token → Basic başlığı,
+  varsayılanlar, hatalı config'te alan adları, SecretPort'suz kurulum reddi.
+- `test/register.test.ts` güncellendi: kayıtlı sürücü listesi artık `[jira-dc, jira-cloud]`.
+
+### Bağımlılık / arayüz talepleri
+
+- **Yeni çalışma zamanı bağımlılığı YOK** — Node 24 yerleşik `fetch`'i kullanıldı; axios/got eklenmedi.
+- Donmuş `packages/ports`/`contracts`'ta değişiklik istenmedi. Not (bloklamıyor): `WorkPort.parseCommand(rawBody)`
+  webhook zarfı varsayar; yoklama modelinde Cloud sürücüsü bunu `{ticketKey|issue.key, comment}` zarfıyla
+  karşılıyor — BFF yoklayıcısının bu zarfı kurması ya da doğrudan `parseCommandFromComment` çağırması yeterli.
+
+## doğrulayıcı düzeltmeleri
+
+Bağımsız doğrulayıcının jira-cloud turundaki 1, 2, 4 ve 6 numaralı bulguları kapatıldı
+(3, 5, 7 orkestratörde). Her düzeltmenin negatif testi var; paket kapısı yeşil
+(**13 dosya / 160 test**, +6).
+
+| # | Bulgu | Ne yapıldı | Negatif test |
+|---|---|---|---|
+| **1 — KRİTİK** | M105 ADF bypass: blockquote/codeBlock içindeki ya da code/link mark'lı `/approve` gerçek onay üretiyordu (DC K-1'in ADF hali) | `adf.ts`: yeni `adfToCommandLines` — her görünür satır `commandCapable` etiketiyle döner. Yalnız **top-level paragraph'ın marksız düz text düğümleri** komut-taşıyabilir; heading/codeBlock/panel/blockquote/liste/bilinmeyen kapsayıcı içeriği ve HERHANGİ bir mark (code/link/strong…) taşıyan ya da text-olmayan inline (mention…) içeren satırlar görünür kalır ama `commandCapable:false`. `comment-command.ts / parseCloudCommentBody`: ilk dolu satır komut-taşıyabilir değilse `none`; taşıyabilirse gramer tüm görünür satırlar üzerinde çalışır — düz `/approve` + arkasında alıntı/kod bloğu hâlâ `takes_no_argument` (tek-yorum kuralı bozulmadı). Düz string gövde eskisi gibi doğrudan gramere gider. | `comment-command.test.ts`: "never reads a command out of quoted, code or styled text" (blockquote'lu · codeBlock'lu · inline-code'lu · link-mark'lı · strong'lu · heading'li `/approve` → hepsi `none`), "still blocks a plain /approve trailed by quoted or code content" (→ `takes_no_argument`), "does not honour an /approve riding with invisible content" (mention'lı satır artık komut metni değil → `none`); `mapping.test.ts`: "tags only plain top-level paragraph text as command-capable". Düz paragraf `/approve` pozitifi aynen yeşil. |
+| **2 — ORTA** | `updated` alanı yoksa edited-comment kontrolü sessizce atlanıyordu (fail-open) | `comment-command.ts`: `created` muhafızıyla simetrik — komut taşıyan yorumda `updated` string değilse `JiraResponseError` ("cannot prove it is unedited"). Alanları map/filter eden bir poller K-2 deliğini sessizce geri açamaz; hata yüksek sesli. | `comment-command.test.ts`: "fails loudly when the updated timestamp is missing — unprovably unedited" (`updated` silinmiş `/approve` → throw, mesaj `updated` içerir; komut asla üretilmez). |
+| **4 — KÜÇÜK** | `values:[] · isLast:false` çelişkili üyelik sayfasında sessiz `false` (paketin O-6 kuralına aykırı) | `cloud/work-port.ts / verifyMembership`: `hasMorePages` kontrolü boş-sayfa kısa devresinin ÖNÜNE alındı; "sayfa devam var diyor ama üye taşımıyor" durumu `JiraMembershipUnresolvedError` (yeni `contradictory_page` nedeni, `errors.ts` union'ına eklendi) ile fail-loud. Meşru boş son sayfa (`isLast:true`) hâlâ `false`. | `work-port.test.ts`: "raises on a page that claims more members but carries none — no silent deny" (çelişkili sayfa → `contradictory_page` hatası; `isLast:true` boş sayfa → `false`). |
+| **6 — KÜÇÜK** | `createLinkedIssue` label'ları `setLabels`'ın boşluk/boş ön-kontrolünden geçmiyordu | Ortak `requireCleanLabels` yardımcısı çıkarıldı; `setLabels` VE `createLinkedIssue` aynı ön-kontrolü kullanıyor — hatalı label, çocuk issue yaratılmadan `JiraArgumentError` ile durur (yarım fan-out yok). | `work-port.test.ts`: "refuses fan-out labels Jira would reject, before any request" (`"iki kelime"` · `" "` → hata, sıfır istek). |
+
+Davranış notu (çağıranlar için): mark'lı/karışık satırdaki komut artık `invalid` değil `none`
+döner — güvenlik yönü aynı (onay üretilmez), yalnız BFF'in "hatalı komut" geri bildirimi
+düz-paragraf komutlarıyla sınırlıdır. `adfToPlainText` (açıklama düzleştirme) değişmedi.

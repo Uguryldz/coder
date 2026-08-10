@@ -2,6 +2,7 @@ import { PortRegistry, type SecretPort, type WorkPort } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
 import {
   createJiraDcWorkPort,
+  JIRA_CLOUD_DRIVER,
   JIRA_DC_DRIVER,
   JiraConfigError,
   JiraDcConfig,
@@ -27,7 +28,7 @@ describe("driver registration", () => {
     const registry = new PortRegistry();
     registerJiraDrivers(registry);
 
-    expect(registry.drivers(WORK_PORT)).toEqual([JIRA_DC_DRIVER]);
+    expect(registry.drivers(WORK_PORT)).toEqual([JIRA_DC_DRIVER, JIRA_CLOUD_DRIVER]);
     const factory = registry.resolve<WorkPort>(WORK_PORT, JIRA_DC_DRIVER);
     expect(factory({ ...baseConfig, deps: { secrets } })).toBeInstanceOf(JiraDcWorkPort);
   });

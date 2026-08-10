@@ -1,5 +1,7 @@
 import type { PortRegistry, SecretPort } from "@maestro/ports";
 import type { FetchLike } from "./client.js";
+import { JIRA_CLOUD_DRIVER, JiraCloudConfig } from "./cloud/config.js";
+import { JiraCloudWorkPort } from "./cloud/work-port.js";
 import { JIRA_DC_DRIVER, JiraDcConfig, WORK_PORT } from "./config.js";
 import { JiraConfigError } from "./errors.js";
 import { JiraDcWorkPort } from "./work-port.js";
@@ -37,6 +39,26 @@ export function createJiraDcWorkPort(input: unknown): JiraDcWorkPort {
   });
 }
 
+/**
+ * Build a Cloud driver instance from a validated config object plus deps.
+ * Cloud needs no webhook secret — the pilot polls comments instead — and no
+ * sleep: the Cloud client never retries in-process.
+ */
+export function createJiraCloudWorkPort(input: unknown): JiraCloudWorkPort {
+  const parsed = JiraCloudConfig.safeParse(input);
+  if (!parsed.success) {
+    throw new JiraConfigError(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+  }
+  const config = parsed.data;
+  const deps = extractDeps(input);
+
+  return new JiraCloudWorkPort({
+    config,
+    token: () => deps.secrets.get(config.apiTokenRef),
+    fetchImpl: deps.fetchImpl,
+  });
+}
+
 function extractDeps(input: unknown): JiraDcDeps {
   const deps = (input as { deps?: unknown } | null)?.deps;
   const secrets = (deps as { secrets?: unknown } | undefined)?.secrets;
@@ -47,9 +69,10 @@ function extractDeps(input: unknown): JiraDcDeps {
 }
 
 /**
- * Register the DC driver on the port registry (M44 clean-room DI): the core
- * never imports this module, the composition root calls this once.
+ * Register the Jira drivers on the port registry (M44 clean-room DI): the
+ * core never imports this module, the composition root calls this once.
  */
 export function registerJiraDrivers(registry: PortRegistry): void {
   registry.register(WORK_PORT, JIRA_DC_DRIVER, createJiraDcWorkPort);
+  registry.register(WORK_PORT, JIRA_CLOUD_DRIVER, createJiraCloudWorkPort);
 }

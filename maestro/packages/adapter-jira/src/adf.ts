@@ -106,6 +106,91 @@ export function toAdfDocument(body: unknown): AdfDoc {
 }
 
 /**
+ * Flatten ADF to plain text. Cloud issue descriptions and polled comments
+ * arrive as ADF, while TicketSnapshot.description and the command grammar
+ * (commands.ts) speak plain text. Top-level blocks are joined with a blank
+ * line, so the M105 "a bare command must be the whole comment" rule still
+ * sees a second paragraph as trailing text.
+ */
+export function adfToPlainText(document: AdfDoc): string {
+  return document.content
+    .map((node) => flattenNode(node))
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
+}
+
+function flattenNode(node: AdfNode): string {
+  if (node.type === "text") return node.text;
+  // Widened on purpose (same as renderBlock): real documents carry node types
+  // outside our model and they must degrade predictably, never disappear.
+  const type = node.type as string;
+  if (type === "hardBreak") return "\n";
+  const children = (node.content ?? []).map((child) => flattenNode(child));
+  switch (type) {
+    case "paragraph":
+    case "heading":
+    case "codeBlock":
+      return children.join("");
+    default:
+      // Unknown LEAF nodes (mention, emoji, media…) become a placeholder
+      // instead of vanishing: invisible content must not let a comment like
+      // "/approve @someone" flatten to a bare "/approve" (M105 fail-closed).
+      if (children.length === 0) return "￼";
+      // Container nodes (panel, lists, unknown blocks) stack their children.
+      return children.filter((child) => child.length > 0).join("\n");
+  }
+}
+
+/**
+ * One visible line of an ADF document, tagged with whether its text may carry
+ * a comment command (M105). Only the plain, unstyled text of a TOP-LEVEL
+ * paragraph is command-capable: a blockquote reply, a code sample, a heading
+ * or a code/link-styled "/approve" QUOTES a command instead of giving one.
+ * The quoted text still comes back as a visible line, so the "bare command
+ * must be the whole comment" check keeps seeing it as trailing content.
+ */
+export interface AdfLine {
+  text: string;
+  commandCapable: boolean;
+}
+
+export function adfToCommandLines(document: AdfDoc): AdfLine[] {
+  const lines: AdfLine[] = [];
+  for (const node of document.content) {
+    if (node.type === "paragraph") {
+      lines.push(...paragraphLines(node));
+      continue;
+    }
+    // Any other block — heading, codeBlock, panel, blockquote, lists, unknown
+    // containers — is context, never command text.
+    for (const text of flattenNode(node).split("\n")) lines.push({ text, commandCapable: false });
+  }
+  return lines;
+}
+
+function paragraphLines(node: AdfBlock): AdfLine[] {
+  const lines: AdfLine[] = [{ text: "", commandCapable: true }];
+  for (const child of node.content ?? []) {
+    if ((child.type as string) === "hardBreak") {
+      lines.push({ text: "", commandCapable: true });
+      continue;
+    }
+    const current = lines[lines.length - 1]!;
+    if (child.type === "text") {
+      current.text += child.text;
+      // Styled text — code, link, strong, ANY mark — is never command text.
+      if (child.marks && child.marks.length > 0) current.commandCapable = false;
+      continue;
+    }
+    // Non-text inline content (mention, emoji, media…): visible placeholder,
+    // and the line can no longer be a bare command.
+    current.text += flattenNode(child);
+    current.commandCapable = false;
+  }
+  return lines;
+}
+
+/**
  * Render ADF to Jira wiki markup, the only rich format REST v2 (DC) accepts.
  * Unknown node types degrade to their plain text rather than throwing — a
  * comment must never be lost because of a decoration we do not model.

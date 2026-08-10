@@ -57,6 +57,23 @@ export class JiraRateLimitError extends JiraHttpError {
 }
 
 /**
+ * 5xx — a transient server-side failure (Cloud driver). The driver never
+ * retries in-process (durable retrying is Temporal's job); this class only
+ * marks the failure as safe to retry upstream, unlike a 4xx which is final.
+ */
+export class JiraRetryableError extends JiraHttpError {
+  constructor(status: number, method: string, url: string, responseBody: string) {
+    super(status, method, url, responseBody, `Jira ${method} ${url}: transient server failure (HTTP ${status})`);
+    this.name = "JiraRetryableError";
+  }
+}
+
+/** 429 and 5xx are worth retrying upstream; every other failure is final. */
+export function isRetryableJiraError(error: unknown): boolean {
+  return error instanceof JiraRetryableError || error instanceof JiraRateLimitError;
+}
+
+/**
  * Webhook signature could not be verified. Verification is fail-closed: this
  * error is thrown for a missing, malformed, or mismatching signature alike, so
  * an unsigned payload can never be mistaken for a verified one.
@@ -113,7 +130,7 @@ export class JiraLinkFailedError extends Error {
 export class JiraMembershipUnresolvedError extends Error {
   constructor(
     readonly group: string,
-    readonly reason: "incomplete_page_bean" | "too_many_pages",
+    readonly reason: "incomplete_page_bean" | "too_many_pages" | "contradictory_page",
     detail: string,
   ) {
     super(`Jira group "${group}" membership could not be resolved (${reason}): ${detail}`);

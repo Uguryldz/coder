@@ -38,7 +38,28 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
 
     const rows = [];
     for (const record of records.items) {
-      const state = await deps.runs.queryRunState(workflowIdFor(record.ticketKey));
+      // A query that FAILS is not a run with no state — it is one whose state
+      // could not be read, and the two must not share a fate. The engine
+      // answers per workflow: a single execution left behind by an older build
+      // ("no such function is exported by the workflow bundle"), or a worker
+      // that is momentarily down, made this loop throw and took the WHOLE list
+      // with it. Studio then rendered "no workflows yet" over a catalog holding
+      // twenty-two of them — the exact failure `read-models.ts` exists to
+      // prevent, arriving through the engine instead of the store.
+      //
+      // So the row survives with `state: null`, which the client already
+      // renders as "not started". `request.log.warn` keeps the reason where an
+      // operator can find it; it must not reach the response, where it would
+      // leak engine internals to a browser.
+      let state = null;
+      try {
+        state = await deps.runs.queryRunState(workflowIdFor(record.ticketKey));
+      } catch (error) {
+        request.log.warn(
+          { err: error, ticket: record.ticketKey },
+          "run state unreadable; listing the row without it",
+        );
+      }
       // A platform record with no execution is a run that has not started yet;
       // it is still the caller's ticket, so it is listed with a null state
       // rather than hidden — hiding it would make the queue look empty.

@@ -75,7 +75,27 @@ export async function buildServer(
 
   // `options.fastify` may override the limit deliberately, but it is never
   // absent: an unset bodyLimit silently becomes Fastify's 1 MB.
-  const app = Fastify({ logger: false, bodyLimit: BODY_LIMIT_BYTES, ...options.fastify });
+  /**
+   * Logging ON, at `warn`.
+   *
+   * It was `false`, and the error handler below dutifully called
+   * `request.log.error` into a logger that discarded it — so a 500 reached the
+   * operator as `{"error":"internal_error"}` with NOTHING on the server side
+   * saying why. That is not a privacy property; the response body is already
+   * opaque by design, and the whole point of the pair is that the reason lives
+   * where only the operator can read it. Found by driving the real stack: a
+   * wired read model threw, Studio showed an empty dashboard, and the log was
+   * silent.
+   *
+   * `warn` rather than `info` keeps per-request noise out of a bank's log
+   * aggregator while letting every refusal and unhandled error through. Tests
+   * pass `options.fastify` and stay quiet.
+   */
+  const app = Fastify({
+    logger: { level: process.env["LOG_LEVEL"] ?? "warn" },
+    bodyLimit: BODY_LIMIT_BYTES,
+    ...options.fastify,
+  });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof HttpError) {

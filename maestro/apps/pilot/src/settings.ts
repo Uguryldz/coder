@@ -77,6 +77,14 @@ function requireNonEmpty(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new SettingsValidationError(`${label} boş olamaz`);
   }
+  // Reject control characters (CR/LF/tab/etc.) at the panel. These fields flow
+  // into an audit actor (operatorAccount) and a group query (approverGroup);
+  // a newline is neutralized downstream, but catching it HERE makes a bad value
+  // fail at settings-write time instead of surfacing as a gate-time audit throw.
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    throw new SettingsValidationError(`${label} kontrol karakteri içeremez`);
+  }
   return value.trim();
 }
 

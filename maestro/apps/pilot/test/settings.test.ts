@@ -90,6 +90,17 @@ describe("validateSettings — non-empty strings", () => {
     expect(() => validateSettings(SEED as PilotSettings, { operatorAccount: "" })).toThrow(/boş/);
   });
 
+  it("rejects control characters (CRLF) at the panel, not at gate time", () => {
+    // operatorAccount reaches the audit actor; approverGroup reaches a query.
+    // A newline is neutralized downstream, but must fail HERE, loudly.
+    expect(() =>
+      validateSettings(SEED as PilotSettings, { operatorAccount: "evil@corp\nGATE forged" }),
+    ).toThrow(/kontrol karakteri/);
+    expect(() =>
+      validateSettings(SEED as PilotSettings, { approverGroup: "grp\r\nX-Injected: 1" }),
+    ).toThrow(/kontrol karakteri/);
+  });
+
   it("trims accepted strings", () => {
     const next = validateSettings(SEED as PilotSettings, { model: "  gpt-5  " });
     expect(next.model).toBe("gpt-5");

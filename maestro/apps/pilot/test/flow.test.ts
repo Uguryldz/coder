@@ -98,9 +98,12 @@ const codeDraft = {
 function fakeJiraCloud(): {
   fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
   comments: Array<{ id: string; body: unknown }>;
+  attachments: Array<{ filename: string; contentType: string }>;
 } {
   const comments: Array<{ id: string; body: unknown }> = [];
+  const attachments: Array<{ filename: string; contentType: string }> = [];
   let nextId = 20000;
+  let attachId = 10050;
   let labels: string[] = [];
 
   const issue = cloudFixture("issue-get") as { fields: Record<string, unknown> } & Record<string, unknown>;
@@ -164,6 +167,18 @@ function fakeJiraCloud(): {
       }
       return Promise.resolve(json(204, undefined));
     }
+    // Attachment upload (M103r): multipart/form-data, no JSON body. Record the
+    // file so the test can assert both analysis docs landed on the ticket.
+    if (path === "/rest/api/3/issue/OPS-6/attachments" && method === "POST") {
+      const form = init?.body;
+      if (!(form instanceof FormData)) throw new Error("attachment POST body must be FormData");
+      const file = form.get("file");
+      if (!(file instanceof Blob)) throw new Error("attachment POST missing file part");
+      const filename = file instanceof File ? file.name : "unknown";
+      attachments.push({ filename, contentType: file.type });
+      const id = String(attachId++);
+      return Promise.resolve(json(200, [{ id, filename, size: file.size, mimeType: file.type }]));
+    }
     // Comment create.
     if (path === "/rest/api/3/issue/OPS-6/comment" && method === "POST") {
       const id = String(nextId++);
@@ -204,7 +219,7 @@ function fakeJiraCloud(): {
     };
   }
 
-  return { fetchImpl, comments };
+  return { fetchImpl, comments, attachments };
 }
 
 describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)", () => {
@@ -274,6 +289,15 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
     expect(bodies).toContain("Tamamlandı");
     // The progress comment was edited in place (M75), not duplicated.
     expect(bodies).toContain("tamamlandı — PR birleşti");
+
+    // M103r: the analysis Word + PDF were attached to the ticket automatically —
+    // both files, with the right names and content types, no human drag-and-drop.
+    expect(jira.attachments.map((a) => a.filename).sort()).toEqual(["OPS-6-analiz.docx", "OPS-6-analiz.pdf"]);
+    const byName = new Map(jira.attachments.map((a) => [a.filename, a.contentType]));
+    expect(byName.get("OPS-6-analiz.docx")).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    expect(byName.get("OPS-6-analiz.pdf")).toBe("application/pdf");
   }, 90_000);
 
   it("kişisel veri modele maskesiz gitmedi", () => {

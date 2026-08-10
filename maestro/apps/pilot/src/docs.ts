@@ -1,3 +1,4 @@
+import type { JiraCloudWorkPort } from "@maestro/adapter-jira";
 import { t } from "@maestro/config";
 import type { AnalysisDoc, RunId, TicketKey } from "@maestro/contracts";
 import {
@@ -119,6 +120,52 @@ export async function analysisToDocs(
       fileName: docFileName(ticketKey, "pdf"),
     },
   };
+}
+
+/** The `addAttachment` capability the pilot needs from the concrete Cloud driver. */
+export type AttachCapableWork = Pick<JiraCloudWorkPort, "addAttachment">;
+
+/** Minimal logger seam so this is testable without the whole StateStore. */
+export type AttachLog = (kind: "ok" | "warn", message: string) => void;
+
+/** Outcome of the attach attempt — `true` iff BOTH files reached the ticket. */
+export interface AttachResult {
+  readonly attached: boolean;
+  readonly ids: string[];
+}
+
+/**
+ * Attach the generated Word + PDF to the live ticket (M103r) via the concrete
+ * Cloud driver's `addAttachment` — a DRIVER capability, not a frozen WorkPort
+ * method (see the driver's doc comment; the port surface would throw
+ * `CapabilityNotSupportedError`).
+ *
+ * FAIL-SOFT by contract: the analysis comment and the download buttons already
+ * stand by the time this runs, so a Jira hiccup here is logged and swallowed —
+ * it NEVER throws, so it can never crash the run. A partial upload (docx lands,
+ * pdf fails) still returns `attached: false` and logs the warning; the reviewer
+ * falls back to the download buttons for whatever did not land.
+ *
+ * Order is docx then pdf so the log line and the recorded ids are deterministic.
+ */
+export async function attachAnalysisDocs(
+  work: AttachCapableWork,
+  ticketKey: TicketKey,
+  generated: GeneratedDocs,
+  log: AttachLog,
+): Promise<AttachResult> {
+  const ids: string[] = [];
+  try {
+    for (const doc of [generated.docx, generated.pdf]) {
+      const res = await work.addAttachment(ticketKey, doc.fileName, doc.bytes, doc.contentType);
+      ids.push(...res.ids);
+    }
+    log("ok", "✓ analiz belgesi Jira'ya eklendi: 2 dosya");
+    return { attached: true, ids };
+  } catch (error) {
+    log("warn", `! analiz belgesi Jira'ya eklenemedi (akış etkilenmedi): ${String(error)}`);
+    return { attached: false, ids };
+  }
 }
 
 /**

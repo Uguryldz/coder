@@ -1,11 +1,7 @@
 import { AuditChain } from "@maestro/audit";
 import {
-  BcryptPasswordHasher,
   buildServer,
   EnvSettingsReader,
-  InMemoryKillSwitchStore,
-  InMemorySessionStore,
-  LocalIdentityProvider,
   StaticGateDirectory,
   UNWIRED_CAPABILITY_LINES,
   type BffDeps,
@@ -13,6 +9,9 @@ import {
 import { createDb } from "@maestro/db";
 import { bootPlatform } from "../boot.js";
 import { listenAddress } from "../env.js";
+import { selectIdentityProvider } from "../identity.js";
+import { PrismaKillSwitchStore } from "../stores/killswitch.js";
+import { PrismaSessionStore } from "../stores/sessions.js";
 import { PrismaJiraProjectBindings } from "../stores/bindings.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
 import { PrismaParamStore } from "../stores/params-store.js";
@@ -36,31 +35,27 @@ import { fail, install, isEntrypoint } from "./lifecycle.js";
  * `assertStoresDurable` turns the kill-switch entry into a refusal in the prod
  * profile; the rest are printed. The list is data rather than prose so the boot
  * path and the operator read the same thing.
+ *
+ * Dalga E emptied this of its two most consequential entries. `killSwitch` and
+ * `sessions` are now Postgres-backed (`PrismaKillSwitchStore` over the
+ * `KillSwitch` table, `PrismaSessionStore` over `Session` — migration 0008), so
+ * a restart no longer releases the emergency brake (M58) or signs every user
+ * out. The kill switch in particular was the only FATAL entry, so removing it
+ * is what lets the prod profile boot with a durable brake rather than refusing.
+ *
+ * What remains is genuinely volatile and cannot be faked durable: the open
+ * four-eyes PROPOSAL queue. A proposal is a value with no approver yet, and the
+ * `ParamVersion` table's CHECK refuses exactly that (a guarded version needs an
+ * approver, migration 0002), so it has no row to live in. Losing one on a
+ * restart costs the first approver a second click — the value was never applied
+ * — so it is reported rather than made a refusal, and the APPLIED values are
+ * durable (`PrismaParamStore` reads and writes `Param`/`ParamVersion`).
  */
 const VOLATILE_STORES: readonly StoreDurability[] = [
   {
-    name: "killSwitch",
-    durable: false,
-    onRestart: "the emergency brake reverts to `off` with nobody told (M58)",
-  },
-  {
-    // The VALUES are durable now (`PrismaParamStore` reads and writes
-    // `Param`/`ParamVersion`); the open four-eyes proposals are not, because a
-    // proposal is a value with no approver and the versions table refuses
-    // exactly that. Losing one costs the first approver a second click — the
-    // value was never applied — so it is reported rather than made a refusal.
     name: "params (pending proposals only)",
     durable: false,
     onRestart: "open four-eyes proposals are lost; applied parameter values survive",
-  },
-  // `templates` used to be here, and is not any more: `PrismaTemplateStore`
-  // reads and writes `AnalysisTemplateVersion` (migration 0007), so a
-  // published version survives a restart and a run pinned to one (M83) can
-  // still read what it was judged against.
-  {
-    name: "sessions",
-    durable: false,
-    onRestart: "every logged-in user is signed out",
   },
 ];
 
@@ -79,7 +74,7 @@ export async function main(): Promise<void> {
   const url = required(process.env["DATABASE_URL"], "DATABASE_URL");
   const db = createDb(url);
 
-  const { env, deployment } = await bootPlatform({ sql: prismaSqlExecutor(db) });
+  const { env, deployment, secrets } = await bootPlatform({ sql: prismaSqlExecutor(db) });
 
   // Before Temporal, before the socket: a deployment whose emergency brake
   // cannot survive a restart must not reach the point of accepting traffic.
@@ -125,8 +120,18 @@ export async function main(): Promise<void> {
       store: auditStore,
       lock: postgresChainLock(prismaTransactionRunner(db)),
     }),
-    sessions: new InMemorySessionStore(),
-    identity: new LocalIdentityProvider(users, new BcryptPasswordHasher()),
+    // Postgres-backed, where it used to be an `InMemorySessionStore` (Dalga E,
+    // migration 0008). A restart no longer signs every logged-in user out
+    // mid-task — a support storm on a process that runs under
+    // `restart: unless-stopped`. See `PrismaSessionStore` for the timing note
+    // on why a primary-key lookup is the right store for a 256-bit token.
+    sessions: new PrismaSessionStore(db.session),
+    // The login path, selected by config (M8). `local` (default) is the bcrypt
+    // provider unchanged; `IDENTITY_DRIVER=ldaps-bind` binds against the bank's
+    // AD/LDAP with NO silent fallback to local — an unreachable directory fails
+    // the login closed rather than downgrading to a weaker store. The local
+    // directory below is both the local provider's store and the default.
+    identity: selectIdentityProvider(env, { secrets, users }),
     users,
     // Read from the `JiraProjectBinding` table rather than from a hard-coded
     // empty list. An empty list resolved every project to `null`, so every
@@ -170,7 +175,12 @@ export async function main(): Promise<void> {
     // bank's Jira integration elsewhere without a deploy.
     settings: new EnvSettingsReader(env.base, read.health, notifyChannels(deployment)),
     routing: new PrismaRoutingReader(db.jiraProjectBinding, db.routingRule),
-    killSwitch: new InMemoryKillSwitchStore(),
+    // Postgres-backed, where it used to be an `InMemoryKillSwitchStore` (Dalga
+    // E, migration 0008). This is the store `assertStoresDurable` refused a
+    // prod boot without: a process-local brake reverts to `off` on the restart
+    // this process is configured to perform, RELEASING the emergency brake with
+    // nobody told (M58). One durable row now survives it.
+    killSwitch: new PrismaKillSwitchStore(db.killSwitch),
     // Studio's read side, live (M7). Ten of the twelve read models answer from
     // the tables the worker writes; `runners` and `scans` still refuse by name
     // because nothing in this platform writes either, and a store over an

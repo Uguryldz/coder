@@ -164,6 +164,9 @@ importers:
       '@maestro/adapter-jira':
         specifier: workspace:*
         version: link:../../packages/adapter-jira
+      '@maestro/adapter-ldap':
+        specifier: workspace:*
+        version: link:../../packages/adapter-ldap
       '@maestro/audit':
         specifier: workspace:*
         version: link:../../packages/audit

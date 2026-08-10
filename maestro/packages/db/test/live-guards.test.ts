@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Db } from "../src/index.js";
-import { readGuardsMigration, readMigration } from "./paths.js";
+import { allMigrationSql, readGuardsMigration, readMigration } from "./paths.js";
 
 /**
  * Behavioural proof of migration `0002`: the guards are only real if a client
@@ -170,5 +170,63 @@ describe.skipIf(url === undefined || url.trim().length === 0)("database guards (
          VALUES ('run-live-2','LIVE-1','full_auto','dahili','0','running', now(), now())`,
       ),
     ).resolves.toBe(1);
+  });
+});
+
+/**
+ * Behavioural proof of migration `0008` (Dalga E): the durable-store guards are
+ * only real if a client that tries to break them fails. Same opt-in switch and
+ * same offline-text mirror (`test/migration.test.ts`) as the block above.
+ *
+ * A fresh schema loading ALL migrations, so `Session` and `KillSwitch` exist —
+ * they arrive in 0008, which the block above deliberately does not load.
+ */
+describe.skipIf(url === undefined || url.trim().length === 0)("durable-store guards (live)", () => {
+  let db: Db;
+
+  beforeAll(async () => {
+    db = createDb(url as string, { log: ["error"] });
+    await db.$executeRawUnsafe("DROP SCHEMA IF EXISTS public CASCADE");
+    await db.$executeRawUnsafe("CREATE SCHEMA public");
+    for (const statement of splitSqlStatements(allMigrationSql())) {
+      await db.$executeRawUnsafe(statement);
+    }
+  }, 120_000);
+
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+
+  it("refuses a session that expires before it was issued", async () => {
+    await expect(
+      db.$executeRawUnsafe(
+        `INSERT INTO "Session" ("token","userId","username","rolesJson","groupsJson","issuedAt","expiresAt")
+         VALUES ('t1','ugur@corp','ugur','[]'::jsonb,'[]'::jsonb, now(), now() - interval '1 hour')`,
+      ),
+    ).rejects.toThrow(/Session_expiry_after_issue/);
+  });
+
+  it("allows exactly one kill-switch row and refuses a second (M58)", async () => {
+    await expect(
+      db.$executeRawUnsafe(
+        `INSERT INTO "KillSwitch" ("id","level","actor","reason","at")
+         VALUES ('ONLY','all','ugur@corp','incident', now())`,
+      ),
+    ).resolves.toBe(1);
+    // A second row with a different id is refused by the single-row CHECK.
+    await expect(
+      db.$executeRawUnsafe(
+        `INSERT INTO "KillSwitch" ("id","level","actor","reason","at")
+         VALUES ('OTHER','off','mert@corp','none', now())`,
+      ),
+    ).rejects.toThrow(/KillSwitch_single_row/);
+  });
+
+  it("refuses a kill-switch level the platform cannot read — a brake must never fail open", async () => {
+    await expect(
+      db.$executeRawUnsafe(
+        `UPDATE "KillSwitch" SET "level" = 'paused' WHERE "id" = 'ONLY'`,
+      ),
+    ).rejects.toThrow(/KillSwitch_level_valid/);
   });
 });

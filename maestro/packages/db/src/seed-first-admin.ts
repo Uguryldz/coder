@@ -25,6 +25,15 @@ export const FIRST_ADMIN_USERNAME = "admin";
 export const FIRST_ADMIN_PASSWORD = "admin123";
 export const FIRST_ADMIN_DISPLAY_NAME = "Yönetici";
 /**
+ * The row `id` — which becomes the AUDIT ACTOR for anything this account seals
+ * (a connector "Test et", a gate approval). The audit chain (packages/audit)
+ * requires a `local@domain` actor and rejects a bare `admin`, so the id must be
+ * corporate-shaped even though the login `email` stays `admin` (login matches on
+ * email — apps/deploy/src/stores/users.ts). Keeping id ≠ email is deliberate:
+ * one is the durable identity, the other the human-typed login handle.
+ */
+export const FIRST_ADMIN_USER_ID = "admin@maestro.local";
+/**
  * The directory group that maps to the `admin` role. Kept in step with
  * `ROLE_BY_GROUP` (apps/bff/src/auth/groups.ts, apps/deploy/src/stores/users.ts):
  * `maestro-admins` is the group whose reading grants `admin`. A group that does
@@ -102,7 +111,7 @@ export async function seedFirstAdmin(
 
   await db.user.create({
     data: {
-      id: FIRST_ADMIN_USERNAME,
+      id: FIRST_ADMIN_USER_ID,
       email: FIRST_ADMIN_USERNAME,
       displayName: FIRST_ADMIN_DISPLAY_NAME,
       passwordHash: await hash(FIRST_ADMIN_PASSWORD),

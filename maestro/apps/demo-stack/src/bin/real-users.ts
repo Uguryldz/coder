@@ -23,6 +23,8 @@ import { PrismaJiraProjectBindings } from "../../../deploy/src/stores/bindings.j
 import { liveReadModels } from "../../../deploy/src/stores/read-live.js";
 import { PrismaVariantCatalog } from "../../../deploy/src/stores/read-variants.js";
 import { AuditPiiReader, AuditDecisionReader } from "../../../deploy/src/stores/read-governance.js";
+import { PrismaConnectionStore } from "../../../deploy/src/stores/connections.js";
+import { EncryptedSecretStore, resolveMasterKey } from "../../../deploy/src/stores/encrypted-secret.js";
 import { buildDemoStack } from "../deps.js";
 import { listenAddress } from "../address.js";
 
@@ -63,6 +65,16 @@ async function main(): Promise<void> {
       db.analysisTemplateVersion,
       db.jiraProjectBinding,
       db.workflowRun,
+    ),
+    // Real connector management (Ayarlar > Bağlantılar): the DB-seeded Jira +
+    // OpenRouter connections, tokens AES-encrypted under CONNECTOR_MASTER_KEY.
+    connections: new PrismaConnectionStore(db.connection),
+    connectorSecrets: new EncryptedSecretStore(
+      resolveMasterKey({
+        envValue: process.env["CONNECTOR_MASTER_KEY"],
+        isProduction: false,
+      }),
+      db.connectorSecret,
     ),
     studio: {
       variants: new PrismaVariantCatalog(db.variant, db.variantVersion),

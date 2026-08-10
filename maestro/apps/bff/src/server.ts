@@ -11,7 +11,9 @@ import { assertCatalog, defaultCatalog } from "./messages.js";
 import { SESSION_TTL_MS } from "./auth/sessions.js";
 import { bffPlatform } from "./platform/index.js";
 import { authRoutes } from "./routes/auth.js";
+import { docTemplateRoutes } from "./routes/doc-template.js";
 import { healthRoutes } from "./routes/health.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { killSwitchRoutes } from "./routes/killswitch.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { paramRoutes } from "./routes/params.js";
@@ -131,6 +133,10 @@ export async function buildServer(
   await app.register(async (scope) => runRoutes(scope, resolved));
   await app.register(async (scope) => paramRoutes(scope, resolved));
   await app.register(async (scope) => templateRoutes(scope, resolved));
+  // Own encapsulation context: the binary `.docx` parser it registers must not
+  // reach the JSON API, where it would turn every other body into a Buffer.
+  await app.register(async (scope) => docTemplateRoutes(scope, resolved));
+  await app.register(async (scope) => settingsRoutes(scope, resolved));
   await app.register(async (scope) => killSwitchRoutes(scope, resolved));
   // Studio's read surface (M86/M7): the 37 screens read through these, and
   // through the same guards and the same project scoping as everything above.

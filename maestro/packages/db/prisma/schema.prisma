@@ -600,6 +600,44 @@ model EvidencePackageRow {
   @@index([ticketKey])
 }
 
+/// The institution's own Word template (M103r/M109), one row per upload.
+///
+/// Append-only by intent: a run pinned to version 2 (M83) must still be able to
+/// render against version 2 after version 3 lands, so an upload INSERTs and
+/// never updates. `version` is the primary key, which makes the "no two
+/// uploaders both become version 3" rule the database's rather than the
+/// application's.
+model DocTemplateVersion {
+  version    Int      @id
+  fileName   String   @db.VarChar(200)
+  uploadedAt DateTime @db.Timestamptz(3)
+  uploadedBy String   @db.VarChar(128)
+  sizeBytes  Int
+  /// Style names read out of the .docx at upload time — string[].
+  stylesJson Json
+  /// The placeholder scan AS PERFORMED for this version. Stored rather than
+  /// recomputed on read: it is what the document owner approved, and a scanner
+  /// improved later must not retroactively change what version 3 contained.
+  placeholdersJson Json
+  /// The file itself, verbatim. The bank's cover, header/footer, logo and
+  /// styles survive precisely because nothing re-serialises these bytes.
+  content    Bytes
+}
+
+/// A document this platform produced, for the template screen's output list
+/// and for answering "which template version was this rendered against".
+model DocTemplateOutputRow {
+  id              String   @id @db.VarChar(128)
+  fileName        String   @db.VarChar(400)
+  at              DateTime @db.Timestamptz(3)
+  /// Not a foreign key: version 0 means "rendered on the built-in fallback
+  /// because no corporate template was uploaded", which points at no row and
+  /// is exactly the case the screen must be able to show.
+  templateVersion Int
+
+  @@index([at])
+}
+
 // MVP local users (M8); AD/LDAP arrives in Aşama 2.
 model User {
   id           String  @id @db.VarChar(64)

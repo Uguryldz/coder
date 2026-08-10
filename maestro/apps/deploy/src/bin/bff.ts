@@ -2,8 +2,8 @@ import { AuditChain } from "@maestro/audit";
 import {
   BcryptPasswordHasher,
   buildServer,
+  EnvSettingsReader,
   InMemoryKillSwitchStore,
-  InMemoryParamStore,
   InMemorySessionStore,
   InMemoryTemplateStore,
   LocalIdentityProvider,
@@ -15,6 +15,9 @@ import { createDb } from "@maestro/db";
 import { bootPlatform } from "../boot.js";
 import { listenAddress } from "../env.js";
 import { PrismaJiraProjectBindings } from "../stores/bindings.js";
+import { PrismaDocTemplateStore } from "../stores/doc-template.js";
+import { PrismaParamStore } from "../stores/params-store.js";
+import { PrismaRoutingReader } from "../stores/routing.js";
 import { assertStoresDurable, volatileStoreWarning, type StoreDurability } from "../stores/durability.js";
 import { postgresProbe, temporalProbe } from "../stores/read-health.js";
 import { DEGRADED_READ_MODELS, liveReadModels } from "../stores/read-live.js";
@@ -41,9 +44,14 @@ const VOLATILE_STORES: readonly StoreDurability[] = [
     onRestart: "the emergency brake reverts to `off` with nobody told (M58)",
   },
   {
-    name: "params",
+    // The VALUES are durable now (`PrismaParamStore` reads and writes
+    // `Param`/`ParamVersion`); the open four-eyes proposals are not, because a
+    // proposal is a value with no approver and the versions table refuses
+    // exactly that. Losing one costs the first approver a second click — the
+    // value was never applied — so it is reported rather than made a refusal.
+    name: "params (pending proposals only)",
     durable: false,
-    onRestart: "M71 parameters fall back to defaults and pending four-eyes proposals are lost",
+    onRestart: "open four-eyes proposals are lost; applied parameter values survive",
   },
   {
     name: "templates",
@@ -100,6 +108,16 @@ export async function main(): Promise<void> {
   // the real one. The lock moves with it — `postgresChainLock` is what stops a
   // second replica from forking the chain, which `LocalChainLock` cannot do.
   const auditStore = new PrismaAuditStore(db.auditLog);
+  // Built once and shared: the settings screen reports the SAME probe results
+  // the health screen does. Two independent probe sets would let one screen
+  // call Jira green while the other calls it red, and an operator would have no
+  // way to tell which to believe.
+  const read = liveReadModels({
+    db,
+    audit: auditStore,
+    probes: [postgresProbe(db), temporalProbe(temporal.gateway)],
+  });
+
   const deps: BffDeps = {
     work: deployment.ports.work,
     workEvents: jiraWorkEventReader(),
@@ -119,26 +137,38 @@ export async function main(): Promise<void> {
     // An unbound project is still dropped; it now means nobody bound it.
     bindings: new PrismaJiraProjectBindings(db.jiraProjectBinding),
     gates: new StaticGateDirectory(),
-    // Both still process-local, and both declared in `VOLATILE_STORES` above
-    // rather than left as a comment: the prod profile refuses to boot on the
-    // kill switch, and the dev profile prints what a restart would cost.
-    params: new InMemoryParamStore(),
+    // Postgres-backed, where it used to be an EMPTY `InMemoryParamStore`.
+    // With no definitions at all, every operational setting the installer had
+    // seeded into `Param`/`ParamVersion` was invisible: the params screen
+    // showed nothing to configure, and the settings, notify and routing
+    // screens could not read the escalation ladder, the channel routing or the
+    // data-class policy that were in the database the whole time. A restart
+    // also silently discarded anything an operator had changed. The pending
+    // four-eyes queue is still process-local — see `PrismaParamStore`.
+    params: new PrismaParamStore(db.param, db.paramVersion),
     // Process-local like the two above, and declared in `VOLATILE_STORES` for
     // the same reason: a template version is what an approved analysis was
     // judged against (M83), so losing the history on a restart is a real cost
     // an operator must read rather than discover.
     templates: new InMemoryTemplateStore(),
+    // Postgres-backed, unlike the two above: an uploaded corporate template is
+    // a FILE somebody produced, not a setting they can retype, and a run pinned
+    // to version 2 (M83) cannot render at all if a restart lost version 2.
+    // That is why this one got a table (migration 0005) rather than a line in
+    // `VOLATILE_STORES`.
+    docTemplates: new PrismaDocTemplateStore(db.docTemplateVersion, db.docTemplateOutputRow),
+    // Wiring, read from the validated environment (M6) and the live probes.
+    // There is no settings table on purpose: an endpoint and a credential path
+    // are deployment facts, and a console able to rewrite them could point the
+    // bank's Jira integration elsewhere without a deploy.
+    settings: new EnvSettingsReader(env.base, read.health, notifyChannels(deployment)),
+    routing: new PrismaRoutingReader(db.jiraProjectBinding, db.routingRule),
     killSwitch: new InMemoryKillSwitchStore(),
     // Studio's read side, live (M7). Ten of the twelve read models answer from
     // the tables the worker writes; `runners` and `scans` still refuse by name
     // because nothing in this platform writes either, and a store over an
     // empty table would render "no runners, no findings" — indistinguishable
     // from a healthy fleet. See `stores/read-live.ts`.
-    read: liveReadModels({
-      db,
-      audit: auditStore,
-      probes: [postgresProbe(db), temporalProbe(temporal.gateway)],
-    }),
     /**
      * The last eight screens (M7), three of them wired.
      *
@@ -157,6 +187,7 @@ export async function main(): Promise<void> {
       pii: new AuditPiiReader(auditStore, db.llmCall),
       decisions: new AuditDecisionReader(auditStore),
     },
+    read,
     config: { env: env.base },
   };
 
@@ -197,6 +228,25 @@ export async function main(): Promise<void> {
     await temporal.close();
     await db.$disconnect();
   });
+}
+
+/**
+ * Which notify channels this deployment actually registered.
+ *
+ * Read out of the resolved selection rather than listed by hand: the notify
+ * driver's config names its channels (`{ jira: {} }`), so this is the same
+ * fact the notifier itself acts on. A hand-kept list here would drift, and the
+ * settings screen would then show a channel as live that nothing delivers to
+ * — which is worse than showing none, because an operator would stop looking
+ * for the reminder that never arrived.
+ *
+ * The `multi` driver fans out to the channels its config names; any other
+ * driver IS its channel, and its own id is the answer.
+ */
+function notifyChannels(deployment: { selection: { notify: { driver: string; config: unknown } } }): readonly string[] {
+  const { driver, config } = deployment.selection.notify;
+  if (driver !== "multi") return [driver];
+  return typeof config === "object" && config !== null ? Object.keys(config) : [];
 }
 
 function required<T>(value: T | undefined, name: string): T {

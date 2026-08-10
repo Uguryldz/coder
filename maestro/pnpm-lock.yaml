@@ -41,9 +41,15 @@ importers:
       '@maestro/mcp-servers':
         specifier: workspace:*
         version: link:../../packages/mcp-servers
+      '@maestro/notify':
+        specifier: workspace:*
+        version: link:../../packages/notify
       '@maestro/ports':
         specifier: workspace:*
         version: link:../../packages/ports
+      '@maestro/publish':
+        specifier: workspace:*
+        version: link:../../packages/publish
       bcryptjs:
         specifier: ^3.0.2
         version: 3.0.3
@@ -63,6 +69,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      docx:
+        specifier: ^9.7.1
+        version: 9.7.1
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

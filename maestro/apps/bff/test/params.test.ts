@@ -240,8 +240,16 @@ describe("GET /params", () => {
 
     const response = await h.app.inject({ method: "GET", url: "/params", headers: auth(first) });
 
-    const body = response.json() as { definitions: unknown[]; values: unknown[]; pending: unknown[] };
-    expect(body.definitions).toHaveLength(2);
+    const body = response.json() as {
+      definitions: { key: string }[];
+      values: unknown[];
+      pending: unknown[];
+    };
+    // The seeded definitions, by KEY rather than by count: the harness's
+    // fixture list grows as screens are wired, and an assertion on its length
+    // fails for the wrong reason every time one is added.
+    expect(body.definitions.map((definition) => definition.key)).toContain("gate.set");
+    expect(body.definitions.map((definition) => definition.key)).toContain("reminder.channel");
     expect(body.values).toHaveLength(0);
     expect(body.pending).toHaveLength(1);
   });

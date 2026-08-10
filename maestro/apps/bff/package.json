@@ -17,7 +17,9 @@
     "@maestro/contracts": "workspace:*",
     "@maestro/execution": "workspace:*",
     "@maestro/mcp-servers": "workspace:*",
+    "@maestro/notify": "workspace:*",
     "@maestro/ports": "workspace:*",
+    "@maestro/publish": "workspace:*",
     "bcryptjs": "^3.0.2",
     "fastify": "^5.2.0",
     "zod": "^4.0.0"
@@ -26,6 +28,7 @@
     "@maestro/adapter-jira": "workspace:*",
     "@maestro/workflows": "workspace:*",
     "@types/node": "^24.0.0",
+    "docx": "^9.7.1",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }

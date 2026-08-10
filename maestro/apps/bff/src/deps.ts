@@ -224,6 +224,134 @@ export interface TemplateStore {
   publish(record: TemplateVersionRecord): Promise<void>;
 }
 
+// ── corporate document template (M103r/M109 / M83) ────────────────────────────
+
+/**
+ * One uploaded corporate `.docx`, as STORED.
+ *
+ * The bytes are kept verbatim. That is the whole promise of M103r: the bank's
+ * cover, header/footer, logo and style definitions survive because nothing
+ * re-serialises them — `@maestro/publish` patches placeholders into the
+ * original file. Anything this platform parsed and rewrote, it could also
+ * silently lose.
+ *
+ * `placeholders` and `styles` are the SCAN of those bytes, recorded at upload
+ * time rather than recomputed per read: the scan is what the document owner
+ * approved, and a scanner improved next quarter must not retroactively change
+ * what version 3 was said to contain.
+ */
+export interface DocTemplateRecord {
+  fileName: string;
+  /** Monotonic. A new upload publishes a new version; it never edits one (M83). */
+  version: number;
+  uploadedAt: string;
+  uploadedBy: string;
+  sizeBytes: number;
+  /** Style names read out of the `.docx`. */
+  styles: readonly string[];
+  /** Every placeholder this platform looks for, found or not. */
+  placeholders: readonly DocTemplatePlaceholder[];
+  /** The file itself. Only the download path reads it. */
+  content: Uint8Array;
+}
+
+export interface DocTemplatePlaceholder {
+  token: string;
+  /** Catalog key describing what gets written here (M104) — never prose. */
+  descriptionKey: string;
+  /** Where in the document it sits, as free text from the scan. */
+  location: string;
+  found: boolean;
+}
+
+/** A document this platform actually produced, for the screen's "outputs" list. */
+export interface DocTemplateOutput {
+  fileName: string;
+  at: string;
+  /** The template version it was rendered against — pinned per run (M83). */
+  templateVersion: number;
+}
+
+export interface DocTemplateStore {
+  /** Newest uploaded version, or null before the first upload. */
+  latest(): Promise<DocTemplateRecord | null>;
+  /**
+   * A specific version. A run pinned to version 2 must still render against
+   * version 2 after version 3 lands (M83), which is the only reason older
+   * versions are kept at all.
+   */
+  get(version: number): Promise<DocTemplateRecord | null>;
+  /**
+   * Append a new version. MUST reject anything other than `latest + 1` so two
+   * uploaders cannot both publish version 3 and lose one of the files.
+   */
+  publish(record: DocTemplateRecord): Promise<void>;
+  /** Documents rendered against these templates, newest first. */
+  outputs(limit: number): Promise<readonly DocTemplateOutput[]>;
+}
+
+// ── platform wiring, as Studio's settings screen reads it ─────────────────────
+
+export type ConnectionStatus = "connected" | "degraded" | "unconfigured";
+
+/**
+ * One outbound connection. `credentialRef` is a Vault path or an auth method
+ * and NEVER a secret: a console that can display a PAT is a console that can
+ * leak it into a screenshot, so the value never leaves the process that holds
+ * it.
+ */
+export interface ConnectionView {
+  id: string;
+  endpoint: string;
+  status: ConnectionStatus;
+  credentialRef: string;
+  checkedAt: string | null;
+}
+
+export interface NotifyDriverView {
+  channel: string;
+  enabled: boolean;
+  /** Where the channel delivers — a room, a mailbox, the ticket itself. */
+  target: string;
+}
+
+export interface SettingsReader {
+  connections(): Promise<readonly ConnectionView[]>;
+  notifyDrivers(): Promise<readonly NotifyDriverView[]>;
+}
+
+// ── ticket → application routing (M99/M102) ───────────────────────────────────
+
+export interface RoutingProjectView {
+  projectKey: string;
+  /** `auto` | `label` | `command` — how a ticket enters the flow (M48a). */
+  trigger: string;
+  /**
+   * Named `apps` because that is what `Routing.tsx` reads. It was `appIds`,
+   * which typechecked all the way through — the screen is untyped against this
+   * interface — and crashed the page on `row.apps.length` the first time a
+   * browser opened it. The screens own these names.
+   */
+  apps: readonly string[];
+  /** Catalog-free note built from the binding's own state. */
+  note: string;
+}
+
+export interface RoutingRuleView {
+  ruleId: string;
+  /** The condition, already rendered readable by the store that owns the shape. */
+  condition: string;
+  /** Where the rule sends the ticket: an application id, or the queue. */
+  effect: string;
+  priority: number;
+  projectKey: string;
+}
+
+export interface RoutingReader {
+  projects(): Promise<readonly RoutingProjectView[]>;
+  rules(): Promise<readonly RoutingRuleView[]>;
+}
+
 // ── kill switch (M58) ─────────────────────────────────────────────────────────
 
 export type KillSwitchLevel = "off" | "intake_only" | "all";
@@ -312,6 +440,12 @@ export interface BffDeps {
   gates: GateDirectory;
   params: ParamStore;
   templates: TemplateStore;
+  /** The corporate `.docx` the analysis is rendered INTO (M103r/M109). */
+  docTemplates: DocTemplateStore;
+  /** Platform wiring, as the settings screen reads it. */
+  settings: SettingsReader;
+  /** Ticket→application routing (M99/M102), as the routing screen reads it. */
+  routing: RoutingReader;
   killSwitch: KillSwitchStore;
   /**
    * Studio's read side (M7). Grouped rather than spread across `BffDeps` so it

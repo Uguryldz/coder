@@ -1,4 +1,6 @@
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import PDFDocument from "pdfkit";
 import type { DocumentModel } from "./doc-model.js";
 import { plainText } from "./doc-model.js";
@@ -37,11 +39,22 @@ const MARGIN = 56;
 const require = createRequire(import.meta.url);
 
 function fontPath(file: string): string {
+  // The `dejavu-fonts-ttf` package restricts deep imports via its `exports`
+  // field, so `require.resolve("dejavu-fonts-ttf/ttf/X.ttf")` throws under
+  // modern Node resolution — which previously produced a SILENT empty PDF
+  // when the caller (e.g. the pilot) swallowed the error path. Resolve the
+  // package ROOT (always allowed) and build the ttf path from there.
   try {
-    return require.resolve(`dejavu-fonts-ttf/ttf/${file}`);
-  } catch {
+    const pkgJson = require.resolve("dejavu-fonts-ttf/package.json");
+    const ttf = join(dirname(pkgJson), "ttf", file);
+    if (!existsSync(ttf)) {
+      throw new Error(`ttf missing at ${ttf}`);
+    }
+    return ttf;
+  } catch (cause) {
     throw new PublishRenderError(
-      `the PDF font ${file} could not be resolved — Turkish characters would be corrupted silently, refusing to render`,
+      `the PDF font ${file} could not be resolved (${String(cause)}) — Turkish characters ` +
+        `would be corrupted silently, refusing to render`,
     );
   }
 }
@@ -211,13 +224,20 @@ function paginate(doc: Doc, ticket: string): void {
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i += 1) {
     doc.switchToPage(range.start + i);
-    const y = doc.page.height - MARGIN + 12;
+    // The footer sits INSIDE the bottom margin band. Writing at
+    // `height - MARGIN + 12` put it BELOW the page body, and pdfkit reacts to
+    // text past the bottom margin by spawning a fresh page — which is what
+    // produced a trail of empty pages after the real content. Keep it above
+    // the bottom edge and disable page-wrapping for the footer text.
+    const y = doc.page.height - MARGIN + 6;
     doc.font("body").fontSize(8).fillColor("#666666");
-    doc.text(ticket, MARGIN, y, { width: contentWidth(doc) / 2, lineBreak: false });
-    doc.text(`${String(i + 1)} / ${String(range.count)}`, MARGIN + contentWidth(doc) / 2, y, {
-      width: contentWidth(doc) / 2,
+    const half = contentWidth(doc) / 2;
+    doc.text(ticket, MARGIN, y, { width: half, lineBreak: false, height: 12 });
+    doc.text(`${String(i + 1)} / ${String(range.count)}`, MARGIN + half, y, {
+      width: half,
       align: "right",
       lineBreak: false,
+      height: 12,
     });
   }
   doc.flushPages();

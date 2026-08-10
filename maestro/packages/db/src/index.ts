@@ -73,6 +73,8 @@ export type { DefaultTemplateSection } from "./template-defaults.js";
 
 // Demo dataset (insa-plani Dalga 1: the seed *is* the mock's data).
 export { buildDemoDataset, seedDemo } from "./seed-demo.js";
+export { resetRuntimeData, RESET_TABLES } from "./reset.js";
+export type { ResetDb } from "./reset.js";
 export type { DemoDataset, SeedDemoDb, SeedDemoDelegates } from "./seed-demo.js";
 export { ago, DEMO_NOW, demoRunId, ist } from "./demo/clock.js";
 export { DEMO_TICKETS } from "./demo/tickets.js";

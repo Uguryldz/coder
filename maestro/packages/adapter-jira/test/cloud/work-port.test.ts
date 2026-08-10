@@ -179,6 +179,25 @@ describe("JiraCloudWorkPort", () => {
     expect(stub.calls[0]!.url).toContain("/rest/api/3/group/member?groupname=gate-approvers");
   });
 
+  it("parses membership against the recorded live group/member shape", async () => {
+    // Real 200 from uyildiz.atlassian.net (groupname param — groupId returns 404
+    // on Cloud). Pins the parser to the shape the site actually returns rather
+    // than a hand-written stub: {self,maxResults,startAt,total,isLast,values[]}.
+    const real = fixture("cloud/group-member-by-name") as {
+      values: Array<{ accountId: string }>;
+    };
+    const present = real.values[0]!.accountId;
+
+    const hit = stubFetch([{ body: real }]);
+    await expect(port(hit).verifyMembership(present, "jira-users-uyildiz")).resolves.toBe(true);
+    expect(hit.calls[0]!.url).toContain("groupname=jira-users-uyildiz");
+
+    const miss = stubFetch([{ body: real }]);
+    await expect(
+      port(miss).verifyMembership("712020:nobody-here", "jira-users-uyildiz"),
+    ).resolves.toBe(false);
+  });
+
   it("skips inactive members and pages until isLast", async () => {
     const inactive = { accountId: ACCOUNT_ID, active: false };
     const stub = stubFetch([

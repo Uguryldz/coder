@@ -234,6 +234,7 @@ model WorkflowRun {
 
   stepEvents  StepEvent[]
   gates       Gate[]
+  strikes     StrikeCounter[]
   journal     JournalEntry[]
   application Application?   @relation(fields: [appId], references: [appId], onDelete: Restrict, onUpdate: Cascade)
 
@@ -304,6 +305,45 @@ model Gate {
 
   @@id([runId, step])
   @@index([closedAt]) // "which gates are still open" — the ladder's sweep
+}
+
+/// Three-strike counters (M54), made durable.
+///
+/// The stuck-protection rule is "the same failure three times → drop to
+/// ai-assist and hand the ticket to a human". Counting that in memory works
+/// for one worker that never stops, and neither holds: a worker is redeployed
+/// mid-run, and Temporal can retry an activity on a DIFFERENT worker from the
+/// one that recorded strike two. Both reset the count to zero, so "three
+/// rejections at the same gate" never arrives and the run retries the same
+/// failing turn forever — the exact stuck loop M54 exists to break.
+///
+/// Keyed by `(runId, scope, ref)` because different scopes never share a
+/// count: a green build does not absolve three rejections at the Tech Lead
+/// gate, so only the key that succeeded is ever cleared.
+model StrikeCounter {
+  runId String @db.VarChar(128)
+  /// gate | ci | agent — see `STRIKE_SCOPES`.
+  scope String @db.VarChar(16)
+  /// Gate id ("5"), CI-error fingerprint, or the agent failure reason.
+  ref   String @db.VarChar(256)
+
+  count Int
+  /// When this counter opened; kept across a restart so the handover note can
+  /// say how long the run has been stuck rather than when it was last read.
+  firstAt DateTime @db.Timestamptz(3)
+  lastAt  DateTime @db.Timestamptz(3)
+  /// Most recent reasons, oldest first; the handover note quotes them.
+  reasons String[]
+
+  /// Restrict, like every other relation in this schema (M30/M56): a run's
+  /// rows are evidence of how it was handled, and a cascade would let a
+  /// deletion elsewhere quietly take the record of a handover with it. The
+  /// counters are cleared explicitly, by the ledger, when they stop applying.
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([runId, scope, ref])
+  /// "which runs are stuck" — the operator's view and the ledger's hydrate.
+  @@index([runId])
 }
 
 /// Table-backed idempotency (M33).

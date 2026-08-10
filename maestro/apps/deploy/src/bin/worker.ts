@@ -1,7 +1,11 @@
-import { createDb } from "@maestro/db";
-import { MAESTRO_TASK_QUEUE, startMaestroWorker } from "@maestro/workflows";
-import { bootPlatform, DEGRADED_CAPABILITIES, MISSING_CORE_DEPS } from "../boot.js";
-import { unwiredAgentTurnRunner } from "../stores/execution.js";
+import { createDb, type Db } from "@maestro/db";
+import { defaultPiiPolicy } from "@maestro/pii";
+import type { LlmPort, StoragePort } from "@maestro/ports";
+import { createDockerLinuxRunner } from "@maestro/runners";
+import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/workflows";
+import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
+import type { DeployEnv } from "../env.js";
+import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
@@ -35,19 +39,32 @@ export async function main(): Promise<void> {
   const db = createDb(url);
 
   try {
-    // Built BEFORE the ports: `publish`'s deps need the run context store and
-    // the receipt store, and `bootPlatform` wires them into the port at
-    // registration time (see `buildPublishDeps`).
+    /**
+     * Built BEFORE the ports: `publish`'s deps need the run context store and
+     * the receipt store, and `bootPlatform` wires them into the port at
+     * registration time (see `buildPublishDeps`).
+     *
+     * The turn runner is the one member that cannot be built here — it needs
+     * the `llm` and `storage` PORTS, which only exist after `bootPlatform`.
+     * So the core is assembled with a placeholder and the real runner is
+     * dropped in below, once both halves exist. The alternative orderings both
+     * fail: building the ports first breaks `publish`, and making the runner
+     * lazy would turn a wiring mistake into a null dereference at the first
+     * engineering turn — which is the failure mode `boot.ts` exists to prevent.
+     */
     const { core, publishRunDeps } = buildWorkerCore(db, {
       sql: prismaSqlExecutor(db),
       transactions: prismaTransactionRunner(db),
-      execution: unwiredAgentTurnRunner(),
+      execution: unrunnableTurnRunner(),
     });
 
     const { env, deployment } = await bootPlatform({
       sql: prismaSqlExecutor(db),
       publishRunDeps,
     });
+
+    const execution = buildTurnRunner(env, db, deployment.ports);
+    const workerCore: CoreDeps = { ...core, execution: execution.runner };
 
     if (MISSING_CORE_DEPS.length > 0) {
       throw new Error(
@@ -72,12 +89,13 @@ export async function main(): Promise<void> {
      * assume the second. This says otherwise, in the same place they are
      * already looking.
      */
-    if (DEGRADED_CAPABILITIES.length > 0) {
+    const degraded = degradedCapabilities(execution.degradedReason);
+    if (degraded.length > 0) {
       console.warn(
-        `[maestro] worker: RUNNING WITH ${DEGRADED_CAPABILITIES.length} DEGRADED CAPABILITY` +
-          `${DEGRADED_CAPABILITIES.length === 1 ? "" : "IES"} — it polls, but a run that reaches ` +
+        `[maestro] worker: RUNNING WITH ${degraded.length} DEGRADED CAPABILIT` +
+          `${degraded.length === 1 ? "Y" : "IES"} — it polls, but a run that reaches ` +
           "one of these stops there with a named error:\n  - " +
-          DEGRADED_CAPABILITIES.join("\n  - "),
+          degraded.join("\n  - "),
       );
     }
 
@@ -86,12 +104,94 @@ export async function main(): Promise<void> {
       taskQueue,
       registry: deployment.registry,
       ports: deployment.selection,
-      core,
+      core: workerCore,
     });
   } finally {
     await db.$disconnect();
   }
 }
+
+/** What the engineering turn needs from the ports, once they exist. */
+interface TurnPorts {
+  readonly llm: LlmPort;
+  readonly storage: StoragePort;
+}
+
+interface BuiltTurnRunner {
+  readonly runner: CoreDeps["execution"];
+  /**
+   * Why the turn still cannot run, or `null` when it can. Feeds
+   * `degradedCapabilities` so the boot banner and the code agree.
+   */
+  readonly degradedReason: string | null;
+}
+
+/**
+ * The engineering turn's runner, built from the ports and the sandbox fleet.
+ *
+ * Three collaborators used to be missing here and the seam refused by name.
+ * They exist now (`@maestro/execution`), so the only thing that can still stop
+ * this is DEPLOYMENT configuration: the fleet needs a digest-pinned image, and
+ * the runner's own schema refuses an unpinned one (M27).
+ *
+ * When that image is unset the refusal is narrower than the old one and says
+ * something different — "this deployment has no sandbox fleet configured", not
+ * "nobody implemented this". An operator can fix the first by setting one
+ * variable.
+ */
+export function buildTurnRunner(env: DeployEnv, db: Db, ports: TurnPorts): BuiltTurnRunner {
+  const image = env.RUNNER_IMAGE_LINUX;
+  if (image === undefined) {
+    return {
+      runner: unrunnableTurnRunner(
+        "execution: no sandbox fleet is configured — RUNNER_IMAGE_LINUX is unset, and an " +
+          "engineering turn runs the agent's verification commands inside a digest-pinned " +
+          "container (M21/M27). Set it to a pinned reference to enable the turn.",
+      ),
+      degradedReason:
+        "AgentTurnRunner (M30/M52/M54): implemented and wired, but this deployment has no sandbox " +
+        "fleet — RUNNER_IMAGE_LINUX is unset, so the engineering turn refuses with a named error. " +
+        "Set it to a digest-pinned image to enable the turn; every other step is unaffected.",
+    };
+  }
+
+  const runnerConfig = {
+    socketPath: env.DOCKER_SOCKET_PATH,
+    platforms: { "linux-node": { image } },
+  };
+  const fleet = createDockerLinuxRunner(runnerConfig);
+
+  return {
+    runner: buildAgentTurnRunner({
+      runner: fleet,
+      llm: ports.llm,
+      storage: ports.storage,
+      piiPolicy: defaultPiiPolicy(),
+      counters: db.strikeCounter,
+      platform: "linux-node",
+      /**
+       * MUST be the runner's own tail budget. A verification result whose
+       * output filled the tail is treated as a failure, because `tail()` drops
+       * the HEAD of the stream and a cut test report cannot be shown to have
+       * come from the run it appears to describe. Reading the default from the
+       * same schema the runner parsed is what keeps the two in step.
+       */
+      tailLimitBytes: DEFAULT_MAX_TAIL_BYTES,
+      commandTimeoutSeconds: env.RUNNER_COMMAND_TIMEOUT_SECONDS,
+    }),
+    degradedReason: null,
+  };
+}
+
+/**
+ * The runner's `maxTailBytes` default, mirrored.
+ *
+ * `DockerRunnerConfig` owns the number and this deployment does not override
+ * it. Mirrored rather than imported because the config type is the parsed
+ * shape, not a constant — and a wrong value here fails SAFE in only one
+ * direction, so it is stated where it can be seen rather than inferred.
+ */
+const DEFAULT_MAX_TAIL_BYTES = 16_384;
 
 if (isEntrypoint(import.meta.url)) {
   await main().catch(fail);

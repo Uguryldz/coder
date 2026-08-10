@@ -35,3 +35,45 @@ export class WorkspaceProbeError extends ExecutionError {
     this.name = "WorkspaceProbeError";
   }
 }
+
+/**
+ * The session was cancelled — the kill switch (M58), a lost lease, a shutdown.
+ *
+ * Distinct from every other error in this file because it is the one that must
+ * NOT be retried and must not be recorded as a failed turn: nothing went wrong
+ * with the code, the platform stopped the work. Callers that would otherwise
+ * match on message text ask `isAbortError` instead.
+ */
+export class SandboxAbortedError extends ExecutionError {
+  constructor(
+    readonly runId: string,
+    readonly reason: string,
+  ) {
+    super(`run ${runId}: sandbox session aborted (${reason})`);
+    this.name = "SandboxAbortedError";
+  }
+}
+
+/**
+ * A verification command produced more output than the runner will carry back.
+ *
+ * `RunnerPort` returns stdout/stderr TAILS, and `tail()` drops the HEAD of the
+ * stream to fit its byte budget. For a test report that is not a smaller
+ * report: the summary line a parser looks for ("3 failing") sits at the end,
+ * but the failure list it names sits in the part that was dropped — and a
+ * runner whose output was cut has no way to prove it exited 0 for the reason
+ * it appears to have. The same reasoning already keeps `unbridgedScanRunner`
+ * refusing rather than parsing a truncated scanner report (M27).
+ */
+export class TruncatedOutputError extends ExecutionError {
+  constructor(
+    readonly commandName: string,
+    readonly limitBytes: number,
+  ) {
+    super(
+      `verification command "${commandName}" produced more output than the ${limitBytes}-byte tail ` +
+        `the runner carries back; the result cannot be read as a pass`,
+    );
+    this.name = "TruncatedOutputError";
+  }
+}

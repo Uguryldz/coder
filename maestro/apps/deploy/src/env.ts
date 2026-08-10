@@ -102,6 +102,25 @@ export const DeployEnvSchema = z.object({
   SCAN_IMAGE_TRIVY: z.string().min(1).optional(),
   SCAN_IMAGE_SEMGREP: z.string().min(1).optional(),
   SCAN_IMAGE_GITLEAKS: z.string().min(1).optional(),
+
+  // ── the engineering turn's sandbox fleet (M21/M23/M60) ──────────────────
+  /**
+   * The image an engineering turn's sandbox runs in, DIGEST-PINNED — same
+   * rule and same reason as the scanner images above. It has no default: the
+   * runner's schema refuses an unpinned reference, and a build environment
+   * that can change without a deployment makes every verification result
+   * unreproducible.
+   *
+   * Absent, the worker keeps a NARROWED refusal for the engineering turn (see
+   * `buildTurnRunner` in bin/worker.ts) rather than inventing a fleet.
+   */
+  RUNNER_IMAGE_LINUX: z.string().min(1).optional(),
+  /**
+   * M23 budget for one verification command. The runner enforces its own
+   * ceiling on top of this, so a value above it is refused rather than
+   * silently clamped.
+   */
+  RUNNER_COMMAND_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(86_400).default(1_800),
 });
 
 export type DeployEnvRaw = z.infer<typeof DeployEnvSchema>;

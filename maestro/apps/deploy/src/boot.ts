@@ -263,12 +263,6 @@ export const MISSING_CORE_DEPS: readonly string[] = [];
  * somebody decides the message is noisy.
  */
 export const DEGRADED_CAPABILITIES: readonly string[] = [
-  "AgentTurnRunner (M30/M52/M54): the engineering turn — the code-writing and " +
-    "verification loop at packages/workflows/src/impl/engineering.ts:107 and :220 — " +
-    "REFUSES with a named error. `AgentExecution` needs a WorkspaceProbe, a " +
-    "VerificationRunner and a StrikeLedger over the runner fleet; none of the three is " +
-    "implemented. Intake, analysis, gates, the escalation ladder, notification and " +
-    "publication all work; a run that reaches the engineering turn stops there.",
   "Studio read side — runners (M60): `/studio/runners` and `/studio/sandboxes` REFUSE " +
     "with a named error. There is no runner-fleet table and `RunnerPort` exposes no " +
     "fleet-wide inventory, so a runner reports itself to nothing. The other ten read " +
@@ -280,3 +274,24 @@ export const DEGRADED_CAPABILITIES: readonly string[] = [
     "them; nothing persists one, so there is no history to page through. An empty page " +
     "here would read as \"no findings\" on a platform that has never stored a finding.",
 ];
+
+/**
+ * The degraded list for THIS process, including the entries that depend on how
+ * it was configured rather than on what was implemented.
+ *
+ * The engineering turn used to be a permanent member of the list above: its
+ * three collaborators had no implementation, so no configuration could have
+ * enabled it. They exist now, and whether the turn runs is a deployment
+ * question — a sandbox fleet needs a digest-pinned image (M27). A worker with
+ * one configured has NO degraded engineering turn and must not print that it
+ * does; a worker without one still must.
+ *
+ * A static list cannot express that, and leaving the entry in permanently
+ * would be the quieter failure the list exists to prevent, pointing the other
+ * way: an operator reading "not implemented" about something that works.
+ */
+export function degradedCapabilities(turnRunnerReason: string | null = null): readonly string[] {
+  return turnRunnerReason === null
+    ? DEGRADED_CAPABILITIES
+    : [turnRunnerReason, ...DEGRADED_CAPABILITIES];
+}

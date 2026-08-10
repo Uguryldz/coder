@@ -170,6 +170,9 @@ importers:
       '@maestro/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@maestro/execution':
+        specifier: workspace:*
+        version: link:../../packages/execution
       '@maestro/llm-gateway':
         specifier: workspace:*
         version: link:../../packages/llm-gateway

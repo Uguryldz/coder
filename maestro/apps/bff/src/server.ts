@@ -19,6 +19,9 @@ import { studioCatalogRoutes } from "./routes/studio-catalog.js";
 import { templateRoutes } from "./routes/template.js";
 import { studioOpsRoutes } from "./routes/studio-ops.js";
 import { studioRunRoutes } from "./routes/studio-runs.js";
+import { studioGovernanceRoutes } from "./routes/studio-governance.js";
+import { studioSurfaceRoutes } from "./routes/studio-surface.js";
+import { studioVariantRoutes } from "./routes/studio-variants.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 
 export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
@@ -39,9 +42,12 @@ export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
 export const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 
 export function resolveDeps(deps: BffDeps): ResolvedDeps {
-  const { messages, clock, config, ...rest } = deps;
+  const { messages, clock, config, studio, ...rest } = deps;
   return {
     ...rest,
+    // `{}` rather than a set of stubs: every model inside stays optional, and a
+    // route whose model is absent refuses by name instead of answering empty.
+    studio: studio ?? {},
     messages: messages ?? defaultCatalog,
     clock: clock ?? { now: () => new Date() },
     // `loadEnv` throws in production when a connection value is missing (M6);
@@ -129,6 +135,14 @@ export async function buildServer(
   await app.register(async (scope) => studioRunRoutes(scope, resolved));
   await app.register(async (scope) => studioOpsRoutes(scope, resolved));
   await app.register(async (scope) => studioCatalogRoutes(scope, resolved));
+  // The last eight screens: the variant catalogue, the two auditor surfaces,
+  // and the product rules (commands, MCP manifest). The endpoints whose stores
+  // do not exist are registered too — they answer 503 with a named reason,
+  // which is the point: an unregistered route 404s, and a 404 renders as
+  // "not built yet" rather than "this capability is not wired here".
+  await app.register(async (scope) => studioVariantRoutes(scope, resolved));
+  await app.register(async (scope) => studioGovernanceRoutes(scope, resolved));
+  await app.register(async (scope) => studioSurfaceRoutes(scope, resolved));
 
   app.decorate("maestro", resolved);
   // The MCP surface reads the platform through the SAME container, so an AI and

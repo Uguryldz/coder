@@ -214,6 +214,7 @@ export function fakeSecrets(token = "confluence-pat"): SecretPort {
   return {
     get: () => Promise.resolve(token),
     issueShortLived: () => Promise.reject(new Error("not used")),
+    set: () => Promise.reject(new Error("not used")),
   };
 }
 

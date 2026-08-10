@@ -756,3 +756,81 @@ model KillSwitch {
   reason String
   at     DateTime @db.Timestamptz(3)
 }
+
+// ---------------------------------------------------------------------------
+// Managed connectors (connector-management surface — migration 0010)
+// ---------------------------------------------------------------------------
+
+/// An admin-editable outbound connection (Jira, GitHub, LLM, Vault, …).
+///
+/// The EDITABLE counterpart to the settings screen's read-only deployment
+/// facts. A row here is a URL + auth kind + non-secret config an admin enters
+/// from Studio, plus a REFERENCE (`secretRef`) to the AES-encrypted token in
+/// `ConnectorSecret`. The token is NEVER a column on this table — a row an
+/// operator can read must not be a row that can leak a PAT (M9). What a read
+/// gets instead is `secretMask` (the last four chars, for recognition) and the
+/// presence of a `secretRef` (whether a token is set at all).
+///
+/// `kind` and `authKind` are text, not Prisma enums: the schema follows a
+/// @map-free convention (enums only where every contract option is a legal
+/// Prisma identifier), and the Zod `ConnectionKind`/`ConnectionAuthKind` unions
+/// in @maestro/contracts are the validator. `configJson` is the non-secret
+/// config bag; a CHECK cannot police its shape, so the contract does.
+model Connection {
+  /// e.g. "jira", "github", "llm-openrouter". Lower-case, URL-safe: it is also
+  /// the `/studio/connections/:id` path segment.
+  id           String   @id @db.VarChar(64)
+  kind         String   @db.VarChar(32)
+  displayName  String   @db.VarChar(120)
+  baseUrl      String   @db.VarChar(2048)
+  authKind     String   @db.VarChar(16)
+  /// Non-secret config only (email, owner, repo, project). Never a token.
+  configJson   Json
+  /// Points at the encrypted secret in `ConnectorSecret`; null until one is set.
+  /// NEVER the token itself. Nullable so a config-only connection can exist
+  /// before an admin enters a credential.
+  secretRef    String?  @db.VarChar(256)
+  /// The LAST FOUR characters of the stored token — the only glimpse a read
+  /// gets, for recognition. Null when no token is set. Four chars is not a
+  /// secret; the value it belongs to never lives on this table.
+  secretMask   String?  @db.VarChar(4)
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @db.Timestamptz(3)
+  updatedAt    DateTime @db.Timestamptz(3)
+  /// The last LIVE test and its honest verdict. `lastTestOk` is null until the
+  /// first test — "never checked" must be distinguishable from "checked and
+  /// broken", so it is a nullable Boolean rather than a default false.
+  lastTestedAt DateTime? @db.Timestamptz(3)
+  lastTestOk   Boolean?
+}
+
+/// The AES-256-GCM ciphertext of one connector token (migration 0010).
+///
+/// This is where a console-entered secret actually lives, separated from
+/// `Connection` on purpose: the token bytes have a different blast radius than
+/// a connection's URL, and keeping them in their own table means a query that
+/// reads connections for a screen cannot accidentally select the ciphertext.
+/// `EncryptedSecretStore` (apps/deploy) is the only SecretPort whose `set`
+/// writes here and whose `get` decrypts.
+///
+/// Nothing here is plaintext. `iv` is a fresh 12-byte GCM nonce per write,
+/// `authTag` is the 16-byte GCM tag verified on decrypt (a tampered ciphertext
+/// throws, never decrypts to garbage), and `ciphertext` is the enciphered
+/// token. The master key is NOT stored — it comes from `CONNECTOR_MASTER_KEY`
+/// in the environment, so a database dump alone cannot recover a token.
+model ConnectorSecret {
+  /// The `secretRef` a `Connection` row points at. Base64url of random bytes,
+  /// so it is unguessable and stable across a token rotation of the same
+  /// connection.
+  ref        String   @id @db.VarChar(256)
+  /// Per-secret GCM nonce, base64. Random on every write; reuse would break GCM.
+  iv         String   @db.VarChar(64)
+  /// The enciphered token, base64. Never the plaintext.
+  ciphertext String
+  /// The 16-byte GCM auth tag, base64. Verified on decrypt — tamper → throw.
+  authTag    String   @db.VarChar(64)
+  /// Which key version enciphered this, for a future key rotation. `v1` today.
+  keyVersion String   @db.VarChar(16)
+  createdAt  DateTime @db.Timestamptz(3)
+  updatedAt  DateTime @db.Timestamptz(3)
+}

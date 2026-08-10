@@ -20,6 +20,7 @@ function fakeSecretPort(values: Record<string, string>, onGet?: () => void): Sec
     },
     issueShortLived: () =>
       Promise.resolve({ secret: "short-lived", expiresAt: new Date().toISOString() }),
+    set: () => Promise.reject(new Error("not used")),
   };
 }
 

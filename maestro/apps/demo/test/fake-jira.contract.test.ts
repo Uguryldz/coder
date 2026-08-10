@@ -90,7 +90,7 @@ describe("sahte Jira ↔ @maestro/adapter-jira", () => {
     const secrets = createDemoSecrets({ apiKey: "test", baseUrl: "http://127.0.0.1" });
     const port = (jira.server.address() as { port: number }).port;
     const wrong = createDemoWorkPort(
-      { get: () => Promise.resolve("yanlis-pat"), issueShortLived: () => Promise.reject(new Error("no")) },
+      { get: () => Promise.resolve("yanlis-pat"), issueShortLived: () => Promise.reject(new Error("no")), set: () => Promise.reject(new Error("no")) },
       `http://127.0.0.1:${port}`,
     );
     await expect(wrong.getTicket(key)).rejects.toThrow();

@@ -218,6 +218,65 @@ export interface SettingsView {
   readonly notifyDrivers: readonly NotifyDriver[];
 }
 
+// ── /studio/connections (connector-management surface) ────────────────────────
+
+/**
+ * A MANAGED connection — the editable connector, distinct from the read-only
+ * `Connection` (deployment fact) above. The token is never here: a read carries
+ * only `secretMask` (last four chars) and `secretSet`. This mirrors the Zod
+ * `Connection` in @maestro/contracts.
+ */
+export type ManagedConnectionKind =
+  | "jira_cloud"
+  | "jira_dc"
+  | "github"
+  | "ado"
+  | "openrouter"
+  | "anthropic"
+  | "vault"
+  | "smtp"
+  | "storage";
+
+export type ManagedConnectionAuthKind = "basic" | "bearer" | "pat" | "api_key";
+
+export interface ManagedConnection {
+  readonly id: string;
+  readonly kind: ManagedConnectionKind;
+  readonly displayName: string;
+  readonly baseUrl: string;
+  readonly authKind: ManagedConnectionAuthKind;
+  readonly config: Readonly<Record<string, string>>;
+  readonly secretRef: string | null;
+  /** Last four chars of the stored token, or null. Never the token. */
+  readonly secretMask: string | null;
+  readonly secretSet: boolean;
+  readonly enabled: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly lastTestedAt: string | null;
+  /** null = never tested; true/false = the last live test's real result. */
+  readonly lastTestOk: boolean | null;
+}
+
+/** The create/update payload — `token` is write-only and optional. */
+export interface ManagedConnectionInput {
+  readonly kind: ManagedConnectionKind;
+  readonly displayName: string;
+  readonly baseUrl: string;
+  readonly authKind: ManagedConnectionAuthKind;
+  readonly config: Readonly<Record<string, string>>;
+  readonly enabled: boolean;
+  readonly token?: string;
+}
+
+/** The live-test response — ok/fail plus a catalog key to render (never a token). */
+export interface ConnectionTestResponse {
+  readonly ok: boolean;
+  readonly messageKey: string;
+  readonly messageParams?: Readonly<Record<string, string>>;
+  readonly testedAt: string;
+}
+
 // ── /notify (REQUESTED) ───────────────────────────────────────────────────────
 
 export interface EscalationStep {

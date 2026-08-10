@@ -12,6 +12,7 @@ import {
 } from "./common/index.ts";
 import { useEnumLabel, useLabel } from "./common/label.ts";
 import { QueryState } from "./common/index.ts";
+import { ConnectorsPanel } from "./settings/ConnectorsPanel.tsx";
 import { KillSwitchPanel } from "./settings/KillSwitchPanel.tsx";
 
 const STATUS_TONE: Readonly<Record<ConnectionStatus, BadgeTone>> = {
@@ -93,6 +94,17 @@ export function SettingsScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
+      {/*
+        The connector-management surface: the platform's outbound connections
+        made ADMIN-EDITABLE (Connection / ConnectorSecret, migration 0010).
+        Distinct from the read-only "deployment facts" table below — that one
+        reports an endpoint and a Vault credential reference the platform was
+        DEPLOYED with; this one lets an admin add a connection, enter a token
+        (stored AES-encrypted, shown masked), and test it live. The panel is
+        admin/tech-lead readable and admin-editable; the BFF enforces both.
+      */}
+      <ConnectorsPanel />
+
       {/*
         `GET /settings` is LIVE (apps/bff/src/routes/settings.ts). A failure here
         is a real failure, so it renders through the ordinary error path rather

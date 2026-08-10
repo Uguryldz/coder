@@ -130,6 +130,11 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   unknown_variant: "error.unknown_variant",
   invalid_variant_body: "error.invalid_variant_body",
   variant_exists: "error.variant_exists",
+  // Connector-management surface (Connection / ConnectorSecret, migration 0010)
+  invalid_connection_id: "error.invalid_connection_id",
+  invalid_connection_body: "error.invalid_connection_body",
+  connection_exists: "error.connection_exists",
+  no_such_connection: "error.no_such_connection",
   // Golden-ticket eval and the M78 justified-pass gate
   invalid_eval_decision: "error.invalid_eval_decision",
   unknown_eval_run: "error.unknown_eval_run",

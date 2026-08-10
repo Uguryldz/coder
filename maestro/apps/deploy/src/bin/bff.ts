@@ -11,6 +11,8 @@ import { bootPlatform } from "../boot.js";
 import { listenAddress } from "../env.js";
 import { selectIdentityProvider } from "../identity.js";
 import { PrismaKillSwitchStore } from "../stores/killswitch.js";
+import { PrismaConnectionStore } from "../stores/connections.js";
+import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
 import { PrismaJiraProjectBindings } from "../stores/bindings.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
@@ -181,6 +183,23 @@ export async function main(): Promise<void> {
     // this process is configured to perform, RELEASING the emergency brake with
     // nobody told (M58). One durable row now survives it.
     killSwitch: new PrismaKillSwitchStore(db.killSwitch),
+    // The connector-management surface (migration 0010): the platform's
+    // outbound connections made admin-editable, with tokens stored
+    // AES-256-GCM-encrypted. The store persists the connection rows; the
+    // EncryptedSecretStore enciphers the tokens under a key from the
+    // environment (`CONNECTOR_MASTER_KEY`) — in prod that key is REQUIRED, and
+    // in dev a documented key is derived with a warning (never silent). This is
+    // its OWN secret port, deliberately not the Vault driver the platform reads
+    // deployment secrets through: a console writes here, and must not be able to
+    // rewrite the Vault mount the operator manages.
+    connections: new PrismaConnectionStore(db.connection),
+    connectorSecrets: new EncryptedSecretStore(
+      resolveMasterKey({
+        envValue: process.env["CONNECTOR_MASTER_KEY"],
+        isProduction: env.profile === "prod",
+      }),
+      db.connectorSecret,
+    ),
     // Studio's read side, live (M7). Ten of the twelve read models answer from
     // the tables the worker writes; `runners` and `scans` still refuse by name
     // because nothing in this platform writes either, and a store over an

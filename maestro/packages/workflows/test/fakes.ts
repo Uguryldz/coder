@@ -184,7 +184,7 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
       delete: () => Promise.resolve(),
       presign: NOT_WIRED("presign"),
     },
-    secrets: { get: NOT_WIRED("secret.get"), issueShortLived: NOT_WIRED("issueShortLived") },
+    secrets: { get: NOT_WIRED("secret.get"), issueShortLived: NOT_WIRED("issueShortLived"), set: NOT_WIRED("secret.set") },
     notify: {
       send: (notification) => {
         recorded.notifications.push(notification);

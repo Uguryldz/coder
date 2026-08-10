@@ -42,6 +42,13 @@ const MISSING: Readonly<Record<string, string>> = {
     "reference tickets and the recorded eval runs, and this deployment did not wire a store " +
     "over them. Until one is wired the route refuses rather than answer an empty page, which " +
     "would render as \"no regressions\" on a platform that has measured none",
+  connections:
+    "no ConnectionStore is injected — the connector-management surface (Connection / " +
+    "ConnectorSecret, migration 0010) lets an admin edit the platform's outbound " +
+    "connections and encipher their tokens, and this deployment did not wire the store " +
+    "and the encrypting SecretPort over those tables. Until both are wired the routes " +
+    "refuse rather than answer an empty list, which would read as \"no connections\" on a " +
+    "platform that simply cannot edit them here",
   greenfield:
     "the greenfield flow (M97) has no table and no producer. No workflow writes an " +
     "architecture proposal, a step state or a repo-setup record for a ticket whose " +

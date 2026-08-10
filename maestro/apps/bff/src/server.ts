@@ -11,6 +11,7 @@ import { assertCatalog, defaultCatalog } from "./messages.js";
 import { SESSION_TTL_MS } from "./auth/sessions.js";
 import { bffPlatform } from "./platform/index.js";
 import { authRoutes } from "./routes/auth.js";
+import { connectionRoutes } from "./routes/connections.js";
 import { docTemplateRoutes } from "./routes/doc-template.js";
 import { healthRoutes } from "./routes/health.js";
 import { settingsRoutes } from "./routes/settings.js";
@@ -52,7 +53,7 @@ export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
 export const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 
 export function resolveDeps(deps: BffDeps): ResolvedDeps {
-  const { messages, clock, config, studio, pilotFetch, ...rest } = deps;
+  const { messages, clock, config, studio, pilotFetch, connectorFetch, ...rest } = deps;
   // `loadEnv` throws in production when a connection value is missing (M6);
   // reading it here means the process cannot come up half-configured.
   const env = config?.env ?? loadEnv();
@@ -76,6 +77,9 @@ export function resolveDeps(deps: BffDeps): ResolvedDeps {
     // The internal service call to the pilot. Real `fetch` unless a test injects
     // a stub; the Studio user's token is never attached to it (see studio-pilot.ts).
     pilotFetch: pilotFetch ?? ((input, init) => fetch(input, init)),
+    // The connector live-test transport. Real `fetch` unless a test injects a
+    // stub; the URL is always built from a stored `baseUrl`, never a request.
+    connectorFetch: connectorFetch ?? ((input, init) => fetch(input, init)),
     diagnostics: commandDiagnosticsOf(deps.work),
     counters: { droppedUnbound: 0, droppedKillSwitch: 0, invalidCommands: 0 },
   };
@@ -156,6 +160,11 @@ export async function buildServer(
   // reach the JSON API, where it would turn every other body into a Buffer.
   await app.register(async (scope) => docTemplateRoutes(scope, resolved));
   await app.register(async (scope) => settingsRoutes(scope, resolved));
+  // The connector-management surface: the platform's outbound connections made
+  // admin-editable, with tokens stored AES-encrypted and read back only as a
+  // mask. Refuses by name (503) when the store + encrypting SecretPort are not
+  // wired, the same convention as the read models above.
+  await app.register(async (scope) => connectionRoutes(scope, resolved));
   await app.register(async (scope) => killSwitchRoutes(scope, resolved));
   // Studio's read surface (M86/M7): the 37 screens read through these, and
   // through the same guards and the same project scoping as everything above.

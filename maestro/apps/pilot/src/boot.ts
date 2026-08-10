@@ -21,6 +21,7 @@ import {
   type JiraCloudEnv,
   type OpenRouterEnv,
 } from "./env.js";
+import { DocStore } from "./docs.js";
 import { createFakeAdo, type FakeAdo } from "./fake-ado.js";
 import { close, listen } from "./http.js";
 import { discoverTickets } from "./poll.js";
@@ -130,6 +131,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   });
 
   const work = createPilotWorkPort(secrets, jiraCloud, options.jiraFetch);
+  const docs = new DocStore();
 
   const run = new PilotRun({
     work,
@@ -139,6 +141,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     audit: createPilotAudit(),
     piiPolicy: policy,
     store,
+    docs,
     completePullRequest: (prId) => ado.completePullRequest(prId),
     ...(options.ciTimeoutMs === undefined ? {} : { ciTimeoutMs: options.ciTimeoutMs }),
     ...(options.commandPollMs === undefined ? {} : { commandPollMs: options.commandPollMs }),
@@ -156,7 +159,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     }
   };
 
-  const ui: Server = createUiServer({ store, run, start: (ticketKey) => run.start(ticketKey) });
+  const ui: Server = createUiServer({ store, run, docs, start: (ticketKey) => run.start(ticketKey) });
   const uiPort = await listen(ui, options.uiPort ?? UI_PORT);
   uiBase = `http://127.0.0.1:${uiPort}`;
 

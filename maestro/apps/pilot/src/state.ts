@@ -43,6 +43,8 @@ export interface PilotState {
   failure: string | null;
   /** Step id whose human gate is open right now, or null. */
   awaitingGate: string | null;
+  /** True once the analysis .docx/.pdf are generated and downloadable. */
+  docsReady: boolean;
   /** Tickets opted in on the live site, newest first (from discovery poll). */
   discovered: DiscoveredTicketView[];
   steps: PilotStep[];
@@ -81,6 +83,7 @@ export function initialState(options: {
     finished: false,
     failure: null,
     awaitingGate: null,
+    docsReady: false,
     discovered: [],
     steps: STEP_DEFINITIONS.map((step) => ({ ...step, state: "bekliyor", notes: [] })),
     log: [],

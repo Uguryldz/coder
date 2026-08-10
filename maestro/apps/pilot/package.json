@@ -13,10 +13,12 @@
     "@maestro/adapter-ado": "workspace:*",
     "@maestro/adapter-jira": "workspace:*",
     "@maestro/audit": "workspace:*",
+    "@maestro/config": "workspace:*",
     "@maestro/contracts": "workspace:*",
     "@maestro/llm-gateway": "workspace:*",
     "@maestro/pii": "workspace:*",
     "@maestro/ports": "workspace:*",
+    "@maestro/publish": "workspace:*",
     "@maestro/secrets": "workspace:*",
     "zod": "^4.0.0"
   },

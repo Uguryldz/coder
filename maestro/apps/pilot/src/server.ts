@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { TicketKey } from "@maestro/contracts";
+import { DOC_CONTENT_TYPE, type DocKind, type DocStore } from "./docs.js";
 import { headerValue, readRawBody, requestUrl, sendJson, sendText } from "./http.js";
 import type { PilotRun } from "./run.js";
 import type { PilotState, StateStore } from "./state.js";
@@ -17,8 +18,14 @@ const PAGE = readFileSync(new URL("./ui.html", import.meta.url), "utf8");
 export interface UiServerOptions {
   store: StateStore;
   run: PilotRun;
+  /** Holds the generated analysis .docx/.pdf the download route streams. */
+  docs: DocStore;
   /** Starts the flow for the chosen ticket; rejects if one is already running. */
   start: (ticketKey: TicketKey) => Promise<void>;
+}
+
+function isDocKind(value: string): value is DocKind {
+  return value === "pdf" || value === "docx";
 }
 
 export function createUiServer(options: UiServerOptions): Server {
@@ -47,6 +54,30 @@ export function createUiServer(options: UiServerOptions): Server {
 
     if (url.pathname === "/api/state" && method === "GET") {
       sendJson(res, 200, options.store.snapshot());
+      return;
+    }
+
+    // Download the generated analysis document. `/api/doc/pdf` or `/api/doc/docx`;
+    // 404 until the analysis step has produced them for the current run.
+    const docMatch = /^\/api\/doc\/([a-z]+)$/.exec(url.pathname);
+    if (docMatch && method === "GET") {
+      const kind = docMatch[1] ?? "";
+      if (!isDocKind(kind)) {
+        sendText(res, 404, "not found");
+        return;
+      }
+      const generated = options.docs.get(kind);
+      if (generated === null) {
+        sendJson(res, 404, { error: "belge henüz üretilmedi" });
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": DOC_CONTENT_TYPE[kind],
+        "content-disposition": `attachment; filename="${generated.fileName}"`,
+        "content-length": String(generated.bytes.byteLength),
+        "cache-control": "no-store",
+      });
+      res.end(Buffer.from(generated.bytes));
       return;
     }
 

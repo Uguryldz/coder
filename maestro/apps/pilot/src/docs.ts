@@ -1,0 +1,156 @@
+import { t } from "@maestro/config";
+import type { AnalysisDoc, RunId, TicketKey } from "@maestro/contracts";
+import {
+  buildDocumentModel,
+  renderAnalysisMarkdown,
+  renderDocx,
+  renderPdf,
+  type DocumentModel,
+} from "@maestro/publish";
+
+/**
+ * Turning the REAL analysis (the model's structured `AnalysisDoc`) into a real
+ * `.docx` and `.pdf` a reviewer can download from the pilot page.
+ *
+ * There is NO new renderer here. The publish package already owns the whole
+ * chain, and every path this reuses is the one the bank's Confluence/Jira
+ * publish uses in production:
+ *
+ *   AnalysisDoc → renderAnalysisMarkdown → buildDocumentModel → renderDocx / renderPdf
+ *
+ * The one document, one text principle (see `doc-model.ts`): the Word file and
+ * the PDF are two renderings of ONE model derived from ONE canonical markdown,
+ * so a section that appears in the download is a section that would appear on
+ * the reviewed page. Turkish survives because the publish package guarantees it
+ * (a Unicode font is embedded in the PDF; the docx carries UTF-8) — this module
+ * only has to avoid mangling it on the way in, which it does by passing the
+ * analysis through untouched.
+ */
+
+/** A generated download: the raw bytes plus the MIME type the route must set. */
+export interface GeneratedDoc {
+  readonly bytes: Uint8Array;
+  readonly contentType: string;
+  /** Attachment file name, e.g. `OPS-7-analiz.pdf`. */
+  readonly fileName: string;
+}
+
+export interface GeneratedDocs {
+  readonly pdf: GeneratedDoc;
+  readonly docx: GeneratedDoc;
+}
+
+export const DOC_CONTENT_TYPE = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+} as const;
+
+export type DocKind = keyof typeof DOC_CONTENT_TYPE;
+
+export const DOC_KINDS: readonly DocKind[] = ["pdf", "docx"];
+
+/** `OPS-7` → `OPS-7-analiz.pdf`. */
+export function docFileName(ticketKey: string, kind: DocKind): string {
+  return `${ticketKey}-analiz.${kind}`;
+}
+
+/**
+ * Build the neutral `DocumentModel` from the analysis — the shared shape both
+ * renderers consume. Exposed on its own so a test can assert all seven sections
+ * survive the mapping (purpose, scope, impact, acceptance, ui/api, test, risk +
+ * clarifications) without rendering bytes.
+ *
+ * `renderAnalysisMarkdown` validates the AnalysisDoc fail-closed and asserts the
+ * language matches the locale, so a six-section analysis never reaches a file.
+ * The künye date is injected (not `new Date()`) so the same analysis always
+ * renders to the same bytes.
+ */
+export function analysisToDocModel(
+  analysis: AnalysisDoc,
+  ticketKey: TicketKey,
+  runId: RunId,
+  date: string,
+): DocumentModel {
+  const locale = analysis.language;
+  const markdownSource = renderAnalysisMarkdown(analysis, {
+    translate: t,
+    locale,
+    runId,
+    ticketKey,
+  });
+  return buildDocumentModel({
+    markdownSource,
+    translate: t,
+    locale,
+    ticketKey,
+    runId,
+    templateVersion: analysis.templateVersion,
+    date,
+  });
+}
+
+/**
+ * Render BOTH artefacts from one model. `renderDocx` is called with no corporate
+ * template (the pilot has none), which produces the plain built-in layout and a
+ * `no_template` warning we do not need to surface here — the pilot is a demo,
+ * not the bank's approved publish path.
+ */
+export async function analysisToDocs(
+  analysis: AnalysisDoc,
+  ticketKey: TicketKey,
+  runId: RunId,
+  now: () => Date = () => new Date(),
+): Promise<GeneratedDocs> {
+  const date = now().toISOString().slice(0, 10);
+  const model = analysisToDocModel(analysis, ticketKey, runId, date);
+
+  const rendered = await renderDocx({ model, template: null, templateBytes: null });
+  const pdfBytes = await renderPdf(model);
+
+  return {
+    docx: {
+      bytes: rendered.bytes,
+      contentType: DOC_CONTENT_TYPE.docx,
+      fileName: docFileName(ticketKey, "docx"),
+    },
+    pdf: {
+      bytes: pdfBytes,
+      contentType: DOC_CONTENT_TYPE.pdf,
+      fileName: docFileName(ticketKey, "pdf"),
+    },
+  };
+}
+
+/**
+ * Where the generated files live between generation and download. In-memory,
+ * keyed by runId: the pilot runs one flow at a time and the page only ever
+ * offers the current run's documents, so a single slot is enough — but keying
+ * by runId means a download request for a stale run is a clean 404 rather than
+ * the wrong file.
+ */
+export class DocStore {
+  private runId: string | null = null;
+  private docs: GeneratedDocs | null = null;
+
+  /** Replace whatever was held with a fresh run's documents. */
+  put(runId: string, docs: GeneratedDocs): void {
+    this.runId = runId;
+    this.docs = docs;
+  }
+
+  /** Drop the held documents (called when a new run starts). */
+  clear(): void {
+    this.runId = null;
+    this.docs = null;
+  }
+
+  /** The current run's document of the given kind, or null if none is ready. */
+  get(kind: DocKind): GeneratedDoc | null {
+    return this.docs === null ? null : this.docs[kind];
+  }
+
+  /** Which run the held documents belong to, or null. */
+  currentRunId(): string | null {
+    return this.runId;
+  }
+}

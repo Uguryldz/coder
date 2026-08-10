@@ -118,3 +118,65 @@ kapı açıldığında o ticket'a **gerçek Jira'da** `/approve` yorumu yazın.
 - Keşif tek sayfadır (`maxResults: 20`); OPS'ta 20'den fazla `maestro` ticket'ı
   olması pilot için beklenmez.
 - Kod yalnız `apps/pilot` altındadır; `packages/*` ve `apps/demo` değişmedi.
+
+## pdf+word üretimi
+
+Pilot artık **gerçek analizi** indirilebilir **`.docx` (Word)** ve **`.pdf`**
+dosyası olarak üretir. Bu, analizin ikinci bir özeti değildir: reviewer'ın Jira
+yorumunda okuduğu **aynı `AnalysisDoc`**, `@maestro/publish` paketinin gerçek
+render motorlarından geçirilir. Yeni bir renderer YAZILMADI.
+
+### Kullanılan gerçek publish fonksiyonları
+
+Zincir (`apps/pilot/src/docs.ts` → `analysisToDocs`):
+
+1. `renderAnalysisMarkdown(analysis, ctx)` — `AnalysisDoc` → kanonik markdown
+   (7 zorunlu bölüm + clarifications). Çeviri fonksiyonu olarak `@maestro/config`
+   `t` (gerçek Türkçe katalog) enjekte edilir.
+2. `buildDocumentModel({ markdownSource, translate, locale, ticketKey, runId,
+   templateVersion, date })` — markdown → nötr `DocumentModel` (künye + numaralı
+   bölümler). Her iki renderer da bu **tek** modeli tüketir.
+3. `renderDocx({ model, template: null, templateBytes: null })` — Word baytları
+   (kurumsal şablon yok → dahili düzen; `no_template` uyarısı pilotta gösterilmez).
+4. `renderPdf(model)` — PDF baytları (Unicode DejaVu fontu gömülü → Türkçe güvenli).
+
+Türkçe (İ, ş, ğ, ı, ç, ö, ü) her iki dosyaya da bozulmadan taşınır — publish
+paketi bunu garanti eder; bu glue yalnızca analizi olduğu gibi geçirerek
+bozmamakla yükümlüdür.
+
+### Nerede üretilir, nerede saklanır
+
+- Üretim: analiz adımından (step "2") sonra, Jira yorumu yazıldıktan HEMEN sonra
+  (`run.ts` → `generateAnalysisDocs`). Bir render hatası akışı bloke etmez;
+  loglanır ve butonlar gösterilmez (dosyalar bir kolaylıktır).
+- Saklama: bellek içi `DocStore` (`docs.ts`), `runId` ile anahtarlı. Pilot tek
+  akış çalıştırır; sayfa yalnız güncel koşunun belgelerini sunar. Diske yazılmaz.
+
+### İndirme rotası + UI
+
+- `GET /api/doc/pdf` ve `GET /api/doc/docx` (`server.ts`): doğru `Content-Type`
+  (`application/pdf` / OOXML wordprocessingml), `Content-Disposition: attachment;
+  filename="OPS-7-analiz.pdf"` (ticket'a göre). Belge henüz üretilmediyse **404**.
+- UI (`ui.html`): analiz hazır olunca (`state.docsReady`) **"📄 Analizi PDF indir"**
+  ve **"📝 Word indir"** butonları görünür. Mevcut SSE/state deseni korundu
+  (`state.ts`'e `docsReady: boolean` eklendi).
+
+### Canlı görmek
+
+`pnpm -F @maestro/pilot start` → `http://localhost:7020`. Bir OPS ticket'ı seçip
+başlatın; **step 2 (Analiz üretildi)** tamamlanınca KPI'ların altındaki kartta
+iki indirme butonu belirir. Butonlar gerçek `.pdf` ve `.docx` dosyalarını indirir.
+
+### Offline testler
+
+- `apps/pilot/test/docs.test.ts` (11 test): 7 zorunlu bölümün model'e eşlenmesi,
+  docx'in `PK` zip başlığı + `word/document.xml` içermesi, pdf'in `%PDF`/`%%EOF`
+  ile başlaması-bitmesi, Türkçe karakterlerin docx metnine ulaşması (yerinde
+  `node:zlib` ile `word/document.xml` açılıp aranır), `DocStore` davranışı.
+- `apps/pilot/test/server-doc.test.ts` (4 test): üretimden önce 404, bilinmeyen
+  kind için 404, pdf/docx rotalarının doğru `Content-Type` + attachment filename
+  ile bayt akıtması. Ağa çıkılmaz.
+
+Yeni çalışma zamanı npm bağımlılığı eklenmedi; yalnız iki workspace paketi
+(`@maestro/publish`, `@maestro/config`) pilot'a bağlandı — renderer'lar ve
+katalog bunlarda zaten mevcuttu.

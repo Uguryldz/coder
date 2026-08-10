@@ -8,7 +8,7 @@ import type { Column } from "../ui/index.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { useClarificationAnswer } from "./shared/signals.ts";
 import { ageLabel } from "./shared/format.ts";
-import { useRuns, type RunSummary } from "./shared/runs.ts";
+import { useRuns, type RunRow } from "./shared/runs.ts";
 import "./shared/screens.css";
 
 /**
@@ -21,11 +21,22 @@ import "./shared/screens.css";
  * pressure mechanism instead.
  *
  * Answering sends the `clarificationAnswered` SIGNAL, the same channel a Jira
- * comment takes. `GET /runs` cannot tell us which runs are parked on 2b — that
- * needs `GET /runs/:ticket` per row, or the richer list requested in the report
- * — so the operator picks the ticket and the BFF decides whether the signal is
- * deliverable (404 `no_run` when nothing is listening).
+ * comment takes.
+ *
+ * The list below is now the REAL 2b queue. `GET /studio/runs` joins each
+ * ticket's workflow state onto the catalog record, so `step === "2b"` is a fact
+ * this screen can read directly — the old Temporal-backed `/runs` carried no
+ * step at all and could only offer "every running workflow", which made the
+ * operator open rows to find the one actually waiting on them.
+ *
+ * Picking a row still only fills the ticket field: the BFF decides whether the
+ * signal is deliverable (404 `no_run` when nothing is listening), because a
+ * step read a moment ago is not a promise the run is still parked there.
  */
+
+/** Step 2b — clarification, the only step that waits on the reporter (M14). */
+const CLARIFY_STEP = "2b";
+
 export function ClarifyScreen(): ReactNode {
   const t = useT();
   const toast = useToast();
@@ -38,7 +49,7 @@ export function ClarifyScreen(): ReactNode {
 
   const { data, isPending, error, refetch } = useRuns(200);
   const open = useMemo(
-    () => (data?.runs ?? []).filter((run) => run.status === "running"),
+    () => (data?.runs ?? []).filter((run) => run.step === CLARIFY_STEP),
     [data],
   );
 
@@ -61,11 +72,22 @@ export function ClarifyScreen(): ReactNode {
     );
   }
 
-  const columns: readonly Column<RunSummary>[] = [
+  const columns: readonly Column<RunRow>[] = [
     {
       key: "ticket",
       header: t("col.ticket"),
-      cell: (run) => <b className="screen-mono">{run.ticketKey}</b>,
+      cell: (run) => (
+        <>
+          <b className="screen-mono">{run.ticketKey}</b>
+          <div className="screen-note">{run.title}</div>
+        </>
+      ),
+    },
+    {
+      key: "reporter",
+      header: t("col.reporter"),
+      // Who is being waited ON — the person the reminder ladder chases (M45).
+      cell: (run) => run.reporter,
     },
     {
       key: "age",
@@ -129,7 +151,7 @@ export function ClarifyScreen(): ReactNode {
             <Table
               columns={columns}
               rows={open}
-              rowKey={(run) => run.runId}
+              rowKey={(run) => run.ticketKey}
               emptyLabel={t("clarify.open.empty")}
               caption={t("clarify.open.caption")}
               onRowClick={(run) => void navigate(`/detail/${run.ticketKey}`)}

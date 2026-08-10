@@ -15,6 +15,7 @@ import { FanoutScreen } from "../src/screens/Fanout.tsx";
 import { LiveScreen } from "../src/screens/Live.tsx";
 import { TicketsScreen } from "../src/screens/Tickets.tsx";
 import { WorkmodeScreen } from "../src/screens/Workmode.tsx";
+import { toRunList, toRunRow } from "../src/screens/shared/runs.ts";
 import { ToastProvider } from "../src/ui/Toast.tsx";
 
 /**
@@ -38,41 +39,121 @@ const TECH_LEAD: Session = {
 const QA: Session = { ...TECH_LEAD, roles: ["qa"], username: "deniz.yilmaz" };
 const DELEGATED_TECH_LEAD: Session = { ...TECH_LEAD, delegated: true };
 
-const RUNS = [
-  {
-    workflowId: "maestro-UGURPAY-501",
-    ticketKey: "UGURPAY-501",
-    runId: "run-501-aaaaaaaa",
-    status: "running",
+/**
+ * A catalog record exactly as `read-models.ts:RunRecord` sends it. Every field
+ * is present because the BFF sends every field; a fixture that quietly dropped
+ * one would let a screen read `undefined` and still pass.
+ */
+function record(
+  ticketKey: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ticketKey,
+    title: `${ticketKey} konusu`,
+    appId: "odeme-servisi",
+    mode: "ai_assist",
+    risk: "orta",
+    dataClass: "dahili",
+    parentTicketKey: null,
+    childTicketKeys: [],
+    reporter: "mehmet.demir@ugurbank",
+    assignee: null,
+    prId: null,
+    costUsd: 0,
+    tokensIn: 0,
+    tokensOut: 0,
     startedAt: "2026-08-01T09:00:00.000Z",
-    closedAt: null,
+    updatedAt: "2026-08-01T09:00:00.000Z",
+    ...extra,
+  };
+}
+
+/** The workflow state the BFF joins onto a record; `null` when none exists. */
+function state(
+  ticketKey: string,
+  status: string,
+  step: string,
+  startedAt = "2026-08-01T09:00:00.000Z",
+): Record<string, unknown> {
+  return {
+    runId: `run-${ticketKey}`,
+    ticketKey,
+    step,
+    status,
+    risk: "orta",
+    startedAt,
+    updatedAt: "2026-08-06T09:00:00.000Z",
+  };
+}
+
+/**
+ * The rows `GET /studio/runs` sends: catalog record + nested `state`, wrapped in
+ * the shared `{ items, nextCursor }` envelope. The statuses are the WORKFLOW
+ * vocabulary (gate/done/fail), not Temporal's (running/completed/failed) — a
+ * screen still speaking the old dictionary matches nothing here and renders an
+ * empty list, which is precisely the silent failure these tests exist to catch.
+ */
+const RUN_ITEMS = [
+  {
+    ...record("UGURPAY-501"),
+    state: state("UGURPAY-501", "running", "6a"),
   },
   {
-    workflowId: "maestro-UGURPAY-478",
-    ticketKey: "UGURPAY-478",
-    runId: "run-478-bbbbbbbb",
-    status: "completed",
-    startedAt: "2026-07-28T09:00:00.000Z",
-    closedAt: "2026-07-29T09:00:00.000Z",
+    ...record("UGURPAY-478", {
+      startedAt: "2026-07-28T09:00:00.000Z",
+      prId: 4821,
+      assignee: "ayse.kaya@ugurbank",
+      costUsd: 1.5,
+      tokensIn: 1200,
+      tokensOut: 340,
+    }),
+    state: state("UGURPAY-478", "done", "13", "2026-07-28T09:00:00.000Z"),
   },
   {
-    workflowId: "maestro-UGURDESK-45",
-    ticketKey: "UGURDESK-45",
-    runId: "run-45-cccccccc",
-    status: "failed",
-    startedAt: "2026-07-20T09:00:00.000Z",
-    closedAt: "2026-07-30T09:00:00.000Z",
+    ...record("UGURDESK-45", { startedAt: "2026-07-20T09:00:00.000Z", appId: null }),
+    state: state("UGURDESK-45", "fail", "6b", "2026-07-20T09:00:00.000Z"),
+  },
+  {
+    ...record("UGURPAY-777", { startedAt: "2026-08-02T09:00:00.000Z" }),
+    state: state("UGURPAY-777", "gate", "12", "2026-08-02T09:00:00.000Z"),
+  },
+  // Parked on step 2b — the clarification wait. Only the joined state can say
+  // so; `/runs` reported this as an ordinary "running" execution.
+  {
+    ...record("UGURPAY-712", { startedAt: "2026-08-04T09:00:00.000Z" }),
+    state: state("UGURPAY-712", "gate", "2b", "2026-08-04T09:00:00.000Z"),
+  },
+  // A catalog row whose workflow never started. The BFF lists it with a null
+  // state rather than hiding it, so the screens must render it, not crash.
+  {
+    ...record("UGURPAY-900", { startedAt: "2026-08-03T09:00:00.000Z" }),
+    state: null,
   },
 ];
 
-const GATE_RUN = {
-  runId: "run-501-aaaaaaaa",
-  ticketKey: "UGURPAY-501",
-  step: "12",
-  status: "gate",
-  risk: "orta",
-  startedAt: "2026-08-01T09:00:00.000Z",
-  updatedAt: "2026-08-06T09:00:00.000Z",
+const RUN_PAGE = { items: RUN_ITEMS, nextCursor: null };
+
+/** `GET /studio/runs/:ticket` — record, live state and matched application. */
+const GATE_DETAIL = {
+  run: record("UGURPAY-501", {
+    prId: 4821,
+    assignee: "ayse.kaya@ugurbank",
+    costUsd: 2.25,
+    tokensIn: 5000,
+    tokensOut: 900,
+  }),
+  state: state("UGURPAY-501", "gate", "12"),
+  application: {
+    appId: "odeme-servisi",
+    displayName: "Ödeme Servisi",
+    adoProject: "UgurBank",
+    adoRepo: "odeme-servisi",
+    platform: "dotnet",
+    jiraComponent: null,
+    maestroYamlPresent: true,
+    createdVia: "onboarding",
+  },
 };
 
 /**
@@ -172,8 +253,8 @@ function renderScreen(
 }
 
 describe("tickets", () => {
-  it("lists runs from GET /runs and filters by status", async () => {
-    const { fetchImpl } = stubFetch({ "/api/runs": () => json({ runs: RUNS }) });
+  it("lists runs from GET /studio/runs and filters by workflow status", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<TicketsScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
@@ -187,8 +268,49 @@ describe("tickets", () => {
     expect(screen.queryByText("UGURDESK-45")).not.toBeInTheDocument();
   });
 
+  /**
+   * The capability the Temporal-backed list could not offer at all: "at a
+   * gate" is a workflow status, and `/runs` collapsed it into "running".
+   */
+  it("filters to runs parked at a gate", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: /Kapıda \(2\)/ }));
+
+    expect(screen.getByText("UGURPAY-777")).toBeInTheDocument();
+    expect(screen.queryByText("UGURPAY-501")).not.toBeInTheDocument();
+  });
+
+  /** Enrichment: fields that only exist on the catalog record. */
+  it("shows the title, application, step, risk and mode from the record", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-501 konusu")).toBeInTheDocument());
+    expect(screen.getAllByText("odeme-servisi").length).toBeGreaterThan(0);
+    // step 6a on the running row, translated from the contract's step table
+    expect(screen.getAllByText("6a").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("orta").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ai_assist").length).toBeGreaterThan(0);
+  });
+
+  /**
+   * A row whose workflow has not started carries `state: null`. It must be
+   * LISTED (the BFF deliberately does not hide it) and must not be given a
+   * status it does not have.
+   */
+  it("lists a catalog row with no execution instead of dropping it", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-900")).toBeInTheDocument());
+    expect(screen.getByText("başlamadı")).toBeInTheDocument();
+  });
+
   it("filters by Jira project", async () => {
-    const { fetchImpl } = stubFetch({ "/api/runs": () => json({ runs: RUNS }) });
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<TicketsScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
@@ -200,7 +322,7 @@ describe("tickets", () => {
 
   it("shows a translated message instead of the server's error code", async () => {
     const { fetchImpl } = stubFetch({
-      "/api/runs": () => json({ error: "project_access" }, 403),
+      "/api/studio/runs": () => json({ error: "project_access" }, 403),
     });
     renderScreen(<TicketsScreen />, { fetchImpl });
 
@@ -209,44 +331,118 @@ describe("tickets", () => {
     expect(screen.getByRole("alert").textContent?.length ?? 0).toBeGreaterThan(10);
   });
 
-  it("sends the bearer token and the limit through the ApiClient", async () => {
-    const { fetchImpl, calls } = stubFetch({ "/api/runs": () => json({ runs: [] }) });
+  /**
+   * The integration regression this whole change exists to prevent: the screen
+   * must ask `/studio/runs` (Postgres, the catalog) and never `/runs`
+   * (Temporal). The dashboard read "no workflows yet" against a database
+   * holding 22 of them purely because of this one path.
+   */
+  it("asks /studio/runs, never the Temporal-backed /runs", async () => {
+    const { fetchImpl, calls } = stubFetch({
+      "/api/studio/runs": () => json({ items: [], nextCursor: null }),
+    });
     renderScreen(<TicketsScreen />, { fetchImpl });
 
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
-    expect(calls[0]!.url).toBe("/api/runs?limit=200");
+    expect(calls[0]!.url).toBe("/api/studio/runs?limit=200");
+    expect(calls.every((call) => !/^\/api\/runs\b/.test(call.url))).toBe(true);
+  });
+});
+
+/**
+ * The shape transformation, asserted directly.
+ *
+ * `/studio/runs` sends `{ items, nextCursor }` where each item nests its
+ * workflow state; `/runs` sent a flat `{ runs: [...] }`. Reading the old field
+ * off the new body yields an EMPTY list with no error — a screen that looks
+ * healthy while showing nothing. So the envelope handling is pinned here as
+ * well as through the rendered output.
+ */
+describe("run list shape", () => {
+  it("reads the { items, nextCursor } envelope, not a bare array", () => {
+    const result = toRunList({ items: RUN_ITEMS, nextCursor: "cursor-2" } as never);
+    expect(result.runs).toHaveLength(RUN_ITEMS.length);
+    expect(result.nextCursor).toBe("cursor-2");
+  });
+
+  it("lifts step/status/runId out of the nested state", () => {
+    const row = toRunRow(RUN_ITEMS[0] as never);
+    expect(row.status).toBe("running");
+    expect(row.step).toBe("6a");
+    expect(row.runId).toBe("run-UGURPAY-501");
+    // Record fields survive the flattening.
+    expect(row.title).toBe("UGURPAY-501 konusu");
+    expect(row.appId).toBe("odeme-servisi");
+  });
+
+  it("leaves status/step/runId null when the workflow has not started", () => {
+    const row = toRunRow(RUN_ITEMS[5] as never);
+    expect(row.status).toBeNull();
+    expect(row.step).toBeNull();
+    expect(row.runId).toBeNull();
+    // The catalog's own risk tier still stands in for the missing state.
+    expect(row.risk).toBe("orta");
+  });
+
+  it("yields an empty list rather than throwing on a body with no items", () => {
+    expect(toRunList(undefined).runs).toEqual([]);
+    expect(toRunList({ runs: RUN_ITEMS } as never).runs).toEqual([]);
   });
 });
 
 describe("dash", () => {
-  it("counts the KPIs from the run list rather than showing constants", async () => {
-    const { fetchImpl } = stubFetch({ "/api/runs": () => json({ runs: RUNS }) });
+  it("counts the KPIs from real workflow statuses rather than showing constants", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<DashScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("Aktif iş akışı")).toBeInTheDocument());
 
+    // one `running`
     const active = screen.getByText("Aktif iş akışı").closest("section");
     expect(within(active!).getByText("1")).toBeInTheDocument();
 
+    // two `gate` rows — a count the Temporal-backed list could not produce
+    const gate = screen.getByText("Kapıda bekleyen").closest("section");
+    expect(within(gate!).getByText("2")).toBeInTheDocument();
+
+    // six rows on the page, including the one with no execution
     const total = screen.getByText("Toplam").closest("section");
-    expect(within(total!).getByText("3")).toBeInTheDocument();
+    expect(within(total!).getByText("6")).toBeInTheDocument();
   });
 
-  it("puts the failed run first in the attention list", async () => {
-    const { fetchImpl } = stubFetch({ "/api/runs": () => json({ runs: RUNS }) });
+  it("puts the failed run first, then the gate, in the attention list", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<DashScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("Dikkat isteyenler")).toBeInTheDocument());
     const rows = screen.getAllByRole("button").filter((el) => el.className.includes("screen-issue"));
     expect(rows[0]!.textContent).toContain("UGURDESK-45");
+    expect(rows[1]!.textContent).toContain("UGURPAY-777");
+    // A plain `running` run is not "attention" — nobody is blocked on it.
+    expect(rows.some((row) => row.textContent?.includes("UGURPAY-501"))).toBe(false);
   });
 
   it("shows the empty state when the operator has no runs", async () => {
-    const { fetchImpl } = stubFetch({ "/api/runs": () => json({ runs: [] }) });
+    const { fetchImpl } = stubFetch({
+      "/api/studio/runs": () => json({ items: [], nextCursor: null }),
+    });
     renderScreen(<DashScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("Henüz iş akışı yok")).toBeInTheDocument());
     expect(screen.queryByText("Aktif iş akışı")).not.toBeInTheDocument();
+  });
+
+  /**
+   * The exact production symptom: a Postgres-backed page of runs rendered as
+   * "Henüz iş akışı yok" because the screen was reading Temporal. If the body
+   * below ever produces the empty state again, this fails.
+   */
+  it("does not show the empty state when /studio/runs returns rows", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
+    renderScreen(<DashScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("Aktif iş akışı")).toBeInTheDocument());
+    expect(screen.queryByText("Henüz iş akışı yok")).not.toBeInTheDocument();
   });
 });
 
@@ -257,7 +453,7 @@ describe("detail + gate decision", () => {
     // path so a regression back to /runs/:ticket/journal falls through to the
     // stub's 404 and the assertions below fail.
     "/api/studio/runs/UGURPAY-501/journal": () => json({ items: JOURNAL, nextCursor: null }),
-    "/api/runs/UGURPAY-501": () => json(GATE_RUN),
+    "/api/studio/runs/UGURPAY-501": () => json(GATE_DETAIL),
   };
 
   function renderDetail(session: Session, extra: Readonly<Record<string, () => Response>> = {}) {
@@ -271,7 +467,7 @@ describe("detail + gate decision", () => {
     return stub;
   }
 
-  it("renders the run's step and risk from GET /runs/:ticket", async () => {
+  it("renders the run's step and risk from GET /studio/runs/:ticket", async () => {
     renderDetail(TECH_LEAD);
     await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
 
@@ -279,6 +475,93 @@ describe("detail + gate decision", () => {
     expect(screen.getByText("orta")).toBeInTheDocument();
     // risk orta -> 4 gates, read from GATES_BY_RISK, not typed in
     expect(screen.getByText("4 kapı")).toBeInTheDocument();
+  });
+
+  /**
+   * The sidebar fields the old endpoint could not supply at all. Each one is
+   * asserted against the fixture's value, so a screen that renders a plausible
+   * placeholder instead of the record's own number fails here.
+   */
+  it("renders the record's application, people, PR and spend", async () => {
+    renderDetail(TECH_LEAD);
+    await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
+
+    expect(screen.getByText("Ödeme Servisi")).toBeInTheDocument();
+    expect(screen.getByText("UgurBank/_git/odeme-servisi")).toBeInTheDocument();
+    expect(screen.getByText("mehmet.demir@ugurbank")).toBeInTheDocument();
+    expect(screen.getByText("ayse.kaya@ugurbank")).toBeInTheDocument();
+    expect(screen.getByText("#4821")).toBeInTheDocument();
+    expect(screen.getByText(/2\.25 USD/)).toBeInTheDocument();
+    expect(screen.getByText("5000 giriş / 900 çıkış token")).toBeInTheDocument();
+  });
+
+  /** A null field is an em dash, never a filled-in guess. */
+  it("shows an em dash for an unassigned ticket with no PR", async () => {
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-501": () =>
+        json({ ...GATE_DETAIL, run: record("UGURPAY-501"), application: null }),
+    });
+    renderScreen(<DetailScreen />, {
+      fetchImpl: stub.fetchImpl,
+      route: "/detail/UGURPAY-501",
+      path: "/detail/:ticket",
+    });
+
+    await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
+    const assignee = screen.getByText("Atanan").nextElementSibling;
+    expect(assignee?.textContent).toBe("—");
+    const pr = screen.getByText("PR").nextElementSibling;
+    expect(pr?.textContent).toBe("—");
+  });
+
+  /** Parent/child links come from the record — the fan-out tree is real now. */
+  it("links the parent and child tickets when the record carries them", async () => {
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-501": () =>
+        json({
+          ...GATE_DETAIL,
+          run: record("UGURPAY-501", {
+            parentTicketKey: "UGURPAY-500",
+            childTicketKeys: ["UGURPAY-502", "UGURDESK-9"],
+          }),
+        }),
+    });
+    renderScreen(<DetailScreen />, {
+      fetchImpl: stub.fetchImpl,
+      route: "/detail/UGURPAY-501",
+      path: "/detail/:ticket",
+    });
+
+    await waitFor(() => expect(screen.getByText("Fan-out bağı")).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "UGURPAY-500" })).toHaveAttribute(
+      "href",
+      "/detail/UGURPAY-500",
+    );
+    expect(screen.getByRole("link", { name: "UGURPAY-502" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "UGURDESK-9" })).toBeInTheDocument();
+  });
+
+  /**
+   * A ticket in the catalog whose workflow never started. The old endpoint
+   * could only 404 this, i.e. claim the ticket did not exist; the new one
+   * returns the record with `state: null` and the screen must say so.
+   */
+  it("shows the record but no step list for a run that has not started", async () => {
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-900": () =>
+        json({ run: record("UGURPAY-900"), state: null, application: null }),
+    });
+    renderScreen(<DetailScreen />, {
+      fetchImpl: stub.fetchImpl,
+      route: "/detail/UGURPAY-900",
+      path: "/detail/:ticket",
+    });
+
+    await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
+    expect(screen.getByText("UGURPAY-900")).toBeInTheDocument();
+    expect(screen.getByText("başlamadı")).toBeInTheDocument();
+    // No gate panel may appear for a run with no state.
+    expect(screen.queryByRole("button", { name: "Onayla" })).not.toBeInTheDocument();
   });
 
   it("sends the approval as a gateDecision SIGNAL, with no actor in the body", async () => {
@@ -342,7 +625,9 @@ describe("detail + gate decision", () => {
   });
 
   it("translates a 404 from GET /runs/:ticket instead of printing the code", async () => {
-    const stub = stubFetch({ "/api/runs/UGURPAY-999": () => json({ error: "no_run" }, 404) });
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-999": () => json({ error: "no_run" }, 404),
+    });
     renderScreen(<DetailScreen />, {
       fetchImpl: stub.fetchImpl,
       route: "/detail/UGURPAY-999",
@@ -396,7 +681,7 @@ describe("clarify", () => {
   it("sends the answer as a clarificationAnswered signal", async () => {
     const stub = stubFetch({
       "/api/runs/UGURPAY-712/signals/clarificationAnswered": () => json({ accepted: true }),
-      "/api/runs": () => json({ runs: RUNS }),
+      "/api/studio/runs": () => json(RUN_PAGE),
     });
     renderScreen(<ClarifyScreen />, { fetchImpl: stub.fetchImpl });
 
@@ -411,8 +696,27 @@ describe("clarify", () => {
     });
   });
 
+  /**
+   * The open-2b list is now the REAL queue: it filters on `state.step`, which
+   * only the joined endpoint carries. The old screen showed every running run.
+   */
+  it("lists only the runs actually parked on step 2b", async () => {
+    const stub = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
+    renderScreen(<ClarifyScreen />, { fetchImpl: stub.fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-712")).toBeInTheDocument());
+    // Running, at another gate, done, failed and not-started rows are all out.
+    expect(screen.queryByText("UGURPAY-501")).not.toBeInTheDocument();
+    expect(screen.queryByText("UGURPAY-777")).not.toBeInTheDocument();
+    expect(screen.queryByText("UGURDESK-45")).not.toBeInTheDocument();
+    // The reporter is who the reminder ladder chases — shown, not invented.
+    expect(screen.getAllByText("mehmet.demir@ugurbank").length).toBeGreaterThan(0);
+  });
+
   it("keeps the send button disabled until both fields are filled", async () => {
-    const stub = stubFetch({ "/api/runs": () => json({ runs: [] }) });
+    const stub = stubFetch({
+      "/api/studio/runs": () => json({ items: [], nextCursor: null }),
+    });
     renderScreen(<ClarifyScreen />, { fetchImpl: stub.fetchImpl });
 
     const send = screen.getByRole("button", { name: "Yanıtı gönder" });
@@ -461,19 +765,70 @@ describe("workmode", () => {
 });
 
 describe("fanout", () => {
-  it("shows sibling runs of the parent's project and never invents a tree", async () => {
-    const { fetchImpl } = stubFetch({ "/api/runs": () => json({ runs: RUNS }) });
+  /**
+   * The tree is READ from the record now, not inferred from the Jira project.
+   * The fixture deliberately puts a child in a DIFFERENT project (UGURDESK-9):
+   * the old project-prefix heuristic would have missed it, and a fan-out that
+   * silently drops the cross-app child defeats the point of M100.
+   */
+  const TREE = {
+    items: [
+      {
+        ...record("UGURPAY-500", {
+          childTicketKeys: ["UGURPAY-502", "UGURDESK-9", "UGURPAY-999"],
+        }),
+        state: state("UGURPAY-500", "running", "3"),
+      },
+      {
+        ...record("UGURPAY-502", { parentTicketKey: "UGURPAY-500" }),
+        state: state("UGURPAY-502", "gate", "12"),
+      },
+      {
+        ...record("UGURDESK-9", { parentTicketKey: "UGURPAY-500", appId: "destek-portali" }),
+        state: state("UGURDESK-9", "running", "6a"),
+      },
+      // Same project, NOT a child — the old heuristic would have listed it.
+      { ...record("UGURPAY-478"), state: state("UGURPAY-478", "done", "13") },
+    ],
+    nextCursor: null,
+  };
+
+  it("shows the real parent/child tree, including a child in another project", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(TREE) });
+    renderScreen(<FanoutScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("Etki matrisi")).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText("Ana ticket anahtarı"), "UGURPAY-500");
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-502")).toBeInTheDocument());
+    // The cross-project child is in the tree because the RECORD says so.
+    expect(screen.getByText("UGURDESK-9")).toBeInTheDocument();
+    expect(screen.getByText("destek-portali")).toBeInTheDocument();
+    // A same-project run that is not a child must NOT appear.
+    expect(screen.queryByText("UGURPAY-478")).not.toBeInTheDocument();
+  });
+
+  /**
+   * A child the parent claims but which is not on the visible page is reported
+   * as missing rather than dropped — a tree that under-reports its own scope
+   * would understate the blast radius of the change.
+   */
+  it("names children it cannot see instead of quietly omitting them", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(TREE) });
+    renderScreen(<FanoutScreen />, { fetchImpl });
+
+    await userEvent.type(screen.getByLabelText("Ana ticket anahtarı"), "UGURPAY-500");
+
+    await waitFor(() => expect(screen.getByText("Görünmeyen alt ticket'lar")).toBeInTheDocument());
+    expect(screen.getByText("UGURPAY-999")).toBeInTheDocument();
+  });
+
+  it("still states that the impact matrix itself has no endpoint", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(TREE) });
     renderScreen(<FanoutScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("Etki matrisi")).toBeInTheDocument());
     expect(screen.getByText(/Etki matrisi analiz belgesinde yaşıyor/)).toBeInTheDocument();
-
-    await userEvent.type(screen.getByLabelText("Ana ticket anahtarı"), "UGURPAY-500");
-
-    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
-    expect(screen.getByText("UGURPAY-478")).toBeInTheDocument();
-    // A different project must not be pulled in.
-    expect(screen.queryByText("UGURDESK-45")).not.toBeInTheDocument();
   });
 });
 
@@ -555,16 +910,19 @@ describe("evidence", () => {
 });
 
 describe("live", () => {
-  it("draws the pipeline from the contract's step table and lists real running work", async () => {
-    const { fetchImpl } = stubFetch({ "/api/runs": () => json({ runs: RUNS }) });
+  it("draws the pipeline from the contract's step table and lists real in-flight work", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<LiveScreen />, { fetchImpl });
 
     // Steps come from STEP_IDS — 2b is a step id that only exists there.
-    expect(screen.getByText("2b")).toBeInTheDocument();
+    expect(screen.getAllByText("2b").length).toBeGreaterThan(0);
     expect(screen.getAllByText("insan kapısı").length).toBeGreaterThan(0);
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
-    // Only running work belongs in the live table.
+    // Gates are in flight too — they are what a person is needed for.
+    expect(screen.getByText("UGURPAY-777")).toBeInTheDocument();
+    // Finished and failed work is not.
     expect(screen.queryByText("UGURPAY-478")).not.toBeInTheDocument();
+    expect(screen.queryByText("UGURDESK-45")).not.toBeInTheDocument();
   });
 });

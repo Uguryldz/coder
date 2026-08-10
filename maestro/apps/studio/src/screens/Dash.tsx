@@ -2,57 +2,59 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Button, Card, Kpi, runStatusTone } from "../ui/index.ts";
+import { Badge, Button, Card, Kpi, riskTone } from "../ui/index.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { ageLabel } from "./shared/format.ts";
-import { useEnumLabel } from "./common/label.ts";
-import { useRuns, type RunSummary } from "./shared/runs.ts";
-import { RUN_STATUS_PREFIX } from "./Tickets.tsx";
+import { useRuns, type RunRow } from "./shared/runs.ts";
+import { RunStatusCell } from "./Tickets.tsx";
 import "./shared/screens.css";
 
 /**
  * Screen: dash — the operator's landing page.
  *
- * Every number on it is counted from `GET /runs`. The mock also shows runner
- * pool capacity and a 24-hour activity feed; both need endpoints that do not
- * exist (`/runners`, `/activity`), so they are requested in the report rather
- * than filled with plausible-looking constants. A dashboard that invents its
- * own figures is worse than one that admits it has none.
+ * Every number on it is counted from `GET /studio/runs`, which joins the
+ * platform catalog to the live workflow state. That is what makes the KPIs
+ * mean what their labels say: "kapıda" counts runs whose workflow status IS
+ * `gate`, not runs Temporal happens to call `running`. The mock also shows
+ * runner pool capacity and a 24-hour activity feed; both need endpoints that do
+ * not exist (`/runners`, `/activity`), so they are requested in the report
+ * rather than filled with plausible-looking constants. A dashboard that invents
+ * its own figures is worse than one that admits it has none.
  */
 
 const ATTENTION_LIMIT = 5;
 
+/** Statuses that mean a human has to look: a failure, or a handover (M96). */
+function needsHuman(run: RunRow): boolean {
+  return run.status === "fail" || run.status === "handover";
+}
+
 export function DashScreen(): ReactNode {
   const t = useT();
   const navigate = useNavigate();
-  const enumLabel = useEnumLabel();
   const { data, isPending, error, refetch } = useRuns(200);
 
   const runs = useMemo(() => data?.runs ?? [], [data]);
 
   const stats = useMemo(() => {
     const open = runs.filter((run) => run.status === "running");
-    const done = runs.filter((run) => run.status === "completed");
-    const broken = runs.filter(
-      (run) =>
-        run.status === "failed" || run.status === "terminated" || run.status === "timed_out",
-    );
-    return { open, done, broken };
+    const gate = runs.filter((run) => run.status === "gate");
+    const done = runs.filter((run) => run.status === "done");
+    const broken = runs.filter(needsHuman);
+    return { open, gate, done, broken };
   }, [runs]);
 
   /**
-   * "Needs attention" is derived, not guessed: a failed run, or an open one
-   * that has been going longest. Ordering by age is the only urgency signal
-   * `/runs` carries today — the gate-level detail the mock shows (who owns the
-   * gate, how long it has waited) lives behind `/runs/:ticket`.
+   * "Needs attention" is derived, not guessed. The order is the order a human
+   * should work the queue in: broken first (a failure blocks everything behind
+   * it), then runs parked at a gate (a decision only a person can make), each
+   * group oldest-first. Gates are visible here for the first time — the old
+   * `/runs` could not tell a gate from any other running execution, so this
+   * list could only ever offer "oldest running".
    */
   const attention = useMemo(() => {
-    const byAgeAsc = (a: RunSummary, b: RunSummary) =>
-      Date.parse(a.startedAt) - Date.parse(b.startedAt);
-    return [...stats.broken.sort(byAgeAsc), ...stats.open.sort(byAgeAsc)].slice(
-      0,
-      ATTENTION_LIMIT,
-    );
+    const byAgeAsc = (a: RunRow, b: RunRow) => Date.parse(a.startedAt) - Date.parse(b.startedAt);
+    return [...stats.broken.sort(byAgeAsc), ...stats.gate.sort(byAgeAsc)].slice(0, ATTENTION_LIMIT);
   }, [stats]);
 
   return (
@@ -88,14 +90,14 @@ export function DashScreen(): ReactNode {
             note={t("dash.kpi.active_note", { n: String(stats.broken.length) })}
           />
           <Kpi
+            label={t("dash.kpi.gate")}
+            value={String(stats.gate.length)}
+            note={t("dash.kpi.gate_note")}
+          />
+          <Kpi
             label={t("dash.kpi.done")}
             value={String(stats.done.length)}
             note={t("dash.kpi.done_note")}
-          />
-          <Kpi
-            label={t("dash.kpi.failed")}
-            value={String(stats.broken.length)}
-            note={t("dash.kpi.failed_note")}
           />
           <Kpi
             label={t("dash.kpi.total")}
@@ -118,24 +120,24 @@ export function DashScreen(): ReactNode {
           ) : (
             attention.map((run) => {
               const age = ageLabel(run.startedAt);
-              const failed = run.status !== "running";
+              const broken = needsHuman(run);
               return (
                 <button
-                  key={run.runId}
+                  key={run.ticketKey}
                   type="button"
-                  className={
-                    failed ? "screen-issue screen-issue--alert" : "screen-issue"
-                  }
+                  className={broken ? "screen-issue screen-issue--alert" : "screen-issue"}
                   onClick={() => void navigate(`/detail/${run.ticketKey}`)}
                 >
-                  <span aria-hidden="true">{failed ? "✕" : "⏳"}</span>
+                  <span aria-hidden="true">{broken ? "✕" : "⏳"}</span>
                   <span className="screen-issue__body">
-                    <b className="screen-mono">{run.ticketKey}</b>{" "}
-                    <Badge tone={runStatusTone(run.status)}>
-                      {enumLabel(RUN_STATUS_PREFIX, run.status).text}
-                    </Badge>
+                    <b className="screen-mono">{run.ticketKey}</b> <RunStatusCell status={run.status} />{" "}
+                    <Badge tone={riskTone(run.risk)}>{t(`risk.${run.risk}`)}</Badge>
                     <span className="screen-note">
-                      {age === null ? "" : t("dash.attention.age", { age: t(age.key, age.params) })}
+                      {run.title}
+                      {run.step === null ? "" : ` · ${t(`steps.${run.step}`)}`}
+                      {age === null
+                        ? ""
+                        : ` · ${t("dash.attention.age", { age: t(age.key, age.params) })}`}
                     </span>
                   </span>
                 </button>

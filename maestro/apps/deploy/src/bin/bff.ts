@@ -1,4 +1,4 @@
-import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
+import { AuditChain } from "@maestro/audit";
 import {
   BcryptPasswordHasher,
   buildServer,
@@ -15,8 +15,10 @@ import { bootPlatform } from "../boot.js";
 import { listenAddress } from "../env.js";
 import { PrismaJiraProjectBindings } from "../stores/bindings.js";
 import { assertStoresDurable, volatileStoreWarning, type StoreDurability } from "../stores/durability.js";
-import { unbridgedReadModels } from "../stores/read-models.js";
-import { prismaSqlExecutor } from "../stores/sql.js";
+import { postgresProbe, temporalProbe } from "../stores/read-health.js";
+import { DEGRADED_READ_MODELS, liveReadModels } from "../stores/read-live.js";
+import { postgresChainLock, PrismaAuditStore } from "../stores/audit.js";
+import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { PrismaUserDirectory } from "../stores/users.js";
 import { connectTemporal } from "../temporal-gateway.js";
 import { jiraWorkEventReader } from "../work-events.js";
@@ -50,11 +52,6 @@ const VOLATILE_STORES: readonly StoreDurability[] = [
     name: "sessions",
     durable: false,
     onRestart: "every logged-in user is signed out",
-  },
-  {
-    name: "audit",
-    durable: false,
-    onRestart: "the hash chain restarts empty; a second replica would fork it (M33)",
   },
 ];
 
@@ -90,16 +87,25 @@ export async function main(): Promise<void> {
   });
 
   const users = new PrismaUserDirectory(db.user);
+  // ONE audit store, shared by the chain that appends and the reader that
+  // verifies. Two stores over the same table would let `verify()` check a
+  // chain nothing wrote (M33).
+  //
+  // Postgres-backed now, where it used to be in-memory: Studio's audit screen
+  // has to read the trail the platform actually wrote, and an in-memory chain
+  // would have rendered a verified chain of zero events on a database holding
+  // the real one. The lock moves with it — `postgresChainLock` is what stops a
+  // second replica from forking the chain, which `LocalChainLock` cannot do.
+  const auditStore = new PrismaAuditStore(db.auditLog);
   const deps: BffDeps = {
     work: deployment.ports.work,
     workEvents: jiraWorkEventReader(),
     ci: deployment.ci,
     runs: temporal.gateway,
-    // In-memory for now: `@maestro/audit` ships no Postgres store, and the
-    // hash chain's lock is process-local with it (M33). Named in RAPOR.md as
-    // a blocker rather than papered over — a single BFF is correct, a second
-    // replica writing the same chain is not.
-    audit: new AuditChain({ store: new InMemoryAuditStore() }),
+    audit: new AuditChain({
+      store: auditStore,
+      lock: postgresChainLock(prismaTransactionRunner(db)),
+    }),
     sessions: new InMemorySessionStore(),
     identity: new LocalIdentityProvider(users, new BcryptPasswordHasher()),
     users,
@@ -120,13 +126,16 @@ export async function main(): Promise<void> {
     // an operator must read rather than discover.
     templates: new InMemoryTemplateStore(),
     killSwitch: new InMemoryKillSwitchStore(),
-    // Studio's read side, unwired (M7). Every one of the twelve read models
-    // needs a Postgres store that does not exist yet, so each refuses by name
-    // instead of returning an empty page. The BFF's in-memory read models
-    // would boot cleanly and render "no runs, no open gates, nothing to
-    // approve" — indistinguishable from a quiet Friday, and wrong. See
-    // `MISSING_READ_MODELS` and the note in stores/read-models.ts.
-    read: unbridgedReadModels(),
+    // Studio's read side, live (M7). Ten of the twelve read models answer from
+    // the tables the worker writes; `runners` and `scans` still refuse by name
+    // because nothing in this platform writes either, and a store over an
+    // empty table would render "no runners, no findings" — indistinguishable
+    // from a healthy fleet. See `stores/read-live.ts`.
+    read: liveReadModels({
+      db,
+      audit: auditStore,
+      probes: [postgresProbe(db), temporalProbe(temporal.gateway)],
+    }),
     config: { env: env.base },
   };
 
@@ -134,6 +143,19 @@ export async function main(): Promise<void> {
   const { host, port } = listenAddress(env);
   await app.listen({ host, port });
   console.info(`[maestro] bff listening on ${host}:${port}`);
+
+  // Which Studio screens will error, said at boot rather than discovered by
+  // the operator who opens one. Same discipline as the worker's banner: a read
+  // model that refuses is a capability this image does not have, and an
+  // operator reading a green start-up log has no other way to tell.
+  if (DEGRADED_READ_MODELS.length > 0) {
+    console.warn(
+      `[maestro] bff: ${DEGRADED_READ_MODELS.length} read model` +
+        `${DEGRADED_READ_MODELS.length === 1 ? "" : "s"} NOT wired — the Studio screens ` +
+        `backed by them refuse rather than render an empty page:\n  - ` +
+        DEGRADED_READ_MODELS.join("\n  - "),
+    );
+  }
 
   install(async () => {
     await app.close();

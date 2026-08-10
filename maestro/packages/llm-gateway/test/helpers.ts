@@ -125,6 +125,7 @@ export function stubSecrets(values: Record<string, string> = {}): SecretPort {
     get: (key) => Promise.resolve(values[key] ?? `secret-for-${key}`),
     issueShortLived: (scope) =>
       Promise.resolve({ secret: `short-${scope}`, expiresAt: "2026-08-08T10:00:00.000Z" }),
+    set: () => Promise.reject(new Error("not used")),
   };
 }
 

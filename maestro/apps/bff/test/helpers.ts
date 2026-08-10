@@ -20,6 +20,9 @@ import type {
 } from "../src/deps.js";
 import { buildServer } from "../src/server.js";
 import { StaticRoutingReader, StaticSettingsReader } from "../src/stores/admin-memory.js";
+import { InMemoryConnectionStore, InMemorySecretStore } from "../src/stores/connection-memory.js";
+import type { ConnectionRecord } from "../src/connection-store.js";
+import type { ConnectorFetch } from "../src/connection-service.js";
 import { InMemoryDocTemplateStore } from "../src/stores/doc-template-memory.js";
 import {
   InMemoryKillSwitchStore,
@@ -163,6 +166,10 @@ export interface Harness {
   /** The corporate `.docx` store (M103r), so a test can assert what was stored. */
   docTemplates: InMemoryDocTemplateStore;
   killSwitch: InMemoryKillSwitchStore;
+  /** The managed-connector store, so a connector test can seed/assert rows. */
+  connections: InMemoryConnectionStore;
+  /** The connector secret store — proves a raw token is enciphered, never stored raw. */
+  connectorSecrets: InMemorySecretStore;
   bindings: StaticJiraProjectBindings;
   /** Studio's read side, as concrete stores the tests seed directly. */
   read: TestReadModels;
@@ -317,6 +324,10 @@ export interface HarnessOptions {
   /** Documents already produced, for the template screen's output list. */
   docOutputs?: readonly DocTemplateOutput[];
   connections?: readonly ConnectionView[];
+  /** Seed the managed-connector store (distinct from the read-only `connections`). */
+  managedConnections?: readonly ConnectionRecord[];
+  /** Stub the connector live-test transport; defaults to a 200-with-no-body fetch. */
+  connectorFetch?: ConnectorFetch;
   notifyDrivers?: readonly NotifyDriverView[];
   routingProjects?: readonly RoutingProjectView[];
   routingRules?: readonly RoutingRuleView[];
@@ -352,6 +363,8 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     options.routingRules ?? TEST_ROUTING_RULES,
   );
   const killSwitch = new InMemoryKillSwitchStore();
+  const connections = new InMemoryConnectionStore(options.managedConnections ?? []);
+  const connectorSecrets = new InMemorySecretStore();
   const bindings = new StaticJiraProjectBindings(options.bindings ?? [UGURPAY_BINDING]);
 
   const read: TestReadModels = {
@@ -390,10 +403,16 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     settings,
     routing,
     killSwitch,
+    connections,
+    connectorSecrets,
     read,
     messages: testCatalog,
     clock,
     config: { actorDomain: "ugurbank.local" },
+    // A default 200-with-empty-body transport so a live test resolves ok without
+    // a network; a test that cares about a specific response injects its own.
+    connectorFetch:
+      options.connectorFetch ?? (() => Promise.resolve(new Response("{}", { status: 200 }))),
     ...options.deps,
   });
 
@@ -464,6 +483,8 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     templates,
     docTemplates,
     killSwitch,
+    connections,
+    connectorSecrets,
     bindings,
     read,
     platform: app.platform,

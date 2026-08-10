@@ -15,6 +15,7 @@ import { fixture, stubFetch } from "../helpers.js";
 const secrets: SecretPort = {
   get: (key: string) => Promise.resolve(`resolved:${key}`),
   issueShortLived: () => Promise.resolve({ secret: "s", expiresAt: "2026-08-10T13:00:00.000+03:00" }),
+  set: () => Promise.reject(new Error("not used")),
 };
 
 const baseConfig = {

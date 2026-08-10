@@ -10,7 +10,9 @@ import type {
   TicketKey,
   WorkMode,
 } from "@maestro/contracts";
-import type { CiPort, WorkPort } from "@maestro/ports";
+import type { CiPort, SecretPort, WorkPort } from "@maestro/ports";
+import type { ConnectionStore } from "./connection-store.js";
+import type { ConnectorFetch } from "./connection-service.js";
 import type { RunGateway } from "./gateway.js";
 import type { StudioReadModels } from "./read-studio.js";
 import type { OnboardingReader, RepoPolicyReader } from "./onboarding-models.js";
@@ -561,6 +563,23 @@ export interface BffDeps {
   docTemplates: DocTemplateStore;
   /** Platform wiring, as the settings screen reads it. */
   settings: SettingsReader;
+  /**
+   * The managed-connector store (connector-management surface). Optional: a
+   * deployment that has not wired it gets 503-by-name on `/studio/connections`,
+   * the same convention as the other capabilities that refuse rather than
+   * render an empty page. Absent here means "connectors are not editable in
+   * this deployment", never "there are no connectors".
+   */
+  connections?: ConnectionStore;
+  /**
+   * The SecretPort that ENCIPHERS connector tokens (the DB-backed
+   * `EncryptedSecretStore`). Deliberately its OWN secret port, not the Vault
+   * driver the rest of the platform reads deployment secrets through: a console
+   * writes here, and a console must not be able to write the Vault mount the
+   * deployment provisions. Optional and paired with `connections` — both wired
+   * together or the connector routes refuse.
+   */
+  connectorSecrets?: SecretPort;
   /** Ticket→application routing (M99/M102), as the routing screen reads it. */
   routing: RoutingReader;
   killSwitch: KillSwitchStore;
@@ -592,6 +611,14 @@ export interface BffDeps {
    * The internal service call NEVER carries the Studio user's token.
    */
   pilotFetch?: PilotFetch;
+  /**
+   * How the connector LIVE test reaches a target (Jira, GitHub, an LLM,
+   * Vault). Optional so a deployment gets the real `fetch` and a test injects a
+   * stub with no network. The URL the test calls is built from the STORED
+   * `baseUrl`, never from a request body — a caller cannot point it at a host of
+   * their choosing.
+   */
+  connectorFetch?: ConnectorFetch;
 }
 
 /** The injected read side; see `read-models.ts` for what each one owes Studio. */
@@ -615,7 +642,7 @@ export interface ReadModels {
 }
 
 export interface ResolvedDeps
-  extends Omit<BffDeps, "messages" | "clock" | "config" | "studio" | "pilotFetch"> {
+  extends Omit<BffDeps, "messages" | "clock" | "config" | "studio" | "pilotFetch" | "connectorFetch"> {
   messages: MessageCatalog;
   clock: Clock;
   config: BffConfig;
@@ -623,6 +650,8 @@ export interface ResolvedDeps
   studio: StudioReadModels;
   /** Resolved to the real `fetch` when a deployment injects none (Dalga D). */
   pilotFetch: PilotFetch;
+  /** Resolved to the real `fetch` when a deployment injects none. */
+  connectorFetch: ConnectorFetch;
   diagnostics: CommandDiagnostics | null;
   /** Deliveries dropped because their project is unbound or paused (M102 counter). */
   counters: { droppedUnbound: number; droppedKillSwitch: number; invalidCommands: number };

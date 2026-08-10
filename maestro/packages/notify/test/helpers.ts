@@ -58,6 +58,9 @@ export function fakeSecrets(values: Record<string, string>): SecretPort {
     async issueShortLived() {
       throw new Error("not used by notify");
     },
+    async set() {
+      throw new Error("not used by notify");
+    },
   };
 }
 

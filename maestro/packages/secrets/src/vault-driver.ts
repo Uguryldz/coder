@@ -1,4 +1,4 @@
-import type { SecretPort } from "@maestro/ports";
+import { CapabilityNotSupportedError, type SecretPort } from "@maestro/ports";
 import { type Clock, systemClock, TtlCache } from "./cache.js";
 import { VAULT_DRIVER, type VaultConfig } from "./config.js";
 import {
@@ -118,6 +118,19 @@ export class VaultSecretPort implements SecretPort {
 
     // Never cached: a short-lived credential is single-use by design.
     return { secret, expiresAt: toIsoDateTime(this.#clock() + granted * 1000) };
+  }
+
+  /**
+   * The connector UI's WRITE path is deliberately not this driver's job. The
+   * Vault mount holds deployment-provisioned secrets an operator manages in
+   * Vault itself; letting a Studio console rewrite a KV path would sit below the
+   * mount allow-list this driver enforces and hand out a way around least
+   * privilege (M6/M80). A console-written connector token is stored by the
+   * DB-backed `EncryptedSecretStore` instead, which is the only SecretPort whose
+   * `set` actually writes. So this one refuses, loudly, rather than pretend.
+   */
+  set(_key: string, _value: string): Promise<void> {
+    return Promise.reject(new CapabilityNotSupportedError("SecretPort", "set"));
   }
 
   /** Drops cached values, e.g. after a rotation signal. */

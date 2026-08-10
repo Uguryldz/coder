@@ -18,6 +18,7 @@ import { DEV_ENV } from "./fixtures.js";
 const fakeSecrets: SecretPort = {
   get: () => Promise.resolve("service-pw"),
   issueShortLived: () => Promise.resolve({ secret: "x", expiresAt: "2026-08-10T00:00:00.000Z" }),
+  set: () => Promise.reject(new Error("not used")),
 };
 
 const emptyUsers: UserDirectory = {

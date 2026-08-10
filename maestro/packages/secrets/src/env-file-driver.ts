@@ -76,6 +76,16 @@ export class EnvFileSecretPort implements SecretPort {
     throw new CapabilityNotSupportedError("SecretPort", "issueShortLived");
   }
 
+  /**
+   * Not supported: the environment and the optional dotenv file are read-only
+   * sources this process does not own — rewriting a shell's exported variable or
+   * a file the operator provisions would be a write with no durable home. A
+   * console-entered connector token is stored by `EncryptedSecretStore` instead.
+   */
+  set(_key: string, _value: string): Promise<void> {
+    return Promise.reject(new CapabilityNotSupportedError("SecretPort", "set"));
+  }
+
   invalidate(): void {
     this.#cache.clear();
     this.#fileEntries = null;

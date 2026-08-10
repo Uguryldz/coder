@@ -13,3 +13,4 @@ export * from "./scan.js";
 export * from "./evidence.js";
 export * from "./notify.js";
 export * from "./publish.js";
+export * from "./connection.js";

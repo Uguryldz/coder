@@ -1,4 +1,6 @@
 export * from "./actor.js";
+export * from "./connection-service.js";
+export * from "./connection-store.js";
 export * from "./deps.js";
 export * from "./doc-template-scan.js";
 export * from "./doc-template-service.js";
@@ -30,6 +32,7 @@ export * from "./routes/access.js";
 export * from "./routes/paging.js";
 export * from "./routes/unwired.js";
 export * from "./stores/admin-memory.js";
+export * from "./stores/connection-memory.js";
 export * from "./stores/doc-template-memory.js";
 export * from "./stores/memory.js";
 export * from "./stores/onboarding-memory.js";

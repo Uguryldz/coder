@@ -8,12 +8,11 @@ import {
   ADO_PROJECT,
   ADO_REPO,
   ADO_WEBHOOK_USERNAME,
-  APPROVER_GROUP,
-  DISCOVERY_POLL_MS,
-  PILOT_MODEL,
+  defaultSettings,
   PILOT_SECRETS,
   UI_PORT,
 } from "./config.js";
+import { SettingsStore } from "./settings.js";
 import {
   loadRepoEnv,
   resolveJiraCloud,
@@ -71,6 +70,7 @@ export interface PilotStage {
   adoUrl: string;
   jiraSite: string;
   store: StateStore;
+  settings: SettingsStore;
   run: PilotRun;
   ado: FakeAdo;
   /** One discovery pass on demand (also used by the running app's loop). */
@@ -103,8 +103,14 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   const adoPort = await listen(ado.server, options.adoPort ?? ADO_PORT);
   const adoUrl = `http://127.0.0.1:${adoPort}`;
 
+  // Runtime settings live here, seeded from env (M71): the UI edits these at
+  // runtime, and every use site reads from the store — not from a module-load
+  // constant — so a change takes effect on the next run/poll without a restart.
+  const settings = new SettingsStore(defaultSettings());
+  const seeded = settings.snapshot();
+
   const store = new StateStore(
-    initialState({ model: PILOT_MODEL, jiraSite: jiraCloud.baseUrl, approverGroup: APPROVER_GROUP }),
+    initialState({ model: seeded.model, jiraSite: jiraCloud.baseUrl, approverGroup: seeded.approverGroup }),
   );
 
   const secrets = createPilotSecrets(openRouter, jiraCloud);
@@ -141,6 +147,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     audit: createPilotAudit(),
     piiPolicy: policy,
     store,
+    settings,
     docs,
     completePullRequest: (prId) => ado.completePullRequest(prId),
     ...(options.ciTimeoutMs === undefined ? {} : { ciTimeoutMs: options.ciTimeoutMs }),
@@ -159,16 +166,26 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     }
   };
 
-  const ui: Server = createUiServer({ store, run, docs, start: (ticketKey) => run.start(ticketKey) });
+  const ui: Server = createUiServer({ store, settings, run, docs, start: (ticketKey) => run.start(ticketKey) });
   const uiPort = await listen(ui, options.uiPort ?? UI_PORT);
   uiBase = `http://127.0.0.1:${uiPort}`;
 
   // Discovery loop: only the running app turns it on; tests call refreshDiscovery
-  // explicitly so no timer fires and no live request leaves the process.
-  let discoveryTimer: ReturnType<typeof setInterval> | null = null;
+  // explicitly so no timer fires and no live request leaves the process. The
+  // interval is re-read from the SettingsStore each cycle (self-rescheduling
+  // setTimeout, not a fixed setInterval) so a UI change to the discovery poll
+  // takes effect on the next cycle without a restart.
+  let discoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  let discoveryStopped = false;
+  const scheduleDiscovery = (): void => {
+    if (discoveryStopped) return;
+    discoveryTimer = setTimeout(() => {
+      void refreshDiscovery().finally(scheduleDiscovery);
+    }, settings.snapshot().discoveryPollMs);
+  };
   if (options.startDiscovery === true) {
     await refreshDiscovery();
-    discoveryTimer = setInterval(() => void refreshDiscovery(), DISCOVERY_POLL_MS);
+    scheduleDiscovery();
   }
 
   return {
@@ -176,12 +193,14 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     adoUrl,
     jiraSite: jiraCloud.baseUrl,
     store,
+    settings,
     run,
     ado,
     refreshDiscovery,
     start: (ticketKey) => run.start(ticketKey),
     async close(): Promise<void> {
-      if (discoveryTimer !== null) clearInterval(discoveryTimer);
+      discoveryStopped = true;
+      if (discoveryTimer !== null) clearTimeout(discoveryTimer);
       await Promise.all([close(ui), close(ado.server)]);
     },
   };

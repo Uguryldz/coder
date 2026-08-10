@@ -180,3 +180,64 @@ iki indirme butonu belirir. Butonlar gerçek `.pdf` ve `.docx` dosyalarını ind
 Yeni çalışma zamanı npm bağımlılığı eklenmedi; yalnız iki workspace paketi
 (`@maestro/publish`, `@maestro/config`) pilot'a bağlandı — renderer'lar ve
 katalog bunlarda zaten mevcuttu.
+
+## ayarlar paneli (env→UI)
+
+M71 ruhu ("bir çok şey env yerine UI'dan çalışmalı"): pilotun operasyonel
+ayarları artık yalnız env ile değil, çalışma anında UI'dan düzenlenebilir. Env
+hâlâ TOHUM'dur — panele hiç dokunulmazsa hiçbir şey değişmez.
+
+### UI'dan düzenlenebilir olan 6 ayar
+- `approverGroup` (PILOT_APPROVER_GROUP) — kapı onayının üyeliği doğrulandığı grup
+- `model` (PILOT_MODEL) — düşünme rollerinin modeli
+- `commandPollMs` (PILOT_COMMAND_POLL_MS) — kapı yorumu yoklama aralığı
+- `discoveryPollMs` (PILOT_DISCOVERY_POLL_MS) — keşif yoklama aralığı
+- `dataClass` (PILOT_DATA_CLASS) — yük veri sınıfı (PII maskeleme sıkılığı)
+- `operatorAccount` (PILOT_OPERATOR_ACCOUNT) — denetimdeki `user@corp` yedeği
+
+Gizli değerler (OpenRouter/Jira jetonları) ve yapısal sabitler (ADO_*, portlar,
+sabit URL'ler, keşif JQL'i) BİLEREK dışarıda: ayar ≠ sır. GET /api/settings
+yalnız bu 6 alanı döndürür; hiçbir jeton sızmaz.
+
+### Mağaza / rota / koruma tasarımı
+- `src/settings.ts` — `SettingsStore`: env'den TOHUM'lanan bellek-içi mağaza.
+  Yazımda doğrulama: poll aralıkları pozitif tam sayı ve 1000–120000 ms;
+  dataClass ∈ {acik,dahili,gizli}; model ve grup boş olamaz; operatör boş olamaz.
+  Geçersiz yazım net Türkçe mesajla reddedilir ve mağaza eski değerini korur —
+  asla çöp saklanmaz. Bellek-içi bilinçli: pilot tek makine/tek akış; DB'li,
+  denetimli ayar mağazası Studio/Dalga-3 işidir. Yeniden başlatınca env'den
+  yeniden tohumlanır (belgelenmiş davranış, hata değil).
+- `GET /api/settings` — güncel 6 değer (sır yok).
+- `POST /api/settings` — doğrula + güncelle; yeni değerleri veya doğrulama
+  mesajıyla 400 döndürür.
+- Her kullanım yerinin env sabitini MODÜL YÜKÜNDE değil KULLANIM anında
+  mağazadan okuması sağlandı: `run.ts` ayarları start()'ta bir kez
+  snapshot'lar (`runSettings`); `boot.ts` keşif döngüsü aralığını her turda
+  mağazadan yeniden okur (sabit setInterval yerine kendini yeniden zamanlayan
+  setTimeout). `corpAccountOf` artık operatör hesabını parametre olarak alır.
+
+### Akış-sürerken koruma kararı (mid-run guard)
+Karar: bir akış sürerken ayar değişikliği 409 `akış sürerken değiştirilemez`
+ile REDDEDİLİR (uygula-sonraki-koşuda yerine reddet). Neden: en güvenli seçim.
+Akış start()'ta ayarları snapshot'lar; böylece bir kapı bir grup için açılıp
+başka bir gruba karşı kapanamaz, veri sınıfı akış ortasında kaymaz. UI'da da
+Kaydet düğmesi akış sürerken kilitlenir (yalnız sunucuda değil, ekranda da
+görünür). Not: `model` gateway binding'ine boot'ta bağlanır (@maestro/llm-gateway
+donuk); model değişikliği bir sonraki BOOT'ta geçerli olur — diğer beş ayar
+sonraki koşu/yoklamada canlı olarak geçerli olur.
+
+### Denetim/log
+Ayar değişikliği pilot log'una yazılır: `⚙ ayarlar güncellendi (operatör): <alanlar>`
+(değişen alan yoksa "değişiklik yok").
+
+### UI
+`ui.html`'e "⚙ Ayarlar" paneli eklendi: 6 alan güncel değerleriyle, Türkçe
+etiketler, Kaydet düğmesi POST eder ve başarı/doğrulama geri bildirimi gösterir.
+Sayfanın mevcut stiline uyumlu.
+
+### Testler (çevrimdışı, ağ yok)
+`test/settings.test.ts` (21) + `test/server-settings.test.ts` (5) = 26 yeni test:
+her sınır (0/negatif/devasa/ondalık poll red, kötü dataClass, boş model/grup red,
+geçerli kabul), env haritasından tohumlama, snapshot'ın kopya olması, geçersiz
+yazımın mağazayı DEĞİŞTİRMEMESİ; GET sır alanı döndürmez; POST geçersizi 400 ile
+reddeder; akış-sürerken 409 koruması. Pilot toplam: 51 test yeşil.

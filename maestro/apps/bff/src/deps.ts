@@ -84,6 +84,14 @@ export interface UserRecord {
  */
 export interface UserDirectory {
   find(username: string): Promise<UserRecord | null>;
+  /**
+   * Every account, for the admin users table (M8/M86). Bounded by a `limit`
+   * because a bank directory is not a page — the caller asks for a window and
+   * the store never hands back the whole table at once. Off-boarded (inactive)
+   * accounts are INCLUDED: an admin auditing who still has access has to be able
+   * to see the deactivated rows, not just the live ones.
+   */
+  list(limit: number): Promise<readonly UserRecord[]>;
   upsert(record: UserRecord): Promise<void>;
   /** Off-boarding. A missing account is indistinguishable from a deactivated one at the guard. */
   remove(username: string): Promise<void>;
@@ -422,6 +430,29 @@ export function commandDiagnosticsOf(work: WorkPort): CommandDiagnostics | null 
   return typeof candidate.parseCommandDetailed === "function"
     ? (candidate as CommandDiagnostics)
     : null;
+}
+
+/**
+ * Creating or re-keying a LOCAL account (M8). A capability of the local bcrypt
+ * provider, not of every `IdentityProvider`: the Aşama 2 AD/LDAP provider
+ * authenticates against the directory and cannot mint a password there, so the
+ * admin "add user" surface has to answer 503 rather than pretend to write a
+ * credential the directory owns. Detected structurally, the same way command
+ * diagnostics are — never by importing `LocalIdentityProvider`.
+ */
+export interface AccountProvisioner {
+  provision(account: {
+    username: string;
+    userId: string;
+    password: string;
+    groups: readonly string[];
+    roles: readonly string[];
+  }): Promise<UserRecord>;
+}
+
+export function accountProvisionerOf(identity: IdentityProvider): AccountProvisioner | null {
+  const candidate = identity as Partial<AccountProvisioner>;
+  return typeof candidate.provision === "function" ? (candidate as AccountProvisioner) : null;
 }
 
 // ── the container ─────────────────────────────────────────────────────────────

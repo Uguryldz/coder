@@ -219,3 +219,30 @@
   font-weight: 600;
   color: var(--text);
 }
+
+/* Group-membership picker on the user form. */
+.scr-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 13px;
+  margin: 0;
+}
+
+.scr-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.scr-check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.scr-check input {
+  cursor: pointer;
+}

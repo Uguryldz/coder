@@ -53,25 +53,74 @@ export interface KillSwitchResult {
   readonly stopped: readonly string[];
 }
 
-// ── /studio/users/:username (LIVE — single lookup only) ───────────────────────
+// ── /studio/users (LIVE — list, lookup, create, edit, off-board) ──────────────
 
 /**
- * What `GET /studio/users/:username` returns. Deliberately thin: the directory
- * is the source of truth and this is a window onto it, so there is no password
- * material and no session inventory.
+ * One account, as every `/studio/users` route returns it. Deliberately thin:
+ * no password material and no session inventory — the hash never leaves the
+ * BFF, and `roles` is the platform's reading of `groups` (M8), computed by the
+ * server so client and server can never disagree about what a group grants.
  *
- * There is NO list endpoint and no mutation. Roles are granted in the directory
- * (M8), not in Studio, which is why the users screen is a lookup rather than a
- * table with edit buttons — see the note in Users.tsx.
+ * `roles` is typed `readonly string[]` and NOT `Role[]`: the directory owns
+ * group names and may carry one outside the closed set (`internal-audit`,
+ * `release-manager`). The screen renders an unknown value rather than blanking
+ * it — see `roleTone` in Users.tsx.
  */
 export interface DirectoryUser {
   readonly username: string;
   readonly userId: string;
-  readonly roles: readonly Role[];
+  readonly roles: readonly string[];
   readonly groups: readonly string[];
-  /** False when the directory has revoked the account. */
+  /** False when the account has been off-boarded (deactivated). */
   readonly active: boolean;
 }
+
+/** `GET /studio/users` — the whole admin window, including off-boarded rows. */
+export interface UsersView {
+  readonly items: readonly DirectoryUser[];
+}
+
+/**
+ * `POST /studio/users`. The password is sent once, over TLS, and never stored
+ * client-side; `groups` are the mapped directory groups an admin may assign,
+ * and the server derives roles from them. A weak password comes back as
+ * `password_policy` with the exact rules it broke.
+ */
+export interface CreateUserRequest {
+  readonly username: string;
+  readonly displayName: string;
+  readonly groups: readonly string[];
+  readonly password: string;
+}
+
+/** `PUT /studio/users/:username` — display name, groups (→roles), or active state. */
+export interface EditUserRequest {
+  readonly displayName?: string;
+  readonly groups?: readonly string[];
+  readonly active?: boolean;
+}
+
+/** The failed password rules the BFF returns in `password_policy.details`. */
+export type PasswordViolation =
+  | "too_short"
+  | "too_long"
+  | "no_upper"
+  | "no_lower"
+  | "no_digit"
+  | "no_symbol"
+  | "contains_username";
+
+/** The directory groups an admin may assign, mapped to the role each grants. */
+export const ROLE_BY_GROUP: Readonly<Record<string, Role>> = {
+  "maestro-admins": "admin",
+  "tech-leads": "tech-lead",
+  "product-owners": "product-owner",
+  qa: "qa",
+  developers: "developer",
+  "internal-audit": "viewer",
+};
+
+export const ASSIGNABLE_GROUPS: readonly string[] = Object.keys(ROLE_BY_GROUP);
 
 // ── paging (LIVE: every /studio list endpoint) ────────────────────────────────
 

@@ -29,9 +29,17 @@ function row(overrides: Partial<UserRow> = {}): UserRow {
 }
 
 function delegate(initial: UserRow | null = row()) {
-  const calls: { upsert: unknown[]; update: unknown[] } = { upsert: [], update: [] };
+  const calls: { upsert: unknown[]; update: unknown[]; findMany: unknown[] } = {
+    upsert: [],
+    update: [],
+    findMany: [],
+  };
   const store: UserDelegate = {
     findUnique: () => Promise.resolve(initial),
+    findMany: (args) => {
+      calls.findMany.push(args);
+      return Promise.resolve(initial === null ? [] : [initial]);
+    },
     upsert: (args) => {
       calls.upsert.push(args);
       return Promise.resolve(args.create);
@@ -125,6 +133,23 @@ describe("PrismaUserDirectory", () => {
     await directory.remove("  AYSE.KAYA@UgurBank.local  ");
 
     expect(calls.update[0]).toMatchObject({ where: { email: "ayse.kaya@ugurbank.local" } });
+  });
+
+  it("lists accounts through a bounded, ordered query", async () => {
+    const { store, calls } = delegate();
+    const records = await new PrismaUserDirectory(store).list(50);
+
+    // The window is bounded and ordered so the same page comes back the same
+    // way; the store never hands back the whole directory unasked.
+    expect(calls.findMany[0]).toMatchObject({ take: 50, orderBy: { email: "asc" } });
+    expect(records[0]?.username).toBe("ayse.kaya@ugurbank.local");
+    expect([...(records[0]?.roles ?? [])].sort()).toEqual(["product-owner", "tech-lead", "viewer"]);
+  });
+
+  it("never asks a negative row count even when handed one", async () => {
+    const { store, calls } = delegate();
+    await new PrismaUserDirectory(store).list(-5);
+    expect(calls.findMany[0]).toMatchObject({ take: 0 });
   });
 
   it("writes groups as an array the JSON column can hold", async () => {

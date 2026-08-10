@@ -11,7 +11,7 @@ import {
   type SettingsView,
 } from "./common/index.ts";
 import { useEnumLabel, useLabel } from "./common/label.ts";
-import { MaybeUnwired } from "./shared/unwired.tsx";
+import { QueryState } from "./common/index.ts";
 import { KillSwitchPanel } from "./settings/KillSwitchPanel.tsx";
 
 const STATUS_TONE: Readonly<Record<ConnectionStatus, BadgeTone>> = {
@@ -94,14 +94,23 @@ export function SettingsScreen(): ReactNode {
   return (
     <div className="scr-stack">
       {/*
-        `GET /settings` is not built yet. MaybeUnwired turns its 404 into
-        "not published yet" instead of "record not found" — the second is a lie
-        about a record, when the truth is about the endpoint.
+        `GET /settings` is LIVE (apps/bff/src/routes/settings.ts). A failure here
+        is a real failure, so it renders through the ordinary error path rather
+        than the "not published yet" fallback that guarded this screen while the
+        endpoint was still a request.
+
+        The connections and notify drivers are DEPLOYMENT FACTS — an endpoint and
+        a Vault credential reference, read from the environment and the probes —
+        so they are shown, not edited: PUT /settings edits the operational
+        parameter set (the /params screen), and `credentialRef` never carries a
+        secret a console could leak. The one control this screen owns outright is
+        the kill switch below.
       */}
-      <MaybeUnwired
+      <QueryState
         isPending={settings.isPending}
         error={settings.error}
         onRetry={() => void settings.refetch()}
+        skeletonRows={4}
       >
         <Card
           title={t("settings.card.connections")}
@@ -130,7 +139,7 @@ export function SettingsScreen(): ReactNode {
             caption={t("settings.card.notify")}
           />
         </Card>
-      </MaybeUnwired>
+      </QueryState>
 
       <KillSwitchPanel />
     </div>

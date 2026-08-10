@@ -77,13 +77,31 @@ export class InMemoryUserDirectory implements UserDirectory {
     return Promise.resolve(record === undefined ? null : { ...record });
   }
 
+  list(limit: number): Promise<readonly UserRecord[]> {
+    // Insertion order is what `Map` iterates; a real store would order by a
+    // column, but neither the interface nor the screen promises an order — the
+    // limit is the contract, not the sort.
+    const all = [...this.users.values()].map((record) => ({ ...record }));
+    return Promise.resolve(all.slice(0, Math.max(0, limit)));
+  }
+
   upsert(record: UserRecord): Promise<void> {
     this.users.set(normalize(record.username), { ...record });
     return Promise.resolve();
   }
 
+  /**
+   * Off-boarding DEACTIVATES rather than deletes, matching the production
+   * `PrismaUserDirectory`: a departed approver's name is on closed gates and the
+   * audit trail resolves it through `find`, so the row must survive its
+   * revocation. The guard treats an inactive account exactly like a missing one
+   * (`authGuard` in auth/guard.ts), so access still ends at the next request.
+   * Removing an account that was never there is a no-op, not an error.
+   */
   remove(username: string): Promise<void> {
-    this.users.delete(normalize(username));
+    const key = normalize(username);
+    const record = this.users.get(key);
+    if (record !== undefined) this.users.set(key, { ...record, active: false });
     return Promise.resolve();
   }
 }

@@ -78,6 +78,43 @@ export class JiraCloudClient {
     return this.request<T>({ method: "PUT", path, body });
   }
 
+  /**
+   * Upload a single file to a Cloud endpoint as `multipart/form-data`.
+   *
+   * This is deliberately NOT routed through `request`: attachments are the one
+   * write that is not JSON. The body is a native `FormData` (Node 24 ships it,
+   * so no `form-data` dependency), and we must NOT set `content-type` ourselves
+   * — `fetch` derives the exact `multipart/form-data; boundary=…` header from
+   * the FormData, and a hand-set header would drop the boundary and corrupt the
+   * upload. The Jira Cloud attachment API additionally requires
+   * `X-Atlassian-Token: no-check` (its XSRF guard) or the POST is rejected 403.
+   *
+   * Same fail-closed auth as `send`: an empty resolved token raises rather than
+   * silently downgrading to the anonymous user.
+   */
+  async postFile<T>(path: string, field: string, file: Blob, filename: string): Promise<T> {
+    const token = await this.token();
+    if (typeof token !== "string" || token.trim().length === 0) {
+      throw new JiraConfigError("the resolved API token is empty — refusing to send an unauthenticated request");
+    }
+    const url = this.buildUrl(path);
+    const form = new FormData();
+    form.append(field, file, filename);
+    const headers: Record<string, string> = {
+      authorization: `Basic ${Buffer.from(`${this.email}:${token}`, "utf8").toString("base64")}`,
+      accept: "application/json",
+      // XSRF opt-out required by the Jira Cloud attachment endpoint.
+      "x-atlassian-token": "no-check",
+    };
+    const res = await this.fetchImpl(url, {
+      method: "POST",
+      headers,
+      body: form,
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    return this.handle<T>("POST", url, res);
+  }
+
   private buildUrl(path: string, query?: JiraCloudRequest["query"]): string {
     const url = new URL(this.baseUrl + (path.startsWith("/") ? path : `/${path}`));
     for (const [key, value] of Object.entries(query ?? {})) {

@@ -5,8 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
   DOC_CONTENT_TYPE,
   DocStore,
+  type AttachCapableWork,
   analysisToDocModel,
   analysisToDocs,
+  attachAnalysisDocs,
   docFileName,
   type GeneratedDocs,
 } from "../src/docs.js";
@@ -196,5 +198,92 @@ describe("DocStore", () => {
     store.clear();
     expect(store.get("pdf")).toBeNull();
     expect(store.currentRunId()).toBeNull();
+  });
+});
+
+// -------------------------------------------------------------- attach (M103r)
+
+interface AttachCall {
+  ticketKey: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+}
+
+/**
+ * A stubbed `addAttachment`-capable driver — the offline stand-in for the
+ * concrete JiraCloudWorkPort. `mode` controls the failure the fail-soft test
+ * needs; no network is ever touched.
+ */
+function stubWork(mode: "ok" | "throw-first" | "throw-second" = "ok"): {
+  work: AttachCapableWork;
+  calls: AttachCall[];
+} {
+  const calls: AttachCall[] = [];
+  const work: AttachCapableWork = {
+    addAttachment(ticketKey, fileName, bytes, contentType) {
+      calls.push({ ticketKey, fileName, contentType, size: bytes.byteLength });
+      if (mode === "throw-first" && calls.length === 1) throw new Error("jira 500");
+      if (mode === "throw-second" && calls.length === 2) throw new Error("jira 500");
+      return Promise.resolve({ ids: [`att-${calls.length}`] });
+    },
+  };
+  return { work, calls };
+}
+
+function collectLog(): { log: (kind: "ok" | "warn", message: string) => void; lines: string[] } {
+  const lines: string[] = [];
+  return { log: (kind, message) => lines.push(`${kind}:${message}`), lines };
+}
+
+describe("attachAnalysisDocs (M103r — auto-attach to Jira)", () => {
+  it("attaches BOTH files, docx then pdf, with the right names and content types", async () => {
+    const generated = await analysisToDocs(ANALYSIS, TICKET, RUN_ID);
+    const { work, calls } = stubWork("ok");
+    const { log, lines } = collectLog();
+
+    const result = await attachAnalysisDocs(work, TICKET, generated, log);
+
+    expect(result.attached).toBe(true);
+    expect(result.ids).toEqual(["att-1", "att-2"]);
+    expect(calls).toHaveLength(2);
+    // docx first, then pdf — deterministic order.
+    expect(calls[0]).toMatchObject({
+      ticketKey: TICKET,
+      fileName: "OPS-7-analiz.docx",
+      contentType: DOC_CONTENT_TYPE.docx,
+    });
+    expect(calls[1]).toMatchObject({
+      ticketKey: TICKET,
+      fileName: "OPS-7-analiz.pdf",
+      contentType: DOC_CONTENT_TYPE.pdf,
+    });
+    expect(calls[0]!.size).toBeGreaterThan(0);
+    expect(lines).toContain("ok:✓ analiz belgesi Jira'ya eklendi: 2 dosya");
+  });
+
+  it("FAIL-SOFT: an attach failure never throws and reports attached=false", async () => {
+    const generated = await analysisToDocs(ANALYSIS, TICKET, RUN_ID);
+    const { work } = stubWork("throw-first");
+    const { log, lines } = collectLog();
+
+    // Must resolve, not reject — the run must continue.
+    const result = await attachAnalysisDocs(work, TICKET, generated, log);
+
+    expect(result.attached).toBe(false);
+    expect(lines.some((l) => l.startsWith("warn:") && l.includes("eklenemedi"))).toBe(true);
+    expect(lines).not.toContain("ok:✓ analiz belgesi Jira'ya eklendi: 2 dosya");
+  });
+
+  it("FAIL-SOFT: a partial failure (pdf fails after docx) still resolves attached=false", async () => {
+    const generated = await analysisToDocs(ANALYSIS, TICKET, RUN_ID);
+    const { work, calls } = stubWork("throw-second");
+    const { log } = collectLog();
+
+    const result = await attachAnalysisDocs(work, TICKET, generated, log);
+
+    expect(result.attached).toBe(false);
+    expect(calls).toHaveLength(2); // it tried both
+    expect(result.ids).toEqual(["att-1"]); // only the first landed
   });
 });

@@ -3,14 +3,17 @@ import { CapabilityNotSupportedError } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
 import {
   doc,
+  type FetchLike,
   heading,
   JiraArgumentError,
   JiraCloudConfig,
   JiraCloudWorkPort,
+  JiraConfigError,
   JiraLinkFailedError,
   JiraMembershipUnresolvedError,
   JiraResponseError,
   paragraph,
+  sanitizeAttachmentFilename,
 } from "../../src/index.js";
 import { fixture, stubFetch, type FetchStub } from "../helpers.js";
 
@@ -270,4 +273,92 @@ describe("JiraCloudWorkPort", () => {
     const stub = stubFetch([]);
     await expect(port(stub).transition("OPS-6", "31")).rejects.toBeInstanceOf(CapabilityNotSupportedError);
   });
+
+  // ---------------------------------------------------------- addAttachment
+
+  it("posts a multipart attachment to the right URL with the no-check header and Basic token", async () => {
+    const cap = captureFetch(fixture("cloud/attachments-created"));
+    const jira = new JiraCloudWorkPort({ config, token: () => "api-token-123", fetchImpl: cap.fetchImpl });
+
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04]); // "PK.." — a docx/zip magic
+    const res = await jira.addAttachment("OPS-6", "OPS-6-analiz.docx", bytes, "application/vnd.x");
+
+    expect(res.ids).toEqual(["10050"]);
+    const call = cap.calls[0]!;
+    expect(call.method).toBe("POST");
+    expect(call.url).toBe("https://uyildiz.atlassian.net/rest/api/3/issue/OPS-6/attachments");
+    // XSRF opt-out required by the Jira Cloud attachment endpoint.
+    expect(call.headers["x-atlassian-token"]).toBe("no-check");
+    expect(call.headers["authorization"]).toMatch(/^Basic /);
+    // We must NOT hand-set content-type: fetch derives the multipart boundary.
+    expect(call.headers["content-type"]).toBeUndefined();
+    // The body is native FormData carrying a `file` part with the sanitized name.
+    expect(call.body).toBeInstanceOf(FormData);
+    const file = (call.body as FormData).get("file");
+    expect(file).toBeInstanceOf(Blob);
+    expect((file as File).name).toBe("OPS-6-analiz.docx");
+    expect(await (file as Blob).arrayBuffer()).toEqual(bytes.buffer);
+  });
+
+  it("sanitizes a path-traversal / CRLF filename before it reaches the part name", async () => {
+    const cap = captureFetch(fixture("cloud/attachments-created"));
+    const jira = new JiraCloudWorkPort({ config, token: () => "api-token-123", fetchImpl: cap.fetchImpl });
+
+    await jira.addAttachment("OPS-6", "../../etc/pa\r\nsswd.pdf", new Uint8Array([1]), "application/pdf");
+
+    const file = (cap.calls[0]!.body as FormData).get("file") as File;
+    // No directory segments, no CR/LF survive.
+    expect(file.name).toBe("passwd.pdf");
+    expect(file.name).not.toContain("/");
+    expect(file.name).not.toMatch(/[\r\n]/);
+  });
+
+  it("cleans the direct helper — traversal, CRLF, and empties fall back to a bare name", () => {
+    expect(sanitizeAttachmentFilename("../evil.docx")).toBe("evil.docx");
+    expect(sanitizeAttachmentFilename("a\r\nb.pdf")).toBe("ab.pdf");
+    expect(sanitizeAttachmentFilename("..")).toBe("attachment");
+    expect(sanitizeAttachmentFilename("   ")).toBe("attachment");
+    expect(sanitizeAttachmentFilename("C:\\\\Users\\\\x\\\\report.pdf")).toBe("report.pdf");
+  });
+
+  it("refuses to upload with an empty resolved token — no silent anonymous POST", async () => {
+    const cap = captureFetch(fixture("cloud/attachments-created"));
+    const jira = new JiraCloudWorkPort({ config, token: () => "   ", fetchImpl: cap.fetchImpl });
+    await expect(jira.addAttachment("OPS-6", "x.pdf", new Uint8Array([1]), "application/pdf")).rejects.toBeInstanceOf(
+      JiraConfigError,
+    );
+    expect(cap.calls).toHaveLength(0);
+  });
+
+  it("fails loudly when the upload answers 2xx without an attachment id", async () => {
+    const cap = captureFetch([]); // 200 with an empty array
+    const jira = new JiraCloudWorkPort({ config, token: () => "api-token-123", fetchImpl: cap.fetchImpl });
+    await expect(jira.addAttachment("OPS-6", "x.pdf", new Uint8Array([1]), "application/pdf")).rejects.toBeInstanceOf(
+      JiraResponseError,
+    );
+  });
 });
+
+/**
+ * A fetch double that records the FormData body verbatim (the shared `stubFetch`
+ * only captures string/JSON bodies), so the multipart assertions can reach into
+ * the `file` part.
+ */
+function captureFetch(responseBody: unknown): {
+  fetchImpl: FetchLike;
+  calls: Array<{ method: string; url: string; headers: Record<string, string>; body: unknown }>;
+} {
+  const calls: Array<{ method: string; url: string; headers: Record<string, string>; body: unknown }> = [];
+  const fetchImpl: FetchLike = (url, init) => {
+    calls.push({
+      method: init?.method ?? "GET",
+      url,
+      headers: { ...((init?.headers ?? {}) as Record<string, string>) },
+      body: init?.body,
+    });
+    return Promise.resolve(
+      new Response(JSON.stringify(responseBody), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+  };
+  return { fetchImpl, calls };
+}

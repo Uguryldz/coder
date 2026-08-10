@@ -242,6 +242,44 @@ export class JiraCloudWorkPort implements WorkPort {
   }
 
   /**
+   * Attach a single file to an issue (M103r — the analysis Word/PDF land on the
+   * ticket automatically instead of a human dragging them in).
+   *
+   * DRIVER-SPECIFIC CAPABILITY, not a WorkPort method. `WorkPort` is FROZEN
+   * (packages/ports), so this lives on the concrete Cloud driver only — the same
+   * shape as `verifyWebhook`/`transition`, which throw `CapabilityNotSupported`
+   * on the port surface while real behaviour lives on the drivers. A caller
+   * reaches it through the concrete `JiraCloudWorkPort` type (as the pilot does
+   * via `createJiraCloudWorkPort`), never through a `WorkPort` reference.
+   *
+   * POST /rest/api/3/issue/{key}/attachments, `multipart/form-data`, `file`
+   * field, header `X-Atlassian-Token: no-check` → 200 with a JSON array of
+   * attachment resources (fixtures/cloud/attachments-created.json). Returns the
+   * created attachment id(s). The filename is sanitised (no path segments, no
+   * CR/LF) before it reaches the multipart part name.
+   */
+  async addAttachment(
+    key: TicketKey,
+    filename: string,
+    bytes: Uint8Array,
+    contentType: string,
+  ): Promise<{ ids: string[] }> {
+    const issueKey = requireTicketKey(key, "key");
+    const safeName = sanitizeAttachmentFilename(filename);
+    // Copy into a fresh ArrayBuffer so the Blob owns exactly these bytes even if
+    // `bytes` is a view over a larger pooled buffer.
+    const copy = bytes.slice();
+    const blob = new Blob([copy], { type: contentType });
+    const created = await this.client.postFile<unknown>(
+      `${API}/issue/${encodeURIComponent(issueKey)}/attachments`,
+      "file",
+      blob,
+      safeName,
+    );
+    return { ids: attachmentIdsOf(created) };
+  }
+
+  /**
    * Not supported: the pilot POLLS comments — no Cloud webhook is registered,
    * no signature scheme was recorded, and fail-closed means a delivery this
    * driver cannot verify must never be treated as verified.
@@ -290,6 +328,48 @@ function requireCleanLabels(labels: string[]): string[] {
     if (/\s/.test(label)) throw new JiraArgumentError("labels", `Jira labels cannot contain whitespace: "${label}"`);
   }
   return clean;
+}
+
+/**
+ * Reduce an untrusted filename to a bare, single-segment name safe to hand to
+ * the multipart part: strip any directory portion (`../evil` → `evil`), drop
+ * control characters including CR/LF (a header-injection vector), and collapse
+ * the reserved path/quote characters. A name that sanitises to nothing falls
+ * back to `attachment` so the upload still names its part.
+ */
+export function sanitizeAttachmentFilename(name: string): string {
+  // Last path segment only — handles both / and \ separators.
+  const base = name.split(/[/\\]/).pop() ?? "";
+  const cleaned = base
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f]/g, "") // control chars incl. CR/LF/TAB
+    .replace(/["*:<>?|]/g, "") // characters Jira/OS reject in names
+    .replace(/^\.+/, "") // no leading dots (".." → "", ".env" → "env")
+    .trim();
+  return cleaned.length > 0 ? cleaned : "attachment";
+}
+
+/**
+ * Pull the created attachment ids out of the Cloud response — a JSON array of
+ * attachment resources. Fails loudly if the site answered 2xx without a usable
+ * array, so a silent "attached nothing" cannot masquerade as success.
+ */
+function attachmentIdsOf(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    throw new JiraResponseError("attachment", ["response is not an array of attachments"]);
+  }
+  const ids = raw
+    .map((entry) => {
+      const id = asRecord(entry)?.["id"];
+      if (typeof id === "string" && id.length > 0) return id;
+      if (typeof id === "number") return String(id);
+      return null;
+    })
+    .filter((id): id is string => id !== null);
+  if (ids.length === 0) {
+    throw new JiraResponseError("attachment", ["response carries no attachment id"]);
+  }
+  return ids;
 }
 
 function currentLabelsOf(raw: unknown): string[] {

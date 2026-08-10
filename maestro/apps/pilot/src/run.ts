@@ -31,7 +31,7 @@ import {
   PILOT_VARIANT,
   type ScmMode,
 } from "./config.js";
-import { analysisToDocs, type DocStore } from "./docs.js";
+import { analysisToDocs, attachAnalysisDocs, type DocStore } from "./docs.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
 import type { PilotSettings, SettingsStore } from "./settings.js";
 import type { StateStore } from "./state.js";
@@ -350,7 +350,7 @@ export class PilotRun {
    * generation failed (the failure is logged, not swallowed into a stack trace).
    */
   private async generateAnalysisDocs(analysis: AnalysisDoc): Promise<void> {
-    const { store, docs } = this.deps;
+    const { store, docs, work } = this.deps;
     const ticketKey = this.requireTicket();
     try {
       const generated = await analysisToDocs(analysis, ticketKey, this.runId);
@@ -362,6 +362,17 @@ export class PilotRun {
         "ok",
         `✓ analiz belgesi üretildi: ${generated.pdf.fileName} (${generated.pdf.bytes.byteLength} B) · ${generated.docx.fileName} (${generated.docx.bytes.byteLength} B)`,
       );
+      // The documents exist — now attach them to the live ticket (M103r), so a
+      // human no longer drags the Word/PDF in by hand. This runs AFTER the files
+      // are parked for download, so a Jira hiccup here never costs the reviewer
+      // the download buttons: `attachAnalysisDocs` is fail-soft and never throws.
+      const result = await attachAnalysisDocs(
+        work,
+        ticketKey,
+        generated,
+        (kind, message) => store.log(kind, message),
+      );
+      if (result.attached) this.deps.onJiraChanged?.();
     } catch (error) {
       store.log("warn", `! analiz belgesi üretilemedi (akış etkilenmedi): ${String(error)}`);
     }

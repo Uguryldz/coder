@@ -104,6 +104,11 @@ function fakeJiraCloud(): { fetchImpl: (u: string, i?: RequestInit) => Promise<R
       }
       return Promise.resolve(json(204, undefined));
     }
+    // Attachment upload (M103r) — this fake refuses it (500). The run must still
+    // finish: attaching is fail-soft, proven here in a REAL run, not just a unit.
+    if (path === "/rest/api/3/issue/OPS-6/attachments" && method === "POST") {
+      return Promise.resolve(json(500, { errorMessages: ["attachment store offline"] }));
+    }
     if (path === "/rest/api/3/issue/OPS-6/comment" && method === "POST") {
       const id = String(nextId++);
       comments.push({ id, body: body["body"] });

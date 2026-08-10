@@ -1,0 +1,236 @@
+import {
+  analysisSchemaName,
+  DEFAULT_ANALYSIS_TEMPLATE,
+  RoleOutputError,
+} from "@maestro/agent-roles";
+import type { GenerateObjectRequest, LlmCallLog, TicketSnapshot } from "@maestro/contracts";
+import type { AgentSessionResult, LlmOutcome, LlmPort } from "@maestro/ports";
+import { describe, expect, it } from "vitest";
+import type { z } from "zod";
+import { AnalysisHaltedError, buildAnalysisContext, produceAnalysis } from "../src/analysis.js";
+
+/**
+ * The pilot's analysis step now runs the REAL agent-roles analyst against the
+ * REAL corporate template (M108/M109). These offline tests use a mock LlmPort
+ * (no network): they prove the analyst is driven by the template/variant/data
+ * class, that a template-valid output projects onto the frozen AnalysisDoc, that
+ * masked values are re-inserted for the display copy, and that a template
+ * violation fails CLOSED — an analysis missing a section never reaches a gate.
+ */
+
+const TICKET: TicketSnapshot = {
+  key: "OPS-6",
+  projectKey: "OPS",
+  issueType: "Story",
+  summary: "Ödeme onayında e-posta makbuzu",
+  description: "İşlem başarılı olduğunda müşteriye makbuz e-postası gönderilsin.",
+  reporter: "reporter@bank.example",
+  assignee: null,
+  components: ["payments"],
+  labels: ["maestro"],
+  parentKey: null,
+  createdAt: "2026-08-10T12:00:00.000Z",
+  updatedAt: "2026-08-10T12:00:00.000Z",
+};
+
+/** Section-keyed analyst output valid against the corporate template. */
+function validOutput(purpose = defaultPurpose()): Record<string, unknown> {
+  return {
+    riskTier: "dusuk",
+    riskReason: "Yüzey sınırlı olduğundan risk düşük değerlendirildi.",
+    clarificationsUsed: [],
+    sections: {
+      purpose,
+      scope: { included: ["Makbuz üretimi"], excluded: ["SMS makbuz"] },
+      impactMatrix: [
+        {
+          appId: "ugurpay",
+          impacted: true,
+          summary: "Ödeme akışı makbuz e-postasını tetikler.",
+          source: "primary_repo_discovery",
+        },
+      ],
+      acceptanceCriteria: ["Makbuz gider.", "Hatada gitmez.", "Audit yazılır."],
+      uiApiChanges: [{ Yüzey: "POST /pay", Durum: "değişti", "Geriye uyum": "geriye uyumlu" }],
+      testApproach:
+        "Birim testleri makbuz kurallarını doğrular. Entegrasyon testi tetiği kontrol eder.",
+      riskAndRollback: {
+        risk: "Yanlış makbuz müşteriyi yanıltabilir.",
+        mitigation: "Doğrulama testleri eklenir.",
+        rollback: "Özellik bayrağı kapatılır.",
+      },
+      sources: [
+        { section: "purpose", claim: "makbuz gönderimi", kind: "ticket", ref: "OPS-6" },
+        { section: "scope", claim: "kapsam", kind: "ticket", ref: "OPS-6" },
+        { section: "impactMatrix", claim: "etki", kind: "ticket", ref: "OPS-6" },
+        { section: "acceptanceCriteria", claim: "kabul", kind: "ticket", ref: "OPS-6" },
+        { section: "uiApiChanges", claim: "uç", kind: "ticket", ref: "OPS-6" },
+        { section: "testApproach", claim: "test", kind: "ticket", ref: "OPS-6" },
+        { section: "riskAndRollback", claim: "risk", kind: "ticket", ref: "OPS-6" },
+      ],
+      openItems: [],
+    },
+  };
+}
+
+function defaultPurpose(): string {
+  return "İşlem onayında müşteriye makbuz e-postası gönderilecek. Böylece manuel talepler azalacak.";
+}
+
+const LOG: LlmCallLog = {
+  at: "2026-08-10T12:00:00.000Z",
+  runId: null,
+  role: "analyst",
+  variantId: "pilot-v1",
+  driver: "openai-compat",
+  model: "openai/gpt-4o-mini",
+  tokensIn: 10,
+  tokensOut: 5,
+  cachePct: null,
+  usd: null,
+  dataClass: "gizli",
+};
+
+interface MockOptions {
+  /** Value(s) the mock returns per call; the last is reused when exhausted. */
+  values: Array<Record<string, unknown>>;
+  unmask?: <R>(value: R) => R;
+}
+
+/** Records the requests so the test can assert what the analyst was driven with. */
+function mockLlm(opts: MockOptions): { llm: LlmPort; requests: GenerateObjectRequest[] } {
+  const requests: GenerateObjectRequest[] = [];
+  let call = 0;
+  const llm: LlmPort = {
+    generateObject<T>(req: GenerateObjectRequest, _schema: z.ZodType<T>): Promise<LlmOutcome<T>> {
+      requests.push(req);
+      const value = opts.values[Math.min(call, opts.values.length - 1)];
+      call += 1;
+      const ok = {
+        status: "ok" as const,
+        value: value as unknown as T,
+        log: LOG,
+        ...(opts.unmask ? { unmask: opts.unmask } : {}),
+      };
+      return Promise.resolve(ok);
+    },
+    agentSession(): Promise<LlmOutcome<AgentSessionResult>> {
+      throw new Error("agentSession not used");
+    },
+  };
+  return { llm, requests };
+}
+
+describe("pilot analizi — gerçek agent-roles analyst (offline)", () => {
+  it("bağlamı canlı ticket'tan kurar; bilgi/repo-kartı henüz boş (TODO)", () => {
+    const context = buildAnalysisContext(TICKET);
+    expect(context.ticket).toBe(TICKET);
+    expect(context.knowledge.repoCards).toEqual([]);
+    expect(context.knowledge.knowledgeDocs).toEqual([]);
+    expect(context.discovery.files).toEqual([]);
+    expect(context.clarifications).toEqual([]);
+  });
+
+  it("runAnalyst'i gerçek şablon/varyant/veri sınıfı ile çağırır", async () => {
+    const { llm, requests } = mockLlm({ values: [validOutput()] });
+    await produceAnalysis({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" });
+
+    expect(requests).toHaveLength(1);
+    const req = requests[0]!;
+    expect(req.role).toBe("analyst");
+    expect(req.variantId).toBe("pilot-v1");
+    expect(req.dataClass).toBe("gizli");
+    // The schema name carries the pinned template id + version (M83).
+    expect(req.schemaName).toBe(analysisSchemaName(DEFAULT_ANALYSIS_TEMPLATE));
+    // The prompt is the real templated prompt — the ticket description travels in it.
+    expect(req.input).toContain(TICKET.description);
+  });
+
+  it("şablon-geçerli çıktı, aşağıya akan AnalysisDoc'a eşlenir", async () => {
+    const { llm } = mockLlm({ values: [validOutput()] });
+    const result = await produceAnalysis({
+      llm,
+      ticket: TICKET,
+      variantId: "pilot-v1",
+      dataClass: "gizli",
+    });
+
+    // A valid, frozen AnalysisDoc — exactly what the Jira comment and docs read.
+    expect(result.display.templateVersion).toBe(DEFAULT_ANALYSIS_TEMPLATE.version);
+    expect(result.display.language).toBe("tr");
+    expect(result.display.riskTier).toBe("dusuk");
+    expect(result.display.impactMatrix.length).toBeGreaterThan(0);
+    expect(result.display.acceptanceCriteria.length).toBeGreaterThanOrEqual(3);
+    expect(result.display.scope.included).toContain("Makbuz üretimi");
+    expect(result.display.riskAndRollback.rollback).toContain("bayrağı");
+    expect(result.attempts).toBe(1);
+  });
+
+  it("maskeli çıktının gerçek değerleri display kopyasında geri konur (M20/M82)", async () => {
+    // Simulate a masked route: the model output carries a mask token, and the
+    // gateway's unmask reverses it. The display copy must show the real value;
+    // the masked copy keeps the token (the copy a journal may retain).
+    const TOKEN = "[EMAIL_1.ab12]";
+    const REAL = "musteri@bank.example";
+    const masked = validOutput(
+      `İşlem onayında müşteriye ${TOKEN} adresine makbuz e-postası gönderilecek. Böylece şubeye gelen manuel makbuz talepleri belirgin şekilde azalacak.`,
+    );
+    const unmask = <R>(value: R): R =>
+      JSON.parse(JSON.stringify(value).split(TOKEN).join(REAL)) as R;
+
+    const { llm } = mockLlm({ values: [masked], unmask });
+    const result = await produceAnalysis({
+      llm,
+      ticket: TICKET,
+      variantId: "pilot-v1",
+      dataClass: "gizli",
+    });
+
+    expect(result.display.purpose).toContain(REAL);
+    expect(result.display.purpose).not.toContain(TOKEN);
+    expect(result.masked.purpose).toContain(TOKEN);
+    expect(result.masked.purpose).not.toContain(REAL);
+  });
+
+  it("şablonu ihlal eden çıktı (eksik bölüm) fail-closed reddedilir", async () => {
+    // A section removed — the generated schema refuses it, the single repair
+    // round returns the same deficient doc, and runAnalyst throws. The analysis
+    // never reaches the gate.
+    const broken = validOutput();
+    delete (broken["sections"] as Record<string, unknown>)["acceptanceCriteria"];
+
+    const { llm, requests } = mockLlm({ values: [broken] });
+    await expect(
+      produceAnalysis({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
+    ).rejects.toBeInstanceOf(RoleOutputError);
+    // One call + one repair round = exactly two attempts, then a hard failure.
+    expect(requests).toHaveLength(2);
+  });
+
+  it("uydurma kaynak (bağlamda olmayan referans) fail-closed reddedilir", async () => {
+    // Every source row points at a repo_file the analyst was never shown — an
+    // empty knowledge pack makes this a fabrication (M98/M109), refused.
+    const fabricated = validOutput();
+    (fabricated["sections"] as Record<string, unknown>)["sources"] = [
+      { section: "purpose", claim: "x", kind: "repo_file", ref: "src/does/not/exist.ts" },
+    ];
+    const { llm } = mockLlm({ values: [fabricated] });
+    await expect(
+      produceAnalysis({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
+    ).rejects.toBeInstanceOf(RoleOutputError);
+  });
+
+  it("ok-olmayan model durumu (blocked) AnalysisHaltedError'a çevrilir", async () => {
+    const llm: LlmPort = {
+      generateObject<T>(): Promise<LlmOutcome<T>> {
+        return Promise.resolve({ status: "blocked", messageKey: "policy.block", dataClass: "gizli" });
+      },
+      agentSession(): Promise<LlmOutcome<AgentSessionResult>> {
+        throw new Error("unused");
+      },
+    };
+    await expect(
+      produceAnalysis({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
+    ).rejects.toBeInstanceOf(AnalysisHaltedError);
+  });
+});

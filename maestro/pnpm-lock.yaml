@@ -261,6 +261,9 @@ importers:
       '@maestro/adapter-jira':
         specifier: workspace:*
         version: link:../../packages/adapter-jira
+      '@maestro/agent-roles':
+        specifier: workspace:*
+        version: link:../../packages/agent-roles
       '@maestro/audit':
         specifier: workspace:*
         version: link:../../packages/audit

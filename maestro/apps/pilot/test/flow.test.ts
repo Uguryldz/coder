@@ -36,7 +36,7 @@ function stubLlmFetch(_url: string, init?: RequestInit): Promise<Response> {
   if (prompt.includes("Schema name: IntakeVerdict")) {
     content = JSON.stringify({ complete: true, missing: [], note: "Ticket geliştirmeye uygun." });
   } else if (prompt.includes("Schema name: AnalysisDoc")) {
-    content = JSON.stringify(analysisDoc);
+    content = JSON.stringify(analysisOutput);
   } else if (prompt.includes("Schema name: CodeDraft")) {
     content = JSON.stringify(codeDraft);
   } else {
@@ -53,21 +53,60 @@ function stubLlmFetch(_url: string, init?: RequestInit): Promise<Response> {
   );
 }
 
-const analysisDoc = {
-  templateVersion: "pilot-v3",
-  language: "tr",
-  purpose: "Ödeme onayında e-posta makbuzu göndermek.",
-  scope: { included: ["Makbuz üretimi", "E-posta gönderimi"], excluded: ["SMS makbuz"] },
-  impactMatrix: [
-    { appId: "ugurpay", impacted: true, summary: "Ödeme akışı değişiyor.", source: "primary_repo_discovery" },
-  ],
-  acceptanceCriteria: ["Makbuz e-posta ile gider", "Başarısız işlemde makbuz gönderilmez"],
-  uiApiChanges: "POST /payments/confirm ucu makbuz tetikler.",
-  testApproach: "Birim testleri ile makbuz kuralları.",
-  riskAndRollback: { risk: "Yanlış makbuz", mitigation: "Doğrulama testleri", rollback: "Özellik bayrağı kapatılır" },
+/**
+ * The analyst's output in the REAL template's shape (M108): keyed by the
+ * `kurumsal-analiz` template section keys, validated by agent-roles against the
+ * generated schema AND the M109 source list. Every claim section carries a
+ * source row pointing at the one reference the pilot's context actually holds
+ * today — the ticket key — because with an empty knowledge pack a repo_file or
+ * repo_card citation would be refused as a fabrication.
+ */
+const TICKET_KEY = "OPS-6";
+const analysisOutput = {
   riskTier: "dusuk",
-  riskReason: "Sınırlı yüzey.",
+  riskReason: "Yüzey sınırlı olduğundan risk düşük değerlendirildi.",
   clarificationsUsed: [],
+  sections: {
+    purpose:
+      "İşlem başarılı olduğunda müşteriye e-posta ile makbuz gönderilecek. Böylece şubeye gelen makbuz talepleri azalacak ve self-servis oranı artacak.",
+    scope: {
+      included: ["Makbuz üretimi", "E-posta gönderimi"],
+      excluded: ["SMS makbuz", "mobil ekranlar"],
+    },
+    impactMatrix: [
+      {
+        appId: "ugurpay",
+        impacted: true,
+        summary: "Ödeme onay akışı makbuz e-postasını tetikler.",
+        source: "primary_repo_discovery",
+      },
+    ],
+    acceptanceCriteria: [
+      "Başarılı işlemde makbuz e-posta ile gider.",
+      "Başarısız işlemde makbuz gönderilmez.",
+      "Makbuz gönderimi audit kaydına yazılır.",
+    ],
+    uiApiChanges: [
+      { Yüzey: "POST /payments/confirm", Durum: "değişti", "Geriye uyum": "geriye uyumlu" },
+    ],
+    testApproach:
+      "Birim testleri makbuz kurallarını doğrular. Entegrasyon testi e-posta tetiğini uçtan uca kontrol eder.",
+    riskAndRollback: {
+      risk: "Yanlış makbuz gönderimi müşteriyi yanıltabilir.",
+      mitigation: "Doğrulama testleri ve gönderim öncesi kontrol eklenir.",
+      rollback: "Özellik bayrağı kapatılır, makbuz tetiği devre dışı bırakılır.",
+    },
+    sources: [
+      { section: "purpose", claim: "e-posta makbuzu gönderilecek", kind: "ticket", ref: TICKET_KEY },
+      { section: "scope", claim: "makbuz üretimi ve gönderimi", kind: "ticket", ref: TICKET_KEY },
+      { section: "impactMatrix", claim: "ödeme akışı etkileniyor", kind: "ticket", ref: TICKET_KEY },
+      { section: "acceptanceCriteria", claim: "başarılı işlemde makbuz gider", kind: "ticket", ref: TICKET_KEY },
+      { section: "uiApiChanges", claim: "onay ucu makbuz tetikler", kind: "ticket", ref: TICKET_KEY },
+      { section: "testApproach", claim: "makbuz kuralları test edilir", kind: "ticket", ref: TICKET_KEY },
+      { section: "riskAndRollback", claim: "yanlış makbuz riski", kind: "ticket", ref: TICKET_KEY },
+    ],
+    openItems: [],
+  },
 };
 
 const codeDraft = {

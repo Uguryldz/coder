@@ -107,28 +107,37 @@ export const DEMO_ROUTING_PROJECTS: readonly RoutingProjectView[] = DEMO_BINDING
     projectKey: binding.projectKey,
     trigger: binding.triggerMode === "auto" ? "auto" : "label",
     apps: binding.appId === null ? [] : [binding.appId],
-    note: noteFor(binding.active, binding.triggerMode),
+    ...noteFor(binding.active, binding.triggerMode),
   }),
 );
 
-function noteFor(active: boolean, triggerMode: "auto" | "opt_in"): string {
-  if (!active) return "unbound: deliveries are dropped";
+/**
+ * The note as a catalog key, mirroring `notePhrase` in the Postgres store —
+ * the demo stack must exercise the SAME wire shape the real one produces, or
+ * it stops being a rehearsal of the screen.
+ */
+function noteFor(
+  active: boolean,
+  triggerMode: "auto" | "opt_in",
+): { noteKey: string; noteParams?: Record<string, string> } {
+  if (!active) return { noteKey: "routing.note.unbound" };
   return triggerMode === "auto"
-    ? "every ticket starts a run"
-    : 'waits for the "maestro" label or /ai-start';
+    ? { noteKey: "routing.note.active_auto" }
+    : { noteKey: "routing.note.active_label", noteParams: { label: "maestro" } };
 }
 
 export const DEMO_ROUTING_RULES: readonly RoutingRuleView[] = [
   {
     ruleId: "pay-odeme",
-    condition: "component = odeme",
+    conditionKey: "routing.condition.component",
+    conditionParams: { value: "odeme" },
     effect: "ugurpay",
     priority: 10,
     projectKey: "UGURPAY",
   },
   {
     ruleId: "web-default",
-    condition: "every ticket",
+    conditionKey: "routing.condition.always",
     effect: "ugurweb",
     priority: 20,
     projectKey: "UGURWEB",
@@ -136,7 +145,8 @@ export const DEMO_ROUTING_RULES: readonly RoutingRuleView[] = [
   {
     // Org-wide, which the contract spells `"*"` and the column stores as NULL.
     ruleId: "org-hotfix",
-    condition: "label = hotfix",
+    conditionKey: "routing.condition.label",
+    conditionParams: { value: "hotfix" },
     effect: "assignment queue",
     priority: 5,
     projectKey: "*",

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Kpi, Table } from "../ui/index.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 
 /**
@@ -52,6 +53,7 @@ interface PiiResponse {
 export function PiiScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
 
   const query = useQuery({
     queryKey: ["pii"],
@@ -116,13 +118,18 @@ export function PiiScreen(): ReactNode {
                 {
                   key: "kind",
                   header: t("pii.col.kind"),
-                  cell: (row: PiiRule) => <Badge tone="gray">{row.kind}</Badge>,
+                  cell: (row: PiiRule) => (
+                    <Badge tone="gray">{enumLabel("pii.kind", row.kind).text}</Badge>
+                  ),
                 },
                 { key: "matcher", header: t("pii.col.matcher"), cell: (row) => <code>{row.matcher}</code> },
                 {
                   key: "strategy",
                   header: t("pii.col.strategy"),
-                  cell: (row) => <Badge tone="purple">{row.strategy}</Badge>,
+                  cell: (row) => {
+                    const label = enumLabel("pii.strategy", row.strategy);
+                    return <Badge tone={label.unknown ? "gray" : "purple"}>{label.text}</Badge>;
+                  },
                 },
                 {
                   key: "hits",

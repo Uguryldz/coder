@@ -84,7 +84,13 @@ const DecisionsOut = z
           decisionId: z.string().min(1),
           ref: z.string().min(1),
           question: z.string().min(1),
-          decision: z.string().min(1),
+          /**
+           * The decision, as its two machine parts rather than one joined
+           * sentence — the screen translates `action` through
+           * `audit.action.*` and composes the line. See `toDecision`.
+           */
+          action: z.string().min(1),
+          actor: z.string().min(1),
           severity: z.string().min(1),
           status: z.string().min(1),
           decidedAt: z.string().min(1),

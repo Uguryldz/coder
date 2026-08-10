@@ -236,9 +236,20 @@ function toDecision(event: AuditEvent, chainVerified: boolean): DecisionRecord {
     // to nothing.
     ref: event.action,
     question: event.subject,
-    // The actor and the action, not prose: the BFF does not send sentences
-    // (M104), and the meta is caller-built JSON that must not be rendered.
-    decision: `${event.action} · ${event.actor}`,
+    /**
+     * The action and the actor as SEPARATE fields.
+     *
+     * This used to be `${event.action} · ${event.actor}` — pre-joined, under a
+     * comment claiming "the BFF does not send sentences (M104)". Joining them
+     * server-side is what put `GATE_OPEN · maestro-worker` into a bank
+     * auditor's decision column: `GATE_OPEN` is not a decision anyone made, it
+     * is an enum member, and once concatenated the screen could no longer
+     * translate either half. Sent apart, the screen renders
+     * `audit.action.GATE_OPEN` → "Kapı onaya açıldı" and composes the line
+     * itself.
+     */
+    action: event.action,
+    actor: event.actor,
     severity: rule.severity,
     status: rule.status,
     decidedAt: event.at,

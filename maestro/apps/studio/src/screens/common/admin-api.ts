@@ -239,8 +239,16 @@ export interface RepoPolicy {
   readonly appId: string;
   readonly platform: string;
   readonly repo: string;
-  /** The file as it exists in the repo; read-only in Studio. */
+  /** The file as it exists in the repo; read-only in Studio. "" when absent. */
   readonly yaml: string;
+  /**
+   * Whether a run has ever observed this repository's `.maestro.yaml`.
+   *
+   * The server used to explain its absence in a block of English YAML comments,
+   * which landed untranslated on a Turkish screen. Now it sends the fact and
+   * the screen writes the sentence (`yaml.absent.*`).
+   */
+  readonly yamlPresent?: boolean;
   /**
    * Protected paths (M52). Platform defaults are separated from repo additions
    * because a default may be ADDED TO but never removed — a UI that mixed them

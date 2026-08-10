@@ -58,7 +58,16 @@ export class ErrorBoundary extends Component<Props, State> {
           fontSize: 13,
         }}
       >
-        <strong>Studio failed to render this screen.</strong>
+        {/*
+          Both languages, hard-coded, on purpose. This panel is what shows when
+          the CATALOG is broken, so it cannot call `t()` to translate itself —
+          a lookup is exactly the thing that just failed. Turkish first because
+          it is the platform's primary language, and the operator who hits this
+          must not be handed a sentence they cannot read.
+        */}
+        <strong lang="tr">Studio bu ekranı görüntüleyemedi.</strong>
+        <br />
+        <strong lang="en">Studio failed to render this screen.</strong>
         <pre style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
           {DETAILED_ERRORS.includes(error.name) ? `${error.name}: ${error.message}` : error.name}
         </pre>

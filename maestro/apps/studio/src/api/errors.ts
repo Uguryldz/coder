@@ -63,6 +63,82 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   invalid_killswitch_body: "error.invalid_killswitch_body",
   ticket_key: "error.invalid_ticket_key",
   bad_request: "error.bad_request",
+  /**
+   * Onboarding and repo-policy (M102/M52). Every one of these was reaching the
+   * operator as the generic `error.unexpected`, which is the failure this table
+   * exists to prevent: the BFF answers `project_already_bound` with the project
+   * key and its state, and the wizard printed "Beklenmeyen bir hata oluştu."
+   * The server was precise and the screen threw the precision away.
+   *
+   * `invalid_page` and not `invalid_query`: the paging guard has its own code,
+   * and mapping it to the neighbouring key would mistranslate it.
+   */
+  invalid_onboarding_body: "error.invalid_onboarding_body",
+  invalid_page: "error.invalid_page",
+  invalid_path: "error.invalid_path",
+  invalid_path_pattern: "error.invalid_path_pattern",
+  invalid_app_id: "error.invalid_app_id",
+  unknown_app: "error.unknown_app",
+  unknown_project: "error.unknown_project",
+  project_already_bound: "error.project_already_bound",
+  platform_mismatch: "error.platform_mismatch",
+  proposal_open: "error.proposal_open",
+  kill_switch: "error.kill_switch",
+  protected_path_is_default: "error.protected_path_is_default",
+  protected_path_exists: "error.protected_path_exists",
+  protected_path_unknown: "error.protected_path_unknown",
+  /**
+   * The rest of the BFF's vocabulary.
+   *
+   * Added wholesale rather than screen-by-screen because the coverage test in
+   * `test/api-client.test.ts` now enumerates the BFF's own `throw` sites: every
+   * one of these was reaching an operator as `error.unexpected`, and the four
+   * onboarding codes above were simply the ones somebody happened to hit while
+   * clicking through. Leaving the others would have meant fixing the symptom.
+   */
+  // Analysis template designer (M108)
+  no_template: "error.no_template",
+  invalid_template_body: "error.invalid_template_body",
+  invalid_template_version: "error.invalid_template_version",
+  template_version_not_found: "error.template_version_not_found",
+  template_version_conflict: "error.template_version_conflict",
+  template_name_required: "error.template_name_required",
+  template_sections_required: "error.template_sections_required",
+  template_too_many_sections: "error.template_too_many_sections",
+  template_section_invalid: "error.template_section_invalid",
+  template_section_title_required: "error.template_section_title_required",
+  template_section_instruction_required: "error.template_section_instruction_required",
+  template_section_format_invalid: "error.template_section_format_invalid",
+  // Corporate Word template (M103r/M109)
+  doc_template_body: "error.doc_template_body",
+  doc_template_empty: "error.doc_template_empty",
+  doc_template_not_docx: "error.doc_template_not_docx",
+  doc_template_too_large: "error.doc_template_too_large",
+  doc_template_version_not_found: "error.doc_template_version_not_found",
+  invalid_doc_template_filename: "error.invalid_doc_template_filename",
+  invalid_doc_template_version: "error.invalid_doc_template_version",
+  raw_body_missing: "error.raw_body_missing",
+  // Parameters (M71)
+  param_not_guarded: "error.param_not_guarded",
+  param_not_seeded: "error.param_not_seeded",
+  param_unusable: "error.param_unusable",
+  // Settings, notify, routing, variants
+  invalid_settings_body: "error.invalid_settings_body",
+  invalid_notify_body: "error.invalid_notify_body",
+  invalid_routing_body: "error.invalid_routing_body",
+  invalid_variant_id: "error.invalid_variant_id",
+  unknown_variant: "error.unknown_variant",
+  // Runs, gates and signals
+  invalid_ticket: "error.invalid_ticket",
+  invalid_mode: "error.invalid_mode",
+  step_not_current: "error.step_not_current",
+  no_evidence: "error.no_evidence",
+  no_repo_card: "error.no_repo_card",
+  malformed_payload: "error.malformed_payload",
+  // Identity
+  invalid_username: "error.invalid_username",
+  unknown_user: "error.unknown_user",
+  unknown_actor: "error.unknown_actor",
   // 403
   role_required: "error.role_required",
   project_access: "error.project_access",

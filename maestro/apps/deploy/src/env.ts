@@ -19,6 +19,29 @@ const SecretRef = z
   .min(1)
   .refine((value) => !value.includes("\n"), "a secret reference is a single line");
 
+/**
+ * An optional setting, where compose's `""` means UNSET.
+ *
+ * `z.string().min(1).optional()` is wrong for anything compose passes as
+ * `${VAR:-}`: that syntax delivers an EMPTY STRING, not an absent variable, so
+ * `min(1)` fails and the whole process refuses to boot over a setting the
+ * operator deliberately left blank. `RUNNER_IMAGE_LINUX` hit exactly this — the
+ * worker is designed to start without a sandbox fleet and refuse only step 6a,
+ * and an empty default would instead have taken the entire worker down at
+ * startup.
+ *
+ * Trimmed before the test, so a variable set to spaces is unset too: whitespace
+ * is what a here-doc or a copied `.env` line leaves behind, and it is never a
+ * meaningful image reference or endpoint.
+ */
+function optionalSetting(): z.ZodType<string | undefined, unknown> {
+  return z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }, z.string().min(1).optional());
+}
+
 export const DeployEnvSchema = z.object({
   MAESTRO_PROFILE: z.string().optional(),
   // `BFF_PORT` / `BFF_HOST` are NOT declared here: they belong to
@@ -99,9 +122,9 @@ export const DeployEnvSchema = z.object({
    * not evidence of anything. The driver's own schema refuses an unpinned
    * reference, so these have no default — the deployment must name a digest.
    */
-  SCAN_IMAGE_TRIVY: z.string().min(1).optional(),
-  SCAN_IMAGE_SEMGREP: z.string().min(1).optional(),
-  SCAN_IMAGE_GITLEAKS: z.string().min(1).optional(),
+  SCAN_IMAGE_TRIVY: optionalSetting(),
+  SCAN_IMAGE_SEMGREP: optionalSetting(),
+  SCAN_IMAGE_GITLEAKS: optionalSetting(),
 
   // ── the engineering turn's sandbox fleet (M21/M23/M60) ──────────────────
   /**
@@ -114,7 +137,7 @@ export const DeployEnvSchema = z.object({
    * Absent, the worker keeps a NARROWED refusal for the engineering turn (see
    * `buildTurnRunner` in bin/worker.ts) rather than inventing a fleet.
    */
-  RUNNER_IMAGE_LINUX: z.string().min(1).optional(),
+  RUNNER_IMAGE_LINUX: optionalSetting(),
   /**
    * M23 budget for one verification command. The runner enforces its own
    * ceiling on top of this, so a value above it is refused rather than

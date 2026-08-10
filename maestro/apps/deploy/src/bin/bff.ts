@@ -5,7 +5,6 @@ import {
   EnvSettingsReader,
   InMemoryKillSwitchStore,
   InMemorySessionStore,
-  InMemoryTemplateStore,
   LocalIdentityProvider,
   StaticGateDirectory,
   UNWIRED_CAPABILITY_LINES,
@@ -18,6 +17,7 @@ import { PrismaJiraProjectBindings } from "../stores/bindings.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
 import { PrismaParamStore } from "../stores/params-store.js";
 import { PrismaRoutingReader } from "../stores/routing.js";
+import { PrismaTemplateStore } from "../stores/template.js";
 import { assertStoresDurable, volatileStoreWarning, type StoreDurability } from "../stores/durability.js";
 import { postgresProbe, temporalProbe } from "../stores/read-health.js";
 import { DEGRADED_READ_MODELS, liveReadModels } from "../stores/read-live.js";
@@ -53,12 +53,10 @@ const VOLATILE_STORES: readonly StoreDurability[] = [
     durable: false,
     onRestart: "open four-eyes proposals are lost; applied parameter values survive",
   },
-  {
-    name: "templates",
-    durable: false,
-    onRestart:
-      "every published analysis template version is lost, and a run pinned to one (M83) can no longer read what it was judged against",
-  },
+  // `templates` used to be here, and is not any more: `PrismaTemplateStore`
+  // reads and writes `AnalysisTemplateVersion` (migration 0007), so a
+  // published version survives a restart and a run pinned to one (M83) can
+  // still read what it was judged against.
   {
     name: "sessions",
     durable: false,
@@ -146,11 +144,20 @@ export async function main(): Promise<void> {
     // also silently discarded anything an operator had changed. The pending
     // four-eyes queue is still process-local — see `PrismaParamStore`.
     params: new PrismaParamStore(db.param, db.paramVersion),
-    // Process-local like the two above, and declared in `VOLATILE_STORES` for
-    // the same reason: a template version is what an approved analysis was
-    // judged against (M83), so losing the history on a restart is a real cost
-    // an operator must read rather than discover.
-    templates: new InMemoryTemplateStore(),
+    // Postgres-backed, where it used to be an `InMemoryTemplateStore`.
+    //
+    // A template version is what an approved analysis was judged against
+    // (M83), and holding that in a process-local array meant every restart
+    // dropped it: `GET /template` went back to 404 `no_template` and the
+    // designer screen back to "henüz yayında değil". That was the last screen
+    // in the platform still showing it. Migration 0007 gives it a table, the
+    // installer publishes version 1, and the store below is append-only in the
+    // same way `PrismaDocTemplateStore` is.
+    templates: new PrismaTemplateStore(
+      db.analysisTemplateVersion,
+      db.jiraProjectBinding,
+      db.workflowRun,
+    ),
     // Postgres-backed, unlike the two above: an uploaded corporate template is
     // a FILE somebody produced, not a setting they can retype, and a run pinned
     // to version 2 (M83) cannot render at all if a restart lost version 2.

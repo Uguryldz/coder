@@ -5,6 +5,7 @@ import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Table } from "../ui/index.ts";
 import { assess, type ChainVerification } from "./audit/verification.ts";
+import { useEnumLabel } from "./common/label.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { shortHash } from "./shared/format.ts";
 
@@ -38,6 +39,7 @@ const ACTION_TONE = (action: string): "green" | "red" | "amber" | "gray" => {
 export function AuditScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const enumLabel = useEnumLabel();
 
   const events = useQuery({
     queryKey: ["audit", "events"],
@@ -117,7 +119,17 @@ export function AuditScreen(): ReactNode {
                 {
                   key: "action",
                   header: t("audit.col.action"),
-                  cell: (row) => <Badge tone={ACTION_TONE(row.action)}>{row.action}</Badge>,
+                  // Translated, not raw. `ACTION_TONE` still keys off the enum
+                  // — the colour is derived from the machine value, the words
+                  // from the catalog.
+                  cell: (row) => {
+                    const label = enumLabel("audit.action", row.action);
+                    return (
+                      <Badge tone={label.unknown ? "gray" : ACTION_TONE(row.action)}>
+                        {label.text}
+                      </Badge>
+                    );
+                  },
                 },
                 { key: "subject", header: t("audit.col.subject"), cell: (row) => row.subject },
                 {

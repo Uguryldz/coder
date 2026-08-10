@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
-import { useEnumLabel } from "./common/label.ts";
+import { useEnumLabel, usePhrase } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 import { outcomeExplanationKey, outcomeKey, outcomeTone } from "./shared/outcome.ts";
 
@@ -21,13 +21,16 @@ interface ProjectBinding {
   /** "auto" | "label" | "command" — how a ticket enters the flow. */
   readonly trigger: string;
   readonly apps: readonly string[];
-  readonly note: string;
+  /** Catalog key for the note, chosen by the server from the binding's state. */
+  readonly noteKey?: string;
+  readonly noteParams?: Readonly<Record<string, string>>;
 }
 
 interface RoutingRule {
   readonly ruleId: string;
-  /** Human-readable condition, already resolved by the server. */
-  readonly condition: string;
+  /** Catalog key for the condition, plus its substitutions. */
+  readonly conditionKey?: string;
+  readonly conditionParams?: Readonly<Record<string, string>>;
   readonly backend: string;
   readonly model: string;
   /** What happens when this rule fires: ok | queued | degraded | blocked. */
@@ -43,6 +46,7 @@ export function RoutingScreen(): ReactNode {
   const t = useT();
   const api = useApi();
   const enumLabel = useEnumLabel();
+  const phrase = usePhrase();
 
   const query = useQuery({
     queryKey: ["routing"],
@@ -80,7 +84,11 @@ export function RoutingScreen(): ReactNode {
                 cell: (row) =>
                   row.apps.length === 0 ? t("routing.no_apps") : row.apps.join(", "),
               },
-              { key: "note", header: t("routing.col.note"), cell: (row) => row.note },
+              {
+                key: "note",
+                header: t("routing.col.note"),
+                cell: (row) => phrase(row.noteKey, row.noteParams),
+              },
             ]}
             rows={query.data?.projects ?? []}
             rowKey={(row) => row.projectKey}
@@ -102,7 +110,7 @@ export function RoutingScreen(): ReactNode {
                 {
                   key: "condition",
                   header: t("routing.col.condition"),
-                  cell: (row: RoutingRule) => row.condition,
+                  cell: (row: RoutingRule) => phrase(row.conditionKey, row.conditionParams),
                 },
                 {
                   key: "backend",

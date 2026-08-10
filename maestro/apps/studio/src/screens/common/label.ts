@@ -84,3 +84,36 @@ export function useEnumLabel(): (keyPrefix: string, value: unknown) => EnumLabel
     [t],
   );
 }
+
+/**
+ * Render a WHOLE sentence the server chose, as a catalog key plus its
+ * substitutions — `{ noteKey: "routing.note.active_label", noteParams: {…} }`.
+ *
+ * The difference from {@link useEnumLabel}: that one owns the key prefix and
+ * receives only the enum value, which is right when the screen knows the family
+ * (`mode.*`, `role.*`). Here the SERVER picks the whole key, because it is the
+ * server that knows a binding is `paused` rather than `draft` and what that
+ * means for arriving tickets. What it must not pick is the WORDING (M104) —
+ * that is the leak this closes: `/routing` used to receive "every ticket starts
+ * a run" as finished English prose and print it into a Turkish table.
+ *
+ * A key the catalog does not carry falls back to a marked, neutral value rather
+ * than throwing. `t()` throwing would take the ErrorBoundary and the whole
+ * screen with it, so a server one version ahead of this build would blank the
+ * routing page instead of showing the five rows it does understand.
+ */
+export function usePhrase(): (key: string | undefined, params?: MessageParams) => string {
+  const { t } = useI18n();
+
+  return useCallback(
+    (key: string | undefined, params?: MessageParams) => {
+      if (key === undefined || key === "") return t("value.unknown_blank");
+      try {
+        return t(key, params);
+      } catch {
+        return t("value.unrecognised", { value: key.slice(0, 64) });
+      }
+    },
+    [t],
+  );
+}

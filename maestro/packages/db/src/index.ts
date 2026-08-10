@@ -62,6 +62,15 @@ export type { ParamWriteDb, ParamVersionWritten, WriteParamVersionInput } from "
 export { seedParams } from "./seed.js";
 export type { SeedParamsOptions, SeedParamsResult } from "./seed.js";
 
+// The analysis template a fresh install starts with (M108).
+export { seedAnalysisTemplate } from "./seed-template.js";
+export type { SeedTemplateOptions, SeedTemplateResult } from "./seed-template.js";
+export {
+  DEFAULT_ANALYSIS_TEMPLATE_NAME,
+  DEFAULT_ANALYSIS_TEMPLATE_SECTIONS,
+} from "./template-defaults.js";
+export type { DefaultTemplateSection } from "./template-defaults.js";
+
 // Demo dataset (insa-plani Dalga 1: the seed *is* the mock's data).
 export { buildDemoDataset, seedDemo } from "./seed-demo.js";
 export type { DemoDataset, SeedDemoDb, SeedDemoDelegates } from "./seed-demo.js";

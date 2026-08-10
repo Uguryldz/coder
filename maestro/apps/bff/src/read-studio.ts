@@ -120,7 +120,16 @@ export interface DecisionRecord {
   /** Masterplan reference, or the audit action when the row carries no `ref`. */
   readonly ref: string;
   readonly question: string;
-  readonly decision: string;
+  /**
+   * The decision as its two machine parts: the audit action and who took it.
+   *
+   * Deliberately NOT a joined `"GATE_OPEN · maestro-worker"` string, which is
+   * what this used to be. Joined, neither half could be translated, and a bank
+   * auditor read a raw enum in the column headed "Karar". The screen renders
+   * `audit.action.${action}` and composes the line.
+   */
+  readonly action: string;
+  readonly actor: string;
   readonly severity: string;
   readonly status: string;
   readonly decidedAt: string;

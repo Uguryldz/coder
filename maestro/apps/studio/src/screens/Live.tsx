@@ -3,12 +3,12 @@ import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { STEP_IDS, STEP_META, type StepId } from "@maestro/contracts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Table, runStatusTone } from "../ui/index.ts";
+import { Badge, Card, Table } from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { ageLabel } from "./shared/format.ts";
-import { useRuns, type RunSummary } from "./shared/runs.ts";
-import { statusKey } from "./Tickets.tsx";
+import { useRuns, type RunRow } from "./shared/runs.ts";
+import { RunStatusCell } from "./Tickets.tsx";
 import "./shared/screens.css";
 
 /**
@@ -22,8 +22,13 @@ import "./shared/screens.css";
  * So this screen keeps the mock's teaching job and drops the fiction:
  *  - the pipeline is drawn from the REAL step table (`STEP_IDS` / `STEP_META`),
  *    labelled with each step's kind, so who-does-what is visible at a glance;
- *  - the "watch it happen" half is the operator's OWN currently running work,
- *    polled from `GET /runs` — a real live view instead of a fake one.
+ *  - the "watch it happen" half is the operator's OWN in-flight work, polled
+ *    from `GET /studio/runs` — a real live view instead of a fake one.
+ *
+ * "In flight" now means `running` OR `gate`: the workflow vocabulary can tell
+ * the two apart, and a run parked at a gate is the one most worth watching —
+ * it is waiting on a person. The old Temporal-backed list called both
+ * "running" and could not separate them, so the step column below was empty.
  */
 
 /** Poll while the tab is open; there is no event stream from the BFF yet. */
@@ -45,20 +50,39 @@ export function LiveScreen(): ReactNode {
     refetchInterval: LIVE_REFRESH_MS,
   });
   const running = useMemo(
-    () => (data?.runs ?? []).filter((run) => run.status === "running"),
+    () => (data?.runs ?? []).filter((run) => run.status === "running" || run.status === "gate"),
     [data],
   );
 
-  const columns: readonly Column<RunSummary>[] = [
+  const columns: readonly Column<RunRow>[] = [
     {
       key: "ticket",
       header: t("col.ticket"),
-      cell: (run) => <b className="screen-mono">{run.ticketKey}</b>,
+      cell: (run) => (
+        <>
+          <b className="screen-mono">{run.ticketKey}</b>
+          <div className="screen-note">{run.title}</div>
+        </>
+      ),
     },
     {
       key: "status",
       header: t("col.status"),
-      cell: (run) => <Badge tone={runStatusTone(run.status)}>{t(statusKey(run.status))}</Badge>,
+      cell: (run) => <RunStatusCell status={run.status} />,
+    },
+    {
+      key: "step",
+      header: t("col.step"),
+      // The step the run is ON — the single most useful "what is happening
+      // right now" fact, and the one the Temporal-backed list never carried.
+      cell: (run) =>
+        run.step === null ? (
+          "—"
+        ) : (
+          <>
+            <span className="screen-mono">{run.step}</span> {t(`steps.${run.step}`)}
+          </>
+        ),
     },
     {
       key: "age",
@@ -112,7 +136,7 @@ export function LiveScreen(): ReactNode {
           <Table
             columns={columns}
             rows={running}
-            rowKey={(run) => run.runId}
+            rowKey={(run) => run.ticketKey}
             emptyLabel={t("live.running.empty")}
             caption={t("live.running.caption")}
             onRowClick={(run) => void navigate(`/detail/${run.ticketKey}`)}

@@ -3,43 +3,50 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { messageKeyOf } from "../api/errors.ts";
 import { useI18n, useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Select, Table, runStatusTone } from "../ui/index.ts";
+import { Badge, Card, Select, Table, riskTone, runStatusTone, workModeTone } from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
 import { ageLabel, dateTimeLabel } from "./shared/format.ts";
-import { projectKeyOf, useRuns, type RunExecutionStatus, type RunSummary } from "./shared/runs.ts";
+import { projectKeyOf, useRuns, type RunRow, type RunStatus } from "./shared/runs.ts";
 import "./shared/screens.css";
 
 /**
  * Screen: tickets — every workflow the operator may see.
  *
- * The rows are exactly what `GET /runs` returns. That endpoint speaks the
- * TEMPORAL status vocabulary (running / completed / failed / …), not the
- * delivery one the mock's chips use (kapıda / kuyrukta). The filter chips
- * therefore follow the endpoint rather than the mock: a "Kapıda" chip here
- * would have nothing to filter on, because whether a run sits at a gate is
- * in `GET /runs/:ticket`, one request per row. See RAPOR-ekranlar-A.md
- * "UÇ İSTEKLERİ" — a richer /runs is requested there.
+ * The rows are exactly what `GET /studio/runs` returns: the platform catalog
+ * record joined to the live workflow state. That endpoint speaks the WORKFLOW
+ * status vocabulary (gate / queued / fail / handover / done / …), so the chips
+ * below can finally filter on the thing operators actually queue by — "kapıda"
+ * is a real filter now, not a wish. The old list read Temporal and could only
+ * offer running/completed/failed.
+ *
+ * A row whose workflow has not started carries `status: null`. It is listed
+ * (the BFF deliberately does not hide it) and shown with an em dash, because a
+ * ticket waiting to start is a ticket the operator must still be able to see.
  */
 
-/** Chip filters, over statuses `/runs` actually sends. */
+/** Chip filters, over the statuses `/studio/runs` actually sends. */
 const FILTERS = [
   { id: "all", labelKey: "tickets.filter.all", match: () => true },
   {
     id: "open",
     labelKey: "tickets.filter.open",
-    match: (run: RunSummary) => run.status === "running",
+    match: (run: RunRow) => run.status === "running",
+  },
+  {
+    id: "gate",
+    labelKey: "tickets.filter.gate",
+    match: (run: RunRow) => run.status === "gate",
   },
   {
     id: "done",
     labelKey: "tickets.filter.done",
-    match: (run: RunSummary) => run.status === "completed",
+    match: (run: RunRow) => run.status === "done",
   },
   {
     id: "failed",
     labelKey: "tickets.filter.failed",
-    match: (run: RunSummary) =>
-      run.status === "failed" || run.status === "terminated" || run.status === "timed_out",
+    match: (run: RunRow) => run.status === "fail" || run.status === "handover",
   },
 ] as const;
 
@@ -72,29 +79,54 @@ export function TicketsScreen(): ReactNode {
   const rows = useMemo(() => {
     const active = FILTERS.find((entry) => entry.id === filter) ?? FILTERS[0];
     return runs.filter(
-      (run) =>
-        active.match(run) && (project === "all" || projectKeyOf(run.ticketKey) === project),
+      (run) => active.match(run) && (project === "all" || projectKeyOf(run.ticketKey) === project),
     );
   }, [runs, filter, project]);
 
-  const columns: readonly Column<RunSummary>[] = [
+  const columns: readonly Column<RunRow>[] = [
     {
       key: "ticket",
       header: t("col.ticket"),
-      cell: (run) => <b className="screen-mono">{run.ticketKey}</b>,
+      cell: (run) => (
+        <>
+          <b className="screen-mono">{run.ticketKey}</b>
+          <div className="screen-note">{run.title}</div>
+        </>
+      ),
     },
     {
-      key: "project",
-      header: t("col.project"),
-      cell: (run) => projectKeyOf(run.ticketKey),
+      key: "app",
+      header: t("col.app"),
+      // `appId` is null until the ticket is matched to an application (M100).
+      cell: (run) => (run.appId === null ? "—" : <span className="screen-mono">{run.appId}</span>),
     },
     {
       key: "status",
       header: t("col.status"),
+      cell: (run) => <RunStatusCell status={run.status} />,
+    },
+    {
+      key: "step",
+      header: t("col.step"),
+      cell: (run) =>
+        run.step === null ? (
+          "—"
+        ) : (
+          <>
+            <span className="screen-mono">{run.step}</span> {t(`steps.${run.step}`)}
+          </>
+        ),
+    },
+    {
+      key: "risk",
+      header: t("col.risk"),
+      cell: (run) => <Badge tone={riskTone(run.risk)}>{t(`risk.${run.risk}`)}</Badge>,
+    },
+    {
+      key: "mode",
+      header: t("col.mode"),
       cell: (run) => (
-        <Badge tone={runStatusTone(run.status)}>
-          {enumLabel(RUN_STATUS_PREFIX, run.status).text}
-        </Badge>
+        <Badge tone={workModeTone(run.mode)}>{enumLabel("mode", run.mode).text}</Badge>
       ),
     },
     {
@@ -150,7 +182,7 @@ export function TicketsScreen(): ReactNode {
           <Table
             columns={columns}
             rows={rows}
-            rowKey={(run) => run.runId}
+            rowKey={(run) => run.ticketKey}
             loading={isPending}
             emptyLabel={t("tickets.empty")}
             caption={t("tickets.caption")}
@@ -170,15 +202,29 @@ export function TicketsScreen(): ReactNode {
 }
 
 /**
- * Catalog key for a Temporal-level execution status.
+ * Catalog key prefix for a workflow status.
  *
- * The key prefix is exported separately so callers can go through
- * `useEnumLabel`: `RunExecutionStatus` is a union in TypeScript but a plain
- * string on the wire, and Temporal owns the vocabulary. An eighth status would
+ * Exported so every screen renders the same word for the same status, and so
+ * callers go through `useEnumLabel`: `WorkflowRunStatus` is a union in
+ * TypeScript but a plain string on the wire, and an eighth status would
  * otherwise throw out of `t()` and blank the whole ticket list.
  */
-export const RUN_STATUS_PREFIX = "run.exec";
+export const RUN_STATUS_PREFIX = "run.status";
 
-export function statusKey(status: RunExecutionStatus): string {
+export function statusKey(status: RunStatus): string {
   return `${RUN_STATUS_PREFIX}.${status}`;
+}
+
+/**
+ * A status badge that tells "not started" apart from a status.
+ *
+ * `null` is rendered as an em dash rather than as any word: the run exists in
+ * the catalog and the workflow engine has never heard of it, and picking
+ * "queued" for that would invent a queue position nothing assigned.
+ */
+export function RunStatusCell({ status }: { readonly status: RunStatus | null }): ReactNode {
+  const t = useT();
+  const enumLabel = useEnumLabel();
+  if (status === null) return <span className="screen-note">{t("run.status.unknown")}</span>;
+  return <Badge tone={runStatusTone(status)}>{enumLabel(RUN_STATUS_PREFIX, status).text}</Badge>;
 }

@@ -7,7 +7,7 @@ import { JournalTab } from "./detail/JournalTab.tsx";
 import { RunSidebar } from "./detail/RunSidebar.tsx";
 import { StepList } from "./detail/StepList.tsx";
 import { NotAvailable, QueryState } from "./shared/QueryState.tsx";
-import { useRunState } from "./shared/runs.ts";
+import { useRunDetail } from "./shared/runs.ts";
 import "./shared/screens.css";
 
 /**
@@ -17,9 +17,17 @@ import "./shared/screens.css";
  * (`DKEY`), which makes the view unlinkable. Here the URL is the state, so a
  * gate reminder can point straight at the run that needs a decision.
  *
- * `GET /runs/:ticket` answers 404 `no_run` for a ticket Maestro never ran and
- * 403 `project_access` for one the caller may not see — both surface through
- * QueryState as translated sentences, never as a raw code.
+ * `GET /studio/runs/:ticket` answers 404 `no_run` for a ticket Maestro never
+ * ran and 403 `project_access` for one the caller may not see — both surface
+ * through QueryState as translated sentences, never as a raw code.
+ *
+ * It returns THREE things where the old `/runs/:ticket` returned one: the
+ * catalog record, the live workflow state, and the application the ticket was
+ * matched to. The state may be `null` for a ticket that exists but whose
+ * workflow has not started — a case the old endpoint could only express as a
+ * 404, i.e. as "no such ticket", which is a different and wrong sentence. So
+ * the step list is rendered only when there is a state to render, and the
+ * sidebar shows the record either way.
  */
 
 const TAB_IDS = ["steps", "journal", "analysis", "diff", "tests", "cost"] as const;
@@ -30,7 +38,7 @@ export function DetailScreen(): ReactNode {
   const { ticket } = useParams<{ ticket: string }>();
   const [tab, setTab] = useState<TabId>("steps");
 
-  const { data: run, isPending, error, refetch } = useRunState(ticket);
+  const { data: detail, isPending, error, refetch } = useRunDetail(ticket);
 
   if (ticket === undefined || ticket === "") {
     return <NotAvailable detailKey="detail.no_ticket" />;
@@ -38,7 +46,7 @@ export function DetailScreen(): ReactNode {
 
   return (
     <QueryState isPending={isPending} error={error} onRetry={() => void refetch()} skeletonRows={8}>
-      {run === undefined ? null : (
+      {detail === undefined ? null : (
         <div className="screen-grid screen-grid--detail">
           <Card padded={false}>
             <Tabs
@@ -49,7 +57,13 @@ export function DetailScreen(): ReactNode {
             />
             <div style={{ padding: 14 }}>
               <TabPanel id="steps" active={tab}>
-                <StepList run={run} />
+                {/* No state means no position in the flow; marking step 0 as
+                    "now" would claim the run had started. */}
+                {detail.state === null ? (
+                  <NotAvailable detailKey="detail.steps.not_started" />
+                ) : (
+                  <StepList run={detail.state} />
+                )}
               </TabPanel>
               <TabPanel id="journal" active={tab}>
                 <JournalTab ticket={ticket} />
@@ -69,7 +83,7 @@ export function DetailScreen(): ReactNode {
             </div>
           </Card>
 
-          <RunSidebar run={run} />
+          <RunSidebar record={detail.run} state={detail.state} application={detail.application} />
         </div>
       )}
     </QueryState>

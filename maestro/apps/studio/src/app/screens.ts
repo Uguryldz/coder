@@ -54,6 +54,10 @@ export const SCREENS: readonly ScreenDef[] = [
   { id: "dash", path: "dash", titleKey: "screen.dash.title", navKey: "nav.dash", group: "operation", icon: "▦" },
   { id: "help", path: "help", titleKey: "screen.help.title", navKey: "nav.help", group: "operation", icon: "📖" },
   { id: "live", path: "live", titleKey: "screen.live.title", navKey: "nav.live", group: "operation", icon: "🎬" },
+  // The pilot's real-Jira flow, driven FROM Studio (Dalga D). Proxied to the
+  // pilot engine via the BFF; start/settings are operator-gated there and the
+  // nav mirrors that so a viewer is not sent to a screen that can only 403.
+  { id: "pilot", path: "pilot", titleKey: "screen.pilot.title", navKey: "nav.pilot", group: "operation", icon: "🎥" },
   { id: "tickets", path: "tickets", titleKey: "screen.tickets.title", navKey: "nav.tickets", group: "operation", icon: "≡" },
   { id: "fanout", path: "fanout", titleKey: "screen.fanout.title", navKey: "nav.fanout", group: "operation", icon: "⑂" },
   { id: "clarify", path: "clarify", titleKey: "screen.clarify.title", navKey: "nav.clarify", group: "operation", icon: "❓" },

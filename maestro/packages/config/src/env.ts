@@ -38,6 +38,19 @@ export const EnvSchema = z.object({
   VAULT_ADDR: z.url().optional(),
   STORAGE_ENDPOINT: z.url().optional(),
   EGRESS_PROXY_URL: z.url().optional(),
+  /**
+   * Where the pilot flow engine listens (M-Dalga D). Studio's "Canlı akış /
+   * Pilot" screen does not talk to the pilot directly — the BFF proxies to it
+   * (`/studio/pilot/*`), and this is the base URL of that internal call.
+   *
+   * Optional and NOT in `REQUIRED_IN_PROD`: the pilot is an optional face, and
+   * a deployment without it must still boot. When it is unset the BFF falls
+   * back to the loopback default (`http://127.0.0.1:7020`), and the proxy
+   * answers 503 `pilot_unreachable` if nothing is listening there — an honest
+   * "not running" rather than a fabricated state. It is a CONFIG value, never
+   * request-supplied, so the proxy is not an open SSRF.
+   */
+  PILOT_BASE_URL: z.url().optional(),
 
   // ── identity: AD/LDAPS (M8) ─────────────────────────────────────────────
   /**

@@ -7,12 +7,20 @@ import { InMemorySessionStore } from "../src/auth/sessions.js";
 import type {
   BffDeps,
   Clock,
+  ConnectionView,
+  DocTemplateOutput,
+  DocTemplateRecord,
   JiraBinding,
   MessageCatalog,
+  NotifyDriverView,
   ReadModels,
+  RoutingProjectView,
+  RoutingRuleView,
   TemplateVersionRecord,
 } from "../src/deps.js";
 import { buildServer } from "../src/server.js";
+import { StaticRoutingReader, StaticSettingsReader } from "../src/stores/admin-memory.js";
+import { InMemoryDocTemplateStore } from "../src/stores/doc-template-memory.js";
 import {
   InMemoryKillSwitchStore,
   InMemoryParamStore,
@@ -97,6 +105,37 @@ export const PARAM_DEFINITIONS: ParamDefinition[] = [
     descriptionKey: "params.description.reminder_channel",
     defaultValue: "teams",
   },
+  /**
+   * The routing screen's policy (M18). GUARDED, like the shipped definition:
+   * it decides whether a `gizli` ticket may reach a cloud model, and a test
+   * fixture that made it unguarded would let `PUT /routing` look like it saves
+   * when the real deployment files a proposal.
+   */
+  {
+    key: "dataclass.policy",
+    scope: "global",
+    type: "json",
+    guarded: true,
+    descriptionKey: "params.description.data_class_policy",
+    defaultValue: {},
+  },
+  /** The reminder ladder and channel routing the notify screen reads (M45/M71). */
+  {
+    key: "escalation.ladder",
+    scope: "global",
+    type: "json",
+    guarded: false,
+    descriptionKey: "params.description.escalation_ladder",
+    defaultValue: {},
+  },
+  {
+    key: "notify.routing",
+    scope: "global",
+    type: "json",
+    guarded: false,
+    descriptionKey: "params.description.notify_routing",
+    defaultValue: {},
+  },
 ];
 
 export interface Harness {
@@ -112,6 +151,8 @@ export interface Harness {
   identity: LocalIdentityProvider;
   params: InMemoryParamStore;
   templates: InMemoryTemplateStore;
+  /** The corporate `.docx` store (M103r), so a test can assert what was stored. */
+  docTemplates: InMemoryDocTemplateStore;
   killSwitch: InMemoryKillSwitchStore;
   bindings: StaticJiraProjectBindings;
   /** Studio's read side, as concrete stores the tests seed directly. */
@@ -184,6 +225,52 @@ export const TEST_SERVICES: readonly ServiceHealth[] = [
   },
 ];
 
+/**
+ * Platform wiring the settings screen reads. One connected, one unconfigured:
+ * the two states the screen must tell apart, and the pair that catches a
+ * reader that collapses "nobody set this up" into "it is broken".
+ */
+export const TEST_CONNECTIONS: readonly ConnectionView[] = [
+  {
+    id: "jira",
+    endpoint: "https://jira.ugurbank.local",
+    status: "connected",
+    credentialRef: "vault:maestro/jira#token",
+    checkedAt: "2026-08-09T09:00:00.000Z",
+  },
+  {
+    id: "siem",
+    endpoint: "",
+    status: "unconfigured",
+    credentialRef: "none",
+    checkedAt: null,
+  },
+];
+
+export const TEST_NOTIFY_DRIVERS: readonly NotifyDriverView[] = [
+  { channel: "jira", enabled: true, target: "ticket comment" },
+  { channel: "teams", enabled: false, target: "platform channel" },
+];
+
+export const TEST_ROUTING_PROJECTS: readonly RoutingProjectView[] = [
+  {
+    projectKey: "UGURPAY",
+    trigger: "label",
+    apps: ["odeme-api"],
+    note: 'waits for the "maestro" label or /ai-start',
+  },
+];
+
+export const TEST_ROUTING_RULES: readonly RoutingRuleView[] = [
+  {
+    ruleId: "pay-component",
+    condition: "component = odeme",
+    effect: "odeme-api",
+    priority: 10,
+    projectKey: "UGURPAY",
+  },
+];
+
 export interface HarnessOptions {
   groups?: Record<string, readonly string[]>;
   bindings?: readonly JiraBinding[];
@@ -195,6 +282,14 @@ export interface HarnessOptions {
   services?: readonly ServiceHealth[];
   /** Published template versions; defaults to a single seeded version 1. */
   templates?: readonly TemplateVersionRecord[];
+  /** Uploaded corporate `.docx` versions; empty by default — most tests upload one. */
+  docTemplates?: readonly DocTemplateRecord[];
+  /** Documents already produced, for the template screen's output list. */
+  docOutputs?: readonly DocTemplateOutput[];
+  connections?: readonly ConnectionView[];
+  notifyDrivers?: readonly NotifyDriverView[];
+  routingProjects?: readonly RoutingProjectView[];
+  routingRules?: readonly RoutingRuleView[];
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -214,6 +309,18 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const templates = new InMemoryTemplateStore(options.templates ?? [SEED_TEMPLATE], [
     { projectKey: "UGURPAY", version: 1, pinnedRuns: 0 },
   ]);
+  const docTemplates = new InMemoryDocTemplateStore(
+    options.docTemplates ?? [],
+    options.docOutputs ?? [],
+  );
+  const settings = new StaticSettingsReader(
+    options.connections ?? TEST_CONNECTIONS,
+    options.notifyDrivers ?? TEST_NOTIFY_DRIVERS,
+  );
+  const routing = new StaticRoutingReader(
+    options.routingProjects ?? TEST_ROUTING_PROJECTS,
+    options.routingRules ?? TEST_ROUTING_RULES,
+  );
   const killSwitch = new InMemoryKillSwitchStore();
   const bindings = new StaticJiraProjectBindings(options.bindings ?? [UGURPAY_BINDING]);
 
@@ -247,6 +354,9 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     gates: new StaticGateDirectory(),
     params,
     templates,
+    docTemplates,
+    settings,
+    routing,
     killSwitch,
     read,
     messages: testCatalog,
@@ -301,6 +411,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     identity,
     params,
     templates,
+    docTemplates,
     killSwitch,
     bindings,
     read,

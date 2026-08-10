@@ -5,6 +5,7 @@ import {
   BcryptPasswordHasher,
   InMemoryAppRegistry,
   InMemoryCostReader,
+  InMemoryDocTemplateStore,
   InMemoryEvidenceReader,
   InMemoryGateBoard,
   InMemoryJournalReader,
@@ -22,10 +23,20 @@ import {
   StaticGateDirectory,
   StaticHealthReader,
   StaticJiraProjectBindings,
+  StaticRoutingReader,
+  StaticSettingsReader,
 } from "@maestro/bff";
 import { loadEnv } from "@maestro/config";
 import { DemoCiPort, DemoWorkEventReader, DemoWorkPort } from "./fakes/work-port.js";
 import { InMemoryRunGateway } from "./fakes/run-gateway.js";
+import {
+  DEMO_CONNECTIONS,
+  DEMO_DOC_OUTPUTS,
+  DEMO_DOC_TEMPLATES,
+  DEMO_NOTIFY_DRIVERS,
+  DEMO_ROUTING_PROJECTS,
+  DEMO_ROUTING_RULES,
+} from "./seed/admin.js";
 import { DEMO_PARAMS } from "./seed/params.js";
 import { DEMO_TEMPLATE_BINDINGS, DEMO_TEMPLATE_VERSIONS } from "./seed/template.js";
 import { seedInto, type SeedSummary } from "./seed/index.js";
@@ -132,6 +143,13 @@ export async function buildDemoStack(options: DemoStackOptions = {}): Promise<De
     gates: new StaticGateDirectory(),
     params: new InMemoryParamStore(DEMO_PARAMS),
     templates: new InMemoryTemplateStore(DEMO_TEMPLATE_VERSIONS, DEMO_TEMPLATE_BINDINGS),
+    // No corporate `.docx` is seeded on purpose: the template screen's job is
+    // to show that generation continues on a plain fallback WITH a visible
+    // warning, and a seeded file would hide the behaviour a document owner
+    // needs to see before uploading one.
+    docTemplates: new InMemoryDocTemplateStore(DEMO_DOC_TEMPLATES, DEMO_DOC_OUTPUTS),
+    settings: new StaticSettingsReader(DEMO_CONNECTIONS, DEMO_NOTIFY_DRIVERS),
+    routing: new StaticRoutingReader(DEMO_ROUTING_PROJECTS, DEMO_ROUTING_RULES),
     killSwitch: new InMemoryKillSwitchStore(),
     read,
     clock,

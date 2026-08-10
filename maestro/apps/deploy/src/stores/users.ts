@@ -54,6 +54,7 @@ export interface UserWriteRow {
  */
 export interface UserDelegate {
   findUnique(args: { where: { email: string } }): Promise<UserRow | null>;
+  findMany(args: { take: number; orderBy: { email: "asc" } }): Promise<UserRow[]>;
   upsert(args: {
     where: { email: string };
     create: UserWriteRow;
@@ -111,6 +112,17 @@ export class PrismaUserDirectory implements UserDirectory {
   async find(username: string): Promise<UserRecord | null> {
     const row = await this.users.findUnique({ where: { email: normalize(username) } });
     return row === null ? null : toRecord(row);
+  }
+
+  /**
+   * The admin users table (M8/M86). Ordered by email so the same window comes
+   * back the same way every time, and bounded by `take` so the query cannot
+   * return the whole directory. Inactive rows are kept: off-boarding is a state
+   * an admin audits, not a row the list hides.
+   */
+  async list(limit: number): Promise<readonly UserRecord[]> {
+    const rows = await this.users.findMany({ take: Math.max(0, limit), orderBy: { email: "asc" } });
+    return rows.map(toRecord);
   }
 
   async upsert(record: UserRecord): Promise<void> {

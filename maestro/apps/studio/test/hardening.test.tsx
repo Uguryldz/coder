@@ -152,18 +152,19 @@ describe("unknown server enum values", () => {
   it("keeps the users screen up when the directory returns a role outside the contract", async () => {
     const fetchImpl = vi.fn(async () =>
       json({
-        username: "ayse.kaya",
-        userId: "ayse.kaya@ugurbank.local",
-        roles: ["admin", "release-manager"],
-        groups: ["maestro-admins"],
-        active: true,
+        items: [
+          {
+            username: "ayse.kaya",
+            userId: "ayse.kaya@ugurbank.local",
+            roles: ["admin", "release-manager"],
+            groups: ["maestro-admins"],
+            active: true,
+          },
+        ],
       }),
     ) as unknown as typeof fetch;
 
     renderScreen(<UsersScreen />, fetchImpl);
-
-    await userEvent.type(screen.getByLabelText("Kullanıcı adı"), "ayse.kaya");
-    await userEvent.click(screen.getByRole("button", { name: "Sorgula" }));
 
     // The known role still renders — this is what the crash used to destroy.
     await waitFor(() => expect(screen.getByText("ayse.kaya")).toBeInTheDocument());
@@ -283,37 +284,31 @@ describe("security findings — raw scanner text", () => {
 
 describe("screens whose read model the BFF has not built", () => {
   /**
-   * `GET /settings` does not exist. A bare 404 renders as "Kayıt bulunamadı",
-   * which tells the operator the wrong thing — the record is not missing, the
-   * endpoint was never written. Sister screens (template, variants, eval …)
-   * already used MaybeUnwired; settings, notify, mcp, commands, yaml and
-   * onboard did not, so the same server condition produced two different
-   * stories depending on which screen you opened.
+   * `GET /settings` is now LIVE (apps/bff/src/routes/settings.ts). The screen no
+   * longer pretends a failure is an unbuilt endpoint — a 404 here is a genuine
+   * failure and renders through the ordinary error path, the same as any other
+   * broken read. The "not published yet" fallback was correct only while the
+   * endpoint was still a request.
    */
-  it("tells the operator the section is not published, not that a record is missing", async () => {
+  it("shows a failing settings read as a failure, not as 'unpublished'", async () => {
     const fetchImpl = vi.fn(async () =>
       json({ error: "not_found" }, 404),
     ) as unknown as typeof fetch;
 
     renderScreen(<SettingsScreen />, fetchImpl);
 
-    await waitFor(() =>
-      expect(screen.getByText("Bu bölüm henüz yayında değil")).toBeInTheDocument(),
-    );
-    // The connections/notify section — the part fed by /settings — must not
-    // claim a record is missing. (KillSwitchPanel below it fetches its own
-    // endpoint and is not part of this assertion.)
-    expect(screen.queryByText("settings.card.connections")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Veri alınamadı")).toBeInTheDocument());
+    // The screen must not claim the section was never built — the endpoint is real.
+    expect(screen.queryByText("Bu bölüm henüz yayında değil")).not.toBeInTheDocument();
   });
 
-  it("still shows a real failure as a failure — 500 is not 'unpublished'", async () => {
+  it("still shows a 500 as a real failure", async () => {
     const fetchImpl = vi.fn(async () =>
       json({ error: "internal" }, 500),
     ) as unknown as typeof fetch;
 
     renderScreen(<SettingsScreen />, fetchImpl);
 
-    // A broken endpoint and an unbuilt one must not look the same.
     await waitFor(() => expect(screen.getByText("Veri alınamadı")).toBeInTheDocument());
     expect(screen.queryByText("Bu bölüm henüz yayında değil")).not.toBeInTheDocument();
   });
@@ -398,11 +393,15 @@ describe("users screen — a disabled account's roles", () => {
   function disabledUser(): typeof fetch {
     return vi.fn(async () =>
       json({
-        username: "eski.calisan",
-        userId: "eski.calisan@ugurbank.local",
-        roles: ["admin"],
-        groups: ["maestro-admins"],
-        active: false,
+        items: [
+          {
+            username: "eski.calisan",
+            userId: "eski.calisan@ugurbank.local",
+            roles: ["admin"],
+            groups: ["maestro-admins"],
+            active: false,
+          },
+        ],
       }),
     ) as unknown as typeof fetch;
   }
@@ -415,9 +414,6 @@ describe("users screen — a disabled account's roles", () => {
    */
   it("strikes through and mutes the roles of a revoked account", async () => {
     renderScreen(<UsersScreen />, disabledUser());
-
-    await userEvent.type(screen.getByLabelText("Kullanıcı adı"), "eski.calisan");
-    await userEvent.click(screen.getByRole("button", { name: "Sorgula" }));
 
     await waitFor(() => expect(screen.getByText("pasif")).toBeInTheDocument());
 
@@ -434,18 +430,19 @@ describe("users screen — a disabled account's roles", () => {
   it("leaves an active account's roles in their normal register", async () => {
     const fetchImpl = vi.fn(async () =>
       json({
-        username: "ayse.kaya",
-        userId: "ayse.kaya@ugurbank.local",
-        roles: ["admin"],
-        groups: ["maestro-admins"],
-        active: true,
+        items: [
+          {
+            username: "ayse.kaya",
+            userId: "ayse.kaya@ugurbank.local",
+            roles: ["admin"],
+            groups: ["maestro-admins"],
+            active: true,
+          },
+        ],
       }),
     ) as unknown as typeof fetch;
 
     renderScreen(<UsersScreen />, fetchImpl);
-
-    await userEvent.type(screen.getByLabelText("Kullanıcı adı"), "ayse.kaya");
-    await userEvent.click(screen.getByRole("button", { name: "Sorgula" }));
 
     await waitFor(() => expect(screen.getByText("etkin")).toBeInTheDocument());
     expect(document.querySelector("s")).toBeNull();

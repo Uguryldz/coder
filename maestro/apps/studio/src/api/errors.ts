@@ -139,6 +139,10 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   invalid_username: "error.invalid_username",
   unknown_user: "error.unknown_user",
   unknown_actor: "error.unknown_actor",
+  // User administration (M8/M86)
+  invalid_user_body: "error.invalid_user_body",
+  user_exists: "error.user_exists",
+  password_policy: "error.password_policy",
   // 403
   role_required: "error.role_required",
   project_access: "error.project_access",

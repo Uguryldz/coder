@@ -56,6 +56,10 @@ export class ApiClient {
     return this.request<T>(path, { ...options, method: "PUT", body });
   }
 
+  delete<T>(path: string, options: Omit<RequestOptions, "method" | "body"> = {}): Promise<T> {
+    return this.request<T>(path, { ...options, method: "DELETE" });
+  }
+
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers({ accept: "application/json" });
     const token = this.#getToken();

@@ -291,3 +291,201 @@ describe("GET /studio/users/:username", () => {
     expect(response.statusCode).toBe(404);
   });
 });
+
+describe("GET /studio/users", () => {
+  it("refuses a caller who is not an admin", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+
+    const response = await h.app.inject({ method: "GET", url: "/studio/users", headers: auth(token) });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("lists accounts including off-boarded ones, never a password hash", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "ayse.kaya", roles: ["tech-lead"], groups: ["tech-leads"] });
+    // Deactivate one so the audit view proves inactive rows are not hidden.
+    await h.users.remove("ayse.kaya");
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({ method: "GET", url: "/studio/users", headers: auth(token) });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { items: Record<string, unknown>[] };
+    const ayse = body.items.find((row) => row["username"] === "ayse.kaya");
+    expect(ayse).toMatchObject({ username: "ayse.kaya", active: false });
+    for (const row of body.items) expect(Object.keys(row)).not.toContain("passwordHash");
+  });
+});
+
+describe("POST /studio/users", () => {
+  const STRONG = "Yeni.Parola-2026!";
+
+  it("refuses a caller who is not an admin", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users",
+      headers: auth(token),
+      payload: { username: "yeni.kisi", displayName: "Yeni Kişi", groups: [], password: STRONG },
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("creates an account and derives its roles from its groups", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users",
+      headers: auth(token),
+      payload: {
+        username: "mert.demir",
+        displayName: "Mert Demir",
+        groups: ["tech-leads"],
+        password: STRONG,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json() as Record<string, unknown>;
+    // Roles are the platform's reading of groups, not the caller's assertion.
+    expect(body["roles"]).toEqual(expect.arrayContaining(["tech-lead", "viewer"]));
+    expect(Object.keys(body)).not.toContain("passwordHash");
+
+    // The new account can actually log in with the password it was given.
+    const loginToken = await h.login("mert.demir", STRONG);
+    expect(typeof loginToken).toBe("string");
+  });
+
+  it("rejects a weak password and names the rules it broke", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users",
+      headers: auth(token),
+      payload: { username: "zayif.parola", displayName: "Zayıf", groups: [], password: "short" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json() as { error: string; details: { violations: string[] } };
+    expect(body.error).toBe("password_policy");
+    // The screen renders each failed rule; a bare "invalid" would hide which.
+    expect(body.details.violations).toEqual(expect.arrayContaining(["too_short"]));
+    // A rejected account was never created.
+    expect(await h.users.find("zayif.parola")).toBeNull();
+  });
+
+  it("rejects a duplicate username", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "var.olan", groups: [] });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users",
+      headers: auth(token),
+      payload: { username: "var.olan", displayName: "Var Olan", groups: [], password: STRONG },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect((response.json() as { error: string }).error).toBe("user_exists");
+  });
+
+  it("rejects a group the platform does not know how to map", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users",
+      headers: auth(token),
+      payload: {
+        username: "gecersiz.grup",
+        displayName: "Geçersiz",
+        groups: ["some-random-ad-group"],
+        password: STRONG,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect((response.json() as { error: string }).error).toBe("invalid_user_body");
+  });
+});
+
+describe("PUT /studio/users/:username", () => {
+  it("re-derives roles when the groups change", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "ayse.kaya", roles: ["qa"], groups: ["qa"] });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "PUT",
+      url: "/studio/users/ayse.kaya",
+      headers: auth(token),
+      payload: { groups: ["tech-leads"] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { roles: string[]; groups: string[] };
+    expect(body.groups).toEqual(["tech-leads"]);
+    expect(body.roles.sort()).toEqual(["tech-lead", "viewer"]);
+  });
+
+  it("404s an unknown account rather than creating one", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "PUT",
+      url: "/studio/users/kimse.yok",
+      headers: auth(token),
+      payload: { active: false },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+describe("DELETE /studio/users/:username", () => {
+  it("deactivates rather than deletes, keeping the account resolvable for audit", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "giden.kisi", roles: ["tech-lead"], groups: ["tech-leads"] });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "DELETE",
+      url: "/studio/users/giden.kisi",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { active: boolean }).active).toBe(false);
+
+    // The row is still there — a closed gate's actor must still resolve (M33).
+    const still = await h.users.find("giden.kisi");
+    expect(still).not.toBeNull();
+    expect(still?.active).toBe(false);
+  });
+
+  it("refuses a non-admin", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "giden.kisi", groups: [] });
+    const token = await memberToken(h);
+
+    const response = await h.app.inject({
+      method: "DELETE",
+      url: "/studio/users/giden.kisi",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+});

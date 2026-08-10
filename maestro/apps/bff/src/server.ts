@@ -23,6 +23,7 @@ import { studioCatalogRoutes } from "./routes/studio-catalog.js";
 import { templateRoutes } from "./routes/template.js";
 import { studioOpsRoutes } from "./routes/studio-ops.js";
 import { studioRunRoutes } from "./routes/studio-runs.js";
+import { studioEvalRoutes } from "./routes/studio-eval.js";
 import { studioGovernanceRoutes } from "./routes/studio-governance.js";
 import { studioSurfaceRoutes } from "./routes/studio-surface.js";
 import { studioVariantRoutes } from "./routes/studio-variants.js";
@@ -149,6 +150,7 @@ export async function buildServer(
   // which is the point: an unregistered route 404s, and a 404 renders as
   // "not built yet" rather than "this capability is not wired here".
   await app.register(async (scope) => studioVariantRoutes(scope, resolved));
+  await app.register(async (scope) => studioEvalRoutes(scope, resolved));
   await app.register(async (scope) => studioGovernanceRoutes(scope, resolved));
   await app.register(async (scope) => studioSurfaceRoutes(scope, resolved));
   // Onboarding a project and reading a repo's `.maestro.yaml` (M93/M102/M52).

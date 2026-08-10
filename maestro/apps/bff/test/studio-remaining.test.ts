@@ -301,8 +301,11 @@ describe("GET /decisions", () => {
   });
 });
 
-describe("the endpoints with no producer", () => {
+describe("the endpoints that refuse when their store is not wired", () => {
   it.each([
+    // `/eval` refuses when ITS store is absent (it is now wireable — see
+    // studio-eval.test.ts for the wired path). `/greenfield` and `/cache` have
+    // no producer at all.
     ["/eval", "eval"],
     ["/greenfield?ticket=UGURPAY-123", "greenfield"],
     ["/cache", "cache"],
@@ -321,10 +324,12 @@ describe("the endpoints with no producer", () => {
     expect(body.details.missing.length).toBeGreaterThan(40);
   });
 
-  it("stays refused however the deployment is wired — these have no producer at all", async () => {
+  it("keeps /eval refused when the OTHER studio stores are wired but eval is not", async () => {
     const h = await wired({ variants: fakeVariants(), pii: fakePii(), decisions: fakeDecisions() });
     const token = await adminToken(h);
 
+    // eval is wired independently of variants/pii/decisions — wiring those does
+    // not turn it on.
     expect((await h.app.inject({ method: "GET", url: "/eval", headers: auth(token) })).statusCode).toBe(503);
   });
 

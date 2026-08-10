@@ -60,6 +60,59 @@ export class ApiClient {
     return this.request<T>(path, { ...options, method: "DELETE" });
   }
 
+  /**
+   * POST a RAW binary body (a `.docx` upload), verbatim.
+   *
+   * Separate from `post` because that one JSON-serialises the body: the
+   * corporate template must reach the BFF byte-for-byte (M103r), so the content
+   * type is the Word MIME and the bytes are sent unchanged. The file name
+   * travels in a header, which is what the BFF reads it from. The same auth and
+   * error handling as every other call — nothing here is a second door.
+   */
+  async postBinary<T>(
+    path: string,
+    body: ArrayBuffer,
+    extraHeaders: Readonly<Record<string, string>> = {},
+  ): Promise<T> {
+    const headers = new Headers({ accept: "application/json", ...extraHeaders });
+    const token = this.#getToken();
+    if (token !== null) headers.set("authorization", `Bearer ${token}`);
+    if (!headers.has("content-type")) {
+      headers.set(
+        "content-type",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      );
+    }
+
+    let response: Response;
+    try {
+      response = await this.#fetch(this.#url(path, {}), { method: "POST", headers, body });
+    } catch (cause) {
+      if (isAbort(cause)) throw cause;
+      throw new NetworkError(cause);
+    }
+    if (!response.ok) throw await this.#toError(response);
+    if (response.status === 204) return undefined as T;
+    return (await this.#readJson(response)) as T;
+  }
+
+  /** GET a binary body (a `.docx` download) as a Blob, with the same auth. */
+  async getBlob(path: string): Promise<Blob> {
+    const headers = new Headers();
+    const token = this.#getToken();
+    if (token !== null) headers.set("authorization", `Bearer ${token}`);
+
+    let response: Response;
+    try {
+      response = await this.#fetch(this.#url(path, {}), { method: "GET", headers });
+    } catch (cause) {
+      if (isAbort(cause)) throw cause;
+      throw new NetworkError(cause);
+    }
+    if (!response.ok) throw await this.#toError(response);
+    return response.blob();
+  }
+
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers({ accept: "application/json" });
     const token = this.#getToken();

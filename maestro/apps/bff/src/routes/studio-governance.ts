@@ -172,31 +172,6 @@ export async function studioGovernanceRoutes(
   });
 
   /**
-   * Golden-ticket evaluation (M38/M43) — REFUSED.
-   *
-   * The screen wants a pool of reference tickets, each with a last score, and
-   * the most recent baseline-vs-candidate run so a REGRESSION is visible before
-   * a variant version is published. Checked against the repo: nothing records a
-   * golden ticket, nothing runs one, nothing stores a score. `VariantVersion`
-   * has an `evalScore` column, and it is written by the demo seed — one number
-   * per version, with no run, no baseline and no per-ticket result behind it.
-   *
-   * So there is no data to page through, and the tempting move — add migration
-   * 0006 with `GoldenTicket` and `EvalRun` — would create columns no producer
-   * ever fills. Every read would come back empty, and this screen renders empty
-   * as "no regressions", which is the single most dangerous sentence it could
-   * say: the entire point of the gate is that a regression is visible BEFORE
-   * publishing. A green page nobody measured is worse than a page that errors.
-   *
-   * A table lands the day something writes it — an eval runner that takes a
-   * candidate version, replays the pool and records per-ticket scores. Not
-   * before.
-   */
-  app.get("/eval", { preHandler }, async () => {
-    unwired("eval");
-  });
-
-  /**
    * The greenfield wizard (M97) — REFUSED.
    *
    * A ticket whose repository does not exist yet runs analysis → AI

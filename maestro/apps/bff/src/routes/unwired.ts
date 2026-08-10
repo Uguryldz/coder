@@ -38,11 +38,10 @@ const MISSING: Readonly<Record<string, string>> = {
     "the screen from it would mean inventing a runner id, a byte count and a session state " +
     "per row — three fabricated facts that would read as a measured fleet",
   eval:
-    "golden-ticket evaluation (M38/M43) has no table and no producer. Nothing in this " +
-    "platform records a golden ticket, runs one against a candidate variant version, or " +
-    "stores a score, so there is no history to read. A table would be columns nothing " +
-    "fills, and every read would return an empty page — which renders as \"no regressions\" " +
-    "on a platform that has never measured one",
+    "no EvalStore is injected — golden-ticket evaluation (M38/M43/M78) reads a pool of " +
+    "reference tickets and the recorded eval runs, and this deployment did not wire a store " +
+    "over them. Until one is wired the route refuses rather than answer an empty page, which " +
+    "would render as \"no regressions\" on a platform that has measured none",
   greenfield:
     "the greenfield flow (M97) has no table and no producer. No workflow writes an " +
     "architecture proposal, a step state or a repo-setup record for a ticket whose " +
@@ -61,7 +60,7 @@ export const UNWIRED_CAPABILITIES: readonly string[] = Object.keys(MISSING);
  * This is the list the boot banner prints, so an operator is told about a
  * missing capability rather than about a wiring choice this image already made.
  */
-export const NO_PRODUCER_CAPABILITIES: readonly string[] = ["cache", "eval", "greenfield"];
+export const NO_PRODUCER_CAPABILITIES: readonly string[] = ["cache", "greenfield"];
 
 /**
  * The refusal. `details.missing` carries the sentence above so an operator

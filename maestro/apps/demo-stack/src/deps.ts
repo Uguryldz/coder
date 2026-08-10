@@ -6,6 +6,7 @@ import {
   InMemoryAppRegistry,
   InMemoryCostReader,
   InMemoryDocTemplateStore,
+  InMemoryEvalStore,
   InMemoryEvidenceReader,
   InMemoryGateBoard,
   InMemoryJournalReader,
@@ -21,6 +22,7 @@ import {
   InMemorySessionStore,
   InMemoryTemplateStore,
   InMemoryUserDirectory,
+  InMemoryVariantCatalog,
   LocalIdentityProvider,
   StaticGateDirectory,
   StaticHealthReader,
@@ -41,6 +43,7 @@ import {
 } from "./seed/admin.js";
 import { DEMO_PARAMS } from "./seed/params.js";
 import { DEMO_TEMPLATE_BINDINGS, DEMO_TEMPLATE_VERSIONS } from "./seed/template.js";
+import { DEMO_EVAL, DEMO_VARIANTS } from "./seed/variants.js";
 import { seedInto, type SeedSummary } from "./seed/index.js";
 import { gateMemberships } from "./seed/memberships.js";
 import { DEMO_ACCOUNTS, DEMO_ACTOR_DOMAIN } from "./seed/users.js";
@@ -166,6 +169,16 @@ export async function buildDemoStack(options: DemoStackOptions = {}): Promise<De
     routing: new StaticRoutingReader(DEMO_ROUTING_PROJECTS, DEMO_ROUTING_RULES),
     killSwitch: new InMemoryKillSwitchStore(),
     read,
+    // The agent-configuration screens (M38/M43/M78). One catalogue instance
+    // answers both the read and the write side, so a variant created in the
+    // demo appears in the catalogue immediately. The eval store carries a
+    // pending run with a real regression, so the justified-pass gate has
+    // something true to gate. `pii` and `decisions` are left unwired on purpose
+    // — the demo shows the 503-by-name refusal those auditor screens give.
+    studio: (() => {
+      const variants = new InMemoryVariantCatalog(DEMO_VARIANTS);
+      return { variants, variantWriter: variants, eval: new InMemoryEvalStore(DEMO_EVAL) };
+    })(),
     clock,
     // `loadEnv` still runs: the demo is a development process (NODE_ENV is not
     // `production`), so it validates and returns local defaults rather than

@@ -1,8 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
+import type { ChangeEvent, ReactNode } from "react";
+import { messageKeyOf } from "../api/errors.ts";
 import { useApi } from "../auth/AuthProvider.tsx";
+import { useAuth } from "../auth/AuthProvider.tsx";
+import { hasRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Table } from "../ui/index.ts";
+import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 
 /**
@@ -55,9 +59,17 @@ interface DocTemplateResponse {
   readonly outputs: readonly { readonly fileName: string; readonly at: string; readonly templateVersion: number }[];
 }
 
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
 export function DoctemplateScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const isAdmin = hasRole(session, "admin");
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const query = useQuery({
     queryKey: ["doctemplate"],
@@ -67,9 +79,75 @@ export function DoctemplateScreen(): ReactNode {
   const data = query.data;
   const missing = (data?.placeholders ?? []).filter((p) => !p.found).length;
 
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const bytes = await file.arrayBuffer();
+      // The name travels in a header and the bytes go up verbatim (M103r).
+      return api.postBinary<DocTemplateResponse>("/doc-template", bytes, {
+        "content-type": DOCX_MIME,
+        "x-maestro-filename": file.name,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["doctemplate"] });
+      toast.show("success", t("doctemplate.toast.uploaded"));
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
+  const onPick = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0];
+    // Reset so picking the same file twice still fires a change event.
+    event.target.value = "";
+    if (file === undefined) return;
+    if (!file.name.toLowerCase().endsWith(".docx")) {
+      toast.show("error", t("doctemplate.error.not_docx"));
+      return;
+    }
+    upload.mutate(file);
+  };
+
+  const download = async (version: number, fileName: string): Promise<void> => {
+    try {
+      const blob = await api.getBlob(`/doc-template/versions/${String(version)}/file`);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.show("error", t(messageKeyOf(error)));
+    }
+  };
+
   return (
     <>
-      <Card title={t("doctemplate.file")} subtitle={t("doctemplate.file_sub")}>
+      <Card
+        title={t("doctemplate.file")}
+        subtitle={t("doctemplate.file_sub")}
+        actions={
+          isAdmin ? (
+            <>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".docx"
+                style={{ display: "none" }}
+                onChange={onPick}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                busy={upload.isPending}
+                onClick={() => fileInput.current?.click()}
+              >
+                {t("doctemplate.action.upload")}
+              </Button>
+            </>
+          ) : undefined
+        }
+      >
         <MaybeUnwired isPending={query.isPending} error={query.error} onRetry={() => void query.refetch()}>
           {data?.template === null || data?.template === undefined ? (
             <p className="tpl-keyline">
@@ -77,11 +155,21 @@ export function DoctemplateScreen(): ReactNode {
             </p>
           ) : (
             <>
-              <p>
-                <b>{data.template.fileName}</b>{" "}
+              <p className="scr-row" style={{ gap: 8, alignItems: "center" }}>
+                <b>{data.template.fileName}</b>
                 <Badge tone="blue">
                   {t("doctemplate.version_n", { n: String(data.template.version) })}
                 </Badge>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (data.template !== null) {
+                      void download(data.template.version, data.template.fileName);
+                    }
+                  }}
+                >
+                  {t("doctemplate.action.download")}
+                </Button>
               </p>
               <p className="tpl-keyline">
                 {t("doctemplate.uploaded_meta", {

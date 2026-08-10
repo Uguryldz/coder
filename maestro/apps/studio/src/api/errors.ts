@@ -128,6 +128,12 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   invalid_routing_body: "error.invalid_routing_body",
   invalid_variant_id: "error.invalid_variant_id",
   unknown_variant: "error.unknown_variant",
+  invalid_variant_body: "error.invalid_variant_body",
+  variant_exists: "error.variant_exists",
+  // Golden-ticket eval and the M78 justified-pass gate
+  invalid_eval_decision: "error.invalid_eval_decision",
+  unknown_eval_run: "error.unknown_eval_run",
+  eval_regression_needs_justification: "error.eval_regression_needs_justification",
   // Runs, gates and signals
   invalid_ticket: "error.invalid_ticket",
   invalid_mode: "error.invalid_mode",

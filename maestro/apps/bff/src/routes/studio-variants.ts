@@ -1,8 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { authGuard } from "../auth/guard.js";
+import { sessionActor } from "../actor.js";
+import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, notFound } from "../errors.js";
+import { assertWritable } from "../platform/propose.js";
+import {
+  VariantId,
+  createVariant,
+  editVariant,
+  publishVariantVersion,
+} from "../variant-service.js";
 import { unwired } from "./unwired.js";
 
 /**
@@ -96,6 +104,60 @@ export async function studioVariantRoutes(app: FastifyInstance, deps: ResolvedDe
 
     return reply.code(200).send(VariantDetailOut.parse(detail));
   });
+
+  /**
+   * Writing a variant is `admin` alone (M86). Reading the catalogue is open —
+   * an engineer must see which persona answers on their ticket — but the persona
+   * and the model an agent runs under decide what the AI does on every ticket in
+   * the institution, and changing them is not a per-project decision.
+   *
+   * Every write is guarded THREE ways: the role above, the kill switch (M58, no
+   * writes while the platform is stopped), and the version sequence the store
+   * owns (M83, append-only). The author and timestamp are derived from the
+   * session and the clock in the service — never taken from the body.
+   */
+  const writeHandler = [preHandler, requireAnyRole("admin")];
+
+  app.post("/variants", { preHandler: writeHandler }, async (request, reply) => {
+    await assertWritable(deps);
+    const detail = await createVariant(deps, {
+      body: request.body,
+      actor: sessionActor(sessionOf(request)),
+    });
+    // 201: a create publishes version 1 of a new variant.
+    return reply.code(201).send(VariantDetailOut.parse(detail));
+  });
+
+  app.put("/variants/:variantId", { preHandler: writeHandler }, async (request, reply) => {
+    const params = z.object({ variantId: VariantId }).safeParse(request.params);
+    if (!params.success) throw badRequest("invalid_variant_id");
+    await assertWritable(deps);
+
+    const detail = await editVariant(deps, {
+      variantId: params.data.variantId,
+      body: request.body,
+      actor: sessionActor(sessionOf(request)),
+    });
+    return reply.code(200).send(VariantDetailOut.parse(detail));
+  });
+
+  app.post(
+    "/variants/:variantId/versions",
+    { preHandler: writeHandler },
+    async (request, reply) => {
+      const params = z.object({ variantId: VariantId }).safeParse(request.params);
+      if (!params.success) throw badRequest("invalid_variant_id");
+      await assertWritable(deps);
+
+      const detail = await publishVariantVersion(deps, {
+        variantId: params.data.variantId,
+        body: request.body,
+        actor: sessionActor(sessionOf(request)),
+      });
+      // 201: publishing appends a new immutable version (M83).
+      return reply.code(201).send(VariantDetailOut.parse(detail));
+    },
+  );
 
   /**
    * Cache and ticket workspaces (M4/M65) — REFUSED, and the refusal is the

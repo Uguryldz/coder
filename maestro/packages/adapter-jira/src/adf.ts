@@ -106,6 +106,42 @@ export function toAdfDocument(body: unknown): AdfDoc {
 }
 
 /**
+ * Flatten ADF to plain text. Cloud issue descriptions and polled comments
+ * arrive as ADF, while TicketSnapshot.description and the command grammar
+ * (commands.ts) speak plain text. Top-level blocks are joined with a blank
+ * line, so the M105 "a bare command must be the whole comment" rule still
+ * sees a second paragraph as trailing text.
+ */
+export function adfToPlainText(document: AdfDoc): string {
+  return document.content
+    .map((node) => flattenNode(node))
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
+}
+
+function flattenNode(node: AdfNode): string {
+  if (node.type === "text") return node.text;
+  // Widened on purpose (same as renderBlock): real documents carry node types
+  // outside our model and they must degrade predictably, never disappear.
+  const type = node.type as string;
+  if (type === "hardBreak") return "\n";
+  const children = (node.content ?? []).map((child) => flattenNode(child));
+  switch (type) {
+    case "paragraph":
+    case "heading":
+    case "codeBlock":
+      return children.join("");
+    default:
+      // Unknown LEAF nodes (mention, emoji, media…) become a placeholder
+      // instead of vanishing: invisible content must not let a comment like
+      // "/approve @someone" flatten to a bare "/approve" (M105 fail-closed).
+      if (children.length === 0) return "￼";
+      // Container nodes (panel, lists, unknown blocks) stack their children.
+      return children.filter((child) => child.length > 0).join("\n");
+  }
+}
+
+/**
  * Render ADF to Jira wiki markup, the only rich format REST v2 (DC) accepts.
  * Unknown node types degrade to their plain text rather than throwing — a
  * comment must never be lost because of a decoration we do not model.

@@ -2,6 +2,29 @@ import { describe, expect, it } from "vitest";
 import { DEGRADED_CAPABILITIES, MISSING_CORE_DEPS } from "../src/boot.js";
 import { buildCoreStores } from "../src/stores/core.js";
 import { unwiredAgentTurnRunner } from "../src/stores/execution.js";
+import { liveReadModels, type ReadModelDb } from "../src/stores/read-live.js";
+
+/**
+ * A `ReadModelDb` whose every delegate answers empty.
+ *
+ * The read models under test here never reach it — they refuse before touching
+ * a delegate — but `liveReadModels` builds all twelve, so the nine live ones
+ * need something to hold.
+ */
+function emptyReadDb(): ReadModelDb {
+  const page = { findMany: () => Promise.resolve([]), count: () => Promise.resolve(0) };
+  return {
+    workflowRun: page,
+    llmCall: { ...page, groupBy: () => Promise.resolve([]) },
+    journalEntry: page,
+    gate: page,
+    application: { ...page, findUnique: () => Promise.resolve(null) },
+    repoCard: { findFirst: () => Promise.resolve(null) },
+    knowledgeDoc: page,
+    subscriptionAccount: { findMany: () => Promise.resolve([]) },
+    evidencePackageRow: { findFirst: () => Promise.resolve(null) },
+  };
+}
 
 /**
  * The worker's start-up precondition.
@@ -64,12 +87,32 @@ describe("the worker's core dependencies", () => {
    */
   describe("declared degraded capabilities", () => {
     it("declares the turn runner, so a started worker is not read as a working one", () => {
-      expect(DEGRADED_CAPABILITIES.length).toBe(1);
-      const [entry = ""] = DEGRADED_CAPABILITIES;
+      const entry = DEGRADED_CAPABILITIES.find((line) => line.includes("AgentTurnRunner")) ?? "";
       // Named precisely enough that an operator can tell what will not run.
       expect(entry).toMatch(/AgentTurnRunner/);
       expect(entry).toMatch(/engineering turn/);
       expect(entry).toMatch(/engineering\.ts:107/);
+    });
+
+    /**
+     * The two read models with no store behind them (M27/M60). Declared here
+     * for the same reason the turn runner is: `/studio/runners` and
+     * `/studio/scans` refuse at runtime, and a refusal nobody announced at
+     * boot is a screen that breaks in front of an operator with no warning.
+     */
+    it("declares the read models that refuse, naming what is missing", () => {
+      const runners = DEGRADED_CAPABILITIES.find((line) => line.includes("runners (M60)")) ?? "";
+      const scans = DEGRADED_CAPABILITIES.find((line) => line.includes("scans (M27)")) ?? "";
+
+      expect(runners).toMatch(/studio\/runners/);
+      expect(runners).toMatch(/no runner-fleet table/);
+      expect(scans).toMatch(/studio\/scans/);
+      expect(scans).toMatch(/nothing persists one/);
+    });
+
+    /** Every declaration is a real one; the list has no leftovers. */
+    it("declares exactly the three capabilities this image lacks", () => {
+      expect(DEGRADED_CAPABILITIES.length).toBe(3);
     });
 
     /**
@@ -86,6 +129,36 @@ describe("the worker's core dependencies", () => {
           () => true,
         );
       expect(declared).toBe(refuses);
+    });
+
+    /**
+     * The same anti-drift rule for the read side: the moment somebody wires a
+     * real runner-fleet or scan store, the composition root stops refusing and
+     * this assertion fails — which is what stops the banner from announcing a
+     * gap the image no longer has.
+     */
+    it("declares the read models only for as long as they actually refuse", async () => {
+      const read = liveReadModels({
+        db: emptyReadDb(),
+        audit: {
+          head: () => Promise.resolve(null),
+          append: () => Promise.resolve(),
+          read: () => Promise.resolve([]),
+        },
+        probes: [],
+      });
+
+      for (const [name, call] of [
+        ["runners (M60)", () => read.runners.list({ limit: 1, cursor: null })],
+        ["scans (M27)", () => read.scans.list({ limit: 1, cursor: null, projectKeys: null })],
+      ] as const) {
+        const refuses = await call().then(
+          () => false,
+          () => true,
+        );
+        const declared = DEGRADED_CAPABILITIES.some((entry) => entry.includes(name));
+        expect(declared).toBe(refuses);
+      }
     });
   });
 });

@@ -269,4 +269,14 @@ export const DEGRADED_CAPABILITIES: readonly string[] = [
     "VerificationRunner and a StrikeLedger over the runner fleet; none of the three is " +
     "implemented. Intake, analysis, gates, the escalation ladder, notification and " +
     "publication all work; a run that reaches the engineering turn stops there.",
+  "Studio read side — runners (M60): `/studio/runners` and `/studio/sandboxes` REFUSE " +
+    "with a named error. There is no runner-fleet table and `RunnerPort` exposes no " +
+    "fleet-wide inventory, so a runner reports itself to nothing. The other ten read " +
+    "models answer from Postgres; these two refuse rather than render an empty fleet, " +
+    "which an operator would read as \"no runners are busy\" instead of \"nobody is " +
+    "counting them\".",
+  "Studio read side — scans (M27): `/studio/scans` REFUSES with a named error. Scan " +
+    "results are produced inside the workflow and consumed by the gate that blocks on " +
+    "them; nothing persists one, so there is no history to page through. An empty page " +
+    "here would read as \"no findings\" on a platform that has never stored a finding.",
 ];

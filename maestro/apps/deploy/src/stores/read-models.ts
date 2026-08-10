@@ -56,9 +56,9 @@ const MISSING: Record<keyof ReadModels, string> = {
  */
 export function unbridgedReadError(model: keyof ReadModels, method: string): Error {
   return new Error(
-    `read model ${model}.${method}: not wired — ${MISSING[model]}. Studio's read side is ` +
-      `unimplemented (M7); refusing rather than answering "nothing found", which reads as a ` +
-      `calm system when the truth is a disconnected data layer.`,
+    `read model ${model}.${method}: not wired — ${MISSING[model]} (M7). Nothing in this ` +
+      `platform writes that data yet, so this refuses rather than answering "nothing found", ` +
+      `which reads as a calm system when the truth is a store that was never filled.`,
   );
 }
 
@@ -71,6 +71,34 @@ export function unbridgedReadError(model: keyof ReadModels, method: string): Err
 function refuse(model: keyof ReadModels, method: string): () => Promise<never> {
   return () => Promise.reject(unbridgedReadError(model, method));
 }
+
+/**
+ * One refusing method, for a read model that is still unbacked while its
+ * neighbours are live (`stores/read-live.ts`).
+ *
+ * Exported because the refusal is no longer all-or-nothing: ten read models
+ * answer from Postgres and two have no data to answer from, so the composition
+ * root needs to refuse model-by-model rather than swap the whole set. Same
+ * error, same wording — an operator gets the identical message whether nothing
+ * is wired or only these two are.
+ */
+export function unbridgedReadModel(
+  model: keyof ReadModels,
+  method: string,
+): () => Promise<never> {
+  return refuse(model, method);
+}
+
+/**
+ * The read models with no table and no producer (M27/M60).
+ *
+ * Not "not implemented yet": nothing in this platform WRITES a runner
+ * inventory or a scan result, so a store for either would read rows that never
+ * arrive. Kept as data so the boot banner and the report say the same thing.
+ */
+export const UNBACKED_READ_MODELS: readonly string[] = ["runners", "scans"].map(
+  (model) => `${model} (${MISSING[model as keyof ReadModels]})`,
+);
 
 /**
  * The twelve read models, each refusing every method it declares.

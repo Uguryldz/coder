@@ -11,6 +11,13 @@ export interface AuthValue {
   readonly api: ApiClient;
   readonly login: (username: string, password: string) => Promise<void>;
   readonly logout: () => Promise<void>;
+  /**
+   * Change the caller's own password (first-run bootstrap + M8 self-service).
+   * On success the BFF has killed every session of the account — including this
+   * one — so this clears the local session and the caller lands back on /login
+   * to sign in with the new password.
+   */
+  readonly changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -100,9 +107,22 @@ export function AuthProvider({
     }
   }, [api, clearSession]);
 
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      // A weak new password throws `password_policy` with its violations, and a
+      // wrong current password throws `invalid_credentials` — the caller (the
+      // change-password screen) renders both. Only a 204 reaches the clear
+      // below, at which point every session of the account is already dead
+      // server-side, so we drop ours and let RequireSession route to /login.
+      await api.post<void>("/auth/change-password", { currentPassword, newPassword });
+      clearSession();
+    },
+    [api, clearSession],
+  );
+
   const value = useMemo<AuthValue>(
-    () => ({ status, session, api, login, logout }),
-    [status, session, api, login, logout],
+    () => ({ status, session, api, login, logout, changePassword }),
+    [status, session, api, login, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -123,6 +123,75 @@ describe("login", () => {
   });
 });
 
+describe("first-run bootstrap change-password (banking standard)", () => {
+  const BOOTSTRAP: Session = { ...SESSION, roles: ["admin"], mustChangePassword: true };
+
+  it("routes a must-change session to the change-password screen, blocking the app", async () => {
+    renderApp({ route: "/dash", session: BOOTSTRAP, token: "tok" });
+    // The change-password screen is shown; the dashboard is not reachable.
+    expect(await screen.findByText("Parolanızı belirleyin")).toBeInTheDocument();
+    expect(screen.queryByText("Panel")).not.toBeInTheDocument();
+  });
+
+  it("even a deep link is bounced to change-password while restricted", async () => {
+    renderApp({ route: "/params", session: BOOTSTRAP, token: "tok" });
+    expect(await screen.findByText("Parolanızı belirleyin")).toBeInTheDocument();
+  });
+
+  it("shows the policy violations the BFF returns, in Turkish", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/auth/change-password")) {
+        return new Response(
+          JSON.stringify({ error: "password_policy", details: { violations: ["too_short", "no_symbol"] } }),
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify({ level: "off" }), { status: 200 });
+    });
+
+    renderApp({
+      route: "/change-password",
+      session: BOOTSTRAP,
+      token: "tok",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await userEvent.type(await screen.findByLabelText("Mevcut parola"), "admin123");
+    await userEvent.type(screen.getByLabelText("Yeni parola"), "admin123");
+    await userEvent.type(screen.getByLabelText("Yeni parola (tekrar)"), "admin123");
+    await userEvent.click(screen.getByRole("button", { name: "Parolayı değiştir" }));
+
+    expect(await screen.findByText("Çok kısa (en az 12 karakter)")).toBeInTheDocument();
+    expect(screen.getByText("En az bir simge gerekli")).toBeInTheDocument();
+  });
+
+  it("signs the user out to /login after a successful change", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/auth/change-password")) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(JSON.stringify({ level: "off" }), { status: 200 });
+    });
+
+    renderApp({
+      route: "/change-password",
+      session: BOOTSTRAP,
+      token: "tok",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await userEvent.type(await screen.findByLabelText("Mevcut parola"), "admin123");
+    await userEvent.type(screen.getByLabelText("Yeni parola"), "Maestro!First-2026");
+    await userEvent.type(screen.getByLabelText("Yeni parola (tekrar)"), "Maestro!First-2026");
+    await userEvent.click(screen.getByRole("button", { name: "Parolayı değiştir" }));
+
+    // The session is cleared, so the login screen appears.
+    expect(await screen.findByLabelText("Kullanıcı adı")).toBeInTheDocument();
+  });
+});
+
 describe("role helpers", () => {
   it("reads roles off the session", () => {
     expect(hasRole(SESSION, "tech-lead")).toBe(true);

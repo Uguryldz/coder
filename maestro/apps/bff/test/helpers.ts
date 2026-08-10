@@ -178,6 +178,17 @@ export interface Harness {
     roles?: string[];
     groups?: string[];
   }): Promise<string>;
+  /**
+   * Plant a first-run bootstrap admin directly in the directory — a
+   * policy-EXEMPT password and `mustChangePassword: true`, bypassing
+   * `provision` exactly the way `seedFirstAdmin` does. `addUser` cannot express
+   * this: it runs the policy, which rejects `admin123` (M8). Returns the token
+   * after logging in, so a test can immediately exercise the restricted session.
+   */
+  seedBootstrapAdmin(user?: {
+    username?: string;
+    password?: string;
+  }): Promise<{ username: string; password: string }>;
   /** Mint a session directly — the only way to get a delegated (`ai-via:`) one. */
   delegatedToken(username: string): Promise<string>;
 }
@@ -397,6 +408,25 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     return user.username;
   };
 
+  const seedBootstrapAdmin: Harness["seedBootstrapAdmin"] = async (user = {}) => {
+    const username = user.username ?? "admin";
+    const password = user.password ?? "admin123";
+    const { BcryptPasswordHasher } = await import("../src/auth/password.js");
+    const hasher = new BcryptPasswordHasher(4);
+    // Hash written DIRECTLY, never through `provision`: the whole point is that
+    // the bootstrap password is policy-exempt on the seed path only.
+    await users.upsert({
+      username,
+      userId: username,
+      passwordHash: await hasher.hash(password),
+      groups: ["maestro-admins"],
+      roles: ["viewer", "admin"],
+      active: true,
+      mustChangePassword: true,
+    });
+    return { username, password };
+  };
+
   const login: Harness["login"] = async (username, password = TEST_PASSWORD) => {
     const response = await app.inject({
       method: "POST",
@@ -439,6 +469,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     platform: app.platform,
     login,
     addUser,
+    seedBootstrapAdmin,
     delegatedToken,
   };
 }

@@ -54,6 +54,15 @@ export interface AuthenticatedUser {
   username: string;
   groups: readonly string[];
   roles: readonly string[];
+  /**
+   * True for the first-run bootstrap admin until it sets a real password
+   * (banking standard, migration 0009). A `true` session is RESTRICTED: the
+   * guard refuses every route but change-password, logout and session, so the
+   * `admin`/`admin123` account can do nothing until it picks a policy-compliant
+   * password. Absent/false for every normal account — the flag is planted only
+   * by the seed and cleared by the change-password flow.
+   */
+  mustChangePassword?: boolean;
 }
 
 /**
@@ -75,6 +84,15 @@ export interface UserRecord {
   groups: readonly string[];
   roles: readonly string[];
   active: boolean;
+  /**
+   * The first-run bootstrap flag (migration 0009). True only for the seeded
+   * `admin` account before it changes its password; the guard reads it back on
+   * every request (the directory is the truth, the session a cache) and
+   * restricts the session while it is set. Optional so a directory row written
+   * before this field existed reads as `false` — an unrestricted normal
+   * account, which is the safe default for a non-bootstrap user.
+   */
+  mustChangePassword?: boolean;
 }
 
 /**
@@ -111,6 +129,14 @@ export interface SessionRecord {
   delegated: boolean;
   issuedAt: string;
   expiresAt: string;
+  /**
+   * The first-run bootstrap flag as of THIS request (migration 0009). Not
+   * persisted in the session store — it is refreshed from the directory by the
+   * guard on every request, exactly like roles and groups, so a change-password
+   * that clears the flag takes effect on the next request rather than the next
+   * login. `sessionOf(request).mustChangePassword` is therefore always current.
+   */
+  mustChangePassword?: boolean;
 }
 
 export interface SessionStore {
@@ -453,6 +479,33 @@ export interface AccountProvisioner {
 export function accountProvisionerOf(identity: IdentityProvider): AccountProvisioner | null {
   const candidate = identity as Partial<AccountProvisioner>;
   return typeof candidate.provision === "function" ? (candidate as AccountProvisioner) : null;
+}
+
+/**
+ * Re-keying a LOCAL account's own password (M8 self-service + the first-run
+ * bootstrap change, migration 0009). A capability of the local bcrypt provider,
+ * not of every `IdentityProvider`: an AD/LDAP-backed login owns no password
+ * this platform may rewrite, so the change-password route answers 503 rather
+ * than pretend to change a credential the directory holds. Detected
+ * structurally, the same way `AccountProvisioner` is — never by importing
+ * `LocalIdentityProvider`.
+ *
+ * The contract: verify `currentPassword`, run the FULL password policy on
+ * `newPassword` (so a bootstrap admin cannot set it back to `admin123`), re-key,
+ * and clear `mustChangePassword`. Returns the re-keyed record, or `null` when
+ * the account is missing/inactive or the current password is wrong.
+ */
+export interface PasswordChanger {
+  changePassword(
+    username: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<UserRecord | null>;
+}
+
+export function passwordChangerOf(identity: IdentityProvider): PasswordChanger | null {
+  const candidate = identity as Partial<PasswordChanger>;
+  return typeof candidate.changePassword === "function" ? (candidate as PasswordChanger) : null;
 }
 
 // ── the container ─────────────────────────────────────────────────────────────

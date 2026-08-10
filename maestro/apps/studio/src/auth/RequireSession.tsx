@@ -18,12 +18,23 @@ import { useAuth } from "./AuthProvider.tsx";
  * and never assume a hidden screen is an unreachable one.
  */
 export function RequireSession(): ReactNode {
-  const { status } = useAuth();
+  const { status, session } = useAuth();
   const location = useLocation();
 
   if (status === "loading") return <Skeleton rows={4} />;
   if (status === "anonymous") {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+  // First-run bootstrap (banking standard): a session that must change its
+  // password reaches NOTHING else. The BFF enforces this too — a restricted
+  // token meets 409 on every other route — so this is the usable face of a real
+  // restriction, not a client-only gate. `/change-password` itself is exempt so
+  // the user can actually get out of the corner.
+  if (
+    session?.mustChangePassword === true &&
+    location.pathname !== "/change-password"
+  ) {
+    return <Navigate to="/change-password" replace />;
   }
   return <Outlet />;
 }

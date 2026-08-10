@@ -2,12 +2,17 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authGuard, sessionOf } from "../auth/guard.js";
 import { issueSession, MAX_SESSIONS_PER_USER } from "../auth/sessions.js";
-import type { ResolvedDeps } from "../deps.js";
-import { badRequest, unauthenticated } from "../errors.js";
+import { passwordChangerOf, type ResolvedDeps } from "../deps.js";
+import { badRequest, unauthenticated, unavailable } from "../errors.js";
 
 const LoginBody = z.object({
   username: z.string().trim().min(1),
   password: z.string().min(1),
+});
+
+const ChangePasswordBody = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(1),
 });
 
 /**
@@ -35,31 +40,96 @@ export async function authRoutes(app: FastifyInstance, deps: ResolvedDeps): Prom
         username: session.username,
         roles: session.roles,
         groups: session.groups,
+        // So the client redirects the bootstrap admin straight to the
+        // change-password screen and blocks the rest of the app (migration
+        // 0009). False for every normal login.
+        mustChangePassword: user.mustChangePassword ?? false,
       },
     });
   });
+
+  /**
+   * Change the caller's own password (M8 self-service; the first-run bootstrap
+   * admin is forced through here on first login, migration 0009).
+   *
+   * `allowRestricted` so a restricted bootstrap session — which reaches nothing
+   * else — can still reach this, the one route that lets it escape the
+   * restriction. The provider verifies the CURRENT password and runs the FULL
+   * policy on the NEW one (so `admin123` cannot be re-set — it is too short and
+   * has no symbol), re-keys, and clears `mustChangePassword`. A successful
+   * change then kills EVERY session of the account, this one included: the
+   * client re-authenticates with the new password, and any other live token
+   * (including a stolen one) dies with it.
+   */
+  app.post(
+    "/auth/change-password",
+    { preHandler: authGuard(deps, { allowRestricted: true }) },
+    async (request, reply) => {
+      const changer = passwordChangerOf(deps.identity);
+      // An AD/LDAP-backed login owns no password this platform may rewrite:
+      // refuse rather than pretend (same discipline as the admin add-user path).
+      if (changer === null) throw unavailable("password_change_unavailable");
+
+      const body = ChangePasswordBody.safeParse(request.body);
+      if (!body.success) throw badRequest("invalid_change_password_body");
+
+      const session = sessionOf(request);
+      const rekeyed = await changer.changePassword(
+        session.username,
+        body.data.currentPassword,
+        body.data.newPassword,
+      );
+      // `null` is the wrong current password (or a vanished account). Never say
+      // which — the policy failure, by contrast, throws `password_policy` with
+      // its violations from inside the provider before reaching here.
+      if (rekeyed === null) throw unauthenticated("invalid_credentials");
+
+      // Kill every session of this account, including the one that made the
+      // request: the old password is gone, so every token minted under it must
+      // go too. The client logs back in with the new password.
+      await deps.sessions.deleteByUser(session.userId);
+
+      return reply.code(204).send();
+    },
+  );
 
   /**
    * Logging out ends the ACCOUNT's sessions, not just this tab's. Someone who
    * logs out because "something looked wrong" means all of it, and a stolen
    * token will never log itself out (M8).
    */
-  app.post("/auth/logout", { preHandler: authGuard(deps) }, async (request, reply) => {
-    await deps.sessions.deleteByUser(sessionOf(request).userId);
-    return reply.code(204).send();
-  });
+  // `allowRestricted`: a bootstrap admin who cannot yet do anything must still
+  // be able to log out.
+  app.post(
+    "/auth/logout",
+    { preHandler: authGuard(deps, { allowRestricted: true }) },
+    async (request, reply) => {
+      await deps.sessions.deleteByUser(sessionOf(request).userId);
+      return reply.code(204).send();
+    },
+  );
 
-  app.get("/auth/session", { preHandler: authGuard(deps) }, async (request, reply) => {
-    const session = sessionOf(request);
-    return reply.code(200).send({
-      userId: session.userId,
-      username: session.username,
-      roles: session.roles,
-      groups: session.groups,
-      delegated: session.delegated,
-      expiresAt: session.expiresAt,
-    });
-  });
+  // `allowRestricted`: the client probes the session on boot to learn whether it
+  // must redirect to the change-password screen, so a restricted session has to
+  // be able to read its own state — that is how it learns it is restricted.
+  app.get(
+    "/auth/session",
+    { preHandler: authGuard(deps, { allowRestricted: true }) },
+    async (request, reply) => {
+      const session = sessionOf(request);
+      return reply.code(200).send({
+        userId: session.userId,
+        username: session.username,
+        roles: session.roles,
+        groups: session.groups,
+        delegated: session.delegated,
+        expiresAt: session.expiresAt,
+        // The client blocks the app and shows the change-password screen while
+        // this is true (migration 0009).
+        mustChangePassword: session.mustChangePassword ?? false,
+      });
+    },
+  );
 }
 
 /**

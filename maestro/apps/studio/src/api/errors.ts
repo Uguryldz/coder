@@ -149,6 +149,8 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   invalid_user_body: "error.invalid_user_body",
   user_exists: "error.user_exists",
   password_policy: "error.password_policy",
+  // First-run bootstrap change-password (migration 0009)
+  invalid_change_password_body: "error.invalid_change_password_body",
   // 403
   role_required: "error.role_required",
   project_access: "error.project_access",
@@ -165,6 +167,12 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   not_delivered: "error.not_delivered",
   param_value_mismatch: "error.param_value_mismatch",
   conflict: "error.conflict",
+  // First-run bootstrap: a restricted session hit a route it may not reach
+  // until it sets a real password (migration 0009). The client should already
+  // have redirected to the change-password screen; this is the fallback prose.
+  password_change_required: "error.password_change_required",
+  // The identity driver owns no password this platform may rewrite (AD/LDAP).
+  password_change_unavailable: "error.password_change_unavailable",
   // 500
   internal_error: "error.internal_error",
   /**

@@ -672,6 +672,16 @@ model User {
   passwordHash String
   groupsJson   Json // string[]
   active       Boolean @default(true)
+  /// First-run bootstrap flag (banking standard). The seed plants ONE admin
+  /// account with a weak, policy-EXEMPT password (`admin`/`admin123`) so a
+  /// fresh clean install can log in — and sets this true so the platform
+  /// FORCES a password change before that account can do anything else. The
+  /// change-password flow (apps/bff/src/routes/auth.ts) runs the full M8 policy
+  /// on the NEW password and clears this flag; while it is true the session is
+  /// restricted to change-password/logout/session only. Defaults false, so
+  /// every account an admin creates through the normal policy-checked provision
+  /// path is unrestricted from its first login.
+  mustChangePassword Boolean @default(false)
 }
 
 // ---------------------------------------------------------------------------

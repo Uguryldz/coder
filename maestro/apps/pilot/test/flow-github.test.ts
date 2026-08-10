@@ -31,7 +31,7 @@ function stubLlmFetch(_url: string, init?: RequestInit): Promise<Response> {
   if (prompt.includes("Schema name: IntakeVerdict")) {
     content = JSON.stringify({ complete: true, missing: [], note: "Uygun." });
   } else if (prompt.includes("Schema name: AnalysisDoc")) {
-    content = JSON.stringify(analysisDoc);
+    content = JSON.stringify(analysisOutput);
   } else if (prompt.includes("Schema name: CodeDraft")) {
     content = JSON.stringify(codeDraft);
   }
@@ -43,19 +43,41 @@ function stubLlmFetch(_url: string, init?: RequestInit): Promise<Response> {
   );
 }
 
-const analysisDoc = {
-  templateVersion: "pilot-v3",
-  language: "tr",
-  purpose: "Ödeme onayında makbuz.",
-  scope: { included: ["Makbuz"], excluded: [] },
-  impactMatrix: [{ appId: "ugurpay", impacted: true, summary: "Akış.", source: "primary_repo_discovery" }],
-  acceptanceCriteria: ["Makbuz gider"],
-  uiApiChanges: "POST /pay.",
-  testApproach: "Birim.",
-  riskAndRollback: { risk: "R", mitigation: "M", rollback: "K" },
+// Analyst output in the REAL `kurumsal-analiz` template shape (M108), section
+// keyed, with a source row per claim section pointing at the ticket (the only
+// reference the pilot's context carries today).
+const TICKET_KEY = "OPS-6";
+const analysisOutput = {
   riskTier: "dusuk",
-  riskReason: "Sınırlı.",
+  riskReason: "Yüzey sınırlı olduğundan risk düşük değerlendirildi.",
   clarificationsUsed: [],
+  sections: {
+    purpose:
+      "İşlem onayında müşteriye makbuz e-postası gönderilecek. Böylece manuel makbuz talepleri azalacak.",
+    scope: { included: ["Makbuz"], excluded: ["SMS makbuz"] },
+    impactMatrix: [
+      { appId: "ugurpay", impacted: true, summary: "Ödeme akışı makbuz tetikler.", source: "primary_repo_discovery" },
+    ],
+    acceptanceCriteria: ["Makbuz gider.", "Hatada gitmez.", "Audit kaydı yazılır."],
+    uiApiChanges: [{ Yüzey: "POST /pay", Durum: "değişti", "Geriye uyum": "geriye uyumlu" }],
+    testApproach:
+      "Birim testleri makbuz kurallarını doğrular. Entegrasyon testi tetiği kontrol eder.",
+    riskAndRollback: {
+      risk: "Yanlış makbuz müşteriyi yanıltabilir.",
+      mitigation: "Doğrulama testleri eklenir.",
+      rollback: "Özellik bayrağı kapatılır.",
+    },
+    sources: [
+      { section: "purpose", claim: "makbuz e-postası", kind: "ticket", ref: TICKET_KEY },
+      { section: "scope", claim: "makbuz üretimi", kind: "ticket", ref: TICKET_KEY },
+      { section: "impactMatrix", claim: "ödeme akışı etkileniyor", kind: "ticket", ref: TICKET_KEY },
+      { section: "acceptanceCriteria", claim: "makbuz gider", kind: "ticket", ref: TICKET_KEY },
+      { section: "uiApiChanges", claim: "onay ucu tetikler", kind: "ticket", ref: TICKET_KEY },
+      { section: "testApproach", claim: "makbuz test edilir", kind: "ticket", ref: TICKET_KEY },
+      { section: "riskAndRollback", claim: "yanlış makbuz riski", kind: "ticket", ref: TICKET_KEY },
+    ],
+    openItems: [],
+  },
 };
 
 const codeDraft = {

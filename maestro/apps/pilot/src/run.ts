@@ -10,13 +10,13 @@ import {
   type JiraCloudWorkPort,
 } from "@maestro/adapter-jira";
 import type { AuditChain } from "@maestro/audit";
-import {
+import type {
   AnalysisDoc,
-  type ApplicationRecord,
-  type AuditAction,
-  type CommandEnvelope,
-  type LlmRole,
-  type TicketKey,
+  ApplicationRecord,
+  AuditAction,
+  CommandEnvelope,
+  LlmRole,
+  TicketKey,
 } from "@maestro/contracts";
 import type { LlmGateway } from "@maestro/llm-gateway";
 import { compiledProfileFor, scanForPii, type LoadedPiiPolicy } from "@maestro/pii";
@@ -31,6 +31,7 @@ import {
   PILOT_VARIANT,
   type ScmMode,
 } from "./config.js";
+import { produceAnalysis } from "./analysis.js";
 import { analysisToDocs, attachAnalysisDocs, type DocStore } from "./docs.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
 import type { PilotSettings, SettingsStore } from "./settings.js";
@@ -79,8 +80,6 @@ const CodeDraft = z
   })
   .strict();
 type CodeDraft = z.infer<typeof CodeDraft>;
-
-const APP_IDS = ["ugurpay", "ugurweb", "ugurmobil-android", "ugurmobil-ios", "ugurmasaustu"];
 
 const MAX_ENGINEER_ATTEMPTS = 3;
 
@@ -302,31 +301,20 @@ export class PilotRun {
       );
     }
 
-    const analysis = await this.think<AnalysisDoc>("analyst", "AnalysisDoc", AnalysisDoc, {
-      gorev: "Bu ticket için kurum analiz şablonunu doldur (7 bölüm).",
-      sablonSurumu: "pilot-v3",
-      dil: "tr",
-      uygulama: APPLICATION,
-      gecerliAppIdler: APP_IDS,
-      ticket: {
-        key: ticket.key,
-        ozet: ticket.summary,
-        aciklama: ticket.description,
-        bilesenler: ticket.components,
-      },
-      kurallar: [
-        "language alanı 'tr' olacak.",
-        "templateVersion alanı 'pilot-v3' olacak.",
-        "impactMatrix yalnız gecerliAppIdler listesindeki appId değerlerini kullanır.",
-        "impactMatrix'te en az ugurpay satırı bulunmalı.",
-        "riskTier: dusuk | orta | kritik.",
-        "Metinler Türkçe, kısa ve somut olsun.",
-        "Köşeli parantezli belirteçler (ör. [EMAIL_1.ab12]) maskeleme çıktısıdır; aynen bırak.",
-      ],
+    // The REAL agent-roles analyst (M43/M108/M109): a real analysis TEMPLATE
+    // decides the sections and the fail-closed validation, a real AnalysisContext
+    // carries the ticket (repo-card/knowledge are wired when populated — see
+    // analysis.ts), and PILOT_VARIANT is the variant. The seven-section check is
+    // no longer a hand-rolled Zod here; it comes from the template.
+    const analysis = await produceAnalysis({
+      llm: this.deps.llm,
+      ticket,
+      variantId: PILOT_VARIANT,
+      dataClass: this.runSettings.dataClass,
     });
     store.log(
       "ok",
-      `✓ analyst: şablon 7/7 doğrulandı · risk: ${analysis.display.riskTier} · etki satırı: ${analysis.display.impactMatrix.length}`,
+      `✓ analyst: şablon ${analysis.display.impactMatrix.length ? "7/7 doğrulandı" : "doğrulandı"} · risk: ${analysis.display.riskTier} · etki satırı: ${analysis.display.impactMatrix.length}`,
     );
     store.note("2", `risk: ${analysis.display.riskTier} — ${analysis.display.riskReason}`);
 

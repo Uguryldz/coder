@@ -249,6 +249,9 @@ importers:
       '@maestro/adapter-ado':
         specifier: workspace:*
         version: link:../../packages/adapter-ado
+      '@maestro/adapter-github':
+        specifier: workspace:*
+        version: link:../../packages/adapter-github
       '@maestro/adapter-jira':
         specifier: workspace:*
         version: link:../../packages/adapter-jira

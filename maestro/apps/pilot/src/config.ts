@@ -21,7 +21,39 @@ export const SECRET_REFS = {
   adoPat: "kv/ado/pat#value",
   adoWebhook: "kv/ado/webhook#value",
   openrouter: "kv/llm/openrouter#value",
+  /** GitHub token (fine-grained PAT or App installation token) — only seeded when PILOT_SCM=github. */
+  github: "kv/github/token#value",
 } as const;
+
+// ----------------------------------------------------------------- SCM switch
+
+/**
+ * Which ScmPort the pilot drives (Dalga C2). `fake` (the default) keeps the
+ * existing behaviour EXACTLY — the ADO prop, no push, `issueSecret` throws — so
+ * nothing changes without an explicit opt-in. `github` builds the REAL GitHub
+ * driver from GITHUB_OWNER/REPO + token and does a REAL git push + PR.
+ *
+ * The default is deliberately `fake`: a missing GitHub token must never turn
+ * into a silent no-op push, and every offline test runs the fake unless it opts
+ * into github with an injected fetch + exec.
+ */
+export type ScmMode = "fake" | "github";
+
+/** Reads and validates PILOT_SCM; anything but `github` is treated as `fake`. */
+export function scmMode(env: Record<string, string> = {}): ScmMode {
+  const raw = (process.env["PILOT_SCM"] ?? env["PILOT_SCM"] ?? "fake").trim().toLowerCase();
+  return raw === "github" ? "github" : "fake";
+}
+
+/**
+ * TTL requested for the short-lived push credential (M31). Well under the
+ * driver's one-hour ceiling: the credential only has to survive one
+ * clone→push, and a tighter window shrinks the blast radius of a leak.
+ */
+export const GITHUB_PUSH_TTL_SECONDS = 600;
+
+/** Base branch the pilot's feature branch targets on GitHub. */
+export const GITHUB_TARGET_BRANCH = process.env["GITHUB_TARGET_BRANCH"] ?? "main";
 
 /**
  * Values behind the FAKE references only. The Jira Cloud token is never here —

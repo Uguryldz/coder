@@ -40,6 +40,53 @@ export function resolveOpenRouter(env: Record<string, string>): OpenRouterEnv {
   return { apiKey: apiKey.trim(), baseUrl: raw.trim().replace(/\/+$/, "").replace(/\/v1$/, "") };
 }
 
+export interface GithubEnv {
+  owner: string;
+  repo: string;
+  /** GitHub token — NEVER logged; handed straight to the SecretPort seed. */
+  token: string;
+  /** Bare host of the API base; https://api.github.com for github.com. */
+  apiBaseUrl: string;
+  graphqlUrl: string;
+  /**
+   * Base of the git remote the runner clones/pushes over HTTPS, WITHOUT the
+   * `owner/repo.git` tail (that is appended per-repo). github.com by default.
+   */
+  gitBaseUrl: string;
+}
+
+/**
+ * Resolves the GitHub edge from the environment. ONLY called when
+ * `PILOT_SCM=github`; on the default `fake` path GitHub is never touched, so a
+ * missing token is not an error there. When github is selected, all three of
+ * GITHUB_OWNER / GITHUB_REPO / GITHUB_TOKEN are mandatory and a miss is a hard,
+ * loud, Turkish failure — a github run with no token would be the "fake
+ * success" this repo refuses everywhere.
+ */
+export function resolveGithub(env: Record<string, string>): GithubEnv {
+  const get = (key: string): string => (process.env[key] ?? env[key] ?? "").trim();
+  const owner = get("GITHUB_OWNER");
+  const repo = get("GITHUB_REPO");
+  const token = get("GITHUB_TOKEN");
+
+  const missing = [
+    owner.length === 0 ? "GITHUB_OWNER" : null,
+    repo.length === 0 ? "GITHUB_REPO" : null,
+    token.length === 0 ? "GITHUB_TOKEN" : null,
+  ].filter((name): name is string => name !== null);
+  if (missing.length > 0) {
+    throw new Error(
+      `PILOT_SCM=github için ${missing.join(", ")} eksik. maestro/.env dosyasına ekleyin (pilot gerçek GitHub deposuna push eder).`,
+    );
+  }
+
+  const strip = (value: string): string => value.replace(/\/+$/, "");
+  const apiBaseUrl = strip(get("GITHUB_API_BASE_URL") || "https://api.github.com");
+  const graphqlUrl = strip(get("GITHUB_GRAPHQL_URL") || "https://api.github.com/graphql");
+  const gitBaseUrl = strip(get("GITHUB_GIT_BASE_URL") || "https://github.com");
+  return { owner, repo, token, apiBaseUrl, graphqlUrl, gitBaseUrl };
+}
+
 export interface JiraCloudEnv {
   baseUrl: string;
   email: string;

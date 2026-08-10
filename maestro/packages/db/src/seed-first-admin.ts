@@ -1,0 +1,120 @@
+import type { PrismaClient } from "@prisma/client";
+
+/**
+ * The first-run bootstrap admin (banking standard).
+ *
+ * A fresh, clean install has to be loggable-into by SOMEONE, or nobody can ever
+ * reach the screen that creates the first real account. So the seed plants ONE
+ * admin — username `admin`, password `admin123` — and marks it
+ * `mustChangePassword`, which forces a password change before that account can
+ * do anything else (the BFF guard restricts the session to change-password/
+ * logout/session while the flag is set, migration 0009).
+ *
+ * `admin123` is DELIBERATELY policy-exempt. The platform's own password policy
+ * (apps/bff/src/auth/password.ts — min 12, upper/lower/digit/symbol, M8) rejects
+ * it, and that rejection is the whole point: the bootstrap credential is a
+ * throwaway that MUST be changed immediately, and the change-password endpoint
+ * runs the FULL policy on the new password (so it cannot be set back to
+ * `admin123`). The exemption lives HERE, on the seed path, and nowhere else —
+ * `LocalIdentityProvider.provision` still enforces the policy for every normal
+ * account.
+ */
+
+/** The bootstrap admin's fixed identity — one place, so the tests and the seed agree. */
+export const FIRST_ADMIN_USERNAME = "admin";
+export const FIRST_ADMIN_PASSWORD = "admin123";
+export const FIRST_ADMIN_DISPLAY_NAME = "Yönetici";
+/**
+ * The directory group that maps to the `admin` role. Kept in step with
+ * `ROLE_BY_GROUP` (apps/bff/src/auth/groups.ts, apps/deploy/src/stores/users.ts):
+ * `maestro-admins` is the group whose reading grants `admin`. A group that does
+ * not map to `admin` would leave the bootstrap account unable to reach the very
+ * screens it exists to unlock.
+ */
+export const FIRST_ADMIN_GROUP = "maestro-admins";
+
+/**
+ * Hashes the bootstrap password. Injected rather than imported so `@maestro/db`
+ * stays free of a hashing dependency — only the BFF's identity provider knows
+ * bcrypt exists (see apps/bff/src/deps.ts). The composition root passes a
+ * `BcryptPasswordHasher`; the offline test passes a fake.
+ */
+export type PasswordHashFn = (password: string) => Promise<string>;
+
+export interface SeedFirstAdminResult {
+  /** True when the bootstrap admin was planted; false when the seed was a no-op. */
+  seeded: boolean;
+  /** Why it was a no-op, for the boot log. */
+  reason: "created" | "admin_exists";
+}
+
+/** The two `PrismaClient.user` methods this seed touches, structurally. */
+export interface SeedFirstAdminDb {
+  user: {
+    findFirst(args: {
+      where: { groupsJson: { array_contains: string[] } };
+      select: { id: true };
+    }): Promise<{ id: string } | null>;
+    create(args: {
+      data: {
+        id: string;
+        email: string;
+        displayName: string;
+        passwordHash: string;
+        groupsJson: string[];
+        active: boolean;
+        mustChangePassword: boolean;
+      };
+    }): Promise<unknown>;
+  };
+}
+
+/**
+ * Plant the first-run admin, ONCE, and never clobber a real one.
+ *
+ * The guard is "does an admin already exist" rather than "does the `admin`
+ * username already exist": the moment ANY account maps to the `admin` role the
+ * platform has a real administrator, and the bootstrap account has done its job.
+ * Re-running the seed (every deploy runs it), or running it after the bootstrap
+ * admin already changed their password (they are still an admin, so an admin
+ * exists), is therefore a no-op — the flag is never reset back to `admin123`,
+ * and a genuine admin is never overwritten.
+ *
+ * `create`, not `upsert`: the existence check above already decided nothing
+ * should be written, so an upsert here would only re-open the door to walking a
+ * changed password back.
+ */
+export async function seedFirstAdmin(
+  db: SeedFirstAdminDb,
+  hash: PasswordHashFn,
+): Promise<SeedFirstAdminResult> {
+  // Any account whose groups include the admin group is a real administrator.
+  // `groupsJson` is a JSON array column; `array_contains` asks Postgres whether
+  // the group is in it, so the check is one indexed-enough query rather than a
+  // table scan the seed then filters in memory.
+  const existingAdmin = await db.user.findFirst({
+    where: { groupsJson: { array_contains: [FIRST_ADMIN_GROUP] } },
+    select: { id: true },
+  });
+  if (existingAdmin !== null) {
+    return { seeded: false, reason: "admin_exists" };
+  }
+
+  await db.user.create({
+    data: {
+      id: FIRST_ADMIN_USERNAME,
+      email: FIRST_ADMIN_USERNAME,
+      displayName: FIRST_ADMIN_DISPLAY_NAME,
+      passwordHash: await hash(FIRST_ADMIN_PASSWORD),
+      groupsJson: [FIRST_ADMIN_GROUP],
+      active: true,
+      mustChangePassword: true,
+    },
+  });
+  return { seeded: true, reason: "created" };
+}
+
+/** Narrowing helper so the CLI and composition root can pass a full client. */
+export function firstAdminDbOf(db: PrismaClient): SeedFirstAdminDb {
+  return db as unknown as SeedFirstAdminDb;
+}

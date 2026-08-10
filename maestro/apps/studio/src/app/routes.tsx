@@ -5,6 +5,7 @@ import { Shell } from "../shell/Shell.tsx";
 import { SCREENS } from "./screens.ts";
 import { SCREEN_COMPONENTS } from "./screen-components.ts";
 import { LoginScreen } from "../screens/Login.tsx";
+import { ChangePasswordScreen } from "../screens/ChangePassword.tsx";
 import { NotFound } from "./NotFound.tsx";
 
 /**
@@ -24,6 +25,11 @@ export function AppRoutes(): ReactNode {
       <Route path="/login" element={<LoginScreen />} />
 
       <Route element={<RequireSession />}>
+        {/* Outside the Shell: the first-run bootstrap blocks the whole app, so
+            this screen stands alone with no sidebar until a real password is
+            set. RequireSession redirects a restricted session here. */}
+        <Route path="/change-password" element={<ChangePasswordScreen />} />
+
         <Route element={<Shell />}>
           <Route index element={<Navigate to="/dash" replace />} />
           {SCREENS.map((screen) => {

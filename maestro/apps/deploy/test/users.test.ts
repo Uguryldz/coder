@@ -168,4 +168,38 @@ describe("PrismaUserDirectory", () => {
       create: { id: "u-mert", groupsJson: ["tech-leads"] },
     });
   });
+
+  it("round-trips the first-run bootstrap flag (migration 0009)", async () => {
+    // A bootstrap admin row reads back as mustChangePassword=true.
+    const { store } = delegate(
+      row({ email: "admin", id: "admin", groupsJson: ["maestro-admins"], mustChangePassword: true }),
+    );
+    const record = await new PrismaUserDirectory(store).find("admin");
+    expect(record?.mustChangePassword).toBe(true);
+    expect(record?.roles).toContain("admin");
+  });
+
+  it("reads a row without the flag as a non-bootstrap account", async () => {
+    // A row from before the column existed (undefined) is the safe default.
+    const { store } = delegate(row());
+    const record = await new PrismaUserDirectory(store).find("ayse.kaya@ugurbank.local");
+    expect(record?.mustChangePassword).toBe(false);
+  });
+
+  it("writes the flag on upsert, defaulting a normal account to false", async () => {
+    const { store, calls } = delegate();
+    await new PrismaUserDirectory(store).upsert({
+      username: "yeni.kullanici@ugurbank.local",
+      userId: "u-yeni",
+      passwordHash: "$2b$12$x",
+      groups: ["developers"],
+      roles: ["developer"],
+      active: true,
+      // No mustChangePassword: a normal account is never a bootstrap account.
+    });
+    expect(calls.upsert[0]).toMatchObject({
+      create: { mustChangePassword: false },
+      update: { mustChangePassword: false },
+    });
+  });
 });

@@ -26,6 +26,13 @@ export interface UserRow {
   passwordHash: string;
   groupsJson: unknown;
   active: boolean;
+  /**
+   * First-run bootstrap flag (migration 0009). Optional on the READ shape so a
+   * fake row in a test — and a real row from a database migrated but not yet
+   * re-read through a regenerated client — reads as `false` rather than
+   * crashing: a missing flag is a non-bootstrap account, the safe default.
+   */
+  mustChangePassword?: boolean;
 }
 
 /**
@@ -41,6 +48,8 @@ export interface UserWriteRow {
   passwordHash: string;
   groupsJson: string[];
   active: boolean;
+  /** First-run bootstrap flag (migration 0009). Written on every upsert. */
+  mustChangePassword: boolean;
 }
 
 /**
@@ -137,12 +146,14 @@ export class PrismaUserDirectory implements UserDirectory {
         passwordHash: record.passwordHash,
         groupsJson: groups,
         active: record.active,
+        mustChangePassword: record.mustChangePassword ?? false,
       },
       update: {
         displayName: record.username,
         passwordHash: record.passwordHash,
         groupsJson: groups,
         active: record.active,
+        mustChangePassword: record.mustChangePassword ?? false,
       },
     });
   }
@@ -169,6 +180,8 @@ function toRecord(row: UserRow): UserRecord {
     groups,
     roles: rolesOf(groups),
     active: row.active,
+    // A missing flag is a non-bootstrap account — the safe default (M8).
+    mustChangePassword: row.mustChangePassword ?? false,
   };
 }
 

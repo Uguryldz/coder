@@ -14,6 +14,15 @@ export interface Session {
   /** true when an AI holds the token for a human; gates and kill switch refuse it. */
   readonly delegated: boolean;
   readonly expiresAt: string;
+  /**
+   * true for the first-run bootstrap admin until it sets a real password
+   * (banking standard). While true the app blocks everything but the
+   * change-password screen — the BFF restricts the session to match, so a
+   * client that ignored this would only meet 409s. Optional on the type so a
+   * fixture (and a `/auth/session` payload from a BFF that predates the field)
+   * reads as not-restricted; the guard checks `=== true`, the safe default.
+   */
+  readonly mustChangePassword?: boolean;
 }
 
 /** POST /auth/login — nests the user, and adds the token. */
@@ -25,6 +34,8 @@ export interface LoginResponse {
     readonly username: string;
     readonly roles: readonly string[];
     readonly groups: readonly string[];
+    /** Forces the change-password screen on first login (banking standard). */
+    readonly mustChangePassword?: boolean;
   };
 }
 
@@ -42,6 +53,7 @@ export function sessionFromLogin(response: LoginResponse): Session {
     groups: response.user.groups,
     delegated: false,
     expiresAt: response.expiresAt,
+    mustChangePassword: response.user.mustChangePassword ?? false,
   };
 }
 

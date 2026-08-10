@@ -4,9 +4,12 @@ import { dirname, resolve } from "node:path";
 import {
   assertPostgresUrl,
   createDb,
+  firstAdminDbOf,
   PRISMA_SCHEMA_RELATIVE_PATH,
   seedAnalysisTemplate,
+  seedFirstAdmin,
 } from "@maestro/db";
+import { BcryptPasswordHasher } from "@maestro/bff";
 import { loadDeployEnv } from "../env.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
 
@@ -75,6 +78,29 @@ export async function main(): Promise<void> {
       template.seeded
         ? `[maestro] analysis template v1 published (${String(template.sections)} sections)`
         : "[maestro] analysis template already published, leaving it alone",
+    );
+
+    /**
+     * Plant the first-run bootstrap admin if this install has no admin yet.
+     *
+     * Here, inside the advisory lock, for the same reasons the template seed is:
+     * this is the path EVERY deployment runs (the seed CLI is opt-in and its
+     * demo half must never touch a bank's database), and N replicas start at
+     * once. A fresh clean install would otherwise have no account anyone could
+     * log in with — nobody could reach the screen that creates the first real
+     * user. The password is `admin123`, deliberately policy-exempt, and the
+     * account is FORCED to change it on first login (M8, banking standard). The
+     * moment a real admin exists — including the bootstrap admin after they have
+     * changed their password — this is a no-op and never resets the credential.
+     */
+    const bootstrapHasher = new BcryptPasswordHasher();
+    const admin = await seedFirstAdmin(firstAdminDbOf(db), (password) =>
+      bootstrapHasher.hash(password),
+    );
+    console.info(
+      admin.seeded
+        ? "[maestro] first-run admin planted (admin / admin123) — password change forced on first login"
+        : "[maestro] an admin account already exists, leaving the bootstrap seed alone",
     );
   } finally {
     // Releasing explicitly rather than relying on disconnect keeps the window

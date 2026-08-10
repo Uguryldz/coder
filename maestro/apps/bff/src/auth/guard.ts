@@ -1,7 +1,18 @@
 import type { FastifyRequest, preHandlerHookHandler } from "fastify";
 import type { ResolvedDeps, SessionRecord } from "../deps.js";
-import { forbidden, unauthenticated } from "../errors.js";
+import { conflict, forbidden, unauthenticated } from "../errors.js";
 import { bearerToken, isExpired } from "./sessions.js";
+
+/** Options for {@link authGuard}. */
+export interface AuthGuardOptions {
+  /**
+   * Let a RESTRICTED (first-run bootstrap) session through. Off by default, so
+   * a route that forgets to opt in fails CLOSED — a bootstrap admin holding
+   * `admin`/`admin123` reaches nothing. Only the three routes a restricted
+   * session is meant to reach set it: change-password, logout, session.
+   */
+  allowRestricted?: boolean;
+}
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -23,7 +34,10 @@ declare module "fastify" {
  * (M8/M32). Deactivating an account or revoking a role has to take effect at
  * the next request, not at the next login.
  */
-export function authGuard(deps: ResolvedDeps): preHandlerHookHandler {
+export function authGuard(
+  deps: ResolvedDeps,
+  options: AuthGuardOptions = {},
+): preHandlerHookHandler {
   return async (request) => {
     const token = bearerToken(request.headers.authorization);
     if (token === null) throw unauthenticated();
@@ -45,11 +59,29 @@ export function authGuard(deps: ResolvedDeps): preHandlerHookHandler {
       throw unauthenticated();
     }
 
+    // The bootstrap flag is refreshed from the directory here, exactly like
+    // roles and groups: the session store is a cache and the directory is the
+    // truth, so a change-password that clears the flag takes effect on the NEXT
+    // request rather than the next login.
+    const mustChangePassword = user.mustChangePassword ?? false;
+
     request.maestroSession = {
       ...session,
       roles: [...user.roles],
       groups: [...user.groups],
+      mustChangePassword,
     };
+
+    // A restricted (first-run bootstrap) session may reach ONLY the routes that
+    // opt in: change-password, logout, session. Everything else — every admin
+    // surface, the kill switch, run signals — is refused with a named 409 until
+    // the account sets a policy-compliant password. Refused AFTER the session is
+    // attached so a handler that logs the actor still can (M33), and as 409
+    // `password_change_required` rather than 403 so Studio can tell "you must
+    // change your password" apart from "you lack a role".
+    if (mustChangePassword && options.allowRestricted !== true) {
+      throw conflict("password_change_required");
+    }
   };
 }
 

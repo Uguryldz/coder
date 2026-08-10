@@ -17,6 +17,7 @@
     "@maestro/audit": "workspace:*",
     "@maestro/bff": "workspace:*",
     "@maestro/config": "workspace:*",
+    "@maestro/db": "workspace:*",
     "@maestro/contracts": "workspace:*",
     "@maestro/ports": "workspace:*",
     "fastify": "^5.2.0",

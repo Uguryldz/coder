@@ -136,6 +136,9 @@ importers:
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@maestro/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@maestro/ports':
         specifier: workspace:*
         version: link:../../packages/ports

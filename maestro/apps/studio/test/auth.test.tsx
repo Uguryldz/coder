@@ -162,7 +162,7 @@ describe("first-run bootstrap change-password (banking standard)", () => {
     await userEvent.type(screen.getByLabelText("Yeni parola (tekrar)"), "admin123");
     await userEvent.click(screen.getByRole("button", { name: "Parolayı değiştir" }));
 
-    expect(await screen.findByText("Çok kısa (en az 12 karakter)")).toBeInTheDocument();
+    expect(await screen.findByText("Çok kısa (en az 8 karakter)")).toBeInTheDocument();
     expect(screen.getByText("En az bir simge gerekli")).toBeInTheDocument();
   });
 

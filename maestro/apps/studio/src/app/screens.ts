@@ -11,7 +11,7 @@
  * test/i18n.test.ts asserts that for the whole table.
  */
 
-export type NavGroup = "operation" | "execution" | "agents" | "governance" | "system";
+export type NavGroup = "monitor" | "work" | "governance" | "admin";
 
 export interface ScreenDef {
   /** Matches the mock's view id; also the stub component's file name, lowercased. */
@@ -33,74 +33,73 @@ export interface ScreenDef {
   readonly roles?: readonly string[];
 }
 
-export const NAV_GROUPS: readonly NavGroup[] = [
-  "operation",
-  "execution",
-  "agents",
-  "governance",
-  "system",
-];
+export const NAV_GROUPS: readonly NavGroup[] = ["monitor", "work", "governance", "admin"];
 
 export const NAV_GROUP_KEY: Readonly<Record<NavGroup, string>> = {
-  operation: "nav.group.operation",
-  execution: "nav.group.execution",
-  agents: "nav.group.agents",
+  monitor: "nav.group.monitor",
+  work: "nav.group.work",
   governance: "nav.group.governance",
-  system: "nav.group.system",
+  admin: "nav.group.admin",
 };
 
+// Sidebar entries carry `navKey` + `group`; a screen WITHOUT them is still
+// routable (reached from a link/row) but hidden from the sidebar. Mock-era
+// static screens (live/jira/commands/greenfield/workmode/fanout/clarify/issues/
+// mcp) are hidden here on purpose — they were gallery pages, not operator tools.
+// Four groups, ordered by how an operator actually uses the platform.
 export const SCREENS: readonly ScreenDef[] = [
-  // — Operasyon —
-  { id: "dash", path: "dash", titleKey: "screen.dash.title", navKey: "nav.dash", group: "operation", icon: "▦" },
-  { id: "help", path: "help", titleKey: "screen.help.title", navKey: "nav.help", group: "operation", icon: "📖" },
-  { id: "live", path: "live", titleKey: "screen.live.title", navKey: "nav.live", group: "operation", icon: "🎬" },
+  // ── İZLEME ──────────────────────────────────────────────────────────────
+  { id: "dash", path: "dash", titleKey: "screen.dash.title", navKey: "nav.dash", group: "monitor", icon: "▦" },
   // The pilot's real-Jira flow, driven FROM Studio (Dalga D). Proxied to the
   // pilot engine via the BFF; start/settings are operator-gated there and the
   // nav mirrors that so a viewer is not sent to a screen that can only 403.
-  { id: "pilot", path: "pilot", titleKey: "screen.pilot.title", navKey: "nav.pilot", group: "operation", icon: "🎥" },
-  { id: "tickets", path: "tickets", titleKey: "screen.tickets.title", navKey: "nav.tickets", group: "operation", icon: "≡" },
-  { id: "fanout", path: "fanout", titleKey: "screen.fanout.title", navKey: "nav.fanout", group: "operation", icon: "⑂" },
-  { id: "clarify", path: "clarify", titleKey: "screen.clarify.title", navKey: "nav.clarify", group: "operation", icon: "❓" },
-  { id: "workmode", path: "workmode", titleKey: "screen.workmode.title", navKey: "nav.workmode", group: "operation", icon: "⇋" },
-  { id: "greenfield", path: "greenfield", titleKey: "screen.greenfield.title", navKey: "nav.greenfield", group: "operation", icon: "✦" },
-  { id: "jira", path: "jira", titleKey: "screen.jira.title", navKey: "nav.jira", group: "operation", icon: "💬" },
-  { id: "commands", path: "commands", titleKey: "screen.commands.title", navKey: "nav.commands", group: "operation", icon: "⌨" },
-  // detail is reached from a table row, not from the sidebar.
-  { id: "detail", path: "detail/:ticket", titleKey: "screen.detail.title" },
+  { id: "pilot", path: "pilot", titleKey: "screen.pilot.title", navKey: "nav.pilot", group: "monitor", icon: "🎥" },
+  { id: "tickets", path: "tickets", titleKey: "screen.tickets.title", navKey: "nav.tickets", group: "monitor", icon: "≡" },
+  { id: "help", path: "help", titleKey: "screen.help.title", navKey: "nav.help", group: "monitor", icon: "📖" },
 
-  // — Yürütme —
-  { id: "runners", path: "runners", titleKey: "screen.runners.title", navKey: "nav.runners", group: "execution", icon: "🖥" },
-  { id: "sandbox", path: "sandbox", titleKey: "screen.sandbox.title", navKey: "nav.sandbox", group: "execution", icon: "▶" },
-  { id: "cache", path: "cache", titleKey: "screen.cache.title", navKey: "nav.cache", group: "execution", icon: "🗄" },
-  { id: "yaml", path: "yaml", titleKey: "screen.yaml.title", navKey: "nav.yaml", group: "execution", icon: "📄" },
+  // ── ÇALIŞMA ─────────────────────────────────────────────────────────────
+  { id: "runners", path: "runners", titleKey: "screen.runners.title", navKey: "nav.runners", group: "work", icon: "🖥" },
+  { id: "sandbox", path: "sandbox", titleKey: "screen.sandbox.title", navKey: "nav.sandbox", group: "work", icon: "▶" },
+  { id: "knowledge", path: "knowledge", titleKey: "screen.knowledge.title", navKey: "nav.knowledge", group: "work", icon: "📚" },
+  { id: "variants", path: "variants", titleKey: "screen.variants.title", navKey: "nav.variants", group: "work", icon: "🤖" },
+  { id: "eval", path: "eval", titleKey: "screen.eval.title", navKey: "nav.eval", group: "work", icon: "🎯" },
+  { id: "template", path: "template", titleKey: "screen.template.title", navKey: "nav.template", group: "work", icon: "📋" },
+  { id: "doctemplate", path: "doctemplate", titleKey: "screen.doctemplate.title", navKey: "nav.doctemplate", group: "work", icon: "📄" },
 
-  // — Ajanlar —
-  { id: "variants", path: "variants", titleKey: "screen.variants.title", navKey: "nav.variants", group: "agents", icon: "🤖" },
-  { id: "variant", path: "variant", titleKey: "screen.variant.title", navKey: "nav.variant", group: "agents", icon: "⚙" },
-  { id: "eval", path: "eval", titleKey: "screen.eval.title", navKey: "nav.eval", group: "agents", icon: "🎯" },
-  { id: "knowledge", path: "knowledge", titleKey: "screen.knowledge.title", navKey: "nav.knowledge", group: "agents", icon: "📚" },
-  { id: "template", path: "template", titleKey: "screen.template.title", navKey: "nav.template", group: "agents", icon: "📋" },
-  { id: "doctemplate", path: "doctemplate", titleKey: "screen.doctemplate.title", navKey: "nav.doctemplate", group: "agents", icon: "📄" },
-
-  // — Yönetişim —
-  { id: "llm", path: "llm", titleKey: "screen.llm.title", navKey: "nav.llm", group: "governance", icon: "⚡" },
-  { id: "pii", path: "pii", titleKey: "screen.pii.title", navKey: "nav.pii", group: "governance", icon: "🔏" },
-  { id: "cost", path: "cost", titleKey: "screen.cost.title", navKey: "nav.cost", group: "governance", icon: "₺" },
+  // ── YÖNETİŞİM (denetim & kanıt) ─────────────────────────────────────────
   { id: "audit", path: "audit", titleKey: "screen.audit.title", navKey: "nav.audit", group: "governance", icon: "🔒" },
   { id: "evidence", path: "evidence", titleKey: "screen.evidence.title", navKey: "nav.evidence", group: "governance", icon: "📦" },
   { id: "security", path: "security", titleKey: "screen.security.title", navKey: "nav.security", group: "governance", icon: "🛡" },
-  { id: "notify", path: "notify", titleKey: "screen.notify.title", navKey: "nav.notify", group: "governance", icon: "🔔" },
+  { id: "cost", path: "cost", titleKey: "screen.cost.title", navKey: "nav.cost", group: "governance", icon: "₺" },
+  { id: "llm", path: "llm", titleKey: "screen.llm.title", navKey: "nav.llm", group: "governance", icon: "⚡" },
+  { id: "pii", path: "pii", titleKey: "screen.pii.title", navKey: "nav.pii", group: "governance", icon: "🔏" },
 
-  // — Sistem —
-  { id: "routing", path: "routing", titleKey: "screen.routing.title", navKey: "nav.routing", group: "system", icon: "⇄" },
+  // ── YÖNETİM (kurulum & ayar) ────────────────────────────────────────────
+  { id: "routing", path: "routing", titleKey: "screen.routing.title", navKey: "nav.routing", group: "admin", icon: "⇄" },
+  { id: "onboard", path: "onboard", titleKey: "screen.onboard.title", navKey: "nav.onboard", group: "admin", icon: "➕" },
+  { id: "notify", path: "notify", titleKey: "screen.notify.title", navKey: "nav.notify", group: "admin", icon: "🔔" },
   // /params is role-gated in the BFF (admin, tech-lead); mirror that in the nav.
-  { id: "params", path: "params", titleKey: "screen.params.title", navKey: "nav.params", group: "system", icon: "🎛", roles: ["admin", "tech-lead"] },
-  { id: "mcp", path: "mcp", titleKey: "screen.mcp.title", navKey: "nav.mcp", group: "system", icon: "🔌" },
-  { id: "onboard", path: "onboard", titleKey: "screen.onboard.title", navKey: "nav.onboard", group: "system", icon: "➕" },
-  { id: "users", path: "users", titleKey: "screen.users.title", navKey: "nav.users", group: "system", icon: "👥", roles: ["admin"] },
-  { id: "settings", path: "settings", titleKey: "screen.settings.title", navKey: "nav.settings", group: "system", icon: "⚙" },
-  { id: "health", path: "health", titleKey: "screen.health.title", navKey: "nav.health", group: "system", icon: "💚" },
-  { id: "issues", path: "issues", titleKey: "screen.issues.title", navKey: "nav.issues", group: "system", icon: "✔" },
+  { id: "params", path: "params", titleKey: "screen.params.title", navKey: "nav.params", group: "admin", icon: "🎛", roles: ["admin", "tech-lead"] },
+  { id: "users", path: "users", titleKey: "screen.users.title", navKey: "nav.users", group: "admin", icon: "👥", roles: ["admin"] },
+  { id: "settings", path: "settings", titleKey: "screen.settings.title", navKey: "nav.settings", group: "admin", icon: "⚙" },
+  { id: "health", path: "health", titleKey: "screen.health.title", navKey: "nav.health", group: "admin", icon: "💚" },
+
+  // ── Sidebar'da GÖRÜNMEZ (rota olarak erişilir) ──────────────────────────
+  // detail: bir tablo satırından açılır. Diğerleri maket-galeri artığı: statik
+  // içerik, operatör aracı değil — rota kalır ama menüden çıkarıldı.
+  { id: "detail", path: "detail/:ticket", titleKey: "screen.detail.title" },
+  { id: "variant", path: "variant", titleKey: "screen.variant.title" },
+  { id: "live", path: "live", titleKey: "screen.live.title" },
+  { id: "fanout", path: "fanout", titleKey: "screen.fanout.title" },
+  { id: "clarify", path: "clarify", titleKey: "screen.clarify.title" },
+  { id: "workmode", path: "workmode", titleKey: "screen.workmode.title" },
+  { id: "greenfield", path: "greenfield", titleKey: "screen.greenfield.title" },
+  { id: "jira", path: "jira", titleKey: "screen.jira.title" },
+  { id: "commands", path: "commands", titleKey: "screen.commands.title" },
+  { id: "cache", path: "cache", titleKey: "screen.cache.title" },
+  { id: "yaml", path: "yaml", titleKey: "screen.yaml.title" },
+  { id: "mcp", path: "mcp", titleKey: "screen.mcp.title" },
+  { id: "issues", path: "issues", titleKey: "screen.issues.title" },
 ];
 
 /** `login` lives outside the shell (no sidebar, no session) — see routes.tsx. */

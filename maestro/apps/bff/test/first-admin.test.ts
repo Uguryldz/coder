@@ -91,9 +91,10 @@ describe("first-run bootstrap admin (M8, migration 0009)", () => {
     expect(response.statusCode).toBe(400);
     const body = response.json() as { error: string; details: { violations: string[] } };
     expect(body.error).toBe("password_policy");
-    // admin123 is too short and has no symbol/upper — the policy names them.
-    expect(body.details.violations).toContain("too_short");
+    // admin123 meets the 8-char minimum but has no symbol/upper — still refused,
+    // so the bootstrap password can never be re-set as the new one.
     expect(body.details.violations).toContain("no_symbol");
+    expect(body.details.violations).toContain("no_upper");
   });
 
   it("rejects a wrong current password without changing anything", async () => {

@@ -8,6 +8,7 @@ import {
   InMemoryTemplateStore,
   LocalIdentityProvider,
   StaticGateDirectory,
+  UNWIRED_CAPABILITY_LINES,
   type BffDeps,
 } from "@maestro/bff";
 import { createDb } from "@maestro/db";
@@ -18,6 +19,8 @@ import { assertStoresDurable, volatileStoreWarning, type StoreDurability } from 
 import { postgresProbe, temporalProbe } from "../stores/read-health.js";
 import { DEGRADED_READ_MODELS, liveReadModels } from "../stores/read-live.js";
 import { postgresChainLock, PrismaAuditStore } from "../stores/audit.js";
+import { AuditDecisionReader, AuditPiiReader } from "../stores/read-governance.js";
+import { PrismaVariantCatalog } from "../stores/read-variants.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { PrismaUserDirectory } from "../stores/users.js";
 import { connectTemporal } from "../temporal-gateway.js";
@@ -136,6 +139,24 @@ export async function main(): Promise<void> {
       audit: auditStore,
       probes: [postgresProbe(db), temporalProbe(temporal.gateway)],
     }),
+    /**
+     * The last eight screens (M7), three of them wired.
+     *
+     * `variants` reads the Variant/VariantVersion tables; `pii` and
+     * `decisions` read the SAME audit store the chain appends through — a
+     * second store over that table would verify itself, which proves nothing
+     * (M33).
+     *
+     * `eval`, `greenfield` and `cache` are deliberately absent: none of them
+     * has a producer, so their routes refuse by name rather than answer an
+     * empty page. See `apps/bff/src/routes/unwired.ts` and the boot banner
+     * below.
+     */
+    studio: {
+      variants: new PrismaVariantCatalog(db.variant, db.variantVersion),
+      pii: new AuditPiiReader(auditStore, db.llmCall),
+      decisions: new AuditDecisionReader(auditStore),
+    },
     config: { env: env.base },
   };
 
@@ -154,6 +175,20 @@ export async function main(): Promise<void> {
         `${DEGRADED_READ_MODELS.length === 1 ? "" : "s"} NOT wired — the Studio screens ` +
         `backed by them refuse rather than render an empty page:\n  - ` +
         DEGRADED_READ_MODELS.join("\n  - "),
+    );
+  }
+
+  // The Studio capabilities that have no producer, named at boot for the same
+  // reason as the read models above: an operator reading a green start-up log
+  // has no other way to learn that `/eval`, `/greenfield` and `/cache` will
+  // answer 503. Each entry leaves this banner when something WRITES its data,
+  // not when somebody decides the warning is noisy.
+  if (UNWIRED_CAPABILITY_LINES.length > 0) {
+    console.warn(
+      `[maestro] bff: ${UNWIRED_CAPABILITY_LINES.length} Studio capabilit` +
+        `${UNWIRED_CAPABILITY_LINES.length === 1 ? "y has" : "ies have"} no data source — ` +
+        `the screens behind them REFUSE (503) rather than render an empty page:\n  - ` +
+        UNWIRED_CAPABILITY_LINES.join("\n  - "),
     );
   }
 

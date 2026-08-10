@@ -12,6 +12,7 @@ import type {
 } from "@maestro/contracts";
 import type { CiPort, WorkPort } from "@maestro/ports";
 import type { RunGateway } from "./gateway.js";
+import type { StudioReadModels } from "./read-studio.js";
 import type {
   AppRegistry,
   AuditReader,
@@ -318,6 +319,18 @@ export interface BffDeps {
    * purpose.
    */
   read: ReadModels;
+  /**
+   * The read side for the last eight screens (M7), model-by-model optional.
+   *
+   * Separate from `read` because these are optional INDIVIDUALLY: this
+   * deployment has variant rows and an audit chain but no golden-ticket table,
+   * so it wires two of the three and the routes behind the rest refuse by name.
+   * Folding them into `ReadModels` would force every composition root and every
+   * test fixture to supply all of them, and the usual way that pressure gets
+   * released is a stub that answers "empty" — the exact failure this project
+   * keeps designing against. Absent here means 503 with a reason, never `[]`.
+   */
+  studio?: StudioReadModels;
   messages?: MessageCatalog;
   clock?: Clock;
   config?: Partial<BffConfig>;
@@ -339,10 +352,12 @@ export interface ReadModels {
   health: HealthReader;
 }
 
-export interface ResolvedDeps extends Omit<BffDeps, "messages" | "clock" | "config"> {
+export interface ResolvedDeps extends Omit<BffDeps, "messages" | "clock" | "config" | "studio"> {
   messages: MessageCatalog;
   clock: Clock;
   config: BffConfig;
+  /** Always present after `resolveDeps`; individual models stay optional. */
+  studio: StudioReadModels;
   diagnostics: CommandDiagnostics | null;
   /** Deliveries dropped because their project is unbound or paused (M102 counter). */
   counters: { droppedUnbound: number; droppedKillSwitch: number; invalidCommands: number };

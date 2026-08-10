@@ -673,3 +673,76 @@ model User {
   groupsJson   Json // string[]
   active       Boolean @default(true)
 }
+
+// ---------------------------------------------------------------------------
+// Durable sessions & kill switch (Dalga E — prod hardening)
+// ---------------------------------------------------------------------------
+
+/// A logged-in session (M8), made durable.
+///
+/// The BFF shipped an `InMemorySessionStore`: a restart signed every logged-in
+/// user out at once, mid-task, with no warning. For a bank that is a support
+/// storm rather than a data loss — but the platform runs under
+/// `restart: unless-stopped`, so it is a storm that arrives on any redeploy or
+/// crash. This table is what makes a session survive one.
+///
+/// The token is the whole credential (256 bits from the CSPRNG) and is the
+/// primary key: a lookup is a single indexed read rather than a table scan, and
+/// two logins can never collide on one row. Expiry is ABSOLUTE (`expiresAt`),
+/// not sliding — a session ends eight hours in whatever it did in between — and
+/// `expiresAt` is indexed so the TTL sweep that drops stale rows is a range
+/// scan, not a full-table walk.
+model Session {
+  /// The bearer token, verbatim. Base64url of 32 random bytes — long enough
+  /// that a VARCHAR bound is a documentation aid, not a real limit.
+  token     String   @id @db.VarChar(128)
+  /// The audit actor (`user@corp`, M33); indexed because logout and role
+  /// changes act on every session an ACCOUNT holds, not on one token.
+  userId    String   @db.VarChar(128)
+  username  String
+  /// Directory groups and the platform roles derived from them at issue time —
+  /// string[]. A role change re-issues rather than mutates, so what a token
+  /// carries is what it was granted, which is what the guard must read back.
+  rolesJson  Json
+  groupsJson Json
+  /// True when an AI tool holds this token on the user's behalf (M101). Stored
+  /// so a delegated session survives a restart still marked delegated — a gate
+  /// decision under a delegated token is refused (M32), and losing the flag on
+  /// restart would silently re-open a human-only channel.
+  delegated Boolean  @default(false)
+  issuedAt  DateTime @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@index([userId]) // logout / off-boarding: every session an account holds
+  @@index([expiresAt]) // the TTL sweep of stale rows
+}
+
+/// The platform's emergency brake (M58), made durable — the whole point of
+/// this table.
+///
+/// `InMemoryKillSwitchStore` started at `off` and the process runs under
+/// `restart: unless-stopped`: an operator sets the switch to `all` during an
+/// incident, the container restarts for any reason, and the brake is RELEASED
+/// silently with the write paths open again. "The platform is stopped" was a
+/// belief, not a fact, at the moment it had to be a fact. The prod profile
+/// refused to start without a durable store for exactly this; this table is
+/// that store.
+///
+/// Single-row by construction: `id` is a fixed sentinel (`ONLY`) and the CHECK
+/// in the migration refuses any other value, so there is one brake and reading
+/// it is a point lookup. The row is UPSERTed on every `set`, so the current
+/// state is always the one row's columns — no "latest by timestamp" query that
+/// a clock skew could answer wrong.
+model KillSwitch {
+  /// Always `"ONLY"`. The migration's CHECK makes a second row impossible, so
+  /// "the kill switch" is one row and not "the newest of several".
+  id     String @id @db.VarChar(8)
+  /// off | intake_only | all — KillSwitchLevel. Text, not a Prisma enum: the
+  /// contract's union is the validator and these are not all legal enum
+  /// identifiers under @map-free rules the schema follows.
+  level  String @db.VarChar(16)
+  /// Who set it and why — carried into the audit row and shown to the operator.
+  actor  String @db.VarChar(128)
+  reason String
+  at     DateTime @db.Timestamptz(3)
+}

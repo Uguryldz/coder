@@ -14,6 +14,12 @@ import type { Db } from "./client.js";
  *   - User            (the admin login and any real accounts)
  *   - Param           (parameter DEFINITIONS — platform config)
  *   - DocTemplateVersion / DocTemplateOutputRow (uploaded corporate templates)
+ *   - Session         (live logins — a reset must not sign the operator running
+ *                      it out mid-reset; a session is runtime, but it is the
+ *                      operator's OWN runtime, and losing it here is a footgun)
+ *   - KillSwitch      (the emergency brake, M58 — clearing it would RELEASE the
+ *                      brake as a side effect of a routine reset, the exact
+ *                      silent release the durable table exists to prevent)
  *
  * CLEARS (order respects foreign keys — children before parents):
  */

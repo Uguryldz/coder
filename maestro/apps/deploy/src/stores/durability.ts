@@ -29,6 +29,14 @@ import type { Profile } from "../profile.js";
  * before the socket opens. In `dev` it is allowed and SAID OUT LOUD at boot,
  * because the offline stack has no Postgres store to point at and an operator
  * running it should still know the brake will not survive a restart.
+ *
+ * Dalga E update: the composition root now supplies a DURABLE kill switch
+ * (`PrismaKillSwitchStore` over the `KillSwitch` table) and durable sessions, so
+ * neither appears in its `VOLATILE_STORES` any more and this guard passes for
+ * them. The machinery below is UNCHANGED on purpose — `FATAL_IF_VOLATILE` still
+ * names the kill switch, so a future regression that fed a volatile one back in
+ * would still be refused at boot. The guard did not stop being needed; the
+ * deployment stopped tripping it.
  */
 
 /** A store the BFF composition root supplies, and whether it survives a restart. */

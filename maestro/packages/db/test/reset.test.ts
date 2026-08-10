@@ -58,7 +58,17 @@ describe("resetRuntimeData", () => {
   it("NEVER clears the tables an operator needs to keep working", async () => {
     // Logins, parameter DEFINITIONS, analysis + doc templates must survive a
     // reset — otherwise the admin is locked out and the platform is unconfigured.
-    const kept = ["User", "Param", "AnalysisTemplateVersion", "DocTemplateVersion", "DocTemplateOutputRow"];
+    // Session and KillSwitch join the kept set (Dalga E): a routine reset must
+    // not sign the operator out or, worse, RELEASE the emergency brake (M58).
+    const kept = [
+      "User",
+      "Param",
+      "AnalysisTemplateVersion",
+      "DocTemplateVersion",
+      "DocTemplateOutputRow",
+      "Session",
+      "KillSwitch",
+    ];
     for (const table of kept) {
       expect(RESET_TABLES as readonly string[], `${table} must be KEPT`).not.toContain(table);
     }

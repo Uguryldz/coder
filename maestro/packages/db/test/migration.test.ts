@@ -151,3 +151,37 @@ describe("append-only + guard migration (hand-written, 0002)", () => {
     expect(guards).not.toMatch(/^\s*CREATE TYPE/im);
   });
 });
+
+describe("durable sessions + kill switch (hand-written, 0008)", () => {
+  const sql = allMigrationSql();
+
+  it("creates both tables", () => {
+    expect(sql).toContain('CREATE TABLE "Session" (');
+    expect(sql).toContain('CREATE TABLE "KillSwitch" (');
+  });
+
+  it("keys a session by its token, so a lookup is one indexed read", () => {
+    expect(sql).toContain('CONSTRAINT "Session_pkey" PRIMARY KEY ("token")');
+  });
+
+  it("indexes sessions by user and expiry — logout acts on the account, the sweep on the clock", () => {
+    expect(sql).toContain('CREATE INDEX "Session_userId_idx" ON "Session"("userId")');
+    expect(sql).toContain('CREATE INDEX "Session_expiresAt_idx" ON "Session"("expiresAt")');
+  });
+
+  it("refuses a session that expires before it was issued", () => {
+    expect(sql).toMatch(/"Session_expiry_after_issue" CHECK \("expiresAt" > "issuedAt"\)/);
+  });
+
+  it("makes the kill switch a single row, not the newest of several (M58)", () => {
+    // The whole point of the durable table: `get()` reads ONE row, never a
+    // "latest by timestamp" a clock skew could answer wrong.
+    expect(sql).toMatch(/"KillSwitch_single_row" CHECK \("id" = 'ONLY'\)/);
+  });
+
+  it("refuses a kill-switch level the platform cannot read — a brake must never fail open", () => {
+    expect(sql).toMatch(
+      /"KillSwitch_level_valid" CHECK \("level" IN \('off', 'intake_only', 'all'\)\)/,
+    );
+  });
+});

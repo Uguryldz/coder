@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
-import type { FetchLike } from "@maestro/adapter-jira";
+import type { FetchLike as JiraFetchLike } from "@maestro/adapter-jira";
+import type { FetchLike as GithubFetchLike } from "@maestro/adapter-github";
 import type { TicketKey } from "@maestro/contracts";
 import {
   ADO_ORG,
@@ -10,16 +11,21 @@ import {
   ADO_WEBHOOK_USERNAME,
   defaultSettings,
   PILOT_SECRETS,
+  scmMode,
   UI_PORT,
+  type ScmMode,
 } from "./config.js";
 import { SettingsStore } from "./settings.js";
 import {
   loadRepoEnv,
+  resolveGithub,
   resolveJiraCloud,
   resolveOpenRouter,
+  type GithubEnv,
   type JiraCloudEnv,
   type OpenRouterEnv,
 } from "./env.js";
+import type { CreateWorkspaceOptions } from "./workspace.js";
 import { DocStore } from "./docs.js";
 import { createFakeAdo, type FakeAdo } from "./fake-ado.js";
 import { close, listen } from "./http.js";
@@ -30,6 +36,7 @@ import { initialState, StateStore } from "./state.js";
 import {
   createPilotAudit,
   createPilotCiPort,
+  createPilotFakeScmPort,
   createPilotGateway,
   createPilotScmPort,
   createPilotSecrets,
@@ -50,10 +57,18 @@ export interface BootOptions {
   /** Overrides env resolution; tests pass dummies alongside the injected fetches. */
   openRouter?: OpenRouterEnv;
   jiraCloud?: JiraCloudEnv;
+  /** Which ScmPort to drive. Defaults to PILOT_SCM (env), which defaults to `fake`. */
+  scm?: ScmMode;
+  /** Overrides GitHub env resolution; tests pass a dummy alongside `githubFetch`. */
+  github?: GithubEnv;
+  /** Injected GitHub REST/GraphQL transport (stub) — keeps the github path offline in tests. */
+  githubFetch?: GithubFetchLike;
+  /** Injected exec runner for the git push — tests stub it so nothing shells out. */
+  workspaceOptions?: CreateWorkspaceOptions;
   /** Injected LLM transport so tests never touch the network. */
   llmFetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Injected Jira Cloud transport (recorded fixtures) — keeps the pilot offline in tests. */
-  jiraFetch?: FetchLike;
+  jiraFetch?: JiraFetchLike;
   /** Delay before the fake build result arrives. */
   buildDelayMs?: number;
   ciTimeoutMs?: number;
@@ -84,6 +99,12 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   const openRouter = options.openRouter ?? resolveOpenRouter(repoEnv);
   const jiraCloud = options.jiraCloud ?? resolveJiraCloud(repoEnv);
 
+  // SCM edge (Dalga C2). `fake` (the default) is unchanged. `github` resolves
+  // the real GitHub edge — owner/repo/token — and builds the real ScmPort.
+  const mode: ScmMode = options.scm ?? scmMode(repoEnv);
+  const github: GithubEnv | undefined =
+    mode === "github" ? (options.github ?? resolveGithub(repoEnv)) : undefined;
+
   let uiBase: string | null = null;
   const errors: unknown[] = [];
 
@@ -113,7 +134,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     initialState({ model: seeded.model, jiraSite: jiraCloud.baseUrl, approverGroup: seeded.approverGroup }),
   );
 
-  const secrets = createPilotSecrets(openRouter, jiraCloud);
+  const secrets = createPilotSecrets(openRouter, jiraCloud, github);
   const { gateway, policy } = createPilotGateway(secrets, openRouter, {
     runId: () => store.snapshot().runId,
     onCallLog: (log) => {
@@ -139,10 +160,21 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   const work = createPilotWorkPort(secrets, jiraCloud, options.jiraFetch);
   const docs = new DocStore();
 
+  // On the github path the real driver does branch/PR/push; the CI signal and
+  // merge stay faked (C3 integrates real GitHub checks). `mergeStatus` points at
+  // a fake ADO scm driver, and `onRealPrOpened` registers the real PR id on the
+  // fake so its status can be reported and drives the fake CI publisher.
+  const scmPort = createPilotScmPort(secrets, adoUrl, github, options.githubFetch);
+  const githubRunConfig =
+    github === undefined
+      ? undefined
+      : { remoteUrl: `${github.gitBaseUrl}/${github.owner}/${github.repo}.git`, owner: github.owner, repo: github.repo };
+
   const run = new PilotRun({
     work,
-    scm: createPilotScmPort(secrets, adoUrl),
+    scm: scmPort,
     ci: createPilotCiPort(secrets, adoUrl),
+    scmMode: mode,
     llm: gateway,
     audit: createPilotAudit(),
     piiPolicy: policy,
@@ -150,6 +182,17 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     settings,
     docs,
     completePullRequest: (prId) => ado.completePullRequest(prId),
+    ...(githubRunConfig ? { github: githubRunConfig } : {}),
+    ...(options.workspaceOptions ? { workspaceOptions: options.workspaceOptions } : {}),
+    ...(github
+      ? {
+          mergeStatus: createPilotFakeScmPort(secrets, adoUrl),
+          onRealPrOpened: (prId, sourceRef) => {
+            ado.registerExternalPr(prId, sourceRef);
+            ado.emitBuildCompleteFor(prId, sourceRef);
+          },
+        }
+      : {}),
     ...(options.ciTimeoutMs === undefined ? {} : { ciTimeoutMs: options.ciTimeoutMs }),
     ...(options.commandPollMs === undefined ? {} : { commandPollMs: options.commandPollMs }),
     ...(options.sleep ? { sleep: options.sleep } : {}),

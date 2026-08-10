@@ -48,6 +48,20 @@ export interface FakeAdo {
   server: Server;
   /** Simulates a human pressing "Complete" in the ADO pull request screen. */
   completePullRequest(prId: number): boolean;
+  /**
+   * Emits a `build.complete` Service Hook for a PR id that was opened OUTSIDE
+   * the fake (the github path opens a REAL GitHub PR). CI stays faked in C2 —
+   * real GitHub checks/Actions is C3 — so the CI signal for a real PR is
+   * synthesised here against its real id, keeping the CI gate wiring exercised
+   * without pretending GitHub checks are integrated yet. See RAPOR-C2.
+   */
+  emitBuildCompleteFor(prId: number, sourceRef: string): void;
+  /**
+   * Registers a PR record for an id opened outside the fake (the github path)
+   * so the faked CI/merge steps — which are NOT integrated with GitHub in C2 —
+   * can still report a status for it. See RAPOR-C2.
+   */
+  registerExternalPr(prId: number, sourceRef: string): void;
   pullRequests(): FakePullRequest[];
   branches(): string[];
   webhookErrors: string[];
@@ -94,6 +108,10 @@ export function createFakeAdo(options: FakeAdoOptions): FakeAdo {
 
   /** Post the `build.complete` Service Hook for a PR validation build. */
   function emitBuildComplete(pr: FakePullRequest): void {
+    emitBuildCompleteById(pr.pullRequestId, pr.sourceRefName, pr.targetRefName);
+  }
+
+  function emitBuildCompleteById(prId: number, sourceRef: string, targetRef: string): void {
     const target = options.webhookUrl();
     if (target === null) return;
     const finished = now().toISOString().replace(/Z$/, "0000Z");
@@ -115,13 +133,13 @@ export function createFakeAdo(options: FakeAdoOptions): FakeAdo {
         definition: { id: options.definitionId, name: `${options.repo}-pr-validation`, type: "build" },
         project: { id: "1c9f2b77-3d64-45e0-9a2b-7f4c6d81ea05", name: options.project },
         reason: "pullRequest",
-        sourceBranch: `refs/pull/${pr.pullRequestId}/merge`,
+        sourceBranch: `refs/pull/${prId}/merge`,
         sourceVersion: HEAD_SHA,
         triggerInfo: {
-          "pr.number": String(pr.pullRequestId),
-          "pr.sourceBranch": pr.sourceRefName,
+          "pr.number": String(prId),
+          "pr.sourceBranch": sourceRef,
           "pr.sourceSha": HEAD_SHA,
-          "pr.targetBranch": pr.targetRefName,
+          "pr.targetBranch": targetRef,
         },
         repository: { id: "5f8c3a1e-9b2d-4c7a-8e11-2b6d4f0a9c33", type: "TfsGit", name: options.repo },
       },
@@ -331,6 +349,25 @@ export function createFakeAdo(options: FakeAdoOptions): FakeAdo {
       pr.status = "completed";
       pr.mergeCommitId = MERGE_SHA;
       return true;
+    },
+    emitBuildCompleteFor(prId: number, sourceRef: string): void {
+      emitBuildCompleteById(prId, sourceRef, "refs/heads/main");
+    },
+    registerExternalPr(prId: number, sourceRef: string): void {
+      if (prs.has(prId)) return;
+      refs.set(sourceRef, HEAD_SHA);
+      prs.set(prId, {
+        pullRequestId: prId,
+        status: "active",
+        isDraft: false,
+        title: `[external] PR ${prId}`,
+        description: "",
+        sourceRefName: sourceRef,
+        targetRefName: "refs/heads/main",
+        mergeCommitId: null,
+        createdAt: now().toISOString(),
+      });
+      threads.set(prId, []);
     },
     pullRequests: () => [...prs.values()],
     branches: () => [...refs.keys()],

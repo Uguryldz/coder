@@ -1,4 +1,4 @@
-import type { AdoCiDriver, AdoScmDriver } from "@maestro/adapter-ado";
+import type { AdoCiDriver } from "@maestro/adapter-ado";
 import {
   bulletList,
   doc,
@@ -12,6 +12,7 @@ import {
 import type { AuditChain } from "@maestro/audit";
 import {
   AnalysisDoc,
+  type ApplicationRecord,
   type AuditAction,
   type CommandEnvelope,
   type LlmRole,
@@ -19,13 +20,16 @@ import {
 } from "@maestro/contracts";
 import type { LlmGateway } from "@maestro/llm-gateway";
 import { compiledProfileFor, scanForPii, type LoadedPiiPolicy } from "@maestro/pii";
-import type { RepoRef } from "@maestro/ports";
+import type { RepoRef, ScmPort } from "@maestro/ports";
 import { z } from "zod";
 import {
   ADO_PROJECT,
   ADO_REPO,
   corpAccountOf,
+  GITHUB_PUSH_TTL_SECONDS,
+  GITHUB_TARGET_BRANCH,
   PILOT_VARIANT,
+  type ScmMode,
 } from "./config.js";
 import { analysisToDocs, type DocStore } from "./docs.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
@@ -35,6 +39,7 @@ import {
   createWorkspace,
   IMPLEMENTATION_PATH,
   TEST_PATH,
+  type CreateWorkspaceOptions,
   type DemoWorkspace,
 } from "./workspace.js";
 
@@ -96,10 +101,38 @@ const APPLICATION = {
   createdVia: "import",
 } as const;
 
+/** GitHub-only run inputs; present iff `scmMode === "github"`. */
+export interface GithubRunConfig {
+  /** Credential-free HTTPS remote, e.g. https://github.com/owner/repo.git */
+  remoteUrl: string;
+  /** GitHub owner/repo for the Application Registry record used by the driver. */
+  owner: string;
+  repo: string;
+}
+
 export interface PilotRunDeps {
   work: JiraCloudWorkPort;
-  scm: AdoScmDriver;
+  scm: ScmPort;
   ci: AdoCiDriver;
+  /** Which SCM edge is live (M-C2). `fake` keeps the ADO prop; `github` pushes for real. */
+  scmMode?: ScmMode;
+  /** Required when `scmMode === "github"`: where the runner clones/pushes. */
+  github?: GithubRunConfig;
+  /** Injected exec runner for the git push; tests stub it (never shell out). */
+  workspaceOptions?: CreateWorkspaceOptions;
+  /**
+   * PR merge-status source. Defaults to `scm`. On the github path this points
+   * at the FAKE (CI + merge stay faked in C2 — real GitHub checks is C3), so
+   * `getPrStatus` and the merge simulation do not hit the real GitHub PR. Its
+   * OWN repo ref is used for the status call (an ADO-shaped ref), not the
+   * github owner/repo the branch/PR steps use.
+   */
+  mergeStatus?: Pick<ScmPort, "getPrStatus" | "resolveRepo">;
+  /**
+   * Called on the github path once the REAL PR is open, so the faked CI signal
+   * can be delivered for its real id (real GitHub checks is C3). No-op on fake.
+   */
+  onRealPrOpened?: (prId: number, sourceRef: string) => void;
   llm: LlmGateway;
   audit: AuditChain;
   piiPolicy: LoadedPiiPolicy;
@@ -127,6 +160,8 @@ export class PilotRun {
   private workspace: DemoWorkspace | null = null;
   private repo: RepoRef | null = null;
   private branch = "";
+  /** Commit sha pushed on the github path; null on the fake path. */
+  private pushedCommitSha: string | null = null;
   private ciWaiter: { prId: number; resolve: (ok: boolean) => void } | null = null;
   /** Aborts the running gate poller when the flow ends or is stopped. */
   private abort: AbortController | null = null;
@@ -157,6 +192,7 @@ export class PilotRun {
     this.progressCommentId = null;
     this.repo = null;
     this.branch = "";
+    this.pushedCommitSha = null;
     this.abort = new AbortController();
     this.deps.docs.clear();
     store.update((state) => {
@@ -346,22 +382,41 @@ export class PilotRun {
     store.log("ok", `✓ analiz onayı: ${envelope.author} · grup üyeliği doğrulandı`);
   }
 
+  private githubMode(): boolean {
+    return this.deps.scmMode === "github";
+  }
+
+  /** The Application Registry record the ScmPort resolves; owner/repo on github. */
+  private application(): ApplicationRecord {
+    if (this.githubMode() && this.deps.github) {
+      return { ...APPLICATION, adoProject: this.deps.github.owner, adoRepo: this.deps.github.repo };
+    }
+    return APPLICATION;
+  }
+
   /** ④ + ⑤ + ⑥ — engineering, scan and the test that really runs. */
   private async stepEngineering(analysis: AnalysisDoc): Promise<CodeDraft> {
     const { store, scm } = this.deps;
     const ticketKey = this.requireTicket();
+    const github = this.githubMode();
     store.step("4", "calisiyor");
 
-    const repo = await scm.resolveRepo(APPLICATION);
-    store.log("ok", `✓ ADO deposu çözüldü (sahte): ${repo.project}/${repo.repo}`);
-    const branch = `feature/${ticketKey}-pilot`;
-    await scm.createBranch(repo, branch, "refs/heads/main");
-    store.log("ok", `✓ dal açıldı: ${branch}`);
+    const baseBranch = github ? GITHUB_TARGET_BRANCH : "main";
+    const repo = await scm.resolveRepo(this.application());
+    store.log(
+      "ok",
+      github
+        ? `✓ GitHub deposu çözüldü (GERÇEK): ${repo.project}/${repo.repo}`
+        : `✓ ADO deposu çözüldü (sahte): ${repo.project}/${repo.repo}`,
+    );
+    const branch = github ? `feature/${ticketKey}` : `feature/${ticketKey}-pilot`;
+    await scm.createBranch(repo, branch, github ? baseBranch : "refs/heads/main");
+    store.log("ok", github ? `✓ dal açıldı (GERÇEK): ${branch}` : `✓ dal açıldı: ${branch}`);
     store.note("4", `dal: ${branch}`);
     this.repo = repo;
     this.branch = branch;
 
-    this.workspace = await createWorkspace();
+    this.workspace = await createWorkspace(this.deps.workspaceOptions ?? {});
     const profile = compiledProfileFor(this.deps.piiPolicy, this.runSettings.dataClass).profile;
 
     let feedback: string | null = null;
@@ -443,6 +498,13 @@ export class PilotRun {
         "ok",
         `✓ test gerçekten koştu: çıkış kodu 0 (${run.durationMs} ms) ${run.stdout ? `· ${run.stdout.split("\n")[0]}` : ""}`,
       );
+
+      // On the github path the green code is pushed FOR REAL now: the PR in the
+      // next step must have a real branch behind it. A push failure fails the
+      // step CLOSED — no false "PR opened" (the exception propagates out of
+      // start(), which records the run as failed and stops).
+      if (github) await this.pushToGithub(code);
+
       return code;
     }
 
@@ -451,26 +513,86 @@ export class PilotRun {
     );
   }
 
-  /** ⑦ pull request + the CI signal that arrives as a Service Hook (fake ADO). */
+  /**
+   * The REAL push (github path only). Mints a short-lived push credential from
+   * the ScmPort (M31), then runs clone→branch→commit→push in the sandbox over
+   * the injected exec runner. The token is handed to the workspace which feeds
+   * it to git out-of-band (env-only `http.extraHeader`) — it never lands on an
+   * argv, in `.git/config`, or in a log line here. `branch` was already created
+   * on GitHub via the API in stepEngineering; the push updates that ref.
+   *
+   * Fails CLOSED: a `getPushCredential` refusal or any git error throws, and
+   * the PR step never runs, so the workflow cannot claim a PR over an
+   * unpushed branch.
+   */
+  private async pushToGithub(code: CodeDraft): Promise<void> {
+    const { store, scm, github } = this.deps;
+    const ticketKey = this.requireTicket();
+    const repo = this.repo;
+    const ws = this.workspace;
+    if (repo === null || ws === undefined || ws === null) {
+      throw new PilotStepError("push için depo/çalışma alanı hazır değil");
+    }
+    if (github === undefined) throw new PilotStepError("github yapılandırması eksik");
+
+    // Short-lived credential (M31): the driver refuses a TTL over its ceiling
+    // and refuses a credential that outlives the window (fail-closed).
+    const credential = await scm.getPushCredential(repo, GITHUB_PUSH_TTL_SECONDS);
+    store.log("dim", `→ kısa ömürlü push kimliği alındı (geçerlilik: ${credential.expiresAt})`);
+
+    const commitSubject = `[AI] ${ticketKey} ${code.summary}`.slice(0, 72);
+    const pushed = await ws.gitPush({
+      remoteUrl: github.remoteUrl,
+      branch: this.branch,
+      baseBranch: GITHUB_TARGET_BRANCH,
+      commitSubject,
+      // M13: an AI-authored commit is attributed and co-signed.
+      coAuthor: "Co-Authored-By: Maestro <maestro@ugurbank.example>",
+      token: credential.token,
+      authorName: "Maestro AI",
+      authorEmail: "maestro@ugurbank.example",
+    });
+    this.pushedCommitSha = pushed.commitSha;
+    store.log("ok", `✓ kod GERÇEK push edildi · commit ${pushed.commitSha.slice(0, 8)} · dal ${this.branch}`);
+    // No dedicated push action exists in the FROZEN AuditAction enum; the pushed
+    // commit sha is recorded on the PR_OPENED event in stepPullRequest instead.
+  }
+
+  /**
+   * ⑦ pull request. On the github path the PR is opened FOR REAL against the
+   * live repo (over the branch just pushed). The CI signal, however, still
+   * arrives from the fake ADO Service Hook — real GitHub checks/Actions is C3,
+   * not done here — so once the real PR is open its id is handed to the fake CI
+   * publisher (`onRealPrOpened`) which emits a `build.complete` for that id.
+   */
   private async stepPullRequest(draft: CodeDraft, analysis: AnalysisDoc): Promise<number> {
     const { store, scm } = this.deps;
     const ticketKey = this.requireTicket();
+    const github = this.githubMode();
     const repo = this.repo;
     if (repo === null) throw new PilotStepError("depo çözülmeden PR açılamaz");
     store.step("7", "calisiyor");
 
     const { prId } = await scm.openPr(repo, {
       sourceBranch: this.branch,
-      targetBranch: "main",
+      targetBranch: github ? GITHUB_TARGET_BRANCH : "main",
       title: `[AI] ${ticketKey} ${analysis.purpose.slice(0, 60)}`,
       description: `${draft.summary}\n\nMaestro pilot çalışması — ${ticketKey}`,
       draft: true,
     });
-    store.log("ok", `✓ PR #${prId} taslak olarak açıldı (sahte ADO)`);
-    await this.record("PR_OPENED", { prId, branch: this.branch });
+    store.log("ok", github ? `✓ PR #${prId} taslak olarak açıldı (GERÇEK GitHub)` : `✓ PR #${prId} taslak olarak açıldı (sahte ADO)`);
+    await this.record("PR_OPENED", {
+      prId,
+      branch: this.branch,
+      ...(this.pushedCommitSha ? { commitSha: this.pushedCommitSha } : {}),
+    });
 
     await scm.activatePr(repo, prId);
     store.log("dim", `→ PR #${prId} taslaktan çıktı — build validation kuyruğa alındı`);
+
+    // CI stays faked (C3 wires real GitHub checks): trigger the fake build for
+    // the REAL PR id now that it is out of draft.
+    if (github) this.deps.onRealPrOpened?.(prId, `refs/heads/${this.branch}`);
 
     const threads = await scm.listPrThreads(repo, prId);
     store.note("7", `PR #${prId} · açık inceleme yorumu: ${threads.length}`);
@@ -507,7 +629,10 @@ export class PilotRun {
 
   /** ⑨ merge (by a human, in ADO) + closure. */
   private async stepMerge(prId: number): Promise<void> {
-    const { store, scm, work } = this.deps;
+    const { store, work } = this.deps;
+    // Merge stays a human action in the fake (C2): even on the github path the
+    // merge + status come from the fake merge-status port, not the real PR.
+    const mergeStatus = this.deps.mergeStatus ?? this.deps.scm;
     const ticketKey = this.requireTicket();
     const repo = this.repo;
     if (repo === null) throw new PilotStepError("depo yok");
@@ -521,11 +646,15 @@ export class PilotRun {
         : "→ (sahte ADO) PR zaten birleşmişti",
     );
 
+    // On the github path the merge-status port is the FAKE ADO driver; its
+    // repo ref is ADO-shaped, not the github owner/repo `this.repo` carries.
+    const statusRepo = this.deps.mergeStatus ? await mergeStatus.resolveRepo(APPLICATION) : repo;
+
     const deadline = Date.now() + 10_000;
-    let status = await scm.getPrStatus(repo, prId);
+    let status = await mergeStatus.getPrStatus(statusRepo, prId);
     while (status.state !== "completed" && Date.now() < deadline) {
       await sleep(this.deps.mergePollMs ?? 300);
-      status = await scm.getPrStatus(repo, prId);
+      status = await mergeStatus.getPrStatus(statusRepo, prId);
     }
     if (status.state !== "completed") {
       throw new PilotStepError(`PR #${prId} birleşmedi (durum: ${status.state})`);

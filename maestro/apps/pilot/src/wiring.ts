@@ -1,9 +1,11 @@
 import { createAdoCiDriver, createAdoScmDriver, type AdoCiDriver, type AdoScmDriver } from "@maestro/adapter-ado";
+import { createGithubScmDriver, type FetchLike as GithubFetchLike } from "@maestro/adapter-github";
 import {
   createJiraCloudWorkPort,
   type FetchLike,
   type JiraCloudWorkPort,
 } from "@maestro/adapter-jira";
+import type { ScmPort } from "@maestro/ports";
 import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
 import type { LlmCallLog } from "@maestro/contracts";
 import { createLlmGateway, type LlmGateway } from "@maestro/llm-gateway";
@@ -21,12 +23,13 @@ import {
   ADO_PROJECT,
   ADO_REPO,
   ADO_WEBHOOK_USERNAME,
+  GITHUB_PUSH_TTL_SECONDS,
   PILOT_MODEL,
   PILOT_SECRETS,
   SECRET_REFS,
 } from "./config.js";
-import type { JiraCloudEnv, OpenRouterEnv } from "./env.js";
-import { resolveJiraCloud, resolveOpenRouter } from "./env.js";
+import type { GithubEnv, JiraCloudEnv, OpenRouterEnv } from "./env.js";
+import { resolveGithub, resolveJiraCloud, resolveOpenRouter } from "./env.js";
 
 /**
  * Composition root of the pilot. Every port below is the REAL package driver.
@@ -50,12 +53,19 @@ function envName(reference: string): string {
  * Jira token lands in the environment of any child process the pilot spawns.
  * The live Jira token is seeded here from `jiraCloud.apiToken` and NEVER logged.
  */
-export function createPilotSecrets(openRouter: OpenRouterEnv, jiraCloud: JiraCloudEnv): SecretPort {
+export function createPilotSecrets(
+  openRouter: OpenRouterEnv,
+  jiraCloud: JiraCloudEnv,
+  github?: GithubEnv,
+): SecretPort {
   const env: Record<string, string> = {
     [envName(SECRET_REFS.jiraCloud)]: jiraCloud.apiToken,
     [envName(SECRET_REFS.adoPat)]: PILOT_SECRETS.adoPat,
     [envName(SECRET_REFS.adoWebhook)]: PILOT_SECRETS.adoWebhook,
     [envName(SECRET_REFS.openrouter)]: openRouter.apiKey,
+    // The GitHub token is seeded ONLY when the github SCM edge is active; the
+    // fake path never carries it, so the default pilot holds no GitHub secret.
+    ...(github ? { [envName(SECRET_REFS.github)]: github.token } : {}),
   };
   return new EnvFileSecretPort({
     config: EnvFileConfig.parse({ allowedMounts: ["kv"], cacheTtlSeconds: 0 }),
@@ -173,13 +183,68 @@ function adoConfig(adoBaseUrl: string): Record<string, unknown> {
   };
 }
 
-export function createPilotScmPort(secrets: SecretPort, adoBaseUrl: string): AdoScmDriver {
+/**
+ * The pilot's ScmPort. `fake` (default) is the unchanged ADO driver against the
+ * fake ADO with `issueSecret` throwing — no push. `github` is the REAL GitHub
+ * driver: real branch, real PR, and a real short-lived push credential minted
+ * on demand (so the engineer step can `git push`).
+ */
+export function createPilotScmPort(
+  secrets: SecretPort,
+  adoBaseUrl: string,
+  github?: GithubEnv,
+  githubFetch?: GithubFetchLike,
+): ScmPort {
+  if (github) return createPilotGithubScmPort(secrets, github, githubFetch);
+  return createPilotFakeScmPort(secrets, adoBaseUrl);
+}
+
+/** The fake ADO ScmPort — unchanged: push disabled, `issueSecret` throws. */
+export function createPilotFakeScmPort(secrets: SecretPort, adoBaseUrl: string): AdoScmDriver {
   return createAdoScmDriver(adoConfig(adoBaseUrl), {
     resolveToken: (ref) => secrets.get(ref),
     issueSecret: () => {
       throw new Error("pilot: bu akışta push yok, kısa ömürlü kimlik bilgisi üretilmiyor");
     },
   });
+}
+
+/**
+ * The REAL GitHub ScmPort. The push credential is minted by an `issueSecret`
+ * callback that reads the seeded GitHub token through the SecretPort and stamps
+ * a short-lived `expiresAt` of now + the requested TTL. That expiry is a
+ * POLICY commitment, enforced by the driver's `getPushCredential`
+ * (`assertTtlWithinCeiling` + `issuedCredentialIssues`): the value is refused
+ * if it is asked to outlive the one-hour ceiling, and the runner is expected to
+ * push within the window. The token itself is NEVER logged or returned anywhere
+ * but the credential, and never touches git config (see workspace.gitPush).
+ *
+ * For the C4 go-live a GitHub App installation token (which genuinely expires)
+ * can replace the PAT with no change here — the callback shape is identical.
+ */
+export function createPilotGithubScmPort(
+  secrets: SecretPort,
+  github: GithubEnv,
+  fetchImpl?: GithubFetchLike,
+): ScmPort {
+  return createGithubScmDriver(
+    {
+      mode: "cloud",
+      apiBaseUrl: github.apiBaseUrl,
+      graphqlUrl: github.graphqlUrl,
+      tokenRef: SECRET_REFS.github,
+      maxPushTtlSeconds: GITHUB_PUSH_TTL_SECONDS,
+    },
+    {
+      resolveToken: (ref) => secrets.get(ref),
+      issueSecret: async (_scope, ttlSeconds) => {
+        const secret = await secrets.get(SECRET_REFS.github);
+        const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+        return { secret, expiresAt };
+      },
+      ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    },
+  );
 }
 
 export function createPilotCiPort(secrets: SecretPort, adoBaseUrl: string): AdoCiDriver {
@@ -196,4 +261,4 @@ export function createPilotAudit(): AuditChain {
   return new AuditChain({ store: new InMemoryAuditStore() });
 }
 
-export { resolveJiraCloud, resolveOpenRouter };
+export { resolveGithub, resolveJiraCloud, resolveOpenRouter };

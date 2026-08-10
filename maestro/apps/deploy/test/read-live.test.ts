@@ -459,6 +459,10 @@ describe("the wired set: what answers and what refuses", () => {
     knowledgeDoc: { findMany: () => Promise.resolve([]), count: () => Promise.resolve(0) },
     subscriptionAccount: { findMany: () => Promise.resolve([]) },
     evidencePackageRow: { findFirst: () => Promise.resolve(null) },
+    jiraProjectBinding: {
+      findMany: () => Promise.resolve([]),
+      findUnique: () => Promise.resolve(null),
+    },
   };
   const build = () =>
     liveReadModels({

@@ -8,6 +8,11 @@ import {
   PrismaQuotaReader,
 } from "./read-catalog.js";
 import { ProbeHealthReader, type ServiceProbe } from "./read-health.js";
+import {
+  PrismaOnboardingReader,
+  PrismaRepoPolicyReader,
+  runSampleDelegate,
+} from "./read-onboarding.js";
 import { PrismaRunCatalog } from "./read-runs.js";
 import { unbridgedReadModel, UNBACKED_READ_MODELS } from "./read-models.js";
 
@@ -36,12 +41,15 @@ import { unbridgedReadModel, UNBACKED_READ_MODELS } from "./read-models.js";
 
 /** Everything `liveReadModels` needs from the Prisma client. */
 export interface ReadModelDb {
-  workflowRun: ConstructorParameters<typeof PrismaRunCatalog>[0];
+  workflowRun: ConstructorParameters<typeof PrismaRunCatalog>[0] &
+    Parameters<typeof runSampleDelegate>[0];
   llmCall: ConstructorParameters<typeof PrismaRunCatalog>[1] &
     ConstructorParameters<typeof PrismaCostReader>[0];
   journalEntry: ConstructorParameters<typeof PrismaJournalReader>[0];
   gate: ConstructorParameters<typeof PrismaGateBoard>[0];
-  application: ConstructorParameters<typeof PrismaAppRegistry>[0];
+  application: ConstructorParameters<typeof PrismaAppRegistry>[0] &
+    ConstructorParameters<typeof PrismaOnboardingReader>[1];
+  jiraProjectBinding: ConstructorParameters<typeof PrismaOnboardingReader>[0];
   repoCard: ConstructorParameters<typeof PrismaAppRegistry>[1];
   knowledgeDoc: ConstructorParameters<typeof PrismaKnowledgeIndex>[0];
   subscriptionAccount: ConstructorParameters<typeof PrismaQuotaReader>[0];
@@ -87,6 +95,15 @@ export function liveReadModels(options: LiveReadModelOptions): ReadModels {
     evidence: new PrismaEvidenceReader(db.evidencePackageRow),
     audit: new AuditStoreReader(options.audit),
     health: new ProbeHealthReader(options.probes),
+    // Both read tables the platform already writes (M93/M102/M52): the binding
+    // rows, the application registry, and the runs whose `matchJson` the dry
+    // run replays. Neither invents a row, so neither needs to refuse.
+    onboarding: new PrismaOnboardingReader(
+      db.jiraProjectBinding,
+      db.application,
+      runSampleDelegate(db.workflowRun),
+    ),
+    repoPolicy: new PrismaRepoPolicyReader(db.application, runSampleDelegate(db.workflowRun)),
   };
 }
 

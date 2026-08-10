@@ -12,6 +12,7 @@ import type {
 } from "@maestro/contracts";
 import type { CiPort, WorkPort } from "@maestro/ports";
 import type { RunGateway } from "./gateway.js";
+import type { OnboardingReader, RepoPolicyReader } from "./onboarding-models.js";
 import type {
   AppRegistry,
   AuditReader,
@@ -337,6 +338,10 @@ export interface ReadModels {
   evidence: EvidenceReader;
   audit: AuditReader;
   health: HealthReader;
+  /** The onboarding wizard's lists and dry-run sample (M93/M102). */
+  onboarding: OnboardingReader;
+  /** `.maestro.yaml` as last observed per application (M52/M71). */
+  repoPolicy: RepoPolicyReader;
 }
 
 export interface ResolvedDeps extends Omit<BffDeps, "messages" | "clock" | "config"> {

@@ -23,6 +23,7 @@ function emptyReadDb(): ReadModelDb {
     knowledgeDoc: page,
     subscriptionAccount: { findMany: () => Promise.resolve([]) },
     evidencePackageRow: { findFirst: () => Promise.resolve(null) },
+    jiraProjectBinding: { ...page, findUnique: () => Promise.resolve(null) },
   };
 }
 

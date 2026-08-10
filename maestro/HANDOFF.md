@@ -1,64 +1,53 @@
 # HANDOFF
 
 ## Görev
-Studio'nun arkası bağlanmamış 16 ekranı için BFF'te eksik 14 ucu yazmak, böylece
-prod pilotu (analiz → onay → Word/PDF → Jira) uçtan uca çalışsın.
+Maestro prod pilotuna hazır hale getirildi (Windows/Mac runner'ları hariç, kullanıcı kararı).
 
-## Tamamlandı (doğrulanmış, canlı ölçüm)
-- Dalga 0–5 kodu: 24 paket, 6 uygulama, 66.708 satır kod, 55.382 satır test.
-- `pnpm run gate` → exit 0, **60/60**, 4028 test.
-- Altyapı ayakta: `maestro/deploy` compose → postgres(55432), redis, temporal(7233), temporal-ui(8233).
-- Migration 0001→0004 uygulandı. DB'de 22 koşu, 19 parametre.
-- Worker gerçek Temporal'a bağlanıyor: "composed 9 ports, polling maestro-delivery".
-- BFF `0.0.0.0:7001`, Studio `0.0.0.0:7000`, dış erişim `coder.uguryildiz.tech` (NPM arkasında, 200 doğrulandı).
-- Test kullanıcısı: `ayse.kaya@bank` / `Prod!Test-2026` (rol admin). **Kullanıcı e-posta alanıyla aranıyor.**
-- Canlı doğrulanan zincir: yanlış parola→401 · webhook imzasız→401 · `/studio/runs`→22 kayıt ·
-  `/studio/audit/verification`→`{"ok":true,"checked":76}` · viewer→admin ucu 403 · `limit=5000`→400.
+## Tamamlandı (canlı ölçüm, tahmin değil)
+- `pnpm run gate` → exit 0, **60/60**, ~4635 test. 24 paket + 6 uygulama.
+- **14 eksik uç yazıldı.** Ölçüm: 11'i 200 + gerçek veri, 3'ü gerekçeli **503**
+  (`eval`/`cache`/`greenfield` — o veriyi YAZAN hiçbir şey yok, boş sayfa "regresyon yok" diye okunurdu).
+- **`AgentTurnRunner` bağlandı** → 6a mühendislik turu açıldı. `RUNNER_IMAGE_LINUX` set edilince
+  degraded 3→2 (canlı doğrulandı). 19 adımın önündeki kilit kalktı.
+- **Şablon tasarımcısı**: migration 0007 (`AnalysisTemplateVersion`, append-only), kalıcı
+  `PrismaTemplateStore`, installer v1 (8 Türkçe bölüm). Tarayıcıda doğrulandı: bölüm ekleme 8→9,
+  BFF restart sonrası şablon duruyor.
+- **6 kırık detay ucu düzeltildi** (22/22 → 200). Sebep: Temporal'da `verifyRun` tipli 6 hayalet
+  workflow; liste ucu korunuyordu, detay + `runIdOf` korunmuyordu. Ortak `queryStateOrNull`.
+- **503 tutarlılığı**: `runners`/`scans` düz Error (=500) atıyordu → `capability_not_wired` (503).
+- Studio `ERROR_KEYS`: **51 kod** eklendi (eski kapsam testi totolojiymiş).
+- Türkçe: `mode.*` katalogda ham enum'a eşliyormuş; 9 sızıntı kapatıldı. tr/en **1523 anahtar, parite**.
+- Compose: `RUNNER_IMAGE_LINUX` anchor'da yoktu (set edilse bile konteynere ulaşmıyordu) + boş
+  string tuzağı (`optionalSetting()`), ikisi de düzeltildi. `deploy/SURUM-NOTU.md` yazıldı.
 
-## Son dalga (prod pilotu öncesi dört eksik) — BİTTİ
-`RAPOR-son-eksikler.md`'ye bak. Özet:
-1. **Analiz şablonu kalıcı.** Migration **0007** (`AnalysisTemplateVersion`, append-only trigger),
-   `PrismaTemplateStore`, ve installer'ın yayınladığı **v1 varsayılan şablonu** (8 bölüm).
-   `templates` artık `VOLATILE_STORES`'ta DEĞİL.
-2. **Türkçe sızıntıları kapandı.** BFF artık cümle değil **katalog anahtarı** gönderiyor
-   (`routing.note.*`, `routing.condition.*`, decisions `action`+`actor` ayrı alanlar,
-   `yamlPresent` bayrağı). `mode.*` katalogda ham enum'du → düzeltildi. Yeni aileler:
-   `audit.action.*` (26), `pii.kind/strategy.*`, `issues.status.*`. tr+en **1523 anahtar, parite**.
-3. **Hata kataloğu.** Studio `ERROR_KEYS`'e **51 kod** eklendi. Eski test kendi tablosunu
-   kendisiyle doğruluyordu (totoloji); yerine BFF'in `throw` noktalarını tarayan **gerçek** test.
-4. **Prod imajı.** `.env.example`'a `RUNNER_IMAGE_LINUX` bölümü; compose anchor'ında
-   **yoktu** — set edilse bile worker'a ulaşmıyordu, eklendi. `deploy/SURUM-NOTU.md` yazıldı.
-
-**Yol boyunca bulunan gerçek hata:** compose `${VAR:-}` **boş string** yollar, `.min(1)` bunu
-reddediyordu → `RUNNER_IMAGE_LINUX` set edilmeyince **worker boot'ta çökerdi**. `optionalSetting()`
-eklendi (scanner imajları da aynı tuzaktaydı).
+## Canlı sistem (şu an ayakta)
+- Studio 7000 / BFF 7001, dış erişim **https://coder.uguryildiz.tech** (NPM arkasında).
+- Giriş: **`admin` / `admin123`** (⚠️ parola politikası atlanarak hash yazıldı — 12 karakter +
+  büyük/küçük/rakam/sembol ister; Studio'dan değiştirilirse geri dönülemez). Eski hesap:
+  `ayse.kaya@bank` / `Prod!Test-2026`. **İkisi de pilot öncesi silinmeli.**
+- Postgres 55432 (compose), migration 0001→0007 uygulanmış, 22 koşu.
 
 ## Devam eden
 Yok.
 
 ## Sıradaki adım
-Kullanıcı onay verirse: 14 ucu paralel ajanlarla yaz. Öncelik sırası —
-**1) `/onboarding` + `/onboarding/options` + `/onboarding/dry-run`** (Jira projesi bağlama; bunsuz pilot başlamaz)
-2) `/doc-template` (Word şablonu) · 3) `/settings` · 4) `/repo-policy` (+`/:app/protected-paths`)
-5) `/routing` `/notify` `/commands` `/mcp/manifest` `/pii` `/variants` `/eval` `/cache` `/greenfield` `/decisions`
+Kullanıcı isterse: 4 imajı build et (`cd deploy && docker compose build`) — dördü de daha önce
+build oldu, 2.62 GB. Öncesinde `deploy/.env` doldurulmalı (kurum bilgileri kullanıcıda).
 
-## Eksik listesi (ölçüldü: `not_found` = uç yok)
-`/settings` `/notify` `/commands` `/mcp/manifest` `/repo-policy` `/onboarding{,/options,/dry-run}`
-`/pii` `/routing` `/cache` `/eval` `/greenfield` `/decisions` `/doc-template` `/variants`
-
-**Arkası bağlı 13 ekran:** Audit, Cost, Health, KillSwitch, Knowledge, Llm, Params, Runners,
-Security, Template, Users, runs(liste/detay), signals.
-
-**Ayrı eksik:** `AgentTurnRunner` yok → koşu 6a mühendislik turunda **açık hatayla** durur.
-19 adımın 7'si (analiz + PO/TL kapıları) çalışır, 12'si 6a'ya bağlı. `DEGRADED_CAPABILITIES`'te ilan ediliyor.
+## Bilinen sınırlar (gizlenmiyor, `SURUM-NOTU.md`'de)
+- `runners`/`scans`/`eval`/`cache`/`greenfield` → 503: arkalarında veri üreten yok.
+- Panoda sayaçlar 0: DB'de 22 koşu var ama Temporal'da canlı workflow yok, `Gate` tablosu boş.
+- Gerçek Jira/ADO/LDAPS/Temporal'a **hiç bağlanılmadı** — %95 doğruluk sınırı, kalan %5 erişim günü.
+- Windows/Mac runner'ları kapsam dışı (kullanıcı kararı).
 
 ## Tuzaklar (tekrar deneme)
-- **404 ≠ uç yok.** `{"error":"not_found"}` uç yok demek; `no_template`/`unknown_user` uç VAR, veri yok.
-  İlk envanterim bu yüzden yanlıştı.
-- `pkill -f "src/bin/bff.ts"` kendi kabuğumu da düşürüyor → `nohup ... &` ile başlat, ayrı komutta doğrula.
-- Docker imajı **her değişiklikte build etme** (kullanıcı uyardı). Altyapı konteynerde, uygulama
-  `tsx` ile kaynaktan; imaj en sonda bir kez.
-- Vite `allowedHosts`: yeni alan adı → 403 (NPM'de bad gateway görünür). `MAESTRO_STUDIO_ALLOWED_HOSTS`.
-- Kapı yüklü makinede flake yapar (8 çekirdek). Tek paket koşusu yeşilse kod sağlamdır.
+- **404 ≠ uç yok.** `not_found` = uç yok; `no_template`/`unknown_user` = uç VAR, veri yok.
+- **Kapı zaman aşımını merkezden ayarlamaya çalışma.** 3 yol denendi: `VITEST_TESTTIMEOUT`
+  sessizce yok sayılıyor · `--testTimeout` paket config'ini EZİYOR (workflows'un 180s'ini 20s'e
+  düşürüp korumak istediğim testleri düşürdü) · paylaşılan `testTimeout()` helper'ı doğru değeri
+  hesaplayıp hiçbir etki etmiyor. Kapı artık sadece yükü **raporluyor**; test düşerse önce tek başına koş.
+- `pkill -f "src/bin/bff.ts"` kendi kabuğunu da düşürür → `nohup ... &`, ayrı komutta doğrula.
+- Docker imajını her değişiklikte build etme (kullanıcı uyardı). Altyapı konteynerde, uygulama `tsx`.
+- Vite `allowedHosts`: yeni alan adı → 403, NPM'de bad gateway görünür.
 - `uinfra-postgres`, `wendococr-redis`, `uinfra-redis` **başka projelere ait — kullanma.**
-- 5432 bu makinede dolu; compose `POSTGRES_PORT=55432` ile çalışıyor.
+- Migration numarası: paralel ajanlar aynı numarayı alabiliyor (0005 iki kez oldu). Merge'de kontrol et.

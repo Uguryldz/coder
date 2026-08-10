@@ -193,10 +193,127 @@ export interface WaitingGate {
   readonly lastActionParams?: Readonly<Record<string, string>>;
 }
 
+/** The four notification channels a driver can be (M45). */
+export type NotifyChannel = "teams" | "smtp" | "jira" | "slack";
+
+/**
+ * The stored channel routing (M45/M71/M87), exactly as the BFF round-trips it.
+ *
+ * `default` covers every event without an explicit entry; an event mapped to an
+ * empty list is muted DELIBERATELY. The editor reads and writes this shape
+ * unchanged so a save cannot silently reinterpret a mute as a default.
+ */
+export interface NotifyRouting {
+  readonly default: readonly NotifyChannel[];
+  readonly byEvent: Readonly<Record<string, readonly NotifyChannel[]>>;
+}
+
+/**
+ * The stored ladder verbatim, as PUT /notify accepts it back.
+ *
+ * The editor changes a THRESHOLD and sends these same steps with their `id`
+ * intact; a projected rung has no id and re-deriving one re-escalates every
+ * open gate. `businessHoursOnly`/`calendar` are round-tripped opaquely so an
+ * edit to the thresholds leaves the working-calendar untouched.
+ */
+export interface EscalationLadderRaw {
+  readonly steps: readonly EscalationLadderStep[];
+  readonly businessHoursOnly: boolean;
+  readonly calendar: unknown;
+}
+
 export interface NotifyView {
   readonly ladder: readonly EscalationStep[];
   readonly delegations: readonly Delegation[];
   readonly waiting: readonly WaitingGate[];
+  /** The stored routing map, so the editor round-trips exactly. */
+  readonly routing: NotifyRouting;
+  /** The stored ladder verbatim, so a threshold edit keeps every step id. */
+  readonly ladderRaw: EscalationLadderRaw;
+}
+
+/**
+ * PUT /notify — the escalation ladder and/or the channel routing.
+ *
+ * Both fields are optional and an absent one is left alone (the BFF resets
+ * nothing). The ladder is sent as the STORED shape — one `channel` and `event`
+ * per step, keyed by a stable `id` — not the projected rungs the screen reads,
+ * because editing a threshold must keep the id so open gates do not re-escalate.
+ */
+export interface EscalationLadderStep {
+  readonly id: string;
+  readonly afterHours: number;
+  readonly channel: NotifyChannel;
+  readonly event: string;
+  readonly action: "notify" | "delegate";
+  readonly to?: readonly string[];
+}
+
+export interface NotifyUpdate {
+  readonly ladder?: EscalationLadderRaw;
+  readonly routing?: NotifyRouting;
+}
+
+// ── /routing (LIVE: GET /routing, PUT /routing) ───────────────────────────────
+
+/** How a ticket enters the flow. */
+export interface RoutingProject {
+  readonly projectKey: string;
+  readonly trigger: string;
+  readonly apps: readonly string[];
+  readonly noteKey?: string;
+  readonly noteParams?: Readonly<Record<string, string>>;
+}
+
+/** One rendered rule of the data-class routing policy. */
+export interface RoutingRule {
+  readonly ruleId: string;
+  readonly conditionKey?: string;
+  readonly conditionParams?: Readonly<Record<string, string>>;
+  readonly backend: string;
+  readonly model: string;
+  readonly outcome: string;
+}
+
+export interface RoutingView {
+  readonly projects: readonly RoutingProject[];
+  readonly rules: readonly RoutingRule[];
+}
+
+/** The three data classes the policy assigns a backend to, most open first. */
+export type DataClassName = "acik" | "dahili" | "gizli";
+
+/** What happens when the on-prem backend a class requires is unavailable. */
+export type OnpremFallback = "degrade_ai_assist" | "block" | "masked_cloud";
+
+/**
+ * The guarded `dataclass.policy` parameter — PUT /routing edits exactly this.
+ *
+ * It is GUARDED (M32/M78): the first PUT files a proposal and a different person
+ * must send the identical value before it applies, so the screen must show
+ * `pending` distinctly from `applied`.
+ */
+export interface DataClassPolicy {
+  readonly backendByClass: Readonly<Record<DataClassName, string>>;
+  readonly whenOnpremMissing: OnpremFallback;
+}
+
+export interface RoutingUpdate {
+  readonly policy: DataClassPolicy;
+}
+
+// ── /studio/apps (LIVE) — the Application Registry (M100) ─────────────────────
+
+/** ApplicationRecord (M100), as the registry table renders it. */
+export interface ApplicationRecord {
+  readonly appId: string;
+  readonly displayName: string;
+  readonly adoProject: string;
+  readonly adoRepo: string;
+  readonly platform: string;
+  readonly jiraComponent: string | null;
+  readonly maestroYamlPresent: boolean;
+  readonly createdVia: "onboarding" | "import";
 }
 
 // ── /mcp (REQUESTED) ──────────────────────────────────────────────────────────

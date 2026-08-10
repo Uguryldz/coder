@@ -1,108 +1,195 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useApi } from "../auth/AuthProvider.tsx";
+import { messageKeyOf } from "../api/errors.ts";
+import { useApi, useAuth } from "../auth/AuthProvider.tsx";
+import { hasRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Table } from "../ui/index.ts";
+import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
+import type {
+  ApplicationRecord,
+  DataClassName,
+  DataClassPolicy,
+  Page,
+  ParamPutResult,
+  RoutingUpdate,
+  RoutingView,
+} from "./common/index.ts";
 import { useEnumLabel, usePhrase } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 import { outcomeExplanationKey, outcomeKey, outcomeTone } from "./shared/outcome.ts";
+import { RoutingPolicyEditor } from "./routing/RoutingPolicyEditor.tsx";
 
 /**
- * Screen: routing — Jira binding, ticket→application matching and LLM routing
- * policy.
+ * Screen: routing — Jira binding, ticket→application matching and the LLM
+ * routing policy (M99/M100/M102).
  *
- * The routing policy is configuration, not code (routing.yaml). Each rule's
- * outcome is shown with the same vocabulary as the cost and llm screens, so
- * "quota exhausted → queue" reads identically wherever it appears.
+ * The two tables answer different questions. The bindings are rows written by
+ * the onboarding flow (which project is live, how a ticket enters). The policy
+ * is the GUARDED `dataclass.policy` parameter — editable here, but every save
+ * takes four eyes because it decides whether a `gizli` ticket may reach a cloud
+ * model. The Application Registry below is the TARGET of a match: each row is a
+ * repo an agent may be told to push to, so it is shown, never implied.
  */
 
-interface ProjectBinding {
-  readonly projectKey: string;
-  /** "auto" | "label" | "command" — how a ticket enters the flow. */
-  readonly trigger: string;
-  readonly apps: readonly string[];
-  /** Catalog key for the note, chosen by the server from the binding's state. */
-  readonly noteKey?: string;
-  readonly noteParams?: Readonly<Record<string, string>>;
-}
-
-interface RoutingRule {
-  readonly ruleId: string;
-  /** Catalog key for the condition, plus its substitutions. */
-  readonly conditionKey?: string;
-  readonly conditionParams?: Readonly<Record<string, string>>;
-  readonly backend: string;
-  readonly model: string;
-  /** What happens when this rule fires: ok | queued | degraded | blocked. */
-  readonly outcome: string;
-}
-
-interface RoutingResponse {
-  readonly projects: readonly ProjectBinding[];
-  readonly rules: readonly RoutingRule[];
-}
+const DATA_CLASSES: readonly DataClassName[] = ["acik", "dahili", "gizli"];
 
 export function RoutingScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
   const enumLabel = useEnumLabel();
   const phrase = usePhrase();
 
-  const query = useQuery({
+  const [editing, setEditing] = useState(false);
+  const [pendingBy, setPendingBy] = useState<string | null>(null);
+
+  const routing = useQuery({
     queryKey: ["routing"],
-    queryFn: ({ signal }) => api.get<RoutingResponse>("/routing", { signal }),
+    queryFn: ({ signal }) => api.get<RoutingView>("/routing", { signal }),
+  });
+
+  // The Application Registry (M100). Read here so the admin can see the targets
+  // a match resolves to without opening another screen.
+  const apps = useQuery({
+    queryKey: ["studio-apps"],
+    queryFn: ({ signal }) => api.get<Page<ApplicationRecord>>("/studio/apps", { signal }),
+  });
+
+  const canEdit = hasRole(session, "admin");
+
+  /**
+   * The current policy, reconstructed from the rules the screen already read.
+   *
+   * The per-class backend comes straight from each `dataclass:<class>` rule; it
+   * is authoritative. `whenOnpremMissing` is NOT recoverable from a rule's
+   * outcome alone (both `degrade_ai_assist` and `masked_cloud` render as
+   * `degraded`), so the editor opens on the safe default and the admin confirms
+   * it — a guarded save re-states the whole policy anyway.
+   */
+  const currentPolicy = useMemo<DataClassPolicy | null>(() => {
+    const rules = routing.data?.rules ?? [];
+    const backendByClass: Partial<Record<DataClassName, string>> = {};
+    for (const dataClass of DATA_CLASSES) {
+      const rule = rules.find((candidate) => candidate.ruleId === `dataclass:${dataClass}`);
+      if (rule !== undefined) backendByClass[dataClass] = rule.backend;
+    }
+    if (DATA_CLASSES.some((dataClass) => backendByClass[dataClass] === undefined)) return null;
+    return {
+      backendByClass: backendByClass as Record<DataClassName, string>,
+      whenOnpremMissing: "degrade_ai_assist",
+    };
+  }, [routing.data]);
+
+  const save = useMutation({
+    mutationFn: (policy: DataClassPolicy) =>
+      api.put<ParamPutResult>("/routing", { policy } satisfies RoutingUpdate),
+    onSuccess: (result) => {
+      setEditing(false);
+      if (result.status === "applied") {
+        setPendingBy(null);
+        void queryClient.invalidateQueries({ queryKey: ["routing"] });
+        toast.show("success", t("routing.policy.toast.applied"));
+      } else {
+        setPendingBy(result.pending.proposedBy);
+        toast.show("warning", t("routing.policy.toast.pending"));
+      }
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
   return (
     <>
-      <Card title={t("routing.projects")} subtitle={t("routing.projects_sub")} padded={false}>
-        <MaybeUnwired
-          isPending={query.isPending}
-          error={query.error}
-          isEmpty={(query.data?.projects ?? []).length === 0}
-          emptyTitle={t("routing.no_projects")}
-          onRetry={() => void query.refetch()}
-        >
-          <Table
-            columns={[
-              {
-                key: "project",
-                header: t("routing.col.project"),
-                cell: (row: ProjectBinding) => row.projectKey,
-              },
-              {
-                key: "trigger",
-                header: t("routing.col.trigger"),
-                cell: (row) => {
-                  const label = enumLabel("routing.trigger", row.trigger);
-                  return <Badge tone={label.unknown ? "gray" : "blue"}>{label.text}</Badge>;
-                },
-              },
-              {
-                key: "apps",
-                header: t("routing.col.apps"),
-                cell: (row) =>
-                  row.apps.length === 0 ? t("routing.no_apps") : row.apps.join(", "),
-              },
-              {
-                key: "note",
-                header: t("routing.col.note"),
-                cell: (row) => phrase(row.noteKey, row.noteParams),
-              },
-            ]}
-            rows={query.data?.projects ?? []}
-            rowKey={(row) => row.projectKey}
-            emptyLabel={t("routing.no_projects")}
-          />
-        </MaybeUnwired>
+      <Card title={t("routing.mechanics.title")} subtitle={t("routing.mechanics.sub")}>
+        <div className="scr-grid scr-grid--2">
+          <div>
+            <b style={{ fontSize: 13 }}>{t("routing.mechanics.webhook")}</b>
+            <p className="scr-mini">{t("routing.mechanics.webhook_body")}</p>
+          </div>
+          <div>
+            <b style={{ fontSize: 13 }}>{t("routing.mechanics.binding")}</b>
+            <p className="scr-mini">{t("routing.mechanics.binding_body")}</p>
+          </div>
+        </div>
       </Card>
 
       <div style={{ marginTop: 14 }}>
-        <Card title={t("routing.policy")} subtitle={t("routing.policy_sub")} padded={false}>
+        <Card
+          title={t("routing.projects")}
+          subtitle={t("routing.projects_sub")}
+          padded={false}
+          actions={
+            <Button size="sm" onClick={() => (window.location.hash = "#onboard")}>
+              {t("routing.action.bind")}
+            </Button>
+          }
+        >
           <MaybeUnwired
-            isPending={query.isPending}
-            error={query.error}
-            isEmpty={(query.data?.rules ?? []).length === 0}
+            isPending={routing.isPending}
+            error={routing.error}
+            isEmpty={(routing.data?.projects ?? []).length === 0}
+            emptyTitle={t("routing.no_projects")}
+            onRetry={() => void routing.refetch()}
+          >
+            <Table
+              columns={[
+                {
+                  key: "project",
+                  header: t("routing.col.project"),
+                  cell: (row) => row.projectKey,
+                },
+                {
+                  key: "trigger",
+                  header: t("routing.col.trigger"),
+                  cell: (row) => {
+                    const label = enumLabel("routing.trigger", row.trigger);
+                    return <Badge tone={label.unknown ? "gray" : "blue"}>{label.text}</Badge>;
+                  },
+                },
+                {
+                  key: "apps",
+                  header: t("routing.col.apps"),
+                  cell: (row) =>
+                    row.apps.length === 0 ? t("routing.no_apps") : row.apps.join(", "),
+                },
+                {
+                  key: "note",
+                  header: t("routing.col.note"),
+                  cell: (row) => phrase(row.noteKey, row.noteParams),
+                },
+              ]}
+              rows={routing.data?.projects ?? []}
+              rowKey={(row) => row.projectKey}
+              emptyLabel={t("routing.no_projects")}
+            />
+          </MaybeUnwired>
+        </Card>
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <Card
+          title={t("routing.policy")}
+          subtitle={t("routing.policy_sub")}
+          padded={false}
+          actions={
+            canEdit ? (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={currentPolicy === null}
+                onClick={() => setEditing(true)}
+              >
+                {t("routing.policy.action.edit")}
+              </Button>
+            ) : undefined
+          }
+        >
+          <MaybeUnwired
+            isPending={routing.isPending}
+            error={routing.error}
+            isEmpty={(routing.data?.rules ?? []).length === 0}
             emptyTitle={t("routing.no_rules")}
           >
             <Table
@@ -110,7 +197,7 @@ export function RoutingScreen(): ReactNode {
                 {
                   key: "condition",
                   header: t("routing.col.condition"),
-                  cell: (row: RoutingRule) => phrase(row.conditionKey, row.conditionParams),
+                  cell: (row) => phrase(row.conditionKey, row.conditionParams),
                 },
                 {
                   key: "backend",
@@ -131,7 +218,7 @@ export function RoutingScreen(): ReactNode {
                   cell: (row) => t(outcomeExplanationKey(row.outcome)),
                 },
               ]}
-              rows={query.data?.rules ?? []}
+              rows={routing.data?.rules ?? []}
               rowKey={(row) => row.ruleId}
               emptyLabel={t("routing.no_rules")}
             />
@@ -139,9 +226,75 @@ export function RoutingScreen(): ReactNode {
         </Card>
       </div>
 
+      <div style={{ marginTop: 14 }}>
+        <Card title={t("routing.registry")} subtitle={t("routing.registry_sub")} padded={false}>
+          <MaybeUnwired
+            isPending={apps.isPending}
+            error={apps.error}
+            isEmpty={(apps.data?.items ?? []).length === 0}
+            emptyTitle={t("routing.registry_empty")}
+            onRetry={() => void apps.refetch()}
+          >
+            <Table
+              columns={[
+                {
+                  key: "app",
+                  header: t("routing.registry.col.app"),
+                  cell: (row) => <b>{row.displayName}</b>,
+                },
+                {
+                  key: "repo",
+                  header: t("routing.registry.col.repo"),
+                  cell: (row) => (
+                    <code className="scr-mono">{`${row.adoProject}/_git/${row.adoRepo}`}</code>
+                  ),
+                },
+                {
+                  key: "platform",
+                  header: t("routing.registry.col.platform"),
+                  cell: (row) => <Badge tone="gray">{row.platform}</Badge>,
+                },
+                {
+                  key: "yaml",
+                  header: t("routing.registry.col.yaml"),
+                  cell: (row) =>
+                    row.maestroYamlPresent ? (
+                      <Badge tone="green">{t("routing.registry.yaml_present")}</Badge>
+                    ) : (
+                      <Badge tone="amber">{t("routing.registry.yaml_absent")}</Badge>
+                    ),
+                },
+                {
+                  key: "source",
+                  header: t("routing.registry.col.source"),
+                  cell: (row) => t(`routing.registry.source.${row.createdVia}`),
+                },
+              ]}
+              rows={apps.data?.items ?? []}
+              rowKey={(row) => row.appId}
+              emptyLabel={t("routing.registry_empty")}
+            />
+          </MaybeUnwired>
+          <p className="scr-mini" style={{ margin: "9px 14px 12px" }}>
+            {t("routing.registry_note")}
+          </p>
+        </Card>
+      </div>
+
       <p className="tpl-keyline" style={{ marginTop: 12 }}>
         {t("routing.config_note")}
       </p>
+
+      {currentPolicy !== null && (
+        <RoutingPolicyEditor
+          open={editing}
+          current={currentPolicy}
+          pendingBy={pendingBy}
+          busy={save.isPending}
+          onClose={() => setEditing(false)}
+          onSubmit={(policy) => save.mutate(policy)}
+        />
+      )}
     </>
   );
 }

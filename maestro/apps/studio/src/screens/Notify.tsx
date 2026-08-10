@@ -1,17 +1,23 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { useApi } from "../auth/AuthProvider.tsx";
+import { messageKeyOf } from "../api/errors.ts";
+import { useApi, useAuth } from "../auth/AuthProvider.tsx";
+import { hasRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Table } from "../ui/index.ts";
+import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
 import {
   type Delegation,
+  type NotifyUpdate,
   type NotifyView,
+  type ParamPutResult,
   useDuration,
   type WaitingGate,
 } from "./common/index.ts";
 import { useEnumLabel, useLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
+import { NotifyEditor } from "./notify/NotifyEditor.tsx";
 
 /**
  * Reminders and escalation (M45/M88): the ladder that keeps a gate from being
@@ -26,13 +32,38 @@ import { MaybeUnwired } from "./shared/unwired.tsx";
 export function NotifyScreen(): ReactNode {
   const api = useApi();
   const t = useT();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
   const label = useLabel();
   const enumLabel = useEnumLabel();
   const duration = useDuration();
 
+  const [editing, setEditing] = useState(false);
+
   const notify = useQuery({
     queryKey: ["notify"],
     queryFn: ({ signal }) => api.get<NotifyView>("/notify", { signal }),
+  });
+
+  const canEdit = hasRole(session, "admin");
+
+  // PUT /notify answers `{ results: [...] }`; a guarded parameter comes back
+  // `pending`, so a save is only truly applied when NONE of the results is.
+  const save = useMutation({
+    mutationFn: (update: NotifyUpdate) =>
+      api.put<{ results: readonly ParamPutResult[] }>("/notify", update),
+    onSuccess: ({ results }) => {
+      setEditing(false);
+      const anyPending = results.some((result) => result.status === "pending");
+      if (anyPending) {
+        toast.show("warning", t("notify.edit.toast.pending"));
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ["notify"] });
+        toast.show("success", t("notify.edit.toast.saved"));
+      }
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
   const delegationColumns: readonly Column<Delegation>[] = [
@@ -90,7 +121,17 @@ export function NotifyScreen(): ReactNode {
         error={notify.error}
         onRetry={() => void notify.refetch()}
       >
-        <Card title={t("notify.card.ladder")} subtitle={t("notify.card.ladder_sub")}>
+        <Card
+          title={t("notify.card.ladder")}
+          subtitle={t("notify.card.ladder_sub")}
+          actions={
+            canEdit && notify.data !== undefined ? (
+              <Button size="sm" variant="primary" onClick={() => setEditing(true)}>
+                {t("notify.edit.action")}
+              </Button>
+            ) : undefined
+          }
+        >
           {(notify.data?.ladder ?? []).length === 0 ? (
             <p className="scr-mini">{t("notify.empty.ladder")}</p>
           ) : (
@@ -141,6 +182,17 @@ export function NotifyScreen(): ReactNode {
           </Card>
         </div>
       </MaybeUnwired>
+
+      {notify.data !== undefined && (
+        <NotifyEditor
+          open={editing}
+          ladder={notify.data.ladderRaw}
+          routing={notify.data.routing}
+          busy={save.isPending}
+          onClose={() => setEditing(false)}
+          onSubmit={(update) => save.mutate(update)}
+        />
+      )}
     </div>
   );
 }

@@ -52,6 +52,13 @@ export interface NotifyView {
   waiting: readonly WaitingGateView[];
   /** The stored routing, so the screen's editor round-trips exactly. */
   routing: NotifyRouting;
+  /**
+   * The stored ladder verbatim (per-step id/channel/event/threshold), so the
+   * editor can change a THRESHOLD and PUT the same steps back with their ids
+   * intact — a projected rung has no id, and re-deriving one would re-escalate
+   * every open gate (see `EscalationStep.id`).
+   */
+  ladderRaw: EscalationLadder;
 }
 
 /**
@@ -88,6 +95,7 @@ export async function readNotify(deps: ResolvedDeps): Promise<NotifyView> {
     delegations: await delegations(deps),
     waiting: await waiting(deps),
     routing,
+    ladderRaw: ladder,
   };
 }
 

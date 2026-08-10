@@ -60,6 +60,16 @@ h1{font-size:19px;margin:0}
 code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px}
 .err{color:var(--red);font-weight:600}
 
+/* --------------------------------------------------------------- settings */
+.set-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:900px){.set-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.set-grid{grid-template-columns:1fr}}
+.set-f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mini)}
+.set-f input,.set-f select{font:inherit;font-size:13px;color:var(--text);background:var(--panel);border:1px solid var(--border2);border-radius:7px;padding:7px 9px}
+.set-f input:focus,.set-f select:focus{outline:none;border-color:var(--blue)}
+.set-ok{color:var(--green);font-weight:600}
+.set-bad{color:var(--red);font-weight:600}
+
 /* --------------------------------------------------------------- Jira (real) */
 .jira-pane{border-radius:3px;border-color:var(--j-border);color:var(--j-text)}
 .jbar{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--j-border);background:var(--j-bg);border-radius:3px 3px 0 0;font-size:12px}
@@ -104,6 +114,34 @@ code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px
     Onaylar <b>gerçek Jira'ya <code>/approve</code> yorumu</b> yazılarak verilir — burada bir kutu yok.
     Bir adım patlarsa ekranda kırmızı görünür — başarı taklit edilmez.
   </div></div>
+
+  <div class="card settings-card" style="margin:14px 0">
+    <div class="ph">⚙ Ayarlar <span class="mini" style="font-weight:400">— env yerine buradan (çalışma sürerken kilitli)</span>
+      <span class="spacer"></span>
+      <button class="btn" id="set-toggle" type="button">Göster</button>
+    </div>
+    <div class="bd" id="set-body" style="display:none">
+      <div class="mini" style="margin-bottom:12px">Bu altı değer çalışma anında düzenlenir; bir sonraki koşuda/yoklamada geçerli olur. Jetonlar ve sabit adresler burada değildir.</div>
+      <div class="set-grid">
+        <label class="set-f"><span>Onaylayan grup</span><input id="s-approverGroup" type="text" autocomplete="off"></label>
+        <label class="set-f"><span>Model</span><input id="s-model" type="text" autocomplete="off"></label>
+        <label class="set-f"><span>Komut yoklama (ms)</span><input id="s-commandPollMs" type="number" min="1000" max="120000" step="500"></label>
+        <label class="set-f"><span>Keşif yoklama (ms)</span><input id="s-discoveryPollMs" type="number" min="1000" max="120000" step="500"></label>
+        <label class="set-f"><span>Veri sınıfı</span>
+          <select id="s-dataClass">
+            <option value="acik">acik</option>
+            <option value="dahili">dahili</option>
+            <option value="gizli">gizli</option>
+          </select>
+        </label>
+        <label class="set-f"><span>Operatör hesabı</span><input id="s-operatorAccount" type="text" autocomplete="off"></label>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+        <button class="btn p" id="set-save" type="button">Kaydet</button>
+        <span class="mini" id="set-msg"></span>
+      </div>
+    </div>
+  </div>
 
   <div class="kpis">
     <div class="kpi"><div class="l">Ticket</div><div class="v" id="k-ticket">—</div></div>
@@ -267,9 +305,79 @@ function renderState(state) {
     : "Sol taraf gerçek Jira'dır: Maestro yorumları oraya yazar, onayı oradaki yorumları <b>yoklayarak</b> alır. Sağ taraf Maestro'nun adımlarıdır.";
 }
 
+// ---------------------------------------------------------------- settings
+// The ⚙ Ayarlar panel: load the six current values, let them be edited, POST on
+// Kaydet. The server validates and refuses a change while a run is in progress
+// (409), so the button is disabled and a note is shown whenever a run is live.
+const SET_FIELDS = ["approverGroup", "model", "commandPollMs", "discoveryPollMs", "dataClass", "operatorAccount"];
+
+function fillSettings(s) {
+  for (const key of SET_FIELDS) {
+    const el = $("s-" + key);
+    if (el && document.activeElement !== el) el.value = s[key];
+  }
+}
+
+async function loadSettings() {
+  try {
+    const s = await (await fetch("/api/settings")).json();
+    fillSettings(s);
+  } catch { /* leave placeholders; the panel is a convenience */ }
+}
+
+function readSettingsForm() {
+  return {
+    approverGroup: $("s-approverGroup").value.trim(),
+    model: $("s-model").value.trim(),
+    commandPollMs: Number($("s-commandPollMs").value),
+    discoveryPollMs: Number($("s-discoveryPollMs").value),
+    dataClass: $("s-dataClass").value,
+    operatorAccount: $("s-operatorAccount").value.trim(),
+  };
+}
+
+function setMsg(text, ok) {
+  const el = $("set-msg");
+  el.textContent = text;
+  el.className = "mini " + (ok === true ? "set-ok" : ok === false ? "set-bad" : "");
+}
+
+$("set-toggle").onclick = () => {
+  const body = $("set-body");
+  const open = body.style.display === "none";
+  body.style.display = open ? "block" : "none";
+  $("set-toggle").textContent = open ? "Gizle" : "Göster";
+  if (open) loadSettings();
+};
+
+$("set-save").onclick = async () => {
+  if (STATE && STATE.running) { setMsg("akış sürerken değiştirilemez", false); return; }
+  setMsg("kaydediliyor…", null);
+  const res = await fetch("/api/settings", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(readSettingsForm()),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) { fillSettings(data); setMsg("✓ kaydedildi", true); }
+  else setMsg("✗ " + (data.error || ("hata " + res.status)), false);
+};
+
+// Reflect run state: lock the Kaydet button while a run is live so the mid-run
+// guard is visible in the UI, not only enforced by the server.
+function syncSettingsLock(state) {
+  const btn = $("set-save");
+  if (!btn) return;
+  btn.disabled = !!state.running;
+  if (state.running && $("set-body").style.display !== "none" && !$("set-msg").textContent) {
+    setMsg("akış sürüyor — ayarlar kilitli", false);
+  }
+}
+
 const events = new EventSource("/api/events");
-events.onmessage = (event) => renderState(JSON.parse(event.data));
-fetch("/api/state").then((r) => r.json()).then(renderState);
+events.onmessage = (event) => { const s = JSON.parse(event.data); renderState(s); syncSettingsLock(s); };
+fetch("/api/state").then((r) => r.json()).then((s) => { renderState(s); syncSettingsLock(s); });
+loadSettings();
 </script>
 </body>
 </html>

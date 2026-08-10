@@ -72,11 +72,17 @@ export const APPROVER_GROUP = process.env["PILOT_APPROVER_GROUP"] ?? "jira-users
  */
 export const PILOT_OPERATOR_ACCOUNT = process.env["PILOT_OPERATOR_ACCOUNT"] ?? "0uguryldz94@gmail.com";
 
-/** Corporate account for a Cloud comment author (audit needs `user@corp`). */
-export function corpAccountOf(author: string): string {
+/**
+ * Corporate account for a Cloud comment author (audit needs `user@corp`).
+ *
+ * The operator-account fallback is passed in so this can be resolved against the
+ * live SettingsStore at USE time (the UI can change it without a restart). An
+ * author that is already e-mail-shaped is used as-is regardless.
+ */
+export function corpAccountOf(author: string, operatorAccount: string = PILOT_OPERATOR_ACCOUNT): string {
   const value = author.trim();
   if (/^[^@\s]+@[^@\s]+$/.test(value)) return value; // already an e-mail identity
-  return PILOT_OPERATOR_ACCOUNT; // opaque accountId → configured operator account
+  return operatorAccount; // opaque accountId → configured operator account
 }
 
 // ------------------------------------------------------------------ ADO (fake)
@@ -96,10 +102,35 @@ export const PILOT_VARIANT = "pilot-v1";
 /**
  * Data class of the payloads. `gizli` + `onPremMissing: "masked_cloud"` masks
  * before anything leaves the machine — the bank's real posture (M18/M63).
+ * Overridable (UI-editable) via PILOT_DATA_CLASS; defaults to `gizli`.
  */
-export const PILOT_DATA_CLASS = "gizli" as const;
+export const PILOT_DATA_CLASS = process.env["PILOT_DATA_CLASS"] ?? "gizli";
 
 /** How often the poller lists comments while a gate is open (ms). */
 export const COMMAND_POLL_MS = Number(process.env["PILOT_COMMAND_POLL_MS"] ?? 3_000);
 /** How often discovery re-lists opted-in tickets while idle (ms). */
 export const DISCOVERY_POLL_MS = Number(process.env["PILOT_DISCOVERY_POLL_MS"] ?? 15_000);
+
+/**
+ * The seed for the runtime `SettingsStore` — the six UI-editable settings, read
+ * ONCE from the env constants above. After boot the store is authoritative; the
+ * env only seeds it, so nothing changes if the panel is never touched. Structural
+ * constants (ADO_*, ports, JQL) and secrets are deliberately NOT here.
+ */
+export function defaultSettings(): {
+  approverGroup: string;
+  model: string;
+  commandPollMs: number;
+  discoveryPollMs: number;
+  dataClass: string;
+  operatorAccount: string;
+} {
+  return {
+    approverGroup: APPROVER_GROUP,
+    model: PILOT_MODEL,
+    commandPollMs: COMMAND_POLL_MS,
+    discoveryPollMs: DISCOVERY_POLL_MS,
+    dataClass: PILOT_DATA_CLASS,
+    operatorAccount: PILOT_OPERATOR_ACCOUNT,
+  };
+}

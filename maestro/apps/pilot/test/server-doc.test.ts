@@ -5,6 +5,7 @@ import { analysisToDocs, DocStore } from "../src/docs.js";
 import { close, listen } from "../src/http.js";
 import type { PilotRun } from "../src/run.js";
 import { createUiServer } from "../src/server.js";
+import { SettingsStore } from "../src/settings.js";
 import { initialState, StateStore } from "../src/state.js";
 
 /**
@@ -40,7 +41,15 @@ function boot(docs: DocStore) {
   const store = new StateStore(
     initialState({ model: "stub", jiraSite: "https://example.atlassian.net", approverGroup: "g" }),
   );
-  const server = createUiServer({ store, run: stubRun, docs, start: () => Promise.resolve() });
+  const settings = new SettingsStore({
+    approverGroup: "g",
+    model: "stub",
+    commandPollMs: 3_000,
+    discoveryPollMs: 15_000,
+    dataClass: "gizli",
+    operatorAccount: "op@corp",
+  });
+  const server = createUiServer({ store, settings, run: stubRun, docs, start: () => Promise.resolve() });
   return { store, server };
 }
 

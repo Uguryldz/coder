@@ -24,14 +24,12 @@ import { z } from "zod";
 import {
   ADO_PROJECT,
   ADO_REPO,
-  APPROVER_GROUP,
-  COMMAND_POLL_MS,
   corpAccountOf,
-  PILOT_DATA_CLASS,
   PILOT_VARIANT,
 } from "./config.js";
 import { analysisToDocs, type DocStore } from "./docs.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
+import type { PilotSettings, SettingsStore } from "./settings.js";
 import type { StateStore } from "./state.js";
 import {
   createWorkspace,
@@ -106,6 +104,8 @@ export interface PilotRunDeps {
   audit: AuditChain;
   piiPolicy: LoadedPiiPolicy;
   store: StateStore;
+  /** Runtime settings (approver group, model, poll ms, data class, operator). */
+  settings: SettingsStore;
   /** Holds the generated .docx/.pdf so the download route can stream them. */
   docs: DocStore;
   /** Stands in for the human who presses "Complete" in the ADO PR screen. */
@@ -130,14 +130,28 @@ export class PilotRun {
   private ciWaiter: { prId: number; resolve: (ok: boolean) => void } | null = null;
   /** Aborts the running gate poller when the flow ends or is stopped. */
   private abort: AbortController | null = null;
+  /**
+   * The settings this run was started with, snapshotted at start(). Because a
+   * settings change is refused WHILE a run is in progress (server.ts guard), the
+   * six values are fixed for a whole run: reading them once here keeps approver
+   * group / data class / model / operator consistent across every step, so a
+   * gate is never opened for one group and closed against another.
+   */
+  private runSettings: PilotSettings;
 
-  constructor(private readonly deps: PilotRunDeps) {}
+  constructor(private readonly deps: PilotRunDeps) {
+    this.runSettings = deps.settings.snapshot();
+  }
 
   // ---------------------------------------------------------------- run
 
   async start(ticketKey: TicketKey): Promise<void> {
     const { store } = this.deps;
     if (store.snapshot().running) throw new Error("akış zaten çalışıyor");
+    // Snapshot the settings for the whole run (they cannot change mid-run — the
+    // server refuses a settings write while running), so every step sees one
+    // consistent approver group / model / data class / operator / poll interval.
+    this.runSettings = this.deps.settings.snapshot();
     this.ticketKey = ticketKey;
     this.runId = `pilot-${new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14)}`;
     this.progressCommentId = null;
@@ -151,6 +165,9 @@ export class PilotRun {
       state.failure = null;
       state.runId = this.runId;
       state.ticketKey = ticketKey;
+      // Reflect the settings this run actually uses (they may have changed since boot).
+      state.model = this.runSettings.model;
+      state.approverGroup = this.runSettings.approverGroup;
       state.browseUrl = `${state.jiraSite}/browse/${ticketKey}`;
       state.awaitingGate = null;
       state.docsReady = false;
@@ -317,11 +334,12 @@ export class PilotRun {
   /** ③ human gate on the analysis (M51 gate "5") — resolved by polling comments. */
   private async stepAnalysisGate(): Promise<void> {
     const { store } = this.deps;
-    await this.record("GATE_OPEN", { step: "5", group: APPROVER_GROUP });
+    const approverGroup = this.runSettings.approverGroup;
+    await this.record("GATE_OPEN", { step: "5", group: approverGroup });
     store.step("3", "onay");
     store.log(
       "warn",
-      `⏸ kapı açık — GERÇEK Jira'da yoruma /approve yazılmasını bekliyorum (grup: ${APPROVER_GROUP})`,
+      `⏸ kapı açık — GERÇEK Jira'da yoruma /approve yazılmasını bekliyorum (grup: ${approverGroup})`,
     );
     const envelope = await this.awaitApproval("3");
     store.step("3", "tamam", `onaylayan: ${envelope.author}`);
@@ -344,7 +362,7 @@ export class PilotRun {
     this.branch = branch;
 
     this.workspace = await createWorkspace();
-    const profile = compiledProfileFor(this.deps.piiPolicy, PILOT_DATA_CLASS).profile;
+    const profile = compiledProfileFor(this.deps.piiPolicy, this.runSettings.dataClass).profile;
 
     let feedback: string | null = null;
     let previousCode: CodeDraft | null = null;
@@ -539,6 +557,7 @@ export class PilotRun {
   private async awaitApproval(step: string): Promise<CommandEnvelope> {
     const { store, work } = this.deps;
     const ticketKey = this.requireTicket();
+    const approverGroup = this.runSettings.approverGroup;
     const signal = this.abort?.signal ?? new AbortController().signal;
     const seen = new Set<string>();
 
@@ -550,7 +569,7 @@ export class PilotRun {
           ticketKey,
           seen,
           accept: ["approve", "reject"],
-          intervalMs: this.deps.commandPollMs ?? COMMAND_POLL_MS,
+          intervalMs: this.deps.commandPollMs ?? this.runSettings.commandPollMs,
           signal,
           ...(this.deps.sleep ? { sleep: this.deps.sleep } : {}),
           onInvalid: (messageKey, command) =>
@@ -573,18 +592,22 @@ export class PilotRun {
       // approve → verify the author is in the approver group (M32/M51). SoD is
       // relaxed only by which group APPROVER_GROUP names (see config/RAPOR);
       // the membership check itself is never skipped.
-      const member = await work.verifyMembership(envelope.author, APPROVER_GROUP);
+      const member = await work.verifyMembership(envelope.author, approverGroup);
       if (!member) {
-        store.log("err", `✗ ${envelope.author} ${APPROVER_GROUP} grubunda değil — onay reddedildi`);
+        store.log("err", `✗ ${envelope.author} ${approverGroup} grubunda değil — onay reddedildi`);
         await work.addComment(
           ticketKey,
-          doc(paragraph(`❌ ${envelope.author} bu kapıyı onaylayamaz (${APPROVER_GROUP} üyesi değil).`)),
+          doc(paragraph(`❌ ${envelope.author} bu kapıyı onaylayamaz (${approverGroup} üyesi değil).`)),
         );
         this.deps.onJiraChanged?.();
         continue; // keep polling — a non-member comment does not open the gate
       }
 
-      await this.record("GATE_APPROVE", { step, group: APPROVER_GROUP }, corpAccountOf(envelope.author));
+      await this.record(
+        "GATE_APPROVE",
+        { step, group: approverGroup },
+        corpAccountOf(envelope.author, this.runSettings.operatorAccount),
+      );
       return envelope;
     }
   }
@@ -625,7 +648,7 @@ export class PilotRun {
     input: unknown,
   ): Promise<{ masked: T; display: T }> {
     const outcome = await this.deps.llm.generateObject(
-      { role, variantId: PILOT_VARIANT, dataClass: PILOT_DATA_CLASS, schemaName, input },
+      { role, variantId: PILOT_VARIANT, dataClass: this.runSettings.dataClass, schemaName, input },
       schema,
     );
     if (outcome.status !== "ok") {

@@ -4,6 +4,7 @@ import { TicketKey } from "@maestro/contracts";
 import { DOC_CONTENT_TYPE, type DocKind, type DocStore } from "./docs.js";
 import { headerValue, readRawBody, requestUrl, sendJson, sendText } from "./http.js";
 import type { PilotRun } from "./run.js";
+import { SettingsValidationError, type SettingsStore } from "./settings.js";
 import type { PilotState, StateStore } from "./state.js";
 
 /**
@@ -17,6 +18,8 @@ const PAGE = readFileSync(new URL("./ui.html", import.meta.url), "utf8");
 
 export interface UiServerOptions {
   store: StateStore;
+  /** Runtime settings the ⚙ Ayarlar panel reads and writes (M71). */
+  settings: SettingsStore;
   run: PilotRun;
   /** Holds the generated analysis .docx/.pdf the download route streams. */
   docs: DocStore;
@@ -54,6 +57,52 @@ export function createUiServer(options: UiServerOptions): Server {
 
     if (url.pathname === "/api/state" && method === "GET") {
       sendJson(res, 200, options.store.snapshot());
+      return;
+    }
+
+    // The six UI-editable operational settings (M71). GET returns the current
+    // values — none is a secret; the store never holds tokens or fixed URLs.
+    if (url.pathname === "/api/settings" && method === "GET") {
+      sendJson(res, 200, options.settings.snapshot());
+      return;
+    }
+
+    // POST validates + updates. MID-RUN GUARD: a settings change is REFUSED while
+    // a run is in progress (409). The run snapshots its settings at start, so a
+    // change never alters approver group / data class / model semantics
+    // mid-flight — it applies cleanly to the NEXT run. This is the safe choice:
+    // no gate is ever opened for one group and evaluated against another.
+    if (url.pathname === "/api/settings" && method === "POST") {
+      if (options.store.snapshot().running) {
+        sendJson(res, 409, { error: "akış sürerken değiştirilemez" });
+        return;
+      }
+      const raw = await readRawBody(req);
+      const body = safeJson(raw);
+      if (body === null) {
+        sendJson(res, 400, { error: "geçerli bir JSON gövdesi gerekli" });
+        return;
+      }
+      try {
+        const before = options.settings.snapshot();
+        const updated = options.settings.update(body);
+        const changed = (Object.keys(updated) as Array<keyof typeof updated>).filter(
+          (key) => before[key] !== updated[key],
+        );
+        options.store.log(
+          "info",
+          changed.length === 0
+            ? "⚙ ayarlar POST edildi — değişiklik yok"
+            : `⚙ ayarlar güncellendi (operatör): ${changed.join(", ")}`,
+        );
+        sendJson(res, 200, updated);
+      } catch (error) {
+        if (error instanceof SettingsValidationError) {
+          sendJson(res, 400, { error: error.message });
+          return;
+        }
+        throw error;
+      }
       return;
     }
 

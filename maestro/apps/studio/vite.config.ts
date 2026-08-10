@@ -8,6 +8,31 @@ import { defineConfig } from "vite";
 // serves its routes at the root (/auth/login, /runs, ...), not under /api.
 const BFF_ORIGIN = process.env["MAESTRO_BFF_ORIGIN"] ?? "http://localhost:7001";
 
+/**
+ * Which interface the dev server binds, and which Host headers it answers.
+ *
+ * Both matter behind a reverse proxy, and they fail differently:
+ *
+ * - `host`: the default binds loopback only, so a proxy on another machine —
+ *   or in another container — connects to nothing and reports 502. Set
+ *   `MAESTRO_STUDIO_HOST=0.0.0.0` when something in front needs to reach it.
+ *   The default stays loopback: a dev server that binds every interface
+ *   because nobody set a variable is exposed by omission.
+ * - `allowedHosts`: Vite refuses a request whose `Host` header it does not
+ *   recognise (DNS-rebinding protection). A proxy forwards the PUBLIC name, so
+ *   `maestro.bank.local` arrives at a server that only knows `localhost` and
+ *   the answer is a 403 the proxy surfaces as a gateway error. List the names
+ *   the proxy will send in `MAESTRO_STUDIO_ALLOWED_HOSTS` (comma-separated).
+ *
+ * This is the DEV server. In production Studio is a static bundle behind nginx
+ * (deploy/docker/Dockerfile.studio) and neither setting applies.
+ */
+const STUDIO_HOST = process.env["MAESTRO_STUDIO_HOST"] ?? "127.0.0.1";
+const ALLOWED_HOSTS = (process.env["MAESTRO_STUDIO_ALLOWED_HOSTS"] ?? "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter((name) => name.length > 0);
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -21,8 +46,10 @@ export default defineConfig({
     },
   },
   server: {
+    host: STUDIO_HOST,
     port: 7000,
     strictPort: true,
+    ...(ALLOWED_HOSTS.length > 0 ? { allowedHosts: ALLOWED_HOSTS } : {}),
     proxy: {
       "/api": {
         target: BFF_ORIGIN,

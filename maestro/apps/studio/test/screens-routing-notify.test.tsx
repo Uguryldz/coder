@@ -5,25 +5,36 @@ import { NotifyScreen } from "../src/screens/Notify.tsx";
 import { RoutingScreen } from "../src/screens/Routing.tsx";
 import { renderScreen, stubFetch, VIEWER } from "./harness.tsx";
 
-const ROUTING_BODY = {
-  path: "/routing",
-  body: {
-    projects: [
-      {
-        projectKey: "UGURPAY",
-        trigger: "auto",
-        apps: ["ugurpay-core"],
-        noteKey: "routing.note.active_auto",
+function routingBody(whenOnpremMissing: string, gizliOutcome: string) {
+  return {
+    path: "/routing",
+    body: {
+      projects: [
+        {
+          projectKey: "UGURPAY",
+          trigger: "auto",
+          apps: ["ugurpay-core"],
+          noteKey: "routing.note.active_auto",
+        },
+      ],
+      rules: [
+        { ruleId: "dataclass:acik", conditionKey: "routing.policy.condition.data_class", conditionParams: { dataClass: "acik" }, backend: "api", model: "api", outcome: "ok" },
+        { ruleId: "dataclass:dahili", conditionKey: "routing.policy.condition.data_class", conditionParams: { dataClass: "dahili" }, backend: "api", model: "api", outcome: "ok" },
+        { ruleId: "dataclass:gizli", conditionKey: "routing.policy.condition.data_class", conditionParams: { dataClass: "gizli" }, backend: "onprem", model: "onprem", outcome: "ok" },
+        { ruleId: "dataclass:onprem_missing", conditionKey: "routing.policy.condition.backend_unavailable", conditionParams: { backend: "onprem" }, backend: "onprem", model: "onprem", outcome: gizliOutcome },
+      ],
+      // The RAW stored policy — the only safe thing to edit against. The rules
+      // above are lossy (`degraded` hides `degrade_ai_assist` vs `masked_cloud`).
+      policy: {
+        backendByClass: { acik: "api", dahili: "api", gizli: "onprem" },
+        whenOnpremMissing,
       },
-    ],
-    rules: [
-      { ruleId: "dataclass:acik", conditionKey: "routing.policy.condition.data_class", conditionParams: { dataClass: "acik" }, backend: "api", model: "api", outcome: "ok" },
-      { ruleId: "dataclass:dahili", conditionKey: "routing.policy.condition.data_class", conditionParams: { dataClass: "dahili" }, backend: "api", model: "api", outcome: "ok" },
-      { ruleId: "dataclass:gizli", conditionKey: "routing.policy.condition.data_class", conditionParams: { dataClass: "gizli" }, backend: "onprem", model: "onprem", outcome: "ok" },
-      { ruleId: "dataclass:onprem_missing", conditionKey: "routing.policy.condition.backend_unavailable", conditionParams: { backend: "onprem" }, backend: "onprem", model: "onprem", outcome: "degraded" },
-    ],
-  },
-};
+    },
+  };
+}
+
+// Default fixture: a lenient degraded fallback.
+const ROUTING_BODY = routingBody("degrade_ai_assist", "degraded");
 
 const APPS_BODY = {
   path: "/studio/apps",
@@ -82,10 +93,44 @@ describe("routing screen", () => {
     const put = calls.find((call) => call.method === "PUT" && call.url.endsWith("/routing"));
     expect(put).toBeDefined();
     const payload = put!.body as { policy: { backendByClass: Record<string, string> } };
-    // Backends are prefilled from the rules the screen already read.
+    // Backends are prefilled from the raw stored policy.
     expect(payload.policy.backendByClass.gizli).toBe("onprem");
     // A guarded save reports pending, never "applied".
     expect(await screen.findByText(/dört-göz onayına gönderildi/)).toBeInTheDocument();
+  });
+
+  /**
+   * The security regression the verifier caught: a no-op save must NOT downgrade
+   * the stored fallback. With `whenOnpremMissing: "block"` in the database, an
+   * admin who opens the editor (to change something else, or nothing) and never
+   * touches the fallback dropdown must PUT `block` back — not the lenient
+   * `degrade_ai_assist` the screen once hardcoded, which would silently let a
+   * `gizli` ticket that should be BLOCKED fall through to AI-assist, past two
+   * approvers who only ever saw the fabricated value.
+   */
+  it("round-trips the stored fallback verbatim on an untouched save (no silent downgrade)", async () => {
+    const { fetchImpl, calls } = stubFetch([
+      routingBody("block", "blocked"),
+      APPS_BODY,
+      {
+        path: "/routing",
+        method: "PUT",
+        body: { status: "applied", change: {} },
+      },
+    ]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+
+    await screen.findByText("UgurPay Core");
+    await userEvent.click(screen.getByRole("button", { name: /Politikayı düzenle/ }));
+    await screen.findByText(/korumalıdır/);
+    // Deliberately touch NOTHING, then save.
+    await userEvent.click(screen.getByRole("button", { name: /Onaya gönder/ }));
+
+    const put = calls.find((call) => call.method === "PUT" && call.url.endsWith("/routing"));
+    expect(put).toBeDefined();
+    const payload = put!.body as { policy: { whenOnpremMissing: string } };
+    expect(payload.policy.whenOnpremMissing).toBe("block");
+    expect(payload.policy.whenOnpremMissing).not.toBe("degrade_ai_assist");
   });
 });
 

@@ -278,6 +278,16 @@ export interface RoutingRule {
 export interface RoutingView {
   readonly projects: readonly RoutingProject[];
   readonly rules: readonly RoutingRule[];
+  /**
+   * The stored policy verbatim, so the editor round-trips it EXACTLY.
+   *
+   * The rendered `rules` are lossy (`degrade_ai_assist` and `masked_cloud` both
+   * become `degraded`), so the editor MUST edit against this, never reconstruct
+   * a fallback from an outcome. Editing a guessed value silently downgrades the
+   * stored policy on a save that never touched it, and four-eyes cannot catch it
+   * because the two proposals agree with each other.
+   */
+  readonly policy: DataClassPolicy;
 }
 
 /** The three data classes the policy assigns a backend to, most open first. */

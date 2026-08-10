@@ -1174,6 +1174,8 @@
   "routing.policy.field.backend": "{dataClass} backend",
   "routing.policy.field.backend_hint": "e.g. api · onprem",
   "routing.policy.field.fallback": "When on-prem is unavailable",
+  "routing.policy.field.fallback_changed": "changing",
+  "routing.policy.field.fallback_current": "Stored value: {value}",
   "routing.policy.field.fallback_hint": "What to do when the confidential class's backend is unreachable",
   "routing.policy.guarded_explain": "This parameter is guarded (M32/M78): saving files a proposal, and it does not go live until a different person confirms the identical value.",
   "routing.policy.pending_explain": "A proposal is open (proposed by {by}). A second person must confirm the identical value.",

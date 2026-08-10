@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
@@ -8,7 +8,6 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
 import type {
   ApplicationRecord,
-  DataClassName,
   DataClassPolicy,
   Page,
   ParamPutResult,
@@ -31,8 +30,6 @@ import { RoutingPolicyEditor } from "./routing/RoutingPolicyEditor.tsx";
  * model. The Application Registry below is the TARGET of a match: each row is a
  * repo an agent may be told to push to, so it is shown, never implied.
  */
-
-const DATA_CLASSES: readonly DataClassName[] = ["acik", "dahili", "gizli"];
 
 export function RoutingScreen(): ReactNode {
   const t = useT();
@@ -61,27 +58,16 @@ export function RoutingScreen(): ReactNode {
   const canEdit = hasRole(session, "admin");
 
   /**
-   * The current policy, reconstructed from the rules the screen already read.
+   * The current policy, taken VERBATIM from the server.
    *
-   * The per-class backend comes straight from each `dataclass:<class>` rule; it
-   * is authoritative. `whenOnpremMissing` is NOT recoverable from a rule's
-   * outcome alone (both `degrade_ai_assist` and `masked_cloud` render as
-   * `degraded`), so the editor opens on the safe default and the admin confirms
-   * it — a guarded save re-states the whole policy anyway.
+   * It must never be reconstructed from the rendered `rules`: the outcome is
+   * lossy (`degrade_ai_assist` and `masked_cloud` both read as `degraded`), so a
+   * guessed `whenOnpremMissing` PUT back on a save that never touched the field
+   * silently downgrades the stored policy — a strict `block` on the `gizli`
+   * class becoming `degrade_ai_assist` — and four-eyes cannot catch it because
+   * the two proposals agree with each other. The raw value round-trips exactly.
    */
-  const currentPolicy = useMemo<DataClassPolicy | null>(() => {
-    const rules = routing.data?.rules ?? [];
-    const backendByClass: Partial<Record<DataClassName, string>> = {};
-    for (const dataClass of DATA_CLASSES) {
-      const rule = rules.find((candidate) => candidate.ruleId === `dataclass:${dataClass}`);
-      if (rule !== undefined) backendByClass[dataClass] = rule.backend;
-    }
-    if (DATA_CLASSES.some((dataClass) => backendByClass[dataClass] === undefined)) return null;
-    return {
-      backendByClass: backendByClass as Record<DataClassName, string>,
-      whenOnpremMissing: "degrade_ai_assist",
-    };
-  }, [routing.data]);
+  const currentPolicy: DataClassPolicy | null = routing.data?.policy ?? null;
 
   const save = useMutation({
     mutationFn: (policy: DataClassPolicy) =>

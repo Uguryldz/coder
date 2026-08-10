@@ -1174,6 +1174,8 @@
   "routing.policy.field.backend": "{dataClass} arka ucu",
   "routing.policy.field.backend_hint": "ör. api · onprem",
   "routing.policy.field.fallback": "On-prem erişilemezse",
+  "routing.policy.field.fallback_changed": "değişiyor",
+  "routing.policy.field.fallback_current": "Kayıtlı değer: {value}",
   "routing.policy.field.fallback_hint": "Gizli sınıfın arka ucu erişilemez olduğunda ne yapılacağı",
   "routing.policy.guarded_explain": "Bu parametre korumalıdır (M32/M78): kaydettiğinde bir teklif oluşur ve farklı bir kişi aynı değeri onaylayana kadar canlıya geçmez.",
   "routing.policy.pending_explain": "Bekleyen bir teklif var ({by} önerdi). İkinci bir kişinin aynı değeri onaylaması gerekir.",

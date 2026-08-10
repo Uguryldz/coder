@@ -93,3 +93,41 @@ eşiği değiştirip aynı adımları id'leriyle geri PUT edebilmesi için gerek
 Yeni `routing.*`, `notify.*` anahtarları `tr.json` **ve** `en.json`'a eklendi
 (mekanik kartı, registry, politika editörü, notify editörü). `notify.*`
 anahtarları catalog-usage testiyle zorlanır ve ikisinde de mevcuttur.
+
+## doğrulayıcı düzeltmesi (whenOnpremMissing round-trip)
+
+**Bulgu (KRİTİK — gizli-veri buluta sızma, no-op save downgrade):**
+`Routing.tsx` `whenOnpremMissing`'i koşulsuz `"degrade_ai_assist"` olarak
+sabitliyordu; `RoutingView` yalnız render edilmiş (kayıplı) `outcome` veriyordu.
+Saklı politikada `gizli` fallback = `block` iken, admin editörü açıp fallback'e
+dokunmadan kaydettiğinde öneri uydurulmuş `degrade_ai_assist` taşıyordu. İki
+onaycı da bu uydurulmuş değeri onaylıyordu (`putParam` yalnız iki öneriyi
+birbiriyle byte-eşliği kontrol eder, mevcut saklı değerle değil), böylece katı
+`block` sessizce `degrade_ai_assist`'e düşüyordu — 4-göz koruyamıyordu.
+
+**Düzeltme (Notify'daki `ladderRaw` ile simetrik):**
+1. `routing-service.ts` → `RoutingView`'a **ham `policy`** (saklı gerçek değer,
+   render outcome değil) eklendi; `readRouting` `policy`'yi aynen döndürür.
+2. Studio `RoutingView` tipine `policy: DataClassPolicy` eklendi.
+3. `Routing.tsx:70` artık `routing.data.policy`'yi **aynen** kullanır — hardcode
+   ve kurallardan yeniden-üretim kaldırıldı (`useMemo`/`DATA_CLASSES`/
+   `DataClassName` importları temizlendi). `RoutingPolicyEditor` gerçek saklı
+   değerle açılır; kullanıcı dokunmazsa saklı değer birebir geri gider.
+4. Ek güvenlik: editörde "Kayıtlı değer: X" satırı ve fallback değiştiğinde
+   "değişiyor" rozeti — ikinci onaycı önerinin NE DEĞİŞTİRDİĞİni görür.
+
+**Negatif testler (zorunlu):**
+- Studio `screens-routing-notify.test.tsx`: saklı `whenOnpremMissing:"block"`
+  olan politikada editör açılıp fallback'e DOKUNMADAN save → PUT payload'ında
+  `whenOnpremMissing` **hâlâ `"block"`**, `degrade_ai_assist` DEĞİL. Mevcut
+  "four-eyes proposal" testi de artık backend'in ham policy'den geldiğini iddia
+  eder.
+- BFF `settings.test.ts`: GET /routing saklı `whenOnpremMissing`'i **aynen**
+  verir (`block`), yalnız kayıplı outcome değil — `degrade_ai_assist` ile
+  `masked_cloud` aynı `degraded` outcome'a düştüğü için editörün kuraldan tahmin
+  YÜRÜTMEMESİ gerektiğini pinler. `outcome:"blocked"→"block"` reverse-map'i de
+  mevcut "reports a blocking fallback as blocked" testiyle korunur.
+
+Sonuç: **BFF 508 test yeşil** (+1), **Studio 224 test yeşil** (+1), her ikisi
+typecheck temiz, catalog-usage yeşil, lint temiz. Notify/step-id/guarded-save/
+admin-gate kısımlarına dokunulmadı.

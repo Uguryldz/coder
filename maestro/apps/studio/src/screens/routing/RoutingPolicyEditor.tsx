@@ -117,6 +117,21 @@ export function RoutingPolicyEditor({
           label: t(`routing.policy.fallback.${option}`),
         }))}
       />
+
+      {/* The stored value, named — so a second approver confirming this proposal
+          sees what it CHANGES, not just what it sets. A `block` quietly becoming
+          `degrade_ai_assist` is the exact downgrade this line makes visible. */}
+      <p className="scr-mini" style={{ marginTop: 8 }}>
+        {t("routing.policy.field.fallback_current", {
+          value: t(`routing.policy.fallback.${current.whenOnpremMissing}`),
+        })}
+        {fallback !== current.whenOnpremMissing && (
+          <>
+            {" "}
+            <Badge tone="amber">{t("routing.policy.field.fallback_changed")}</Badge>
+          </>
+        )}
+      </p>
     </Modal>
   );
 }

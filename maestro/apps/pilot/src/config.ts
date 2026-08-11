@@ -39,9 +39,21 @@ export const SECRET_REFS = {
  */
 export type ScmMode = "fake" | "github";
 
-/** Reads and validates PILOT_SCM; anything but `github` is treated as `fake`. */
-export function scmMode(env: Record<string, string> = {}): ScmMode {
-  const raw = (process.env["PILOT_SCM"] ?? env["PILOT_SCM"] ?? "fake").trim().toLowerCase();
+/**
+ * Reads and validates PILOT_SCM; anything but `github` is treated as `fake`.
+ *
+ * By default `process.env` wins over the passed map (the real app layers the
+ * live shell env over `maestro/.env`). When `authoritative` is true the passed
+ * map is the SOLE source and `process.env` is ignored — tests inject a fixed
+ * env this way so a polluted `PILOT_SCM=github` in the developer's shell can
+ * never sweep an offline test into the real GitHub path.
+ */
+export function scmMode(env: Record<string, string> = {}, authoritative = false): ScmMode {
+  const raw = (
+    authoritative ? env["PILOT_SCM"] ?? "fake" : process.env["PILOT_SCM"] ?? env["PILOT_SCM"] ?? "fake"
+  )
+    .trim()
+    .toLowerCase();
   return raw === "github" ? "github" : "fake";
 }
 

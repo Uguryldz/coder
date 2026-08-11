@@ -268,10 +268,12 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
   beforeAll(async () => {
     jira = fakeJiraCloud();
     stage = await bootPilot({
-      // Pin the SCM to the fake ADO path this test exercises. Without it,
-      // bootPilot falls back to scmMode(repoEnv), which reads maestro/.env —
-      // so a developer with PILOT_SCM=github in their .env would send this
-      // "offline" test to real GitHub. Tests must not depend on .env.
+      // Inject an empty env so this boot is fully hermetic: maestro/.env is not
+      // read and process.env is ignored for every env-derived decision. With
+      // `env: {}` the SCM mode resolves to `fake` regardless of a developer's
+      // shell — so a polluted PILOT_SCM=github can never send this "offline"
+      // test to real GitHub. `scm: "fake"` is kept as belt-and-braces.
+      env: {},
       scm: "fake",
       uiPort: 0,
       adoPort: 0,

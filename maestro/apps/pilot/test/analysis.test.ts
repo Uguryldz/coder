@@ -7,7 +7,12 @@ import type { GenerateObjectRequest, LlmCallLog, TicketSnapshot } from "@maestro
 import type { AgentSessionResult, LlmOutcome, LlmPort } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
-import { AnalysisHaltedError, buildAnalysisContext, produceAnalysis } from "../src/analysis.js";
+import {
+  AnalysisHaltedError,
+  buildAnalysisContext,
+  produceAnalysis,
+  requestIntake,
+} from "../src/analysis.js";
 
 /**
  * The pilot's analysis step now runs the REAL agent-roles analyst against the
@@ -231,6 +236,90 @@ describe("pilot analizi — gerçek agent-roles analyst (offline)", () => {
     };
     await expect(
       produceAnalysis({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
+    ).rejects.toBeInstanceOf(AnalysisHaltedError);
+  });
+});
+
+describe("pilot intake/clarify geçidi — gerçek agent-roles intake (offline)", () => {
+  it("dolu ticket → complete:true; analiz üretilebilir", async () => {
+    const { llm, requests } = mockLlm({ values: [{ complete: true, missing: [] }] });
+    const intake = await requestIntake({
+      llm,
+      ticket: TICKET,
+      variantId: "pilot-v1",
+      dataClass: "gizli",
+    });
+
+    expect(intake.complete).toBe(true);
+    expect(intake.display.missing).toEqual([]);
+    // Same LLM/variant/data-class inputs the analyst uses (the intake role, though).
+    const req = requests[0]!;
+    expect(req.role).toBe("intake");
+    expect(req.variantId).toBe("pilot-v1");
+    expect(req.dataClass).toBe("gizli");
+    // The ticket title + description travel in the real intake prompt.
+    expect(req.input).toContain(TICKET.summary);
+    expect(req.input).toContain(TICKET.description);
+  });
+
+  it("belirsiz ticket → complete:false ve açık sorular taşınır (missing)", async () => {
+    // The real intake output for a too-thin ticket: it names what is missing and
+    // asks about it. Its shape gives it nowhere to invent a value.
+    const incomplete = {
+      complete: false,
+      missing: [
+        {
+          field: "kabul kriterleri",
+          why: "Ticket'ta ölçülebilir kabul kriteri yok.",
+          question: "Bu işin başarı ölçütleri neler? Kabul kriterlerini yazar mısınız?",
+        },
+        {
+          field: "kapsam",
+          why: "Hangi ekranların/servislerin etkileneceği belirtilmemiş.",
+          question: "Değişiklik hangi ekran veya servisleri kapsıyor?",
+        },
+      ],
+    };
+    const { llm } = mockLlm({ values: [incomplete] });
+    const intake = await requestIntake({
+      llm,
+      ticket: TICKET,
+      variantId: "pilot-v1",
+      dataClass: "gizli",
+    });
+
+    expect(intake.complete).toBe(false);
+    expect(intake.display.missing).toHaveLength(2);
+    expect(intake.display.missing.map((m) => m.question)).toEqual([
+      incomplete.missing[0]!.question,
+      incomplete.missing[1]!.question,
+    ]);
+  });
+
+  it("çelişkili çıktı (incomplete ama soru yok) fail-closed reddedilir", async () => {
+    // validateIntake refuses "incomplete but asks nothing"; the single repair
+    // round returns the same contradiction, and runIntake throws.
+    const { llm } = mockLlm({ values: [{ complete: false, missing: [] }] });
+    await expect(
+      requestIntake({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
+    ).rejects.toBeInstanceOf(RoleOutputError);
+  });
+
+  it("ok-olmayan model durumu (queued) AnalysisHaltedError'a çevrilir", async () => {
+    const llm: LlmPort = {
+      generateObject<T>(): Promise<LlmOutcome<T>> {
+        return Promise.resolve({
+          status: "queued",
+          resumeAt: "2026-08-11T00:00:00.000Z",
+          reason: "subscription_quota",
+        });
+      },
+      agentSession(): Promise<LlmOutcome<AgentSessionResult>> {
+        throw new Error("unused");
+      },
+    };
+    await expect(
+      requestIntake({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
     ).rejects.toBeInstanceOf(AnalysisHaltedError);
   });
 });

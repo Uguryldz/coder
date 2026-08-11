@@ -14,18 +14,21 @@ import {
   runSampleDelegate,
 } from "./read-onboarding.js";
 import { PrismaRunCatalog } from "./read-runs.js";
+import { PrismaSandboxReader } from "./read-sandbox.js";
 import { unbridgedReadModel, UNBACKED_READ_MODELS } from "./read-models.js";
 
 /**
  * Studio's read side, bridged (M7).
  *
- * Ten of the twelve read models now answer from Postgres. The other two do not
- * exist as data anywhere in this platform, and they keep refusing by name —
- * which is the whole discipline of this file and worth stating plainly:
+ * Most read models now answer from Postgres. What still refuses does so by
+ * name — the whole discipline of this file and worth stating plainly:
  *
- *  · `runners` (M60) — there is no runner-fleet table and `RunnerPort` exposes
- *    no fleet-wide inventory; a runner reports itself to nothing. A table
- *    would be a table nothing writes.
+ *  · `runners.list` (M60) — there is no runner-fleet table and `RunnerPort`
+ *    exposes no fleet-wide inventory; a runner reports itself to nothing. A
+ *    table would be a table nothing writes. Its sibling `runners.sandboxes`,
+ *    though, IS wired now: the pilot writes SANDBOX_CREATE/DESTROY to the audit
+ *    chain and `PrismaSandboxReader` folds those events into workspace state,
+ *    so one half of this read model answers while the other keeps refusing.
  *  · `scans` (M27) — scan results are produced inside the workflow
  *    (`packages/workflows/src/impl/scan.ts`) and consumed by the gate that
  *    blocks on them; nothing persists one. Same again.
@@ -54,6 +57,7 @@ export interface ReadModelDb {
   knowledgeDoc: ConstructorParameters<typeof PrismaKnowledgeIndex>[0];
   subscriptionAccount: ConstructorParameters<typeof PrismaQuotaReader>[0];
   evidencePackageRow: ConstructorParameters<typeof PrismaEvidenceReader>[0];
+  auditLog: ConstructorParameters<typeof PrismaSandboxReader>[0];
 }
 
 export interface LiveReadModelOptions {
@@ -79,6 +83,7 @@ export interface LiveReadModelOptions {
  */
 export function liveReadModels(options: LiveReadModelOptions): ReadModels {
   const { db } = options;
+  const sandboxes = new PrismaSandboxReader(db.auditLog);
   return {
     runs: new PrismaRunCatalog(db.workflowRun, db.llmCall),
     journal: new PrismaJournalReader(db.journalEntry),
@@ -86,8 +91,13 @@ export function liveReadModels(options: LiveReadModelOptions): ReadModels {
     apps: new PrismaAppRegistry(db.application, db.repoCard),
     knowledge: new PrismaKnowledgeIndex(db.knowledgeDoc),
     runners: {
+      // The fleet inventory stays refusing — no runner reports its presence to
+      // anything, so there is no list to read (M60). Sandboxes DO leave a
+      // trace: the pilot writes SANDBOX_CREATE/DESTROY to the audit chain, and
+      // this reader folds those events into the current state of each
+      // workspace. Same read model, split fate: one half has data, one does not.
       list: unbridgedReadModel("runners", "list"),
-      sandboxes: unbridgedReadModel("runners", "sandboxes"),
+      sandboxes: (page) => sandboxes.sandboxes(page),
     },
     quota: new PrismaQuotaReader(db.subscriptionAccount),
     cost: new PrismaCostReader(db.llmCall),

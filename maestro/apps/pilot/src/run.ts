@@ -31,7 +31,7 @@ import {
   PILOT_VARIANT,
   type ScmMode,
 } from "./config.js";
-import { produceAnalysis } from "./analysis.js";
+import { produceAnalysis, requestIntake } from "./analysis.js";
 import { analysisToDocs, attachAnalysisDocs, type DocStore } from "./docs.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
 import type { PilotSettings, SettingsStore } from "./settings.js";
@@ -63,14 +63,20 @@ export class PilotStepError extends Error {
   }
 }
 
-const IntakeVerdict = z
-  .object({
-    complete: z.boolean(),
-    missing: z.array(z.string()).max(5),
-    note: z.string().min(1),
-  })
-  .strict();
-type IntakeVerdict = z.infer<typeof IntakeVerdict>;
+/**
+ * The intake gate found the ticket too thin to analyse and asked the reporter to
+ * clarify (step 2, M98). This is NOT a failure: the flow stops CLEANLY, having
+ * posted a clarification comment on the ticket, and waits for a human answer —
+ * it must never fall through to the analysis/gate/code steps. `start()` catches
+ * this type apart from a real error so the run reads "paused for clarification",
+ * not "failed".
+ */
+export class ClarificationRequestedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ClarificationRequestedError";
+  }
+}
 
 const CodeDraft = z
   .object({
@@ -82,6 +88,17 @@ const CodeDraft = z
 type CodeDraft = z.infer<typeof CodeDraft>;
 
 const MAX_ENGINEER_ATTEMPTS = 3;
+
+/**
+ * The runner identity the pilot's sandbox events carry (M60).
+ *
+ * The pilot opens its workspace in-process — there is no fleet of runners here
+ * to report a real host — so the "runner" a sandbox belongs to is this one
+ * local pilot. A stable constant rather than a per-run value keeps every
+ * workspace this process opens attributable to the same runner on the Studio
+ * sandbox screen, which is what `PrismaSandboxReader` folds on.
+ */
+const PILOT_RUNNER = "pilot-local";
 
 /** The AI commit identity (M13); the push token is NOT this — see cloneForGithub. */
 const AI_AUTHOR_NAME = "Maestro AI";
@@ -237,15 +254,38 @@ export class PilotRun {
         state.running = false;
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      store.log("err", `✗ akış durdu: ${message}`);
-      store.update((state) => {
-        state.failure = message;
-        state.running = false;
-      });
+      // The clarify gate stopping the flow is NOT a failure: the ticket was too
+      // thin to analyse, the reporter has been asked, and the run ends cleanly to
+      // wait for a human answer. Everything else is a real failure.
+      if (error instanceof ClarificationRequestedError) {
+        store.log("warn", `⏸ akış netleştirme için durdu: ${error.message}`);
+        store.update((state) => {
+          state.finished = true;
+          state.running = false;
+        });
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        store.log("err", `✗ akış durdu: ${message}`);
+        store.update((state) => {
+          state.failure = message;
+          state.running = false;
+        });
+      }
     } finally {
       this.abort?.abort();
       this.abort = null;
+      // Record the teardown BEFORE disposing, and only if a workspace was
+      // actually opened (a failure before stepEngineering leaves it null). The
+      // DESTROY moves the workspace to "resumable" on the sandbox screen. A
+      // failed audit write must not strand the temp directory, so it is caught:
+      // cleanup always runs, and `verifyAudit` below still reports the chain.
+      if (this.workspace !== null && this.ticketKey !== null) {
+        try {
+          await this.recordSandbox("SANDBOX_DESTROY");
+        } catch (error) {
+          this.deps.store.log("warn", `↻ sandbox kapanışı denetime yazılamadı: ${String(error)}`);
+        }
+      }
       await this.workspace?.dispose();
       this.workspace = null;
       await this.verifyAudit();
@@ -284,29 +324,26 @@ export class PilotRun {
     this.deps.onJiraChanged?.();
     store.step("1", "tamam", "canlı Jira'ya durum yorumu bırakıldı");
 
+    // ---- ② intake / CLARIFY gate (M98), by the REAL agent-roles intake role.
+    // An incomplete ticket must NOT get a nine-section analysis over guesses:
+    // the role either judges the ticket complete or names what is missing and
+    // asks. On "incomplete" the flow stops here and puts the questions back to
+    // the reporter as a single Turkish clarification comment.
     store.step("2", "calisiyor");
-    const intake = await this.think<IntakeVerdict>("intake", "IntakeVerdict", IntakeVerdict, {
-      gorev: "Ticket geliştirmeye başlamak için yeterli mi? Eksikleri listele.",
-      dil: "tr",
-      ticket: {
-        key: ticket.key,
-        ozet: ticket.summary,
-        aciklama: ticket.description,
-        bilesenler: ticket.components,
-      },
-      kurallar: ["Kısa yaz.", "missing en fazla 3 madde.", "note tek cümle, Türkçe."],
+    const intake = await requestIntake({
+      llm: this.deps.llm,
+      ticket,
+      variantId: PILOT_VARIANT,
+      dataClass: this.runSettings.dataClass,
     });
-    store.log(
-      intake.display.complete ? "ok" : "warn",
-      `${intake.display.complete ? "✓" : "!"} intake: ${intake.display.note}`,
-    );
-    if (!intake.display.complete && intake.display.missing.length > 0) {
-      store.note("2", `eksik görülen: ${intake.display.missing.join(" · ")}`);
-      store.log(
-        "warn",
-        "! gerçek akışta burada 2b clarification kapısı açılır; bu kısaltılmış pilotta devam ediliyor",
+    if (!intake.complete) {
+      await this.requestClarification(ticket.key, intake.display.missing);
+      // Stops the flow CLEANLY (not a failure): no analysis, no gate, no code.
+      throw new ClarificationRequestedError(
+        `ticket analiz için yeterli değil — ${intake.display.missing.length} netleştirme sorusu soruldu`,
       );
     }
+    store.log("ok", "✓ intake: ticket analiz için yeterli görüldü");
 
     // The REAL agent-roles analyst (M43/M108/M109): a real analysis TEMPLATE
     // decides the sections and the fail-closed validation, a real AnalysisContext
@@ -333,6 +370,37 @@ export class PilotRun {
 
     store.step("2", "tamam");
     return analysis.display;
+  }
+
+  /**
+   * The CLARIFY gate's action (M98): post the intake role's open questions to the
+   * ticket as ONE Turkish clarification comment and record the event, then let
+   * the caller stop the flow. Uses the same live Jira comment path the analysis
+   * comment uses, so the reporter sees the questions on the ticket they already
+   * watch. `missing` comes straight from the real intake output — each entry is a
+   * concrete, model-authored question, never an invented value.
+   */
+  private async requestClarification(
+    ticketKey: TicketKey,
+    missing: ReadonlyArray<{ field: string; why: string; question: string }>,
+  ): Promise<void> {
+    const { store, work } = this.deps;
+    store.step("2", "onay", `netleştirme bekleniyor — ${missing.length} soru`);
+    for (const item of missing) store.note("2", `soru: ${item.question}`);
+    store.log("warn", `! intake: ticket analiz için yeterli değil — ${missing.length} netleştirme sorusu`);
+
+    await this.updateProgress("netleştirme bekleniyor — ticket analiz için yeterli değil");
+    await work.addComment(ticketKey, clarificationComment(missing));
+    this.deps.onJiraChanged?.();
+
+    // The trail records that the reporter was asked (M98). Actor is the system
+    // worker (the same actor the flow's other automated events carry), so the
+    // append is never refused for an unclassifiable actor.
+    await this.record("CLARIFICATION_ASKED", {
+      questionCount: missing.length,
+      fields: missing.map((m) => m.field),
+    });
+    store.log("ok", "✓ netleştirme yorumu CANLI Jira'ya yazıldı — insan yanıtı bekleniyor");
   }
 
   /**
@@ -423,6 +491,10 @@ export class PilotRun {
     this.branch = branch;
 
     this.workspace = await createWorkspace(this.deps.workspaceOptions ?? {});
+    // The workspace is open: record it so the Studio sandbox screen shows this
+    // run's live workspace, and (paired with the SANDBOX_DESTROY on the way out)
+    // so the trail carries the workspace's whole lifetime (M60).
+    await this.recordSandbox("SANDBOX_CREATE");
     const profile = compiledProfileFor(this.deps.piiPolicy, this.runSettings.dataClass).profile;
 
     // On the github path the repo is cloned NOW, BEFORE any code is written, so
@@ -873,6 +945,32 @@ export class PilotRun {
     this.deps.onJiraChanged?.();
   }
 
+  /**
+   * Record a sandbox lifecycle event (M60): SANDBOX_CREATE when the workspace
+   * opens, SANDBOX_DESTROY before it is torn down.
+   *
+   * Written apart from `record` because the shape is deliberately different:
+   * the subject is `"<ticketKey> · <runnerId>"` (not the bare ticket) and the
+   * meta carries `{ ticketKey, runner }`, the exact shape `PrismaSandboxReader`
+   * folds and the demo seed already writes — so a real run's workspaces line up
+   * on the Studio sandbox screen with the seeded ones. The actor is
+   * `maestro-runner`, a system actor the audit trail accepts (a workspace is a
+   * runner's, not a worker's), so the append is never refused for an
+   * unclassifiable actor.
+   */
+  private async recordSandbox(action: "SANDBOX_CREATE" | "SANDBOX_DESTROY"): Promise<void> {
+    const ticketKey = this.requireTicket();
+    const event = await this.deps.audit.append({
+      actor: "maestro-runner",
+      action,
+      subject: `${ticketKey} · ${PILOT_RUNNER}`,
+      meta: { ticketKey, runner: PILOT_RUNNER, runId: this.runId },
+    });
+    this.deps.store.update((state) => {
+      state.audit.records = event.seq;
+    });
+  }
+
   private async record(
     action: AuditAction,
     meta: Record<string, unknown>,
@@ -912,6 +1010,24 @@ export class PilotRun {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The intake role's open questions, rendered as the ONE Turkish clarification
+ * comment the reporter reads on the ticket (M98). The questions come from the
+ * real intake output; the comment only frames them and asks for an answer.
+ */
+function clarificationComment(
+  missing: ReadonlyArray<{ field: string; why: string; question: string }>,
+): ReturnType<typeof doc> {
+  return doc(
+    heading(3, "❓ Netleştirme gerekli"),
+    paragraph("Bu kayıt analiz için henüz yeterli değil. Devam edebilmemiz için şu noktaları netleştirir misiniz:"),
+    bulletList(missing.map((m) => m.question)),
+    paragraph([
+      text("Yanıtlarınızı bu ticket'a ekledikten sonra Maestro analizi baştan üretebilir."),
+    ]),
+  );
 }
 
 /** The analysis, rendered as the Jira comment a reviewer actually reads. */

@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import type { FetchLike as JiraFetchLike } from "@maestro/adapter-jira";
 import type { FetchLike as GithubFetchLike } from "@maestro/adapter-github";
 import type { TicketKey } from "@maestro/contracts";
+import type { AuditChain } from "@maestro/audit";
 import {
   ADO_ORG,
   ADO_PORT,
@@ -98,6 +99,13 @@ export interface BootOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Off by default in tests; the running app turns the discovery loop on. */
   startDiscovery?: boolean;
+  /**
+   * The audit chain the run appends through. Defaults to the in-memory pilot
+   * chain (`createPilotAudit`). Injectable so a test can hold the SAME chain the
+   * run writes to and read the trail back — e.g. to assert a run bracketed its
+   * workspace with one SANDBOX_CREATE and one SANDBOX_DESTROY (M60).
+   */
+  audit?: AuditChain;
 }
 
 export interface PilotStage {
@@ -108,6 +116,8 @@ export interface PilotStage {
   settings: SettingsStore;
   run: PilotRun;
   ado: FakeAdo;
+  /** The hash-chained audit trail the run wrote to; read it to inspect events. */
+  audit: AuditChain;
   /** One discovery pass on demand (also used by the running app's loop). */
   refreshDiscovery(): Promise<void>;
   start(ticketKey: TicketKey): Promise<void>;
@@ -219,13 +229,17 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
       ? undefined
       : { remoteUrl: `${github.gitBaseUrl}/${github.owner}/${github.repo}.git`, owner: github.owner, repo: github.repo };
 
+  // The hash-chained audit trail (M33). Injectable so a test can hold the same
+  // chain the run appends through; the app takes the default in-memory chain.
+  const audit = options.audit ?? createPilotAudit();
+
   const run = new PilotRun({
     work,
     scm: scmPort,
     ci: createPilotCiPort(secrets, adoUrl),
     scmMode: mode,
     llm: gateway,
-    audit: createPilotAudit(),
+    audit,
     piiPolicy: policy,
     store,
     settings,
@@ -288,6 +302,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     settings,
     run,
     ado,
+    audit,
     refreshDiscovery,
     start: (ticketKey) => run.start(ticketKey),
     async close(): Promise<void> {

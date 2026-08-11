@@ -1,4 +1,5 @@
 import { doc, paragraph } from "@maestro/adapter-jira";
+import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bootPilot, type PilotStage } from "../src/boot.js";
 import { APPROVER_GROUP } from "../src/config.js";
@@ -33,8 +34,8 @@ function stubLlmFetch(_url: string, init?: RequestInit): Promise<Response> {
   const prompt = messages.map((message) => message.content).join("\n");
 
   let content: string;
-  if (prompt.includes("Schema name: IntakeVerdict")) {
-    content = JSON.stringify({ complete: true, missing: [], note: "Ticket geliştirmeye uygun." });
+  if (prompt.includes("Schema name: IntakeOutput")) {
+    content = JSON.stringify({ complete: true, missing: [] });
   } else if (prompt.includes("Schema name: AnalysisDoc")) {
     content = JSON.stringify(analysisOutput);
   } else if (prompt.includes("Schema name: CodeDraft")) {
@@ -264,10 +265,14 @@ function fakeJiraCloud(): {
 describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)", () => {
   let stage: PilotStage;
   let jira: ReturnType<typeof fakeJiraCloud>;
+  // The SAME chain the run appends through, so the test can read the trail back
+  // and assert the sandbox events (M60). InMemoryAuditStore.read() enumerates.
+  const auditStore = new InMemoryAuditStore();
 
   beforeAll(async () => {
     jira = fakeJiraCloud();
     stage = await bootPilot({
+      audit: new AuditChain({ store: auditStore }),
       // Inject an empty env so this boot is fully hermetic: maestro/.env is not
       // read and process.env is ignored for every env-derived decision. With
       // `env: {}` the SCM mode resolves to `fake` regardless of a developer's
@@ -324,6 +329,22 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
     // The chain really verified and has records.
     expect(state.audit.verified).toBe(true);
     expect(state.audit.records).toBeGreaterThan(8);
+
+    // M60: the run bracketed its workspace with exactly one SANDBOX_CREATE and
+    // one SANDBOX_DESTROY, in that order, in the shape the Studio sandbox screen
+    // folds — subject "<ticket> · <runner>", meta { ticketKey, runner }. This is
+    // what makes the run's workspace show up (and then read as resumable) there.
+    const events = await auditStore.read();
+    const sandboxEvents = events.filter(
+      (e) => e.action === "SANDBOX_CREATE" || e.action === "SANDBOX_DESTROY",
+    );
+    expect(sandboxEvents.map((e) => e.action)).toEqual(["SANDBOX_CREATE", "SANDBOX_DESTROY"]);
+    for (const event of sandboxEvents) {
+      expect(event.subject).toBe("OPS-6 · pilot-local");
+      expect(event.meta["ticketKey"]).toBe("OPS-6");
+      expect(event.meta["runner"]).toBe("pilot-local");
+      expect(event.actor).toBe("maestro-runner");
+    }
 
     // The PR exists on the ADO side and is merged.
     const pr = stage.ado.pullRequests().at(-1);

@@ -9,6 +9,10 @@ import {
 } from "../src/stores/read-catalog.js";
 import { postgresProbe, ProbeHealthReader } from "../src/stores/read-health.js";
 import { PrismaRunCatalog } from "../src/stores/read-runs.js";
+import { PrismaSandboxReader } from "../src/stores/read-sandbox.js";
+import { AuditChain } from "@maestro/audit";
+import { postgresChainLock, PrismaAuditStore } from "../src/stores/audit.js";
+import { prismaTransactionRunner } from "../src/stores/sql.js";
 
 /**
  * The read models against a REAL Postgres.
@@ -286,6 +290,52 @@ live("read models against a live database", () => {
     });
   });
 
+  describe("SandboxReader", () => {
+    /**
+     * Proves the delegate binds to the real client: `action: { in: [...] }` and
+     * `orderBy: { seq: "desc" }` are hand-written descriptions of the generated
+     * client's `findMany`, and a description that has drifted typechecks and
+     * fails at the first call. Appended through `AuditChain` because the table
+     * is a hash chain — a bare `createMany` would need valid `prevHash`/`hash`.
+     */
+    it("folds SANDBOX_CREATE/DESTROY events into workspace state", async () => {
+      const chain = new AuditChain({
+        store: new PrismaAuditStore(db.auditLog),
+        lock: postgresChainLock(prismaTransactionRunner(db)),
+      });
+
+      // One workspace still open, one already destroyed. Ticket keys are unique
+      // to this suite so a shared audit log's other rows do not interfere.
+      await chain.append({
+        actor: "maestro-runner",
+        action: "SANDBOX_CREATE",
+        subject: "LIVEBOX-1 · live-runner-a",
+        meta: { ticketKey: "LIVEBOX-1", runner: "live-runner-a" },
+      });
+      await chain.append({
+        actor: "maestro-runner",
+        action: "SANDBOX_CREATE",
+        subject: "LIVEBOX-2 · live-runner-b",
+        meta: { ticketKey: "LIVEBOX-2", runner: "live-runner-b" },
+      });
+      await chain.append({
+        actor: "maestro-runner",
+        action: "SANDBOX_DESTROY",
+        subject: "LIVEBOX-2 · live-runner-b",
+        meta: { ticketKey: "LIVEBOX-2", runner: "live-runner-b" },
+      });
+
+      const reader = new PrismaSandboxReader(db.auditLog);
+      const page = await reader.sandboxes({ limit: 50, cursor: null });
+      const mine = page.items.filter((box) => box.ticketKey.startsWith("LIVEBOX-"));
+
+      const byKey = new Map(mine.map((box) => [box.ticketKey, box]));
+      expect(byKey.get("LIVEBOX-1")?.state).toBe("active");
+      expect(byKey.get("LIVEBOX-2")?.state).toBe("resumable");
+      expect(byKey.get("LIVEBOX-1")?.runnerId).toBe("live-runner-a");
+    });
+  });
+
   describe("HealthReader", () => {
     it("reports a reachable database healthy", async () => {
       const reader = new ProbeHealthReader([postgresProbe(db)]);
@@ -494,6 +544,22 @@ async function reset(db: Db): Promise<void> {
   await db.workflowRun.deleteMany({ where: { id: OWNED } });
   await db.repoCard.deleteMany({ where: { appId: OWNED } });
   await db.application.deleteMany({ where: { appId: OWNED } });
+  await clearSandboxAudit(db);
+}
+
+/**
+ * `AuditLog` is append-only (migration 0001), so this suite's sandbox events
+ * are removed the same trigger-disabled way `clearJournal` clears the journal —
+ * and only THIS suite's rows (`LIVEBOX-%` subjects), so a concurrent
+ * `live-stores.test.ts` audit chain survives.
+ */
+async function clearSandboxAudit(db: Db): Promise<void> {
+  await db.$executeRawUnsafe('ALTER TABLE "AuditLog" DISABLE TRIGGER "AuditLog_append_only"');
+  try {
+    await db.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "subject" LIKE $1`, "LIVEBOX-%");
+  } finally {
+    await db.$executeRawUnsafe('ALTER TABLE "AuditLog" ENABLE TRIGGER "AuditLog_append_only"');
+  }
 }
 
 /**

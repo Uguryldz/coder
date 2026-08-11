@@ -11,6 +11,12 @@ import {
   type RunCostDelegate,
 } from "../src/stores/read-runs.js";
 import { toKnowledgeDoc } from "../src/stores/read-catalog.js";
+import {
+  foldSandboxes,
+  PrismaSandboxReader,
+  sandboxIdentity,
+  type SandboxAuditRow,
+} from "../src/stores/read-sandbox.js";
 import { ProbeHealthReader, safeNote, type ServiceProbe } from "../src/stores/read-health.js";
 import { liveReadModels } from "../src/stores/read-live.js";
 import { UNBACKED_READ_MODELS } from "../src/stores/read-models.js";
@@ -374,6 +380,141 @@ describe("knowledge: an unlabelled corpus is confidential (M18)", () => {
   });
 });
 
+describe("sandboxes: audit events fold into workspace state (M60)", () => {
+  const box = (
+    seq: number,
+    action: SandboxAuditRow["action"],
+    ticketKey: string,
+    runner: string,
+    at: string,
+    extraMeta: Record<string, unknown> = {},
+  ): SandboxAuditRow => ({
+    seq: BigInt(seq),
+    at: new Date(at),
+    action,
+    subject: `${ticketKey} · ${runner}`,
+    metaJson: { ticketKey, runner, ...extraMeta },
+  });
+
+  it("a workspace whose latest event is CREATE is active", () => {
+    const records = foldSandboxes([
+      box(1, "SANDBOX_CREATE", "UGURPAY-1", "lnx-01", "2026-01-01T00:00:00.000Z"),
+    ]);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.state).toBe("active");
+    expect(records[0]?.ticketKey).toBe("UGURPAY-1");
+    expect(records[0]?.runnerId).toBe("lnx-01");
+    expect(records[0]?.lastAccessAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("a workspace that has since been destroyed is resumable, not gone", () => {
+    // Rows arrive newest-first (seq desc), as the store orders them: the DESTROY
+    // is seq 2, so it decides the state; the CREATE at seq 1 is folded away.
+    const records = foldSandboxes([
+      box(2, "SANDBOX_DESTROY", "UGURPAY-1", "lnx-01", "2026-01-02T00:00:00.000Z"),
+      box(1, "SANDBOX_CREATE", "UGURPAY-1", "lnx-01", "2026-01-01T00:00:00.000Z"),
+    ]);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.state).toBe("resumable");
+    // The most recent event's time, not the create's.
+    expect(records[0]?.lastAccessAt).toBe("2026-01-02T00:00:00.000Z");
+  });
+
+  it("never invents human_held when no meta signals it", () => {
+    const records = foldSandboxes([
+      box(1, "SANDBOX_CREATE", "UGURPAY-9", "lnx-02", "2026-01-01T00:00:00.000Z"),
+    ]);
+    expect(records[0]?.state).not.toBe("human_held");
+  });
+
+  it("keeps two different workspaces distinct", () => {
+    const records = foldSandboxes([
+      box(3, "SANDBOX_CREATE", "UGURPAY-2", "lnx-02", "2026-01-03T00:00:00.000Z"),
+      box(2, "SANDBOX_DESTROY", "UGURPAY-1", "lnx-01", "2026-01-02T00:00:00.000Z"),
+      box(1, "SANDBOX_CREATE", "UGURPAY-1", "lnx-01", "2026-01-01T00:00:00.000Z"),
+    ]);
+
+    expect(records.map((r) => `${r.ticketKey}/${r.runnerId}:${r.state}`)).toEqual([
+      "UGURPAY-2/lnx-02:active",
+      "UGURPAY-1/lnx-01:resumable",
+    ]);
+  });
+
+  it("reads size from meta when present, else reports 0 rather than a guess", () => {
+    const withSize = foldSandboxes([
+      box(1, "SANDBOX_CREATE", "UGURPAY-1", "lnx-01", "2026-01-01T00:00:00.000Z", {
+        sizeBytes: 4096,
+      }),
+    ]);
+    const withoutSize = foldSandboxes([
+      box(1, "SANDBOX_CREATE", "UGURPAY-2", "lnx-02", "2026-01-01T00:00:00.000Z"),
+    ]);
+
+    expect(withSize[0]?.sizeBytes).toBe(4096);
+    expect(withoutSize[0]?.sizeBytes).toBe(0);
+  });
+
+  it("recovers identity from the subject when meta is absent", () => {
+    const id = sandboxIdentity({ subject: "UGURPAY-123 · lnx-01", metaJson: null });
+    expect(id).toEqual({ ticketKey: "UGURPAY-123", runnerId: "lnx-01" });
+  });
+
+  it("skips a row that identifies no workspace at all", () => {
+    const records = foldSandboxes([
+      {
+        seq: 1n,
+        at: new Date("2026-01-01T00:00:00.000Z"),
+        action: "SANDBOX_CREATE",
+        subject: "malformed-subject",
+        metaJson: null,
+      },
+    ]);
+    expect(records).toEqual([]);
+  });
+
+  it("pages the folded set, respecting limit and continuing by cursor", async () => {
+    const rows: SandboxAuditRow[] = [
+      box(3, "SANDBOX_CREATE", "UGURPAY-3", "lnx-03", "2026-01-03T00:00:00.000Z"),
+      box(2, "SANDBOX_CREATE", "UGURPAY-2", "lnx-02", "2026-01-02T00:00:00.000Z"),
+      box(1, "SANDBOX_CREATE", "UGURPAY-1", "lnx-01", "2026-01-01T00:00:00.000Z"),
+    ];
+    const reader = new PrismaSandboxReader({
+      findMany: () => Promise.resolve(rows),
+    });
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    for (let guard = 0; guard < 5; guard += 1) {
+      const page: Awaited<ReturnType<typeof reader.sandboxes>> = await reader.sandboxes({
+        limit: 2,
+        cursor,
+      });
+      seen.push(...page.items.map((item) => item.ticketKey));
+      cursor = page.nextCursor;
+      if (cursor === null) break;
+    }
+
+    expect(seen).toEqual(["UGURPAY-3", "UGURPAY-2", "UGURPAY-1"]);
+    expect(new Set(seen).size).toBe(3);
+  });
+
+  it("only ever asks the audit log for the two sandbox actions", async () => {
+    let asked: unknown;
+    const reader = new PrismaSandboxReader({
+      findMany: (args) => {
+        asked = args.where.action.in;
+        return Promise.resolve([]);
+      },
+    });
+
+    await reader.sandboxes({ limit: 10, cursor: null });
+
+    expect(asked).toEqual(["SANDBOX_CREATE", "SANDBOX_DESTROY"]);
+  });
+});
+
 describe("health: probes report what they established", () => {
   const ok = (service: string): ServiceProbe => ({
     service,
@@ -463,6 +604,7 @@ describe("the wired set: what answers and what refuses", () => {
       findMany: () => Promise.resolve([]),
       findUnique: () => Promise.resolve(null),
     },
+    auditLog: { findMany: () => Promise.resolve([]) },
   };
   const build = () =>
     liveReadModels({
@@ -478,11 +620,20 @@ describe("the wired set: what answers and what refuses", () => {
     }
   });
 
-  it("refuses runners rather than reporting an empty fleet", async () => {
+  it("refuses the runner fleet list rather than reporting an empty fleet", async () => {
     // An empty page here would render "no runners" — indistinguishable from a
     // fleet that is present and idle.
     await expect(build().runners.list({ limit: 10, cursor: null })).rejects.toThrow(/not wired/);
-    await expect(build().runners.sandboxes({ limit: 10, cursor: null })).rejects.toThrow(/not wired/);
+  });
+
+  it("answers sandboxes from the audit log instead of refusing", async () => {
+    // The sibling half of the runners read model is wired: it folds the
+    // SANDBOX_* audit events the pilot writes, so it must NOT refuse. An empty
+    // audit log yields an empty page here, which is the truth (no workspace has
+    // opened), not the "store never filled" lie the fleet list guards against.
+    const page = await build().runners.sandboxes({ limit: 10, cursor: null });
+    expect(page.items).toEqual([]);
+    expect(page.nextCursor).toBeNull();
   });
 
   it("refuses scans rather than reporting no findings", async () => {

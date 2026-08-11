@@ -3,7 +3,9 @@ import {
   type AnalysisOutput,
   type AnalysisTemplate,
   DEFAULT_ANALYSIS_TEMPLATE,
+  type IntakeOutput,
   runAnalyst,
+  runIntake,
   toAnalysisDoc,
 } from "@maestro/agent-roles";
 import type { AnalysisDoc, DataClass, TicketSnapshot } from "@maestro/contracts";
@@ -64,7 +66,11 @@ export function buildAnalysisContext(ticket: TicketSnapshot): AnalysisContext {
     discovery: { appId: ticket.projectKey, files: [], modules: [] },
     // TODO(repo-card/knowledge): populated from the M38 knowledge pack.
     knowledge: { repoCards: [], knowledgeDocs: [], codingStandards: [], exampleAnalyses: [] },
-    // TODO: the shortened pilot has no clarification gate (see run.ts step 2b).
+    // The clarification gate runs BEFORE analysis (see `requestIntake` and
+    // run.ts step 2): an incomplete ticket never reaches this context — the flow
+    // stops and asks the reporter. So by the time the analyst is built the ticket
+    // was judged complete, and there are no clarification ROUNDS to replay yet
+    // (a resumed round after a reporter answers is a later wave).
     clarifications: [],
   };
 }
@@ -180,4 +186,64 @@ export async function produceAnalysis(args: ProduceAnalysisArgs): Promise<Analys
     display: toAnalysisDoc(template, displayOutput),
     attempts: result.attempts,
   };
+}
+
+/**
+ * The pilot's CLARIFY (intake) gate — the real agent-roles intake role (M98).
+ *
+ * Runs BEFORE `produceAnalysis`. Maestro does not force mandatory Jira fields on
+ * the organisation, so a ticket can arrive too thin to analyse. The intake
+ * role's output shape gives it nowhere to invent a value: it can only judge the
+ * ticket `complete` or name what is `missing` and ask about it. When it reports
+ * incomplete, the flow must NOT produce a nine-section analysis over guesses —
+ * it stops and puts the open questions back to the reporter (see run.ts step 2).
+ *
+ * Same LLM/variant/data-class inputs `produceAnalysis` uses (the variant reader
+ * feeds both — no new env dependency), and the SAME non-ok handling: a queued /
+ * degraded / blocked model becomes an `AnalysisHaltedError`. A fail-closed
+ * template violation (an incomplete verdict that asks nothing) is a
+ * `RoleOutputError` thrown from `runIntake` after its single repair round.
+ */
+export interface IntakeGateResult {
+  /** Whether the ticket is complete enough to analyse. */
+  complete: boolean;
+  /**
+   * The intake verdict with real values re-inserted — what the reporter reads in
+   * the clarification comment. On the masked route the display copy re-opens the
+   * mask; when nothing was masked it equals the masked copy.
+   */
+  display: IntakeOutput;
+  attempts: number;
+}
+
+export interface RequestIntakeArgs {
+  llm: LlmPort;
+  ticket: TicketSnapshot;
+  variantId: string;
+  dataClass: DataClass;
+}
+
+/** Run the real intake role and hand back its verdict for the pilot's gate. */
+export async function requestIntake(args: RequestIntakeArgs): Promise<IntakeGateResult> {
+  const captured = captureUnmask(args.llm);
+
+  const result = await runIntake({
+    llm: captured.port,
+    ticket: args.ticket,
+    variantId: args.variantId,
+    dataClass: args.dataClass,
+  });
+
+  if (result.status !== "ok") {
+    throw new AnalysisHaltedError(
+      result.status === "queued"
+        ? `model kuyruğa alındı (kota) — ${result.resumeAt}`
+        : `model çağrısı '${result.status}': ${result.messageKey}`,
+    );
+  }
+
+  // The RoleResult value is the MASKED verdict; the display copy re-inserts the
+  // real values with the captured unmask (the reporter reads the display copy).
+  const display = captured.unmask(result.value);
+  return { complete: display.complete, display, attempts: result.attempts };
 }

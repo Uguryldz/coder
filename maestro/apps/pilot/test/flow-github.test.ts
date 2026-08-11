@@ -31,8 +31,8 @@ function stubLlmFetch(_url: string, init?: RequestInit): Promise<Response> {
   const messages = (JSON.parse(raw) as { messages: Array<{ content: string }> }).messages;
   const prompt = messages.map((m) => m.content).join("\n");
   let content = "{}";
-  if (prompt.includes("Schema name: IntakeVerdict")) {
-    content = JSON.stringify({ complete: true, missing: [], note: "Uygun." });
+  if (prompt.includes("Schema name: IntakeOutput")) {
+    content = JSON.stringify({ complete: true, missing: [] });
   } else if (prompt.includes("Schema name: AnalysisDoc")) {
     content = JSON.stringify(analysisOutput);
   } else if (prompt.includes("Schema name: CodeDraft")) {

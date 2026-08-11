@@ -29,14 +29,16 @@ export interface OpenRouterEnv {
  * that silently runs without a model would be the "fake success" this repo
  * refuses everywhere else.
  */
-export function resolveOpenRouter(env: Record<string, string>): OpenRouterEnv {
-  const apiKey = process.env["OPENROUTER_API_KEY"] ?? env["OPENROUTER_API_KEY"] ?? "";
+export function resolveOpenRouter(env: Record<string, string>, authoritative = false): OpenRouterEnv {
+  const get = (key: string): string | undefined =>
+    authoritative ? env[key] : process.env[key] ?? env[key];
+  const apiKey = get("OPENROUTER_API_KEY") ?? "";
   if (apiKey.trim().length === 0) {
     throw new Error(
       "OPENROUTER_API_KEY bulunamadı. maestro/.env dosyasına OPENROUTER_API_KEY=... satırını ekleyin.",
     );
   }
-  const raw = process.env["OPENROUTER_BASE_URL"] ?? env["OPENROUTER_BASE_URL"] ?? "https://openrouter.ai/api";
+  const raw = get("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api";
   return { apiKey: apiKey.trim(), baseUrl: raw.trim().replace(/\/+$/, "").replace(/\/v1$/, "") };
 }
 
@@ -63,8 +65,9 @@ export interface GithubEnv {
  * loud, Turkish failure — a github run with no token would be the "fake
  * success" this repo refuses everywhere.
  */
-export function resolveGithub(env: Record<string, string>): GithubEnv {
-  const get = (key: string): string => (process.env[key] ?? env[key] ?? "").trim();
+export function resolveGithub(env: Record<string, string>, authoritative = false): GithubEnv {
+  const get = (key: string): string =>
+    (authoritative ? env[key] ?? "" : process.env[key] ?? env[key] ?? "").trim();
   const owner = get("GITHUB_OWNER");
   const repo = get("GITHUB_REPO");
   const token = get("GITHUB_TOKEN");
@@ -100,8 +103,9 @@ export interface JiraCloudEnv {
  * — the whole point of the pilot is to talk to the real site, so we never fall
  * back to a fake.
  */
-export function resolveJiraCloud(env: Record<string, string>): JiraCloudEnv {
-  const get = (key: string): string => (process.env[key] ?? env[key] ?? "").trim();
+export function resolveJiraCloud(env: Record<string, string>, authoritative = false): JiraCloudEnv {
+  const get = (key: string): string =>
+    (authoritative ? env[key] ?? "" : process.env[key] ?? env[key] ?? "").trim();
   const baseUrl = get("JIRA_CLOUD_BASE_URL");
   const email = get("JIRA_CLOUD_EMAIL");
   const apiToken = get("JIRA_CLOUD_API_TOKEN");

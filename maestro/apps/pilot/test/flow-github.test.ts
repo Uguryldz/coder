@@ -284,6 +284,7 @@ describe("pilot github SCM path — gerçek dal/PR + gerçek git push (offline)"
     const github = fakeGithub();
     // Rebuild boot with a shared github stub so we can inspect its calls.
     stage = await bootPilot({
+      env: {},
       uiPort: 0,
       adoPort: 0,
       scm: "github",
@@ -367,6 +368,7 @@ describe("pilot github SCM path — gerçek dal/PR + gerçek git push (offline)"
     exec.failPush = true;
     const github = fakeGithub();
     stage = await bootPilot({
+      env: {},
       uiPort: 0,
       adoPort: 0,
       scm: "github",

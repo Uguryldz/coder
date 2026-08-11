@@ -54,6 +54,16 @@ import {
 export interface BootOptions {
   uiPort?: number;
   adoPort?: number;
+  /**
+   * Injectable environment. When provided it is the SOLE source for every
+   * env-derived boot decision (SCM mode, OpenRouter, Jira, GitHub) — the real
+   * `maestro/.env` (`loadRepoEnv()`) is NOT read and `process.env` is IGNORED.
+   * Tests pass `env: {}` (or a fixed map) so a polluted developer shell (e.g.
+   * `PILOT_SCM=github`, a real `GITHUB_TOKEN`) can never sweep an offline test
+   * into real network behaviour. When unset (the real app) `loadRepoEnv()` is
+   * read and `process.env` still layers over it, exactly as before.
+   */
+  env?: Record<string, string>;
   /** Overrides env resolution; tests pass dummies alongside the injected fetches. */
   openRouter?: OpenRouterEnv;
   jiraCloud?: JiraCloudEnv;
@@ -95,15 +105,20 @@ export interface PilotStage {
 }
 
 export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> {
-  const repoEnv = loadRepoEnv();
-  const openRouter = options.openRouter ?? resolveOpenRouter(repoEnv);
-  const jiraCloud = options.jiraCloud ?? resolveJiraCloud(repoEnv);
+  // When `options.env` is injected it is AUTHORITATIVE: the real `maestro/.env`
+  // is not read and `process.env` is ignored, so no boot decision can leak from
+  // the developer's shell or repo file. Tests inject `{}` (or a fixed map) to
+  // stay hermetic; the real app injects nothing and reads `maestro/.env`.
+  const injected = options.env !== undefined;
+  const repoEnv = options.env ?? loadRepoEnv();
+  const openRouter = options.openRouter ?? resolveOpenRouter(repoEnv, injected);
+  const jiraCloud = options.jiraCloud ?? resolveJiraCloud(repoEnv, injected);
 
   // SCM edge (Dalga C2). `fake` (the default) is unchanged. `github` resolves
   // the real GitHub edge — owner/repo/token — and builds the real ScmPort.
-  const mode: ScmMode = options.scm ?? scmMode(repoEnv);
+  const mode: ScmMode = options.scm ?? scmMode(repoEnv, injected);
   const github: GithubEnv | undefined =
-    mode === "github" ? (options.github ?? resolveGithub(repoEnv)) : undefined;
+    mode === "github" ? (options.github ?? resolveGithub(repoEnv, injected)) : undefined;
 
   let uiBase: string | null = null;
   const errors: unknown[] = [];

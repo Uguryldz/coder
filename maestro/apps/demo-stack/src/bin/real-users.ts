@@ -11,7 +11,12 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
-import { buildServer, LocalIdentityProvider, BcryptPasswordHasher } from "@maestro/bff";
+import {
+  buildServer,
+  LocalIdentityProvider,
+  BcryptPasswordHasher,
+  StaticSettingsReader,
+} from "@maestro/bff";
 import { createDb } from "@maestro/db";
 import { PrismaUserDirectory } from "../../../deploy/src/stores/users.js";
 import { PrismaSessionStore } from "../../../deploy/src/stores/sessions.js";
@@ -67,6 +72,10 @@ async function main(): Promise<void> {
       db.jiraProjectBinding,
       db.workflowRun,
     ),
+    // The old "deployment facts" connection list (jira.ugurbank.local etc.) was
+    // demo scaffolding — empty it. The real, editable connections live in the
+    // connector panel below (Ayarlar > Bağlantılar), backed by `connections`.
+    settings: new StaticSettingsReader([], []),
     // Real connector management (Ayarlar > Bağlantılar): the DB-seeded Jira +
     // OpenRouter connections, tokens AES-encrypted under CONNECTOR_MASTER_KEY.
     connections: new PrismaConnectionStore(db.connection),

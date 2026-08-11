@@ -31,6 +31,32 @@ export interface AuthProviderProps {
   readonly initialToken?: string | null;
 }
 
+/**
+ * The bearer is kept in `sessionStorage` so a reload keeps the operator signed
+ * in without surviving a tab close. Both helpers are guarded: `sessionStorage`
+ * is absent under SSR and can throw in a locked-down browser, and neither case
+ * should crash the app — a missing store simply means "no persisted token".
+ */
+const TOKEN_KEY = "maestro.token";
+
+function readStoredToken(): string | null {
+  try {
+    return globalThis.sessionStorage?.getItem(TOKEN_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredToken(token: string | null): void {
+  try {
+    if (token === null) globalThis.sessionStorage?.removeItem(TOKEN_KEY);
+    else globalThis.sessionStorage?.setItem(TOKEN_KEY, token);
+  } catch {
+    // A store that refuses writes just means no persistence; the in-memory
+    // ref still carries the token for this page's lifetime.
+  }
+}
+
 export function AuthProvider({
   children,
   fetchImpl,
@@ -42,14 +68,20 @@ export function AuthProvider({
     initialSession !== undefined ? (initialSession === null ? "anonymous" : "authenticated") : "loading",
   );
 
-  // The token lives in a ref, not in state: the ApiClient reads it on every
-  // request through a stable closure, so a re-render must not be required for
-  // the next call to carry the right credential. It is deliberately NOT in
-  // localStorage — any XSS would otherwise walk away with an 8-hour bearer.
-  const tokenRef = useRef<string | null>(initialToken ?? null);
+  // The token lives in a ref, not in React state: the ApiClient reads it on
+  // every request through a stable closure, so a re-render must not be required
+  // for the next call to carry the right credential.
+  //
+  // Persistence is `sessionStorage`, NOT `localStorage`: a page reload keeps the
+  // operator signed in (the whole point of this change), but the token dies when
+  // the tab closes and never outlives the browser session. localStorage would
+  // hand an 8-hour bearer to any XSS AND survive a full browser restart; the
+  // sessionStorage window is the smaller, deliberate trade.
+  const tokenRef = useRef<string | null>(initialToken ?? readStoredToken());
 
   const clearSession = useCallback(() => {
     tokenRef.current = null;
+    writeStoredToken(null);
     setSession(null);
     setStatus("anonymous");
   }, []);
@@ -90,6 +122,7 @@ export function AuthProvider({
     async (username: string, password: string) => {
       const response = await api.post<LoginResponse>("/auth/login", { username, password });
       tokenRef.current = response.token;
+      writeStoredToken(response.token);
       setSession(sessionFromLogin(response));
       setStatus("authenticated");
     },

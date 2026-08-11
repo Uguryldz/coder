@@ -200,6 +200,9 @@ importers:
       '@maestro/pii':
         specifier: workspace:*
         version: link:../../packages/pii
+      '@maestro/pilot':
+        specifier: workspace:*
+        version: link:../pilot
       '@maestro/ports':
         specifier: workspace:*
         version: link:../../packages/ports

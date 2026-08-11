@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start:bff": "tsx src/bin/bff.ts",
+    "start:pilot": "tsx src/bin/pilot.ts",
     "start:worker": "tsx src/bin/worker.ts",
     "migrate": "tsx src/bin/migrate.ts",
     "typecheck": "tsc --noEmit -p .",
@@ -28,6 +29,7 @@
     "@maestro/memory": "workspace:*",
     "@maestro/notify": "workspace:*",
     "@maestro/pii": "workspace:*",
+    "@maestro/pilot": "workspace:*",
     "@maestro/ports": "workspace:*",
     "@maestro/publish": "workspace:*",
     "@maestro/runners": "workspace:*",

@@ -83,6 +83,13 @@ type CodeDraft = z.infer<typeof CodeDraft>;
 
 const MAX_ENGINEER_ATTEMPTS = 3;
 
+/** The AI commit identity (M13); the push token is NOT this — see cloneForGithub. */
+const AI_AUTHOR_NAME = "Maestro AI";
+const AI_AUTHOR_EMAIL = "maestro@ugurbank.example";
+
+/** A short-lived push credential minted from the ScmPort (M31). */
+type PushCredential = Awaited<ReturnType<ScmPort["getPushCredential"]>>;
+
 /** Models sometimes fence code even when told not to; the fence is not code. */
 function stripFences(value: string): string {
   const fenced = /^\s*```(?:[a-zA-Z]*)\n([\s\S]*?)```\s*$/.exec(value);
@@ -418,6 +425,15 @@ export class PilotRun {
     this.workspace = await createWorkspace(this.deps.workspaceOptions ?? {});
     const profile = compiledProfileFor(this.deps.piiPolicy, this.runSettings.dataClass).profile;
 
+    // On the github path the repo is cloned NOW, BEFORE any code is written, so
+    // the model's files land INSIDE the git working tree (the workspace flips
+    // its codeDir to the clone). Otherwise the write goes to the workspace root
+    // while git commits an empty clone → "nothing to commit, working tree
+    // clean". One short-lived credential (M31) covers both the clone and the
+    // later push — clone→…→push happen seconds apart within this one run.
+    let pushCredential: PushCredential | null = null;
+    if (github) pushCredential = await this.cloneForGithub(branch, baseBranch);
+
     let feedback: string | null = null;
     let previousCode: CodeDraft | null = null;
     let lastError = "";
@@ -455,6 +471,12 @@ export class PilotRun {
         test: stripFences(draft.masked.test),
       };
       previousCode = code;
+      // On the github path `write` now targets the CLONE (workspace.codeDir was
+      // flipped by cloneForGithub), so the model's files land inside the git
+      // working tree and there is a real diff to commit.
+      // TODO (deeper feature, next wave): the model writes to a FIXED path
+      // (src/impl.mjs) — a NEW file. Matching its change to the repo's ACTUAL
+      // files (real edits, not a new file) needs the engineer to see the repo.
       await this.workspace.write(IMPLEMENTATION_PATH, code.implementation);
       await this.workspace.write(TEST_PATH, code.test);
       store.log("ok", `✓ engineer: ${IMPLEMENTATION_PATH} + ${TEST_PATH} yazıldı`);
@@ -498,11 +520,12 @@ export class PilotRun {
         `✓ test gerçekten koştu: çıkış kodu 0 (${run.durationMs} ms) ${run.stdout ? `· ${run.stdout.split("\n")[0]}` : ""}`,
       );
 
-      // On the github path the green code is pushed FOR REAL now: the PR in the
-      // next step must have a real branch behind it. A push failure fails the
-      // step CLOSED — no false "PR opened" (the exception propagates out of
-      // start(), which records the run as failed and stops).
-      if (github) await this.pushToGithub(code);
+      // On the github path the green code is pushed FOR REAL now: the code was
+      // already written into the CLONE (codeDir points there), so `git add` sees
+      // a real diff. The PR in the next step must have a real branch behind it.
+      // A push failure fails the step CLOSED — no false "PR opened" (the
+      // exception propagates out of start(), which records the run as failed).
+      if (github) await this.pushToGithub(code, pushCredential!);
 
       return code;
     }
@@ -513,24 +536,28 @@ export class PilotRun {
   }
 
   /**
-   * The REAL push (github path only). Mints a short-lived push credential from
-   * the ScmPort (M31), then runs clone→branch→commit→push in the sandbox over
-   * the injected exec runner. The token is handed to the workspace which feeds
-   * it to git out-of-band (env-only `http.extraHeader`) — it never lands on an
-   * argv, in `.git/config`, or in a log line here. `branch` was already created
-   * on GitHub via the API in stepEngineering; the push updates that ref.
+   * The CLONE half of the github git path (github path only). Mints ONE
+   * short-lived push credential (M31) and clones the base branch into the
+   * workspace, checking out the feature branch — this runs BEFORE any code is
+   * written so the model's files land inside the git working tree (the
+   * workspace flips its `codeDir` to the clone). Without this the write would go
+   * to the workspace root while git commits an empty clone → "nothing to commit,
+   * working tree clean", which is the exact end-to-end bug this fixes.
    *
-   * Fails CLOSED: a `getPushCredential` refusal or any git error throws, and
-   * the PR step never runs, so the workflow cannot claim a PR over an
-   * unpushed branch.
+   * Returns the credential so the later `pushToGithub` can reuse it for the push
+   * (clone and push are seconds apart within one run, well inside the TTL). The
+   * token is handed to the workspace which feeds it to git out-of-band (env-only
+   * `http.extraHeader`) — it never lands on an argv, in `.git/config`, or a log.
+   *
+   * Fails CLOSED: a `getPushCredential` refusal or a clone error throws, so the
+   * flow never reaches the write/test/push over a broken working tree.
    */
-  private async pushToGithub(code: CodeDraft): Promise<void> {
+  private async cloneForGithub(branch: string, baseBranch: string): Promise<PushCredential> {
     const { store, scm, github } = this.deps;
-    const ticketKey = this.requireTicket();
     const repo = this.repo;
     const ws = this.workspace;
     if (repo === null || ws === undefined || ws === null) {
-      throw new PilotStepError("push için depo/çalışma alanı hazır değil");
+      throw new PilotStepError("klon için depo/çalışma alanı hazır değil");
     }
     if (github === undefined) throw new PilotStepError("github yapılandırması eksik");
 
@@ -539,17 +566,46 @@ export class PilotRun {
     const credential = await scm.getPushCredential(repo, GITHUB_PUSH_TTL_SECONDS);
     store.log("dim", `→ kısa ömürlü push kimliği alındı (geçerlilik: ${credential.expiresAt})`);
 
-    const commitSubject = `[AI] ${ticketKey} ${code.summary}`.slice(0, 72);
-    const pushed = await ws.gitPush({
+    await ws.gitClone({
       remoteUrl: github.remoteUrl,
+      branch,
+      baseBranch,
+      token: credential.token,
+      authorName: AI_AUTHOR_NAME,
+      authorEmail: AI_AUTHOR_EMAIL,
+    });
+    store.log("dim", `→ depo klonlandı ve '${branch}' dalı açıldı — kod klon içine yazılacak`);
+    return credential;
+  }
+
+  /**
+   * The COMMIT/PUSH half of the github git path (github path only). The green
+   * code was already written INTO the clone (codeDir points at the working
+   * tree), so `git add --all` sees a real diff. Runs add→commit→push over the
+   * injected exec runner, reusing the credential minted in `cloneForGithub`.
+   * `branch` was already created on GitHub via the API in stepEngineering; the
+   * push updates that ref.
+   *
+   * Fails CLOSED: any git error throws, and the PR step never runs, so the
+   * workflow cannot claim a PR over an unpushed branch.
+   */
+  private async pushToGithub(code: CodeDraft, credential: PushCredential): Promise<void> {
+    const { store } = this.deps;
+    const ticketKey = this.requireTicket();
+    const ws = this.workspace;
+    if (ws === undefined || ws === null) {
+      throw new PilotStepError("push için çalışma alanı hazır değil");
+    }
+
+    const commitSubject = `[AI] ${ticketKey} ${code.summary}`.slice(0, 72);
+    const pushed = await ws.gitCommitPush({
       branch: this.branch,
-      baseBranch: GITHUB_TARGET_BRANCH,
       commitSubject,
       // M13: an AI-authored commit is attributed and co-signed.
-      coAuthor: "Co-Authored-By: Maestro <maestro@ugurbank.example>",
+      coAuthor: `Co-Authored-By: Maestro <${AI_AUTHOR_EMAIL}>`,
       token: credential.token,
-      authorName: "Maestro AI",
-      authorEmail: "maestro@ugurbank.example",
+      authorName: AI_AUTHOR_NAME,
+      authorEmail: AI_AUTHOR_EMAIL,
     });
     this.pushedCommitSha = pushed.commitSha;
     store.log("ok", `✓ kod GERÇEK push edildi · commit ${pushed.commitSha.slice(0, 8)} · dal ${this.branch}`);

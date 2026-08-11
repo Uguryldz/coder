@@ -217,7 +217,8 @@ export function createPilotFakeScmPort(secrets: SecretPort, adoBaseUrl: string):
  * (`assertTtlWithinCeiling` + `issuedCredentialIssues`): the value is refused
  * if it is asked to outlive the one-hour ceiling, and the runner is expected to
  * push within the window. The token itself is NEVER logged or returned anywhere
- * but the credential, and never touches git config (see workspace.gitPush).
+ * but the credential, and never touches git config (see workspace.gitClone /
+ * gitCommitPush).
  *
  * For the C4 go-live a GitHub App installation token (which genuinely expires)
  * can replace the PAT with no change here — the callback shape is identical.

@@ -89,6 +89,21 @@ export interface GatewayHooks {
 }
 
 /**
+ * The model each thinking role binds to, resolved DB-first at boot (M38).
+ *
+ * `analyst` and `engineer` come from their VARIANT's active version (or the env
+ * fallback when no store is wired); `intake` shares the analyst's model — intake
+ * is the analyst's first pass, not a separately configured agent. Every field
+ * defaults to `PILOT_MODEL` so an offline test that does not resolve variants
+ * keeps the exact old behaviour.
+ */
+export interface RoleModels {
+  intake?: string;
+  analyst?: string;
+  engineer?: string;
+}
+
+/**
  * The LLM gateway over OpenRouter's OpenAI-compatible API. Identical posture to
  * the demo: `onPremMissing: "masked_cloud"` with a `gizli` data class masks the
  * payload through `@maestro/pii` before anything leaves the machine and
@@ -98,8 +113,15 @@ export function createPilotGateway(
   secrets: SecretPort,
   openRouter: OpenRouterEnv,
   hooks: GatewayHooks = {},
+  models: RoleModels = {},
 ): { gateway: LlmGateway; policy: LoadedPiiPolicy } {
   const policy = defaultPiiPolicy();
+  // Each role's model is the DB-resolved one when boot passed it, else the
+  // bootstrap PILOT_MODEL. This is the seam that makes the pilot run on the
+  // model an admin set on the variant in Studio, not on an env constant.
+  const analystModel = models.analyst ?? PILOT_MODEL;
+  const engineerModel = models.engineer ?? PILOT_MODEL;
+  const intakeModel = models.intake ?? analystModel;
   const gateway = createLlmGateway(
     {
       drivers: [
@@ -112,9 +134,9 @@ export function createPilotGateway(
         },
       ],
       bindings: [
-        { role: "intake", driver: "openai-compat", model: PILOT_MODEL },
-        { role: "analyst", driver: "openai-compat", model: PILOT_MODEL },
-        { role: "engineer", driver: "openai-compat", model: PILOT_MODEL },
+        { role: "intake", driver: "openai-compat", model: intakeModel },
+        { role: "analyst", driver: "openai-compat", model: analystModel },
+        { role: "engineer", driver: "openai-compat", model: engineerModel },
       ],
       routes: [
         { dataClass: "acik", allowedDrivers: ["openai-compat"] },

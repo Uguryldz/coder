@@ -76,7 +76,13 @@ export function stubFetch(routes: readonly Route[]): StubFetch {
 
 export function renderScreen(
   ui: ReactNode,
-  options: { session?: Session; fetchImpl?: typeof fetch; locale?: "tr" | "en" } = {},
+  options: {
+    session?: Session;
+    fetchImpl?: typeof fetch;
+    locale?: "tr" | "en";
+    /** Router entry, so a screen that reads `?id=` (e.g. the variant detail) has one. */
+    initialEntries?: readonly string[];
+  } = {},
 ): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -91,7 +97,9 @@ export function renderScreen(
           initialToken="test-token"
         >
           <ToastProvider>
-            <MemoryRouter>{ui}</MemoryRouter>
+            <MemoryRouter initialEntries={options.initialEntries ? [...options.initialEntries] : ["/"]}>
+              {ui}
+            </MemoryRouter>
           </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>

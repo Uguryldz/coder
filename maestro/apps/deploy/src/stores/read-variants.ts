@@ -94,12 +94,29 @@ function toKnowledgeLink(ref: string, variantVersion: number): VariantKnowledgeL
   };
 }
 
+/**
+ * `configJson.publishedBy` — the audit actor the WRITER records for a version.
+ *
+ * A version written before the writer existed (or seeded with only
+ * `knowledgeRefs`) has no author in its config, so this returns `null` and the
+ * caller keeps rendering `UNRECORDED`. A version an admin published from Studio
+ * carries the real actor — the marker is only the honest answer when nothing
+ * was recorded, never a value that overrides one that was.
+ */
+function stringFieldOf(configJson: unknown, key: string): string | null {
+  if (typeof configJson !== "object" || configJson === null) return null;
+  const value = (configJson as Record<string, unknown>)[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 function toVersionRecord(row: VariantVersionRow): VariantVersionRecord {
   return {
     version: row.version,
     publishedAt: row.createdAt.toISOString(),
-    publishedBy: UNRECORDED,
-    note: UNRECORDED,
+    // The writer stores the server-derived author and note in `configJson`; a
+    // pre-writer row has neither and falls back to the marker.
+    publishedBy: stringFieldOf(row.configJson, "publishedBy") ?? UNRECORDED,
+    note: stringFieldOf(row.configJson, "note") ?? UNRECORDED,
     // `null` stays `null`: never evaluated is not a score of zero.
     evalScore: row.evalScore,
   };
@@ -169,13 +186,13 @@ export class PrismaVariantCatalog implements VariantCatalog {
       platform: row.name,
       model: active?.model ?? UNRECORDED,
       activeVersion,
-      // The persona text is NOT in this database. `configJson` holds the model
-      // parameters and the knowledge refs; the prompt text lives in
-      // `packages/agent-roles` as `DEFAULT_PROMPT_TEXTS` plus per-variant
-      // overrides, which this process does not load. Returning "" would render
-      // an empty editor an operator reads as an empty persona, so the field
-      // says where the text actually lives.
-      persona: PERSONA_NOT_STORED,
+      // The persona a version was PUBLISHED with lives in `configJson.persona`
+      // (the writer stores it there). A version created before the writer
+      // existed has no persona in its config — for those the prompt text lives
+      // in `packages/agent-roles` and this process does not load it, so the
+      // field explains that rather than rendering an empty editor an operator
+      // reads as an empty persona.
+      persona: stringFieldOf(active?.configJson, "persona") ?? PERSONA_NOT_STORED,
       knowledge: knowledgeRefsOf(active?.configJson).map((ref) =>
         toKnowledgeLink(ref, activeVersion),
       ),

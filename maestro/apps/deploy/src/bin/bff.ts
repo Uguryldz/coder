@@ -25,6 +25,7 @@ import { DEGRADED_READ_MODELS, liveReadModels } from "../stores/read-live.js";
 import { postgresChainLock, PrismaAuditStore } from "../stores/audit.js";
 import { AuditDecisionReader, AuditPiiReader } from "../stores/read-governance.js";
 import { PrismaVariantCatalog } from "../stores/read-variants.js";
+import { PrismaVariantWriter } from "../stores/write-variants.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { PrismaUserDirectory } from "../stores/users.js";
 import { connectTemporal } from "../temporal-gateway.js";
@@ -220,6 +221,12 @@ export async function main(): Promise<void> {
      */
     studio: {
       variants: new PrismaVariantCatalog(db.variant, db.variantVersion),
+      // The write side of the same tables (M38/M83). Wiring it turns the
+      // admin-gated POST/PUT variant endpoints from 503-by-name into real
+      // appends — a variant an admin creates or re-versions in Studio is
+      // persisted, not lost at the next restart. Independent of the reader on
+      // purpose: a deployment could ship the catalogue without the writer.
+      variantWriter: new PrismaVariantWriter(db.variant, db.variantVersion),
       pii: new AuditPiiReader(auditStore, db.llmCall),
       decisions: new AuditDecisionReader(auditStore),
     },

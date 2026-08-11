@@ -125,11 +125,29 @@ export const ADO_REPO = "ugurpay";
 /** The one build definition allowed to close the CI gate (M12 allow-list). */
 export const ADO_PR_VALIDATION_DEFINITION = 12;
 
-/** Model used for every thinking role. Cheap on purpose (same as demo). */
+/**
+ * BOOTSTRAP-DEFAULT model, NOT the flow-time model (M38).
+ *
+ * Read once here so a fresh/offline pilot has a model to fall back to when no
+ * variant store is wired. The running flow resolves its model from the VARIANT
+ * (DB) via `resolveVariantModel` — this constant is only the default the seed
+ * plants and the offline fallback the boot logs a warning about. Cheap on
+ * purpose (same as the demo) because it is a throwaway starting point.
+ */
 export const PILOT_MODEL = process.env["PILOT_MODEL"] ?? "openai/gpt-4o-mini";
 
 /** Variant id recorded on every gateway call log (M38). */
 export const PILOT_VARIANT = "pilot-v1";
+
+/**
+ * The variants whose MODEL the pilot resolves from the store (M38). One per
+ * thinking role, matching the ids `seedDefaultVariants` plants, so a fresh
+ * install's DB-first resolution finds a real row an admin can then re-version
+ * from Studio. Overridable via env for a pilot pointed at differently-named
+ * variants, but the DEFAULT is the seeded pair — never a hardcoded model.
+ */
+export const PILOT_ANALYST_VARIANT = process.env["PILOT_ANALYST_VARIANT"] ?? "analyst-default";
+export const PILOT_ENGINEER_VARIANT = process.env["PILOT_ENGINEER_VARIANT"] ?? "engineer-default";
 
 /**
  * Data class of the payloads. `gizli` + `onPremMissing: "masked_cloud"` masks

@@ -22,6 +22,7 @@ import { PrismaTemplateStore } from "../../../deploy/src/stores/template.js";
 import { PrismaJiraProjectBindings } from "../../../deploy/src/stores/bindings.js";
 import { liveReadModels } from "../../../deploy/src/stores/read-live.js";
 import { PrismaVariantCatalog } from "../../../deploy/src/stores/read-variants.js";
+import { PrismaVariantWriter } from "../../../deploy/src/stores/write-variants.js";
 import { AuditPiiReader, AuditDecisionReader } from "../../../deploy/src/stores/read-governance.js";
 import { PrismaConnectionStore } from "../../../deploy/src/stores/connections.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../../../deploy/src/stores/encrypted-secret.js";
@@ -78,6 +79,10 @@ async function main(): Promise<void> {
     ),
     studio: {
       variants: new PrismaVariantCatalog(db.variant, db.variantVersion),
+      // The write side, so an admin can genuinely create/re-version an agent
+      // variant from Studio against the real DB — the whole point of this
+      // launcher is exercising the real durable stores in a browser.
+      variantWriter: new PrismaVariantWriter(db.variant, db.variantVersion),
       pii: new AuditPiiReader(auditStore, db.llmCall),
       decisions: new AuditDecisionReader(auditStore),
     },
@@ -87,9 +92,7 @@ async function main(): Promise<void> {
   const server = await buildServer(deps);
   await server.listen({ host, port });
 
-  // eslint-disable-next-line no-console
   console.log(`\n  BFF (gerçek kullanıcı DB'si) http://${host}:${port}`);
-  // eslint-disable-next-line no-console
   console.log(`  Giriş: admin / admin123  → ilk girişte parola değiştirme\n`);
 
   const studioDir = fileURLToPath(new URL("../../../studio", import.meta.url));
@@ -97,7 +100,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  // eslint-disable-next-line no-console
   console.error(error);
   process.exit(1);
 });

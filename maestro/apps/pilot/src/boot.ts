@@ -10,11 +10,14 @@ import {
   ADO_REPO,
   ADO_WEBHOOK_USERNAME,
   defaultSettings,
+  PILOT_ANALYST_VARIANT,
+  PILOT_ENGINEER_VARIANT,
   PILOT_SECRETS,
   scmMode,
   UI_PORT,
   type ScmMode,
 } from "./config.js";
+import { resolveVariantModel, type VariantModelReader } from "./variant.js";
 import { SettingsStore } from "./settings.js";
 import {
   loadRepoEnv,
@@ -67,6 +70,13 @@ export interface BootOptions {
   workspaceOptions?: CreateWorkspaceOptions;
   /** Injected LLM transport so tests never touch the network. */
   llmFetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /**
+   * The variant store the pilot resolves its analyst/engineer MODEL from (M38).
+   * When present, the gateway binds each role to the variant's active-version
+   * model (DB-first — the model an admin set in Studio). When absent, boot logs
+   * a warning and falls back to the bootstrap `PILOT_MODEL`. Tests pass a stub.
+   */
+  variantReader?: VariantModelReader;
   /** Injected Jira Cloud transport (recorded fixtures) — keeps the pilot offline in tests. */
   jiraFetch?: JiraFetchLike;
   /** Delay before the fake build result arrives. */
@@ -124,14 +134,32 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   const adoPort = await listen(ado.server, options.adoPort ?? ADO_PORT);
   const adoUrl = `http://127.0.0.1:${adoPort}`;
 
-  // Runtime settings live here, seeded from env (M71): the UI edits these at
-  // runtime, and every use site reads from the store — not from a module-load
-  // constant — so a change takes effect on the next run/poll without a restart.
-  const settings = new SettingsStore(defaultSettings());
+  // DB-FIRST model resolution (M38 / Uğur's hard rule). The analyst and
+  // engineer roles run under the model on their VARIANT's active version, not
+  // an env constant. `resolveVariantModel` reads the variant store; with no
+  // store wired it warns and falls back to the bootstrap PILOT_MODEL (the env
+  // seed), so an offline pilot still boots. This runs BEFORE the settings store
+  // so the seeded settings/display model is the one the gateway actually binds.
+  const envDefaults = defaultSettings();
+  const analyst = await resolveVariantModel(PILOT_ANALYST_VARIANT, options.variantReader, {
+    fallbackModel: envDefaults.model,
+  });
+  const engineer = await resolveVariantModel(PILOT_ENGINEER_VARIANT, options.variantReader, {
+    fallbackModel: envDefaults.model,
+  });
+
+  // Runtime settings live here (M71): the UI edits these at runtime and every
+  // use site reads from the store. The MODEL is seeded from the DB-resolved
+  // analyst variant (not the raw env constant) so the settings panel and the
+  // status display agree with the model the gateway actually calls — the env
+  // `PILOT_MODEL` only survives as the fallback baked into `analyst.model`.
+  const settings = new SettingsStore({ ...envDefaults, model: analyst.model });
   const seeded = settings.snapshot();
 
   const store = new StateStore(
-    initialState({ model: seeded.model, jiraSite: jiraCloud.baseUrl, approverGroup: seeded.approverGroup }),
+    // The displayed model is the analyst's — the role that runs first and is
+    // what an operator watching the run sees working.
+    initialState({ model: analyst.model, jiraSite: jiraCloud.baseUrl, approverGroup: seeded.approverGroup }),
   );
 
   const secrets = createPilotSecrets(openRouter, jiraCloud, github);
@@ -155,6 +183,12 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
       );
     },
     ...(options.llmFetch ? { fetchImpl: options.llmFetch } : {}),
+  }, {
+    // The DB-resolved (or env-fallback) model per role. intake shares the
+    // analyst's model — it is the analyst's first pass, not a separate agent.
+    intake: analyst.model,
+    analyst: analyst.model,
+    engineer: engineer.model,
   });
 
   const work = createPilotWorkPort(secrets, jiraCloud, options.jiraFetch);

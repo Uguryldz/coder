@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { EvalScreen } from "../src/screens/Eval.tsx";
 import { VariantsScreen } from "../src/screens/Variants.tsx";
 import { parseKnowledge } from "../src/screens/Variants.tsx";
+import { VariantScreen } from "../src/screens/Variant.tsx";
 import { ADMIN, VIEWER, renderScreen, stubFetch } from "./harness.tsx";
 
 /**
@@ -96,6 +97,76 @@ const REGRESSED = {
     decision: { status: "pending", justification: "", decidedBy: null, decidedAt: null },
   },
 };
+
+/** A variant detail with an active version 2 on `claude-opus-5`. */
+const VARIANT_DETAIL = {
+  path: "/variants/analyst-web",
+  body: {
+    variantId: "analyst-web",
+    role: "analyst",
+    platform: "web",
+    model: "claude-opus-5",
+    activeVersion: 2,
+    persona: "mevcut persona",
+    knowledge: [{ docId: "bddk-uyum.md", fileName: "bddk-uyum.md", category: "md", version: 2 }],
+    versions: [
+      { version: 2, publishedAt: "2026-07-20T09:00:00.000Z", publishedBy: "ayse@ugurbank.local", note: "v2", evalScore: 91 },
+      { version: 1, publishedAt: "2026-07-01T09:00:00.000Z", publishedBy: "ayse@ugurbank.local", note: "ilk", evalScore: 88 },
+    ],
+  },
+};
+
+describe("variant detail screen — publish new version (M83)", () => {
+  it("hides the write buttons from a non-admin", async () => {
+    const { fetchImpl } = stubFetch([VARIANT_DETAIL]);
+    renderScreen(<VariantScreen />, {
+      fetchImpl,
+      session: VIEWER,
+      initialEntries: ["/variant?id=analyst-web"],
+    });
+    await screen.findByText("mevcut persona");
+    expect(screen.queryByRole("button", { name: "Yeni sürüm yayınla" })).not.toBeInTheDocument();
+  });
+
+  it("publishes a new version with a different model, posting only versioned fields", async () => {
+    const { fetchImpl, calls } = stubFetch([
+      VARIANT_DETAIL,
+      {
+        path: "/variants/analyst-web/versions",
+        method: "POST",
+        status: 201,
+        body: { ...VARIANT_DETAIL.body, model: "claude-sonnet-5", activeVersion: 3 },
+      },
+    ]);
+    renderScreen(<VariantScreen />, {
+      fetchImpl,
+      session: ADMIN,
+      initialEntries: ["/variant?id=analyst-web"],
+    });
+
+    // Open the "publish version" modal (seeded from the active version).
+    await userEvent.click(await screen.findByRole("button", { name: "Yeni sürüm yayınla" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // Change the MODEL — this is "model chosen from the UI".
+    const model = within(dialog).getByLabelText("Model");
+    await userEvent.clear(model);
+    await userEvent.type(model, "claude-sonnet-5");
+    await userEvent.type(within(dialog).getByLabelText("Sürüm notu"), "model yükseltildi");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Yeni sürüm yayınla" }));
+
+    await waitFor(() => {
+      const post = calls.find((call) => call.url.includes("/versions"));
+      expect(post).toBeDefined();
+      expect(post?.method).toBe("POST");
+      expect(post?.body).toMatchObject({ model: "claude-sonnet-5", note: "model yükseltildi" });
+      // Server-derived provenance is NEVER sent by the client (M83).
+      expect(post?.body).not.toHaveProperty("version");
+      expect(post?.body).not.toHaveProperty("publishedBy");
+      expect(post?.body).not.toHaveProperty("publishedAt");
+    });
+  });
+});
 
 describe("eval screen (M78)", () => {
   it("shows the regression verdict on the run", async () => {

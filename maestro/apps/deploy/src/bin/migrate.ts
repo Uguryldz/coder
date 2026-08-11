@@ -4,9 +4,11 @@ import { dirname, resolve } from "node:path";
 import {
   assertPostgresUrl,
   createDb,
+  DEFAULT_VARIANT_MODEL,
   firstAdminDbOf,
   PRISMA_SCHEMA_RELATIVE_PATH,
   seedAnalysisTemplate,
+  seedDefaultVariants,
   seedFirstAdmin,
 } from "@maestro/db";
 import { BcryptPasswordHasher } from "@maestro/bff";
@@ -101,6 +103,26 @@ export async function main(): Promise<void> {
       admin.seeded
         ? "[maestro] first-run admin planted (admin / admin123) — password change forced on first login"
         : "[maestro] an admin account already exists, leaving the bootstrap seed alone",
+    );
+
+    /**
+     * Plant the default agent variants if this install has none (M38).
+     *
+     * Here, inside the same advisory lock and on the same every-deploy path as
+     * the template and admin seeds. A fresh clean install has no variant rows,
+     * so `/variants` renders empty and the pilot has no DB record to resolve its
+     * model from. This gives it one `analyst` and one `engineer` variant, whose
+     * version-1 model is the BOOTSTRAP `PILOT_MODEL` (env) — the only place env
+     * feeds a variant. From then on the admin re-versions them from Studio and
+     * env is never read at flow time. Idempotent and non-clobbering per id: a
+     * bank whose admin has already re-versioned a variant keeps it (M83).
+     */
+    const bootstrapModel = process.env["PILOT_MODEL"]?.trim() || DEFAULT_VARIANT_MODEL;
+    const variants = await seedDefaultVariants(db, { model: bootstrapModel });
+    console.info(
+      variants.seeded.length > 0
+        ? `[maestro] default agent variants planted (${variants.seeded.join(", ")}) on model ${bootstrapModel}`
+        : "[maestro] agent variants already exist, leaving them alone",
     );
   } finally {
     // Releasing explicitly rather than relying on disconnect keeps the window

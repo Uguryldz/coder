@@ -87,6 +87,20 @@ export {
 } from "./template-defaults.js";
 export type { DefaultTemplateSection } from "./template-defaults.js";
 
+// The default agent variants a fresh install starts with (M38): one per
+// thinking role, model bootstrapped from PILOT_MODEL, editable from Studio.
+export { seedDefaultVariants } from "./seed-variants.js";
+export type {
+  SeedVariantsDb,
+  SeedVariantsOptions,
+  SeedVariantsResult,
+} from "./seed-variants.js";
+export {
+  DEFAULT_VARIANT_MODEL,
+  DEFAULT_VARIANTS,
+} from "./variant-defaults.js";
+export type { DefaultVariant } from "./variant-defaults.js";
+
 // Demo dataset (insa-plani Dalga 1: the seed *is* the mock's data).
 export { buildDemoDataset, seedDemo } from "./seed-demo.js";
 export { resetRuntimeData, RESET_TABLES } from "./reset.js";

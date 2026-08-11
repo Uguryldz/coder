@@ -1,7 +1,10 @@
 import { doc, paragraph } from "@maestro/adapter-jira";
 import { afterEach, describe, expect, it } from "vitest";
 import { bootPilot, type PilotStage } from "../src/boot.js";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { ExecRequest, ExecResult } from "../src/workspace.js";
+import { IMPLEMENTATION_PATH, TEST_PATH } from "../src/workspace.js";
 import { cloudFixture, waitFor } from "./helpers.js";
 
 /**
@@ -216,6 +219,14 @@ interface ExecStub {
   exec: (req: ExecRequest) => Promise<ExecResult>;
   git: ExecRequest[];
   failPush: boolean;
+  /** cwd of the `git add` step — where the diff is staged from (the clone). */
+  addCwd: string | null;
+  /** true iff the impl file existed on disk under the `git add` cwd. */
+  implInClone: boolean;
+  /** true iff the test file existed on disk under the node-test cwd. */
+  testInClone: boolean;
+  /** cwd the generated node test ran in (must be the clone on the github path). */
+  testCwd: string | null;
 }
 
 function recordingExec(): ExecStub {
@@ -223,10 +234,20 @@ function recordingExec(): ExecStub {
   const stub: ExecStub = {
     git,
     failPush: false,
+    addCwd: null,
+    implInClone: false,
+    testInClone: false,
+    testCwd: null,
     exec: (req: ExecRequest): Promise<ExecResult> => {
       // The node test run still goes through this runner; only record git.
       if (req.file === "git") {
         git.push(req);
+        // The whole fix: when git stages the diff, the model's file must ALREADY
+        // exist under the git working directory (the clone). Prove it on disk.
+        if (req.args[0] === "add") {
+          stub.addCwd = req.cwd;
+          stub.implInClone = existsSync(join(req.cwd, IMPLEMENTATION_PATH));
+        }
         if (stub.failPush && req.args[0] === "push") {
           return Promise.resolve({ ok: false, exitCode: 128, stderr: "remote rejected", stdout: "" });
         }
@@ -238,7 +259,10 @@ function recordingExec(): ExecStub {
           stderr: "",
         });
       }
-      // The generated test really runs (proves the test gate stays real).
+      // The generated test really runs (proves the test gate stays real). It must
+      // run in the clone, where the code and test files were written.
+      stub.testCwd = req.cwd;
+      stub.testInClone = existsSync(join(req.cwd, TEST_PATH));
       return Promise.resolve({ ok: true, exitCode: 0, stdout: "OK", stderr: "" });
     },
   };
@@ -300,7 +324,8 @@ describe("pilot github SCM path — gerçek dal/PR + gerçek git push (offline)"
     expect(s.failure).toBeNull();
     expect(s.finished).toBe(true);
 
-    // The git sequence really ran, in order.
+    // The git sequence really ran, in order: clone FIRST (before the code is
+    // written), then the rest AFTER the code lands in the clone.
     expect(exec.git.map((c) => c.args[0])).toEqual([
       "clone",
       "checkout",
@@ -309,6 +334,16 @@ describe("pilot github SCM path — gerçek dal/PR + gerçek git push (offline)"
       "push",
       "rev-parse",
     ]);
+
+    // THE FIX, proven end-to-end: the model's file was written INTO the git
+    // working tree (the clone dir), so `git add` saw a real diff. The
+    // "nothing to commit, working tree clean" bug was exactly the code landing
+    // OUTSIDE the clone. The add step and the node test both ran in the clone.
+    const cloneDir = join(exec.git[0]!.cwd, "repo");
+    expect(exec.addCwd).toBe(cloneDir);
+    expect(exec.testCwd).toBe(cloneDir);
+    expect(exec.implInClone).toBe(true);
+    expect(exec.testInClone).toBe(true);
     // A REAL PR was POSTed to GitHub.
     const prPost = github.calls.find((c) => c.method === "POST" && c.path.endsWith("/pulls"));
     expect(prPost).toBeDefined();

@@ -45,14 +45,30 @@ export type ExecRunner = (request: ExecRequest) => Promise<ExecResult>;
 
 export interface DemoWorkspace {
   root: string;
+  /**
+   * The directory the code files are written to and the test is run in. On the
+   * fake path this is `root`. On the github path, AFTER `gitClone`, it becomes
+   * the cloned repo working tree (`root/repo`) — so the model's files land
+   * inside the git working directory and there is a real diff to commit.
+   */
+  readonly codeDir: string;
   write(relativePath: string, content: string): Promise<void>;
   runTest(timeoutMs?: number): Promise<TestRun>;
   /**
-   * Real git sequence for the github SCM path. Returns the pushed commit sha.
+   * Clone the repo into `root/repo` and re-point `codeDir` at that working tree.
+   * MUST run before `write`/`runTest` on the github path so the code files are
+   * written inside the git working directory (that is the whole fix — otherwise
+   * `git commit` finds an empty clone and reports "nothing to commit").
+   * Returns the branch that was checked out, so the caller can commit against it.
+   */
+  gitClone(args: GitCloneArgs): Promise<void>;
+  /**
+   * Stage → commit → push from the cloned working tree (`codeDir`), then return
+   * the pushed commit sha. MUST run after `gitClone` + the code writes.
    * Fails CLOSED: any non-zero git step throws, so a caller can never mistake a
    * failed push for a successful one.
    */
-  gitPush(args: GitPushArgs): Promise<{ commitSha: string }>;
+  gitCommitPush(args: GitCommitPushArgs): Promise<{ commitSha: string }>;
   dispose(): Promise<void>;
 }
 
@@ -64,13 +80,23 @@ export interface TestRun {
   durationMs: number;
 }
 
-export interface GitPushArgs {
+export interface GitCloneArgs {
   /** HTTPS remote WITHOUT credentials, e.g. https://github.com/owner/repo.git */
   remoteUrl: string;
   /** Feature branch to create and push, e.g. feature/OPS-6. */
   branch: string;
   /** Base branch to clone/branch from, e.g. main. */
   baseBranch: string;
+  /** Short-lived push token (M31). NEVER logged; fed to git via env only. */
+  token: string;
+  /** Author identity for the commit; the token is NOT this. */
+  authorName: string;
+  authorEmail: string;
+}
+
+export interface GitCommitPushArgs {
+  /** Feature branch to push, e.g. feature/OPS-6. Must match the cloned branch. */
+  branch: string;
   /** First line of the commit message ([AI] prefix expected, M13). */
   commitSubject: string;
   /** Trailer line, e.g. "Co-Authored-By: Maestro <maestro@…>" (M13). */
@@ -89,10 +115,12 @@ export interface CreateWorkspaceOptions {
 
 const GIT_TIMEOUT_MS = 60_000;
 
+/** The clone target subdir under the workspace root; the git working tree. */
+export const REPO_DIR_NAME = "repo";
+
 /**
- * Builds the ordered git command plan for a clone→branch→commit→push, plus the
- * env that carries the credential OUT of band. Pure and exported so a test can
- * assert the SEQUENCE and prove the token never lands on an argv.
+ * Builds the credential/identity env that carries the token OUT of band, shared
+ * by the clone and commit/push plans.
  *
  * Credential handling (the security core, M31/M80):
  *  - The token is turned into a Basic `http.extraHeader` and injected through
@@ -100,23 +128,20 @@ const GIT_TIMEOUT_MS = 60_000;
  *    like a `-c` override but it is EPHEMERAL: it is never written to
  *    `.git/config`, and — unlike `-c key=value` — it is not on the argv, so it
  *    cannot surface in `ps`, a shell history, or a logged command line.
- *  - The remote URL stays credential-free, so `git remote -v` / `.git/config`
- *    hold only `https://github.com/owner/repo.git`.
  *  - The env map is returned SEPARATELY from the argv so a logger can print the
  *    argv freely and never touch the secret.
  */
-export function buildGitPushPlan(args: GitPushArgs): {
-  steps: Array<{ args: string[]; cwd: "parent" | "repo" }>;
-  credentialEnv: Record<string, string>;
-  repoDirName: string;
-} {
-  const repoDirName = "repo";
+function buildCredentialEnv(args: {
+  token: string;
+  authorName: string;
+  authorEmail: string;
+}): Record<string, string> {
   const header = `AUTHORIZATION: basic ${base64(`x-access-token:${args.token}`)}`;
   // All overrides — the credential header AND the commit identity — ride
   // GIT_CONFIG_* so NONE of them land on an argv or in `.git/config`. The token
   // is the one that matters for secrecy; the identity travels the same way so a
   // logger printing the argv shows a clean `git commit -m …` with no `-c`.
-  const credentialEnv: Record<string, string> = {
+  return {
     GIT_CONFIG_COUNT: "3",
     GIT_CONFIG_KEY_0: "http.extraHeader",
     GIT_CONFIG_VALUE_0: header,
@@ -127,18 +152,49 @@ export function buildGitPushPlan(args: GitPushArgs): {
     // Belt-and-braces: never let git pop an interactive credential prompt.
     GIT_TERMINAL_PROMPT: "0",
   };
+}
 
-  const message = `${args.commitSubject}\n\n${args.coAuthor}`;
-
+/**
+ * Builds the ordered git command plan for the CLONE half: clone the base branch
+ * into `./repo`, then branch off. This MUST run before the code is written so
+ * the model's files land inside the git working tree. Pure and exported so a
+ * test can assert the sequence + that the token never lands on an argv, and the
+ * remote URL stays credential-free.
+ */
+export function buildGitClonePlan(args: GitCloneArgs): {
+  steps: Array<{ args: string[]; cwd: "parent" | "repo" }>;
+  credentialEnv: Record<string, string>;
+  repoDirName: string;
+} {
+  const credentialEnv = buildCredentialEnv(args);
   const steps: Array<{ args: string[]; cwd: "parent" | "repo" }> = [
     // clone the base branch, shallow, into ./repo
     {
-      args: ["clone", "--branch", args.baseBranch, "--depth", "1", args.remoteUrl, repoDirName],
+      args: ["clone", "--branch", args.baseBranch, "--depth", "1", args.remoteUrl, REPO_DIR_NAME],
       cwd: "parent",
     },
     // branch off
     { args: ["checkout", "-b", args.branch], cwd: "repo" },
-    // stage the model's files
+  ];
+  return { steps, credentialEnv, repoDirName: REPO_DIR_NAME };
+}
+
+/**
+ * Builds the ordered git command plan for the COMMIT/PUSH half: stage → commit →
+ * push → rev-parse, all inside the cloned working tree (`./repo`). This runs
+ * AFTER the code was written into the clone, so `git add --all` sees a real
+ * diff. Pure and exported so a test can assert the sequence and prove the token
+ * never lands on an argv.
+ */
+export function buildGitCommitPushPlan(args: GitCommitPushArgs): {
+  steps: Array<{ args: string[]; cwd: "parent" | "repo" }>;
+  credentialEnv: Record<string, string>;
+  repoDirName: string;
+} {
+  const credentialEnv = buildCredentialEnv(args);
+  const message = `${args.commitSubject}\n\n${args.coAuthor}`;
+  const steps: Array<{ args: string[]; cwd: "parent" | "repo" }> = [
+    // stage the model's files (written into the clone before this runs)
     { args: ["add", "--all"], cwd: "repo" },
     // commit with the AI author identity (from env) + co-author trailer (M13)
     { args: ["commit", "-m", message], cwd: "repo" },
@@ -147,17 +203,56 @@ export function buildGitPushPlan(args: GitPushArgs): {
     // resolve the pushed commit sha for the caller
     { args: ["rev-parse", "HEAD"], cwd: "repo" },
   ];
-  return { steps, credentialEnv, repoDirName };
+  return { steps, credentialEnv, repoDirName: REPO_DIR_NAME };
 }
 
 export async function createWorkspace(options: CreateWorkspaceOptions = {}): Promise<DemoWorkspace> {
   const root = await mkdtemp(join(tmpdir(), "maestro-demo-"));
   const exec = options.exec ?? defaultExecRunner;
+  const repoDir = join(root, REPO_DIR_NAME);
+
+  // The directory the code is written to and the test runs in. Starts as `root`
+  // (the fake path). `gitClone` flips it to the cloned repo working tree so the
+  // model's files land INSIDE the git working directory — that is the fix.
+  let codeDir = root;
+
+  // Runs the ordered git steps of a plan, failing CLOSED on any non-zero step.
+  // Returns the rev-parse HEAD sha if the plan resolves one, else "".
+  const runGitPlan = async (plan: {
+    steps: Array<{ args: string[]; cwd: "parent" | "repo" }>;
+    credentialEnv: Record<string, string>;
+  }): Promise<string> => {
+    // The credential env rides on EVERY git child (the header is only used by
+    // the transport steps, but keeping it uniform means no branch decides,
+    // per command, whether to attach the secret). PATH is the only inherited
+    // value; nothing else of the pilot's environment reaches git.
+    const baseEnv: Record<string, string> = { PATH: process.env["PATH"] ?? "", ...plan.credentialEnv };
+    let commitSha = "";
+    for (const step of plan.steps) {
+      const result = await exec({
+        file: "git",
+        args: step.args,
+        cwd: step.cwd === "parent" ? root : repoDir,
+        env: baseEnv,
+        timeoutMs: GIT_TIMEOUT_MS,
+      });
+      if (!result.ok) {
+        // Fail closed. The message carries the git argv (never the secret —
+        // it lives only in env) and stderr, so the step surfaces a real cause.
+        throw new GitStepError(step.args, result.exitCode, result.stderr || result.stdout);
+      }
+      if (step.args[0] === "rev-parse") commitSha = result.stdout.trim();
+    }
+    return commitSha;
+  };
 
   return {
     root,
+    get codeDir(): string {
+      return codeDir;
+    },
     async write(relativePath: string, content: string): Promise<void> {
-      const full = join(root, relativePath);
+      const full = join(codeDir, relativePath);
       mkdirSync(dirname(full), { recursive: true });
       await writeFile(full, content, "utf8");
     },
@@ -166,7 +261,7 @@ export async function createWorkspace(options: CreateWorkspaceOptions = {}): Pro
       return exec({
         file: process.execPath,
         args: [TEST_PATH],
-        cwd: root,
+        cwd: codeDir,
         timeoutMs,
         env: { PATH: process.env["PATH"] ?? "" },
       }).then((result) => ({
@@ -177,31 +272,16 @@ export async function createWorkspace(options: CreateWorkspaceOptions = {}): Pro
         durationMs: Date.now() - startedAt,
       }));
     },
-    async gitPush(args: GitPushArgs): Promise<{ commitSha: string }> {
-      const { steps, credentialEnv, repoDirName } = buildGitPushPlan(args);
-      const repoDir = join(root, repoDirName);
-      // The credential env rides on EVERY git child (the header is only used by
-      // the transport steps, but keeping it uniform means no branch decides,
-      // per command, whether to attach the secret). PATH is the only inherited
-      // value; nothing else of the pilot's environment reaches git.
-      const baseEnv: Record<string, string> = { PATH: process.env["PATH"] ?? "", ...credentialEnv };
-
-      let commitSha = "";
-      for (const step of steps) {
-        const result = await exec({
-          file: "git",
-          args: step.args,
-          cwd: step.cwd === "parent" ? root : repoDir,
-          env: baseEnv,
-          timeoutMs: GIT_TIMEOUT_MS,
-        });
-        if (!result.ok) {
-          // Fail closed. The message carries the git argv (never the secret —
-          // it lives only in env) and stderr, so the step surfaces a real cause.
-          throw new GitStepError(step.args, result.exitCode, result.stderr || result.stdout);
-        }
-        if (step.args[0] === "rev-parse") commitSha = result.stdout.trim();
-      }
+    async gitClone(args: GitCloneArgs): Promise<void> {
+      // Clone + branch off, THEN re-point codeDir at the working tree so the
+      // subsequent write()/runTest() operate inside the git repo. Without this
+      // flip the code files land at root and the clone is empty — the bug that
+      // produced "nothing to commit, working tree clean".
+      await runGitPlan(buildGitClonePlan(args));
+      codeDir = repoDir;
+    },
+    async gitCommitPush(args: GitCommitPushArgs): Promise<{ commitSha: string }> {
+      const commitSha = await runGitPlan(buildGitCommitPushPlan(args));
       if (commitSha === "") {
         throw new GitStepError(["rev-parse", "HEAD"], null, "git push HEAD sha'sı çözülemedi");
       }

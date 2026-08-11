@@ -201,7 +201,11 @@ describe("confluence publish driver (M47)", () => {
   it("refuses to send an unauthenticated request when the token resolves empty", async () => {
     const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, body: { results: [] } }));
     const driver = new ConfluencePublisher(CONFIG, {
-      secrets: { get: () => Promise.resolve("   "), issueShortLived: () => Promise.reject(new Error("x")) },
+      secrets: {
+        get: () => Promise.resolve("   "),
+        set: () => Promise.resolve(),
+        issueShortLived: () => Promise.reject(new Error("x")),
+      },
       state: new InMemoryPublishState(),
       runContext: runContext(),
       translate: fakeTranslate(),

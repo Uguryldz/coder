@@ -27,6 +27,8 @@ function boot() {
     discoveryPollMs: 15_000,
     dataClass: "gizli",
     operatorAccount: "op@corp",
+    sandboxRoot: "",
+    reviewStatusName: "İNCELEMEDE",
   });
   const server = createUiServer({ store, settings, run: stubRun, docs: new DocStore(), start: () => Promise.resolve() });
   return { store, settings, server };
@@ -46,7 +48,7 @@ async function baseUrl(server: NonNullable<typeof running>): Promise<string> {
 }
 
 describe("GET /api/settings", () => {
-  it("returns the six current values and exposes no secret", async () => {
+  it("returns the current settable values and exposes no secret", async () => {
     const { server } = boot();
     running = server;
     const url = await baseUrl(server);
@@ -55,7 +57,7 @@ describe("GET /api/settings", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(Object.keys(body).sort()).toEqual(
-      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount"].sort(),
+      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName"].sort(),
     );
     // No token/secret leaks through.
     for (const key of Object.keys(body)) {

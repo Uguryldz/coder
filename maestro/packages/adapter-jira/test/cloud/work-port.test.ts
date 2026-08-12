@@ -274,6 +274,147 @@ describe("JiraCloudWorkPort", () => {
     await expect(port(stub).transition("OPS-6", "31")).rejects.toBeInstanceOf(CapabilityNotSupportedError);
   });
 
+  // ------------------------------------------------- return-to-reporter (İADE)
+
+  /** A live-shaped GET /issue/{key}/transitions body — id, name, destination + category. */
+  function transitionsBody(): unknown {
+    return {
+      transitions: [
+        { id: "21", name: "İncelemeye al", to: { id: "10001", name: "İNCELEMEDE", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+        { id: "11", name: "Geri al", to: { id: "10000", name: "Yapılacaklar", statusCategory: { key: "new", name: "To Do" } } },
+        { id: "31", name: "Bitir", to: { id: "10002", name: "Tamam", statusCategory: { key: "done", name: "Done" } } },
+      ],
+    };
+  }
+
+  it("reads available transitions with each destination's status category", async () => {
+    const stub = stubFetch([{ body: transitionsBody() }]);
+    const rows = await port(stub).readAvailableTransitions("OPS-6");
+
+    expect(stub.calls[0]!.method).toBe("GET");
+    expect(stub.calls[0]!.url).toBe("https://uyildiz.atlassian.net/rest/api/3/issue/OPS-6/transitions");
+    const todo = rows.find((r) => r.toCategoryKey === "new");
+    expect(todo).toMatchObject({ id: "11", toStatusName: "Yapılacaklar", toCategoryName: "To Do" });
+  });
+
+  it("applies a transition by id via POST /transitions (204)", async () => {
+    const stub = stubFetch([{ status: 204 }]);
+    await port(stub).applyTransition("OPS-6", "11");
+
+    expect(stub.calls[0]!.method).toBe("POST");
+    expect(stub.calls[0]!.url).toBe("https://uyildiz.atlassian.net/rest/api/3/issue/OPS-6/transitions");
+    expect(stub.calls[0]!.body).toEqual({ transition: { id: "11" } });
+  });
+
+  it("rejects an empty transition id before the network", async () => {
+    const stub = stubFetch([]);
+    await expect(port(stub).applyTransition("OPS-6", "  ")).rejects.toBeInstanceOf(JiraArgumentError);
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it("returns a ticket to its reporter: reassign, then the To-Do transition (chosen by category, not name)", async () => {
+    // (1) assign 204, (2) GET transitions, (3) POST the chosen To-Do transition 204.
+    const stub = stubFetch([{ status: 204 }, { body: transitionsBody() }, { status: 204 }]);
+    const result = await port(stub).returnToReporter("OPS-6", ACCOUNT_ID);
+
+    expect(result).toEqual({
+      assigned: true,
+      transitioned: true,
+      transition: {
+        id: "11",
+        name: "Geri al",
+        toStatusId: "10000",
+        toStatusName: "Yapılacaklar",
+        toCategoryKey: "new",
+        toCategoryName: "To Do",
+      },
+    });
+    // reassign to the reporter's accountId
+    expect(stub.calls[0]!.url).toBe("https://uyildiz.atlassian.net/rest/api/3/issue/OPS-6/assignee");
+    expect(stub.calls[0]!.body).toEqual({ accountId: ACCOUNT_ID });
+    // the applied transition is the To-Do one (id 11), NOT "İncelemeye al" (21)
+    expect(stub.calls[2]!.body).toEqual({ transition: { id: "11" } });
+  });
+
+  it("returns cleanly with transitioned:false when no To-Do transition is offered (already in backlog)", async () => {
+    const onlyForward = {
+      transitions: [
+        { id: "21", name: "İncelemeye al", to: { id: "10001", name: "İNCELEMEDE", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+      ],
+    };
+    // assign 204, GET transitions — no POST, since nothing To-Do to apply.
+    const stub = stubFetch([{ status: 204 }, { body: onlyForward }]);
+    const result = await port(stub).returnToReporter("OPS-6", ACCOUNT_ID);
+
+    expect(result).toEqual({ assigned: true, transitioned: false, transition: null });
+    expect(stub.calls).toHaveLength(2); // no transition POST
+  });
+
+  // ------------------------------------------------- send-to-review (onay devri)
+
+  it("sends a ticket to review: reassign to the manager, then the İNCELEMEDE transition (name-first)", async () => {
+    // (1) assign 204, (2) GET transitions, (3) POST the chosen review transition 204.
+    const stub = stubFetch([{ status: 204 }, { body: transitionsBody() }, { status: 204 }]);
+    const result = await port(stub).sendToReview("OPS-6", ACCOUNT_ID);
+
+    expect(result).toEqual({
+      assigned: true,
+      transitioned: true,
+      transition: {
+        id: "21",
+        name: "İncelemeye al",
+        toStatusId: "10001",
+        toStatusName: "İNCELEMEDE",
+        toCategoryKey: "indeterminate",
+        toCategoryName: "In Progress",
+      },
+    });
+    // reassign to the manager's accountId
+    expect(stub.calls[0]!.url).toBe("https://uyildiz.atlassian.net/rest/api/3/issue/OPS-6/assignee");
+    expect(stub.calls[0]!.body).toEqual({ accountId: ACCOUNT_ID });
+    // the applied transition is the İNCELEMEDE one (id 21), matched by NAME even
+    // though a category-blind pick would also see "Devam Ediyor"-style edges.
+    expect(stub.calls[2]!.body).toEqual({ transition: { id: "21" } });
+  });
+
+  it("falls back to the In-Progress category when the review status name is not matched", async () => {
+    // A workflow whose review column was renamed away from "İNCELEMEDE": only an
+    // In-Progress edge under a different name is offered. Selection must still find
+    // it by CATEGORY (indeterminate), and NOT pick the To-Do edge.
+    const renamed = {
+      transitions: [
+        { id: "11", name: "Geri al", to: { id: "10000", name: "Yapılacaklar", statusCategory: { key: "new", name: "To Do" } } },
+        { id: "25", name: "İncele", to: { id: "10005", name: "Gözden Geçir", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+      ],
+    };
+    const stub = stubFetch([{ status: 204 }, { body: renamed }, { status: 204 }]);
+    const result = await port(stub).sendToReview("OPS-6", ACCOUNT_ID);
+
+    expect(result.transitioned).toBe(true);
+    expect(result.transition?.toStatusName).toBe("Gözden Geçir");
+    expect(stub.calls[2]!.body).toEqual({ transition: { id: "25" } });
+  });
+
+  it("sends to review with transitioned:false when no In-Progress transition is offered", async () => {
+    const onlyDone = {
+      transitions: [
+        { id: "31", name: "Bitir", to: { id: "10002", name: "Tamam", statusCategory: { key: "done", name: "Done" } } },
+      ],
+    };
+    // assign 204, GET transitions — no POST, since nothing In-Progress to apply.
+    const stub = stubFetch([{ status: 204 }, { body: onlyDone }]);
+    const result = await port(stub).sendToReview("OPS-6", ACCOUNT_ID);
+
+    expect(result).toEqual({ assigned: true, transitioned: false, transition: null });
+    expect(stub.calls).toHaveLength(2); // no transition POST
+  });
+
+  it("rejects an empty manager accountId before the network", async () => {
+    const stub = stubFetch([]);
+    await expect(port(stub).sendToReview("OPS-6", "   ")).rejects.toBeInstanceOf(JiraArgumentError);
+    expect(stub.calls).toHaveLength(0); // no assign, no half-done handover
+  });
+
   // ---------------------------------------------------------- addAttachment
 
   it("posts a multipart attachment to the right URL with the no-check header and Basic token", async () => {

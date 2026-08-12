@@ -4,10 +4,12 @@ import { bootPilot, type PilotStage } from "../src/boot.js";
 import { cloudFixture, waitFor } from "./helpers.js";
 
 /**
- * The CLARIFY (intake) gate, end-to-end against a FAKE-of-the-real Jira Cloud,
- * entirely offline. When the intake role judges a ticket too thin to analyse,
- * the pilot must NOT produce an analysis — it posts ONE Turkish clarification
- * comment carrying the open questions and stops, waiting for a human answer.
+ * The intake gate → İADE (return), end-to-end against a FAKE-of-the-real Jira
+ * Cloud, entirely offline. When the intake role judges a ticket too thin to
+ * analyse, the pilot must NOT produce an analysis — it posts ONE Turkish
+ * clarification comment carrying the open questions AND hands the ticket back to
+ * its reporter: reassigns it and moves it to a backlog (To Do) status, the
+ * transition chosen DYNAMICALLY by destination category (not a hard-coded name).
  *
  * The model is a stub whose intake answer is `complete:false` with two real
  * `missing` questions (its shape gives it nowhere to invent a value). The stub
@@ -17,6 +19,8 @@ import { cloudFixture, waitFor } from "./helpers.js";
  */
 
 const SITE = "https://uyildiz.atlassian.net";
+/** The requester (Uğur) the not-fit ticket is handed back to — from bootstrap env. */
+const REQUESTER = "712020:7ee7a2ab-23e7-47aa-a61e-38b79b7eb4d1";
 
 const MISSING = [
   {
@@ -61,11 +65,25 @@ function fakeJiraCloud(): {
   fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
   comments: Array<{ id: string; body: unknown }>;
   attachments: Array<{ filename: string }>;
+  assignments: Array<string | null>;
+  transitions: string[];
 } {
   const comments: Array<{ id: string; body: unknown }> = [];
   const attachments: Array<{ filename: string }> = [];
+  const assignments: Array<string | null> = [];
+  const transitions: string[] = [];
   let nextId = 20000;
   let labels: string[] = [];
+
+  // A live-shaped transitions payload: the "Yapılacaklar" edge is To Do (key
+  // `new`), and it is NOT first — so a category-blind pick would wrongly choose
+  // the In-Progress edge, and this proves the selection is by category.
+  const transitionsPayload = {
+    transitions: [
+      { id: "21", name: "İncelemeye al", to: { id: "10001", name: "İNCELEMEDE", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+      { id: "11", name: "Geri al", to: { id: "10000", name: "Yapılacaklar", statusCategory: { key: "new", name: "To Do" } } },
+    ],
+  };
 
   const issue = cloudFixture("issue-get") as { fields: Record<string, unknown> } & Record<string, unknown>;
   // A deliberately thin description — this is the ticket the intake role rejects.
@@ -130,6 +148,23 @@ function fakeJiraCloud(): {
       if (found) found.body = body["body"];
       return Promise.resolve(json(200, { id }));
     }
+    // İADE — reassign the ticket to its reporter.
+    if (path === "/rest/api/3/issue/OPS-6/assignee" && method === "PUT") {
+      const accountId = body["accountId"];
+      assignments.push(typeof accountId === "string" ? accountId : null);
+      return Promise.resolve(json(204, undefined));
+    }
+    // İADE — read the available transitions (with destination categories).
+    if (path === "/rest/api/3/issue/OPS-6/transitions" && method === "GET") {
+      return Promise.resolve(json(200, transitionsPayload));
+    }
+    // İADE — apply the chosen To-Do transition.
+    if (path === "/rest/api/3/issue/OPS-6/transitions" && method === "POST") {
+      const transition = body["transition"] as { id?: string } | undefined;
+      if (transition?.id) transitions.push(transition.id);
+      return Promise.resolve(json(204, undefined));
+    }
+
     // The gate poller must never be reached on the clarify path; if it is, this
     // returns only Maestro's own (non-command) comments so nothing resolves.
     if (path === "/rest/api/3/issue/OPS-6/comment" && method === "GET") {
@@ -147,7 +182,7 @@ function fakeJiraCloud(): {
     };
   }
 
-  return { fetchImpl, comments, attachments };
+  return { fetchImpl, comments, attachments, assignments, transitions };
 }
 
 describe("pilot clarify geçidi — belirsiz ticket analiz üretmeden netleştirme sorar", () => {
@@ -159,7 +194,9 @@ describe("pilot clarify geçidi — belirsiz ticket analiz üretmeden netleştir
     jira = fakeJiraCloud();
     stage = await bootPilot({
       audit: new AuditChain({ store: auditStore }),
-      env: {},
+      // The requester is injected via the authoritative env map (bootstrap seed):
+      // the İADE branch hands the not-fit ticket back to this accountId.
+      env: { MAESTRO_REQUESTER_ACCOUNT_ID: REQUESTER },
       scm: "fake",
       uiPort: 0,
       adoPort: 0,
@@ -177,7 +214,7 @@ describe("pilot clarify geçidi — belirsiz ticket analiz üretmeden netleştir
     await stage.close();
   });
 
-  it("analiz ÜRETMEZ, tek netleştirme yorumu yazar ve sorular yoruma girer", async () => {
+  it("analiz ÜRETMEZ; netleştirme yazar VE ticket'ı talep açana İADE eder (atama + statü)", async () => {
     const running = stage.start("OPS-6");
     await waitFor(
       () => stage.store.snapshot().finished || stage.store.snapshot().failure !== null,
@@ -206,11 +243,27 @@ describe("pilot clarify geçidi — belirsiz ticket analiz üretmeden netleştir
     // No analysis Word/PDF was attached on the clarify path.
     expect(jira.attachments).toHaveLength(0);
 
-    // The trail records that the reporter was asked (M98).
+    // İADE (return): the ticket was reassigned to the reporter and moved to the
+    // backlog. The reassign carried the requester accountId; the applied
+    // transition is the To-Do one (id 11), NOT the In-Progress one (21) — proof
+    // the target is chosen by category, not by list order.
+    expect(jira.assignments).toContain(REQUESTER);
+    expect(jira.transitions).toEqual(["11"]);
+
+    // The trail records that the reporter was asked (M98) AND that the ticket was
+    // handed back (HANDOVER) — the İADE event, not a real failure.
     const events = await auditStore.read();
     const asked = events.filter((e) => e.action === "CLARIFICATION_ASKED");
     expect(asked).toHaveLength(1);
     expect(asked[0]!.meta["questionCount"]).toBe(MISSING.length);
+    const handover = events.filter((e) => e.action === "HANDOVER");
+    expect(handover).toHaveLength(1);
+    expect(handover[0]!.meta).toMatchObject({
+      reason: "intake_incomplete",
+      reassigned: true,
+      transitioned: true,
+      toStatus: "Yapılacaklar",
+    });
     // No analysis-side events (a security scan or PR would mean the flow ran on).
     expect(events.some((e) => e.action === "PR_OPENED")).toBe(false);
   }, 60_000);

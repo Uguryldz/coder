@@ -5,6 +5,8 @@ import {
   heading,
   inlineCode,
   paragraph,
+  selectReturnTransition,
+  selectReviewTransition,
   strong,
   text,
   type JiraCloudWorkPort,
@@ -64,17 +66,50 @@ export class PilotStepError extends Error {
 }
 
 /**
- * The intake gate found the ticket too thin to analyse and asked the reporter to
- * clarify (step 2, M98). This is NOT a failure: the flow stops CLEANLY, having
- * posted a clarification comment on the ticket, and waits for a human answer —
- * it must never fall through to the analysis/gate/code steps. `start()` catches
- * this type apart from a real error so the run reads "paused for clarification",
- * not "failed".
+ * The intake gate found the ticket too thin to analyse and RETURNED it (İADE):
+ * it posted the open questions AND handed the ticket back to its reporter —
+ * reassigned + moved to a backlog status (step 2, M98). This is NOT a failure:
+ * the flow stops CLEANLY and never falls through to the analysis/gate/code
+ * steps. `start()` catches this type apart from a real error so the run reads
+ * "returned to reporter", not "failed".
  */
 export class ClarificationRequestedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ClarificationRequestedError";
+  }
+}
+
+/**
+ * A human resolved a gate with `/reject`. Carries the rejection reason so the
+ * gate's caller can decide what happens next:
+ *   - the ANALYSIS gate turns this into a CLEAN return (the manager rejected the
+ *     analysis → note on the ticket + hand it back to the bot for re-analysis),
+ *   - the PR gate lets it propagate as a failure (a rejected PR stops the run).
+ * `awaitApproval` throws this instead of a bare `PilotStepError` so the two gates
+ * can behave differently without the poller knowing which gate it serves.
+ */
+export class GateRejectedError extends Error {
+  constructor(
+    public readonly reason: string,
+    /** The Cloud comment author who wrote `/reject` — the human the reject is attributed to. */
+    public readonly author: string,
+  ) {
+    super(`kapı reddedildi: ${reason}`);
+    this.name = "GateRejectedError";
+  }
+}
+
+/**
+ * The Analyst Manager rejected the analysis at the review gate. Like İADE this is
+ * a CLEAN STOP, not a failure: the rejection note is on the ticket and the ticket
+ * has been handed back to the bot for re-analysis, so the run ends cleanly and
+ * never falls through to the code/PR steps.
+ */
+export class AnalysisRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AnalysisRejectedError";
   }
 }
 
@@ -162,6 +197,31 @@ export interface PilotRunDeps {
   store: StateStore;
   /** Runtime settings (approver group, model, poll ms, data class, operator). */
   settings: SettingsStore;
+  /**
+   * The reporter's Cloud accountId a ticket is handed BACK to on the İADE
+   * (not-fit) branch. Seeded from MAESTRO_REQUESTER_ACCOUNT_ID at boot and
+   * UI-param-ready (Studio). Empty string means "not configured": the ticket is
+   * still moved back to the backlog, just not reassigned — never a crash.
+   */
+  requesterAccountId?: string;
+  /**
+   * The Analyst Manager's Cloud accountId a ticket is handed to for ANALYSIS
+   * APPROVAL (onay devri). When the analysis is complete and its Word/PDF are
+   * attached, the ticket is reassigned to this account and moved into review
+   * ("İNCELEMEDE"). Seeded from MAESTRO_MANAGER_ACCOUNT_ID at boot, UI-param-ready
+   * (Studio). Empty string means "not configured": the ticket is still moved into
+   * review, just not reassigned — never a crash.
+   */
+  managerAccountId?: string;
+  /**
+   * The Maestro Bot's Cloud accountId the ticket is reassigned BACK to once the
+   * manager approves the analysis (for the code step), and on a rejected analysis
+   * (for re-analysis). Seeded from MAESTRO_BOT_ACCOUNT_ID at boot — the same id
+   * the assignment-based discovery filters on — UI-param-ready. Empty string
+   * means "not configured": the reassign-back is skipped (a warning), the flow
+   * still proceeds; the ticket simply stays with the manager.
+   */
+  botAccountId?: string;
   /** Holds the generated .docx/.pdf so the download route can stream them. */
   docs: DocStore;
   /** Stands in for the human who presses "Complete" in the ADO PR screen. */
@@ -254,11 +314,20 @@ export class PilotRun {
         state.running = false;
       });
     } catch (error) {
-      // The clarify gate stopping the flow is NOT a failure: the ticket was too
-      // thin to analyse, the reporter has been asked, and the run ends cleanly to
-      // wait for a human answer. Everything else is a real failure.
+      // The intake gate stopping the flow is NOT a failure: the ticket was too
+      // thin to analyse, the reporter has been asked AND the ticket was returned
+      // to them, and the run ends cleanly. Everything else is a real failure.
       if (error instanceof ClarificationRequestedError) {
-        store.log("warn", `⏸ akış netleştirme için durdu: ${error.message}`);
+        store.log("warn", `⏎ akış İADE ile durdu: ${error.message}`);
+        store.update((state) => {
+          state.finished = true;
+          state.running = false;
+        });
+      } else if (error instanceof AnalysisRejectedError) {
+        // The manager rejected the analysis: like İADE this is a CLEAN stop, not
+        // a failure. The rejection note is on the ticket and the ticket is back
+        // with the bot for re-analysis; the run ends cleanly (no code/PR).
+        store.log("warn", `⏎ akış analiz-red ile durdu: ${error.message}`);
         store.update((state) => {
           state.finished = true;
           state.running = false;
@@ -337,10 +406,16 @@ export class PilotRun {
       dataClass: this.runSettings.dataClass,
     });
     if (!intake.complete) {
+      // The AGENT LOOKED and judged the ticket unfit → İADE (return), not
+      // "ask and wait". Two moves, in order:
+      //   (a) write the open questions to the ticket (unchanged clarify note),
+      //   (b) hand the ticket BACK — reassign to the reporter and move it to a
+      //       backlog/To-Do status (chosen dynamically by category).
       await this.requestClarification(ticket.key, intake.display.missing);
+      await this.returnTicketToReporter(ticket.key);
       // Stops the flow CLEANLY (not a failure): no analysis, no gate, no code.
       throw new ClarificationRequestedError(
-        `ticket analiz için yeterli değil — ${intake.display.missing.length} netleştirme sorusu soruldu`,
+        `ticket analiz için yeterli değil — ${intake.display.missing.length} soru soruldu ve ticket talep açana İADE edildi`,
       );
     }
     store.log("ok", "✓ intake: ticket analiz için yeterli görüldü");
@@ -404,6 +479,74 @@ export class PilotRun {
   }
 
   /**
+   * The İADE (return) action: hand an unfit ticket back to its reporter instead
+   * of parking it in Maestro's court. Reassigns the ticket to the reporter's
+   * accountId and moves it to a backlog/To-Do status, the transition chosen
+   * DYNAMICALLY by destination category (never a hard-coded name — the driver's
+   * `returnToReporter` reads each transition's `to.statusCategory`).
+   *
+   * FAIL-SOFT on purpose. A return is a CLEAN STOP, not a failure: if Jira
+   * refuses the reassign or the transition (permissions, a workflow with no
+   * To-Do edge, a transient error), the run must still end cleanly having at
+   * least asked — it must NOT flip to `failure`. So every Jira error here is
+   * caught and logged, mirroring how `attachAnalysisDocs` never throws into the
+   * flow. The HANDOVER audit event is written only for what actually happened.
+   *
+   * The reporter accountId comes from `requesterAccountId` (seeded from
+   * MAESTRO_REQUESTER_ACCOUNT_ID at boot, UI-param-ready). Empty → the reassign
+   * is skipped and only the status is moved back, with a warning.
+   */
+  private async returnTicketToReporter(ticketKey: TicketKey): Promise<void> {
+    const { store, work } = this.deps;
+    const requester = (this.deps.requesterAccountId ?? "").trim();
+    try {
+      if (requester.length === 0) {
+        // No reporter configured: still move the ticket back so it does not sit
+        // in Maestro's court, but say plainly that it could not be reassigned.
+        store.log(
+          "warn",
+          "! talep açan hesabı (requesterAccountId) tanımlı değil — ticket geri atanamadı, yalnız statüsü geri alınacak",
+        );
+        const transitions = await work.readAvailableTransitions(ticketKey);
+        const target = selectReturnTransition(transitions);
+        if (target === null) {
+          store.log("dim", "→ geri alınacak (To Do) statü geçişi bulunamadı — ticket zaten geride");
+          await this.record("HANDOVER", { reason: "intake_incomplete", reassigned: false, transitioned: false });
+          return;
+        }
+        await work.applyTransition(ticketKey, target.id);
+        store.log("ok", `✓ İADE: ticket '${target.toStatusName}' statüsüne geri alındı (atama yapılamadı)`);
+        this.deps.onJiraChanged?.();
+        await this.record("HANDOVER", {
+          reason: "intake_incomplete",
+          reassigned: false,
+          transitioned: true,
+          toStatus: target.toStatusName,
+        });
+        return;
+      }
+
+      const result = await work.returnToReporter(ticketKey, requester);
+      const statusNote = result.transition
+        ? `'${result.transition.toStatusName}' statüsüne geri alındı`
+        : "geri alınacak (To Do) statü geçişi yok — statü değişmedi";
+      store.log("ok", `✓ İADE: ticket talep açana geri atandı ve ${statusNote}`);
+      store.note("2", `İADE: talep açana geri atandı${result.transition ? ` · ${result.transition.toStatusName}` : ""}`);
+      this.deps.onJiraChanged?.();
+      await this.record("HANDOVER", {
+        reason: "intake_incomplete",
+        reassigned: result.assigned,
+        transitioned: result.transitioned,
+        ...(result.transition ? { toStatus: result.transition.toStatusName } : {}),
+      });
+    } catch (error) {
+      // A return failure must NOT sink the clean stop: the reporter was already
+      // asked (the clarification comment is in). Log and carry on.
+      store.log("warn", `! İADE tamamlanamadı (akış temiz durdu, netleştirme yazıldı): ${String(error)}`);
+    }
+  }
+
+  /**
    * Render the analysis to a real `.docx` and `.pdf` and park them for download.
    *
    * This is the same analysis the reviewer reads in the Jira comment, rendered
@@ -441,19 +584,172 @@ export class PilotRun {
     }
   }
 
-  /** ③ human gate on the analysis (M51 gate "5") — resolved by polling comments. */
+  /**
+   * ③ the analysis-approval gate (M51 gate "5"), resolved by polling comments.
+   *
+   * ONAY DEVRİ (approval hand-off) — the user's decision, wired in three moves:
+   *   (a) BEFORE the gate opens, hand the ticket to the Analyst Manager: reassign
+   *       it to the manager's accountId and move it into review ("İNCELEMEDE"),
+   *       the transition chosen DYNAMICALLY (see sendAnalysisToReview).
+   *   (b) On /approve by a group member, reassign the ticket BACK to the Maestro
+   *       Bot (the code step is the bot's) and proceed to engineering.
+   *   (c) On /reject, post an analysis-rejection note, hand the ticket back to the
+   *       bot for re-analysis, and stop the flow CLEANLY (AnalysisRejectedError) —
+   *       never fall through to the code/PR steps.
+   */
   private async stepAnalysisGate(): Promise<void> {
     const { store } = this.deps;
     const approverGroup = this.runSettings.approverGroup;
+
+    // (a) onay devri: hand the ticket to the Analyst Manager and move it into
+    // review, so the approval physically sits in the manager's queue.
+    await this.sendAnalysisToReview();
+
     await this.record("GATE_OPEN", { step: "5", group: approverGroup });
     store.step("3", "onay");
     store.log(
       "warn",
       `⏸ kapı açık — GERÇEK Jira'da yoruma /approve yazılmasını bekliyorum (grup: ${approverGroup})`,
     );
-    const envelope = await this.awaitApproval("3");
+
+    let envelope;
+    try {
+      envelope = await this.awaitApproval("3");
+    } catch (error) {
+      // (c) manager rejected the analysis → note on the ticket + hand back to the
+      // bot for re-analysis, then stop CLEANLY. Any other error propagates.
+      if (error instanceof GateRejectedError) {
+        await this.rejectAnalysisBackToBot(error.reason, error.author);
+        throw new AnalysisRejectedError(
+          `analiz reddedildi — not Jira'ya yazıldı ve ticket yeniden analiz için Maestro Bot'a geri atandı`,
+        );
+      }
+      throw error;
+    }
+
+    // (b) approved → the code step is the bot's: reassign back to the Maestro Bot.
+    await this.returnTicketToBot("analysis_approved");
     store.step("3", "tamam", `onaylayan: ${envelope.author}`);
     store.log("ok", `✓ analiz onayı: ${envelope.author} · grup üyeliği doğrulandı`);
+  }
+
+  /**
+   * ONAY DEVRİ move (a): hand the completed analysis to the Analyst Manager.
+   * Reassigns the ticket to `managerAccountId` and moves it into review
+   * ("İNCELEMEDE"), the review transition chosen DYNAMICALLY by the driver
+   * (name-first, then In-Progress category — never a hard-coded id/name).
+   *
+   * FAIL-SOFT, deliberately: the analysis and its docs are already on the ticket
+   * and the gate is about to open regardless, so a Jira hiccup here (a refused
+   * assign, a workflow with no review edge) must NOT sink the run — it is logged,
+   * a HANDOVER event is written for what actually happened, and the gate still
+   * opens. An empty `managerAccountId` moves the status only, with a warning.
+   */
+  private async sendAnalysisToReview(): Promise<void> {
+    const { store, work } = this.deps;
+    const ticketKey = this.requireTicket();
+    const manager = (this.deps.managerAccountId ?? "").trim();
+    const reviewStatus = this.runSettings.reviewStatusName;
+    try {
+      if (manager.length === 0) {
+        // No manager configured: still move the ticket into review so it does not
+        // sit unassigned in the bot's court, but say plainly it was not reassigned.
+        store.log(
+          "warn",
+          "! Analist Yönetici hesabı (managerAccountId) tanımlı değil — ticket yöneticiye atanamadı, yalnız statüsü taşınacak",
+        );
+        const transitions = await work.readAvailableTransitions(ticketKey);
+        const target = selectReviewTransition(transitions, reviewStatus);
+        if (target === null) {
+          store.log("dim", "→ inceleme (İNCELEMEDE) statü geçişi bulunamadı — statü değişmedi");
+          await this.record("HANDOVER", { reason: "analysis_review", reassigned: false, transitioned: false });
+          return;
+        }
+        await work.applyTransition(ticketKey, target.id);
+        store.log("ok", `✓ onay devri: ticket '${target.toStatusName}' statüsüne taşındı (atama yapılamadı)`);
+        this.deps.onJiraChanged?.();
+        await this.record("HANDOVER", {
+          reason: "analysis_review",
+          reassigned: false,
+          transitioned: true,
+          toStatus: target.toStatusName,
+        });
+        return;
+      }
+
+      const result = await work.sendToReview(ticketKey, manager, reviewStatus);
+      const statusNote = result.transition
+        ? `'${result.transition.toStatusName}' statüsüne taşındı`
+        : "inceleme (İNCELEMEDE) statü geçişi yok — statü değişmedi";
+      store.log("ok", `✓ onay devri: ticket Analist Yönetici'ye atandı ve ${statusNote}`);
+      store.note("3", `onay devri: Analist Yönetici'ye atandı${result.transition ? ` · ${result.transition.toStatusName}` : ""}`);
+      this.deps.onJiraChanged?.();
+      await this.record("HANDOVER", {
+        reason: "analysis_review",
+        reassigned: result.assigned,
+        transitioned: result.transitioned,
+        ...(result.transition ? { toStatus: result.transition.toStatusName } : {}),
+      });
+    } catch (error) {
+      store.log("warn", `! onay devri tamamlanamadı (akış etkilenmedi, kapı yine de açılıyor): ${String(error)}`);
+    }
+  }
+
+  /**
+   * ONAY DEVRİ move (b): reassign the ticket BACK to the Maestro Bot after the
+   * manager approves (the code step runs as the bot). FAIL-SOFT — the approval
+   * already passed, so a reassign hiccup only logs and records; the flow proceeds
+   * to engineering either way. `reason` distinguishes the approve path from the
+   * reject path on the HANDOVER event. Empty `botAccountId` skips the reassign.
+   */
+  private async returnTicketToBot(reason: string): Promise<void> {
+    const { store, work } = this.deps;
+    const ticketKey = this.requireTicket();
+    const bot = (this.deps.botAccountId ?? "").trim();
+    try {
+      if (bot.length === 0) {
+        store.log("warn", "! Maestro Bot hesabı (botAccountId) tanımlı değil — ticket bota geri atanamadı");
+        await this.record("HANDOVER", { reason, reassigned: false });
+        return;
+      }
+      await work.assign(ticketKey, bot);
+      store.log("dim", "→ ticket Maestro Bot'a geri atandı (kod adımı bota ait)");
+      this.deps.onJiraChanged?.();
+      await this.record("HANDOVER", { reason, reassigned: true });
+    } catch (error) {
+      store.log("warn", `! bota geri atama tamamlanamadı (akış etkilenmedi): ${String(error)}`);
+    }
+  }
+
+  /**
+   * ONAY DEVRİ move (c): the manager REJECTED the analysis. Post a Turkish
+   * rejection note carrying the reason, then hand the ticket back to the Maestro
+   * Bot for a fresh analysis. FAIL-SOFT on the Jira side (the note is the record
+   * that matters); the caller turns this into a CLEAN stop (AnalysisRejectedError),
+   * not a failure.
+   */
+  private async rejectAnalysisBackToBot(reason: string, author: string): Promise<void> {
+    const { store, work } = this.deps;
+    const ticketKey = this.requireTicket();
+    store.step("3", "hata", `analiz reddedildi: ${reason}`);
+    store.log("warn", `⏎ analiz reddedildi (Analist Yönetici): ${reason}`);
+    // The rejection is recorded as a gate reject on the analysis gate, attributed
+    // to the HUMAN who rejected it (the audit chain refuses GATE_REJECT for a
+    // system actor — a gate decision must carry a person, like GATE_APPROVE).
+    await this.record(
+      "GATE_REJECT",
+      { step: "5", reason },
+      corpAccountOf(author, this.runSettings.operatorAccount),
+    );
+    try {
+      await this.updateProgress("analiz reddedildi — yeniden analiz için ticket bota geri atandı");
+      await work.addComment(ticketKey, analysisRejectionComment(reason));
+      this.deps.onJiraChanged?.();
+    } catch (error) {
+      store.log("warn", `! analiz-red notu yazılamadı (akış temiz durdu): ${String(error)}`);
+    }
+    await this.returnTicketToBot("analysis_rejected");
+    store.log("ok", "✓ analiz-red notu CANLI Jira'ya yazıldı ve ticket yeniden analiz için bota geri atandı");
   }
 
   private githubMode(): boolean {
@@ -490,7 +786,22 @@ export class PilotRun {
     this.repo = repo;
     this.branch = branch;
 
-    this.workspace = await createWorkspace(this.deps.workspaceOptions ?? {});
+    // Open the workspace. When a permanent sandbox KÖK is configured (from the
+    // UI settings, seeded by env at bootstrap), the workspace is an ISOLATED
+    // subdirectory `<root>/<ticketKey>/` under that stable root — each ticket
+    // gets its own space + its own AI context/cache, and dispose() removes only
+    // that subdir, never the root. When it is empty the workspace stays a
+    // throwaway mkdtemp dir (legacy). Any injected `exec` (tests) is preserved;
+    // an injected `persistentRoot` in workspaceOptions (a test overriding the
+    // root directly) wins over the settings value.
+    const baseWorkspaceOptions = this.deps.workspaceOptions ?? {};
+    const sandboxRoot = this.runSettings.sandboxRoot.trim();
+    const persistentRoot =
+      baseWorkspaceOptions.persistentRoot ?? (sandboxRoot.length > 0 ? sandboxRoot : undefined);
+    this.workspace = await createWorkspace({
+      ...baseWorkspaceOptions,
+      ...(persistentRoot !== undefined ? { persistentRoot, ticketKey } : {}),
+    });
     // The workspace is open: record it so the Studio sandbox screen shows this
     // run's live workspace, and (paired with the SANDBOX_DESTROY on the way out)
     // so the trail carries the workspace's whole lifetime (M60).
@@ -842,7 +1153,7 @@ export class PilotRun {
       this.deps.onJiraChanged?.();
 
       if (envelope.command.name === "reject") {
-        throw new PilotStepError(`kapı reddedildi: ${envelope.command.reason}`);
+        throw new GateRejectedError(envelope.command.reason, envelope.author);
       }
 
       // approve → verify the author is in the approver group (M32/M51). SoD is
@@ -1026,6 +1337,24 @@ function clarificationComment(
     bulletList(missing.map((m) => m.question)),
     paragraph([
       text("Yanıtlarınızı bu ticket'a ekledikten sonra Maestro analizi baştan üretebilir."),
+    ]),
+  );
+}
+
+/**
+ * The Analyst Manager's analysis rejection, rendered as the Turkish note the
+ * ticket carries (onay devri, red dalı). The reason comes straight from the
+ * reviewer's `/reject <reason>` comment; the note only frames it and says the
+ * ticket has been handed back to the bot for a fresh analysis.
+ */
+function analysisRejectionComment(reason: string): ReturnType<typeof doc> {
+  return doc(
+    heading(3, "⛔ Analiz reddedildi"),
+    paragraph([strong("Analist Yönetici gerekçesi: "), text(reason)]),
+    paragraph([
+      text(
+        "Ticket yeniden analiz için Maestro Bot'a geri atandı. Gerekçe doğrultusunda güncellenip yeniden değerlendirilecektir.",
+      ),
     ]),
   );
 }

@@ -13,6 +13,7 @@ import type {
 import type { CiPort, SecretPort, WorkPort } from "@maestro/ports";
 import type { ConnectionStore } from "./connection-store.js";
 import type { ConnectorFetch } from "./connection-service.js";
+import type { JiraWorkflowReader } from "./jira-workflow-model.js";
 import type { RunGateway } from "./gateway.js";
 import type { StudioReadModels } from "./read-studio.js";
 import type { OnboardingReader, RepoPolicyReader } from "./onboarding-models.js";
@@ -582,6 +583,16 @@ export interface BffDeps {
   connectorSecrets?: SecretPort;
   /** Ticket→application routing (M99/M102), as the routing screen reads it. */
   routing: RoutingReader;
+  /**
+   * Reads a Jira project's workflow graph (statuses + transitions) off LIVE
+   * Jira for the import screen (M102). Optional: a deployment that has not wired
+   * a driver capable of it gets 503-by-name on `/studio/jira-workflow`, the same
+   * convention as the other capabilities that refuse rather than render an empty
+   * page. Absent here means "the live workflow cannot be read in this
+   * deployment", never "this project has no workflow". Read-only — nothing here
+   * moves an issue.
+   */
+  jiraWorkflow?: JiraWorkflowReader;
   killSwitch: KillSwitchStore;
   /**
    * Studio's read side (M7). Grouped rather than spread across `BffDeps` so it

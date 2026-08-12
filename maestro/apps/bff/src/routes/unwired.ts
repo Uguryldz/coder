@@ -54,6 +54,12 @@ const MISSING: Readonly<Record<string, string>> = {
     "architecture proposal, a step state or a repo-setup record for a ticket whose " +
     "repository does not exist yet, so there is nothing to report. An empty step list " +
     "would render as a wizard that has not started rather than a capability that is absent",
+  "jira-workflow":
+    "no JiraWorkflowReader is injected — the workflow-import screen (M102) reads a " +
+    "project's statuses and transitions off LIVE Jira, and this deployment did not wire a " +
+    "driver capable of it (the Cloud driver's readProjectWorkflow). Until one is wired the " +
+    "route refuses rather than answer an empty graph, which would render as \"this project " +
+    "has no workflow\" on a project that simply cannot be read here",
 };
 
 export const UNWIRED_CAPABILITIES: readonly string[] = Object.keys(MISSING);

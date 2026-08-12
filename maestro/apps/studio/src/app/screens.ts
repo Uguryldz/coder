@@ -55,6 +55,9 @@ export const SCREENS: readonly ScreenDef[] = [
   // nav mirrors that so a viewer is not sent to a screen that can only 403.
   { id: "pilot", path: "pilot", titleKey: "screen.pilot.title", navKey: "nav.pilot", group: "monitor", icon: "🎥" },
   { id: "tickets", path: "tickets", titleKey: "screen.tickets.title", navKey: "nav.tickets", group: "monitor", icon: "≡" },
+  // The live OPS Jira workflow drawn as SVG (Dalga D). Read-only monitor view:
+  // it highlights where a selected ticket sits, so it belongs beside tickets.
+  { id: "flow", path: "flow", titleKey: "screen.flow.title", navKey: "nav.flow", group: "monitor", icon: "🔀" },
   { id: "help", path: "help", titleKey: "screen.help.title", navKey: "nav.help", group: "monitor", icon: "📖" },
 
   // ── ÇALIŞMA ─────────────────────────────────────────────────────────────

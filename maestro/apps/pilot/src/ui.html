@@ -135,6 +135,7 @@ code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px
           </select>
         </label>
         <label class="set-f"><span>Operatör hesabı</span><input id="s-operatorAccount" type="text" autocomplete="off"></label>
+        <label class="set-f"><span>Sandbox kökü (boş = geçici)</span><input id="s-sandboxRoot" type="text" autocomplete="off" placeholder="/kalici/sandbox/koku"></label>
       </div>
       <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
         <button class="btn p" id="set-save" type="button">Kaydet</button>
@@ -306,10 +307,10 @@ function renderState(state) {
 }
 
 // ---------------------------------------------------------------- settings
-// The ⚙ Ayarlar panel: load the six current values, let them be edited, POST on
+// The ⚙ Ayarlar panel: load the current values, let them be edited, POST on
 // Kaydet. The server validates and refuses a change while a run is in progress
 // (409), so the button is disabled and a note is shown whenever a run is live.
-const SET_FIELDS = ["approverGroup", "model", "commandPollMs", "discoveryPollMs", "dataClass", "operatorAccount"];
+const SET_FIELDS = ["approverGroup", "model", "commandPollMs", "discoveryPollMs", "dataClass", "operatorAccount", "sandboxRoot"];
 
 function fillSettings(s) {
   for (const key of SET_FIELDS) {
@@ -333,6 +334,7 @@ function readSettingsForm() {
     discoveryPollMs: Number($("s-discoveryPollMs").value),
     dataClass: $("s-dataClass").value,
     operatorAccount: $("s-operatorAccount").value.trim(),
+    sandboxRoot: $("s-sandboxRoot").value.trim(),
   };
 }
 

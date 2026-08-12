@@ -1,0 +1,132 @@
+/*
+ * The Jira workflow diagram. Colours are tokens only (ui/tokens.css) so the
+ * dark theme follows automatically — a literal hex here would light one node
+ * the wrong colour in dark mode with no test to catch it.
+ */
+
+.flow-scroll {
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+}
+
+.flow-svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Column headers (To Do / In Progress / Done). */
+.flow-col-head {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Node body: category tints the fill and left border via the modifier. */
+.flow-node-box {
+  fill: var(--panel2);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.flow-node--todo .flow-node-box {
+  fill: var(--blue-bg);
+  stroke: var(--blue);
+}
+
+.flow-node--inprogress .flow-node-box {
+  fill: var(--amber-bg);
+  stroke: var(--amber);
+}
+
+.flow-node--done .flow-node-box {
+  fill: var(--green-bg);
+  stroke: var(--green);
+}
+
+.flow-node--other .flow-node-box {
+  fill: var(--panel2);
+  stroke: var(--border2);
+}
+
+.flow-node-label {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Active ("hangi adımdayız") — a purple ring plus a thicker box. Colour is
+   never the only signal: the node also carries aria-current="step". */
+.flow-node--active .flow-node-box {
+  stroke: var(--purple);
+  stroke-width: 2.5;
+}
+
+.flow-node-ring {
+  stroke: var(--purple);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+/* Edges. */
+.flow-edge {
+  stroke: var(--border2);
+  stroke-width: 1.5;
+}
+
+.flow-edge--back {
+  stroke: var(--orange);
+  stroke-dasharray: 4 3;
+}
+
+.flow-arrowhead {
+  fill: var(--border2);
+}
+
+.flow-arrowhead--back {
+  fill: var(--orange);
+}
+
+/* The legend row under the diagram. */
+.flow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin: 10px 2px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.flow-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flow-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid var(--border);
+}
+
+.flow-swatch--todo {
+  background: var(--blue-bg);
+  border-color: var(--blue);
+}
+.flow-swatch--inprogress {
+  background: var(--amber-bg);
+  border-color: var(--amber);
+}
+.flow-swatch--done {
+  background: var(--green-bg);
+  border-color: var(--green);
+}
+.flow-swatch--active {
+  background: transparent;
+  border-color: var(--purple);
+  border-style: dashed;
+}

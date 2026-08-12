@@ -74,6 +74,8 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
    * and mapping it to the neighbouring key would mistranslate it.
    */
   invalid_onboarding_body: "error.invalid_onboarding_body",
+  // The Jira-workflow import surface (M102) guards its `project` query.
+  invalid_project: "error.invalid_project",
   invalid_page: "error.invalid_page",
   invalid_path: "error.invalid_path",
   invalid_path_pattern: "error.invalid_path_pattern",

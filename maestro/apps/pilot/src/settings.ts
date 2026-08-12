@@ -1,3 +1,5 @@
+import { isAbsolute } from "node:path";
+
 import { DataClass } from "@maestro/contracts";
 
 /**
@@ -20,7 +22,7 @@ import { DataClass } from "@maestro/contracts";
  * junk is never stored.
  */
 
-/** The six UI-editable settings. */
+/** The UI-editable settings. */
 export interface PilotSettings {
   /** Group whose membership every gate approval is checked against (M32/M51). */
   approverGroup: string;
@@ -34,6 +36,22 @@ export interface PilotSettings {
   dataClass: DataClass;
   /** Corporate account a Cloud comment author falls back to (audit needs user@corp). */
   operatorAccount: string;
+  /**
+   * The permanent KÖK (root) for the single analysis sandbox. Every ticket runs
+   * in its own ISOLATED subdirectory under this root (`<root>/<ticketKey>/`),
+   * and the root itself is never torn down. Empty string means "no persistent
+   * root" — the pilot falls back to a throwaway per-run `mkdtemp` dir (the legacy
+   * behaviour). UI-editable; env only seeds the default at bootstrap.
+   */
+  sandboxRoot: string;
+  /**
+   * The review status name the analysis-approval handover moves a ticket to
+   * (default "İNCELEMEDE"). NEVER the sole selection key — the driver matches
+   * this name first, then falls back to the In-Progress status category — so a
+   * site that renamed its review column still works. UI-editable; env only seeds
+   * the default at bootstrap.
+   */
+  reviewStatusName: string;
 }
 
 /** Bounds for the poll intervals — a positive integer, not absurdly small/large. */
@@ -53,6 +71,8 @@ const SEED_BASE: PilotSettings = {
   discoveryPollMs: POLL_MS_MIN,
   dataClass: "gizli",
   operatorAccount: "-",
+  sandboxRoot: "",
+  reviewStatusName: "İNCELEMEDE",
 };
 
 /** Human-readable field labels, reused in validation messages (Turkish). */
@@ -63,6 +83,8 @@ const LABELS = {
   discoveryPollMs: "keşif yoklama aralığı",
   dataClass: "veri sınıfı",
   operatorAccount: "operatör hesabı",
+  sandboxRoot: "sandbox kökü",
+  reviewStatusName: "inceleme statüsü",
 } as const;
 
 /** Thrown when a write is rejected; carries a UI-safe Turkish message. */
@@ -86,6 +108,30 @@ function requireNonEmpty(value: unknown, label: string): string {
     throw new SettingsValidationError(`${label} kontrol karakteri içeremez`);
   }
   return value.trim();
+}
+
+/**
+ * The sandbox KÖK: EITHER empty (persistent root off → mkdtemp fallback) OR an
+ * ABSOLUTE path with no control characters. A relative root is rejected because
+ * it would resolve against whatever cwd the runner happens to have, and the
+ * whole point of the root is a single, stable, operator-chosen location. The
+ * per-ticket subdir is derived from a slugged ticket key downstream, so the root
+ * itself only needs to be a sane absolute directory here.
+ */
+function requireOptionalAbsolutePath(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new SettingsValidationError(`${label} metin olmalı`);
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return "";
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+    throw new SettingsValidationError(`${label} kontrol karakteri içeremez`);
+  }
+  if (!isAbsolute(trimmed)) {
+    throw new SettingsValidationError(`${label} mutlak bir yol olmalı (veya boş bırakılmalı)`);
+  }
+  return trimmed;
 }
 
 function requirePollMs(value: unknown, label: string): number {
@@ -136,6 +182,12 @@ export function validateSettings(
   }
   if ("operatorAccount" in patch) {
     next.operatorAccount = requireNonEmpty(patch.operatorAccount, LABELS.operatorAccount);
+  }
+  if ("sandboxRoot" in patch) {
+    next.sandboxRoot = requireOptionalAbsolutePath(patch.sandboxRoot, LABELS.sandboxRoot);
+  }
+  if ("reviewStatusName" in patch) {
+    next.reviewStatusName = requireNonEmpty(patch.reviewStatusName, LABELS.reviewStatusName);
   }
 
   return next;

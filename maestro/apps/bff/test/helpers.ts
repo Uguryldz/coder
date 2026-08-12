@@ -19,7 +19,8 @@ import type {
   TemplateVersionRecord,
 } from "../src/deps.js";
 import { buildServer } from "../src/server.js";
-import { StaticRoutingReader, StaticSettingsReader } from "../src/stores/admin-memory.js";
+import { StaticJiraWorkflowReader, StaticRoutingReader, StaticSettingsReader } from "../src/stores/admin-memory.js";
+import type { JiraWorkflowGraphView } from "../src/jira-workflow-model.js";
 import { InMemoryConnectionStore, InMemorySecretStore } from "../src/stores/connection-memory.js";
 import type { ConnectionRecord } from "../src/connection-store.js";
 import type { ConnectorFetch } from "../src/connection-service.js";
@@ -302,6 +303,29 @@ export const TEST_ROUTING_RULES: readonly RoutingRuleView[] = [
   },
 ];
 
+/**
+ * A project workflow graph the import screen reads (M102), matching the OPS
+ * project on the live site: four statuses, a per-status "start" edge and a
+ * global "done" edge, honestly flagged as an OBSERVED (not proven complete)
+ * edge set.
+ */
+export const TEST_WORKFLOW_GRAPH: JiraWorkflowGraphView = {
+  projectKey: "OPS",
+  statuses: [
+    { id: "10004", name: "Yapılacaklar", category: "Yapılacaklar" },
+    { id: "10005", name: "Devam Ediyor", category: "Devam Ediyor" },
+    { id: "10007", name: "İNCELEMEDE", category: "Devam Ediyor" },
+    { id: "10006", name: "Tamam", category: "Tamam" },
+  ],
+  transitions: [
+    { id: "11", name: "Devam Ediyor", fromStatusId: "10004", toStatusId: "10005" },
+    { id: "21", name: "İncele", fromStatusId: "10005", toStatusId: "10007" },
+    { id: "31", name: "Tamam", fromStatusId: null, toStatusId: "10006" },
+  ],
+  edgesComplete: false,
+  sampledFrom: ["OPS-6", "OPS-7"],
+};
+
 export interface HarnessOptions {
   groups?: Record<string, readonly string[]>;
   bindings?: readonly JiraBinding[];
@@ -331,6 +355,12 @@ export interface HarnessOptions {
   notifyDrivers?: readonly NotifyDriverView[];
   routingProjects?: readonly RoutingProjectView[];
   routingRules?: readonly RoutingRuleView[];
+  /**
+   * Project workflow graphs the import screen reads (M102). Defaults to the
+   * single seeded OPS graph; pass `[]` to exercise the "project not readable"
+   * path, or `deps: { jiraWorkflow: undefined }` to exercise the 503-by-name.
+   */
+  workflowGraphs?: readonly JiraWorkflowGraphView[];
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -362,6 +392,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     options.routingProjects ?? TEST_ROUTING_PROJECTS,
     options.routingRules ?? TEST_ROUTING_RULES,
   );
+  const jiraWorkflow = new StaticJiraWorkflowReader(options.workflowGraphs ?? [TEST_WORKFLOW_GRAPH]);
   const killSwitch = new InMemoryKillSwitchStore();
   const connections = new InMemoryConnectionStore(options.managedConnections ?? []);
   const connectorSecrets = new InMemorySecretStore();
@@ -402,6 +433,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     docTemplates,
     settings,
     routing,
+    jiraWorkflow,
     killSwitch,
     connections,
     connectorSecrets,

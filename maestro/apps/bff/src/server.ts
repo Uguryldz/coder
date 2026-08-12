@@ -15,6 +15,7 @@ import { connectionRoutes } from "./routes/connections.js";
 import { docTemplateRoutes } from "./routes/doc-template.js";
 import { healthRoutes } from "./routes/health.js";
 import { settingsRoutes } from "./routes/settings.js";
+import { jiraWorkflowRoutes } from "./routes/jira-workflow.js";
 import { killSwitchRoutes } from "./routes/killswitch.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { paramRoutes } from "./routes/params.js";
@@ -160,6 +161,12 @@ export async function buildServer(
   // reach the JSON API, where it would turn every other body into a Buffer.
   await app.register(async (scope) => docTemplateRoutes(scope, resolved));
   await app.register(async (scope) => settingsRoutes(scope, resolved));
+  // The workflow-import surface (M102): a Jira project's live statuses and
+  // transitions, read for Studio to map onto Maestro's steps. Admin/tech-lead,
+  // read-only, and refuses by name (503) when no reader is wired — the same
+  // convention as the read models, so an unwired import cannot render as "this
+  // project has no workflow".
+  await app.register(async (scope) => jiraWorkflowRoutes(scope, resolved));
   // The connector-management surface: the platform's outbound connections made
   // admin-editable, with tokens stored AES-encrypted and read back only as a
   // mask. Refuses by name (503) when the store + encrypting SecretPort are not

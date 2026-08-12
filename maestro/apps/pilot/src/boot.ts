@@ -26,6 +26,8 @@ import {
   resolveGithub,
   resolveJiraCloud,
   resolveMaestroBotAccountId,
+  resolveMaestroManagerAccountId,
+  resolveMaestroRequesterAccountId,
   resolveOpenRouter,
   type GithubEnv,
   type JiraCloudEnv,
@@ -144,6 +146,21 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   const botAccountId = resolveMaestroBotAccountId(repoEnv, injected);
   const discoveryQuery = discoveryJql(botAccountId);
 
+  // The reporter a not-fit ticket is handed BACK to on the İADE branch. Seeded
+  // from MAESTRO_REQUESTER_ACCOUNT_ID at boot; UI-param-ready (Studio). Empty is
+  // valid — the return then moves the ticket back to the backlog without a
+  // reassign (a loud warning is emitted by the resolver), never a boot failure.
+  const requesterAccountId = resolveMaestroRequesterAccountId(repoEnv, injected);
+
+  // The Analyst Manager a completed analysis is handed to for approval (onay
+  // devri): when the analysis + its docs are on the ticket, the pilot reassigns
+  // to this accountId and moves the ticket into review ("İNCELEMEDE"). Seeded
+  // from MAESTRO_MANAGER_ACCOUNT_ID at boot; UI-param-ready (Studio). Empty is
+  // valid — the handover then only moves the status, without a reassign (a loud
+  // warning is emitted by the resolver), never a boot failure. On approve the
+  // ticket is reassigned BACK to the bot (`botAccountId`) for the code step.
+  const managerAccountId = resolveMaestroManagerAccountId(repoEnv, injected);
+
   // SCM edge (Dalga C2). `fake` (the default) is unchanged. `github` resolves
   // the real GitHub edge — owner/repo/token — and builds the real ScmPort.
   const mode: ScmMode = options.scm ?? scmMode(repoEnv, injected);
@@ -253,6 +270,9 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     piiPolicy: policy,
     store,
     settings,
+    requesterAccountId,
+    managerAccountId,
+    botAccountId,
     docs,
     completePullRequest: (prId) => ado.completePullRequest(prId),
     ...(githubRunConfig ? { github: githubRunConfig } : {}),

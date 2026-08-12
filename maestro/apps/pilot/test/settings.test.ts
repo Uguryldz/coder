@@ -22,6 +22,8 @@ const SEED: Record<keyof PilotSettings, unknown> = {
   discoveryPollMs: 15_000,
   dataClass: "gizli",
   operatorAccount: "op@corp",
+  sandboxRoot: "",
+  reviewStatusName: "İNCELEMEDE",
 };
 
 describe("validateSettings — poll bounds", () => {
@@ -107,6 +109,35 @@ describe("validateSettings — non-empty strings", () => {
   });
 });
 
+describe("validateSettings — sandboxRoot (persistent KÖK)", () => {
+  it("accepts an empty root (persistent root OFF → mkdtemp fallback)", () => {
+    const next = validateSettings(SEED as PilotSettings, { sandboxRoot: "" });
+    expect(next.sandboxRoot).toBe("");
+    // Whitespace-only is normalised to empty too.
+    expect(validateSettings(SEED as PilotSettings, { sandboxRoot: "   " }).sandboxRoot).toBe("");
+  });
+
+  it("accepts and trims an absolute path", () => {
+    const next = validateSettings(SEED as PilotSettings, { sandboxRoot: "  /srv/maestro/sandbox  " });
+    expect(next.sandboxRoot).toBe("/srv/maestro/sandbox");
+  });
+
+  it("rejects a relative path (the root must be a single stable location)", () => {
+    expect(() =>
+      validateSettings(SEED as PilotSettings, { sandboxRoot: "relative/sandbox" }),
+    ).toThrow(/mutlak/);
+    expect(() =>
+      validateSettings(SEED as PilotSettings, { sandboxRoot: "./sandbox" }),
+    ).toThrow(/mutlak/);
+  });
+
+  it("rejects control characters in the root", () => {
+    expect(() =>
+      validateSettings(SEED as PilotSettings, { sandboxRoot: "/srv/sand\nbox" }),
+    ).toThrow(/kontrol karakteri/);
+  });
+});
+
 describe("validateSettings — partial patch", () => {
   it("keeps unmentioned fields unchanged", () => {
     const next = validateSettings(SEED as PilotSettings, { model: "gpt-5" });
@@ -126,6 +157,8 @@ describe("SettingsStore", () => {
       discoveryPollMs: 15_000,
       dataClass: "gizli",
       operatorAccount: "op@corp",
+      sandboxRoot: "",
+      reviewStatusName: "İNCELEMEDE",
     });
   });
 
@@ -154,10 +187,10 @@ describe("SettingsStore", () => {
     expect(store.snapshot().commandPollMs).toBe(3_000); // unchanged
   });
 
-  it("exposes no secret fields — only the six settings", () => {
+  it("exposes no secret fields — only the settable settings", () => {
     const store = new SettingsStore(SEED);
     expect(Object.keys(store.snapshot()).sort()).toEqual(
-      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount"].sort(),
+      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName"].sort(),
     );
   });
 });

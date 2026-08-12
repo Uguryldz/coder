@@ -20,11 +20,12 @@ const MOCK_VIEW_IDS = [
 
 /**
  * Screens added AFTER the mock froze. `pilot` (Dalga D) is Studio's face for
- * the pilot's real-Jira flow — it has no mock view because the mock predates
- * the pilot engine. Listed explicitly so the coverage check stays honest: a
- * dropped or accidental screen still fails, an intentional addition is named.
+ * the pilot's real-Jira flow, and `flow` draws that project's live Jira
+ * workflow as SVG — both post-date the mock, which predates the pilot engine.
+ * Listed explicitly so the coverage check stays honest: a dropped or accidental
+ * screen still fails, an intentional addition is named.
  */
-const POST_MOCK_VIEW_IDS = ["pilot"] as const;
+const POST_MOCK_VIEW_IDS = ["pilot", "flow"] as const;
 const EXPECTED_VIEW_IDS = [...MOCK_VIEW_IDS, ...POST_MOCK_VIEW_IDS];
 
 describe("route table", () => {

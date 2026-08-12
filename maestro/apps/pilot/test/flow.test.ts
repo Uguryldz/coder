@@ -1,3 +1,7 @@
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { doc, paragraph } from "@maestro/adapter-jira";
 import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -16,6 +20,10 @@ import { cloudFixture, waitFor } from "./helpers.js";
 
 const OPERATOR = "712020:7ee7a2ab-23e7-47aa-a61e-38b79b7eb4d1";
 const SITE = "https://uyildiz.atlassian.net";
+/** The Analyst Manager (approver) the analysis is handed to — from bootstrap env. */
+const MANAGER = "712020:491aeb73-1111-2222-3333-444455556666";
+/** The Maestro Bot the ticket is reassigned BACK to on approve — from bootstrap env. */
+const BOT = "712020:b836c135-7777-8888-9999-aaaabbbbcccc";
 
 // PII on purpose: proves the analyst/engineer inputs are masked before they
 // leave the machine, exactly as the demo does with its ticket description.
@@ -139,12 +147,30 @@ function fakeJiraCloud(): {
   fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
   comments: Array<{ id: string; body: unknown }>;
   attachments: Array<{ filename: string; contentType: string }>;
+  assignments: Array<string | null>;
+  transitions: string[];
 } {
   const comments: Array<{ id: string; body: unknown }> = [];
   const attachments: Array<{ filename: string; contentType: string }> = [];
+  // Every assignee PUT and applied transition, in order, so the test can assert
+  // the analysis onay-devri (assign→manager, İNCELEMEDE) and the reassign-back
+  // to the bot on approve.
+  const assignments: Array<string | null> = [];
+  const transitions: string[] = [];
   let nextId = 20000;
   let attachId = 10050;
   let labels: string[] = [];
+
+  // A live-shaped transitions payload: the "İNCELEMEDE" edge is In Progress and
+  // is NOT the only in-progress edge — a category-blind pick could land on the
+  // wrong one, so name-first selection is what puts the ticket in review.
+  const transitionsPayload = {
+    transitions: [
+      { id: "31", name: "Başla", to: { id: "10010", name: "Devam Ediyor", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+      { id: "21", name: "İncelemeye al", to: { id: "10001", name: "İNCELEMEDE", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+      { id: "11", name: "Geri al", to: { id: "10000", name: "Yapılacaklar", statusCategory: { key: "new", name: "To Do" } } },
+    ],
+  };
 
   const issue = cloudFixture("issue-get") as { fields: Record<string, unknown> } & Record<string, unknown>;
   // Inject PII into the description so masking has something real to remove.
@@ -232,6 +258,22 @@ function fakeJiraCloud(): {
       if (found) found.body = body["body"];
       return Promise.resolve(json(200, { id }));
     }
+    // Assignee PUT (onay devri: assign→manager, then reassign→bot on approve).
+    if (path === "/rest/api/3/issue/OPS-6/assignee" && method === "PUT") {
+      const accountId = body["accountId"];
+      assignments.push(typeof accountId === "string" ? accountId : null);
+      return Promise.resolve(json(204, undefined));
+    }
+    // Available transitions (with destination categories).
+    if (path === "/rest/api/3/issue/OPS-6/transitions" && method === "GET") {
+      return Promise.resolve(json(200, transitionsPayload));
+    }
+    // Apply the chosen transition (İNCELEMEDE on the handover).
+    if (path === "/rest/api/3/issue/OPS-6/transitions" && method === "POST") {
+      const transition = body["transition"] as { id?: string } | undefined;
+      if (transition?.id) transitions.push(transition.id);
+      return Promise.resolve(json(204, undefined));
+    }
     // Comment list (the poll source): Maestro's own comments plus the standing
     // operator /approve. A fresh `seen` set per gate lets both gates pick it up.
     if (path === "/rest/api/3/issue/OPS-6/comment" && method === "GET") {
@@ -259,7 +301,7 @@ function fakeJiraCloud(): {
     };
   }
 
-  return { fetchImpl, comments, attachments };
+  return { fetchImpl, comments, attachments, assignments, transitions };
 }
 
 describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)", () => {
@@ -268,17 +310,25 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
   // The SAME chain the run appends through, so the test can read the trail back
   // and assert the sandbox events (M60). InMemoryAuditStore.read() enumerates.
   const auditStore = new InMemoryAuditStore();
+  // The PERMANENT sandbox KÖK this run's workspace opens its ISOLATED ticket
+  // subdir under (persistent-root model). Set from the UI settings store (env
+  // only seeds the default), so this drives the real run.ts → createWorkspace
+  // persistent-root wiring, not the mkdtemp fallback.
+  let sandboxRoot: string;
 
   beforeAll(async () => {
     jira = fakeJiraCloud();
+    sandboxRoot = await mkdtemp(join(tmpdir(), "maestro-flow-sandbox-"));
     stage = await bootPilot({
       audit: new AuditChain({ store: auditStore }),
-      // Inject an empty env so this boot is fully hermetic: maestro/.env is not
-      // read and process.env is ignored for every env-derived decision. With
-      // `env: {}` the SCM mode resolves to `fake` regardless of a developer's
-      // shell — so a polluted PILOT_SCM=github can never send this "offline"
-      // test to real GitHub. `scm: "fake"` is kept as belt-and-braces.
-      env: {},
+      // Inject an authoritative env so this boot is fully hermetic: maestro/.env
+      // is not read and process.env is ignored for every env-derived decision.
+      // The manager + bot account ids seed the analysis onay-devri (assign→manager
+      // + İNCELEMEDE, then reassign→bot on approve). With the SCM mode absent the
+      // resolve falls to `fake` regardless of a developer's shell — so a polluted
+      // PILOT_SCM=github can never send this "offline" test to real GitHub.
+      // `scm: "fake"` is kept as belt-and-braces.
+      env: { MAESTRO_MANAGER_ACCOUNT_ID: MANAGER, MAESTRO_BOT_ACCOUNT_ID: BOT },
       scm: "fake",
       uiPort: 0,
       adoPort: 0,
@@ -290,10 +340,15 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
       ciTimeoutMs: 15_000,
       commandPollMs: 20,
     });
+    // Turn on the persistent sandbox root FROM THE SETTINGS STORE (as the UI
+    // would), before any run: the workspace now opens <root>/OPS-6 and disposes
+    // only that subdir, leaving the root standing.
+    stage.settings.update({ sandboxRoot });
   });
 
   afterAll(async () => {
     await stage.close();
+    await rm(sandboxRoot, { recursive: true, force: true });
   });
 
   it("keşif, canlı arama sonucundan maestro ticket'larını getirir", async () => {
@@ -345,6 +400,42 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
       expect(event.meta["runner"]).toBe("pilot-local");
       expect(event.actor).toBe("maestro-runner");
     }
+
+    // ONAY DEVRİ (analysis approval hand-off): before the analysis gate opened,
+    // the ticket was reassigned to the Analyst Manager and moved to "İNCELEMEDE"
+    // (transition 21 — the review edge, chosen by NAME even though a To-Do and a
+    // "Devam Ediyor" edge were also on offer). On /approve it was reassigned BACK
+    // to the Maestro Bot for the code step. So the assignee sequence begins
+    // MANAGER → BOT, and the İNCELEMEDE transition was applied.
+    expect(jira.assignments[0]).toBe(MANAGER);
+    expect(jira.assignments).toContain(BOT);
+    expect(jira.assignments.indexOf(MANAGER)).toBeLessThan(jira.assignments.indexOf(BOT));
+    expect(jira.transitions).toContain("21");
+
+    // The trail carries the handover both ways: a HANDOVER to review (assigned +
+    // İNCELEMEDE) and a HANDOVER back to the bot on approval.
+    const handovers = events.filter((e) => e.action === "HANDOVER");
+    const toReview = handovers.find((e) => e.meta["reason"] === "analysis_review");
+    expect(toReview?.meta).toMatchObject({ reassigned: true, transitioned: true, toStatus: "İNCELEMEDE" });
+    const backToBot = handovers.find((e) => e.meta["reason"] === "analysis_approved");
+    expect(backToBot?.meta).toMatchObject({ reassigned: true });
+
+    // Persistent-KÖK model: the run opened its workspace as an ISOLATED subdir
+    // under the permanent sandbox root, and on teardown disposed ONLY that
+    // subdir — the KÖK itself is never torn down. So after the finished run the
+    // root still stands and OPS-6's subdir is gone (dispose removed it, not the
+    // root). This proves the SANDBOX_CREATE/DESTROY events above bracket a real
+    // persistent-root workspace, not a mkdtemp one.
+    const exists = async (path: string): Promise<boolean> => {
+      try {
+        await stat(path);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(await exists(sandboxRoot)).toBe(true);
+    expect(await exists(join(sandboxRoot, "OPS-6"))).toBe(false);
 
     // The PR exists on the ADO side and is merged.
     const pr = stage.ado.pullRequests().at(-1);

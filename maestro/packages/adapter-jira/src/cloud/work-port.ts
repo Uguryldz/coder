@@ -14,6 +14,15 @@ import { commandFromCloudPayload, parseCommandFromComment, type CloudCommentComm
 import type { JiraCloudConfig } from "./config.js";
 import { cloudUserIdOf, mapCloudIssueToSnapshot } from "./mapping.js";
 import { searchIssues, type CloudSearchPage, type CloudSearchRequest } from "./search.js";
+import { JiraCloudWorkflowReader, type JiraWorkflowGraph, type JiraWorkflowReadOptions } from "./workflow.js";
+import {
+  DEFAULT_REVIEW_STATUS_NAME,
+  parseAvailableTransitions,
+  requireTransitionId,
+  selectReturnTransition,
+  selectReviewTransition,
+  type AvailableTransition,
+} from "./return-flow.js";
 
 export interface JiraCloudWorkPortOptions {
   config: JiraCloudConfig;
@@ -277,6 +286,130 @@ export class JiraCloudWorkPort implements WorkPort {
       safeName,
     );
     return { ids: attachmentIdsOf(created) };
+  }
+
+  /**
+   * Read the project's workflow graph (statuses + observed transitions) for
+   * Studio's import screen.
+   *
+   * DRIVER-SPECIFIC CAPABILITY, not a WorkPort method — the same shape as
+   * `addAttachment`. `WorkPort` is FROZEN (packages/ports), and mapping live
+   * Jira statuses onto Studio is a NEW read layer, not a change to the frozen
+   * port surface. A caller reaches it through the concrete `JiraCloudWorkPort`
+   * type (as the composition root does via `createJiraCloudWorkPort`), never
+   * through a `WorkPort` reference. Read-only: it moves no issue, so the frozen
+   * `transition()` no-op below is unaffected.
+   */
+  readProjectWorkflow(projectKey: string, options?: JiraWorkflowReadOptions): Promise<JiraWorkflowGraph> {
+    return new JiraCloudWorkflowReader(this.client).readProjectWorkflow(projectKey, options);
+  }
+
+  /**
+   * The transitions available FROM an issue's current status, each carrying its
+   * destination status's category — the source a caller picks a target from by
+   * category rather than by a brittle localised name.
+   *
+   * DRIVER-SPECIFIC CAPABILITY, not a WorkPort method — the same shape as
+   * `readProjectWorkflow`. This one READS (`GET /issue/{key}/transitions`), and
+   * `expand=transitions.fields` is NOT requested: the default payload already
+   * carries `to.statusCategory`, which is all the category-based selection needs.
+   */
+  async readAvailableTransitions(key: TicketKey): Promise<AvailableTransition[]> {
+    const issueKey = requireTicketKey(key, "key");
+    const raw = await this.client.get<unknown>(
+      `${API}/issue/${encodeURIComponent(issueKey)}/transitions`,
+    );
+    return parseAvailableTransitions(raw);
+  }
+
+  /**
+   * Apply a transition by id — the WRITE the frozen `WorkPort.transition` no-op
+   * cannot perform. `POST /issue/{key}/transitions` with `{ transition: { id } }`
+   * answers 204 on success (fixtures/cloud/transition-applied is a 204).
+   *
+   * DRIVER-SPECIFIC CAPABILITY, reached through the concrete `JiraCloudWorkPort`
+   * exactly like `addAttachment`. The frozen port's `transition()` below stays a
+   * CapabilityNotSupported no-op; a caller that wants the real move addresses the
+   * concrete driver, so no frozen contract is widened.
+   */
+  async applyTransition(key: TicketKey, transitionId: string): Promise<void> {
+    const issueKey = requireTicketKey(key, "key");
+    const id = requireTransitionId(transitionId);
+    await this.client.post<void>(`${API}/issue/${encodeURIComponent(issueKey)}/transitions`, {
+      transition: { id },
+    });
+  }
+
+  /**
+   * Hand an unfit ticket back to its reporter (İADE): reassign it to
+   * `reporterAccountId` and move it to a backlog/To-Do status, choosing the
+   * transition DYNAMICALLY by destination category (never a hard-coded name —
+   * see return-flow.ts). Returns what actually happened so the caller can log
+   * and audit the real outcome:
+   *
+   *   - `assigned`     — the reassignment succeeded.
+   *   - `transitioned` — a To-Do transition was found AND applied.
+   *   - `transition`   — the transition Jira offered (null when none applied),
+   *                      so the caller records which status the ticket returned to.
+   *
+   * Fail-SOFT is the caller's job (the return is a clean stop, not a failure):
+   * this method still throws on a real Jira error so the caller decides whether
+   * to swallow it. When the issue's current status offers NO To-Do transition
+   * (already in the backlog, or the workflow forbids going back), the ticket is
+   * still reassigned and `transitioned:false` is returned — not an error.
+   */
+  async returnToReporter(
+    key: TicketKey,
+    reporterAccountId: string,
+  ): Promise<{ assigned: boolean; transitioned: boolean; transition: AvailableTransition | null }> {
+    const issueKey = requireTicketKey(key, "key");
+    await this.assign(issueKey, reporterAccountId);
+    const transitions = await this.readAvailableTransitions(issueKey);
+    const target = selectReturnTransition(transitions);
+    if (target === null) {
+      return { assigned: true, transitioned: false, transition: null };
+    }
+    await this.applyTransition(issueKey, target.id);
+    return { assigned: true, transitioned: true, transition: target };
+  }
+
+  /**
+   * Hand a ticket to the Analyst Manager for analysis approval (onay devri):
+   * reassign it to `managerAccountId` and move it INTO REVIEW — the review
+   * status chosen DYNAMICALLY, matching `reviewStatusName` (default "İNCELEMEDE")
+   * by name FIRST and then falling back to the In-Progress category (never a
+   * hard-coded transition id or a brittle name-only match — see return-flow.ts).
+   * Returns what actually happened so the caller logs and audits the real
+   * outcome:
+   *
+   *   - `assigned`     — the reassignment to the manager succeeded.
+   *   - `transitioned` — a review transition was found AND applied.
+   *   - `transition`   — the transition Jira offered (null when none applied),
+   *                      so the caller records which status the ticket moved to.
+   *
+   * The reassign runs FIRST and unconditionally: even a workflow that offers no
+   * in-progress edge from the current status (already in review, or a locked
+   * workflow) still lands the ticket in the manager's queue, with
+   * `transitioned:false` — that is not an error. This method still throws on a
+   * real Jira error (a refused assign, a 5xx) so the caller decides whether to
+   * treat the handover as fatal.
+   */
+  async sendToReview(
+    key: TicketKey,
+    managerAccountId: string,
+    reviewStatusName: string = DEFAULT_REVIEW_STATUS_NAME,
+  ): Promise<{ assigned: boolean; transitioned: boolean; transition: AvailableTransition | null }> {
+    const issueKey = requireTicketKey(key, "key");
+    const manager = managerAccountId.trim();
+    if (manager.length === 0) throw new JiraArgumentError("managerAccountId", "empty");
+    await this.assign(issueKey, manager);
+    const transitions = await this.readAvailableTransitions(issueKey);
+    const target = selectReviewTransition(transitions, reviewStatusName);
+    if (target === null) {
+      return { assigned: true, transitioned: false, transition: null };
+    }
+    await this.applyTransition(issueKey, target.id);
+    return { assigned: true, transitioned: true, transition: target };
   }
 
   /**

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -52,6 +52,16 @@ export interface DemoWorkspace {
    * inside the git working directory and there is a real diff to commit.
    */
   readonly codeDir: string;
+  /**
+   * A ticket-scoped directory for AI context/cache (prompts, retrieval caches,
+   * scratch state) that must NOT leak between tickets. On the mkdtemp path it
+   * lives under the throwaway root; under a persistent root it lives INSIDE the
+   * ticket's own subdirectory (`<root>/<ticketKey>/context`), so one ticket can
+   * never read another ticket's cache — the shared root holds only isolated
+   * per-ticket data. Always distinct from `codeDir` so a `git add --all` in the
+   * clone never stages the AI's scratch state.
+   */
+  readonly contextDir: string;
   write(relativePath: string, content: string): Promise<void>;
   runTest(timeoutMs?: number): Promise<TestRun>;
   /**
@@ -111,6 +121,57 @@ export interface GitCommitPushArgs {
 export interface CreateWorkspaceOptions {
   /** Injected command runner; defaults to a real `execFile` sandboxed runner. */
   exec?: ExecRunner;
+  /**
+   * The KÖK (permanent root) for the single analysis sandbox. When set, the
+   * workspace is opened as an ISOLATED subdirectory `<root>/<ticketKey>/` under
+   * this stable root instead of a fresh `mkdtemp` temp dir — and `dispose()`
+   * removes ONLY that ticket subdirectory, never the root. When absent (the
+   * default), behaviour is unchanged: a throwaway `mkdtemp` dir, disposed whole
+   * (no regression for callers/tests that pass no root).
+   *
+   * This value is read from the UI/param settings (env only SEEDS the default at
+   * bootstrap), never from the environment at use time.
+   */
+  persistentRoot?: string;
+  /**
+   * The ticket the workspace is opened for. REQUIRED when `persistentRoot` is
+   * set — it names the isolated subdirectory (`<root>/<ticketKey>/`) so each
+   * ticket gets its own space and cannot see another's. Ignored on the mkdtemp
+   * path. The value is slugged (see `ticketDirName`) so a ticket key can never
+   * escape the root via path separators.
+   */
+  ticketKey?: string;
+}
+
+/** The AI context/cache subdir name inside a ticket's isolated area. */
+export const CONTEXT_DIR_NAME = "context";
+/** The code/working subdir name inside a ticket's isolated area (persistent root). */
+export const WORK_DIR_NAME = "work";
+
+/**
+ * Turn a ticket key into a SAFE single path segment for the isolated subdir.
+ *
+ * A ticket key is operator/Jira-supplied, so it is treated as untrusted here:
+ * every character outside `[A-Za-z0-9._-]` is replaced with `_`, which strips
+ * path separators (`/`, `\`), `..` traversal, NUL, and drive-letter tricks. The
+ * result can only ever name a direct child of the root, so one ticket's area can
+ * never be steered onto another's — or outside the root. Throws (fails CLOSED)
+ * if nothing usable remains, rather than opening an ambiguous shared dir.
+ */
+export function ticketDirName(ticketKey: string): string {
+  const slug = ticketKey
+    // Everything outside the safe set becomes `_` — kills `/`, `\`, NUL, spaces.
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    // Collapse any run of two-or-more dots so no `..` survives ANYWHERE (belt and
+    // braces on top of the separator strip: even a flattened segment carries no
+    // traversal token).
+    .replace(/\.{2,}/g, "_")
+    // Drop a leading dot so the segment is never hidden/relative.
+    .replace(/^\.+/, "");
+  if (slug.length === 0 || /^_+$/.test(slug)) {
+    throw new Error(`geçersiz ticket anahtarı sandbox dizini için: ${JSON.stringify(ticketKey)}`);
+  }
+  return slug;
 }
 
 const GIT_TIMEOUT_MS = 60_000;
@@ -207,8 +268,45 @@ export function buildGitCommitPushPlan(args: GitCommitPushArgs): {
 }
 
 export async function createWorkspace(options: CreateWorkspaceOptions = {}): Promise<DemoWorkspace> {
-  const root = await mkdtemp(join(tmpdir(), "maestro-demo-"));
   const exec = options.exec ?? defaultExecRunner;
+
+  // Two modes for opening the workspace root:
+  //
+  //  · PERSISTENT ROOT (persistentRoot set): the analysis sandbox has ONE stable
+  //    KÖK that is never torn down. Each ticket gets its own ISOLATED subdir
+  //    `<root>/<ticketKey>/` — created here, removed by `dispose()` (the root and
+  //    every OTHER ticket survive). `disposeTarget` is that ticket subdir.
+  //
+  //  · MKDTEMP (default): a fresh throwaway dir per call, disposed whole. No
+  //    regression — any caller/test that passes no root keeps the old behaviour.
+  //
+  // `root` is always the directory the fake-path code write + test run in;
+  // `disposeTarget` is what `dispose()` removes — the same as `root` on the
+  // mkdtemp path, but the ticket subdir (NOT the KÖK) on the persistent path.
+  let root: string;
+  let disposeTarget: string;
+  let contextDir: string;
+  if (options.persistentRoot !== undefined && options.persistentRoot.trim().length > 0) {
+    if (options.ticketKey === undefined || options.ticketKey.trim().length === 0) {
+      throw new Error("kalıcı sandbox kökü verildi ama ticketKey verilmedi");
+    }
+    const ticketRoot = join(options.persistentRoot, ticketDirName(options.ticketKey));
+    root = join(ticketRoot, WORK_DIR_NAME);
+    contextDir = join(ticketRoot, CONTEXT_DIR_NAME);
+    // Ensure the KÖK, this ticket's area, its work dir AND its context dir exist.
+    // `recursive` creates the (permanent) root if it is not there yet without
+    // failing when it already is — the root is shared across tickets/runs.
+    await mkdir(root, { recursive: true });
+    await mkdir(contextDir, { recursive: true });
+    // dispose() removes ONLY this ticket's area, never the shared KÖK.
+    disposeTarget = ticketRoot;
+  } else {
+    root = await mkdtemp(join(tmpdir(), "maestro-demo-"));
+    contextDir = join(root, CONTEXT_DIR_NAME);
+    await mkdir(contextDir, { recursive: true });
+    disposeTarget = root;
+  }
+
   const repoDir = join(root, REPO_DIR_NAME);
 
   // The directory the code is written to and the test runs in. Starts as `root`
@@ -248,6 +346,7 @@ export async function createWorkspace(options: CreateWorkspaceOptions = {}): Pro
 
   return {
     root,
+    contextDir,
     get codeDir(): string {
       return codeDir;
     },
@@ -288,7 +387,10 @@ export async function createWorkspace(options: CreateWorkspaceOptions = {}): Pro
       return { commitSha };
     },
     async dispose(): Promise<void> {
-      await rm(root, { recursive: true, force: true });
+      // Remove this workspace's area only: the whole throwaway dir on the
+      // mkdtemp path, or just THIS ticket's subdir under a persistent KÖK. The
+      // shared root and every other ticket's area are left untouched.
+      await rm(disposeTarget, { recursive: true, force: true });
     },
   };
 }

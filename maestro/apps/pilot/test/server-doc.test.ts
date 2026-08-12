@@ -48,6 +48,8 @@ function boot(docs: DocStore) {
     discoveryPollMs: 15_000,
     dataClass: "gizli",
     operatorAccount: "op@corp",
+    sandboxRoot: "",
+    reviewStatusName: "İNCELEMEDE",
   });
   const server = createUiServer({ store, settings, run: stubRun, docs, start: () => Promise.resolve() });
   return { store, server };

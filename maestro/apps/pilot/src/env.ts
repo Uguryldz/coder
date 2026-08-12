@@ -202,3 +202,65 @@ export function resolveMaestroBotAccountId(
   }
   return accountId;
 }
+
+/**
+ * Resolves the REQUESTER's Cloud accountId from MAESTRO_REQUESTER_ACCOUNT_ID —
+ * the person a ticket is handed BACK to when the intake role finds it too thin
+ * to analyse (the İADE branch). Same injectable-env contract as the bot id: when
+ * `authoritative`, only the injected map is read; otherwise `process.env` layers
+ * over it.
+ *
+ * NEVER hard-coded, and empty is a valid "not configured" state — an empty
+ * string turns the return branch's REASSIGN into a no-op (the ticket is still
+ * moved to the backlog, just not reassigned), with a loud warning, rather than
+ * throwing at boot. This is the BOOTSTRAP seed only; the running system is meant
+ * to read it as a UI-editable param (Studio), never from env at use time.
+ */
+export function resolveMaestroRequesterAccountId(
+  env: Record<string, string>,
+  authoritative = false,
+  warn: WarnFn = defaultWarn,
+): string {
+  const get = (key: string): string =>
+    (authoritative ? env[key] ?? "" : process.env[key] ?? env[key] ?? "").trim();
+  const accountId = get("MAESTRO_REQUESTER_ACCOUNT_ID");
+  if (accountId.length === 0) {
+    warn(
+      "! MAESTRO_REQUESTER_ACCOUNT_ID tanımlı değil; uygun-değil (İADE) dalında ticket geri " +
+        "atanamaz — yalnız statüsü geri alınır. Talep açana geri atama için maestro/.env dosyasına ekleyin.",
+    );
+  }
+  return accountId;
+}
+
+/**
+ * Resolves the Analyst Manager's Cloud accountId from MAESTRO_MANAGER_ACCOUNT_ID
+ * — the person a ticket is handed to for ANALYSIS APPROVAL (onay devri). When the
+ * analysis is complete and its Word/PDF are attached, the pilot reassigns the
+ * ticket to this accountId and moves it into review ("İNCELEMEDE"), so the
+ * approval physically sits in the manager's queue. Same injectable-env contract
+ * as the bot/requester ids: when `authoritative`, only the injected map is read;
+ * otherwise `process.env` layers over it.
+ *
+ * NEVER hard-coded, and empty is a valid "not configured" state — an empty string
+ * turns the analysis-handover REASSIGN into a no-op (the ticket is still moved
+ * into review, just not reassigned), with a loud warning, rather than throwing at
+ * boot. This is the BOOTSTRAP seed only; the running system is meant to read it
+ * as a UI-editable param (Studio), never from env at use time.
+ */
+export function resolveMaestroManagerAccountId(
+  env: Record<string, string>,
+  authoritative = false,
+  warn: WarnFn = defaultWarn,
+): string {
+  const get = (key: string): string =>
+    (authoritative ? env[key] ?? "" : process.env[key] ?? env[key] ?? "").trim();
+  const accountId = get("MAESTRO_MANAGER_ACCOUNT_ID");
+  if (accountId.length === 0) {
+    warn(
+      "! MAESTRO_MANAGER_ACCOUNT_ID tanımlı değil; analiz onayı dalında ticket Analist Yönetici'ye " +
+        "atanamaz — yalnız statüsü İNCELEMEDE'ye taşınır. Onay devri için maestro/.env dosyasına ekleyin.",
+    );
+  }
+  return accountId;
+}

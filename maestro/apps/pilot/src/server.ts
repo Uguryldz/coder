@@ -60,7 +60,7 @@ export function createUiServer(options: UiServerOptions): Server {
       return;
     }
 
-    // The six UI-editable operational settings (M71). GET returns the current
+    // The UI-editable operational settings (M71). GET returns the current
     // values — none is a secret; the store never holds tokens or fixed URLs.
     if (url.pathname === "/api/settings" && method === "GET") {
       sendJson(res, 200, options.settings.snapshot());

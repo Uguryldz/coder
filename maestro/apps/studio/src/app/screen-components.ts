@@ -10,6 +10,7 @@ import { DoctemplateScreen } from "../screens/Doctemplate.tsx";
 import { EvalScreen } from "../screens/Eval.tsx";
 import { EvidenceScreen } from "../screens/Evidence.tsx";
 import { FanoutScreen } from "../screens/Fanout.tsx";
+import { FlowScreen } from "../screens/Flow.tsx";
 import { GreenfieldScreen } from "../screens/Greenfield.tsx";
 import { HealthScreen } from "../screens/Health.tsx";
 import { HelpScreen } from "../screens/Help.tsx";
@@ -50,6 +51,7 @@ export const SCREEN_COMPONENTS: Readonly<Record<string, ComponentType>> = {
   live: LiveScreen,
   pilot: PilotScreen,
   tickets: TicketsScreen,
+  flow: FlowScreen,
   fanout: FanoutScreen,
   clarify: ClarifyScreen,
   workmode: WorkmodeScreen,

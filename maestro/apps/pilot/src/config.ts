@@ -198,6 +198,24 @@ export const PILOT_ENGINEER_VARIANT = process.env["PILOT_ENGINEER_VARIANT"] ?? "
  */
 export const PILOT_DATA_CLASS = process.env["PILOT_DATA_CLASS"] ?? "gizli";
 
+/**
+ * The permanent KÖK (root) for the single analysis sandbox. Every ticket runs in
+ * its own isolated subdirectory under this root and the root is never torn down;
+ * empty (the default) keeps the legacy throwaway-per-run `mkdtemp` behaviour.
+ * This is only the BOOTSTRAP SEED — after boot the value lives in the runtime
+ * SettingsStore and is edited from the UI, never re-read from env at use time.
+ */
+export const SANDBOX_ROOT = process.env["PILOT_SANDBOX_ROOT"] ?? "";
+
+/**
+ * The review status the analysis-approval handover moves a ticket to (the OPS
+ * workflow's review column, "İNCELEMEDE"). This is only the BOOTSTRAP SEED for
+ * the UI-editable setting; the driver matches it by name first and then falls
+ * back to the In-Progress status CATEGORY, so a renamed column never breaks the
+ * handover. Overridable via PILOT_REVIEW_STATUS.
+ */
+export const REVIEW_STATUS_NAME = process.env["PILOT_REVIEW_STATUS"] ?? "İNCELEMEDE";
+
 /** How often the poller lists comments while a gate is open (ms). */
 export const COMMAND_POLL_MS = Number(process.env["PILOT_COMMAND_POLL_MS"] ?? 3_000);
 /** How often discovery re-lists opted-in tickets while idle (ms). */
@@ -216,6 +234,8 @@ export function defaultSettings(): {
   discoveryPollMs: number;
   dataClass: string;
   operatorAccount: string;
+  sandboxRoot: string;
+  reviewStatusName: string;
 } {
   return {
     approverGroup: APPROVER_GROUP,
@@ -224,5 +244,7 @@ export function defaultSettings(): {
     discoveryPollMs: DISCOVERY_POLL_MS,
     dataClass: PILOT_DATA_CLASS,
     operatorAccount: PILOT_OPERATOR_ACCOUNT,
+    sandboxRoot: SANDBOX_ROOT,
+    reviewStatusName: REVIEW_STATUS_NAME,
   };
 }

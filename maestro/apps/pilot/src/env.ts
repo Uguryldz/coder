@@ -97,23 +97,76 @@ export interface JiraCloudEnv {
   apiToken: string;
 }
 
+/** Injected so the identity/fallback warning is testable and does not hard-wire console. */
+export type WarnFn = (message: string) => void;
+
+const defaultWarn: WarnFn = (message) => {
+  console.warn(message);
+};
+
 /**
- * Resolves the LIVE Jira Cloud credentials from the environment. These three
- * already exist in `maestro/.env`. Missing any of them is a hard, loud failure
- * — the whole point of the pilot is to talk to the real site, so we never fall
- * back to a fake.
+ * Resolves the LIVE Jira Cloud credentials from the environment — as the
+ * MAESTRO BOT.
+ *
+ * The identity Maestro binds to is now the dedicated bot account, not the
+ * operator's personal token: `email` and `apiToken` are read from
+ * MAESTRO_BOT_EMAIL / MAESTRO_BOT_API_TOKEN. So Maestro sees the tickets
+ * ASSIGNED to the bot and writes its gate comments under the bot identity.
+ *
+ * When BOTH bot values are present they win. When either is missing the
+ * personal JIRA_CLOUD_EMAIL / JIRA_CLOUD_API_TOKEN are used as a fallback and a
+ * loud warning is emitted — a pilot silently running under the wrong identity
+ * would be exactly the "fake success" this repo refuses. `baseUrl` is always
+ * JIRA_CLOUD_BASE_URL (the site is the same whichever identity connects).
+ *
+ * Missing the base URL, or lacking BOTH a bot and a personal identity, is a
+ * hard, loud failure — the whole point of the pilot is to talk to the real
+ * site, so we never fall back to a fake.
  */
-export function resolveJiraCloud(env: Record<string, string>, authoritative = false): JiraCloudEnv {
+export function resolveJiraCloud(
+  env: Record<string, string>,
+  authoritative = false,
+  warn: WarnFn = defaultWarn,
+): JiraCloudEnv {
   const get = (key: string): string =>
     (authoritative ? env[key] ?? "" : process.env[key] ?? env[key] ?? "").trim();
   const baseUrl = get("JIRA_CLOUD_BASE_URL");
-  const email = get("JIRA_CLOUD_EMAIL");
-  const apiToken = get("JIRA_CLOUD_API_TOKEN");
+  const botEmail = get("MAESTRO_BOT_EMAIL");
+  const botToken = get("MAESTRO_BOT_API_TOKEN");
+  const personalEmail = get("JIRA_CLOUD_EMAIL");
+  const personalToken = get("JIRA_CLOUD_API_TOKEN");
+
+  // The Maestro Bot identity wins whenever it is complete; otherwise fall back
+  // to the personal identity with a loud warning (never silently).
+  let email: string;
+  let apiToken: string;
+  if (botEmail.length > 0 && botToken.length > 0) {
+    email = botEmail;
+    apiToken = botToken;
+  } else {
+    email = personalEmail;
+    apiToken = personalToken;
+    if (botEmail.length > 0 || botToken.length > 0) {
+      const missing = [
+        botEmail.length === 0 ? "MAESTRO_BOT_EMAIL" : null,
+        botToken.length === 0 ? "MAESTRO_BOT_API_TOKEN" : null,
+      ].filter((n): n is string => n !== null);
+      warn(
+        `! Maestro Bot kimliği eksik (${missing.join(", ")}); kişisel JIRA_CLOUD_* kimliğine düşülüyor. ` +
+          `Bot hesabıyla bağlanmak için maestro/.env dosyasına iki değeri de ekleyin.`,
+      );
+    } else {
+      warn(
+        "! Maestro Bot kimliği tanımlı değil (MAESTRO_BOT_EMAIL / MAESTRO_BOT_API_TOKEN); " +
+          "kişisel JIRA_CLOUD_* kimliğine düşülüyor.",
+      );
+    }
+  }
 
   const missing = [
     baseUrl.length === 0 ? "JIRA_CLOUD_BASE_URL" : null,
-    email.length === 0 ? "JIRA_CLOUD_EMAIL" : null,
-    apiToken.length === 0 ? "JIRA_CLOUD_API_TOKEN" : null,
+    email.length === 0 ? "JIRA_CLOUD_EMAIL veya MAESTRO_BOT_EMAIL" : null,
+    apiToken.length === 0 ? "JIRA_CLOUD_API_TOKEN veya MAESTRO_BOT_API_TOKEN" : null,
   ].filter((name): name is string => name !== null);
   if (missing.length > 0) {
     throw new Error(
@@ -121,4 +174,31 @@ export function resolveJiraCloud(env: Record<string, string>, authoritative = fa
     );
   }
   return { baseUrl: baseUrl.replace(/\/+$/, ""), email, apiToken };
+}
+
+/**
+ * Resolves the Maestro Bot's Cloud accountId from MAESTRO_BOT_ACCOUNT_ID — the
+ * value the assignment-based discovery JQL filters on (`assignee = "<id>"`).
+ *
+ * It is NEVER hard-coded. When present it flows into `discoveryJql`; when
+ * missing a loud warning is emitted and an empty string is returned, which
+ * `discoveryJql` renders as `currentUser()` — the query stays bounded and valid
+ * but then follows whoever the token authenticates as, which is only correct if
+ * the bot token is the one connected.
+ */
+export function resolveMaestroBotAccountId(
+  env: Record<string, string>,
+  authoritative = false,
+  warn: WarnFn = defaultWarn,
+): string {
+  const get = (key: string): string =>
+    (authoritative ? env[key] ?? "" : process.env[key] ?? env[key] ?? "").trim();
+  const accountId = get("MAESTRO_BOT_ACCOUNT_ID");
+  if (accountId.length === 0) {
+    warn(
+      "! MAESTRO_BOT_ACCOUNT_ID tanımlı değil; keşif JQL'i assignee = currentUser() ile çalışacak " +
+        "(bağlı token neyse ona atanmış ticket'lar). Atama tabanlı keşif için maestro/.env dosyasına ekleyin.",
+    );
+  }
+  return accountId;
 }

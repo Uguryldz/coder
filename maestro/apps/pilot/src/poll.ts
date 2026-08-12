@@ -6,7 +6,8 @@ import { DISCOVERY_FIELDS, DISCOVERY_JQL, DISCOVERY_MAX } from "./config.js";
  * The pilot's stand-in for the two things the demo got from webhooks. Atlassian
  * Cloud cannot reach localhost, so nothing is delivered TO us — we POLL:
  *
- *   discoverTickets()  — the newest `maestro`-labelled OPS tickets (opt-in).
+ *   discoverTickets()  — the newest OPS tickets ASSIGNED to the Maestro Bot
+ *                        and not yet Done (assignment is the opt-in).
  *   pollForCommand()   — a gate's comments, until a valid /approve or /reject.
  *
  * Both take the live WorkPort (or, in tests, one wired to a stub fetch), so the
@@ -37,10 +38,17 @@ function statusOf(raw: unknown): string | null {
  * returns lightweight rows for the picker. Newest first, as the JQL orders. The
  * raw issue is mapped through the driver's own mapper so a shape the site would
  * reject never reaches the UI as a half-ticket.
+ *
+ * `jql` is injected by boot with the resolved, accountId-bearing assignment
+ * query. It defaults to `DISCOVERY_JQL` (bounded, `assignee = currentUser()`)
+ * so offline callers that don't wire an accountId still issue a valid query.
  */
-export async function discoverTickets(work: JiraCloudWorkPort): Promise<DiscoveredTicket[]> {
+export async function discoverTickets(
+  work: JiraCloudWorkPort,
+  jql: string = DISCOVERY_JQL,
+): Promise<DiscoveredTicket[]> {
   const page = await work.searchIssues({
-    jql: DISCOVERY_JQL,
+    jql,
     maxResults: DISCOVERY_MAX,
     fields: [...DISCOVERY_FIELDS],
   });

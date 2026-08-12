@@ -1,6 +1,7 @@
 import { JiraCloudConfig, JiraCloudWorkPort, doc, paragraph } from "@maestro/adapter-jira";
 import { describe, expect, it } from "vitest";
 import { discoverTickets, pollForCommandOnce } from "../src/poll.js";
+import { discoveryJql } from "../src/config.js";
 import { cloudFixture, stubFetch, type FetchStub } from "./helpers.js";
 
 /**
@@ -21,7 +22,7 @@ function port(stub: FetchStub): JiraCloudWorkPort {
 }
 
 describe("discoverTickets", () => {
-  it("returns the maestro-labelled OPS tickets from the recorded search page", async () => {
+  it("returns the bot-assigned OPS tickets from the recorded search page", async () => {
     const stub = stubFetch([{ body: cloudFixture("search-jql") }]);
     const rows = await discoverTickets(port(stub));
 
@@ -29,9 +30,22 @@ describe("discoverTickets", () => {
     expect(rows[0]!.key).toBe("OPS-6");
     expect(rows[0]!.summary).toContain("Ödeme Onayı");
     expect(rows[0]!.status).toBe("Yapılacaklar");
-    // The discovery JQL is bounded (project = OPS …) — it reached the endpoint.
+    // The default discovery JQL is bounded (project = OPS …) and assignment-based.
+    const jql = new URL(stub.calls[0]!.url).searchParams.get("jql")!;
     expect(stub.calls[0]!.url).toContain("/rest/api/3/search/jql");
-    expect(new URL(stub.calls[0]!.url).searchParams.get("jql")).toContain("project = OPS");
+    expect(jql).toContain("project = OPS");
+    expect(jql).toContain("assignee =");
+    expect(jql).not.toContain("labels = maestro");
+  });
+
+  it("passes the injected assignment JQL through to the endpoint verbatim", async () => {
+    const stub = stubFetch([{ body: cloudFixture("search-jql") }]);
+    const injected = discoveryJql("712020:b836c135-c9d3-499a-a665-aed43d362cfd");
+    await discoverTickets(port(stub), injected);
+
+    const jql = new URL(stub.calls[0]!.url).searchParams.get("jql");
+    expect(jql).toBe(injected);
+    expect(jql).toContain('assignee = "712020:b836c135-c9d3-499a-a665-aed43d362cfd"');
   });
 });
 

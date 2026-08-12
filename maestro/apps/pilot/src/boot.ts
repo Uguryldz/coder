@@ -11,6 +11,7 @@ import {
   ADO_REPO,
   ADO_WEBHOOK_USERNAME,
   defaultSettings,
+  discoveryJql,
   PILOT_ANALYST_VARIANT,
   PILOT_ENGINEER_VARIANT,
   PILOT_SECRETS,
@@ -24,6 +25,7 @@ import {
   loadRepoEnv,
   resolveGithub,
   resolveJiraCloud,
+  resolveMaestroBotAccountId,
   resolveOpenRouter,
   type GithubEnv,
   type JiraCloudEnv,
@@ -133,6 +135,14 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   const repoEnv = options.env ?? loadRepoEnv();
   const openRouter = options.openRouter ?? resolveOpenRouter(repoEnv, injected);
   const jiraCloud = options.jiraCloud ?? resolveJiraCloud(repoEnv, injected);
+
+  // Assignment-based discovery (the assignment-driven SDLC's cornerstone): the
+  // Maestro Bot's accountId, resolved from MAESTRO_BOT_ACCOUNT_ID, is baked into
+  // the bounded discovery JQL so the pilot picks up exactly the tickets ASSIGNED
+  // to the bot and not yet Done. Empty (no accountId) → `assignee = currentUser()`
+  // with a loud warning; the query stays bounded either way.
+  const botAccountId = resolveMaestroBotAccountId(repoEnv, injected);
+  const discoveryQuery = discoveryJql(botAccountId);
 
   // SCM edge (Dalga C2). `fake` (the default) is unchanged. `github` resolves
   // the real GitHub edge — owner/repo/token — and builds the real ScmPort.
@@ -263,7 +273,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
 
   const refreshDiscovery = async (): Promise<void> => {
     try {
-      const rows = await discoverTickets(work);
+      const rows = await discoverTickets(work, discoveryQuery);
       store.update((state) => {
         state.discovered = rows;
       });

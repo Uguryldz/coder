@@ -79,6 +79,49 @@ describe("env isolation", () => {
 
   // ------------------------------------------------------- integration level
 
+  it("bootPilot threads the injected MAESTRO_BOT_ACCOUNT_ID into the discovery JQL", async () => {
+    // The injectable-env contract, proven end to end: a bot accountId placed in
+    // the AUTHORITATIVE `env` map (never in process.env, never in maestro/.env)
+    // must reach the live search JQL verbatim. We capture the JQL the discovery
+    // pass issues to the stubbed Jira transport.
+    const BOT = "712020:b836c135-c9d3-499a-a665-aed43d362cfd";
+    let discoveryJqlSeen: string | null = null;
+    const jiraFetch = (rawUrl: string): Promise<Response> => {
+      const url = new URL(rawUrl);
+      if (url.pathname === "/rest/api/3/search/jql") {
+        discoveryJqlSeen = url.searchParams.get("jql");
+        return Promise.resolve(
+          new Response(JSON.stringify({ issues: [], total: 0 }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      throw new Error(`unexpected jira call: ${rawUrl}`);
+    };
+
+    let stage: PilotStage | undefined;
+    try {
+      stage = await bootPilot({
+        // Authoritative env carrying ONLY the bot accountId (plus the values the
+        // resolvers need); process.env is polluted but must be ignored.
+        env: { MAESTRO_BOT_ACCOUNT_ID: BOT },
+        uiPort: 0,
+        adoPort: 0,
+        openRouter: { apiKey: "test-key", baseUrl: "http://127.0.0.1:1" },
+        jiraCloud: { baseUrl: SITE, email: "pilot@bank.example", apiToken: "api-token-123" },
+        jiraFetch,
+      });
+      await stage.refreshDiscovery();
+      expect(discoveryJqlSeen).not.toBeNull();
+      expect(discoveryJqlSeen!).toContain(`assignee = "${BOT}"`);
+      expect(discoveryJqlSeen!).toContain("project = OPS");
+      expect(discoveryJqlSeen!).not.toContain("labels = maestro");
+    } finally {
+      await stage?.close();
+    }
+  });
+
   it("bootPilot with a polluted process.env but env:{} still comes up fake", async () => {
     // env:{} is authoritative → PILOT_SCM=github in the shell is ignored, so the
     // github edge is never resolved. If it were NOT ignored, boot would build

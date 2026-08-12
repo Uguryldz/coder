@@ -3,10 +3,14 @@
  * site https://uyildiz.atlassian.net (project OPS). ADO stays a fake server the
  * pilot starts itself; the model, PII masking and audit are real, as in demo.
  *
- * The three real values are read from the environment at boot (see env.ts):
+ * The real values are read from the environment at boot (see env.ts):
  *   - OPENROUTER_API_KEY  (the model)
- *   - JIRA_CLOUD_API_TOKEN (the live Jira token — through a SecretPort)
- * Neither is stored here; this file carries references, ports and defaults only.
+ *   - The live Jira identity, as MAESTRO BOT: MAESTRO_BOT_EMAIL +
+ *     MAESTRO_BOT_API_TOKEN (through a SecretPort), with the personal
+ *     JIRA_CLOUD_EMAIL / JIRA_CLOUD_API_TOKEN kept only as a loud fallback.
+ *   - MAESTRO_BOT_ACCOUNT_ID  (the bot's Cloud accountId — drives the
+ *     assignment-based discovery JQL below).
+ * None is stored here; this file carries references, ports and defaults only.
  */
 
 /** Browser entry point. 7020 to avoid clashing with the demo's 7010. */
@@ -84,8 +88,34 @@ export const ADO_WEBHOOK_USERNAME = "maestro";
 /** Project on the live site the pilot works in. */
 export const PROJECT_KEY = "OPS";
 
-/** JQL that finds tickets opted in to Maestro. Bounded (project = …). */
-export const DISCOVERY_JQL = `project = ${PROJECT_KEY} AND labels = maestro ORDER BY created DESC`;
+/**
+ * JQL that finds the tickets Maestro must work on. The opt-in signal is now
+ * ASSIGNMENT, not a label: a ticket is Maestro's iff it is assigned to the
+ * Maestro Bot account and not yet Done. This is the foundation of the
+ * assignment-driven SDLC flow — dragging a ticket onto the bot IS the trigger.
+ *
+ * The bounded-JQL guard is preserved: the query still names the project
+ * (`project = OPS`), so the driver's guard that refuses an unbounded search
+ * still passes. The accountId is quoted so Jira Cloud parses the opaque
+ * `712020:...` value as a single literal (an unquoted colon would break it).
+ *
+ * `botAccountId` comes from MAESTRO_BOT_ACCOUNT_ID at boot; it is NEVER
+ * hard-coded here. When it is missing the caller (env.ts) substitutes
+ * `currentUser()` and logs a loud warning — the query stays bounded and valid,
+ * but discovery then follows whoever the token authenticates as.
+ */
+export function discoveryJql(botAccountId: string): string {
+  const assignee = botAccountId.trim().length > 0 ? `"${botAccountId.trim()}"` : "currentUser()";
+  return `project = ${PROJECT_KEY} AND assignee = ${assignee} AND statusCategory != Done ORDER BY created DESC`;
+}
+
+/**
+ * The discovery JQL with the bot account left to `currentUser()`. Used as the
+ * default by `discoverTickets` so the offline poll test keeps a bounded,
+ * project-scoped query without wiring an accountId; the running app always
+ * passes the resolved, accountId-bearing JQL from boot.
+ */
+export const DISCOVERY_JQL = discoveryJql("");
 /** Cap the discovery page — the driver's bounded-JQL guard still applies. */
 export const DISCOVERY_MAX = 20;
 

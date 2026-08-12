@@ -18,6 +18,8 @@ import {
   StaticSettingsReader,
 } from "@maestro/bff";
 import { createDb } from "@maestro/db";
+import { createJiraCloudWorkPort } from "@maestro/adapter-jira";
+import type { SecretPort } from "@maestro/ports";
 import { PrismaUserDirectory } from "../../../deploy/src/stores/users.js";
 import { PrismaSessionStore } from "../../../deploy/src/stores/sessions.js";
 import { PrismaKillSwitchStore } from "../../../deploy/src/stores/killswitch.js";
@@ -56,6 +58,39 @@ async function main(): Promise<void> {
   // İş akışları screen shows the real (empty) run set, not the demo's 17.
   const demo = await buildDemoStack();
   const read = liveReadModels({ db, audit: auditStore, probes: [] });
+
+  // The Flow screen imports the live Jira workflow (statuses + transitions).
+  // It needs a real Cloud driver, which needs a real Jira credential — read it
+  // from the bootstrap env (git-ignored .env), the same source the pilot uses.
+  // When the env is absent the reader stays UNWIRED and the route answers a
+  // named 503 rather than a broken screen: no credential, no fake graph.
+  const jiraBaseUrl = process.env["JIRA_CLOUD_BASE_URL"];
+  const jiraEmail = process.env["JIRA_CLOUD_EMAIL"];
+  const jiraToken = process.env["JIRA_CLOUD_API_TOKEN"];
+  const JIRA_TOKEN_REF = "jira-cloud-token";
+  const jiraWorkflow =
+    jiraBaseUrl && jiraEmail && jiraToken
+      ? createJiraCloudWorkPort({
+          baseUrl: jiraBaseUrl,
+          email: jiraEmail,
+          apiTokenRef: JIRA_TOKEN_REF,
+          // `createJiraCloudWorkPort` reads the SecretPort from `deps.secrets`.
+          // A minimal in-process port holding only the Jira token; the value
+          // lives in this closure, is never logged, and write/short-lived paths
+          // are not needed by the read-only workflow reader.
+          deps: {
+            secrets: {
+              get: (key: string) =>
+                key === JIRA_TOKEN_REF
+                  ? Promise.resolve(jiraToken)
+                  : Promise.reject(new Error(`unknown secret ${key}`)),
+              set: () => Promise.reject(new Error("read-only secret port")),
+              issueShortLived: () => Promise.reject(new Error("read-only secret port")),
+            } satisfies SecretPort,
+          },
+        })
+      : undefined;
+
   const deps = {
     ...demo.deps,
     users,
@@ -78,6 +113,8 @@ async function main(): Promise<void> {
     settings: new StaticSettingsReader([], []),
     // Real connector management (Ayarlar > Bağlantılar): the DB-seeded Jira +
     // OpenRouter connections, tokens AES-encrypted under CONNECTOR_MASTER_KEY.
+    // Flow screen: the live Jira workflow reader (undefined → named 503).
+    ...(jiraWorkflow ? { jiraWorkflow } : {}),
     connections: new PrismaConnectionStore(db.connection),
     connectorSecrets: new EncryptedSecretStore(
       resolveMasterKey({

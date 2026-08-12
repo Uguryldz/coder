@@ -124,6 +124,9 @@ importers:
 
   apps/demo-stack:
     dependencies:
+      '@maestro/adapter-jira':
+        specifier: workspace:*
+        version: link:../../packages/adapter-jira
       '@maestro/audit':
         specifier: workspace:*
         version: link:../../packages/audit

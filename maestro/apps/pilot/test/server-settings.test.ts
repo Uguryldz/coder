@@ -1,9 +1,12 @@
+import { ListeningRulesStore } from "../src/listening.js";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { DocStore } from "../src/docs.js";
 import { close, listen } from "../src/http.js";
 import type { PilotRun } from "../src/run.js";
 import { createUiServer } from "../src/server.js";
+import { createPilotAudit } from "../src/wiring.js";
+import { GuidanceStore } from "../src/guidance.js";
 import { SettingsStore } from "../src/settings.js";
 import { initialState, StateStore } from "../src/state.js";
 
@@ -29,8 +32,9 @@ function boot() {
     operatorAccount: "op@corp",
     sandboxRoot: "",
     reviewStatusName: "İNCELEMEDE",
+    autoMerge: false,
   });
-  const server = createUiServer({ store, settings, run: stubRun, docs: new DocStore(), start: () => Promise.resolve() });
+  const server = createUiServer({ store, settings, listening: new ListeningRulesStore(), guidance: new GuidanceStore(), run: stubRun, docs: new DocStore(), audit: createPilotAudit(), start: () => Promise.resolve() });
   return { store, settings, server };
 }
 
@@ -57,7 +61,7 @@ describe("GET /api/settings", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(Object.keys(body).sort()).toEqual(
-      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName"].sort(),
+      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName", "autoMerge"].sort(),
     );
     // No token/secret leaks through.
     for (const key of Object.keys(body)) {

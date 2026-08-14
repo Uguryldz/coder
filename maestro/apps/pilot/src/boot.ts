@@ -21,6 +21,8 @@ import {
 } from "./config.js";
 import { resolveVariantModel, type VariantModelReader } from "./variant.js";
 import { SettingsStore } from "./settings.js";
+import { ListeningRulesStore } from "./listening.js";
+import { GuidanceStore } from "./guidance.js";
 import {
   loadRepoEnv,
   resolveGithub,
@@ -44,7 +46,6 @@ import { initialState, StateStore } from "./state.js";
 import {
   createPilotAudit,
   createPilotCiPort,
-  createPilotFakeScmPort,
   createPilotGateway,
   createPilotScmPort,
   createPilotSecrets,
@@ -97,6 +98,8 @@ export interface BootOptions {
   /** Delay before the fake build result arrives. */
   buildDelayMs?: number;
   ciTimeoutMs?: number;
+  /** Arm auto-merge at boot (B14). Defaults to the env/settings value (off). */
+  autoMerge?: boolean;
   /** Gate comment poll interval (ms) — tests pass a small value. */
   commandPollMs?: number;
   /** Sleep injected into the gate poller so tests don't wait on real timers. */
@@ -118,6 +121,8 @@ export interface PilotStage {
   jiraSite: string;
   store: StateStore;
   settings: SettingsStore;
+  /** The live listening-rule set (mirrored from Studio/DB over the BFF proxy). */
+  listening: ListeningRulesStore;
   run: PilotRun;
   ado: FakeAdo;
   /** The hash-chained audit trail the run wrote to; read it to inspect events. */
@@ -205,8 +210,24 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   // analyst variant (not the raw env constant) so the settings panel and the
   // status display agree with the model the gateway actually calls — the env
   // `PILOT_MODEL` only survives as the fallback baked into `analyst.model`.
-  const settings = new SettingsStore({ ...envDefaults, model: analyst.model });
+  const settings = new SettingsStore({
+    ...envDefaults,
+    model: analyst.model,
+    ...(options.autoMerge === undefined ? {} : { autoMerge: options.autoMerge }),
+  });
   const seeded = settings.snapshot();
+
+  // Listening rules live here too (Faz 3): the pilot cannot read the DB, so the
+  // rules an admin edits in Studio are mirrored into this store over the BFF
+  // proxy. Empty at boot — no rule means discovery uses the default JQL and every
+  // ticket runs the old way, so the pilot behaves exactly as before until a rule
+  // is added.
+  const listening = new ListeningRulesStore();
+
+  // The analysis-guidance notes ("öğren"). Empty at boot; the BFF mirrors the
+  // enabled DB notes over /api/guidance, and the analyst reads them so uploaded
+  // knowledge shapes the next analysis. Empty = analyst leans only on the ticket.
+  const guidance = new GuidanceStore();
 
   const store = new StateStore(
     // The displayed model is the analyst's — the role that runs first and is
@@ -246,10 +267,11 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   const work = createPilotWorkPort(secrets, jiraCloud, options.jiraFetch);
   const docs = new DocStore();
 
-  // On the github path the real driver does branch/PR/push; the CI signal and
-  // merge stay faked (C3 integrates real GitHub checks). `mergeStatus` points at
-  // a fake ADO scm driver, and `onRealPrOpened` registers the real PR id on the
-  // fake so its status can be reported and drives the fake CI publisher.
+  // On the github path the real driver does branch/PR/push, real CI (GitHub
+  // Checks) and — when auto-merge is armed — the real merge (B14). The fake ADO
+  // `onRealPrOpened` publisher stays ONLY as the CI fallback for a repo whose
+  // driver cannot read real checks; merge-status now comes from the real PR, so
+  // no fake merge-status port is wired on the github path.
   const scmPort = createPilotScmPort(secrets, adoUrl, github, options.githubFetch);
   const githubRunConfig =
     github === undefined
@@ -273,13 +295,17 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     requesterAccountId,
     managerAccountId,
     botAccountId,
+    listening,
+    guidance,
     docs,
     completePullRequest: (prId) => ado.completePullRequest(prId),
     ...(githubRunConfig ? { github: githubRunConfig } : {}),
     ...(options.workspaceOptions ? { workspaceOptions: options.workspaceOptions } : {}),
     ...(github
       ? {
-          mergeStatus: createPilotFakeScmPort(secrets, adoUrl),
+          // CI fallback only: if the github driver cannot read real checks, the
+          // pilot waits on this fake ADO build signal instead. When real checks
+          // ARE available (the normal github path), onRealPrOpened is not called.
           onRealPrOpened: (prId, sourceRef) => {
             ado.registerExternalPr(prId, sourceRef);
             ado.emitBuildCompleteFor(prId, sourceRef);
@@ -293,7 +319,12 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
 
   const refreshDiscovery = async (): Promise<void> => {
     try {
-      const rows = await discoverTickets(work, discoveryQuery);
+      // The JQL is derived from the listening rules each cycle: when a `status`
+      // rule exists it lists exactly those statuses, otherwise it is the default
+      // assignment JQL. So an admin adding a rule in Studio (mirrored here)
+      // changes what discovery lists on the next pass, no restart.
+      const jql = listening.discoveryJqlFor(botAccountId, discoveryQuery);
+      const rows = await discoverTickets(work, jql);
       store.update((state) => {
         state.discovered = rows;
       });
@@ -302,7 +333,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     }
   };
 
-  const ui: Server = createUiServer({ store, settings, run, docs, start: (ticketKey) => run.start(ticketKey) });
+  const ui: Server = createUiServer({ store, settings, listening, guidance, run, docs, audit, start: (ticketKey) => run.start(ticketKey) });
   const uiPort = await listen(ui, options.uiPort ?? UI_PORT);
   uiBase = `http://127.0.0.1:${uiPort}`;
 
@@ -330,6 +361,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     jiraSite: jiraCloud.baseUrl,
     store,
     settings,
+    listening,
     run,
     ado,
     audit,

@@ -52,6 +52,15 @@ export interface PilotSettings {
    * the default at bootstrap.
    */
   reviewStatusName: string;
+  /**
+   * Auto-merge (B14). OFF by default: merge stays a HUMAN action — the pilot
+   * opens the PR, CI runs, a human approves the gate, and a human clicks merge.
+   * When ON, and ONLY on the github path with real CI green and the PR gate
+   * approved, the pilot performs the merge itself via the real merge API. This
+   * is the one switch that lets Maestro write to the trunk, so it is guarded,
+   * off by default, and never inferred.
+   */
+  autoMerge: boolean;
 }
 
 /** Bounds for the poll intervals — a positive integer, not absurdly small/large. */
@@ -73,6 +82,7 @@ const SEED_BASE: PilotSettings = {
   operatorAccount: "-",
   sandboxRoot: "",
   reviewStatusName: "İNCELEMEDE",
+  autoMerge: false,
 };
 
 /** Human-readable field labels, reused in validation messages (Turkish). */
@@ -85,6 +95,7 @@ const LABELS = {
   operatorAccount: "operatör hesabı",
   sandboxRoot: "sandbox kökü",
   reviewStatusName: "inceleme statüsü",
+  autoMerge: "otomatik birleştirme",
 } as const;
 
 /** Thrown when a write is rejected; carries a UI-safe Turkish message. */
@@ -188,6 +199,12 @@ export function validateSettings(
   }
   if ("reviewStatusName" in patch) {
     next.reviewStatusName = requireNonEmpty(patch.reviewStatusName, LABELS.reviewStatusName);
+  }
+  if ("autoMerge" in patch) {
+    if (typeof patch.autoMerge !== "boolean") {
+      throw new SettingsValidationError(`${LABELS.autoMerge} yalnız açık/kapalı olabilir`);
+    }
+    next.autoMerge = patch.autoMerge;
   }
 
   return next;

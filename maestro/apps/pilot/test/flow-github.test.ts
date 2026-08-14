@@ -208,6 +208,17 @@ function fakeGithub(): GithubStub {
     if (/\/pulls\/77\/comments$/.test(path) && method === "GET") {
       return Promise.resolve(json(200, []));
     }
+    // GET .../commits/{sha}/check-runs — real CI (B14). One completed, passing
+    // check, so the pilot's awaitRealCi sees green on the first poll.
+    if (path.includes("/check-runs") && method === "GET") {
+      return Promise.resolve(
+        json(200, { total_count: 1, check_runs: [{ name: "build", status: "completed", conclusion: "success" }] }),
+      );
+    }
+    // PUT .../pulls/77/merge — real merge (B14, auto-merge armed).
+    if (/\/pulls\/77\/merge$/.test(path) && method === "PUT") {
+      return Promise.resolve(json(200, { merged: true, sha: "c".repeat(40) }));
+    }
     throw new Error(`unexpected GitHub call: ${method} ${path}`);
   };
   return { fetchImpl, calls };
@@ -305,6 +316,9 @@ describe("pilot github SCM path — gerçek dal/PR + gerçek git push (offline)"
       buildDelayMs: 20,
       ciTimeoutMs: 15_000,
       commandPollMs: 20,
+      // B14: arm auto-merge so this end-to-end exercises the REAL merge path
+      // (real CI green → gate approved → Maestro merges via PUT .../merge).
+      autoMerge: true,
     });
     const orig = stage.store.log.bind(stage.store);
     stage.store.log = (level, line) => {

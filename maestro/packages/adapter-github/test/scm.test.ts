@@ -217,3 +217,75 @@ describe("GithubScmDriver.getPrStatus (four state mappings)", () => {
     await expect(scm.getPrStatus(REPO, 128)).rejects.toThrow(/no merge_commit_sha/);
   });
 });
+
+const SHA = "a".repeat(40);
+
+describe("GithubScmDriver.getCommitChecks (B14 real CI verdict)", () => {
+  it("reads commits/{sha}/check-runs and maps all-passing → success", async () => {
+    const { scm, calls } = driver(() => ({
+      json: {
+        total_count: 2,
+        check_runs: [
+          { name: "build", status: "completed", conclusion: "success" },
+          { name: "lint", status: "completed", conclusion: "neutral" },
+        ],
+      },
+    }));
+    const checks = await scm.getCommitChecks!(REPO, SHA as never);
+    expect(checks.state).toBe("success");
+    expect(pathOf(calls[0]!)).toBe(
+      `https://api.github.com/repos/ugurbank/ugurpay/commits/${SHA}/check-runs`,
+    );
+  });
+
+  it("maps any incomplete check → pending (never green while running)", async () => {
+    const { scm } = driver(() => ({
+      json: {
+        total_count: 2,
+        check_runs: [
+          { name: "build", status: "completed", conclusion: "success" },
+          { name: "e2e", status: "in_progress", conclusion: null },
+        ],
+      },
+    }));
+    expect((await scm.getCommitChecks!(REPO, SHA as never)).state).toBe("pending");
+  });
+
+  it("maps any failed check → failure even if another is still pending", async () => {
+    const { scm } = driver(() => ({
+      json: {
+        total_count: 2,
+        check_runs: [
+          { name: "build", status: "completed", conclusion: "failure" },
+          { name: "e2e", status: "queued", conclusion: null },
+        ],
+      },
+    }));
+    expect((await scm.getCommitChecks!(REPO, SHA as never)).state).toBe("failure");
+  });
+
+  it("maps no checks at all → none (repo with no CI configured)", async () => {
+    const { scm } = driver(() => ({ json: { total_count: 0, check_runs: [] } }));
+    expect((await scm.getCommitChecks!(REPO, SHA as never)).state).toBe("none");
+  });
+});
+
+describe("GithubScmDriver.mergePr (B14 real merge)", () => {
+  it("PUTs pulls/{n}/merge and returns the merge sha", async () => {
+    const { scm, calls } = driver(() => ({ json: { merged: true, sha: "c".repeat(40) } }));
+    const result = await scm.mergePr!(REPO, 77);
+    expect(result.mergeSha).toBe("c".repeat(40));
+    expect(calls[0]!.method).toBe("PUT");
+    expect(pathOf(calls[0]!)).toBe("https://api.github.com/repos/ugurbank/ugurpay/pulls/77/merge");
+  });
+
+  it("throws when GitHub answers 200 but did not actually merge", async () => {
+    const { scm } = driver(() => ({ json: { merged: false, message: "not mergeable" } }));
+    await expect(scm.mergePr!(REPO, 77)).rejects.toThrow(/did not merge/);
+  });
+
+  it("throws on a malformed merge sha rather than reporting success", async () => {
+    const { scm } = driver(() => ({ json: { merged: true, sha: "zzz" } }));
+    await expect(scm.mergePr!(REPO, 77)).rejects.toThrow(/invalid merge sha/);
+  });
+});

@@ -4,7 +4,9 @@ import {
   doc,
   heading,
   inlineCode,
+  isTextAttachment,
   paragraph,
+  selectDoneTransition,
   selectReturnTransition,
   selectReviewTransition,
   strong,
@@ -17,6 +19,8 @@ import type {
   ApplicationRecord,
   AuditAction,
   CommandEnvelope,
+  DataClass,
+  GitSha,
   LlmRole,
   TicketKey,
 } from "@maestro/contracts";
@@ -34,7 +38,11 @@ import {
   type ScmMode,
 } from "./config.js";
 import { produceAnalysis, requestIntake } from "./analysis.js";
+import { type ChangeTypeMatch, classifyChangeTypes } from "./change-type.js";
 import { analysisToDocs, attachAnalysisDocs, type DocStore } from "./docs.js";
+import { flowTypeLabel, type FlowType, type ListeningRulesStore } from "./listening.js";
+import { planFor } from "./flow-plan.js";
+import type { GuidanceStore } from "./guidance.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
 import type { PilotSettings, SettingsStore } from "./settings.js";
 import type { StateStore } from "./state.js";
@@ -123,6 +131,9 @@ const CodeDraft = z
 type CodeDraft = z.infer<typeof CodeDraft>;
 
 const MAX_ENGINEER_ATTEMPTS = 3;
+/** How many times a rejected PR is revised from reviewer feedback before the
+ * ticket is handed to a human (the AI does not argue with the reviewer forever). */
+const MAX_REVISE_ROUNDS = 2;
 
 /**
  * The runner identity the pilot's sandbox events carry (M60).
@@ -222,6 +233,19 @@ export interface PilotRunDeps {
    * still proceeds; the ticket simply stays with the manager.
    */
   botAccountId?: string;
+  /**
+   * The live listening rules (Faz 3). Optional: when present, the run classifies
+   * the ticket into a flow type (status/issuetype → analiz|duzeltme|gelistirme)
+   * and records it for the UI/log. Absent (older callers, most tests) leaves the
+   * flow un-classified — exactly the pre-Faz-3 behaviour.
+   */
+  listening?: ListeningRulesStore;
+  /**
+   * The enabled analysis-guidance notes ("öğren"). Read when building the
+   * analysis context so uploaded knowledge shapes the analysis. Optional: absent
+   * or empty means the analyst leans only on the ticket, as before.
+   */
+  guidance?: GuidanceStore;
   /** Holds the generated .docx/.pdf so the download route can stream them. */
   docs: DocStore;
   /** Stands in for the human who presses "Complete" in the ADO PR screen. */
@@ -240,6 +264,21 @@ export class PilotRun {
   private runId = "";
   private ticketKey: TicketKey | null = null;
   private progressCommentId: string | null = null;
+  /**
+   * The data class actually used for this run. It starts at the project's
+   * configured class (runSettings.dataClass) but is RAISED to "gizli" the
+   * moment PII is detected in the ticket itself (B10) — a TCKN/IBAN pasted into
+   * a ticket description must never leave the process as plaintext to a cloud
+   * model just because the *project* was classed "acik". Never lowered.
+   */
+  private detectedDataClass: DataClass | null = null;
+  /**
+   * Special change types (B11) detected for this run — migration / feature flag
+   * / config / dependency. Set once analysis is ready; read by stepEngineering
+   * to inject the matching guardrails and by the PR description. Empty = an
+   * ordinary change, handled by the generic engineer rules.
+   */
+  private changeTypes: ChangeTypeMatch[] = [];
   private workspace: DemoWorkspace | null = null;
   private repo: RepoRef | null = null;
   private branch = "";
@@ -248,6 +287,13 @@ export class PilotRun {
   private ciWaiter: { prId: number; resolve: (ok: boolean) => void } | null = null;
   /** Aborts the running gate poller when the flow ends or is stopped. */
   private abort: AbortController | null = null;
+  /**
+   * The listening-rule flow type for this run, set during intake once the ticket
+   * is classified. `planFor(this.flow)` decides which steps run — `analiz` stops
+   * after the analysis, `duzeltme` skips the analysis gate, everything else runs
+   * the full pipeline. Null until classified (and null = full pipeline).
+   */
+  private flow: FlowType | null = null;
   /**
    * The settings this run was started with, snapshotted at start(). Because a
    * settings change is refused WHILE a run is in progress (server.ts guard), the
@@ -273,6 +319,8 @@ export class PilotRun {
     this.ticketKey = ticketKey;
     this.runId = `pilot-${new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14)}`;
     this.progressCommentId = null;
+    this.detectedDataClass = null; // each run re-scans; no carry-over from the last ticket
+    this.changeTypes = []; // re-classified per ticket from its own analysis
     this.repo = null;
     this.branch = "";
     this.pushedCommitSha = null;
@@ -303,12 +351,46 @@ export class PilotRun {
 
     try {
       await this.record("RUN_STARTED", { ticket: ticketKey });
+      // Intake classifies the ticket and sets `this.flow`; the plan then decides
+      // which of the remaining steps actually run (analiz → stop after analysis,
+      // duzeltme → skip the analysis gate, else → full pipeline).
       const analysis = await this.stepIntakeAndAnalysis();
-      await this.stepAnalysisGate();
-      const draft = await this.stepEngineering(analysis);
-      const prId = await this.stepPullRequest(draft, analysis);
-      await this.stepPrGate(prId);
-      await this.stepMerge(prId);
+      const plan = planFor(this.flow);
+
+      if (plan.analysisGate) await this.stepAnalysisGate();
+
+      if (plan.engineering) {
+        // Engineer → PR → human PR gate. If the reviewer asks for CHANGES
+        // (rejects with feedback) rather than approving, run a REVISE round:
+        // collect the PR comments, re-run the engineer with them as feedback,
+        // open a fresh PR, and gate again. Bounded so a reviewer who keeps
+        // rejecting does not loop forever — after MAX revise rounds it stops and
+        // hands the ticket to a human (the reviewer's court, not the AI's).
+        let reviewFeedback: string | null = null;
+        let approved = false;
+        for (let round = 0; round <= MAX_REVISE_ROUNDS && !approved; round += 1) {
+          const draft = await this.stepEngineering(analysis, reviewFeedback);
+          const prId = await this.stepPullRequest(draft, analysis);
+          try {
+            await this.stepPrGate(prId);
+            await this.stepMerge(prId);
+            approved = true;
+          } catch (error) {
+            if (error instanceof GateRejectedError && round < MAX_REVISE_ROUNDS) {
+              reviewFeedback = await this.collectReviewFeedback(prId, error.reason);
+              store.log("warn", `↻ revize turu ${round + 1}: inceleyen değişiklik istedi, ajan yeniden çalışıyor`);
+              continue;
+            }
+            throw error; // final round exhausted, or a non-review error
+          }
+        }
+      } else {
+        // "analiz" flow: the analysis document IS the deliverable. Stop cleanly
+        // here — no code, no PR, no merge — and say so, so the operator does not
+        // wait for a PR that was never meant to come.
+        store.log("info", "🧾 analiz akışı: analiz belgesi üretildi, kod/PR aşaması atlandı.");
+      }
+
       store.update((state) => {
         state.finished = true;
         state.running = false;
@@ -358,12 +440,56 @@ export class PilotRun {
       await this.workspace?.dispose();
       this.workspace = null;
       await this.verifyAudit();
+      // Record this run into the pilot's history so past work is not lost when
+      // the next run overwrites the live state — the "geçmiş işler" list.
+      this.deps.store.archiveCurrent();
     }
   }
 
   private requireTicket(): TicketKey {
     if (this.ticketKey === null) throw new PilotStepError("ticket seçilmeden akış başlatılamaz");
     return this.ticketKey;
+  }
+
+  /**
+   * The effective data class for this run: the project's configured class,
+   * unless a ticket-content scan raised it (B10). Every place that used to read
+   * `runSettings.dataClass` (intake, analysis, the PII egress profile) must read
+   * THIS instead, so the raised class actually protects the flow.
+   */
+  private effectiveDataClass(): DataClass {
+    return this.detectedDataClass ?? (this.runSettings.dataClass as DataClass);
+  }
+
+  /**
+   * Ticket-level PII gate (B10). The project's data class is a static default;
+   * a single ticket can carry PII the project as a whole does not — a support
+   * ticket that pastes a customer's TCKN/IBAN into the description. Scan the
+   * ticket's own text (summary + description + any text attachments already
+   * read) with the WIDEST profile ("acik" masks the most), and if anything is
+   * found, RAISE the run's class to "gizli". Raise only, never lower: a project
+   * already classed "gizli" stays "gizli"; a clean ticket in an "acik" project
+   * stays "acik".
+   */
+  private escalateDataClassForPii(
+    ticket: { summary: string; description: string },
+    attachments: ReadonlyArray<{ content: string | null }>,
+  ): void {
+    if (this.effectiveDataClass() === "gizli") return; // already at the ceiling
+    const widest = compiledProfileFor(this.deps.piiPolicy, "acik").profile;
+    const haystack = {
+      summary: ticket.summary,
+      description: ticket.description,
+      attachments: attachments.map((a) => a.content ?? ""),
+    };
+    const counts = scanForPii(haystack, widest);
+    if (counts.occurrences === 0) return;
+    this.detectedDataClass = "gizli";
+    this.deps.store.log(
+      "warn",
+      `🔒 ticket içeriğinde ${counts.occurrences} kişisel veri (TCKN/IBAN vb.) bulundu → veri sınıfı "gizli"ye yükseltildi; bu iş yalnızca yerel/gizli-onaylı modele gider.`,
+    );
+    this.deps.onJiraChanged?.();
   }
 
   // -------------------------------------------------------------- steps
@@ -377,6 +503,35 @@ export class PilotRun {
     const ticket = await work.getTicket(ticketKey);
     store.log("ok", `✓ CANLI Jira'dan okundu: ${ticket.key} — ${ticket.summary}`);
     store.note("1", `bildiren: ${ticket.reporter} · bileşen: ${ticket.components.join(", ") || "—"}`);
+
+    // Classify the ticket into a flow type from the listening rules (Faz 3). A
+    // match records "this is a DÜZELTME/ANALİZ/… flow" for the UI and log; no
+    // match leaves it un-classified (the default flow), so a ticket is never
+    // blocked by classification. The behaviour BRANCH on flow type is a later
+    // phase — here it is visibility only.
+    // `getTicket` (TicketSnapshot) carries the issue type but NOT the current
+    // status, so classification here matches on issue type; a status rule does
+    // its job earlier, in the discovery JQL (it decides whether the ticket is
+    // listed at all). `status: null` means a status rule simply does not match
+    // at this point, which is correct — it already matched to get here.
+    const flow =
+      this.deps.listening?.flowTypeFor(this.deps.botAccountId ?? "", {
+        // Project key is the ticket key's prefix ("OPS-123" → "OPS"), so a rule
+        // only classifies its own project's tickets.
+        projectKey: ticketKey.split("-")[0] ?? "",
+        status: null,
+        issueType: ticket.issueType,
+      }) ?? null;
+    if (flow !== null) {
+      // Remember it for the run: the step sequence in start() reads `this.flow`
+      // to decide which steps run (planFor), turning the choice from a label
+      // into real behaviour.
+      this.flow = flow;
+      store.update((state) => {
+        state.flowType = flow;
+      });
+      store.log("info", `👂 dinleme kuralı: bu bir ${flowTypeLabel(flow)} akışı (${ticket.issueType})`);
+    }
 
     const labels = ticket.labels.includes("maestro") ? ticket.labels : [...ticket.labels, "maestro"];
     await work.setLabels(ticketKey, labels);
@@ -393,6 +548,24 @@ export class PilotRun {
     this.deps.onJiraChanged?.();
     store.step("1", "tamam", "canlı Jira'ya durum yorumu bırakıldı");
 
+    // Read the ticket's ATTACHMENTS now — BEFORE the intake role runs — for two
+    // reasons: the analyst downstream needs them (a bank ticket that says "the
+    // error is in the attached screenshot/spec PDF" is half-context without
+    // them), and the ticket-level PII gate (B10) must scan them too. Text
+    // attachments are read inline; images/PDFs are named (their bytes are not
+    // parsed here — multimodal is a later step) so the analyst at least KNOWS
+    // they exist and can flag "review the attached screenshot".
+    const attachments = await this.readTicketAttachments(ticketKey);
+    if (attachments.length > 0) {
+      store.log("info", `📎 ${attachments.length} ek analize katıldı: ${attachments.map((a) => a.name).join(", ")}`);
+    }
+
+    // ---- ⓪ ticket-level PII gate (B10). BEFORE any LLM sees the ticket: if the
+    // ticket's own text carries a TCKN/IBAN etc. (regardless of the project's
+    // configured class), raise this run's data class to "gizli" so intake and
+    // analysis route to a gizli-approved model, not a cloud one.
+    this.escalateDataClassForPii(ticket, attachments);
+
     // ---- ② intake / CLARIFY gate (M98), by the REAL agent-roles intake role.
     // An incomplete ticket must NOT get a nine-section analysis over guesses:
     // the role either judges the ticket complete or names what is missing and
@@ -403,7 +576,7 @@ export class PilotRun {
       llm: this.deps.llm,
       ticket,
       variantId: PILOT_VARIANT,
-      dataClass: this.runSettings.dataClass,
+      dataClass: this.effectiveDataClass(),
     });
     if (!intake.complete) {
       // The AGENT LOOKED and judged the ticket unfit → İADE (return), not
@@ -425,11 +598,18 @@ export class PilotRun {
     // carries the ticket (repo-card/knowledge are wired when populated — see
     // analysis.ts), and PILOT_VARIANT is the variant. The seven-section check is
     // no longer a hand-rolled Zod here; it comes from the template.
+    const guidanceNotes = this.deps.guidance?.snapshot() ?? [];
+    if (guidanceNotes.length > 0) {
+      store.log("info", `📚 analiz ${guidanceNotes.length} bilgi kütüphanesi notunu dikkate alıyor.`);
+    }
+
     const analysis = await produceAnalysis({
       llm: this.deps.llm,
       ticket,
       variantId: PILOT_VARIANT,
-      dataClass: this.runSettings.dataClass,
+      dataClass: this.effectiveDataClass(),
+      guidance: guidanceNotes,
+      attachments,
     });
     store.log(
       "ok",
@@ -437,14 +617,96 @@ export class PilotRun {
     );
     store.note("2", `risk: ${analysis.display.riskTier} — ${analysis.display.riskReason}`);
 
+    // Special change types (B11): detect migration / feature-flag / config /
+    // dependency from BOTH the ticket's own text and the analysis's words (a
+    // reporter may not name it; the analyst may surface it in scope/risk). Any
+    // hit adds engineer guardrails downstream and a reviewer-facing note here.
+    this.changeTypes = classifyChangeTypes([
+      ticket.summary,
+      ticket.description,
+      analysis.display.scope.included.join(" "),
+      analysis.display.scope.excluded.join(" "),
+      analysis.display.uiApiChanges,
+      analysis.display.riskAndRollback.risk,
+      analysis.display.riskAndRollback.rollback,
+    ]);
+    if (this.changeTypes.length > 0) {
+      store.log(
+        "info",
+        `🔧 özel değişiklik türü: ${this.changeTypes.map((c) => c.label).join(", ")} — mühendislik için ek kurallar uygulanacak.`,
+      );
+    }
+
     await this.updateProgress("analiz hazır — onay bekleniyor");
     await work.addComment(ticketKey, analysisComment(analysis.display));
+    if (this.changeTypes.length > 0) {
+      await work.addComment(ticketKey, this.changeTypesComment());
+      this.deps.onJiraChanged?.();
+    }
     this.deps.onJiraChanged?.();
 
     await this.generateAnalysisDocs(analysis.display);
 
+    // Fan-out (M100): if the analysis found the work spans MORE THAN ONE
+    // application, open one child ticket per impacted app so each has its own
+    // tracked flow — a big work item is not squeezed into a single ticket.
+    await this.fanOutImpactedApps(ticketKey, analysis.display);
+
     store.step("2", "tamam");
     return analysis.display;
+  }
+
+  /**
+   * The reviewer-facing note for the special change types (B11) detected on
+   * this run — one bullet per type, each naming the guardrail the reviewer
+   * should check (DBA review for a migration, default-OFF for a flag, etc.).
+   */
+  private changeTypesComment() {
+    return doc(
+      paragraph([strong("🔧 Özel değişiklik türü tespit edildi")]),
+      paragraph(
+        "Aşağıdaki değişiklik türleri bu iş için ek dikkat gerektirir; mühendislik adımında bunlara özel kurallar uygulanır ve gözden geçirende ayrıca doğrulanmalıdır:",
+      ),
+      bulletList(this.changeTypes.map((c) => c.note)),
+    );
+  }
+
+  /**
+   * Open a child ticket per IMPACTED application beyond the primary one. Only
+   * fires when the impact matrix names ≥2 distinct impacted apps — a single-app
+   * change stays one ticket. Best-effort: a child that cannot be created is
+   * logged and skipped, never fatal, and a Jira that has no "Alt görev" type
+   * fails softly (the analysis still stands on the parent).
+   */
+  private async fanOutImpactedApps(ticketKey: TicketKey, analysis: AnalysisDoc): Promise<void> {
+    const impacted = [
+      ...new Set(analysis.impactMatrix.filter((c) => c.impacted).map((c) => c.appId)),
+    ];
+    // The primary app is the one the ticket is already bound to; children are the
+    // OTHERS. Nothing to fan out to when only the primary (or none) is impacted.
+    const primary = APPLICATION.appId;
+    const extras = impacted.filter((appId) => appId !== primary);
+    if (extras.length === 0) return;
+
+    const projectKey = ticketKey.split("-")[0] ?? "";
+    if (projectKey === "") return;
+
+    this.deps.store.log("info", `🌿 fan-out: ${extras.length} etkilenen uygulama için alt-ticket açılıyor`);
+    for (const appId of extras) {
+      const cell = analysis.impactMatrix.find((c) => c.appId === appId && c.impacted);
+      try {
+        const child = await this.deps.work.createChildIssue({
+          projectKey,
+          parentKey: ticketKey,
+          summary: `[${appId}] ${cell?.summary ?? analysis.purpose}`.slice(0, 240),
+          description: `${ticketKey} analizinden türetildi. Etkilenen uygulama: ${appId}.\n\n${cell?.summary ?? ""}`,
+        });
+        this.deps.store.log("ok", `✓ alt-ticket açıldı: ${child.key} (${appId})`);
+      } catch (error) {
+        this.deps.store.log("warn", `! ${appId} için alt-ticket açılamadı: ${String(error)}`);
+      }
+    }
+    this.deps.onJiraChanged?.();
   }
 
   /**
@@ -765,7 +1027,13 @@ export class PilotRun {
   }
 
   /** ④ + ⑤ + ⑥ — engineering, scan and the test that really runs. */
-  private async stepEngineering(analysis: AnalysisDoc): Promise<CodeDraft> {
+  private async stepEngineering(
+    analysis: AnalysisDoc,
+    // Human review feedback from a REVISE round (PR comments). When present it
+    // seeds the engineer's `feedback` so the first attempt already addresses the
+    // reviewer's notes, rather than re-generating the same code that was rejected.
+    reviewFeedback: string | null = null,
+  ): Promise<CodeDraft> {
     const { store, scm } = this.deps;
     const ticketKey = this.requireTicket();
     const github = this.githubMode();
@@ -806,7 +1074,7 @@ export class PilotRun {
     // run's live workspace, and (paired with the SANDBOX_DESTROY on the way out)
     // so the trail carries the workspace's whole lifetime (M60).
     await this.recordSandbox("SANDBOX_CREATE");
-    const profile = compiledProfileFor(this.deps.piiPolicy, this.runSettings.dataClass).profile;
+    const profile = compiledProfileFor(this.deps.piiPolicy, this.effectiveDataClass()).profile;
 
     // On the github path the repo is cloned NOW, BEFORE any code is written, so
     // the model's files land INSIDE the git working tree (the workspace flips
@@ -817,7 +1085,9 @@ export class PilotRun {
     let pushCredential: PushCredential | null = null;
     if (github) pushCredential = await this.cloneForGithub(branch, baseBranch);
 
-    let feedback: string | null = null;
+    // Seed with the reviewer's notes on a REVISE round, so attempt 1 already
+    // addresses them (the same `oncekiHata` channel the self-heal loop uses).
+    let feedback: string | null = reviewFeedback;
     let previousCode: CodeDraft | null = null;
     let lastError = "";
     for (let attempt = 1; attempt <= MAX_ENGINEER_ATTEMPTS; attempt += 1) {
@@ -843,6 +1113,10 @@ export class PilotRun {
           "Kodun ve testin içine e-posta adresi, telefon, TCKN, IBAN veya kart numarası YAZMA — örnek/sahte olanları bile. '@' işareti geçen metin kullanma.",
           "summary: 1-2 cümle Türkçe özet.",
           "Markdown kod bloğu (```) kullanma; alanlar düz metin olacak.",
+          // B11: special-change-type guardrails. Empty for an ordinary change;
+          // a migration/flag/config/dependency ticket adds its specific rules
+          // (idempotent + rollback, default-OFF, safe defaults, pinned version).
+          ...this.changeTypes.flatMap((c) => c.rules),
         ],
         ...(feedback === null ? {} : { oncekiHata: feedback }),
         ...(previousCode === null ? {} : { oncekiKod: previousCode }),
@@ -1015,7 +1289,10 @@ export class PilotRun {
       sourceBranch: this.branch,
       targetBranch: github ? GITHUB_TARGET_BRANCH : "main",
       title: `[AI] ${ticketKey} ${analysis.purpose.slice(0, 60)}`,
-      description: `${draft.summary}\n\nMaestro pilot çalışması — ${ticketKey}`,
+      // A structured PR body so a human reviewer sees WHAT/WHY/RISK and can reach
+      // the ticket and the analysis at once — not a two-line stub. The ticket URL
+      // makes the PR↔Jira link machine-followable.
+      description: this.buildPrDescription(ticketKey, draft, analysis),
       draft: true,
     });
     store.log("ok", github ? `✓ PR #${prId} taslak olarak açıldı (GERÇEK GitHub)` : `✓ PR #${prId} taslak olarak açıldı (sahte ADO)`);
@@ -1028,14 +1305,22 @@ export class PilotRun {
     await scm.activatePr(repo, prId);
     store.log("dim", `→ PR #${prId} taslaktan çıktı — build validation kuyruğa alındı`);
 
-    // CI stays faked (C3 wires real GitHub checks): trigger the fake build for
-    // the REAL PR id now that it is out of draft.
-    if (github) this.deps.onRealPrOpened?.(prId, `refs/heads/${this.branch}`);
-
     const threads = await scm.listPrThreads(repo, prId);
     store.note("7", `PR #${prId} · açık inceleme yorumu: ${threads.length}`);
 
-    const green = await this.awaitCi(prId);
+    // CI (B14): on the github path with a pushed commit and a driver that can
+    // read real checks, WAIT ON GITHUB CHECKS — the actual build/test results
+    // for the head commit. Otherwise fall back to the fake ADO build signal
+    // (the demo/test path): trigger the fake build for the real PR id now that
+    // it is out of draft, and wait on its webhook.
+    const canRealCi = github && this.pushedCommitSha !== null && typeof scm.getCommitChecks === "function";
+    let green: boolean;
+    if (canRealCi) {
+      green = await this.awaitRealCi(repo, this.pushedCommitSha as GitSha, prId);
+    } else {
+      if (github) this.deps.onRealPrOpened?.(prId, `refs/heads/${this.branch}`);
+      green = await this.awaitCi(prId);
+    }
     if (!green) {
       store.step("7", "hata", "CI kırmızı");
       throw new PilotStepError(`CI build'i başarısız döndü (PR #${prId})`);
@@ -1065,52 +1350,209 @@ export class PilotRun {
     store.log("ok", `✓ PR onayı: ${envelope.author}`);
   }
 
-  /** ⑨ merge (by a human, in ADO) + closure. */
+  /** ⑨ merge + closure. Human-merge by default; auto-merge only when armed (B14). */
   private async stepMerge(prId: number): Promise<void> {
-    const { store, work } = this.deps;
-    // Merge stays a human action in the fake (C2): even on the github path the
-    // merge + status come from the fake merge-status port, not the real PR.
-    const mergeStatus = this.deps.mergeStatus ?? this.deps.scm;
+    const { store, work, scm } = this.deps;
     const ticketKey = this.requireTicket();
     const repo = this.repo;
     if (repo === null) throw new PilotStepError("depo yok");
     store.step("9", "calisiyor");
 
-    const merged = this.deps.completePullRequest(prId);
-    store.log(
-      "dim",
-      merged
-        ? "→ (sahte ADO) PR'ı bir insan 'Complete' ile birleştirdi — Maestro merge etmez"
-        : "→ (sahte ADO) PR zaten birleşmişti",
-    );
+    // AUTO-MERGE (B14) is armed ONLY when every guard holds: the setting is on,
+    // this is the github path (a real repo), and the driver can actually merge.
+    // The PR gate was already approved (stepPrGate) and CI was already green
+    // (stepOpenPr) before we ever reach here, so those two invariants hold by
+    // construction. When armed, Maestro performs the merge itself; otherwise it
+    // WAITS for a human to merge — the default, unchanged behaviour.
+    const autoMergeArmed =
+      this.runSettings.autoMerge && this.githubMode() && typeof scm.mergePr === "function";
 
-    // On the github path the merge-status port is the FAKE ADO driver; its
-    // repo ref is ADO-shaped, not the github owner/repo `this.repo` carries.
-    const statusRepo = this.deps.mergeStatus ? await mergeStatus.resolveRepo(APPLICATION) : repo;
+    let mergeSha: string | null;
+    if (autoMergeArmed) {
+      store.log("warn", `⚙ otomatik birleştirme AÇIK — Maestro PR #${prId}'i gerçek olarak birleştiriyor…`);
+      const result = await (scm.mergePr as NonNullable<ScmPort["mergePr"]>).call(scm, repo, prId);
+      mergeSha = result.mergeSha;
+      store.log("ok", `✓ Maestro birleştirdi (GERÇEK) · commit ${mergeSha.slice(0, 8)}`);
+    } else {
+      // Human-merge: wait for the merge to happen out-of-band. On the fake path
+      // the merge + status come from the fake ADO driver; on the github path
+      // (auto-merge off) a human merges the real PR and getPrStatus confirms it.
+      const mergeStatus = this.deps.mergeStatus ?? scm;
+      const merged = this.deps.completePullRequest(prId);
+      store.log(
+        "dim",
+        merged
+          ? "→ PR'ı bir insan birleştirdi — Maestro merge etmez (varsayılan)"
+          : "→ PR zaten birleşmişti",
+      );
+      const statusRepo = this.deps.mergeStatus ? await mergeStatus.resolveRepo(APPLICATION) : repo;
+      const deadline = Date.now() + 10_000;
+      let status = await mergeStatus.getPrStatus(statusRepo, prId);
+      while (status.state !== "completed" && Date.now() < deadline) {
+        await sleep(this.deps.mergePollMs ?? 300);
+        status = await mergeStatus.getPrStatus(statusRepo, prId);
+      }
+      if (status.state !== "completed") {
+        throw new PilotStepError(`PR #${prId} birleşmedi (durum: ${status.state})`);
+      }
+      mergeSha = status.mergeSha;
+      store.log("ok", `✓ merge doğrulandı · commit ${mergeSha?.slice(0, 8) ?? "?"}`);
+    }
+    await this.record("PR_MERGED", { prId, mergeSha: mergeSha ?? null, auto: autoMergeArmed });
 
-    const deadline = Date.now() + 10_000;
-    let status = await mergeStatus.getPrStatus(statusRepo, prId);
-    while (status.state !== "completed" && Date.now() < deadline) {
-      await sleep(this.deps.mergePollMs ?? 300);
-      status = await mergeStatus.getPrStatus(statusRepo, prId);
+    // Close the Jira ticket: move it to a Done-category status so the work does
+    // not sit open after it is merged. Selection is by CATEGORY (a site may
+    // rename "Done"), and a workflow that offers no Done transition is not an
+    // error — the merge already succeeded, this is bookkeeping.
+    let closedStatus: string | null = null;
+    try {
+      const transitions = await work.readAvailableTransitions(ticketKey);
+      const done = selectDoneTransition(transitions);
+      if (done !== null) {
+        await work.applyTransition(ticketKey, done.id);
+        closedStatus = done.toStatusName;
+        store.log("ok", `✓ ticket '${done.toStatusName}' statüsüne kapatıldı`);
+      } else {
+        store.log("dim", "→ 'Tamamlandı' statü geçişi bulunamadı — ticket statüsü elle kapatılmalı");
+      }
+    } catch (error) {
+      store.log("warn", `! ticket kapatma statüsü uygulanamadı: ${String(error)}`);
     }
-    if (status.state !== "completed") {
-      throw new PilotStepError(`PR #${prId} birleşmedi (durum: ${status.state})`);
-    }
-    store.log("ok", `✓ merge doğrulandı · commit ${status.mergeSha?.slice(0, 8) ?? "?"}`);
-    await this.record("PR_MERGED", { prId, mergeSha: status.mergeSha ?? null });
+
+    // Tidy the feature branch so merged branches do not pile up. Best-effort:
+    // the branch may already be gone (auto-delete-on-merge), and a failure here
+    // must never turn a successful merge into a failed run.
+    await this.deleteMergedBranch();
 
     await this.updateProgress("tamamlandı — PR birleşti");
     await work.addComment(
       ticketKey,
       doc(
         heading(3, "🎉 Tamamlandı"),
-        paragraph(`${ticketKey} için PR #${prId} birleşti. Analiz, kod, test ve onay zinciri kayıt altında.`),
+        paragraph(
+          `${ticketKey} için PR #${prId} birleşti${closedStatus !== null ? ` ve ticket '${closedStatus}' statüsüne alındı` : ""}. Analiz, kod, test ve onay zinciri kayıt altında.`,
+        ),
+        // The product boundary, stated plainly so nobody assumes it went live:
+        // Maestro stops at merge; deploy/release is the institution's own process.
+        paragraph(
+          "Not: Maestro burada durur. Prod'a çıkış (deploy/release) kurumun kendi sürecidir — Maestro üretime bir şey dağıtmaz.",
+        ),
       ),
     );
     this.deps.onJiraChanged?.();
-    await this.record("RUN_CLOSED", { prId });
+    await this.record("RUN_CLOSED", { prId, closedStatus });
     store.step("9", "tamam");
+  }
+
+  /**
+   * Delete the run's feature branch after merge. Reached only on the real SCM
+   * path (a branch was pushed); on the fake path there is nothing to delete.
+   * Every failure is swallowed — a merged PR is done regardless of whether the
+   * source branch could be removed.
+   */
+  private async deleteMergedBranch(): Promise<void> {
+    if (this.repo === null || this.branch === "") return;
+    const scm = this.deps.scm;
+    if (typeof scm.deleteBranch !== "function") return;
+    try {
+      await scm.deleteBranch(this.repo, this.branch);
+      this.deps.store.log("dim", `→ dal temizlendi: ${this.branch}`);
+    } catch (error) {
+      this.deps.store.log("dim", `→ dal silinemedi (${this.branch}): ${String(error)}`);
+    }
+  }
+
+  /**
+   * Gather the reviewer's change requests into one feedback string for a revise
+   * round: the reject reason (from the Jira /reject comment) plus every open PR
+   * review thread's comments. Best-effort on the PR threads — if they cannot be
+   * read, the reject reason alone still drives the revision.
+   */
+  private async collectReviewFeedback(prId: number, rejectReason: string): Promise<string> {
+    const parts: string[] = [];
+    if (rejectReason.trim().length > 0) parts.push(`Ret gerekçesi: ${rejectReason.trim()}`);
+    try {
+      if (this.repo !== null) {
+        const threads = await this.deps.scm.listPrThreads(this.repo, prId);
+        for (const thread of threads) {
+          for (const c of thread.comments) {
+            if (c.text.trim().length > 0) parts.push(`PR yorumu (${c.author}): ${c.text.trim()}`);
+          }
+        }
+      }
+    } catch {
+      // PR threads unreadable — the reject reason alone is enough to revise.
+    }
+    return parts.length > 0
+      ? `İnceleyen aşağıdaki değişiklikleri istedi; kodu buna göre düzelt:\n${parts.join("\n")}`
+      : "İnceleyen değişiklik istedi (ayrıntı yok); kodu gözden geçirip iyileştir.";
+  }
+
+  /**
+   * A structured PR body: what changed, why (the analysis), the risk, and links
+   * back to the Jira ticket. Markdown, because GitHub renders it; a reviewer
+   * sees the context without leaving the PR. The body states plainly that the AI
+   * wrote it and a human must approve — the review is not a rubber stamp.
+   */
+  private buildPrDescription(ticketKey: TicketKey, draft: CodeDraft, analysis: AnalysisDoc): string {
+    const site = this.deps.store.snapshot().jiraSite;
+    const ticketUrl = site ? `${site}/browse/${ticketKey}` : ticketKey;
+    // B11: surface any special change type so the reviewer sees the extra care
+    // up front (a migration/flag/config/dependency line), not buried in the diff.
+    const changeTypeLines =
+      this.changeTypes.length > 0
+        ? ["", "**Özel değişiklik türü:**", ...this.changeTypes.map((c) => `- ${c.note}`)]
+        : [];
+    return [
+      `## ${ticketKey}`,
+      "",
+      `**Ne yapıldı:** ${draft.summary}`,
+      "",
+      `**Amaç:** ${analysis.purpose}`,
+      "",
+      `**Risk:** ${analysis.riskTier} — ${analysis.riskReason}`,
+      ...changeTypeLines,
+      "",
+      `**Jira ticket:** [${ticketKey}](${ticketUrl})`,
+      "",
+      "---",
+      "> Bu değişikliği Maestro'nun yapay zekâ ajanı yazdı; analiz, test ve güvenlik taraması kayıt altında. **İnceleyip onaylayan bir insan olmalıdır** — merge kurumun kendi sürecidir.",
+    ].join("\n");
+  }
+
+  /**
+   * Read the ticket's attachments for the analyst. Text attachments (txt/md/json)
+   * are downloaded and their content included (capped, so a huge log does not
+   * blow the prompt); images/PDFs are named but not parsed. Best-effort: an
+   * attachment that cannot be listed or downloaded is skipped, never fatal — the
+   * analysis proceeds with whatever context was available.
+   */
+  private async readTicketAttachments(
+    ticketKey: TicketKey,
+  ): Promise<readonly { name: string; kind: string; content: string | null }[]> {
+    const MAX_TEXT_BYTES = 20_000;
+    let metas: readonly { filename: string; mimeType: string; size: number; contentUrl: string }[];
+    try {
+      metas = await this.deps.work.readAttachments(ticketKey);
+    } catch (error) {
+      this.deps.store.log("dim", `→ ekler okunamadı: ${String(error)}`);
+      return [];
+    }
+
+    const out: { name: string; kind: string; content: string | null }[] = [];
+    for (const meta of metas) {
+      const text = isTextAttachment(meta.mimeType) && meta.size <= MAX_TEXT_BYTES;
+      let content: string | null = null;
+      if (text && typeof this.deps.work.downloadAttachment === "function") {
+        try {
+          content = await this.deps.work.downloadAttachment(meta.contentUrl);
+        } catch {
+          content = null; // named but unreadable — still useful to the analyst
+        }
+      }
+      out.push({ name: meta.filename, kind: meta.mimeType, content });
+    }
+    return out;
   }
 
   // ---------------------------------------------------- gate: comment polling
@@ -1215,7 +1657,7 @@ export class PilotRun {
     input: unknown,
   ): Promise<{ masked: T; display: T }> {
     const outcome = await this.deps.llm.generateObject(
-      { role, variantId: PILOT_VARIANT, dataClass: this.runSettings.dataClass, schemaName, input },
+      { role, variantId: PILOT_VARIANT, dataClass: this.effectiveDataClass(), schemaName, input },
       schema,
     );
     if (outcome.status !== "ok") {
@@ -1227,6 +1669,49 @@ export class PilotRun {
     }
     const unmask = outcome.unmask;
     return { masked: outcome.value, display: unmask ? unmask(outcome.value) : outcome.value };
+  }
+
+  /**
+   * Wait on the REAL GitHub Checks for the pushed commit (B14). Polls
+   * `getCommitChecks` until it is no longer `pending`: `success`/`none` → green
+   * (a repo with no CI configured has nothing to fail on), `failure` → red. On
+   * timeout the checks never settled, which is treated as red — a build that
+   * will not report is not a build that passed.
+   */
+  private async awaitRealCi(repo: RepoRef, sha: GitSha, prId: number): Promise<boolean> {
+    const getChecks = this.deps.scm.getCommitChecks;
+    if (typeof getChecks !== "function") return this.awaitCi(prId);
+    const { store } = this.deps;
+    const timeoutMs = this.deps.ciTimeoutMs ?? 60_000;
+    const pollMs = this.deps.mergePollMs ?? 3_000;
+    const deadline = Date.now() + timeoutMs;
+    store.log("dim", `→ gerçek GitHub Checks bekleniyor · commit ${sha.slice(0, 8)}`);
+    let lastDetail = "";
+    for (;;) {
+      const checks = await getChecks.call(this.deps.scm, repo, sha);
+      lastDetail = checks.detail.join(" · ");
+      await this.record("CI_RESULT", { prId, sha, state: checks.state, detail: checks.detail });
+      if (checks.state === "success" || checks.state === "none") {
+        store.log(
+          "ok",
+          checks.state === "none"
+            ? "→ commit için yapılandırılmış CI kontrolü yok — geçildi"
+            : `→ CI yeşil: ${lastDetail}`,
+        );
+        return true;
+      }
+      if (checks.state === "failure") {
+        store.log("err", `→ CI kırmızı: ${lastDetail}`);
+        return false;
+      }
+      // pending — keep waiting until the deadline.
+      if (Date.now() >= deadline) {
+        store.log("err", `→ CI ${timeoutMs / 1000} sn içinde tamamlanmadı: ${lastDetail}`);
+        return false;
+      }
+      store.step("7", "calisiyor", `CI çalışıyor: ${lastDetail || "kontroller kuyrukta"}`);
+      await sleep(pollMs);
+    }
   }
 
   private awaitCi(prId: number): Promise<boolean> {

@@ -94,6 +94,16 @@ export class AuditChain {
     return this.store.head();
   }
 
+  /**
+   * Read the stored events, optionally sliced by sequence range. A pure
+   * read-through to the store — appends stay the only mutation path — so a
+   * caller that must PRESENT the trail (a regulator export, an audit screen)
+   * can get the records without reaching past the chain into its store.
+   */
+  read(range?: { fromSeq?: number; toSeq?: number }): Promise<AuditEvent[]> {
+    return this.store.read(range);
+  }
+
   /** Append one record. Serialised against every other append on this chain. */
   append(input: AppendInput): Promise<AuditEvent> {
     return this.lock.withLock(async () => {

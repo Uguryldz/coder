@@ -236,6 +236,7 @@ export function defaultSettings(): {
   operatorAccount: string;
   sandboxRoot: string;
   reviewStatusName: string;
+  autoMerge: boolean;
 } {
   return {
     approverGroup: APPROVER_GROUP,
@@ -246,5 +247,8 @@ export function defaultSettings(): {
     operatorAccount: PILOT_OPERATOR_ACCOUNT,
     sandboxRoot: SANDBOX_ROOT,
     reviewStatusName: REVIEW_STATUS_NAME,
+    // Human-merge by default (B14). Only an explicit PILOT_AUTO_MERGE=true seeds
+    // it on; anything else — unset, "false", "0" — stays off.
+    autoMerge: process.env["PILOT_AUTO_MERGE"] === "true",
   };
 }

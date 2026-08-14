@@ -92,3 +92,29 @@ export const MarkReadyResponse = z.looseObject({
     .nullable(),
 });
 export type MarkReadyResponse = z.infer<typeof MarkReadyResponse>;
+
+/**
+ * GET /repos/{owner}/{repo}/commits/{sha}/check-runs — the CI checks for a
+ * commit (B14). Only the fields the aggregate verdict needs are declared:
+ * `status` (queued/in_progress/completed) and, once completed, `conclusion`
+ * (success/failure/neutral/…). `name` is kept for the human-readable log line.
+ */
+export const CheckRunsResponse = z.looseObject({
+  total_count: z.number().int(),
+  check_runs: z.array(
+    z.looseObject({
+      name: z.string().optional(),
+      status: z.string(),
+      conclusion: z.string().nullable().optional(),
+    }),
+  ),
+});
+export type CheckRunsResponse = z.infer<typeof CheckRunsResponse>;
+
+/** PUT /repos/{owner}/{repo}/pulls/{n}/merge — the merge result (B14). */
+export const MergeResponse = z.looseObject({
+  merged: z.boolean(),
+  sha: z.string().min(1).optional(),
+  message: z.string().optional(),
+});
+export type MergeResponse = z.infer<typeof MergeResponse>;

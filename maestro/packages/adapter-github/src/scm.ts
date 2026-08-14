@@ -1,5 +1,5 @@
 import { ApplicationRecord, type GitSha } from "@maestro/contracts";
-import type { PrStatus, PrThread, RepoRef, ScmPort } from "@maestro/ports";
+import type { CommitChecks, PrStatus, PrThread, RepoRef, ScmPort } from "@maestro/ports";
 import { isFullSha, toFullRef, toGitSha, toHeadsPath } from "./branch.js";
 import type { GithubClient } from "./client.js";
 import { DEFAULT_MAX_PUSH_TTL_SECONDS } from "./config.js";
@@ -12,10 +12,12 @@ import {
 import { GithubResponseError } from "./errors.js";
 import { parseOrThrow as parse } from "./parse.js";
 import {
+  CheckRunsResponse,
   CreatedRefResponse,
   CreatedReviewComment,
   GitRefResponse,
   MarkReadyResponse,
+  MergeResponse,
   PullRequestResponse,
   RepoResponse,
   type ReviewComment,
@@ -101,6 +103,14 @@ export class GithubScmDriver implements ScmPort {
         `created ref ${body.ref} does not match requested ${fullRef}`,
       ]);
     }
+  }
+
+  /** Delete a branch (its ref) after merge, via DELETE git/refs/heads/{branch}. */
+  async deleteBranch(repo: RepoRef, name: string): Promise<void> {
+    await this.client.request({
+      path: `repos/${this.slug(repo)}/git/refs/${toHeadsPath(name)}`,
+      method: "DELETE",
+    });
   }
 
   /** Tip commit sha of a branch via GET git/ref/heads/{branch}. */
@@ -278,6 +288,76 @@ export class GithubScmDriver implements ScmPort {
       await this.client.request({ path: `repos/${this.slug(repo)}/pulls/${prId}` }),
       "GET pull request",
     );
+  }
+
+  /**
+   * Aggregate CI verdict for a commit via GET commits/{sha}/check-runs (B14).
+   *
+   * Rules, fail-closed: any check still `queued`/`in_progress` → `pending`
+   * (never call a build green while it is running); any completed check whose
+   * conclusion is not a pass (`success`/`neutral`/`skipped`) → `failure`; all
+   * completed and passing → `success`; no checks at all → `none` (a repo with
+   * no CI configured — the caller decides whether that is acceptable).
+   */
+  async getCommitChecks(repo: RepoRef, sha: GitSha): Promise<CommitChecks> {
+    const body = parse(
+      CheckRunsResponse,
+      await this.client.request({ path: `repos/${this.slug(repo)}/commits/${sha}/check-runs` }),
+      "GET check-runs",
+    );
+    if (body.check_runs.length === 0) return { sha, state: "none", detail: [] };
+
+    const PASS = new Set(["success", "neutral", "skipped"]);
+    const detail: string[] = [];
+    let anyPending = false;
+    let anyFailed = false;
+    for (const run of body.check_runs) {
+      const name = run.name ?? "check";
+      if (run.status !== "completed") {
+        anyPending = true;
+        detail.push(`${name} ⏳`);
+        continue;
+      }
+      const conclusion = run.conclusion ?? "";
+      if (PASS.has(conclusion)) {
+        detail.push(`${name} ✓`);
+      } else {
+        anyFailed = true;
+        detail.push(`${name} ✗ (${conclusion || "?"})`);
+      }
+    }
+    // A failure is decided even if something is still pending: a red check does
+    // not turn green by waiting, so surface it now rather than blocking.
+    const state = anyFailed ? "failure" : anyPending ? "pending" : "success";
+    return { sha, state, detail };
+  }
+
+  /**
+   * Merge a pull request via PUT pulls/{n}/merge (B14). Returns the merge commit
+   * sha. GitHub answers 200 with `{merged:true, sha}` on success and a 405/409
+   * (a client error the transport raises) when the PR is not mergeable — this
+   * method never fakes a merge, so a non-merged 200 is itself an error.
+   */
+  async mergePr(repo: RepoRef, prId: number): Promise<{ mergeSha: GitSha }> {
+    const body = parse(
+      MergeResponse,
+      await this.client.request({
+        path: `repos/${this.slug(repo)}/pulls/${prId}/merge`,
+        method: "PUT",
+        body: { merge_method: "merge" },
+      }),
+      "PUT merge",
+    );
+    if (!body.merged || body.sha === undefined) {
+      throw new GithubResponseError("PUT merge", [
+        `pull request ${prId} did not merge: ${body.message ?? "unknown"}`,
+      ]);
+    }
+    const mergeSha = toGitSha(body.sha);
+    if (mergeSha === null) {
+      throw new GithubResponseError("PUT merge", [`invalid merge sha: ${body.sha}`]);
+    }
+    return { mergeSha };
   }
 
   private slug(repo: RepoRef): string {

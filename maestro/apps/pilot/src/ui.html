@@ -67,6 +67,11 @@ code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px
 .set-f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mini)}
 .set-f input,.set-f select{font:inherit;font-size:13px;color:var(--text);background:var(--panel);border:1px solid var(--border2);border-radius:7px;padding:7px 9px}
 .set-f input:focus,.set-f select:focus{outline:none;border-color:var(--blue)}
+.aud-filters{display:flex;flex-wrap:wrap;gap:10px}
+.aud-table{width:100%;border-collapse:collapse;font-size:13px}
+.aud-table th,.aud-table td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border2);white-space:nowrap}
+.aud-table th{color:var(--mini);font-weight:600;position:sticky;top:0;background:var(--panel)}
+.aud-table td:last-child{white-space:normal}
 .set-ok{color:var(--green);font-weight:600}
 .set-bad{color:var(--red);font-weight:600}
 
@@ -137,6 +142,10 @@ code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px
         <label class="set-f"><span>Operatör hesabı</span><input id="s-operatorAccount" type="text" autocomplete="off"></label>
         <label class="set-f"><span>Sandbox kökü (boş = geçici)</span><input id="s-sandboxRoot" type="text" autocomplete="off" placeholder="/kalici/sandbox/koku"></label>
       </div>
+      <label class="set-f" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px">
+        <input id="s-autoMerge" type="checkbox">
+        <span>Otomatik birleştirme (yalnız CI yeşil + onaylıysa; <b>kapalıyken merge insana bırakılır</b>)</span>
+      </label>
       <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
         <button class="btn p" id="set-save" type="button">Kaydet</button>
         <span class="mini" id="set-msg"></span>
@@ -158,6 +167,30 @@ code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px
       <a class="dlbtn" id="dl-pdf" href="/api/doc/pdf">📄 Analizi PDF indir</a>
       <a class="dlbtn" id="dl-docx" href="/api/doc/docx">📝 Word indir</a>
     </span>
+  </div></div>
+
+  <div class="card" id="audit-card" style="margin-bottom:14px"><div class="bd">
+    <div class="ph" style="cursor:pointer" id="audit-toggle">🛡️ Denetim raporu (regülatör) <span class="spacer"></span><span class="mini">tarih / aktör / aksiyon süz, CSV indir</span></div>
+    <div id="audit-body" style="display:none;margin-top:10px">
+      <div class="aud-filters">
+        <label class="set-f"><span>Başlangıç</span><input id="a-from" type="date"></label>
+        <label class="set-f"><span>Bitiş</span><input id="a-to" type="date"></label>
+        <label class="set-f"><span>Aktör</span><input id="a-actor" type="text" autocomplete="off" placeholder="ör. ayse@corp"></label>
+        <label class="set-f"><span>Aksiyon</span><input id="a-action" type="text" autocomplete="off" placeholder="ör. GATE_APPROVE"></label>
+        <label class="set-f"><span>Ara</span><input id="a-q" type="text" autocomplete="off" placeholder="konu/aktör/aksiyon"></label>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <button class="btn p" id="a-fetch" type="button">Getir</button>
+        <a class="dlbtn" id="a-csv" href="/api/audit.csv">⬇ CSV indir</a>
+        <span class="mini" id="a-count">—</span>
+        <span class="spacer"></span>
+        <button class="btn" id="a-prev" type="button">‹ Önceki</button>
+        <button class="btn" id="a-next" type="button">Sonraki ›</button>
+      </div>
+      <div class="aud-scroll" style="margin-top:10px;max-height:320px;overflow:auto">
+        <table class="aud-table"><thead><tr><th>#</th><th>Tarih</th><th>Aktör</th><th>Aksiyon</th><th>Konu</th></tr></thead><tbody id="a-rows"><tr><td colspan="5" class="mini">“Getir” ile denetim kayıtlarını listeleyin.</td></tr></tbody></table>
+      </div>
+    </div>
   </div></div>
 
   <div class="grid">
@@ -317,6 +350,8 @@ function fillSettings(s) {
     const el = $("s-" + key);
     if (el && document.activeElement !== el) el.value = s[key];
   }
+  const am = $("s-autoMerge");
+  if (am && document.activeElement !== am) am.checked = !!s.autoMerge;
 }
 
 async function loadSettings() {
@@ -335,6 +370,7 @@ function readSettingsForm() {
     dataClass: $("s-dataClass").value,
     operatorAccount: $("s-operatorAccount").value.trim(),
     sandboxRoot: $("s-sandboxRoot").value.trim(),
+    autoMerge: $("s-autoMerge").checked,
   };
 }
 
@@ -375,6 +411,64 @@ function syncSettingsLock(state) {
     setMsg("akış sürüyor — ayarlar kilitli", false);
   }
 }
+
+// ── B13 denetim raporu (regülatör): filtrele + listele + CSV indir ──────────
+let auditOffset = 0;
+const AUDIT_LIMIT = 50;
+
+function auditQuery(withPaging) {
+  const p = new URLSearchParams();
+  const from = $("a-from").value;
+  const to = $("a-to").value;
+  // <input type=date> gives YYYY-MM-DD; widen to the full day in ISO so the
+  // window is inclusive of everything that happened on the chosen dates.
+  if (from) p.set("from", from + "T00:00:00.000Z");
+  if (to) p.set("to", to + "T23:59:59.999Z");
+  if ($("a-actor").value.trim()) p.set("actor", $("a-actor").value.trim());
+  if ($("a-action").value.trim()) p.set("action", $("a-action").value.trim());
+  if ($("a-q").value.trim()) p.set("q", $("a-q").value.trim());
+  if (withPaging) { p.set("offset", String(auditOffset)); p.set("limit", String(AUDIT_LIMIT)); }
+  return p;
+}
+
+function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+async function loadAudit() {
+  // Keep the CSV link in sync with the live filters (no paging: whole window).
+  $("a-csv").href = "/api/audit.csv?" + auditQuery(false).toString();
+  let page;
+  try {
+    page = await (await fetch("/api/audit?" + auditQuery(true).toString())).json();
+  } catch (e) {
+    $("a-count").textContent = "denetim okunamadı";
+    return;
+  }
+  const rows = page.events || [];
+  const body = $("a-rows");
+  if (rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" class="mini">Bu süzgeçle kayıt yok.</td></tr>';
+  } else {
+    body.innerHTML = rows.map((e) =>
+      "<tr><td>" + e.seq + "</td><td>" + esc(e.at.replace("T", " ").slice(0, 19)) +
+      "</td><td>" + esc(e.actor) + "</td><td>" + esc(e.action) + "</td><td>" + esc(e.subject) + "</td></tr>"
+    ).join("");
+  }
+  const shownFrom = page.total === 0 ? 0 : page.offset + 1;
+  const shownTo = Math.min(page.offset + rows.length, page.total);
+  $("a-count").textContent = shownFrom + "–" + shownTo + " / " + page.total + " kayıt";
+  $("a-prev").disabled = page.offset <= 0;
+  $("a-next").disabled = page.offset + rows.length >= page.total;
+}
+
+$("audit-toggle").addEventListener("click", () => {
+  const b = $("audit-body");
+  const open = b.style.display === "none";
+  b.style.display = open ? "block" : "none";
+  if (open) { auditOffset = 0; loadAudit(); }
+});
+$("a-fetch").addEventListener("click", () => { auditOffset = 0; loadAudit(); });
+$("a-prev").addEventListener("click", () => { auditOffset = Math.max(0, auditOffset - AUDIT_LIMIT); loadAudit(); });
+$("a-next").addEventListener("click", () => { auditOffset += AUDIT_LIMIT; loadAudit(); });
 
 const events = new EventSource("/api/events");
 events.onmessage = (event) => { const s = JSON.parse(event.data); renderState(s); syncSettingsLock(s); };

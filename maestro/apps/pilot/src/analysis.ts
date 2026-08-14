@@ -59,13 +59,35 @@ export function pilotAnalysisTemplate(): AnalysisTemplate {
  * ticket-sourced claims, which is the honest posture: it cannot cite a repo
  * file it was never shown.
  */
-export function buildAnalysisContext(ticket: TicketSnapshot): AnalysisContext {
+export function buildAnalysisContext(
+  ticket: TicketSnapshot,
+  guidance: readonly { title: string; content: string }[] = [],
+  attachments: readonly { name: string; kind: string; content: string | null }[] = [],
+): AnalysisContext {
+  // Turn attachments into named docs the analyst can read. A text attachment
+  // carries its content; an image/PDF carries a note that it exists (its bytes
+  // are not parsed yet), so the analyst can say "review the attached screenshot"
+  // rather than silently ignoring it.
+  const attachmentDocs = attachments.map((a) => ({
+    name: `ek: ${a.name}`,
+    text:
+      a.content !== null
+        ? a.content
+        : `(${a.kind} eki — içeriği metin olarak okunamadı; analizde 'ekli ${a.name} incelenmeli' olarak belirt)`,
+  }));
   return {
     ticket,
     // TODO(repo-card/knowledge): populated from step 3o repo discovery.
     discovery: { appId: ticket.projectKey, files: [], modules: [] },
-    // TODO(repo-card/knowledge): populated from the M38 knowledge pack.
-    knowledge: { repoCards: [], knowledgeDocs: [], codingStandards: [], exampleAnalyses: [] },
+    // The operator's uploaded "öğren" notes plus the ticket's attachments become
+    // knowledge docs the analyst leans on. repoCards/coding standards/example
+    // analyses are still the M38/M100 inputs left for later.
+    knowledge: {
+      repoCards: [],
+      knowledgeDocs: [...guidance.map((g) => ({ name: g.title, text: g.content })), ...attachmentDocs],
+      codingStandards: [],
+      exampleAnalyses: [],
+    },
     // The clarification gate runs BEFORE analysis (see `requestIntake` and
     // run.ts step 2): an incomplete ticket never reaches this context — the flow
     // stops and asks the reporter. So by the time the analyst is built the ticket
@@ -140,6 +162,18 @@ export interface ProduceAnalysisArgs {
   variantId: string;
   dataClass: DataClass;
   template?: AnalysisTemplate;
+  /**
+   * The enabled analysis-guidance notes ("öğren") — injected into the analyst's
+   * context as knowledge docs, so the operator's uploaded knowledge shapes the
+   * analysis. Empty/absent = the analyst leans only on the ticket, as before.
+   */
+  guidance?: readonly { title: string; content: string }[];
+  /**
+   * The ticket's attachments. Text attachments carry their content; images/PDFs
+   * carry only a name (bytes not parsed here). Given to the analyst so a
+   * screenshot/spec-PDF ticket is not analysed with only its text fields.
+   */
+  attachments?: readonly { name: string; kind: string; content: string | null }[];
 }
 
 /**
@@ -155,7 +189,7 @@ export interface ProduceAnalysisArgs {
  */
 export async function produceAnalysis(args: ProduceAnalysisArgs): Promise<AnalysisResult> {
   const template = args.template ?? pilotAnalysisTemplate();
-  const context = buildAnalysisContext(args.ticket);
+  const context = buildAnalysisContext(args.ticket, args.guidance ?? [], args.attachments ?? []);
   const captured = captureUnmask(args.llm);
 
   const result = await runAnalyst({

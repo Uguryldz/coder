@@ -1,3 +1,4 @@
+import { ListeningRulesStore } from "../src/listening.js";
 import type { AddressInfo } from "node:net";
 import type { AnalysisDoc } from "@maestro/contracts";
 import { afterEach, describe, expect, it } from "vitest";
@@ -5,6 +6,8 @@ import { analysisToDocs, DocStore } from "../src/docs.js";
 import { close, listen } from "../src/http.js";
 import type { PilotRun } from "../src/run.js";
 import { createUiServer } from "../src/server.js";
+import { createPilotAudit } from "../src/wiring.js";
+import { GuidanceStore } from "../src/guidance.js";
 import { SettingsStore } from "../src/settings.js";
 import { initialState, StateStore } from "../src/state.js";
 
@@ -50,8 +53,9 @@ function boot(docs: DocStore) {
     operatorAccount: "op@corp",
     sandboxRoot: "",
     reviewStatusName: "İNCELEMEDE",
+    autoMerge: false,
   });
-  const server = createUiServer({ store, settings, run: stubRun, docs, start: () => Promise.resolve() });
+  const server = createUiServer({ store, settings, listening: new ListeningRulesStore(), guidance: new GuidanceStore(), run: stubRun, docs, audit: createPilotAudit(), start: () => Promise.resolve() });
   return { store, server };
 }
 

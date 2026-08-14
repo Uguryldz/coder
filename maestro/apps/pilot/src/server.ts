@@ -1,10 +1,18 @@
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { AuditChain } from "@maestro/audit";
 import { TicketKey } from "@maestro/contracts";
+import {
+  type AuditFilter,
+  auditEventsToCsv,
+  pageAuditEvents,
+} from "./audit-report.js";
 import { DOC_CONTENT_TYPE, type DocKind, type DocStore } from "./docs.js";
 import { headerValue, readRawBody, requestUrl, sendJson, sendText } from "./http.js";
 import type { PilotRun } from "./run.js";
 import { SettingsValidationError, type SettingsStore } from "./settings.js";
+import { isValidRule, type ListeningRulesStore } from "./listening.js";
+import { GuidanceStore } from "./guidance.js";
 import type { PilotState, StateStore } from "./state.js";
 
 /**
@@ -20,9 +28,27 @@ export interface UiServerOptions {
   store: StateStore;
   /** Runtime settings the ⚙ Ayarlar panel reads and writes (M71). */
   settings: SettingsStore;
+  /**
+   * The live listening-rule set (Faz 3). The BFF mirrors the DB rules here over
+   * `/api/listening` so the pilot — which cannot read Postgres — discovers and
+   * classifies tickets by the rules an admin edited in Studio.
+   */
+  listening: ListeningRulesStore;
+  /**
+   * The enabled analysis-guidance notes ("öğren"). The BFF mirrors the DB's
+   * enabled notes here over `/api/guidance`; the analyst reads them so an
+   * operator's uploaded knowledge shapes the next analysis.
+   */
+  guidance: GuidanceStore;
   run: PilotRun;
   /** Holds the generated analysis .docx/.pdf the download route streams. */
   docs: DocStore;
+  /**
+   * The hash-chained audit trail (M33). The regulator report (B13) reads it —
+   * filtered/paged as JSON over `/api/audit`, downloaded as CSV over
+   * `/api/audit.csv`.
+   */
+  audit: AuditChain;
   /** Starts the flow for the chosen ticket; rejects if one is already running. */
   start: (ticketKey: TicketKey) => Promise<void>;
 }
@@ -57,6 +83,42 @@ export function createUiServer(options: UiServerOptions): Server {
 
     if (url.pathname === "/api/state" && method === "GET") {
       sendJson(res, 200, options.store.snapshot());
+      return;
+    }
+
+    // The finished runs, newest first — the "geçmiş işler" list. The live state
+    // is one run; this is the history of the ones that ended.
+    if (url.pathname === "/api/runs" && method === "GET") {
+      sendJson(res, 200, { runs: options.store.historySnapshot() });
+      return;
+    }
+
+    // ── B13 regulator report: the audit trail, filtered + paged (JSON) and
+    // downloadable (CSV). Filters: from/to (ISO on `at`), actor, action, q
+    // (substring). Both routes read the SAME chain, so the CSV can never diverge
+    // from what the screen shows.
+    if ((url.pathname === "/api/audit" || url.pathname === "/api/audit.csv") && method === "GET") {
+      const params = url.searchParams;
+      const filter: AuditFilter = {
+        ...(params.get("from") ? { from: params.get("from") as string } : {}),
+        ...(params.get("to") ? { to: params.get("to") as string } : {}),
+        ...(params.get("actor") ? { actor: params.get("actor") as string } : {}),
+        ...(params.get("action") ? { action: params.get("action") as string } : {}),
+        ...(params.get("q") ? { q: params.get("q") as string } : {}),
+      };
+      const all = await options.audit.read();
+      if (url.pathname === "/api/audit.csv") {
+        // The CSV export ignores paging: a regulator wants the WHOLE filtered
+        // window in one file, not page 1 of it.
+        const filtered = pageAuditEvents(all, filter, 0, all.length + 1).events;
+        const stamp = new Date().toISOString().slice(0, 10);
+        res.setHeader("content-disposition", `attachment; filename="maestro-denetim-${stamp}.csv"`);
+        sendText(res, 200, auditEventsToCsv(filtered), "text/csv; charset=utf-8");
+        return;
+      }
+      const offset = Number(params.get("offset") ?? "0");
+      const limit = Number(params.get("limit") ?? "50");
+      sendJson(res, 200, pageAuditEvents(all, filter, offset, limit));
       return;
     }
 
@@ -103,6 +165,58 @@ export function createUiServer(options: UiServerOptions): Server {
         }
         throw error;
       }
+      return;
+    }
+
+    // The live listening rules (Faz 3). GET returns the current set; POST
+    // REPLACES it wholesale with the array the BFF mirror sends (the same full
+    // list Studio shows). No mid-run guard: a rule change only affects the NEXT
+    // discovery pass and the NEXT ticket's classification, never a running flow.
+    if (url.pathname === "/api/listening" && method === "GET") {
+      sendJson(res, 200, { rules: options.listening.snapshot() });
+      return;
+    }
+    // The enabled analysis-guidance notes ("öğren"), mirrored from the DB. POST
+    // REPLACES the set; the analyst reads it on the next analysis. No mid-run
+    // guard: guidance only affects the NEXT ticket's analysis.
+    if (url.pathname === "/api/guidance" && method === "GET") {
+      sendJson(res, 200, { notes: options.guidance.snapshot() });
+      return;
+    }
+    if (url.pathname === "/api/guidance" && method === "POST") {
+      const raw = await readRawBody(req);
+      const body = safeJson(raw);
+      const incoming = (body as { notes?: unknown } | null)?.notes;
+      if (!Array.isArray(incoming)) {
+        sendJson(res, 400, { error: "notes dizisi gerekli" });
+        return;
+      }
+      options.guidance.set(incoming as { title: string; content: string }[]);
+      options.store.log("info", `📚 bilgi kütüphanesi güncellendi: ${options.guidance.snapshot().length} not (analize katılacak)`);
+      sendJson(res, 200, { notes: options.guidance.snapshot() });
+      return;
+    }
+
+    if (url.pathname === "/api/listening" && method === "POST") {
+      const raw = await readRawBody(req);
+      const body = safeJson(raw);
+      const incoming = (body as { rules?: unknown } | null)?.rules;
+      if (!Array.isArray(incoming)) {
+        sendJson(res, 400, { error: "rules dizisi gerekli" });
+        return;
+      }
+      // Defence-in-depth: the mirror comes from the BFF over validated DB rows,
+      // but the pilot still keeps only rules whose shape it understands — a
+      // malformed entry is dropped, never stored with an unknown matchKind or
+      // flowType that discovery/classification could not interpret.
+      const rules = incoming.filter(isValidRule);
+      options.listening.set(rules);
+      options.store.log(
+        "info",
+        `👂 dinleme kuralları güncellendi: ${rules.length} kural` +
+          (rules.length === incoming.length ? "" : ` (${incoming.length - rules.length} geçersiz atlandı)`),
+      );
+      sendJson(res, 200, { rules: options.listening.snapshot() });
       return;
     }
 

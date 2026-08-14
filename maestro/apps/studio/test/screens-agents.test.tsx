@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { EvalScreen } from "../src/screens/Eval.tsx";
 import { VariantsScreen } from "../src/screens/Variants.tsx";
-import { parseKnowledge } from "../src/screens/Variants.tsx";
+import { parseKnowledge } from "../src/screens/variants/knowledge.ts";
 import { VariantScreen } from "../src/screens/Variant.tsx";
 import { ADMIN, VIEWER, renderScreen, stubFetch } from "./harness.tsx";
 
@@ -44,7 +44,7 @@ describe("variants screen", () => {
     const { fetchImpl } = stubFetch([VARIANTS_LIST]);
     renderScreen(<VariantsScreen />, { fetchImpl, session: VIEWER });
     await screen.findByText("analyst-web");
-    expect(screen.queryByRole("button", { name: "Variant ekle" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ajan tanımı ekle" })).not.toBeInTheDocument();
   });
 
   it("creates a variant, posting the typed fields (never a forged author)", async () => {
@@ -59,14 +59,14 @@ describe("variants screen", () => {
     ]);
     renderScreen(<VariantsScreen />, { fetchImpl, session: ADMIN });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Variant ekle" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Ajan tanımı ekle" }));
     const dialog = await screen.findByRole("dialog");
 
     await userEvent.type(within(dialog).getByLabelText("Variant kimliği"), "engineer-mobile");
     await userEvent.type(within(dialog).getByLabelText("Platform"), "-ios");
     await userEvent.clear(within(dialog).getByLabelText("Model"));
     await userEvent.type(within(dialog).getByLabelText("Model"), "claude-opus-5");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Variant ekle" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Ajan tanımı ekle" }));
 
     await waitFor(() => {
       const post = calls.find((call) => call.method === "POST");

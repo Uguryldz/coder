@@ -1,21 +1,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { APPROVAL_GATE_STEPS, type StepId, type WorkflowRunState } from "@maestro/contracts";
+import { type StepId } from "@maestro/contracts";
 import { messageKeyOf } from "../../api/errors.ts";
 import { useAuth } from "../../auth/AuthProvider.tsx";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Input, Modal, useToast } from "../../ui/index.ts";
 import { mayDecide, useGateDecision } from "./signals.ts";
-
-/** Is this run parked on a human approval gate right now? */
-export function isApprovalGate(run: Pick<WorkflowRunState, "status" | "step">): boolean {
-  return run.status === "gate" && (APPROVAL_GATE_STEPS as readonly string[]).includes(run.step);
-}
-
-/** Step 2b is a clarification WAIT, not an approval — different control set. */
-export function isClarificationWait(run: Pick<WorkflowRunState, "status" | "step">): boolean {
-  return run.status === "gate" && run.step === "2b";
-}
 
 export interface GatePanelProps {
   readonly ticket: string;

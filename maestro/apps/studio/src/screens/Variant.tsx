@@ -12,7 +12,7 @@ import { Badge, Button, Card, EmptyState, Input, Modal, TabPanel, Table, Tabs, u
 import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 import { TextArea } from "./shared/TextArea.tsx";
-import { parseKnowledge } from "./Variants.tsx";
+import { parseKnowledge } from "./variants/knowledge.ts";
 
 /**
  * Screen: variant — one agent variant in detail (persona, knowledge, versions).

@@ -4,7 +4,8 @@ import { GATES_BY_RISK, type ApplicationRecord, type WorkflowRunState } from "@m
 import { useI18n, useT } from "../../i18n/I18nProvider.tsx";
 import { Badge, Card, riskTone, workModeTone } from "../../ui/index.ts";
 import { useEnumLabel } from "../common/label.ts";
-import { GatePanel, isApprovalGate, isClarificationWait } from "../shared/GatePanel.tsx";
+import { GatePanel } from "../shared/GatePanel.tsx";
+import { isApprovalGate, isClarificationWait } from "../shared/gate-utils.ts";
 import { ageLabel, dateTimeLabel } from "../shared/format.ts";
 import { RunStatusCell } from "../Tickets.tsx";
 import { projectKeyOf, type RunDetail } from "../shared/runs.ts";

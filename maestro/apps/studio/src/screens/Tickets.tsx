@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { messageKeyOf } from "../api/errors.ts";
 import { useI18n, useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Select, Table, riskTone, runStatusTone, workModeTone } from "../ui/index.ts";
+import { Badge, Card, Input, Select, Table, riskTone, runStatusTone, workModeTone } from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
 import { ageLabel, dateTimeLabel } from "./shared/format.ts";
 import { projectKeyOf, useRuns, type RunRow, type RunStatus } from "./shared/runs.ts";
+import { RUN_STATUS_PREFIX } from "./tickets/status.ts";
 import "./shared/screens.css";
 
 /**
@@ -53,15 +54,34 @@ const FILTERS = [
 type FilterId = (typeof FILTERS)[number]["id"];
 
 export function TicketsScreen(): ReactNode {
+  return (
+    <div className="screen-stack">
+      <TicketsList />
+    </div>
+  );
+}
+
+/**
+ * The filterable run list, split out of `TicketsScreen` so the Panel can show
+ * it inline — the two used to be separate menu rows over the SAME `/studio/runs`
+ * data (the Panel was literally the first-five summary of this list). Gathering
+ * them means one page: summary on top, the full filterable list below.
+ */
+export function TicketsList(): ReactNode {
   const t = useT();
   const { locale } = useI18n();
   const navigate = useNavigate();
   const enumLabel = useEnumLabel();
   const [filter, setFilter] = useState<FilterId>("all");
   const [project, setProject] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
 
-  const { data, isPending, error, refetch } = useRuns(200);
+  const RUN_PAGE = 500;
+  const { data, isPending, error, refetch } = useRuns(RUN_PAGE);
   const runs = useMemo(() => data?.runs ?? [], [data]);
+  // The list is capped at one page; if the cap is hit there may be more the
+  // server did not send. Say so plainly instead of implying this is everything.
+  const capped = runs.length >= RUN_PAGE;
 
   const projects = useMemo(
     () => [...new Set(runs.map((run) => projectKeyOf(run.ticketKey)))].sort(),
@@ -78,10 +98,16 @@ export function TicketsScreen(): ReactNode {
 
   const rows = useMemo(() => {
     const active = FILTERS.find((entry) => entry.id === filter) ?? FILTERS[0];
+    const q = search.trim().toLowerCase();
     return runs.filter(
-      (run) => active.match(run) && (project === "all" || projectKeyOf(run.ticketKey) === project),
+      (run) =>
+        active.match(run) &&
+        (project === "all" || projectKeyOf(run.ticketKey) === project) &&
+        (q === "" ||
+          run.ticketKey.toLowerCase().includes(q) ||
+          (run.title ?? "").toLowerCase().includes(q)),
     );
-  }, [runs, filter, project]);
+  }, [runs, filter, project, search]);
 
   const columns: readonly Column<RunRow>[] = [
     {
@@ -146,7 +172,7 @@ export function TicketsScreen(): ReactNode {
   ];
 
   return (
-    <div className="screen-stack">
+    <>
       <Card>
         <div className="screen-filters">
           {FILTERS.map((entry) => (
@@ -161,6 +187,12 @@ export function TicketsScreen(): ReactNode {
             </button>
           ))}
           <span style={{ flex: 1 }} />
+          <Input
+            label={t("tickets.filter.search")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("tickets.filter.search_ph")}
+          />
           <Select
             label={t("tickets.filter.project")}
             value={project}
@@ -171,6 +203,11 @@ export function TicketsScreen(): ReactNode {
             ]}
           />
         </div>
+        {capped && (
+          <p className="screen-note" style={{ marginTop: 8 }}>
+            {t("tickets.capped", { n: String(RUN_PAGE) })}
+          </p>
+        )}
       </Card>
 
       <Card padded={false}>
@@ -197,22 +234,8 @@ export function TicketsScreen(): ReactNode {
           {t("action.refresh")}
         </button>
       </p>
-    </div>
+    </>
   );
-}
-
-/**
- * Catalog key prefix for a workflow status.
- *
- * Exported so every screen renders the same word for the same status, and so
- * callers go through `useEnumLabel`: `WorkflowRunStatus` is a union in
- * TypeScript but a plain string on the wire, and an eighth status would
- * otherwise throw out of `t()` and blank the whole ticket list.
- */
-export const RUN_STATUS_PREFIX = "run.status";
-
-export function statusKey(status: RunStatus): string {
-  return `${RUN_STATUS_PREFIX}.${status}`;
 }
 
 /**

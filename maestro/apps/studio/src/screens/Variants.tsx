@@ -12,6 +12,7 @@ import { Badge, Button, Card, Input, Modal, Select, Table, useToast } from "../u
 import { TextArea } from "./shared/TextArea.tsx";
 import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
+import { parseKnowledge } from "./variants/knowledge.ts";
 
 /**
  * Screen: variants — the agent variant catalogue (7 roles × platform).
@@ -259,14 +260,4 @@ function CreateVariantModal({
       />
     </Modal>
   );
-}
-
-/** Knowledge refs are one file per line (or comma-separated), trimmed and deduped. */
-export function parseKnowledge(raw: string): string[] {
-  const seen = new Set<string>();
-  for (const token of raw.split(/[\n,]/)) {
-    const trimmed = token.trim();
-    if (trimmed !== "") seen.add(trimmed);
-  }
-  return [...seen];
 }

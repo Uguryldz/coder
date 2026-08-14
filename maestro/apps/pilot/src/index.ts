@@ -10,3 +10,11 @@
 export { bootPilot } from "./boot.js";
 export type { BootOptions, PilotStage } from "./boot.js";
 export type { VariantModelReader, ResolvedVariantModel } from "./variant.js";
+export type { ListeningRule, FlowType } from "./listening.js";
+
+// The canonical nine step definitions live in the side-effect-free `./state`
+// subpath (see package.json exports) so a consumer — Studio's agent-pipeline map
+// — can prove its step ids line up with the pilot's without pulling in the
+// barrel's boot/server. Re-exported here too for launchers already on the barrel.
+export { STEP_DEFINITIONS } from "./state.js";
+export type { PilotStep, StepState } from "./state.js";

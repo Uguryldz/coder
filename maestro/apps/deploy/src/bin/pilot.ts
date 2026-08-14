@@ -1,5 +1,8 @@
-import { bootPilot, type VariantModelReader } from "@maestro/pilot";
+import { AuditChain } from "@maestro/audit";
+import { bootPilot, type ListeningRule, type VariantModelReader } from "@maestro/pilot";
 import { createDb } from "@maestro/db";
+import { postgresChainLock, PrismaAuditStore } from "../stores/audit.js";
+import { prismaTransactionRunner } from "../stores/sql.js";
 import { PrismaVariantModelReader } from "../stores/variant-model-reader.js";
 import { fail, install, isEntrypoint } from "./lifecycle.js";
 
@@ -39,10 +42,40 @@ import { fail, install, isEntrypoint } from "./lifecycle.js";
  * reader is built over) without opening a connection; the real caller passes the
  * real `createDb`, whose construction is lazy (no query until first use).
  */
-export function variantReaderFromEnv(
+export interface PilotDbWiring {
+  variantReader: VariantModelReader;
+  /**
+   * The pilot's audit chain over the REAL `AuditLog` table (M33), with the
+   * cross-process advisory lock — the same chain the BFF writes. Wiring it here
+   * closes the worst persistence gap: without it the pilot's trail lived in an
+   * `InMemoryAuditStore` and every restart erased the regulator's history.
+   */
+  audit: AuditChain;
+  /**
+   * Fire-and-forget writer landing every completed LLM call in the `LlmCall`
+   * table, so the Studio cost/PII screens report the pilot's REAL spend. A DB
+   * hiccup is logged and swallowed — reporting must never fail a run.
+   */
+  onLlmCall: (log: import("@maestro/contracts").LlmCallLog) => void;
+  /**
+   * Read the pilot's boot seeds from the DB: the listening rules and the
+   * ENABLED "öğren" notes. Without this, a pilot restart silently forgot both
+   * until someone re-saved them in Studio (the mirror is push-only).
+   */
+  loadSeeds: () => Promise<{
+    listening: ListeningRule[];
+    guidance: { title: string; content: string }[];
+  }>;
+}
+
+const MATCH_KINDS = new Set(["status", "issuetype"]);
+const FLOW_TYPES = new Set(["analiz", "duzeltme", "gelistirme"]);
+
+/** Build ALL of the pilot's DB-backed wiring from one client (one URL, one pool). */
+export function pilotWiringFromEnv(
   env: Record<string, string | undefined>,
   makeDb: typeof createDb = createDb,
-): VariantModelReader {
+): PilotDbWiring {
   const url = env["DATABASE_URL"]?.trim();
   if (url === undefined || url === "") {
     throw new Error(
@@ -51,13 +84,79 @@ export function variantReaderFromEnv(
     );
   }
   const db = makeDb(url);
-  return new PrismaVariantModelReader(db.variantVersion);
+  return {
+    variantReader: new PrismaVariantModelReader(db.variantVersion),
+    audit: new AuditChain({
+      store: new PrismaAuditStore(db.auditLog),
+      lock: postgresChainLock(prismaTransactionRunner(db)),
+    }),
+    onLlmCall: (log) => {
+      void db.llmCall
+        .create({
+          data: {
+            at: new Date(log.at),
+            runId: log.runId,
+            role: log.role,
+            variantId: log.variantId,
+            driver: log.driver,
+            model: log.model,
+            tokensIn: log.tokensIn,
+            tokensOut: log.tokensOut,
+            cachePct: log.cachePct,
+            usd: log.usd,
+            dataClass: log.dataClass,
+          },
+        })
+        .catch((error: unknown) => {
+          console.warn(`[pilot] LlmCall DB yazımı başarısız (raporlama): ${String(error)}`);
+        });
+    },
+    loadSeeds: async () => {
+      const [rules, notes] = await Promise.all([
+        db.listeningRule.findMany({ orderBy: { priority: "asc" } }),
+        db.analysisGuidance.findMany({ where: { enabled: true }, orderBy: { updatedAt: "asc" } }),
+      ]);
+      return {
+        // Defensive: the DB stores matchKind/flowType as free VarChar; only
+        // rows the pilot's classifier understands are seeded.
+        listening: rules
+          .filter((r) => MATCH_KINDS.has(r.matchKind) && FLOW_TYPES.has(r.flowType))
+          .map((r) => ({
+            projectKey: r.projectKey,
+            assigneeAccountId: r.assigneeAccountId,
+            matchKind: r.matchKind as ListeningRule["matchKind"],
+            matchValue: r.matchValue,
+            flowType: r.flowType as ListeningRule["flowType"],
+            priority: r.priority,
+            enabled: r.enabled,
+          })),
+        guidance: notes.map((n) => ({ title: n.title, content: n.content })),
+      };
+    },
+  };
+}
+
+/** Kept for callers/tests that only need the reader; delegates to the wiring. */
+export function variantReaderFromEnv(
+  env: Record<string, string | undefined>,
+  makeDb: typeof createDb = createDb,
+): VariantModelReader {
+  return pilotWiringFromEnv(env, makeDb).variantReader;
 }
 
 async function main(): Promise<void> {
-  const variantReader = variantReaderFromEnv(process.env);
+  const { variantReader, audit, onLlmCall, loadSeeds } = pilotWiringFromEnv(process.env);
+  // Boot seeds from the DB (Faz 1): rules + enabled notes survive a restart.
+  const seeds = await loadSeeds();
 
-  const stage = await bootPilot({ startDiscovery: true, variantReader });
+  const stage = await bootPilot({
+    startDiscovery: true,
+    variantReader,
+    audit,
+    onLlmCall,
+    listening: seeds.listening,
+    guidance: seeds.guidance,
+  });
   process.stdout.write(
     [
       "",

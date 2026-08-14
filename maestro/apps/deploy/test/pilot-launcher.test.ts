@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Db, createDb } from "@maestro/db";
-import { variantReaderFromEnv } from "../src/bin/pilot.js";
+import { pilotWiringFromEnv, variantReaderFromEnv } from "../src/bin/pilot.js";
 
 /**
  * The LIVE pilot launcher's DB-first wiring (`apps/deploy/src/bin/pilot.ts`).
@@ -67,5 +67,43 @@ describe("variantReaderFromEnv", () => {
       variantReaderFromEnv({ DATABASE_URL: "   " }, makeDb as unknown as typeof createDb),
     ).toThrow(/DATABASE_URL is required/);
     expect(makeDb).not.toHaveBeenCalled();
+  });
+});
+
+describe("pilotWiringFromEnv — Postgres-backed audit chain", () => {
+  it("appends the pilot's audit events to the REAL AuditLog table (not memory)", async () => {
+    // A fake db with just enough surface: the auditLog delegate captures the
+    // INSERT, and $transaction runs the advisory-lock callback inline.
+    const created: unknown[] = [];
+    const makeDb = ((_url: string) =>
+      ({
+        variantVersion: { findMany: () => Promise.resolve([]) },
+        auditLog: {
+          findFirst: () => Promise.resolve(null), // empty chain → genesis
+          findMany: () => Promise.resolve([]),
+          create: (args: { data: unknown }) => {
+            created.push(args.data);
+            return Promise.resolve({});
+          },
+        },
+        $transaction: <T,>(fn: (tx: unknown) => Promise<T>) =>
+          fn({ $queryRawUnsafe: () => Promise.resolve([]) }),
+      }) as unknown as Db) as typeof createDb;
+
+    const wiring = pilotWiringFromEnv(
+      { DATABASE_URL: "postgresql://maestro:pw@localhost:55432/maestro" },
+      makeDb,
+    );
+    await wiring.audit.append({
+      actor: "maestro-runner",
+      action: "RUN_STARTED",
+      subject: "OPS-1",
+      meta: {},
+    });
+
+    // The event landed in the Postgres delegate — a restart can no longer
+    // erase the regulator's trail.
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ seq: 1n, actor: "maestro-runner", action: "RUN_STARTED" });
   });
 });

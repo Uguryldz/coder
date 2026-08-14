@@ -102,6 +102,20 @@ export interface BootOptions {
   autoMerge?: boolean;
   /** Seed the knowledge library ("öğren") at boot — the analyst + engineer read it. */
   guidance?: readonly { title: string; content: string }[];
+  /**
+   * Seed the listening rules at boot. The composition root reads the DB's
+   * `ListeningRule` rows and passes them here, so a pilot RESTART no longer
+   * silently forgets every rule until someone re-saves in Studio (the mirror
+   * push still applies later edits live).
+   */
+  listening?: readonly import("./listening.js").ListeningRule[];
+  /**
+   * Called for every LLM call the gateway completes, IN ADDITION to the RAM
+   * counters. The composition root passes a Postgres writer here so cost/PII
+   * reporting sees the pilot's real spend; absent = counters only (offline
+   * pilot). Must never throw — a reporting failure must not fail a run.
+   */
+  onLlmCall?: (log: import("@maestro/contracts").LlmCallLog) => void;
   /** Gate comment poll interval (ms) — tests pass a small value. */
   commandPollMs?: number;
   /** Sleep injected into the gate poller so tests don't wait on real timers. */
@@ -244,7 +258,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   // proxy. Empty at boot — no rule means discovery uses the default JQL and every
   // ticket runs the old way, so the pilot behaves exactly as before until a rule
   // is added.
-  const listening = new ListeningRulesStore();
+  const listening = new ListeningRulesStore(options.listening ?? []);
 
   // The analysis-guidance notes ("öğren"). Empty at boot in production; the BFF
   // mirrors the enabled DB notes over /api/guidance, and both the analyst AND
@@ -268,6 +282,14 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
         state.tokens += log.tokensIn + log.tokensOut;
       });
       store.log("dim", `→ model ${log.driver}/${log.model} · rol ${log.role} · ${log.tokensIn}+${log.tokensOut} token`);
+      // Persist the call when a writer is wired (Faz 1): the cost/PII screens
+      // read the LlmCall table, and without this the pilot's real spend never
+      // reached it. Guarded — reporting must never fail a run.
+      try {
+        options.onLlmCall?.(log);
+      } catch {
+        store.log("dim", "→ llm çağrı kaydı yazılamadı (raporlama) — akış etkilenmedi");
+      }
     },
     onMasked: (event) => {
       if (event.counts.fields === 0) return;

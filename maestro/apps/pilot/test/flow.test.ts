@@ -339,6 +339,9 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
       buildDelayMs: 30,
       ciTimeoutMs: 15_000,
       commandPollMs: 20,
+      // Seed the knowledge library so this run proves uploaded house rules reach
+      // BOTH the analyst and the engineer (Adım 1: belge → mühendis ajan).
+      guidance: [{ title: "Kodlama standardı", content: "Parametreli sorgu kullan." }],
     });
     // Turn on the persistent sandbox root FROM THE SETTINGS STORE (as the UI
     // would), before any run: the workspace now opens <root>/OPS-6 and disposes
@@ -464,5 +467,16 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
     expect(sent).not.toContain(PII_EMAIL);
     expect(sent).not.toContain(PII_PHONE);
     expect(stage.store.snapshot().maskedFields).toBeGreaterThan(0);
+  });
+
+  it("kurum bilgisi (öğren) hem analiste hem MÜHENDİSE ulaştı", () => {
+    // The uploaded coding standard must appear in the ENGINEER call, not only
+    // the analyst — so house rules bind the written code (Adım 1).
+    const engineerCalls = outbound.filter((b) => b.includes("Schema name: CodeDraft"));
+    expect(engineerCalls.length).toBeGreaterThan(0);
+    expect(engineerCalls.join("\n")).toContain("Parametreli sorgu kullan");
+    // And still reaches the analyst, as before.
+    const analystCalls = outbound.filter((b) => b.includes("Schema name: AnalysisDoc"));
+    expect(analystCalls.join("\n")).toContain("Parametreli sorgu kullan");
   });
 });

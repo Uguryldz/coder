@@ -1085,6 +1085,18 @@ export class PilotRun {
     let pushCredential: PushCredential | null = null;
     if (github) pushCredential = await this.cloneForGithub(branch, baseBranch);
 
+    // The knowledge library ("öğren"): the operator's uploaded coding standards,
+    // patterns and house rules. These already shape the ANALYSIS; feeding them
+    // to the ENGINEER too means the WRITTEN CODE follows the same house rules —
+    // "use parameterised queries", "prefer this pattern" — instead of the model
+    // guessing the corporate style each time. Empty when nothing is uploaded, so
+    // the engineer behaves exactly as before on a bare project.
+    const guidanceNotes = this.deps.guidance?.snapshot() ?? [];
+    const guidanceRules = guidanceNotes.map((g) => `Kurum bilgisi — ${g.title}: ${g.content}`);
+    if (guidanceRules.length > 0) {
+      store.log("info", `📚 mühendis ${guidanceRules.length} kurum bilgi/standart notunu dikkate alıyor.`);
+    }
+
     // Seed with the reviewer's notes on a REVISE round, so attempt 1 already
     // addresses them (the same `oncekiHata` channel the self-heal loop uses).
     let feedback: string | null = reviewFeedback;
@@ -1117,6 +1129,10 @@ export class PilotRun {
           // a migration/flag/config/dependency ticket adds its specific rules
           // (idempotent + rollback, default-OFF, safe defaults, pinned version).
           ...this.changeTypes.flatMap((c) => c.rules),
+          // The corporate knowledge library ("öğren"): the same notes the analyst
+          // leans on, now binding the engineer's code to the house rules. Empty
+          // when nothing is uploaded.
+          ...guidanceRules,
         ],
         ...(feedback === null ? {} : { oncekiHata: feedback }),
         ...(previousCode === null ? {} : { oncekiKod: previousCode }),

@@ -100,6 +100,8 @@ export interface BootOptions {
   ciTimeoutMs?: number;
   /** Arm auto-merge at boot (B14). Defaults to the env/settings value (off). */
   autoMerge?: boolean;
+  /** Seed the knowledge library ("öğren") at boot — the analyst + engineer read it. */
+  guidance?: readonly { title: string; content: string }[];
   /** Gate comment poll interval (ms) — tests pass a small value. */
   commandPollMs?: number;
   /** Sleep injected into the gate poller so tests don't wait on real timers. */
@@ -224,10 +226,12 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   // is added.
   const listening = new ListeningRulesStore();
 
-  // The analysis-guidance notes ("öğren"). Empty at boot; the BFF mirrors the
-  // enabled DB notes over /api/guidance, and the analyst reads them so uploaded
-  // knowledge shapes the next analysis. Empty = analyst leans only on the ticket.
-  const guidance = new GuidanceStore();
+  // The analysis-guidance notes ("öğren"). Empty at boot in production; the BFF
+  // mirrors the enabled DB notes over /api/guidance, and both the analyst AND
+  // the engineer read them so uploaded knowledge shapes the next analysis and
+  // the code it produces. Empty = the roles lean only on the ticket. A test may
+  // seed it directly to exercise the knowledge path.
+  const guidance = new GuidanceStore(options.guidance ?? []);
 
   const store = new StateStore(
     // The displayed model is the analyst's — the role that runs first and is

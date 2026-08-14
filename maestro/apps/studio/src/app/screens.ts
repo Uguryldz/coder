@@ -11,7 +11,15 @@
  * test/i18n.test.ts asserts that for the whole table.
  */
 
-export type NavGroup = "monitor" | "work" | "governance" | "admin";
+/**
+ * The five operator-facing groups, ordered by how a manager actually works:
+ * start (daily work) → watch (what is happening) → compliance → AI settings →
+ * system. This replaces the old monitor/work/governance/admin split, which
+ * mixed a manager's daily tasks with engineer-only tooling. Nothing is hidden —
+ * every page still lives in a group; the grouping just tells a first-time (even
+ * junior) admin where each thing belongs.
+ */
+export type NavGroup = "start" | "watch" | "compliance" | "ai" | "system";
 
 export interface ScreenDef {
   /** Matches the mock's view id; also the stub component's file name, lowercased. */
@@ -33,13 +41,14 @@ export interface ScreenDef {
   readonly roles?: readonly string[];
 }
 
-export const NAV_GROUPS: readonly NavGroup[] = ["monitor", "work", "governance", "admin"];
+export const NAV_GROUPS: readonly NavGroup[] = ["start", "watch", "compliance", "ai", "system"];
 
 export const NAV_GROUP_KEY: Readonly<Record<NavGroup, string>> = {
-  monitor: "nav.group.monitor",
-  work: "nav.group.work",
-  governance: "nav.group.governance",
-  admin: "nav.group.admin",
+  start: "nav.group.start",
+  watch: "nav.group.watch",
+  compliance: "nav.group.compliance",
+  ai: "nav.group.ai",
+  system: "nav.group.system",
 };
 
 // Sidebar entries carry `navKey` + `group`; a screen WITHOUT them is still
@@ -48,44 +57,46 @@ export const NAV_GROUP_KEY: Readonly<Record<NavGroup, string>> = {
 // mcp) are hidden here on purpose — they were gallery pages, not operator tools.
 // Four groups, ordered by how an operator actually uses the platform.
 export const SCREENS: readonly ScreenDef[] = [
-  // ── İZLEME ──────────────────────────────────────────────────────────────
-  { id: "dash", path: "dash", titleKey: "screen.dash.title", navKey: "nav.dash", group: "monitor", icon: "▦" },
-  // The pilot's real-Jira flow, driven FROM Studio (Dalga D). Proxied to the
-  // pilot engine via the BFF; start/settings are operator-gated there and the
-  // nav mirrors that so a viewer is not sent to a screen that can only 403.
-  { id: "pilot", path: "pilot", titleKey: "screen.pilot.title", navKey: "nav.pilot", group: "monitor", icon: "🎥" },
-  { id: "tickets", path: "tickets", titleKey: "screen.tickets.title", navKey: "nav.tickets", group: "monitor", icon: "≡" },
-  // The live OPS Jira workflow drawn as SVG (Dalga D). Read-only monitor view:
-  // it highlights where a selected ticket sits, so it belongs beside tickets.
-  { id: "flow", path: "flow", titleKey: "screen.flow.title", navKey: "nav.flow", group: "monitor", icon: "🔀" },
-  { id: "help", path: "help", titleKey: "screen.help.title", navKey: "nav.help", group: "monitor", icon: "📖" },
+  // ── ① BAŞLA / İŞİM — a manager's daily work, in the order they do it ──────
+  { id: "dash", path: "dash", titleKey: "screen.dash.title", navKey: "nav.dash", group: "start", icon: "▦" },
+  { id: "projects", path: "projects", titleKey: "screen.projects.title", navKey: "nav.projects", group: "start", icon: "⇄" },
+  { id: "template", path: "template", titleKey: "screen.template.title", navKey: "nav.template", group: "start", icon: "📋" },
+  { id: "doctemplate", path: "doctemplate", titleKey: "screen.doctemplate.title", navKey: "nav.doctemplate", group: "start", icon: "📄" },
+  { id: "notify", path: "notify", titleKey: "screen.notify.title", navKey: "nav.notify", group: "start", icon: "🔔" },
 
-  // ── ÇALIŞMA ─────────────────────────────────────────────────────────────
-  { id: "runners", path: "runners", titleKey: "screen.runners.title", navKey: "nav.runners", group: "work", icon: "🖥" },
-  { id: "sandbox", path: "sandbox", titleKey: "screen.sandbox.title", navKey: "nav.sandbox", group: "work", icon: "▶" },
-  { id: "knowledge", path: "knowledge", titleKey: "screen.knowledge.title", navKey: "nav.knowledge", group: "work", icon: "📚" },
-  { id: "variants", path: "variants", titleKey: "screen.variants.title", navKey: "nav.variants", group: "work", icon: "🤖" },
-  { id: "eval", path: "eval", titleKey: "screen.eval.title", navKey: "nav.eval", group: "work", icon: "🎯" },
-  { id: "template", path: "template", titleKey: "screen.template.title", navKey: "nav.template", group: "work", icon: "📋" },
-  { id: "doctemplate", path: "doctemplate", titleKey: "screen.doctemplate.title", navKey: "nav.doctemplate", group: "work", icon: "📄" },
+  // ── ② İZLE — what is happening right now (renamed off "Pilot"/"Ajan") ─────
+  // "tickets" (İş akışları) merged into the Panel — Dash renders TicketsList and
+  // /tickets redirects to /dash (routes.tsx). No SCREENS row: it is not a page of
+  // its own any more, just a redirect.
+  // Canlı akış = Pilot (list) + Flow (map) as two tabs of one page (WatchScreen).
+  // /flow redirects to /pilot?view=map (routes.tsx); no separate SCREENS row.
+  { id: "pilot", path: "pilot", titleKey: "screen.pilot.title", navKey: "nav.pilot", group: "watch", icon: "🎥" },
 
-  // ── YÖNETİŞİM (denetim & kanıt) ─────────────────────────────────────────
-  { id: "audit", path: "audit", titleKey: "screen.audit.title", navKey: "nav.audit", group: "governance", icon: "🔒" },
-  { id: "evidence", path: "evidence", titleKey: "screen.evidence.title", navKey: "nav.evidence", group: "governance", icon: "📦" },
-  { id: "security", path: "security", titleKey: "screen.security.title", navKey: "nav.security", group: "governance", icon: "🛡" },
-  { id: "cost", path: "cost", titleKey: "screen.cost.title", navKey: "nav.cost", group: "governance", icon: "₺" },
-  { id: "llm", path: "llm", titleKey: "screen.llm.title", navKey: "nav.llm", group: "governance", icon: "⚡" },
-  { id: "pii", path: "pii", titleKey: "screen.pii.title", navKey: "nav.pii", group: "governance", icon: "🔏" },
+  // ── ③ DENETİM & UYUM — audit / compliance (jargon → Turkish) ─────────────
+  { id: "audit", path: "audit", titleKey: "screen.audit.title", navKey: "nav.audit", group: "compliance", icon: "🔒" },
+  { id: "evidence", path: "evidence", titleKey: "screen.evidence.title", navKey: "nav.evidence", group: "compliance", icon: "📦" },
+  { id: "pii", path: "pii", titleKey: "screen.pii.title", navKey: "nav.pii", group: "compliance", icon: "🔏" },
+  // Cost + LLM Gateway read the same two endpoints — now one page (AiUsageScreen)
+  // with a "Maliyet" and a "Trafik" tab. /llm redirects to /cost?view=traffic.
+  { id: "cost", path: "cost", titleKey: "screen.aiusage.title", navKey: "nav.aiusage", group: "compliance", icon: "₺" },
 
-  // ── YÖNETİM (kurulum & ayar) ────────────────────────────────────────────
-  { id: "routing", path: "routing", titleKey: "screen.routing.title", navKey: "nav.routing", group: "admin", icon: "⇄" },
-  { id: "onboard", path: "onboard", titleKey: "screen.onboard.title", navKey: "nav.onboard", group: "admin", icon: "➕" },
-  { id: "notify", path: "notify", titleKey: "screen.notify.title", navKey: "nav.notify", group: "admin", icon: "🔔" },
-  // /params is role-gated in the BFF (admin, tech-lead); mirror that in the nav.
-  { id: "params", path: "params", titleKey: "screen.params.title", navKey: "nav.params", group: "admin", icon: "🎛", roles: ["admin", "tech-lead"] },
-  { id: "users", path: "users", titleKey: "screen.users.title", navKey: "nav.users", group: "admin", icon: "👥", roles: ["admin"] },
-  { id: "settings", path: "settings", titleKey: "screen.settings.title", navKey: "nav.settings", group: "admin", icon: "⚙" },
-  { id: "health", path: "health", titleKey: "screen.health.title", navKey: "nav.health", group: "admin", icon: "💚" },
+  // ── ④ YAPAY ZEKÂ AYARLARI — the manager's own AI config, simplified ───────
+  { id: "variants", path: "variants", titleKey: "screen.variants.title", navKey: "nav.variants", group: "ai", icon: "🤖" },
+  { id: "knowledge", path: "knowledge", titleKey: "screen.knowledge.title", navKey: "nav.knowledge", group: "ai", icon: "📚" },
+  { id: "eval", path: "eval", titleKey: "screen.eval.title", navKey: "nav.eval", group: "ai", icon: "🎯" },
+  { id: "security", path: "security", titleKey: "screen.security.title", navKey: "nav.security", group: "ai", icon: "🛡" },
+
+  // ── ⑤ SİSTEM — setup / infrastructure, rarely touched but reachable ──────
+  { id: "users", path: "users", titleKey: "screen.users.title", navKey: "nav.users", group: "system", icon: "👥", roles: ["admin"] },
+  { id: "settings", path: "settings", titleKey: "screen.settings.title", navKey: "nav.settings", group: "system", icon: "⚙" },
+  { id: "params", path: "params", titleKey: "screen.params.title", navKey: "nav.params", group: "system", icon: "🎛", roles: ["admin", "tech-lead"] },
+  { id: "health", path: "health", titleKey: "screen.health.title", navKey: "nav.health", group: "system", icon: "💚" },
+  { id: "runners", path: "runners", titleKey: "screen.runners.title", navKey: "nav.runners", group: "system", icon: "🖥" },
+  { id: "sandbox", path: "sandbox", titleKey: "screen.sandbox.title", navKey: "nav.sandbox", group: "system", icon: "▶" },
+
+  // Help moved out of the sidebar groups — it is documentation, reachable via a
+  // dedicated link; keeping it as a routable non-grouped screen.
+  { id: "help", path: "help", titleKey: "screen.help.title", navKey: "nav.help", group: "start", icon: "📖" },
 
   // ── Sidebar'da GÖRÜNMEZ (rota olarak erişilir) ──────────────────────────
   // detail: bir tablo satırından açılır. Diğerleri maket-galeri artığı: statik

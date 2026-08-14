@@ -25,10 +25,14 @@
  * never needs a live Postgres to unit-test.
  */
 
-/** A `VariantVersion` row, as the reader needs it: just the model number. */
+/**
+ * A `VariantVersion` row, as the reader needs it: the model plus the config
+ * blob (which carries the persona overlay an admin wrote in Studio).
+ */
 export interface VariantVersionModelRow {
   version: number;
   model: string;
+  configJson: unknown;
 }
 
 /**
@@ -40,12 +44,31 @@ export interface VariantVersionModelDelegate {
   findMany(args: {
     where: { variantId: string };
     orderBy: { version: "desc" };
-    select: { version: true; model: true };
+    select: { version: true; model: true; configJson: true };
   }): Promise<VariantVersionModelRow[]>;
+}
+
+/** Pull the persona string out of a version's config blob, defensively. */
+function personaOf(configJson: unknown): string | null {
+  if (typeof configJson !== "object" || configJson === null) return null;
+  const persona = (configJson as { persona?: unknown }).persona;
+  if (typeof persona !== "string") return null;
+  const trimmed = persona.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 export class PrismaVariantModelReader {
   constructor(private readonly versions: VariantVersionModelDelegate) {}
+
+  private activeRow(variantId: string): Promise<VariantVersionModelRow | undefined> {
+    return this.versions
+      .findMany({
+        where: { variantId },
+        orderBy: { version: "desc" },
+        select: { version: true, model: true, configJson: true },
+      })
+      .then((rows) => rows[0]);
+  }
 
   /**
    * The active (newest published) version's model for `variantId`, or `null`
@@ -56,14 +79,21 @@ export class PrismaVariantModelReader {
    * is misconfigured.
    */
   async activeModel(variantId: string): Promise<string | null> {
-    const rows = await this.versions.findMany({
-      where: { variantId },
-      orderBy: { version: "desc" },
-      select: { version: true, model: true },
-    });
-    const active = rows[0];
+    const active = await this.activeRow(variantId);
     if (active === undefined) return null;
     const model = active.model.trim();
     return model === "" ? null : model;
+  }
+
+  /**
+   * The active version's PERSONA overlay for `variantId` — the instruction an
+   * admin typed in Studio, stored in `configJson.persona`. `null` when there is
+   * no such variant, no published version, or no persona set. Satisfies the
+   * pilot's optional `VariantModelReader.activePersona`.
+   */
+  async activePersona(variantId: string): Promise<string | null> {
+    const active = await this.activeRow(variantId);
+    if (active === undefined) return null;
+    return personaOf(active.configJson);
   }
 }

@@ -31,6 +31,15 @@ export interface VariantModelReader {
    * case and must propagate, not be turned into env silently.
    */
   activeModel(variantId: string): Promise<string | null>;
+  /**
+   * The active version's PERSONA overlay for `variantId` — the instruction text
+   * an admin wrote in Studio for this agent. OPTIONAL: a reader that only
+   * resolves the model omits it, and the pilot then runs each role on the
+   * corporate default persona (agent-roles) exactly as before. When present and
+   * non-empty, the pilot injects it so what an admin types in Studio's "Persona"
+   * field actually shapes the analysis and the code. `null`/empty = no overlay.
+   */
+  activePersona?(variantId: string): Promise<string | null>;
 }
 
 /** How a resolution turned out — surfaced so boot can log the honest reason. */

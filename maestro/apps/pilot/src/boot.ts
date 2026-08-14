@@ -207,6 +207,26 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     fallbackModel: envDefaults.model,
   });
 
+  // Persona overlays (what an admin wrote in Studio's "Persona" field for each
+  // agent). Read alongside the model when the reader supports it; absent reader
+  // or absent persona → null, and the role runs on the corporate-default persona
+  // exactly as before. This is what makes editing an agent's persona in Studio
+  // actually change how it analyses / writes code.
+  const readPersona = async (variantId: string): Promise<string | null> => {
+    const reader = options.variantReader;
+    if (reader?.activePersona === undefined) return null;
+    try {
+      const persona = await reader.activePersona(variantId);
+      return persona && persona.trim() !== "" ? persona.trim() : null;
+    } catch {
+      // A persona read that fails must never break boot — the model already
+      // resolved; fall back to the default persona quietly.
+      return null;
+    }
+  };
+  const analystPersona = await readPersona(PILOT_ANALYST_VARIANT);
+  const engineerPersona = await readPersona(PILOT_ENGINEER_VARIANT);
+
   // Runtime settings live here (M71): the UI edits these at runtime and every
   // use site reads from the store. The MODEL is seeded from the DB-resolved
   // analyst variant (not the raw env constant) so the settings panel and the
@@ -302,6 +322,8 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     listening,
     guidance,
     docs,
+    ...(analystPersona !== null ? { analystPersona } : {}),
+    ...(engineerPersona !== null ? { engineerPersona } : {}),
     completePullRequest: (prId) => ado.completePullRequest(prId),
     ...(githubRunConfig ? { github: githubRunConfig } : {}),
     ...(options.workspaceOptions ? { workspaceOptions: options.workspaceOptions } : {}),

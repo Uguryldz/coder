@@ -342,6 +342,18 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
       // Seed the knowledge library so this run proves uploaded house rules reach
       // BOTH the analyst and the engineer (Adım 1: belge → mühendis ajan).
       guidance: [{ title: "Kodlama standardı", content: "Parametreli sorgu kullan." }],
+      // A variant reader that returns a Studio-configured PERSONA for each role,
+      // so this run proves the persona reaches both the analyst and the engineer
+      // (ajana persona bağı).
+      variantReader: {
+        activeModel: () => Promise.resolve(null),
+        activePersona: (variantId: string) =>
+          Promise.resolve(
+            variantId.includes("engineer")
+              ? "MÜHENDİS PERSONA: küçük ve okunur kod yaz."
+              : "ANALİST PERSONA: riskleri önce yaz.",
+          ),
+      },
     });
     // Turn on the persistent sandbox root FROM THE SETTINGS STORE (as the UI
     // would), before any run: the workspace now opens <root>/OPS-6 and disposes
@@ -478,5 +490,14 @@ describe("pilot kısaltılmış akış — canlı Jira'ya karşı (offline stub)
     // And still reaches the analyst, as before.
     const analystCalls = outbound.filter((b) => b.includes("Schema name: AnalysisDoc"));
     expect(analystCalls.join("\n")).toContain("Parametreli sorgu kullan");
+  });
+
+  it("Studio persona'sı analiste ve mühendise ayrı ayrı ulaştı", () => {
+    // The analyst variant's persona reaches the analyst call…
+    const analystCalls = outbound.filter((b) => b.includes("Schema name: AnalysisDoc"));
+    expect(analystCalls.join("\n")).toContain("ANALİST PERSONA: riskleri önce yaz.");
+    // …and the engineer variant's persona reaches the engineer call.
+    const engineerCalls = outbound.filter((b) => b.includes("Schema name: CodeDraft"));
+    expect(engineerCalls.join("\n")).toContain("MÜHENDİS PERSONA: küçük ve okunur kod yaz.");
   });
 });

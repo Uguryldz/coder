@@ -246,6 +246,15 @@ export interface PilotRunDeps {
    * or empty means the analyst leans only on the ticket, as before.
    */
   guidance?: GuidanceStore;
+  /**
+   * The analyst agent's PERSONA overlay — the instruction text an admin wrote in
+   * Studio for the analyst variant (resolved from the DB at boot). When present,
+   * it is injected into the analyst's context so the agent behaves as configured
+   * in Studio, not only on the corporate-default persona. Absent = default.
+   */
+  analystPersona?: string;
+  /** The engineer agent's PERSONA overlay (Studio's engineer-variant persona). */
+  engineerPersona?: string;
   /** Holds the generated .docx/.pdf so the download route can stream them. */
   docs: DocStore;
   /** Stands in for the human who presses "Complete" in the ADO PR screen. */
@@ -602,13 +611,23 @@ export class PilotRun {
     if (guidanceNotes.length > 0) {
       store.log("info", `📚 analiz ${guidanceNotes.length} bilgi kütüphanesi notunu dikkate alıyor.`);
     }
+    // Prepend the analyst's Studio persona (if configured) as the first knowledge
+    // note, so what an admin wrote in the "Persona" field actually steers the
+    // analysis. It leads the list so the model reads the role instruction first.
+    const analystGuidance =
+      this.deps.analystPersona !== undefined
+        ? [{ title: "Ajan talimatı (persona)", content: this.deps.analystPersona }, ...guidanceNotes]
+        : guidanceNotes;
+    if (this.deps.analystPersona !== undefined) {
+      store.log("info", "🧠 analist Studio'da tanımlı persona ile çalışıyor.");
+    }
 
     const analysis = await produceAnalysis({
       llm: this.deps.llm,
       ticket,
       variantId: PILOT_VARIANT,
       dataClass: this.effectiveDataClass(),
-      guidance: guidanceNotes,
+      guidance: analystGuidance,
       attachments,
     });
     store.log(
@@ -1096,6 +1115,15 @@ export class PilotRun {
     if (guidanceRules.length > 0) {
       store.log("info", `📚 mühendis ${guidanceRules.length} kurum bilgi/standart notunu dikkate alıyor.`);
     }
+    // The engineer's Studio persona (if configured) leads its rules, so an admin
+    // editing the engineer agent's persona actually changes how code is written.
+    const personaRules =
+      this.deps.engineerPersona !== undefined
+        ? [`Ajan talimatı (persona): ${this.deps.engineerPersona}`]
+        : [];
+    if (this.deps.engineerPersona !== undefined) {
+      store.log("info", "🧠 mühendis Studio'da tanımlı persona ile çalışıyor.");
+    }
 
     // Seed with the reviewer's notes on a REVISE round, so attempt 1 already
     // addresses them (the same `oncekiHata` channel the self-heal loop uses).
@@ -1129,6 +1157,9 @@ export class PilotRun {
           // a migration/flag/config/dependency ticket adds its specific rules
           // (idempotent + rollback, default-OFF, safe defaults, pinned version).
           ...this.changeTypes.flatMap((c) => c.rules),
+          // The engineer agent's Studio persona (its role instruction), read
+          // first so it frames everything below. Empty when none is configured.
+          ...personaRules,
           // The corporate knowledge library ("öğren"): the same notes the analyst
           // leans on, now binding the engineer's code to the house rules. Empty
           // when nothing is uploaded.

@@ -29,6 +29,12 @@ export interface ListeningRuleRow {
   flowType: string;
   priority: number;
   enabled: boolean;
+  /**
+   * Faz 3 (akış→ajan): the agent variant this rule's flow runs under, per side.
+   * NULL = the platform default agent — exactly the pre-mapping behaviour.
+   */
+  analystVariantId: string | null;
+  engineerVariantId: string | null;
 }
 
 export interface ListeningDelegate {
@@ -87,6 +93,10 @@ function toRecord(row: ListeningRuleRow): ListeningRuleRecord {
     flowType: row.flowType as FlowType,
     priority: row.priority,
     enabled: row.enabled,
+    // Faz 3 agent mapping — NULL stays null ("default agent"), never dropped,
+    // so a rule read back carries exactly the mapping Studio saved.
+    analystVariantId: row.analystVariantId,
+    engineerVariantId: row.engineerVariantId,
   };
 }
 
@@ -100,5 +110,9 @@ function toRow(record: ListeningRuleRecord): ListeningRuleRow {
     flowType: record.flowType,
     priority: record.priority,
     enabled: record.enabled,
+    // The record's absent-or-null both mean "default agent"; the column stores
+    // that one way (NULL), so undefined is normalised here.
+    analystVariantId: record.analystVariantId ?? null,
+    engineerVariantId: record.engineerVariantId ?? null,
   };
 }

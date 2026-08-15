@@ -53,6 +53,9 @@ function record(over: Partial<ListeningRuleRecord> = {}): ListeningRuleRecord {
     flowType: "duzeltme",
     priority: 100,
     enabled: true,
+    // Faz 3 agent mapping — null is the stored form of "default agent".
+    analystVariantId: null,
+    engineerVariantId: null,
     ...over,
   };
 }
@@ -73,6 +76,29 @@ describe("PrismaListeningStore", () => {
       findMany: () => Promise.resolve([...rows.values()]),
     });
     expect(await restarted.get("lr_1")).toEqual(record());
+  });
+
+  it("round-trips the Faz 3 agent-variant mapping (akış→ajan)", async () => {
+    const { delegate } = fakeDelegate();
+    const store = new PrismaListeningStore(delegate);
+    await store.put(
+      record({ analystVariantId: "mobil-analist", engineerVariantId: "mobil-muhendis" }),
+    );
+    const read = await store.get("lr_1");
+    expect(read?.analystVariantId).toBe("mobil-analist");
+    expect(read?.engineerVariantId).toBe("mobil-muhendis");
+  });
+
+  it("an ABSENT variant field is stored as NULL (default agent), not dropped", async () => {
+    const { delegate, rows } = fakeDelegate();
+    const store = new PrismaListeningStore(delegate);
+    // A record written before the mapping existed carries no variant fields at
+    // all — the column write must normalise that to NULL, never undefined.
+    const { analystVariantId: _a, engineerVariantId: _e, ...legacy } = record();
+    await store.put(legacy as ListeningRuleRecord);
+    expect(rows.get("lr_1")?.analystVariantId).toBeNull();
+    expect(rows.get("lr_1")?.engineerVariantId).toBeNull();
+    expect((await store.get("lr_1"))?.analystVariantId).toBeNull();
   });
 
   it("lists ordered by (projectKey, priority)", async () => {

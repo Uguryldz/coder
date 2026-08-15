@@ -34,6 +34,16 @@ export interface ListeningRule {
   flowType: FlowType;
   priority: number;
   enabled: boolean;
+  /**
+   * Which Studio-defined agent VARIANT runs the analysis for tickets this rule
+   * classifies (Faz 3: akış → ajan eşlemesi). Absent (or null in the DB row) =
+   * the pilot's default analyst variant, exactly the pre-mapping behaviour. The
+   * run resolves the variant's model + persona PER RUN, so publishing a new
+   * version takes effect on the next ticket without a restart.
+   */
+  analystVariantId?: string;
+  /** The engineer counterpart of `analystVariantId`. Absent = default variant. */
+  engineerVariantId?: string;
 }
 
 /** A ticket's fields the classifier looks at. */
@@ -62,7 +72,19 @@ export class ListeningRulesStore {
   set(rules: readonly ListeningRule[]): void {
     this.rules = rules
       .filter((r) => r.enabled)
-      .map((r) => ({ ...r }))
+      .map((r) => {
+        // Normalise the OPTIONAL agent-variant fields at the boundary: a DB
+        // null, an empty string or whitespace all mean "no override" and are
+        // stored as ABSENT, so downstream `?? default` fallbacks work uniformly.
+        const { analystVariantId, engineerVariantId, ...rest } = r;
+        const analyst = normalizeVariantId(analystVariantId);
+        const engineer = normalizeVariantId(engineerVariantId);
+        return {
+          ...rest,
+          ...(analyst !== undefined ? { analystVariantId: analyst } : {}),
+          ...(engineer !== undefined ? { engineerVariantId: engineer } : {}),
+        };
+      })
       .sort((a, b) => a.priority - b.priority);
   }
 
@@ -106,24 +128,46 @@ export class ListeningRulesStore {
   }
 
   /**
-   * Classify a discovered ticket into a flow type, or null when no rule matches.
+   * The full RULE that classifies a discovered ticket, or null when none does.
    *
    * Rules are already priority-ordered; the first match wins. A `status` rule
    * matches the ticket's current status name; an `issuetype` rule matches its
-   * issue-type name. Null means "no rule applied" — the caller runs the default
-   * flow, so classification never blocks a ticket.
+   * issue-type name. The whole rule (not just its flow type) is returned so the
+   * run can also read the rule's agent-variant mapping (`analystVariantId` /
+   * `engineerVariantId`) and run the flow with THAT agent. A copy is returned,
+   * so a caller can never mutate the live store.
    */
-  flowTypeFor(botAccountId: string, ticket: ClassifiableTicket): FlowType | null {
+  ruleFor(botAccountId: string, ticket: ClassifiableTicket): ListeningRule | null {
     for (const rule of this.rules) {
       // Match the rule to the ticket's OWN project, not a hard-coded one, so a
       // rule on any bound project classifies its tickets.
       if (rule.projectKey !== ticket.projectKey) continue;
       if (rule.assigneeAccountId !== "" && rule.assigneeAccountId !== botAccountId.trim()) continue;
       const field = rule.matchKind === "status" ? ticket.status : ticket.issueType;
-      if (field !== null && field === rule.matchValue) return rule.flowType;
+      if (field !== null && field === rule.matchValue) return { ...rule };
     }
     return null;
   }
+
+  /**
+   * Classify a discovered ticket into a flow type, or null when no rule matches.
+   * Null means "no rule applied" — the caller runs the default flow, so
+   * classification never blocks a ticket. (The flow-type projection of
+   * `ruleFor`; behaviour unchanged.)
+   */
+  flowTypeFor(botAccountId: string, ticket: ClassifiableTicket): FlowType | null {
+    return this.ruleFor(botAccountId, ticket)?.flowType ?? null;
+  }
+}
+
+/**
+ * Normalise an optional agent-variant id: a DB `null`, empty or all-whitespace
+ * value means "no override" (undefined); anything else is the trimmed id.
+ */
+function normalizeVariantId(value: string | null | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 const FLOW_TYPES: readonly FlowType[] = ["analiz", "duzeltme", "gelistirme"];
@@ -140,6 +184,11 @@ const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype"];
 export function isValidRule(value: unknown): value is ListeningRule {
   if (typeof value !== "object" || value === null) return false;
   const r = value as Record<string, unknown>;
+  // The OPTIONAL agent-variant fields: absent, null (a DB row without an
+  // override) or a string are all well-formed — `set` normalises null/empty to
+  // "absent". Any other type is a malformed entry and drops the rule.
+  const validVariant = (v: unknown): boolean =>
+    v === undefined || v === null || typeof v === "string";
   return (
     typeof r["projectKey"] === "string" &&
     typeof r["assigneeAccountId"] === "string" &&
@@ -147,7 +196,9 @@ export function isValidRule(value: unknown): value is ListeningRule {
     typeof r["priority"] === "number" &&
     typeof r["enabled"] === "boolean" &&
     MATCH_KINDS.includes(r["matchKind"] as MatchKind) &&
-    FLOW_TYPES.includes(r["flowType"] as FlowType)
+    FLOW_TYPES.includes(r["flowType"] as FlowType) &&
+    validVariant(r["analystVariantId"]) &&
+    validVariant(r["engineerVariantId"])
   );
 }
 

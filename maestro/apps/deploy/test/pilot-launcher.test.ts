@@ -117,6 +117,54 @@ describe("pilotWiringFromEnv — Postgres-backed audit chain", () => {
   });
 });
 
+describe("pilotWiringFromEnv — loadSeeds dinleme kuralları (Faz 3 akış→ajan)", () => {
+  it("kural satırındaki analyst/engineer varyant kolonları pilot seed'ine geçer (null → alan yok)", async () => {
+    const baseRow = {
+      ruleId: "lr_1",
+      projectKey: "OPS",
+      assigneeAccountId: "712020:bot",
+      matchKind: "issuetype",
+      matchValue: "Hata",
+      flowType: "duzeltme",
+      priority: 100,
+      enabled: true,
+    };
+    const makeDb = ((_url: string) =>
+      ({
+        variantVersion: { findMany: () => Promise.resolve([]) },
+        listeningRule: {
+          findMany: () =>
+            Promise.resolve([
+              // A rule an admin mapped to Studio agents…
+              { ...baseRow, analystVariantId: "mobil-analist", engineerVariantId: "mobil-muhendis" },
+              // …and an unmapped one (DB NULL = default agent).
+              { ...baseRow, ruleId: "lr_2", matchValue: "Görev", analystVariantId: null, engineerVariantId: null },
+            ]),
+        },
+        analysisGuidance: { findMany: () => Promise.resolve([]) },
+      }) as unknown as Db) as typeof createDb;
+
+    const wiring = pilotWiringFromEnv(
+      { DATABASE_URL: "postgresql://maestro:pw@localhost:55432/maestro" },
+      makeDb,
+    );
+    const seeds = await wiring.loadSeeds();
+
+    expect(seeds.listening).toHaveLength(2);
+    // The mapped rule carries its agent variants into the pilot's seed…
+    expect(seeds.listening[0]).toMatchObject({
+      analystVariantId: "mobil-analist",
+      engineerVariantId: "mobil-muhendis",
+    });
+    // …and the pilot rule shape carries no DB ruleId (not part of the seed).
+    expect(seeds.listening[0]).not.toHaveProperty("ruleId");
+    // …and the unmapped rule seeds WITHOUT the fields (null → absent), so the
+    // pilot's `?? default` fallback picks the platform default agent.
+    expect(seeds.listening[1]).not.toHaveProperty("analystVariantId");
+    expect(seeds.listening[1]).not.toHaveProperty("engineerVariantId");
+  });
+});
+
 describe("pilot ayarlarının dosya kalıcılığı (.pilot-settings.json)", () => {
   const SETTINGS: PilotSettings = {
     approverGroup: "jira-users-uyildiz",

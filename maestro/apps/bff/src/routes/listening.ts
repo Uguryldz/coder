@@ -36,6 +36,18 @@ const IdParam = z.object({ ruleId: z.string().min(1).max(64) });
  * `flowType` are closed enums here so an invalid value is a 400, not a row the
  * database rejects with a 500-shaped constraint error.
  */
+/**
+ * An optional agent-variant reference (Faz 3): absent, null and "" all mean
+ * "the default agent" and normalise to `null`, so the DB stores one shape and
+ * the pilot mirror never sees an empty string masquerading as a choice.
+ */
+const VariantRef = z
+  .string()
+  .trim()
+  .max(64)
+  .nullish()
+  .transform((value) => (value == null || value === "" ? null : value));
+
 const RuleBody = z.object({
   projectKey: z.string().trim().min(1).max(32),
   assigneeAccountId: z.string().trim().min(1).max(128),
@@ -44,6 +56,10 @@ const RuleBody = z.object({
   flowType: z.enum(FLOW_TYPES as unknown as [string, ...string[]]),
   priority: z.number().int().min(0).max(10_000).default(100),
   enabled: z.boolean().default(true),
+  /** Which agent variant runs the analysis side; null → default agent. */
+  analystVariantId: VariantRef,
+  /** Which agent variant runs the engineering side; null → default agent. */
+  engineerVariantId: VariantRef,
 });
 
 function listeningDeps(deps: ResolvedDeps): { store: ListeningStore } {

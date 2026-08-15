@@ -38,6 +38,15 @@ export interface ListeningRuleRecord {
   flowType: FlowType;
   priority: number;
   enabled: boolean;
+  /**
+   * Which agent variant runs the ANALYSIS side of this flow (Faz 3). `null` (or
+   * absent, for rows written before the column existed) means "the default
+   * agent" — the pilot picks its own. Optional so the Prisma delegate in
+   * `apps/deploy` compiles before its column mapping lands.
+   */
+  analystVariantId?: string | null;
+  /** Same as `analystVariantId`, for the ENGINEERING (coding) side. */
+  engineerVariantId?: string | null;
 }
 
 /**

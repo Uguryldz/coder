@@ -224,6 +224,15 @@ export function pilotWiringFromEnv(
             flowType: r.flowType as ListeningRule["flowType"],
             priority: r.priority,
             enabled: r.enabled,
+            // Faz 3 (akış→ajan): the rule's agent-variant mapping rides into the
+            // pilot's seed, so a restart keeps running the flow with the agent
+            // an admin bound in Studio. DB NULL = "default agent" = absent.
+            ...(typeof r.analystVariantId === "string" && r.analystVariantId.trim() !== ""
+              ? { analystVariantId: r.analystVariantId }
+              : {}),
+            ...(typeof r.engineerVariantId === "string" && r.engineerVariantId.trim() !== ""
+              ? { engineerVariantId: r.engineerVariantId }
+              : {}),
           })),
         guidance: notes.map((n) => ({ title: n.title, content: n.content })),
       };

@@ -89,6 +89,52 @@ describe("POST /studio/listening-rules", () => {
     expect(await h.listening.list()).toHaveLength(1);
   });
 
+  it("round-trips the agent-variant choice: create with variants → GET returns them", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    const res = await post(h, "/studio/listening-rules", token, {
+      ...RULE,
+      analystVariantId: "analyst-node-v2",
+      engineerVariantId: "engineer-dotnet-v1",
+    });
+    expect(res.statusCode).toBe(201);
+    const { rule } = res.json() as { rule: { analystVariantId: string | null; engineerVariantId: string | null } };
+    expect(rule.analystVariantId).toBe("analyst-node-v2");
+    expect(rule.engineerVariantId).toBe("engineer-dotnet-v1");
+
+    const listed = await get(h, "/studio/listening-rules", token);
+    const { rules } = listed.json() as {
+      rules: { analystVariantId: string | null; engineerVariantId: string | null }[];
+    };
+    expect(rules[0]!.analystVariantId).toBe("analyst-node-v2");
+    expect(rules[0]!.engineerVariantId).toBe("engineer-dotnet-v1");
+  });
+
+  it("normalises an absent or empty agent choice to null (default agent)", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    // Absent fields → null.
+    const bare = await post(h, "/studio/listening-rules", token, RULE);
+    expect(bare.statusCode).toBe(201);
+    const created = (bare.json() as { rule: { analystVariantId: string | null; engineerVariantId: string | null } }).rule;
+    expect(created.analystVariantId).toBeNull();
+    expect(created.engineerVariantId).toBeNull();
+
+    // Empty strings (a Select's "default" option) → null too, never "".
+    const empty = await post(h, "/studio/listening-rules", token, {
+      ...RULE,
+      matchValue: "Hikaye",
+      analystVariantId: "",
+      engineerVariantId: "",
+    });
+    expect(empty.statusCode).toBe(201);
+    const rule2 = (empty.json() as { rule: { analystVariantId: string | null; engineerVariantId: string | null } }).rule;
+    expect(rule2.analystVariantId).toBeNull();
+    expect(rule2.engineerVariantId).toBeNull();
+  });
+
   it("is admin-only — a tech-lead cannot create a rule", async () => {
     const h = await harness();
     const token = await techLead(h);
@@ -132,11 +178,15 @@ describe("PUT/DELETE /studio/listening-rules/:ruleId", () => {
       ...RULE,
       matchValue: "Hikaye",
       flowType: "gelistirme",
+      engineerVariantId: "engineer-node-v3",
     });
     expect(res.statusCode).toBe(200);
     const stored = await h.listening.get("lr_seed");
     expect(stored?.flowType).toBe("gelistirme");
     expect(stored?.matchValue).toBe("Hikaye");
+    // The agent choice replaces along with the rest of the rule.
+    expect(stored?.engineerVariantId).toBe("engineer-node-v3");
+    expect(stored?.analystVariantId).toBeNull();
   });
 
   it("404s a PUT to an unknown rule", async () => {

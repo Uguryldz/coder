@@ -50,6 +50,7 @@ import {
   createPilotScmPort,
   createPilotSecrets,
   createPilotWorkPort,
+  type GatewayHooks,
 } from "./wiring.js";
 
 /**
@@ -342,7 +343,10 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   );
 
   const secrets = createPilotSecrets(openRouter, jiraCloud, github);
-  const { gateway, policy } = createPilotGateway(secrets, openRouter, {
+  // The gateway hooks, built ONCE and shared by the boot gateway and every
+  // run-local gateway `makeRunGateway` builds below — so a run on a rule-mapped
+  // variant still counts tokens, logs calls and reports masking identically.
+  const gatewayHooks: GatewayHooks = {
     runId: () => store.snapshot().runId,
     onCallLog: (log) => {
       store.update((state) => {
@@ -370,7 +374,8 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
       );
     },
     ...(options.llmFetch ? { fetchImpl: options.llmFetch } : {}),
-  }, {
+  };
+  const { gateway, policy } = createPilotGateway(secrets, openRouter, gatewayHooks, {
     // The DB-resolved (or env-fallback) model per role. intake shares the
     // analyst's model — it is the analyst's first pass, not a separate agent.
     intake: analyst.model,
@@ -415,6 +420,12 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     ...(options.docTemplate ? { docTemplate: options.docTemplate } : {}),
     ...(analystPersona !== null ? { analystPersona } : {}),
     ...(engineerPersona !== null ? { engineerPersona } : {}),
+    // Run-time variant resolution (Faz 3): the run re-reads model + persona from
+    // the variant store per ticket, and applies the model by building a
+    // run-local gateway over the SAME secrets/hooks — so a Studio publish or a
+    // rule→ajan remap is live on the next run, restart-free.
+    ...(options.variantReader ? { variantReader: options.variantReader } : {}),
+    makeRunGateway: (models) => createPilotGateway(secrets, openRouter, gatewayHooks, models).gateway,
     completePullRequest: (prId) => ado.completePullRequest(prId),
     ...(githubRunConfig ? { github: githubRunConfig } : {}),
     ...(options.workspaceOptions ? { workspaceOptions: options.workspaceOptions } : {}),

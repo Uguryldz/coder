@@ -218,6 +218,8 @@ describe("POST /studio/pilot/listening (mirror DB rules into the pilot)", () => 
           flowType: "duzeltme",
           priority: 100,
           enabled: true,
+          analystVariantId: "analyst-node-v2",
+          engineerVariantId: null,
         },
       ],
     });
@@ -233,8 +235,14 @@ describe("POST /studio/pilot/listening (mirror DB rules into the pilot)", () => 
     expect(res.statusCode).toBe(200);
     expect(pilot.calls[0]?.url).toBe("http://127.0.0.1:7020/api/listening");
     // The DB rule was forwarded — the pilot receives the full list, not a flag.
-    const body = JSON.parse(pilot.calls[0]?.init?.body as string) as { rules: unknown[] };
+    const body = JSON.parse(pilot.calls[0]?.init?.body as string) as {
+      rules: { analystVariantId?: string | null; engineerVariantId?: string | null }[];
+    };
     expect(body.rules).toHaveLength(1);
+    // The agent-variant choice (Faz 3) rides the same payload: the mirror
+    // forwards whatever the store returns, new columns included.
+    expect(body.rules[0]!.analystVariantId).toBe("analyst-node-v2");
+    expect(body.rules[0]!.engineerVariantId).toBeNull();
   });
 
   it("role-gates the mirror: a viewer gets 403 and the pilot is never called", async () => {

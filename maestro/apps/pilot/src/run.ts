@@ -37,13 +37,16 @@ import {
   corpAccountOf,
   GITHUB_PUSH_TTL_SECONDS,
   GITHUB_TARGET_BRANCH,
-  PILOT_VARIANT,
+  PILOT_ANALYST_VARIANT,
+  PILOT_ENGINEER_VARIANT,
   type ScmMode,
 } from "./config.js";
 import { produceAnalysis, requestIntake, type TicketComment } from "./analysis.js";
 import { type ChangeTypeMatch, classifyChangeTypes } from "./change-type.js";
 import { analysisToDocs, attachAnalysisDocs, type DocStore, type PilotDocTemplate } from "./docs.js";
-import { flowTypeLabel, type FlowType, type ListeningRulesStore } from "./listening.js";
+import { flowTypeLabel, type FlowType, type ListeningRule, type ListeningRulesStore } from "./listening.js";
+import { resolveVariantModel, type VariantModelReader } from "./variant.js";
+import type { RoleModels } from "./wiring.js";
 import { planFor } from "./flow-plan.js";
 import type { GuidanceStore } from "./guidance.js";
 import { pollForCommand, PollAbortedError } from "./poll.js";
@@ -254,10 +257,30 @@ export interface PilotRunDeps {
    * Studio for the analyst variant (resolved from the DB at boot). When present,
    * it is injected into the analyst's context so the agent behaves as configured
    * in Studio, not only on the corporate-default persona. Absent = default.
+   * With a `variantReader` wired these are only the FALLBACK — each run
+   * re-resolves the persona from its own variant (see `resolveRunAgents`).
    */
   analystPersona?: string;
   /** The engineer agent's PERSONA overlay (Studio's engineer-variant persona). */
   engineerPersona?: string;
+  /**
+   * Run-time variant resolution (Faz 3: akış → ajan eşlemesi). When wired, the
+   * run resolves the matched listening rule's `analystVariantId` /
+   * `engineerVariantId` (defaults: the boot variants) to a MODEL + PERSONA per
+   * run — so an admin binding ANY Studio agent to a rule, or publishing a new
+   * version of an already-bound agent, takes effect on the very next ticket, no
+   * restart. Absent = the boot-resolved model/persona, exactly as before.
+   */
+  variantReader?: VariantModelReader;
+  /**
+   * Rebuild the LLM gateway for THIS run's resolved role models (wired by boot
+   * as a `createPilotGateway` closure — pilot-side only, the gateway package is
+   * untouched). The gateway's role→model bindings are immutable once built, so
+   * applying a run-resolved model means building a run-local gateway; the boot
+   * gateway stays the fallback for every run that resolves nothing new. Absent
+   * (older callers/tests) = the deps gateway serves every run, as before.
+   */
+  makeRunGateway?: (models: RoleModels) => LlmGateway;
   /** Holds the generated .docx/.pdf so the download route can stream them. */
   docs: DocStore;
   /**
@@ -322,6 +345,26 @@ export class PilotRun {
    */
   private startHint: { status?: string } | null = null;
   /**
+   * The AGENTS this run actually runs with (Faz 3): the variant id per role —
+   * the matched listening rule's mapping, or the boot defaults — plus the
+   * persona resolved from that variant PER RUN. Reset at start(); refined by
+   * `resolveRunAgents` once the ticket is classified. The variant ids also
+   * label every LLM call (LlmCall rows), so cost/PII reporting attributes each
+   * call to the agent that really made it.
+   */
+  private agents: {
+    analystVariantId: string;
+    engineerVariantId: string;
+    analystPersona: string | undefined;
+    engineerPersona: string | undefined;
+  };
+  /**
+   * The run-local LLM gateway, built by `makeRunGateway` when this run resolved
+   * its variants' models — so the model an admin published in Studio is what
+   * THIS run calls, restart-free. Null = the boot gateway (deps.llm) serves.
+   */
+  private runLlm: LlmGateway | null = null;
+  /**
    * The settings this run was started with, snapshotted at start(). Because a
    * settings change is refused WHILE a run is in progress (server.ts guard), the
    * six values are fixed for a whole run: reading them once here keeps approver
@@ -332,6 +375,22 @@ export class PilotRun {
 
   constructor(private readonly deps: PilotRunDeps) {
     this.runSettings = deps.settings.snapshot();
+    this.agents = this.defaultAgents();
+  }
+
+  /** The boot-resolved agent set — what a run uses until/unless a rule remaps it. */
+  private defaultAgents(): PilotRun["agents"] {
+    return {
+      analystVariantId: PILOT_ANALYST_VARIANT,
+      engineerVariantId: PILOT_ENGINEER_VARIANT,
+      analystPersona: this.deps.analystPersona,
+      engineerPersona: this.deps.engineerPersona,
+    };
+  }
+
+  /** The LLM port this run calls: the run-local gateway when one was built. */
+  private llm(): LlmGateway {
+    return this.runLlm ?? this.deps.llm;
   }
 
   // ---------------------------------------------------------------- run
@@ -352,6 +411,8 @@ export class PilotRun {
     this.repo = null;
     this.branch = "";
     this.pushedCommitSha = null;
+    this.agents = this.defaultAgents(); // re-resolved per ticket from its own rule
+    this.runLlm = null;
     this.abort = new AbortController();
     this.deps.docs.clear();
     store.update((state) => {
@@ -578,14 +639,15 @@ export class PilotRun {
     // status the caller passed to `start()` (auto-start and the UI both do).
     // Without a hint the status stays null and a status rule simply does not
     // match here (the pre-hint behaviour), never a block.
-    const flow =
-      this.deps.listening?.flowTypeFor(this.deps.botAccountId ?? "", {
+    const matchedRule =
+      this.deps.listening?.ruleFor(this.deps.botAccountId ?? "", {
         // Project key is the ticket key's prefix ("OPS-123" → "OPS"), so a rule
         // only classifies its own project's tickets.
         projectKey: ticketKey.split("-")[0] ?? "",
         status: this.startHint?.status ?? null,
         issueType: ticket.issueType,
       }) ?? null;
+    const flow = matchedRule?.flowType ?? null;
     if (flow !== null) {
       // Remember it for the run: the step sequence in start() reads `this.flow`
       // to decide which steps run (planFor), turning the choice from a label
@@ -596,6 +658,13 @@ export class PilotRun {
       });
       store.log("info", `👂 dinleme kuralı: bu bir ${flowTypeLabel(flow)} akışı (${ticket.issueType})`);
     }
+
+    // Resolve the AGENTS this run flows through (Faz 3: akış → ajan eşlemesi):
+    // the matched rule's variant ids (default: the boot variants), their model +
+    // persona read from the variant store PER RUN — so a Studio publish or a
+    // rule remap takes effect on the very next ticket without a restart. Runs
+    // BEFORE the first LLM call so intake already thinks as the mapped agent.
+    await this.resolveRunAgents(matchedRule);
 
     const labels = ticket.labels.includes("maestro") ? ticket.labels : [...ticket.labels, "maestro"];
     await work.setLabels(ticketKey, labels);
@@ -651,9 +720,12 @@ export class PilotRun {
     // the reporter as a single Turkish clarification comment.
     store.step("2", "calisiyor");
     const intake = await requestIntake({
-      llm: this.deps.llm,
+      // Intake is the analyst's first pass: the run-resolved gateway + the
+      // analyst variant id label, so the call runs (and is logged) as the agent
+      // the rule mapped.
+      llm: this.llm(),
       ticket,
-      variantId: PILOT_VARIANT,
+      variantId: this.agents.analystVariantId,
       dataClass: this.effectiveDataClass(),
       comments,
     });
@@ -675,7 +747,7 @@ export class PilotRun {
     // The REAL agent-roles analyst (M43/M108/M109): a real analysis TEMPLATE
     // decides the sections and the fail-closed validation, a real AnalysisContext
     // carries the ticket (repo-card/knowledge are wired when populated — see
-    // analysis.ts), and PILOT_VARIANT is the variant. The seven-section check is
+    // analysis.ts), and the run-resolved analyst variant is the variant. The seven-section check is
     // no longer a hand-rolled Zod here; it comes from the template.
     const guidanceNotes = this.deps.guidance?.snapshot() ?? [];
     if (guidanceNotes.length > 0) {
@@ -685,17 +757,17 @@ export class PilotRun {
     // note, so what an admin wrote in the "Persona" field actually steers the
     // analysis. It leads the list so the model reads the role instruction first.
     const analystGuidance =
-      this.deps.analystPersona !== undefined
-        ? [{ title: "Ajan talimatı (persona)", content: this.deps.analystPersona }, ...guidanceNotes]
+      this.agents.analystPersona !== undefined
+        ? [{ title: "Ajan talimatı (persona)", content: this.agents.analystPersona }, ...guidanceNotes]
         : guidanceNotes;
-    if (this.deps.analystPersona !== undefined) {
+    if (this.agents.analystPersona !== undefined) {
       store.log("info", "🧠 analist Studio'da tanımlı persona ile çalışıyor.");
     }
 
     const analysis = await produceAnalysis({
-      llm: this.deps.llm,
+      llm: this.llm(),
       ticket,
-      variantId: PILOT_VARIANT,
+      variantId: this.agents.analystVariantId,
       dataClass: this.effectiveDataClass(),
       guidance: analystGuidance,
       attachments,
@@ -744,6 +816,106 @@ export class PilotRun {
 
     store.step("2", "tamam");
     return analysis.display;
+  }
+
+  /**
+   * Resolve THIS run's agents from the matched listening rule (Faz 3).
+   *
+   * The variant ids come from the rule (`analystVariantId`/`engineerVariantId`)
+   * with the boot defaults as fallback; the MODEL and PERSONA are then read
+   * from the variant store PER RUN, so a Studio publish or a rule remap is live
+   * on the next ticket, restart-free. The model is applied by building a
+   * run-local gateway (`makeRunGateway` — the gateway's bindings are immutable
+   * once built); the persona replaces the boot-resolved deps persona for this
+   * run only.
+   *
+   * FAIL-SOFT: a variant store that errors mid-resolution must not kill a run
+   * the boot gateway can still serve — the error is logged and the run falls
+   * back to the boot-bound model/persona. No reader wired = the pre-Faz-3
+   * behaviour exactly (deps persona + boot gateway), only the call LABELS carry
+   * the (default) variant ids.
+   */
+  private async resolveRunAgents(rule: ListeningRule | null): Promise<void> {
+    const { store } = this.deps;
+    this.agents.analystVariantId = rule?.analystVariantId ?? PILOT_ANALYST_VARIANT;
+    this.agents.engineerVariantId = rule?.engineerVariantId ?? PILOT_ENGINEER_VARIANT;
+
+    const reader = this.deps.variantReader;
+    if (reader === undefined) {
+      if (rule?.analystVariantId !== undefined || rule?.engineerVariantId !== undefined) {
+        store.log(
+          "warn",
+          "! dinleme kuralı bir ajan varyantı eşliyor ama varyant deposu bağlı değil — boot modeli/persona ile devam ediliyor",
+        );
+      }
+      return;
+    }
+
+    try {
+      const warn = (message: string): void => store.log("dim", `→ ${message}`);
+      const analyst = await resolveVariantModel(this.agents.analystVariantId, reader, {
+        fallbackModel: this.runSettings.model,
+        warn,
+      });
+      const engineer = await resolveVariantModel(this.agents.engineerVariantId, reader, {
+        fallbackModel: this.runSettings.model,
+        warn,
+      });
+
+      // Persona per run, from the SAME variant the model came from. A reader
+      // without persona support keeps the boot-resolved deps persona (the old
+      // behaviour); a reader that answers null/empty means "no overlay".
+      if (reader.activePersona !== undefined) {
+        this.agents.analystPersona = await this.readRunPersona(reader, this.agents.analystVariantId);
+        this.agents.engineerPersona = await this.readRunPersona(reader, this.agents.engineerVariantId);
+      }
+
+      // Apply the run-resolved models by building a run-local gateway (the
+      // bindings of the boot gateway are immutable). Intake shares the analyst's
+      // model — it is the analyst's first pass, same as boot.
+      if (this.deps.makeRunGateway !== undefined) {
+        this.runLlm = this.deps.makeRunGateway({
+          intake: analyst.model,
+          analyst: analyst.model,
+          engineer: engineer.model,
+        });
+      }
+
+      const tag = (source: "variant" | "env-fallback"): string =>
+        source === "variant" ? "" : " · varsayılan model";
+      store.log(
+        "info",
+        `🤖 analiz ajanı: ${this.agents.analystVariantId} (model ${analyst.model}${tag(analyst.source)})`,
+      );
+      store.log(
+        "info",
+        `🤖 mühendis ajanı: ${this.agents.engineerVariantId} (model ${engineer.model}${tag(engineer.source)})`,
+      );
+    } catch (error) {
+      // The boot gateway still works — a broken variant store degrades to the
+      // boot-bound model/persona rather than failing the ticket.
+      this.runLlm = null;
+      this.agents.analystPersona = this.deps.analystPersona;
+      this.agents.engineerPersona = this.deps.engineerPersona;
+      store.log(
+        "warn",
+        `! ajan varyantı çözülemedi (boot modeli/persona ile devam): ${String(error)}`,
+      );
+    }
+  }
+
+  /** One variant's persona for this run; a failed read means "no overlay". */
+  private async readRunPersona(
+    reader: VariantModelReader,
+    variantId: string,
+  ): Promise<string | undefined> {
+    try {
+      const persona = await reader.activePersona?.(variantId);
+      const trimmed = persona?.trim() ?? "";
+      return trimmed === "" ? undefined : trimmed;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -1209,10 +1381,10 @@ export class PilotRun {
     // The engineer's Studio persona (if configured) leads its rules, so an admin
     // editing the engineer agent's persona actually changes how code is written.
     const personaRules =
-      this.deps.engineerPersona !== undefined
-        ? [`Ajan talimatı (persona): ${this.deps.engineerPersona}`]
+      this.agents.engineerPersona !== undefined
+        ? [`Ajan talimatı (persona): ${this.agents.engineerPersona}`]
         : [];
-    if (this.deps.engineerPersona !== undefined) {
+    if (this.agents.engineerPersona !== undefined) {
       store.log("info", "🧠 mühendis Studio'da tanımlı persona ile çalışıyor.");
     }
 
@@ -1836,8 +2008,12 @@ export class PilotRun {
     schema: z.ZodType<T>,
     input: unknown,
   ): Promise<{ masked: T; display: T }> {
-    const outcome = await this.deps.llm.generateObject(
-      { role, variantId: PILOT_VARIANT, dataClass: this.effectiveDataClass(), schemaName, input },
+    // The run-resolved gateway + the ROLE's own run-resolved variant id, so the
+    // LlmCall row is attributed to the agent that really made the call.
+    const variantId =
+      role === "engineer" ? this.agents.engineerVariantId : this.agents.analystVariantId;
+    const outcome = await this.llm().generateObject(
+      { role, variantId, dataClass: this.effectiveDataClass(), schemaName, input },
       schema,
     );
     if (outcome.status !== "ok") {

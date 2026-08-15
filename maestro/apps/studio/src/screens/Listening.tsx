@@ -42,6 +42,16 @@ interface ListeningRule {
   readonly flowType: FlowType;
   readonly priority: number;
   readonly enabled: boolean;
+  /** Agent variant for the analysis side; null/absent → the default agent. */
+  readonly analystVariantId?: string | null;
+  /** Agent variant for the engineering side; null/absent → the default agent. */
+  readonly engineerVariantId?: string | null;
+}
+
+/** The slice of `GET /variants` this screen needs: id + role, for filtering. */
+interface VariantOption {
+  readonly variantId: string;
+  readonly role: string;
 }
 
 const FLOW_TONE: Readonly<Record<FlowType, BadgeTone>> = {
@@ -108,6 +118,22 @@ export function ListeningScreen(): ReactNode {
   const [matchKind, setMatchKind] = useState<MatchKind>("issuetype");
   const [matchValue, setMatchValue] = useState("");
   const [flowType, setFlowType] = useState<FlowType>("analiz");
+  // Which agent variant runs each side of the flow. "" means "default agent"
+  // and is sent as null — the pilot then picks its own.
+  const [analystVariantId, setAnalystVariantId] = useState("");
+  const [engineerVariantId, setEngineerVariantId] = useState("");
+
+  // The agent-variant catalogue, for the two per-role dropdowns. A platform
+  // without the variants surface (503) simply leaves both lists empty and the
+  // selects offer only "default agent" — the rule still saves.
+  const variants = useQuery({
+    queryKey: ["variants"],
+    queryFn: ({ signal }) =>
+      api.get<{ variants: readonly VariantOption[] }>("/variants", { signal }),
+    retry: false,
+  });
+  const analystOptions = (variants.data?.variants ?? []).filter((v) => v.role === "analyst");
+  const engineerOptions = (variants.data?.variants ?? []).filter((v) => v.role === "engineer");
 
   // The real status / issue-type names for the chosen project, read live off
   // Jira. Turns "Değer" from free text (silent typos) into a dropdown of exactly
@@ -170,6 +196,9 @@ export function ListeningScreen(): ReactNode {
       matchKind,
       matchValue: matchValue.trim(),
       flowType,
+      // "" is the "default agent" choice — normalised to null on the wire.
+      analystVariantId: analystVariantId === "" ? null : analystVariantId,
+      engineerVariantId: engineerVariantId === "" ? null : engineerVariantId,
     });
   };
 
@@ -189,6 +218,21 @@ export function ListeningScreen(): ReactNode {
       key: "flowType",
       header: t("listening.col.flow"),
       cell: (r) => <Badge tone={FLOW_TONE[r.flowType]}>{t(`listening.flow.${r.flowType}`)}</Badge>,
+    },
+    {
+      key: "agents",
+      header: t("listening.col.agents"),
+      // Which variant runs each side; an unset side reads "default", so a rule
+      // that overrides nothing still says so instead of showing a blank cell.
+      cell: (r) => (
+        <span className="screen-note">
+          {t("listening.agent.analyst_short")}:{" "}
+          <b>{r.analystVariantId ?? t("listening.agent.default_short")}</b>
+          {" · "}
+          {t("listening.agent.engineer_short")}:{" "}
+          <b>{r.engineerVariantId ?? t("listening.agent.default_short")}</b>
+        </span>
+      ),
     },
     {
       key: "assignee",
@@ -302,6 +346,26 @@ export function ListeningScreen(): ReactNode {
                 { value: "gelistirme", label: t("listening.flow.gelistirme") },
               ]}
               hint={t(`listening.flow.hint.${flowType}`)}
+            />
+            <Select
+              label={t("listening.agent.analyst")}
+              value={analystVariantId}
+              onChange={(e) => setAnalystVariantId(e.target.value)}
+              options={[
+                { value: "", label: t("listening.agent.default") },
+                ...analystOptions.map((v) => ({ value: v.variantId, label: v.variantId })),
+              ]}
+              hint={t("listening.agent.hint")}
+            />
+            <Select
+              label={t("listening.agent.engineer")}
+              value={engineerVariantId}
+              onChange={(e) => setEngineerVariantId(e.target.value)}
+              options={[
+                { value: "", label: t("listening.agent.default") },
+                ...engineerOptions.map((v) => ({ value: v.variantId, label: v.variantId })),
+              ]}
+              hint={t("listening.agent.hint")}
             />
             <div style={{ display: "flex", alignItems: "flex-end" }}>
               <Button variant="primary" busy={create.isPending} onClick={onSubmit}>

@@ -123,6 +123,57 @@ describe("flowTypeFor", () => {
   });
 });
 
+describe("ruleFor — akış → ajan eşlemesi (Faz 3)", () => {
+  it("returns the WHOLE matched rule, agent-variant mapping included", () => {
+    const store = new ListeningRulesStore([
+      rule({ analystVariantId: "mobil-analist", engineerVariantId: "mobil-muhendis" }),
+    ]);
+    const matched = store.ruleFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Hata" });
+    expect(matched?.flowType).toBe("duzeltme");
+    expect(matched?.analystVariantId).toBe("mobil-analist");
+    expect(matched?.engineerVariantId).toBe("mobil-muhendis");
+  });
+
+  it("returns null when no rule matches, and a COPY when one does", () => {
+    const store = new ListeningRulesStore([rule()]);
+    expect(store.ruleFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Hikaye" })).toBeNull();
+    const matched = store.ruleFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Hata" });
+    matched!.flowType = "analiz"; // mutating the copy…
+    expect(store.flowTypeFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Hata" })).toBe(
+      "duzeltme", // …never reaches the live store
+    );
+  });
+
+  it("agrees with flowTypeFor on every match (same walk, same priority order)", () => {
+    const store = new ListeningRulesStore([
+      rule({ matchKind: "issuetype", matchValue: "Hikaye", flowType: "gelistirme", priority: 200 }),
+      rule({ matchKind: "issuetype", matchValue: "Hikaye", flowType: "analiz", priority: 10, analystVariantId: "ozel" }),
+    ]);
+    const ticket = { projectKey: PROJECT_KEY, status: null, issueType: "Hikaye" } as const;
+    expect(store.ruleFor(BOT, ticket)?.flowType).toBe(store.flowTypeFor(BOT, ticket));
+    expect(store.ruleFor(BOT, ticket)?.analystVariantId).toBe("ozel");
+  });
+
+  it("normalises a null/empty variant field to ABSENT on set (DB null = default agent)", () => {
+    const store = new ListeningRulesStore([
+      rule({
+        analystVariantId: null as unknown as string,
+        engineerVariantId: "  ",
+      }),
+    ]);
+    const matched = store.ruleFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Hata" });
+    expect(matched).not.toBeNull();
+    expect(matched).not.toHaveProperty("analystVariantId");
+    expect(matched).not.toHaveProperty("engineerVariantId");
+    // And a padded id is trimmed, not stored verbatim.
+    const trimmedStore = new ListeningRulesStore([rule({ analystVariantId: " mobil-analist " })]);
+    expect(
+      trimmedStore.ruleFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Hata" })
+        ?.analystVariantId,
+    ).toBe("mobil-analist");
+  });
+});
+
 describe("isValidRule (mirror boundary guard)", () => {
   it("accepts a well-formed rule", () => {
     expect(isValidRule(rule())).toBe(true);
@@ -141,6 +192,19 @@ describe("isValidRule (mirror boundary guard)", () => {
     expect(isValidRule(noPriority)).toBe(false);
     expect(isValidRule(null)).toBe(false);
     expect(isValidRule("x")).toBe(false);
+  });
+
+  it("accepts the agent-variant fields as string, null or absent (Faz 3)", () => {
+    expect(isValidRule({ ...rule(), analystVariantId: "mobil-analist" })).toBe(true);
+    expect(isValidRule({ ...rule(), engineerVariantId: "mobil-muhendis" })).toBe(true);
+    // A DB row without an override mirrors as null — well-formed, not dropped.
+    expect(isValidRule({ ...rule(), analystVariantId: null, engineerVariantId: null })).toBe(true);
+    expect(isValidRule(rule())).toBe(true); // absent stays valid
+  });
+
+  it("rejects a non-string, non-null variant field (malformed mirror entry)", () => {
+    expect(isValidRule({ ...rule(), analystVariantId: 7 })).toBe(false);
+    expect(isValidRule({ ...rule(), engineerVariantId: { id: "x" } })).toBe(false);
   });
 });
 

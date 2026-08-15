@@ -77,6 +77,16 @@ function stubFetch(rules: object[]): ReturnType<typeof vi.fn> {
     if (u.includes("/routing")) {
       return Response.json({ projects: [{ projectKey: "OPS", trigger: "auto", apps: [], noteKey: "" }], rules: [], policy: null });
     }
+    // The two agent dropdowns read the variant catalogue, filtered by role.
+    if (u.includes("/variants")) {
+      return Response.json({
+        variants: [
+          { variantId: "analyst-node-v2", role: "analyst", platform: "node", model: "m", activeVersion: 1, knowledgeFiles: 0, evalScore: null },
+          { variantId: "engineer-node-v1", role: "engineer", platform: "node", model: "m", activeVersion: 1, knowledgeFiles: 0, evalScore: null },
+          { variantId: "intake-v1", role: "intake", platform: "node", model: "m", activeVersion: 1, knowledgeFiles: 0, evalScore: null },
+        ],
+      });
+    }
     return Response.json({}, { status: 200 });
   });
   vi.stubGlobal("fetch", fn);
@@ -133,6 +143,61 @@ describe("ListeningScreen", () => {
       expect(body.projectKey).toBe("OPS"); // picked from the dropdown, not typed
       expect(body.matchValue).toBe("Hata");
       expect(body.assigneeAccountId).toBe("712020:bot");
+      // No agent picked → the "default agent" choice is sent as null, not "".
+      expect(body.analystVariantId).toBeNull();
+      expect(body.engineerVariantId).toBeNull();
     });
+  });
+
+  it("fills the agent selects from the variant catalogue, filtered by role", async () => {
+    stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+
+    const analystSelect = (await screen.findByLabelText("Analiz ajanı")) as HTMLSelectElement;
+    const engineerSelect = screen.getByLabelText("Geliştirme ajanı") as HTMLSelectElement;
+    await waitFor(() => {
+      // Each select: the "default agent" option plus ONLY its own role's variants.
+      const analystValues = [...analystSelect.options].map((o) => o.value);
+      expect(analystValues).toEqual(["", "analyst-node-v2"]);
+      const engineerValues = [...engineerSelect.options].map((o) => o.value);
+      expect(engineerValues).toEqual(["", "engineer-node-v1"]);
+    });
+  });
+
+  it("POSTs the chosen agent variants when a rule is added", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Hata");
+    await screen.findByRole("option", { name: "analyst-node-v2" });
+    await userEvent.selectOptions(screen.getByLabelText("Analiz ajanı"), "analyst-node-v2");
+    await userEvent.selectOptions(screen.getByLabelText("Geliştirme ajanı"), "engineer-node-v1");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      const body = JSON.parse((posted![1] as RequestInit).body as string);
+      expect(body.analystVariantId).toBe("analyst-node-v2");
+      expect(body.engineerVariantId).toBe("engineer-node-v1");
+    });
+  });
+
+  it("shows the rule's chosen agents in the list, or 'varsayılan' when unset", async () => {
+    stubFetch([
+      { ...SEED, analystVariantId: "analyst-node-v2", engineerVariantId: null },
+    ]);
+    renderScreen(VIEWER); // read-only: the table alone renders the agents cell
+    await screen.findByText("Hata");
+    expect(screen.getByText("analyst-node-v2")).toBeTruthy();
+    expect(screen.getByText("varsayılan")).toBeTruthy();
   });
 });

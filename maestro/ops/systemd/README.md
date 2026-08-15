@@ -61,3 +61,31 @@ kullanın: script'in başlattığı süreç terminal/oturumla ilişkilidir ve ö
 kimse yeniden başlatmaz; servis ise `Restart=always` ile kendini toparlar ve
 boot'ta kendiliğinden kalkar. Script, systemd kurulu makinede yalnız
 `./maestro-baslat.sh stop` (eski süreçleri temizlemek) için anlamlıdır.
+
+## Bilinen tuzak: Studio ayakta görünüp port ölü (ENOSPC)
+
+Belirti: `systemctl --user is-active maestro-stack` → `active`, ama 7000
+yanıt vermiyor. Log'da:
+
+```
+Error: ENOSPC: System limit for number of file watchers reached
+```
+
+Sebep: Studio, Vite geliştirme sunucusuyla servis ediliyor ve monorepo'daki
+kaynak dosyaları izliyor. Çekirdek limiti yetmediğinde Vite süreci ölür;
+systemd birimi `Type=simple` olduğu için stack (BFF) ayakta kalır ve birim
+`active` görünmeye devam eder — bu yüzden `is-active` tek başına yeterli
+sağlık göstergesi değildir, portu da yoklayın.
+
+Asıl darboğaz genelde `max_user_watches` değil `max_user_instances`'tır
+(aynı makinede birden fazla izleyici süreç varsa hızla tükenir).
+
+Kalıcı düzeltme (kurulu): `/etc/sysctl.d/99-maestro-inotify.conf`
+
+```
+fs.inotify.max_user_instances = 1024
+fs.inotify.max_user_watches = 524288
+```
+
+Uygulamak için `sudo sysctl --system`, sonra
+`systemctl --user restart maestro-stack`.

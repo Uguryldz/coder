@@ -7,6 +7,7 @@ import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.j
 import type { DeployEnv } from "../env.js";
 import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
+import { llmCallRecorder } from "../stores/llm-call-log.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
 
@@ -61,6 +62,10 @@ export async function main(): Promise<void> {
     const { env, deployment } = await bootPlatform({
       sql: prismaSqlExecutor(db),
       publishRunDeps,
+      // The worker is where model calls happen, so it is where they are
+      // recorded. Without this the cost and PII screens answer 200 with an
+      // empty table on a deployment that has been spending all day.
+      onLlmCall: llmCallRecorder(db.llmCall),
     });
 
     const execution = buildTurnRunner(env, db, deployment.ports);

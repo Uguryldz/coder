@@ -1,5 +1,6 @@
 import { createJiraDcWorkPort } from "@maestro/adapter-jira";
 import { t } from "@maestro/config";
+import type { LlmCallLog } from "@maestro/contracts";
 import type { FetchLike } from "@maestro/notify";
 import { defaultPiiPolicy, maskOutbound, type LoadedPiiPolicy } from "@maestro/pii";
 import type { SecretPort, WorkPort } from "@maestro/ports";
@@ -51,6 +52,20 @@ export interface BootOptions {
    * skip the M75 idempotency check either.
    */
   readonly publishRunDeps?: PublishRunDeps;
+  /**
+   * Where every model call is recorded, for the cost and PII screens.
+   *
+   * Same shape of dependency as `publishRunDeps`: only a service that owns the
+   * database pool can supply it, so the platform takes it rather than reaching
+   * for a client it must not import. Absent, calls still run — the gateway's
+   * hook is optional — and the screens simply have nothing to show.
+   *
+   * That absence is not hypothetical. `LlmCall` rows have only ever been
+   * written by the pilot launcher (`bin/pilot.ts`), so the Temporal path
+   * produced no spend history at all: `/studio/cost` answered 200 with an
+   * empty table on a deployment that had been calling a model all day.
+   */
+  readonly onLlmCall?: (log: LlmCallLog) => void;
 }
 
 /** What the publisher needs that only a database-owning service can supply. */
@@ -98,6 +113,10 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
       // this is not an optional nicety — it is what makes the route legal.
       mask: (payload, context) =>
         maskOutbound(payload, { policy, dataClass: context.dataClass, boundary: context.boundary }),
+      // Spend and PII history. Optional here for the same reason it is optional
+      // on the gateway: a deployment without a database pool (compose.test.ts)
+      // still boots, it just records nothing.
+      ...(options.onLlmCall === undefined ? {} : { onCallLog: options.onLlmCall }),
     },
     // `notify` needs `work` (the jira channel posts through it), `secrets` (the
     // webhook channels read their URL through a SecretPort), and now `fetchImpl`

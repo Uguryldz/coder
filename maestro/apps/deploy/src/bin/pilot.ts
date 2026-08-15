@@ -15,6 +15,7 @@ import { postgresChainLock, PrismaAuditStore } from "../stores/audit.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
 import { PrismaTemplateStore } from "../stores/template.js";
 import { prismaTransactionRunner } from "../stores/sql.js";
+import { llmCallRecorder } from "../stores/llm-call-log.js";
 import { PrismaVariantModelReader } from "../stores/variant-model-reader.js";
 import { fail, install, isEntrypoint } from "./lifecycle.js";
 
@@ -236,27 +237,10 @@ export function pilotWiringFromEnv(
       store: new PrismaAuditStore(db.auditLog),
       lock: postgresChainLock(prismaTransactionRunner(db)),
     }),
-    onLlmCall: (log) => {
-      void db.llmCall
-        .create({
-          data: {
-            at: new Date(log.at),
-            runId: log.runId,
-            role: log.role,
-            variantId: log.variantId,
-            driver: log.driver,
-            model: log.model,
-            tokensIn: log.tokensIn,
-            tokensOut: log.tokensOut,
-            cachePct: log.cachePct,
-            usd: log.usd,
-            dataClass: log.dataClass,
-          },
-        })
-        .catch((error: unknown) => {
-          console.warn(`[pilot] LlmCall DB yazımı başarısız (raporlama): ${String(error)}`);
-        });
-    },
+    // Shared with the worker (`stores/llm-call-log.ts`). Two hand-written
+    // copies of this insert is how the two paths end up recording different
+    // columns and the cost screen disagrees with itself.
+    onLlmCall: llmCallRecorder(db.llmCall),
     loadSeeds: async () => {
       const [rules, notes] = await Promise.all([
         db.listeningRule.findMany({ orderBy: { priority: "asc" } }),

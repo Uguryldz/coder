@@ -38,7 +38,7 @@ describe("TemporalRunGateway.signalWithStart — opening the run row", () => {
   it("opens the row when a plain start creates the execution", async () => {
     const opened: OpenedRun[] = [];
     const gateway = gatewayWith(
-      { start: () => Promise.resolve({}) } as Partial<Client["workflow"]>,
+      { start: () => Promise.resolve({}) } as unknown as Partial<Client["workflow"]>,
       async (run) => void opened.push(run),
     );
 
@@ -65,7 +65,7 @@ describe("TemporalRunGateway.signalWithStart — opening the run row", () => {
           Promise.reject(
             new WorkflowExecutionAlreadyStartedError("already started", "maestro-OPS-7", "ticketWorkflow"),
           ),
-      } as Partial<Client["workflow"]>,
+      } as unknown as Partial<Client["workflow"]>,
       async (run) => void opened.push(run),
     );
 
@@ -78,7 +78,7 @@ describe("TemporalRunGateway.signalWithStart — opening the run row", () => {
   it("propagates a failure to open the row", async () => {
     // A started execution whose row was not written fails one activity later,
     // far from the cause. Reporting "started" for it would hide that.
-    const gateway = gatewayWith({ start: () => Promise.resolve({}) } as Partial<Client["workflow"]>, () =>
+    const gateway = gatewayWith({ start: () => Promise.resolve({}) } as unknown as Partial<Client["workflow"]>, () =>
       Promise.reject(new Error("db down")),
     );
 
@@ -86,7 +86,7 @@ describe("TemporalRunGateway.signalWithStart — opening the run row", () => {
   });
 
   it("works without a hook — the gateway stays usable unwired", async () => {
-    const gateway = gatewayWith({ start: () => Promise.resolve({}) } as Partial<Client["workflow"]>);
+    const gateway = gatewayWith({ start: () => Promise.resolve({}) } as unknown as Partial<Client["workflow"]>);
     await expect(gateway.signalWithStart({ ...INPUT })).resolves.toMatchObject({ started: true });
   });
 });

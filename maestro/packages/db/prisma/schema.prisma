@@ -668,9 +668,14 @@ model AnalysisGuidance {
   /// True = the AI learns from it (injected into new analyses). False = kept but
   /// ignored, so an admin can pause a note without deleting it.
   enabled   Boolean  @default(true)
+  /// Ajan hedefi: NULL = HERKESE (her ajanın bağlamına girer — bugünkü davranış);
+  /// dolu = yalnız o variant'ın koştuğu run'larda o ajanın bağlamına girer.
+  /// Bir ajanın detay ekranından yüklenen belge buraya o ajanın id'siyle yazılır.
+  variantId String?  @db.VarChar(64)
   updatedAt DateTime @db.Timestamptz(3)
 
   @@index([enabled])
+  @@index([variantId])
 }
 
 model EvidencePackageRow {

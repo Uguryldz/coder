@@ -37,6 +37,30 @@ describe("GuidanceStore", () => {
     store.set([{ title: "new", content: "y" }]);
     expect(store.snapshot()).toEqual([{ title: "new", content: "y" }]);
   });
+
+  it("forVariant: global notlar herkese, hedefli not yalnız kendi ajanına", () => {
+    const store = new GuidanceStore([
+      { title: "genel", content: "herkese" },
+      { title: "analiste özel", content: "x", variantId: "ozel-analist" },
+      { title: "mühendise özel", content: "y", variantId: "ozel-muhendis" },
+    ]);
+    expect(store.forVariant("ozel-analist").map((n) => n.title)).toEqual(["genel", "analiste özel"]);
+    expect(store.forVariant("ozel-muhendis").map((n) => n.title)).toEqual(["genel", "mühendise özel"]);
+    // Çözülmemiş ajan yalnız global görür; hedefli not asla sızmaz.
+    expect(store.forVariant(null).map((n) => n.title)).toEqual(["genel"]);
+    expect(store.forVariant("baska-ajan").map((n) => n.title)).toEqual(["genel"]);
+  });
+
+  it("variantId sınırda normalize edilir: boş/whitespace → hedefsiz (global)", () => {
+    const store = new GuidanceStore([
+      { title: "a", content: "x", variantId: "  " },
+      { title: "b", content: "y", variantId: " v1 " },
+    ]);
+    expect(store.snapshot()).toEqual([
+      { title: "a", content: "x" },
+      { title: "b", content: "y", variantId: "v1" },
+    ]);
+  });
 });
 
 describe("buildAnalysisContext with guidance", () => {

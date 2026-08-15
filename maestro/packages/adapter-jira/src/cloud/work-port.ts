@@ -304,6 +304,48 @@ export class JiraCloudWorkPort implements WorkPort {
     return comments;
   }
 
+  /**
+   * The ticket's ASSIGNEE changes, oldest→newest, from the issue changelog
+   * (iş atama usulü onayı için). Each entry: WHO made the change (`actor`),
+   * WHO the ticket was assigned TO (`toAccountId` — null when unassigned) and
+   * the changelog entry's own id/time, so a gate can baseline exactly like it
+   * baselines comments (only entries newer than gate-open count).
+   */
+  async listAssigneeChanges(
+    key: TicketKey,
+  ): Promise<Array<{ id: string; actorAccountId: string; toAccountId: string | null; at: string }>> {
+    const issueKey = requireTicketKey(key, "key");
+    const raw = await this.client.get<unknown>(
+      `${API}/issue/${encodeURIComponent(issueKey)}/changelog`,
+      {},
+    );
+    const values = asRecord(raw)?.["values"];
+    if (!Array.isArray(values)) throw new JiraResponseError("changelog", ["response carries no values array"]);
+
+    const out: Array<{ id: string; actorAccountId: string; toAccountId: string | null; at: string }> = [];
+    for (const entry of values) {
+      const rec = asRecord(entry);
+      const id = rec?.["id"];
+      const created = rec?.["created"];
+      const actor = asRecord(rec?.["author"])?.["accountId"];
+      const items = rec?.["items"];
+      if (typeof id !== "string" && typeof id !== "number") continue;
+      if (typeof actor !== "string" || !Array.isArray(items)) continue;
+      for (const item of items) {
+        const it = asRecord(item);
+        if (it?.["field"] !== "assignee") continue;
+        const to = it["to"];
+        out.push({
+          id: String(id),
+          actorAccountId: actor,
+          toAccountId: typeof to === "string" && to.length > 0 ? to : null,
+          at: typeof created === "string" ? created : "",
+        });
+      }
+    }
+    return out;
+  }
+
   /** Poller payload → command, or null. Never throws on unknown commands. */
   async parseCommand(rawBody: unknown): Promise<CommandEnvelope | null> {
     return this.parseCommandDetailed(rawBody).envelope;

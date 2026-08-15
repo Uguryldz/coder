@@ -278,6 +278,45 @@ describe("JiraCloudWorkPort", () => {
     expect(stub.calls[0]!.url).toContain("/rest/api/3/issue/OPS-6/comment");
   });
 
+  it("lists assignee changes from the changelog (iş atama usulü onayı)", async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          values: [
+            {
+              id: "500",
+              created: "2026-08-15T01:00:00.000+0300",
+              author: { accountId: "712020:manager" },
+              items: [
+                { field: "status", from: "1", to: "2" },
+                { field: "assignee", from: "712020:manager", to: "712020:bot" },
+              ],
+            },
+            {
+              id: "501",
+              created: "2026-08-15T01:05:00.000+0300",
+              author: { accountId: "712020:someone" },
+              items: [{ field: "assignee", from: "712020:bot", to: null }],
+            },
+            {
+              id: "502",
+              created: "2026-08-15T01:10:00.000+0300",
+              author: { accountId: "712020:other" },
+              items: [{ field: "summary", fromString: "a", toString: "b" }], // atama değil → düşer
+            },
+          ],
+        },
+      },
+    ]);
+    const changes = await port(stub).listAssigneeChanges("OPS-6");
+
+    expect(stub.calls[0]!.url).toContain("/rest/api/3/issue/OPS-6/changelog");
+    expect(changes).toEqual([
+      { id: "500", actorAccountId: "712020:manager", toAccountId: "712020:bot", at: "2026-08-15T01:00:00.000+0300" },
+      { id: "501", actorAccountId: "712020:someone", toAccountId: null, at: "2026-08-15T01:05:00.000+0300" },
+    ]);
+  });
+
   it("parses a command from a polled comment through the port", async () => {
     const stub = stubFetch([]);
     const comment = {

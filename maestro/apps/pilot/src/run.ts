@@ -49,7 +49,7 @@ import { resolveVariantModel, type VariantModelReader } from "./variant.js";
 import type { RoleModels } from "./wiring.js";
 import { planFor } from "./flow-plan.js";
 import type { GuidanceStore } from "./guidance.js";
-import { markExistingCommentsSeen, pollForCommand, PollAbortedError } from "./poll.js";
+import { markExistingCommentsSeen, pollForCommandOnce, PollAbortedError } from "./poll.js";
 import type { PilotSettings, SettingsStore } from "./settings.js";
 import type { StateStore } from "./state.js";
 import {
@@ -749,7 +749,9 @@ export class PilotRun {
     // carries the ticket (repo-card/knowledge are wired when populated — see
     // analysis.ts), and the run-resolved analyst variant is the variant. The seven-section check is
     // no longer a hand-rolled Zod here; it comes from the template.
-    const guidanceNotes = this.deps.guidance?.snapshot() ?? [];
+    // Ajan-hedefli bilgi: global notlar + YALNIZ bu run'ın analist variant'ına
+    // hedeflenmiş notlar. Başka bir ajana yüklenen belge buraya sızmaz.
+    const guidanceNotes = this.deps.guidance?.forVariant(this.agents.analystVariantId) ?? [];
     if (guidanceNotes.length > 0) {
       store.log("info", `📚 analiz ${guidanceNotes.length} bilgi kütüphanesi notunu dikkate alıyor.`);
     }
@@ -1414,7 +1416,9 @@ export class PilotRun {
     // "use parameterised queries", "prefer this pattern" — instead of the model
     // guessing the corporate style each time. Empty when nothing is uploaded, so
     // the engineer behaves exactly as before on a bare project.
-    const guidanceNotes = this.deps.guidance?.snapshot() ?? [];
+    // Ajan-hedefli bilgi: global notlar + yalnız bu run'ın MÜHENDİS variant'ına
+    // hedeflenmiş notlar (analiste yüklenen belge mühendise sızmaz, tersi de).
+    const guidanceNotes = this.deps.guidance?.forVariant(this.agents.engineerVariantId) ?? [];
     const guidanceRules = guidanceNotes.map((g) => `Kurum bilgisi — ${g.title}: ${g.content}`);
     if (guidanceRules.length > 0) {
       store.log("info", `📚 mühendis ${guidanceRules.length} kurum bilgi/standart notunu dikkate alıyor.`);
@@ -1974,28 +1978,71 @@ export class PilotRun {
       throw new PilotStepError(`kapı açılamadı — mevcut yorum tabanı okunamadı: ${String(error)}`);
     }
 
-    for (;;) {
-      let hit;
+    // İŞ ATAMA USULÜ ONAYI: yorum komutuna ek olarak, kapı açıkken bir insanın
+    // ticket'ı Maestro Bot'a GERİ ATAMASI da onay sayılır (gerçek Jira alışkanlığı:
+    // insanlar komut yazmaz, işi atar). Aynı bayat-koruma ilkesi: kapı açılırken
+    // mevcut changelog girdileri tabana alınır, yalnız SONRAKİ atama sayılır.
+    // FAIL-SOFT: changelog okunamazsa (eski fake'ler dahil) yalnız yorum yolu
+    // çalışır — atama kanalı hiçbir zaman kapıyı kıramaz.
+    const bot = (this.deps.botAccountId ?? "").trim();
+    const assignSeen = new Set<string>();
+    if (bot.length !== 0) {
       try {
-        hit = await pollForCommand({
+        for (const change of await work.listAssigneeChanges(ticketKey)) assignSeen.add(change.id);
+      } catch {
+        store.log("dim", "→ atama tabanı okunamadı — bu kapıda yalnız yorum onayı geçerli");
+      }
+    }
+    const pollAssignmentApproval = async (): Promise<CommandEnvelope | null> => {
+      if (bot.length === 0) return null;
+      try {
+        for (const change of await work.listAssigneeChanges(ticketKey)) {
+          if (assignSeen.has(change.id)) continue;
+          assignSeen.add(change.id);
+          if (change.toAccountId !== bot) continue; // başka atamalar kapıyı ilgilendirmez
+          if (change.actorAccountId === bot) continue; // botun kendi ataması onay değildir
+          store.log("info", `→ iş atama usulü: ticket ${change.actorAccountId} tarafından bota atandı — onay olarak değerlendiriliyor`);
+          return {
+            ticketKey,
+            author: change.actorAccountId,
+            at: change.at !== "" ? change.at : new Date().toISOString(),
+            command: { name: "approve" },
+          } as CommandEnvelope;
+        }
+      } catch {
+        // transient changelog hatası: yorum yolu zaten dönüyor, sessizce geç
+      }
+      return null;
+    };
+
+    const intervalMs = this.deps.commandPollMs ?? this.runSettings.commandPollMs;
+    const wait = this.deps.sleep ?? sleep;
+    for (;;) {
+      if (signal.aborted) throw new PilotStepError("kapı iptal edildi (akış durdu)");
+      let envelope: CommandEnvelope | null = null;
+      try {
+        const hit = await pollForCommandOnce({
           work,
           ticketKey,
           seen,
           accept: ["approve", "reject"],
-          intervalMs: this.deps.commandPollMs ?? this.runSettings.commandPollMs,
-          signal,
-          ...(this.deps.sleep ? { sleep: this.deps.sleep } : {}),
           onInvalid: (messageKey, command) =>
             store.log("warn", `! komut geçersiz: /${command} (${messageKey})`),
-          onIgnored: (envelope) =>
-            store.log("dim", `→ komut yok sayıldı bu kapıda: /${envelope.command.name} · ${envelope.author}`),
+          onIgnored: (env) =>
+            store.log("dim", `→ komut yok sayıldı bu kapıda: /${env.command.name} · ${env.author}`),
         });
+        envelope = hit?.envelope ?? null;
       } catch (error) {
         if (error instanceof PollAbortedError) throw new PilotStepError("kapı iptal edildi (akış durdu)");
         throw error;
       }
-
-      const envelope = hit.envelope;
+      // Yorum komutu yoksa atama kanalına bak.
+      if (envelope === null) envelope = await pollAssignmentApproval();
+      if (envelope === null) {
+        if (signal.aborted) throw new PilotStepError("kapı iptal edildi (akış durdu)");
+        await wait(intervalMs);
+        continue;
+      }
       this.deps.onJiraChanged?.();
 
       if (envelope.command.name === "reject") {

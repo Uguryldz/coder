@@ -12,7 +12,7 @@ import { PublishRenderError } from "../src/errors.js";
 import { renderPdf } from "../src/pdf-render.js";
 import { InMemoryPublishState } from "../src/types.js";
 import { fakeTranslate, RUN_ID, TICKET, runContext } from "./helpers.js";
-import { ANALYSIS_MARKDOWN, docxTemplate, unzip } from "./doc-helpers.js";
+import { ANALYSIS_MARKDOWN, brandedDocxTemplate, docxTemplate, unzip } from "./doc-helpers.js";
 
 /**
  * M103r. These tests assert on the BYTES: a `.docx` that is not a zip carrying
@@ -116,6 +116,63 @@ describe("docx rendering (M103r)", () => {
     const { bytes, template } = await docxTemplate([sectionToken(1)]);
 
     await expect(renderDocx({ model: model(), template, templateBytes: bytes })).rejects.toThrow(PublishRenderError);
+  });
+
+  it("ANTET GARANTİSİ: header/footer, gömülü logo (media) ve stiller patch'ten AYNEN çıkar", async () => {
+    // The guarantee the bank relies on (M103r): renderDocx PATCHES the uploaded
+    // file — it never rebuilds it — so the letterhead (header/footer), the logo
+    // bytes under word/media/ and the corporate styles travel into every
+    // generated analysis document untouched, while the {{...}} slots are filled.
+    const { bytes, template, logo } = await brandedDocxTemplate([
+      FIXED_PLACEHOLDERS.title,
+      FIXED_PLACEHOLDERS.ticket,
+      sectionToken(1),
+      FIXED_PLACEHOLDERS.body,
+    ]);
+
+    // The fixture really is a branded .docx: header + footer parts, media, style.
+    const inputEntries = await unzip(bytes);
+    const headerName = [...inputEntries.keys()].find((n) => /^word\/header\d+\.xml$/.test(n));
+    const footerName = [...inputEntries.keys()].find((n) => /^word\/footer\d+\.xml$/.test(n));
+    const mediaName = [...inputEntries.keys()].find((n) => /^word\/media\/.+\.png$/.test(n));
+    expect(headerName).toBeDefined();
+    expect(footerName).toBeDefined();
+    expect(mediaName).toBeDefined();
+
+    const rendered = await renderDocx({ model: model(), template, templateBytes: bytes });
+    const out = await unzip(rendered.bytes);
+
+    // 1) The letterhead survived: the SAME header/footer parts exist and still
+    //    carry the bank's text and the logo reference (a:blip → the media part).
+    const headerXml = new TextDecoder().decode(out.get(headerName!));
+    expect(headerXml).toContain("KURUMSAL ANTET — Banka A.Ş.");
+    expect(headerXml).toContain("<a:blip"); // the logo is still referenced
+    const footerXml = new TextDecoder().decode(out.get(footerName!));
+    expect(footerXml).toContain("KURUMSAL ALTBILGI — gizlilik notu");
+
+    // 2) The LOGO bytes are byte-identical — never re-encoded, never dropped.
+    expect(out.has(mediaName!)).toBe(true);
+    expect(Buffer.from(out.get(mediaName!)!).equals(Buffer.from(logo))).toBe(true);
+    // …and the input media part came through byte-identical too (sanity).
+    expect(Buffer.from(inputEntries.get(mediaName!)!).equals(Buffer.from(logo))).toBe(true);
+
+    // 3) The corporate styles survived (`keepOriginalStyles`).
+    const stylesXml = new TextDecoder().decode(out.get("word/styles.xml"));
+    expect(stylesXml).toContain("KurumsalGovde");
+
+    // 4) The body slots were FILLED: placeholders consumed, analysis in, the
+    //    template's own body text intact around them.
+    const xml = new TextDecoder().decode(out.get("word/document.xml"));
+    expect(xml).not.toContain("{{baslik}}");
+    expect(xml).not.toContain("{{ticket}}");
+    expect(xml).not.toContain("{{bolum:1}}");
+    expect(xml).not.toContain("{{govde}}");
+    expect(xml).toContain("UGURPAY-123"); // {{ticket}} value landed
+    expect(xml).toContain("Kart limit"); // section 1's analysis content landed
+    expect(xml).toContain("KURUMSAL USTBILGI");
+    expect(xml).toContain("KURUMSAL KAPANIS");
+    expect(rendered.warnings.filter((w) => w.code === "no_template")).toHaveLength(0);
+    expect(rendered.warnings.filter((w) => w.code === "template_unreadable")).toHaveLength(0);
   });
 
   it("falls back with a warning when the uploaded template is not a .docx", async () => {

@@ -9,3 +9,5 @@ coverage/
 
 # UI'dan düzenlenen pilot ayarlarının kalıcılık dosyası (kişisel, ortama özgü)
 .pilot-settings.json
+# Kalıcı analiz/kod çalışma alanı (ticket-başına izole)
+.sandbox/

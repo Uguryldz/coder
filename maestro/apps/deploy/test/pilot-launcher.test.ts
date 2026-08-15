@@ -1,10 +1,12 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Db, createDb } from "@maestro/db";
 import type { PilotSettings } from "@maestro/pilot";
 import {
+  defaultSandboxRootPath,
+  ensureSandboxRootDefault,
   loadPilotSettingsFile,
   persistPilotSettingsFile,
   pilotWiringFromEnv,
@@ -279,5 +281,157 @@ describe("pilotWiringFromEnv — aktif Word şablonu (DocTemplateVersion)", () =
       makeDb,
     );
     expect(await wiring.docTemplate()).toBeNull();
+  });
+});
+
+describe("pilotWiringFromEnv — Studio analiz şablonu overlay'i (AnalysisTemplateVersion)", () => {
+  const SECTION = {
+    key: "purpose",
+    title: "İş Değeri (Studio)",
+    description: "",
+    aiInstruction: "Amacı iki cümlede, iş değeriyle yaz.",
+    required: true,
+    format: "free_text",
+    example: "",
+  };
+
+  function makeDbWith(row: unknown): typeof createDb {
+    return ((_url: string) =>
+      ({
+        variantVersion: { findMany: () => Promise.resolve([]) },
+        analysisTemplateVersion: {
+          findFirst: (args: { orderBy: { version: "desc" } }) => {
+            expect(args.orderBy.version).toBe("desc"); // aktif = en yüksek versiyon
+            return Promise.resolve(row);
+          },
+        },
+        jiraProjectBinding: { findMany: () => Promise.resolve([]) },
+        workflowRun: { findMany: () => Promise.resolve([]) },
+      }) as unknown as Db) as typeof createDb;
+  }
+
+  it("aktif (en yüksek) versiyonun bölümleri {key,title,aiInstruction} olarak döner", async () => {
+    const wiring = pilotWiringFromEnv(
+      { DATABASE_URL: "postgresql://maestro:pw@localhost:55432/maestro" },
+      makeDbWith({
+        version: 4,
+        name: "kurumsal-analiz",
+        sectionsJson: [SECTION],
+        publishedBy: "admin@corp",
+        publishedAt: new Date("2026-08-10T10:00:00.000Z"),
+      }),
+    );
+
+    const overlay = await wiring.analysisTemplateOverlay();
+    expect(overlay).toEqual({
+      sections: [
+        {
+          key: "purpose",
+          title: "İş Değeri (Studio)",
+          aiInstruction: "Amacı iki cümlede, iş değeriyle yaz.",
+        },
+      ],
+    });
+  });
+
+  it("hiç şablon yayınlanmamışsa null (motorun varsayılan şablonu)", async () => {
+    const wiring = pilotWiringFromEnv(
+      { DATABASE_URL: "postgresql://maestro:pw@localhost:55432/maestro" },
+      makeDbWith(null),
+    );
+    expect(await wiring.analysisTemplateOverlay()).toBeNull();
+  });
+
+  it("DB hatası null'a düşer — bir analiz asla şablon okuması yüzünden ölmez", async () => {
+    const makeDb = ((_url: string) =>
+      ({
+        variantVersion: { findMany: () => Promise.resolve([]) },
+        analysisTemplateVersion: {
+          findFirst: () => Promise.reject(new Error("bağlantı koptu")),
+        },
+        jiraProjectBinding: { findMany: () => Promise.resolve([]) },
+        workflowRun: { findMany: () => Promise.resolve([]) },
+      }) as unknown as Db) as typeof createDb;
+    const wiring = pilotWiringFromEnv(
+      { DATABASE_URL: "postgresql://maestro:pw@localhost:55432/maestro" },
+      makeDb,
+    );
+    expect(await wiring.analysisTemplateOverlay()).toBeNull();
+  });
+
+  it("bozuk sectionsJson (eski/elle yazılmış satır) da null'a düşer — fail-soft", async () => {
+    const wiring = pilotWiringFromEnv(
+      { DATABASE_URL: "postgresql://maestro:pw@localhost:55432/maestro" },
+      makeDbWith({
+        version: 2,
+        name: "bozuk",
+        sectionsJson: [{ key: "purpose" }], // required alanlar eksik → parse hatası
+        publishedBy: "admin@corp",
+        publishedAt: new Date("2026-08-10T10:00:00.000Z"),
+      }),
+    );
+    expect(await wiring.analysisTemplateOverlay()).toBeNull();
+  });
+});
+
+describe("ensureSandboxRootDefault — kalıcı sandbox hazırlığı", () => {
+  it("seed'de VE env'de kök boşsa varsayılanı doldurur ve dizini mkdir -p ile açar", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pilot-sandbox-"));
+    const fallback = join(dir, "derin", ".sandbox"); // iç içe: -p davranışı da kanıtlanır
+
+    const seeded = await ensureSandboxRootDefault({ sandboxRoot: "" }, {}, fallback);
+
+    expect(seeded?.sandboxRoot).toBe(fallback);
+    expect((await stat(fallback)).isDirectory()).toBe(true);
+  });
+
+  it("hiç kalıcı ayar yokken (undefined seed) de varsayılan dolar", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pilot-sandbox-"));
+    const fallback = join(dir, ".sandbox");
+
+    const seeded = await ensureSandboxRootDefault(undefined, {}, fallback);
+
+    expect(seeded).toEqual({ sandboxRoot: fallback });
+    expect((await stat(fallback)).isDirectory()).toBe(true);
+  });
+
+  it("DOLU kalıcı ayar ASLA ezilmez — seed aynen döner, dizin açılmaz", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pilot-sandbox-"));
+    const fallback = join(dir, ".sandbox");
+    const persisted = { sandboxRoot: "/srv/kalici-sandbox", autoStart: true };
+
+    const seeded = await ensureSandboxRootDefault(persisted, {}, fallback);
+
+    expect(seeded).toBe(persisted); // dokunulmadı (aynı referans)
+    await expect(stat(fallback)).rejects.toThrow(); // varsayılan dizin açılmadı
+  });
+
+  it("PILOT_SANDBOX_ROOT env'i doluysa da dokunulmaz (env seed'i zaten taşır)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pilot-sandbox-"));
+    const fallback = join(dir, ".sandbox");
+
+    const seeded = await ensureSandboxRootDefault(
+      { sandboxRoot: "" },
+      { PILOT_SANDBOX_ROOT: "/srv/env-sandbox" },
+      fallback,
+    );
+
+    expect(seeded).toEqual({ sandboxRoot: "" }); // seed aynen — env yolunu config katmanı uygular
+    await expect(stat(fallback)).rejects.toThrow();
+  });
+
+  it("mkdir hatası fail-soft: seed yine dolar, boot kırılmaz", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pilot-sandbox-"));
+    const file = join(dir, "engel");
+    await writeFile(file, "dosya", "utf8");
+    const fallback = join(file, ".sandbox"); // bir DOSYANIN altı: mkdir kesin başarısız
+
+    const seeded = await ensureSandboxRootDefault(undefined, {}, fallback);
+
+    expect(seeded).toEqual({ sandboxRoot: fallback }); // uyarıyla da olsa seed doldu
+  });
+
+  it("varsayılan yol maestro kökünün altındaki .sandbox'tır (.pilot-settings.json'un yanı)", () => {
+    expect(defaultSandboxRootPath().endsWith("/.sandbox")).toBe(true);
   });
 });

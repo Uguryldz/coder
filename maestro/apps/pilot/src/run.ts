@@ -1,4 +1,5 @@
 import type { AdoCiDriver } from "@maestro/adapter-ado";
+import type { AnalysisTemplate } from "@maestro/agent-roles";
 import {
   adfToPlainText,
   bulletList,
@@ -41,7 +42,14 @@ import {
   PILOT_ENGINEER_VARIANT,
   type ScmMode,
 } from "./config.js";
-import { produceAnalysis, requestIntake, type TicketComment } from "./analysis.js";
+import {
+  applyTemplateOverlay,
+  produceAnalysis,
+  requestIntake,
+  type AnalysisTemplateOverlay,
+  type AnalysisTemplateOverlayLoader,
+  type TicketComment,
+} from "./analysis.js";
 import { type ChangeTypeMatch, classifyChangeTypes } from "./change-type.js";
 import { analysisToDocs, attachAnalysisDocs, type DocStore, type PilotDocTemplate } from "./docs.js";
 import { flowTypeLabel, type FlowType, type ListeningRule, type ListeningRulesStore } from "./listening.js";
@@ -290,6 +298,16 @@ export interface PilotRunDeps {
    * Absent or resolving null = the plain built-in layout, as before.
    */
   docTemplate?: () => Promise<PilotDocTemplate | null>;
+  /**
+   * Lazy loader for the ACTIVE Studio analysis-template overlay
+   * (AnalysisTemplateVersion in the DB, wired by the composition root). Read
+   * PER RUN, right before the analyst — so a template published in Studio
+   * shapes the very next analysis, no restart. Only a key-matched section's
+   * title + aiInstruction are overlaid (`applyTemplateOverlay`); the engine's
+   * contract bindings never change. Absent or resolving null = the corporate
+   * default template, exactly as before.
+   */
+  analysisTemplateOverlay?: AnalysisTemplateOverlayLoader;
   /** Stands in for the human who presses "Complete" in the ADO PR screen. */
   completePullRequest: (prId: number) => boolean;
   /** Called whenever the Jira side changed, so the UI can refresh its pane. */
@@ -771,6 +789,7 @@ export class PilotRun {
       ticket,
       variantId: this.agents.analystVariantId,
       dataClass: this.effectiveDataClass(),
+      template: await this.resolveAnalysisTemplate(),
       guidance: analystGuidance,
       attachments,
       comments,
@@ -1076,6 +1095,36 @@ export class PilotRun {
       // asked (the clarification comment is in). Log and carry on.
       store.log("warn", `! İADE tamamlanamadı (akış temiz durdu, netleştirme yazıldı): ${String(error)}`);
     }
+  }
+
+  /**
+   * The analysis template THIS run's analyst validates against: the corporate
+   * default with the ACTIVE Studio overlay applied (title + aiInstruction of
+   * key-matched sections — see `applyTemplateOverlay`). Read lazily PER RUN so
+   * a Studio publish is live on the next ticket, restart-free. FAIL-SOFT: a
+   * loader error is logged and the default serves — a template read must never
+   * kill an analysis. Overlay sections the engine has no slot for are logged
+   * loudly rather than silently dropped.
+   */
+  private async resolveAnalysisTemplate(): Promise<AnalysisTemplate> {
+    const { store } = this.deps;
+    const loader = this.deps.analysisTemplateOverlay;
+    let overlay: AnalysisTemplateOverlay | null = null;
+    if (loader !== undefined) {
+      try {
+        overlay = await loader();
+      } catch (error) {
+        store.log("warn", `! Studio analiz şablonu okunamadı (varsayılan şablon kullanılacak): ${String(error)}`);
+      }
+    }
+    const { template, unmatched } = applyTemplateOverlay(overlay);
+    if (overlay !== null) {
+      store.log("info", "📐 analiz şablonu Studio yayınıyla güncellendi (bölüm başlıkları + AI talimatları)");
+    }
+    for (const key of unmatched) {
+      store.log("warn", `! şablonda eşleşmeyen bölüm: ${key} (motor yapısı sabit — bölüm eklenmedi)`);
+    }
+    return template;
   }
 
   /**

@@ -1,5 +1,5 @@
 import { inflateRawSync } from "node:zlib";
-import { Document, Packer, Paragraph, TextRun } from "docx";
+import { Document, Footer, Header, ImageRun, Packer, Paragraph, TextRun } from "docx";
 import type { DocTemplateFile, TemplatePlaceholder } from "../src/doc-template.js";
 
 /**
@@ -74,6 +74,92 @@ export async function docxTemplate(
       uploadedBy: "doc.owner@corp",
       sizeBytes: bytes.byteLength,
       styles: ["Normal", "Heading1"],
+      placeholders,
+    },
+  };
+}
+
+/**
+ * A real 1×1 PNG (valid signature, IHDR/IDAT/IEND) standing in for the bank's
+ * logo. Small on purpose: the assertion is byte-identity through the patcher,
+ * not rendering fidelity.
+ */
+export const LOGO_PNG: Uint8Array = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
+
+/**
+ * A corporate `.docx` the way a bank actually builds one: a HEADER carrying the
+ * letterhead text and the LOGO image, a footer, a named corporate style, and
+ * the placeholder tokens in the body. Built with the same library the driver
+ * patches (see `docxTemplate` above) so the thing proven is that the
+ * letterhead/logo/styles of a REAL Word file survive `renderDocx`'s patching.
+ */
+export async function brandedDocxTemplate(
+  tokens: readonly string[],
+): Promise<{ bytes: Uint8Array; template: DocTemplateFile; logo: Uint8Array }> {
+  const doc = new Document({
+    styles: {
+      paragraphStyles: [
+        {
+          id: "KurumsalGovde",
+          name: "Kurumsal Govde",
+          basedOn: "Normal",
+          run: { font: "Arial", size: 21 },
+        },
+      ],
+    },
+    sections: [
+      {
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({ children: [new TextRun({ text: "KURUMSAL ANTET — Banka A.Ş.", bold: true })] }),
+              new Paragraph({
+                children: [
+                  new ImageRun({
+                    type: "png",
+                    data: LOGO_PNG,
+                    transformation: { width: 24, height: 24 },
+                  }),
+                ],
+              }),
+            ],
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [new Paragraph({ children: [new TextRun("KURUMSAL ALTBILGI — gizlilik notu")] })],
+          }),
+        },
+        children: [
+          new Paragraph({ style: "KurumsalGovde", children: [new TextRun("KURUMSAL USTBILGI")] }),
+          ...tokens.map((token) => new Paragraph({ children: [new TextRun(token)] })),
+          new Paragraph({ children: [new TextRun("KURUMSAL KAPANIS")] }),
+        ],
+      },
+    ],
+  });
+  const bytes = new Uint8Array(await Packer.toBuffer(doc));
+  const placeholders: TemplatePlaceholder[] = tokens.map((token) => ({
+    token,
+    descriptionKey: "publish.doc.placeholder",
+    location: "body",
+    found: true,
+  }));
+  return {
+    bytes,
+    logo: LOGO_PNG,
+    template: {
+      fileName: "banka-antetli-sablon.docx",
+      version: 5,
+      uploadedAt: "2026-08-01T00:00:00.000Z",
+      uploadedBy: "doc.owner@corp",
+      sizeBytes: bytes.byteLength,
+      styles: ["Kurumsal Govde"],
       placeholders,
     },
   };

@@ -35,10 +35,12 @@ import {
   type JiraCloudEnv,
   type OpenRouterEnv,
 } from "./env.js";
+import type { AnalysisTemplateOverlayLoader } from "./analysis.js";
 import type { CreateWorkspaceOptions } from "./workspace.js";
 import { DocStore, type PilotDocTemplate } from "./docs.js";
 import { createFakeAdo, type FakeAdo } from "./fake-ado.js";
 import { close, listen } from "./http.js";
+import { detectOrphans } from "./orphan.js";
 import { discoverTickets, type DiscoveredTicket } from "./poll.js";
 import { PilotRun } from "./run.js";
 import { createUiServer } from "./server.js";
@@ -121,6 +123,15 @@ export interface BootOptions {
    * resolving null keeps the plain built-in layout.
    */
   docTemplate?: () => Promise<PilotDocTemplate | null>;
+  /**
+   * Lazy loader for the ACTIVE Studio analysis-template overlay
+   * (`AnalysisTemplateVersion`), wired by the composition root. Called PER RUN
+   * right before the analyst, so a Studio publish shapes the next analysis
+   * restart-free. Only key-matched sections' title + aiInstruction are applied
+   * (safe overlay — the engine's contract bindings never change); absent or
+   * resolving null keeps the corporate default template.
+   */
+  analysisTemplateOverlay?: AnalysisTemplateOverlayLoader;
   /** Seed the knowledge library ("öğren") at boot — the analyst + engineer read it. */
   guidance?: readonly { title: string; content: string }[];
   /**
@@ -418,6 +429,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     guidance,
     docs,
     ...(options.docTemplate ? { docTemplate: options.docTemplate } : {}),
+    ...(options.analysisTemplateOverlay ? { analysisTemplateOverlay: options.analysisTemplateOverlay } : {}),
     ...(analystPersona !== null ? { analystPersona } : {}),
     ...(engineerPersona !== null ? { engineerPersona } : {}),
     // Run-time variant resolution (Faz 3): the run re-reads model + persona from
@@ -476,6 +488,15 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     // running" race is caught here so the discovery loop never dies on it.
     void run
       .start(pick.key as TicketKey, pick.status === null ? undefined : { status: pick.status })
+      .then(() => {
+        // BULGU-3 (canlı S3): the attempted-set exists to stop FAILURE loops,
+        // but a run that ends CLEANLY must not freeze the ticket forever —
+        // a manager's /reject hands the ticket back for RE-analysis, and an
+        // İADE answered by the reporter comes back for a second pass. Both are
+        // human-driven (no runaway loop is possible), so a clean, non-failure
+        // ending clears the mark; a real failure keeps the block.
+        if (store.snapshot().failure === null) autoStartAttempted.delete(pick.key);
+      })
       .catch((error: unknown) => {
         store.log("warn", `! oto-başlatma başarısız (${pick.key}): ${String(error)}`);
       });
@@ -530,6 +551,20 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   if (options.startDiscovery === true) {
     await refreshDiscovery();
     scheduleDiscovery();
+    // YETİM İŞ GÖRÜNÜRLÜĞÜ (v1): restart, onay kapısında bekleyen işi yetim
+    // bırakır — run belleği gitti, ticket İNCELEMEDE'de yöneticinin üzerinde.
+    // Boot'ta BİR KEZ tara: günlüğe warn + ticket'a tek yönlendirme yorumu
+    // (çift-yorum engeli detectOrphans içinde). Devralma v1'de akış-içi devam
+    // değildir: kullanıcı ticket'ı bota atayınca atama-keşif + oto-başlatma
+    // zinciri yeniden analiz eder. Fire-and-forget ve fail-soft — detectOrphans
+    // asla reddetmez, boot'u hiçbir hata bozamaz. Yalnız çalışan uygulama
+    // (startDiscovery) tarar; testler istedikleri sahte ile doğrudan çağırır.
+    void detectOrphans({
+      work,
+      managerAccountId,
+      reviewStatusName: settings.snapshot().reviewStatusName,
+      log: (level, text) => store.log(level, text),
+    });
   }
 
   return {

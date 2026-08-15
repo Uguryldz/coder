@@ -1,8 +1,10 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AuditChain } from "@maestro/audit";
 import {
   bootPilot,
+  type AnalysisTemplateOverlay,
   type ListeningRule,
   type PilotDocTemplate,
   type PilotSettings,
@@ -11,6 +13,7 @@ import {
 import { createDb } from "@maestro/db";
 import { postgresChainLock, PrismaAuditStore } from "../stores/audit.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
+import { PrismaTemplateStore } from "../stores/template.js";
 import { prismaTransactionRunner } from "../stores/sql.js";
 import { PrismaVariantModelReader } from "../stores/variant-model-reader.js";
 import { fail, install, isEntrypoint } from "./lifecycle.js";
@@ -83,6 +86,16 @@ export interface PilotDbWiring {
    * pilot falls back to the built-in layout instead of failing a run.
    */
   docTemplate: () => Promise<PilotDocTemplate | null>;
+  /**
+   * Lazy loader for the ACTIVE Studio ANALYSIS template
+   * (`AnalysisTemplateVersion` — newest version, the store is append-only),
+   * reduced to the SAFE overlay shape the pilot applies onto the engine
+   * template: per section only `key`, `title`, `aiInstruction`. Called by the
+   * pilot PER RUN, so a Studio publish is live restart-free. No template yet or
+   * a read error → null (logged), and the corporate default serves — a
+   * template read must never fail an analysis.
+   */
+  analysisTemplateOverlay: () => Promise<AnalysisTemplateOverlay | null>;
 }
 
 // ---------------------------------------------------------------- settings file
@@ -161,6 +174,44 @@ export async function persistPilotSettingsFile(
   } catch (error) {
     console.warn(`[pilot] ayarlar dosyaya yazılamadı (${path}) — bellekte güncel: ${String(error)}`);
   }
+}
+
+// ---------------------------------------------------------------- sandbox kökü
+//
+// KALICI SANDBOX HAZIRLIĞI ("hiç kapanmayan worker" paketi). Pilot tarafı zaten
+// kalıcı kök + `<root>/<ticketKey>` izole alt dizin davranışına sahip — ama kök
+// BOŞ kaldığında her run atılan-kullanılan `mkdtemp` alanına düşer ve restart'ta
+// hiçbir iz kalmaz. Burada, yalnız hiç kimse bir kök seçmemişken (ne UI'da
+// kaydedilmiş ayar ne PILOT_SANDBOX_ROOT env'i) makul bir varsayılan seçilir:
+// `<maestro kökü>/.sandbox` (git-ignore bölgesi, `.env` ile aynı yer). Dolu bir
+// değer ASLA ezilmez — bu yalnız boş→varsayılan doldurmasıdır.
+
+/** `<maestro kökü>/.sandbox` — kalıcı sandbox'ın varsayılan kökü. */
+export function defaultSandboxRootPath(): string {
+  return join(dirname(pilotSettingsFilePath()), ".sandbox");
+}
+
+/**
+ * Seed'deki `sandboxRoot` boşsa VE `PILOT_SANDBOX_ROOT` da boşsa varsayılan kökü
+ * seed'e koyar ve dizini `mkdir -p` ile oluşturur. Aksi halde seed'e DOKUNMAZ
+ * (dolu ayar/env her zaman kazanır). mkdir hatası fail-soft'tur: uyarı düşer,
+ * seed yine doldurulur — boot asla bozulmaz (workspace zaten run başında kendi
+ * alt dizinini `mkdir -p` ile açar).
+ */
+export async function ensureSandboxRootDefault(
+  persisted: Partial<PilotSettings> | undefined,
+  env: Record<string, string | undefined>,
+  fallbackRoot: string = defaultSandboxRootPath(),
+): Promise<Partial<PilotSettings> | undefined> {
+  const persistedRoot = typeof persisted?.sandboxRoot === "string" ? persisted.sandboxRoot.trim() : "";
+  const envRoot = env["PILOT_SANDBOX_ROOT"]?.trim() ?? "";
+  if (persistedRoot !== "" || envRoot !== "") return persisted; // dolu değer asla ezilmez
+  try {
+    await mkdir(fallbackRoot, { recursive: true });
+  } catch (error) {
+    console.warn(`[pilot] varsayılan sandbox kökü oluşturulamadı (${fallbackRoot}): ${String(error)}`);
+  }
+  return { ...(persisted ?? {}), sandboxRoot: fallbackRoot };
 }
 
 const MATCH_KINDS = new Set(["status", "issuetype"]);
@@ -271,6 +322,27 @@ export function pilotWiringFromEnv(
         return null;
       }
     },
+    analysisTemplateOverlay: async () => {
+      try {
+        // The same append-only store the BFF composes: active = newest version
+        // (what an admin last published in Studio's template designer).
+        const store = new PrismaTemplateStore(db.analysisTemplateVersion, db.jiraProjectBinding, db.workflowRun);
+        const record = await store.latest();
+        if (record === null) return null;
+        return {
+          sections: record.sections.map((s) => ({
+            key: s.key,
+            title: s.title,
+            aiInstruction: s.aiInstruction,
+          })),
+        };
+      } catch (error) {
+        // Fail-soft: the engine's default template serves — a Studio-template
+        // read must never fail an analysis, let alone a run.
+        console.warn(`[pilot] Studio analiz şablonu DB'den okunamadı (varsayılan şablon kullanılacak): ${String(error)}`);
+        return null;
+      }
+    },
   };
 }
 
@@ -283,13 +355,16 @@ export function variantReaderFromEnv(
 }
 
 async function main(): Promise<void> {
-  const { variantReader, audit, onLlmCall, loadSeeds, docTemplate } = pilotWiringFromEnv(process.env);
+  const { variantReader, audit, onLlmCall, loadSeeds, docTemplate, analysisTemplateOverlay } =
+    pilotWiringFromEnv(process.env);
   // Boot seeds from the DB (Faz 1): rules + enabled notes survive a restart.
   const seeds = await loadSeeds();
   // The UI-edited settings, persisted as a JSON file at the maestro root (the
   // Param table is a locked catalog — see the note above the file helpers).
   // Seeded here so a restart keeps what the operator saved in the panel.
-  const persistedSettings = await loadPilotSettingsFile();
+  // Kalıcı sandbox hazırlığı: kimse bir kök seçmediyse `<maestro kökü>/.sandbox`
+  // varsayılanı seed'e girer ve dizin açılır; dolu ayar/env'e dokunulmaz.
+  const persistedSettings = await ensureSandboxRootDefault(await loadPilotSettingsFile(), process.env);
 
   const stage = await bootPilot({
     startDiscovery: true,
@@ -303,6 +378,7 @@ async function main(): Promise<void> {
       void persistPilotSettingsFile(settings);
     },
     docTemplate,
+    analysisTemplateOverlay,
   });
   process.stdout.write(
     [

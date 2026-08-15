@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import {
   AnalysisHaltedError,
+  applyTemplateOverlay,
   buildAnalysisContext,
   produceAnalysis,
   requestIntake,
@@ -208,8 +209,9 @@ describe("pilot analizi — gerçek agent-roles analyst (offline)", () => {
     await expect(
       produceAnalysis({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
     ).rejects.toBeInstanceOf(RoleOutputError);
-    // One call + one repair round = exactly two attempts, then a hard failure.
-    expect(requests).toHaveLength(2);
+    // One call + repair rounds up to the role budget (MAX_ROLE_ATTEMPTS=3,
+    // BULGU-1 sonrası 2→3), then a hard failure — fail-closed korunur.
+    expect(requests).toHaveLength(3);
   });
 
   it("uydurma kaynak (bağlamda olmayan referans) fail-closed reddedilir", async () => {
@@ -237,6 +239,105 @@ describe("pilot analizi — gerçek agent-roles analyst (offline)", () => {
     await expect(
       produceAnalysis({ llm, ticket: TICKET, variantId: "pilot-v1", dataClass: "gizli" }),
     ).rejects.toBeInstanceOf(AnalysisHaltedError);
+  });
+});
+
+describe("applyTemplateOverlay — Studio şablonunun güvenli overlay'i (M108)", () => {
+  it("eşleşen key'in yalnız title + aiInstruction'ı DB değeriyle değişir; bindings aynen kalır", () => {
+    const { template, unmatched } = applyTemplateOverlay({
+      sections: [
+        { key: "purpose", title: "İş Değeri (Studio)", aiInstruction: "Amacı iki cümlede yaz." },
+        { key: "uiApiChanges", aiInstruction: "Her uç noktayı tabloya yaz." },
+      ],
+    });
+
+    expect(unmatched).toEqual([]);
+    const purpose = template.sections.find((s) => s.key === "purpose")!;
+    const basePurpose = DEFAULT_ANALYSIS_TEMPLATE.sections.find((s) => s.key === "purpose")!;
+    expect(purpose.title).toBe("İş Değeri (Studio)");
+    expect(purpose.aiInstruction).toBe("Amacı iki cümlede yaz.");
+    // The structural/binding fields are the engine's, untouched.
+    expect(purpose.contractField).toBe(basePurpose.contractField);
+    expect(purpose.format).toBe(basePurpose.format);
+    expect(purpose.required).toBe(basePurpose.required);
+    expect(purpose.example).toBe(basePurpose.example);
+
+    // A partial overlay (only aiInstruction) keeps the engine title, and the
+    // table section's columns binding survives verbatim.
+    const uiApi = template.sections.find((s) => s.key === "uiApiChanges")!;
+    const baseUiApi = DEFAULT_ANALYSIS_TEMPLATE.sections.find((s) => s.key === "uiApiChanges")!;
+    expect(uiApi.title).toBe(baseUiApi.title);
+    expect(uiApi.aiInstruction).toBe("Her uç noktayı tabloya yaz.");
+    expect(uiApi.columns).toEqual(baseUiApi.columns);
+
+    // Sections the overlay does not name are the SAME objects (no rebuild).
+    const risk = template.sections.find((s) => s.key === "riskAndRollback")!;
+    const baseRisk = DEFAULT_ANALYSIS_TEMPLATE.sections.find((s) => s.key === "riskAndRollback")!;
+    expect(risk).toBe(baseRisk);
+    // The engine's identity fields never change (pinning/schema name intact).
+    expect(template.templateId).toBe(DEFAULT_ANALYSIS_TEMPLATE.templateId);
+    expect(template.version).toBe(DEFAULT_ANALYSIS_TEMPLATE.version);
+  });
+
+  it("DEFAULT'ta olmayan key sessizce atlanmaz — unmatched listesine düşer, bölüm EKLENMEZ", () => {
+    const { template, unmatched } = applyTemplateOverlay({
+      sections: [
+        { key: "guvenlikAnalizi", title: "Güvenlik Analizi", aiInstruction: "Tehdit modelini yaz." },
+        { key: "purpose", aiInstruction: "Amacı yaz." },
+      ],
+    });
+
+    expect(unmatched).toEqual(["guvenlikAnalizi"]);
+    // The engine's structure is fixed: no section was added or removed.
+    expect(template.sections.map((s) => s.key)).toEqual(
+      DEFAULT_ANALYSIS_TEMPLATE.sections.map((s) => s.key),
+    );
+  });
+
+  it("null overlay → DEFAULT şablon birebir (aynı referans)", () => {
+    const { template, unmatched } = applyTemplateOverlay(null);
+    expect(template).toBe(DEFAULT_ANALYSIS_TEMPLATE);
+    expect(unmatched).toEqual([]);
+  });
+
+  it("boş/whitespace DB değeri bir prompt'u asla silemez — alan uygulanmaz", () => {
+    const { template } = applyTemplateOverlay({
+      sections: [{ key: "purpose", title: "   ", aiInstruction: "" }],
+    });
+    const purpose = template.sections.find((s) => s.key === "purpose")!;
+    const basePurpose = DEFAULT_ANALYSIS_TEMPLATE.sections.find((s) => s.key === "purpose")!;
+    expect(purpose.title).toBe(basePurpose.title);
+    expect(purpose.aiInstruction).toBe(basePurpose.aiInstruction);
+  });
+
+  it("DEFAULT şablonun kendisi asla mutate edilmez (kopya üzerinde çalışır)", () => {
+    const before = JSON.stringify(DEFAULT_ANALYSIS_TEMPLATE);
+    applyTemplateOverlay({
+      sections: [{ key: "purpose", title: "Değişti", aiInstruction: "Değişti." }],
+    });
+    expect(JSON.stringify(DEFAULT_ANALYSIS_TEMPLATE)).toBe(before);
+  });
+
+  it("overlay'li şablonla üretim: analyst şablon-geçerli çıktıyla yine AnalysisDoc'a düşer", async () => {
+    const { llm, requests } = mockLlm({ values: [validOutput()] });
+    const { template } = applyTemplateOverlay({
+      sections: [{ key: "purpose", title: "İş Değeri", aiInstruction: "Amacı net yaz." }],
+    });
+    const result = await produceAnalysis({
+      llm,
+      ticket: TICKET,
+      variantId: "pilot-v1",
+      dataClass: "gizli",
+      template,
+    });
+
+    // The pinning identity is unchanged (same templateId@version)…
+    expect(requests[0]!.schemaName).toBe(analysisSchemaName(DEFAULT_ANALYSIS_TEMPLATE));
+    // …the Studio instruction reached the prompt…
+    expect(requests[0]!.input).toContain("Amacı net yaz.");
+    // …and the projection onto the frozen AnalysisDoc still holds (bindings intact).
+    expect(result.display.templateVersion).toBe(DEFAULT_ANALYSIS_TEMPLATE.version);
+    expect(result.display.impactMatrix.length).toBeGreaterThan(0);
   });
 });
 

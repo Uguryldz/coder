@@ -42,6 +42,79 @@ export function pilotAnalysisTemplate(): AnalysisTemplate {
 }
 
 /**
+ * The SAFE Studio overlay for the analysis template (M108, "güvenli overlay").
+ *
+ * Studio's template designer publishes section rows to the DB
+ * (`AnalysisTemplateVersion`), but the engine's template is
+ * `DEFAULT_ANALYSIS_TEMPLATE`, whose sections carry CONTRACT BINDINGS
+ * (`contractField`, `subFields`, `columns`, `format`) that the DB shape does not
+ * — swapping the whole template for the DB rows would break the fail-closed
+ * projection onto the frozen `AnalysisDoc`. So the DB may only OVERLAY the two
+ * prose fields a document owner actually edits: a section's `title` and its
+ * `aiInstruction` (the Turkish instruction the model reads verbatim, M59).
+ * Everything structural stays the engine's.
+ */
+export interface AnalysisTemplateOverlaySection {
+  key: string;
+  title?: string;
+  aiInstruction?: string;
+}
+
+export interface AnalysisTemplateOverlay {
+  sections: readonly AnalysisTemplateOverlaySection[];
+}
+
+/** Loader shape the composition root wires (lazy — read PER RUN, restart-free). */
+export type AnalysisTemplateOverlayLoader = () => Promise<AnalysisTemplateOverlay | null>;
+
+export interface OverlayedAnalysisTemplate {
+  template: AnalysisTemplate;
+  /**
+   * Overlay section keys the engine template does not carry. NOT silently
+   * dropped: the caller logs each one ("şablonda eşleşmeyen bölüm: X — motor
+   * yapısı sabit") so a designer who added a section in Studio learns the
+   * engine's structure did not grow a slot for it.
+   */
+  unmatched: string[];
+}
+
+/**
+ * Apply a Studio overlay onto the engine template, PURE and fail-safe.
+ *
+ * Only `title` and `aiInstruction` of a key-matched section are replaced, and
+ * only with a non-empty value (an empty DB cell can never blank out a prompt —
+ * both fields are NonEmpty in the template schema). Bindings, format, columns,
+ * subFields, required, examples: untouched. `null` overlay = the base template
+ * byte-for-byte (`template === base`).
+ */
+export function applyTemplateOverlay(
+  overlay: AnalysisTemplateOverlay | null,
+  base: AnalysisTemplate = DEFAULT_ANALYSIS_TEMPLATE,
+): OverlayedAnalysisTemplate {
+  if (overlay === null || overlay.sections.length === 0) {
+    return { template: base, unmatched: [] };
+  }
+
+  const byKey = new Map(overlay.sections.map((s) => [s.key, s]));
+  const sections = base.sections.map((section) => {
+    const over = byKey.get(section.key);
+    if (over === undefined) return section;
+    const title = over.title?.trim();
+    const aiInstruction = over.aiInstruction?.trim();
+    return {
+      ...section,
+      ...(title !== undefined && title !== "" ? { title } : {}),
+      ...(aiInstruction !== undefined && aiInstruction !== "" ? { aiInstruction } : {}),
+    };
+  });
+
+  const known = new Set(base.sections.map((s) => s.key));
+  const unmatched = [...new Set(overlay.sections.map((s) => s.key).filter((key) => !known.has(key)))];
+
+  return { template: { ...base, sections }, unmatched };
+}
+
+/**
  * Everything the analyst is allowed to know for this run.
  *
  * Today the pilot only has the live Jira ticket, so the ticket is the only

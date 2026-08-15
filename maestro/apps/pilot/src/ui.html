@@ -441,7 +441,7 @@ function auditQuery(withPaging) {
   return p;
 }
 
-function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+// esc yukarıda tanımlı (satır ~228) — ikinci bildirim sayfayı çökertiyordu (BULGU-2).
 
 async function loadAudit() {
   // Keep the CSV link in sync with the live filters (no paging: whole window).

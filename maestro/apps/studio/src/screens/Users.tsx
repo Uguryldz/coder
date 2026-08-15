@@ -367,20 +367,28 @@ function UserFormModal({
 
       <fieldset className="scr-fieldset" style={{ marginTop: 12 }}>
         <legend className="ui-field__label">{t("users.field.groups")}</legend>
+        <div className="scr-mini" style={{ marginBottom: 8 }}>{t("users.field.groups_hint")}</div>
         <div className="scr-checklist">
-          {ASSIGNABLE_GROUPS.map((group) => (
-            <label key={group} className="scr-check">
-              <input
-                type="checkbox"
-                checked={groups.includes(group)}
-                onChange={() => toggleGroup(group)}
-              />
-              <span className="scr-mono">{group}</span>
-              <Badge tone={roleTone(ROLE_BY_GROUP[group] ?? "viewer")}>
-                {t(`role.${ROLE_BY_GROUP[group] ?? "viewer"}`)}
-              </Badge>
-            </label>
-          ))}
+          {ASSIGNABLE_GROUPS.map((group) => {
+            const role = ROLE_BY_GROUP[group] ?? "viewer";
+            return (
+              <label key={group} className="scr-check" style={{ alignItems: "flex-start" }}>
+                <input
+                  type="checkbox"
+                  checked={groups.includes(group)}
+                  onChange={() => toggleGroup(group)}
+                />
+                <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <span className="scr-row" style={{ gap: 6, alignItems: "center" }}>
+                    <b>{t(`users.group.${group}`).split(" — ")[0]}</b>
+                    <Badge tone={roleTone(role)}>{t(`role.${role}`)}</Badge>
+                    <span className="scr-mono scr-mini">{group}</span>
+                  </span>
+                  <span className="scr-mini">{t(`users.group.${group}`)}</span>
+                </span>
+              </label>
+            );
+          })}
         </div>
         <div className="scr-mini" style={{ marginTop: 8 }}>
           {t("users.field.roles_preview")}:{" "}

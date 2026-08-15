@@ -136,23 +136,47 @@ export async function assertBindable(
   // unknown one would file a proposal to route tickets at a repo that has no row.
   if (repo === undefined) throw notFound("unknown_app", { appId: target.adoRepo });
 
-  const project = options.projects.find(
-    (candidate) => candidate.projectKey === target.jiraProject,
-  );
-  if (project === undefined) throw notFound("unknown_project", { projectKey: target.jiraProject });
+  assertProjectFree(options.projects, target.jiraProject);
+  return { appId: repo.appId, platform: repo.platform };
+}
+
+/**
+ * The project half of `assertBindable`, on its own.
+ *
+ * The submit path calls this BEFORE it registers a repo, so a draft naming a
+ * project that does not exist or is already bound is refused without leaving a
+ * freshly-written app row behind it. Registering the repo and then discovering
+ * the project is unusable would strand an inventory entry the operator never got
+ * a proposal for — the exact half-finished state the wizard must not create.
+ */
+export async function assertProjectBindable(
+  deps: ResolvedDeps,
+  projectKey: string,
+): Promise<void> {
+  const options = await deps.read.onboarding.options({ limit: MAX_DRY_RUN_SAMPLE, cursor: null });
+  assertProjectFree(options.projects, projectKey);
+}
+
+function assertProjectFree(
+  projects: readonly { projectKey: string; state: string | null }[],
+  projectKey: string,
+): void {
+  const project = projects.find((candidate) => candidate.projectKey === projectKey);
+
+  // A project absent from the binding table is not an error: it is a project
+  // nobody has onboarded yet, which is exactly what the wizard is for. The
+  // screen only offers projects it read LIVE off Jira, so a key reaching here is
+  // a real project — the binding table is a record of what is ALREADY bound, not
+  // the set of projects that exist (M102).
+  if (project === undefined) return;
 
   // A project that is already live belongs to somebody. Re-binding it would
   // redirect a running project's tickets into a different repository, which is
   // exactly the M14/M99 mistake the dry run exists to catch — so it is refused
   // here rather than reported as a warning the operator can click past.
   if (project.state !== null && ACTIVE_BINDING_STATES.includes(project.state)) {
-    throw conflict("project_already_bound", {
-      projectKey: target.jiraProject,
-      state: project.state,
-    });
+    throw conflict("project_already_bound", { projectKey, state: project.state });
   }
-
-  return { appId: repo.appId, platform: repo.platform };
 }
 
 /**

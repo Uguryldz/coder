@@ -12,6 +12,8 @@ import type {
 } from "@maestro/contracts";
 import type { CiPort, SecretPort, WorkPort } from "@maestro/ports";
 import type { ConnectionStore } from "./connection-store.js";
+import type { ListeningStore } from "./listening-store.js";
+import type { GuidanceStore } from "./guidance-store.js";
 import type { ConnectorFetch } from "./connection-service.js";
 import type { JiraWorkflowReader } from "./jira-workflow-model.js";
 import type { RunGateway } from "./gateway.js";
@@ -174,6 +176,32 @@ export interface JiraProjectBindings {
   resolve(projectKey: string): Promise<JiraBinding | null>;
 }
 
+/**
+ * Creating (or re-creating) a project's binding when an onboarding proposal is
+ * APPROVED (M93/M102). Optional and wired exactly like `appRegistry`: a
+ * deployment that has not wired it leaves the approve path answering 503-by-name
+ * rather than pretending to bind. Present here means "an approved proposal can
+ * write the live binding".
+ *
+ * Kept OFF `JiraProjectBindings` (which stays `resolve`-only) so the intake read
+ * path never gains a write method it could call by accident. `bind` is an UPSERT
+ * keyed on `projectKey`: re-approving a re-onboarded project overwrites its
+ * binding rather than failing.
+ */
+export interface BindingWrite {
+  projectKey: string;
+  /** `TriggerModeE` (`auto` | `label` | `command`) as stored — mapped from the wizard's opt_in/automatic. */
+  trigger: "auto" | "label" | "command";
+  /** `active` puts the project live; the wizard's approval is what makes it live. */
+  state: "draft" | "dry_run" | "active" | "paused" | "unbound";
+  /** Exactly the shape `parseDefaults` reads back: `{ appId, mode, dataClass }`. */
+  defaults: { appId: string | null; mode: WorkMode; dataClass: DataClass };
+}
+
+export interface BindingWriter {
+  bind(binding: BindingWrite): Promise<void>;
+}
+
 // ── gate ownership (M71) ──────────────────────────────────────────────────────
 
 export interface GateDirectory {
@@ -201,7 +229,12 @@ export interface ParamStore {
   pending(): Promise<readonly PendingParamChange[]>;
   putPending(change: PendingParamChange): Promise<void>;
   clearPending(key: string, scopeRef: string | null): Promise<void>;
-  apply(change: ParamChange): Promise<void>;
+  /**
+   * Persist a param version. `options.allowSelfApprove` waives the guarded
+   * "approver ≠ author" rule for a master-admin self-approval the BFF has
+   * already authorised; omitted/false keeps the strict two-person rule.
+   */
+  apply(change: ParamChange, options?: { allowSelfApprove?: boolean }): Promise<void>;
 }
 
 // ── analysis template designer (M108 / M83) ───────────────────────────────────
@@ -511,6 +544,41 @@ export function passwordChangerOf(identity: IdentityProvider): PasswordChanger |
   return typeof candidate.changePassword === "function" ? (candidate as PasswordChanger) : null;
 }
 
+// ── application registry write (M93/M100) ─────────────────────────────────────
+
+/**
+ * The one field the wizard supplies about a repository, split into the two
+ * columns the registry stores.
+ *
+ * `appId` is the repo's full name verbatim (`owner/repo`) — the same string the
+ * screen picks from the live SCM list and the same one `assertBindable` matches
+ * on, so registering it and then binding it cannot disagree about which repo was
+ * meant. `adoProject`/`adoRepo` are the two halves the platform's `.docx`/SCM
+ * adapters read (an ADO project is a GitHub owner here, M100).
+ */
+export interface AppRegistration {
+  appId: string;
+  displayName: string;
+  adoProject: string;
+  adoRepo: string;
+  platform: string;
+}
+
+/**
+ * Registering an application into the inventory (M93/M100). Optional and wired
+ * exactly like `connections`: a deployment that has not wired it leaves the
+ * onboarding submit at its older behaviour — file the binding proposal and
+ * require the repo to have been onboarded already — rather than pretending to
+ * write a row. Present here means "the wizard may create the app row itself".
+ *
+ * `register` is an UPSERT keyed on `appId`: re-running the wizard for a repo
+ * already in the registry must not fail, because the operator's intent the
+ * second time is the same as the first.
+ */
+export interface AppRegistryWriter {
+  register(app: AppRegistration): Promise<void>;
+}
+
 // ── the container ─────────────────────────────────────────────────────────────
 
 export interface BffConfig {
@@ -581,6 +649,36 @@ export interface BffDeps {
    * together or the connector routes refuse.
    */
   connectorSecrets?: SecretPort;
+  /**
+   * Writes an application row into the inventory when the wizard is submitted
+   * (M93/M100). Optional: a deployment that has not wired it leaves the
+   * onboarding submit at its older proposal-only behaviour — the repo must have
+   * been onboarded already — rather than 503-ing. Absent here means "the wizard
+   * cannot create the app row in this deployment", never "no applications".
+   */
+  appRegistry?: AppRegistryWriter;
+  /**
+   * Writes a project's live binding when an onboarding proposal is approved
+   * (M93/M102). Optional and paired with the onboarding approve path: a
+   * deployment that has not wired it makes approve answer 503-by-name rather than
+   * clearing the proposal without binding anything. Absent means "this deployment
+   * cannot turn an approved proposal into a live binding".
+   */
+  bindingWriter?: BindingWriter;
+  /**
+   * The listening-rules store ("dinleme kuralları" surface). Optional: a
+   * deployment that has not wired it gets 503-by-name on
+   * `/studio/listening-rules`, the same convention as the other capabilities
+   * that refuse rather than render an empty page. Absent here means "listening
+   * rules are not editable in this deployment", never "there are no rules".
+   */
+  listening?: ListeningStore;
+  /**
+   * Analysis-guidance store — the "öğren" knowledge library. Optional, same
+   * 503-by-name convention as `listening`: absent means the deployment did not
+   * wire it, never "there is no guidance". The enabled notes feed the analyst.
+   */
+  guidance?: GuidanceStore;
   /** Ticket→application routing (M99/M102), as the routing screen reads it. */
   routing: RoutingReader;
   /**

@@ -72,7 +72,8 @@ export async function settingsRoutes(app: FastifyInstance, deps: ResolvedDeps): 
     const body = SettingsUpdate.safeParse(request.body);
     if (!body.success) throw badRequest("invalid_settings_body");
 
-    const actor = sessionActor(sessionOf(request));
+    const session = sessionOf(request);
+    const actor = sessionActor(session);
     // Sequential rather than `Promise.all`: each `putParam` reads the current
     // version to compute the next one, and two of them racing on the same key
     // would both write version n+1.
@@ -84,6 +85,9 @@ export async function settingsRoutes(app: FastifyInstance, deps: ResolvedDeps): 
           scopeRef: change.scopeRef,
           value: change.value,
           actor,
+          // Groups let a master admin self-approve a guarded change; other
+          // roles still need a second person (master-approver.ts).
+          actorGroups: session.groups,
         }),
       );
     }

@@ -6,7 +6,7 @@ import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
-import { QueryState } from "./shared/QueryState.tsx";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 import { bySeverity, severityTone, toSeverity } from "./shared/severity.ts";
 
 /**
@@ -121,7 +121,7 @@ export function SecurityScreen(): ReactNode {
         }
         padded={false}
       >
-        <QueryState
+        <MaybeUnwired
           isPending={query.isPending}
           error={query.error}
           isEmpty={rows.length === 0}
@@ -188,7 +188,7 @@ export function SecurityScreen(): ReactNode {
             rowKey={(row) => `${row.ticketKey}:${row.finding.tool}:${row.finding.ruleId}:${row.at}`}
             emptyLabel={t("security.no_findings")}
           />
-        </QueryState>
+        </MaybeUnwired>
       </Card>
 
       <p className="tpl-keyline" style={{ marginTop: 12 }}>

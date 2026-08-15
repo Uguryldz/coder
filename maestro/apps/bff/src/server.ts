@@ -12,6 +12,8 @@ import { SESSION_TTL_MS } from "./auth/sessions.js";
 import { bffPlatform } from "./platform/index.js";
 import { authRoutes } from "./routes/auth.js";
 import { connectionRoutes } from "./routes/connections.js";
+import { listeningRoutes } from "./routes/listening.js";
+import { guidanceRoutes } from "./routes/guidance.js";
 import { docTemplateRoutes } from "./routes/doc-template.js";
 import { healthRoutes } from "./routes/health.js";
 import { settingsRoutes } from "./routes/settings.js";
@@ -172,6 +174,11 @@ export async function buildServer(
   // mask. Refuses by name (503) when the store + encrypting SecretPort are not
   // wired, the same convention as the read models above.
   await app.register(async (scope) => connectionRoutes(scope, resolved));
+  // The listening-rules surface: which tickets Maestro picks up and how it runs
+  // them (status/issuetype → flow type), made admin-editable. Refuses by name
+  // (503) when no ListeningStore is wired, the same convention as above.
+  await app.register(async (scope) => listeningRoutes(scope, resolved));
+  await app.register(async (scope) => guidanceRoutes(scope, resolved));
   await app.register(async (scope) => killSwitchRoutes(scope, resolved));
   // Studio's read surface (M86/M7): the 37 screens read through these, and
   // through the same guards and the same project scoping as everything above.

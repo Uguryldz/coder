@@ -12,9 +12,17 @@ import { NotAvailable, QueryState } from "./QueryState.tsx";
  *
  * A plain 404 renders through the error path as "record not found", which tells
  * the operator the wrong thing: the record is not missing, the endpoint was
- * never built. This wrapper distinguishes the two — a 404/501 becomes cluster
- * A's `<NotAvailable>` ("not published yet, deliberately blank rather than
+ * never built. This wrapper distinguishes the two — a 404/501, or a 503 whose
+ * code is `capability_not_wired`, becomes cluster A's `<NotAvailable>` ("not
+ * published yet / not wired in this deployment, deliberately blank rather than
  * invented"), while every other failure keeps its translated error.
+ *
+ * The 503 case matters because the read models that refuse by name (runners,
+ * scans, eval — a store this deployment did not wire) answer `503
+ * capability_not_wired`, NOT 404. Without it those screens render a red "veri
+ * alınamadı" ERROR for a capability that is simply absent — the operator reads a
+ * breakage where the honest message is "this platform does not have this yet".
+ * A 503 with any OTHER code is a genuine outage and keeps its error.
  *
  * The screens behind this are complete. When a route lands, its screen starts
  * rendering real data with no further change; nothing here needs deleting.
@@ -28,14 +36,19 @@ export interface MaybeUnwiredProps {
   readonly error: unknown;
   readonly isEmpty?: boolean;
   readonly emptyTitle?: string;
+  readonly emptyIcon?: string;
   readonly onRetry?: (() => void) | undefined;
   readonly skeletonRows?: number;
   readonly children: ReactNode;
 }
 
-/** True when a failure means "this endpoint does not exist", not "it broke". */
+/** True when a failure means "this endpoint does not exist / is not wired here", not "it broke". */
 export function isNotBuilt(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 404 || error.status === 501);
+  if (!(error instanceof ApiError)) return false;
+  if (error.status === 404 || error.status === 501) return true;
+  // A read model that refuses by name (unwired store) answers 503 with this
+  // exact code. Any other 503 is a real outage and stays an error.
+  return error.status === 503 && error.code === "capability_not_wired";
 }
 
 export function MaybeUnwired({
@@ -43,6 +56,7 @@ export function MaybeUnwired({
   error,
   isEmpty = false,
   emptyTitle,
+  emptyIcon,
   onRetry,
   skeletonRows = 4,
   children,
@@ -55,6 +69,7 @@ export function MaybeUnwired({
       error={error}
       isEmpty={isEmpty}
       {...(emptyTitle === undefined ? {} : { emptyTitle })}
+      {...(emptyIcon === undefined ? {} : { emptyIcon })}
       {...(onRetry === undefined ? {} : { onRetry })}
       skeletonRows={skeletonRows}
     >

@@ -39,6 +39,13 @@ export interface ScreenDef {
    * request regardless of what the sidebar shows. See RequireSession.tsx.
    */
   readonly roles?: readonly string[];
+  /**
+   * True for a screen whose backing capability is NOT live yet (the page shows
+   * MaybeUnwired's "yayında değil"). The sidebar renders a small "yakında"
+   * badge next to it — the entry stays visible and routable (deep links must
+   * not break), it just stops pretending to be a working tool.
+   */
+  readonly soon?: true;
 }
 
 export const NAV_GROUPS: readonly NavGroup[] = ["start", "watch", "compliance", "ai", "system"];
@@ -74,7 +81,7 @@ export const SCREENS: readonly ScreenDef[] = [
 
   // ── ③ DENETİM & UYUM — audit / compliance (jargon → Turkish) ─────────────
   { id: "audit", path: "audit", titleKey: "screen.audit.title", navKey: "nav.audit", group: "compliance", icon: "🔒" },
-  { id: "evidence", path: "evidence", titleKey: "screen.evidence.title", navKey: "nav.evidence", group: "compliance", icon: "📦" },
+  { id: "evidence", path: "evidence", titleKey: "screen.evidence.title", navKey: "nav.evidence", group: "compliance", icon: "📦", soon: true },
   { id: "pii", path: "pii", titleKey: "screen.pii.title", navKey: "nav.pii", group: "compliance", icon: "🔏" },
   // Cost + LLM Gateway read the same two endpoints — now one page (AiUsageScreen)
   // with a "Maliyet" and a "Trafik" tab. /llm redirects to /cost?view=traffic.
@@ -83,15 +90,15 @@ export const SCREENS: readonly ScreenDef[] = [
   // ── ④ YAPAY ZEKÂ AYARLARI — the manager's own AI config, simplified ───────
   { id: "variants", path: "variants", titleKey: "screen.variants.title", navKey: "nav.variants", group: "ai", icon: "🤖" },
   { id: "knowledge", path: "knowledge", titleKey: "screen.knowledge.title", navKey: "nav.knowledge", group: "ai", icon: "📚" },
-  { id: "eval", path: "eval", titleKey: "screen.eval.title", navKey: "nav.eval", group: "ai", icon: "🎯" },
-  { id: "security", path: "security", titleKey: "screen.security.title", navKey: "nav.security", group: "ai", icon: "🛡" },
+  { id: "eval", path: "eval", titleKey: "screen.eval.title", navKey: "nav.eval", group: "ai", icon: "🎯", soon: true },
+  { id: "security", path: "security", titleKey: "screen.security.title", navKey: "nav.security", group: "ai", icon: "🛡", soon: true },
 
   // ── ⑤ SİSTEM — setup / infrastructure, rarely touched but reachable ──────
   { id: "users", path: "users", titleKey: "screen.users.title", navKey: "nav.users", group: "system", icon: "👥", roles: ["admin"] },
   { id: "settings", path: "settings", titleKey: "screen.settings.title", navKey: "nav.settings", group: "system", icon: "⚙" },
   { id: "params", path: "params", titleKey: "screen.params.title", navKey: "nav.params", group: "system", icon: "🎛", roles: ["admin", "tech-lead"] },
   { id: "health", path: "health", titleKey: "screen.health.title", navKey: "nav.health", group: "system", icon: "💚" },
-  { id: "runners", path: "runners", titleKey: "screen.runners.title", navKey: "nav.runners", group: "system", icon: "🖥" },
+  { id: "runners", path: "runners", titleKey: "screen.runners.title", navKey: "nav.runners", group: "system", icon: "🖥", soon: true },
   { id: "sandbox", path: "sandbox", titleKey: "screen.sandbox.title", navKey: "nav.sandbox", group: "system", icon: "▶" },
 
   // Help moved out of the sidebar groups — it is documentation, reachable via a

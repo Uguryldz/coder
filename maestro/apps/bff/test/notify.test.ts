@@ -286,6 +286,47 @@ describe("PUT /notify", () => {
     expect(ladderRows.map((row) => row.version)).toEqual([1, 2]);
   });
 
+  it("saves a Teams webhook and reads it back MASKED, never in full", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    await seed(h);
+    const secretUrl = "https://outlook.office.com/webhook/verylongsecret-abc123";
+
+    const put = await h.app.inject({
+      method: "PUT",
+      url: "/notify",
+      headers: auth(token),
+      payload: { teamsWebhook: secretUrl },
+    });
+    expect(put.statusCode).toBe(200);
+
+    const body = (await get(h, token)).json() as { teamsWebhookMask: string };
+    // The read returns only a mask — the last few chars — never the full URL.
+    expect(body.teamsWebhookMask).toBe("…abc123");
+    expect(JSON.stringify(body)).not.toContain(secretUrl);
+    expect(JSON.stringify(body)).not.toContain("verylongsecret");
+  });
+
+  it("clears the Teams webhook when an empty string is saved", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    await seed(h);
+    await h.app.inject({
+      method: "PUT",
+      url: "/notify",
+      headers: auth(token),
+      payload: { teamsWebhook: "https://outlook.office.com/webhook/x123456" },
+    });
+    await h.app.inject({
+      method: "PUT",
+      url: "/notify",
+      headers: auth(token),
+      payload: { teamsWebhook: "" },
+    });
+    const body = (await get(h, token)).json() as { teamsWebhookMask: string };
+    expect(body.teamsWebhookMask).toBe("");
+  });
+
   it("keeps a step's id across an edit so open gates do not re-escalate", async () => {
     const h = await harness();
     const token = await admin(h);

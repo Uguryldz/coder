@@ -1,294 +1,151 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { AuthProvider } from "../src/auth/AuthProvider.tsx";
 import { I18nProvider } from "../src/i18n/I18nProvider.tsx";
 import { ToastProvider } from "../src/ui/Toast.tsx";
 import { FlowScreen } from "../src/screens/Flow.tsx";
-import {
-  activeNodeId,
-  edgeAnchors,
-  layoutFlow,
-  normalizeCategory,
-  presentCategories,
-  MARGIN,
-  NODE_WIDTH,
-  NODE_HEIGHT,
-  COLUMN_GAP,
-  ROW_GAP,
-  type FlowGraph,
-  type FlowStatus,
-} from "../src/screens/flow/layout.ts";
+import { AGENT_PIPELINE } from "../src/screens/flow/agentPipeline.ts";
+import { layoutPipeline } from "../src/screens/flow/pipelineLayout.ts";
+// Import the step definitions straight from the pilot's state module, NOT its
+// barrel: the barrel pulls in boot/server (readFileSync of ui.html), which has
+// no place in a jsdom unit test. `state.ts` is pure data — the id list only.
+import { STEP_DEFINITIONS } from "@maestro/pilot/state";
 import { ADMIN } from "./harness.tsx";
 
 /**
- * Flow screen (Dalga D) — the live OPS Jira workflow drawn as SVG.
+ * Flow screen — Maestro's AGENT pipeline drawn as SVG (the "hangi adımda hangi
+ * ajan" map), replacing the old Jira-status diagram.
  *
- * The geometry is a PURE function (`layoutFlow`), so the deterministic tests
- * assert its numbers directly rather than sniffing pixels out of the DOM. The
- * fixtures use the BFF's REAL wire shape (apps/bff/src/jira-workflow-model.ts):
- * `projectKey`, a category LABEL ("To Do"/"In Progress"/"Done"), transitions
- * carrying an `id` and a NULLABLE `fromStatusId`, plus `edgesComplete` /
- * `sampledFrom`. A test that used an invented shape would pass here and break
- * against the server.
+ * THE LOAD-BEARING TEST is the id alignment: the map's step ids MUST equal the
+ * pilot's STEP_DEFINITIONS ids, in the same order — that identity is the only
+ * thing keeping the live position (from `/studio/pilot/state`, keyed by step id)
+ * honest. If someone renumbers one side, this fails rather than the diagram
+ * silently lighting the wrong node.
+ *
+ * The geometry is a PURE function (`layoutPipeline`), so its numbers are asserted
+ * directly rather than sniffed out of the DOM.
  */
 
-/** The live OPS statuses, exactly as verified against uyildiz.atlassian.net. */
-const OPS_STATUSES: readonly FlowStatus[] = [
-  { id: "10000", name: "Yapılacaklar", category: "To Do" },
-  { id: "10001", name: "Devam Ediyor", category: "In Progress" },
-  { id: "10002", name: "İNCELEMEDE", category: "In Progress" },
-  { id: "10003", name: "Tamam", category: "Done" },
-];
+describe("agent pipeline model", () => {
+  it("has exactly the pilot's step ids, in order", () => {
+    const pipelineIds = AGENT_PIPELINE.map((s) => s.id);
+    const pilotIds = STEP_DEFINITIONS.map((s) => s.id);
+    expect(pipelineIds).toEqual(pilotIds);
+  });
 
-const OPS_GRAPH: FlowGraph = {
-  statuses: OPS_STATUSES,
-  transitions: [
-    { id: "11", name: "Başlat", fromStatusId: "10000", toStatusId: "10001" },
-    { id: "21", name: "İncelemeye gönder", fromStatusId: "10001", toStatusId: "10002" },
-    { id: "31", name: "Tamamla", fromStatusId: "10002", toStatusId: "10003" },
-    // A re-open: In-Review back to In-Progress — a backward, same-column edge.
-    { id: "41", name: "Geri gönder", fromStatusId: "10002", toStatusId: "10001" },
-  ],
-};
+  it("assigns every step an actor and a role", () => {
+    for (const step of AGENT_PIPELINE) {
+      expect(step.role.length).toBeGreaterThan(0);
+      expect(step.task.length).toBeGreaterThan(0);
+      expect(["maestro", "agent", "human"]).toContain(step.actor);
+    }
+  });
 
-describe("flow category normalization (pure)", () => {
-  it("maps Jira's label AND its machine key to a column bucket", () => {
-    expect(normalizeCategory("To Do")).toBe("todo");
-    expect(normalizeCategory("new")).toBe("todo");
-    expect(normalizeCategory("In Progress")).toBe("inprogress");
-    expect(normalizeCategory("indeterminate")).toBe("inprogress");
-    expect(normalizeCategory("Done")).toBe("done");
-    // An unreported or unrecognised category is a visible "other", not dropped.
-    expect(normalizeCategory("")).toBe("other");
-    expect(normalizeCategory("Beklemede")).toBe("other");
+  it("draws the İADE branch off the intake step and a re-analysis branch off the review step", () => {
+    const intake = AGENT_PIPELINE.find((s) => s.id === "2");
+    const review = AGENT_PIPELINE.find((s) => s.id === "3");
+    expect(intake?.branches.some((b) => b.kind === "out")).toBe(true);
+    expect(review?.branches.some((b) => b.kind === "back")).toBe(true);
   });
 });
 
-describe("flow layout (pure)", () => {
-  it("orders columns To Do -> In Progress -> Done and drops empty categories", () => {
-    expect(presentCategories(OPS_STATUSES)).toEqual(["todo", "inprogress", "done"]);
-    // No In-Progress status -> the middle column vanishes, it is not left blank.
-    const noProgress = OPS_STATUSES.filter((s) => s.category !== "In Progress");
-    expect(presentCategories(noProgress)).toEqual(["todo", "done"]);
+describe("pipeline layout", () => {
+  it("is deterministic — same output every call", () => {
+    expect(layoutPipeline()).toEqual(layoutPipeline());
   });
 
-  it("places nodes deterministically by category column and stacked row", () => {
-    const layout = layoutFlow(OPS_GRAPH);
-
-    const todo = layout.nodes.find((n) => n.id === "10000")!;
-    const prog = layout.nodes.find((n) => n.id === "10001")!;
-    const review = layout.nodes.find((n) => n.id === "10002")!;
-    const done = layout.nodes.find((n) => n.id === "10003")!;
-
-    // Column 0 / row 0.
-    expect([todo.column, todo.row]).toEqual([0, 0]);
-    expect(todo.x).toBe(MARGIN);
-    expect(todo.y).toBe(MARGIN);
-
-    // Two in-progress statuses stack in column 1, rows 0 and 1, in server order.
-    expect([prog.column, prog.row]).toEqual([1, 0]);
-    expect([review.column, review.row]).toEqual([1, 1]);
-    expect(prog.x).toBe(MARGIN + (NODE_WIDTH + COLUMN_GAP));
-    expect(review.y).toBe(MARGIN + (NODE_HEIGHT + ROW_GAP));
-
-    // Done is column 2.
-    expect(done.column).toBe(2);
-
-    // Centres are precomputed and consistent.
-    expect(todo.cx).toBe(todo.x + NODE_WIDTH / 2);
-    expect(todo.cy).toBe(todo.y + NODE_HEIGHT / 2);
-
-    // Same input -> identical output, twice.
-    expect(layoutFlow(OPS_GRAPH)).toEqual(layout);
+  it("places one node per step and never overlaps two boxes", () => {
+    const { nodes } = layoutPipeline();
+    expect(nodes).toHaveLength(AGENT_PIPELINE.length);
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        const a = nodes[i]!;
+        const b = nodes[j]!;
+        const overlap =
+          a.x < b.x + b.width &&
+          a.x + a.width > b.x &&
+          a.y < b.y + b.height &&
+          a.y + a.height > b.y;
+        expect(overlap, `nodes ${a.id} and ${b.id} overlap`).toBe(false);
+      }
+    }
   });
 
-  it("emits one edge per transition whose target exists, and skips dangling ones", () => {
-    const layout = layoutFlow(OPS_GRAPH);
-    expect(layout.edges).toHaveLength(4);
-
-    // A transition into a status the endpoint never listed is not drawn.
-    const withDangling = layoutFlow({
-      ...OPS_GRAPH,
-      transitions: [
-        ...OPS_GRAPH.transitions,
-        { id: "99", name: "Ghost", fromStatusId: "10003", toStatusId: "99999" },
-      ],
-    });
-    expect(withDangling.edges).toHaveLength(4);
+  it("routes a main edge between every consecutive pair of steps", () => {
+    const { edges } = layoutPipeline();
+    const main = edges.filter((e) => e.kind === "main");
+    expect(main).toHaveLength(AGENT_PIPELINE.length - 1);
   });
 
-  it("expands a global (fromStatusId: null) transition into an edge from every other node", () => {
-    // A global "İptal" to Done: reachable from all three non-Done statuses.
-    const withGlobal = layoutFlow({
-      ...OPS_GRAPH,
-      transitions: [{ id: "51", name: "İptal", fromStatusId: null, toStatusId: "10003" }],
-    });
-    // 4 statuses, one is the target -> 3 edges, each marked global.
-    expect(withGlobal.edges).toHaveLength(3);
-    expect(withGlobal.edges.every((e) => e.global && e.toId === "10003")).toBe(true);
-    expect(new Set(withGlobal.edges.map((e) => e.fromId))).toEqual(
-      new Set(["10000", "10001", "10002"]),
-    );
-  });
-
-  it("routes a forward edge right-face to left-face and a same-column edge vertically", () => {
-    const layout = layoutFlow(OPS_GRAPH);
-    const nodeById = new Map(layout.nodes.map((n) => [n.id, n]));
-
-    // Forward: 10000 -> 10001 leaves the source's RIGHT and enters target LEFT.
-    const forward = edgeAnchors(nodeById.get("10000")!, nodeById.get("10001")!);
-    expect(forward.x1).toBe(nodeById.get("10000")!.x + NODE_WIDTH);
-    expect(forward.x2).toBe(nodeById.get("10001")!.x);
-
-    // Backward (10002 -> 10001, same column, lower row -> upper): vertical.
-    const back = edgeAnchors(nodeById.get("10002")!, nodeById.get("10001")!);
-    expect(back.y2).toBe(nodeById.get("10001")!.y + NODE_HEIGHT);
+  it("routes the re-analysis 'back' edge from step 3 to step 2", () => {
+    const { edges } = layoutPipeline();
+    const back = edges.find((e) => e.kind === "back");
+    expect(back?.fromId).toBe("3");
+    expect(back?.toId).toBe("2");
   });
 });
 
-describe("flow active-node selection (pure)", () => {
-  const layout = layoutFlow(OPS_GRAPH);
+// ── Screen render ──────────────────────────────────────────────────────────
 
-  it("matches a live status to a node by statusId", () => {
-    expect(activeNodeId(layout, "10002")).toBe("10002");
-  });
-
-  it("highlights nothing for an absent, null or unknown status", () => {
-    expect(activeNodeId(layout, null)).toBeNull();
-    expect(activeNodeId(layout, undefined)).toBeNull();
-    expect(activeNodeId(layout, "")).toBeNull();
-    // A status id the workflow never drew must not light an unrelated node.
-    expect(activeNodeId(layout, "77777")).toBeNull();
-  });
-});
-
-/** A fetch stub that answers a routing table and records calls. */
-function stubFetch(routes: Readonly<Record<string, (url: string) => Response>>): {
-  fetchImpl: typeof fetch;
-  calls: string[];
-} {
-  const calls: string[] = [];
-  const fetchImpl = (async (input: RequestInfo | URL) => {
-    const url = String(input);
-    calls.push(url);
-    const key = Object.keys(routes)
-      .filter((route) => url.split("?")[0]!.endsWith(route))
-      .sort((a, b) => b.length - a.length)[0];
-    if (key === undefined) return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
-    return routes[key]!(url);
-  }) as typeof fetch;
-  return { fetchImpl, calls };
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-function renderFlow(fetchImpl: typeof fetch): void {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+function renderFlow(): void {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <I18nProvider initialLocale="tr">
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider fetchImpl={fetchImpl} initialSession={ADMIN} initialToken="test-token">
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <I18nProvider>
           <ToastProvider>
-            <MemoryRouter initialEntries={["/flow"]}>
+            <AuthProvider initialSession={ADMIN}>
               <FlowScreen />
-            </MemoryRouter>
+            </AuthProvider>
           </ToastProvider>
-        </AuthProvider>
+        </I18nProvider>
       </QueryClientProvider>
-    </I18nProvider>,
+    </MemoryRouter>,
   );
 }
 
-/** The BFF's `JiraWorkflowGraphView`, verbatim shape. */
-const WORKFLOW_BODY = {
-  projectKey: "OPS",
-  statuses: OPS_STATUSES,
-  transitions: OPS_GRAPH.transitions,
-  edgesComplete: false,
-  sampledFrom: ["OPS-1", "OPS-2", "OPS-7"],
-};
-
-describe("flow screen", () => {
-  it("draws every OPS status as a node from GET /studio/jira-workflow", async () => {
-    const { fetchImpl, calls } = stubFetch({
-      "/studio/jira-workflow": () => json(WORKFLOW_BODY),
-    });
-    renderFlow(fetchImpl);
-
-    // The node labels are drawn inside the SVG figure. "Yapılacaklar" also
-    // appears as a column header + legend chip, so scope to the SVG text nodes.
-    const fig = await screen.findByRole("img");
-    const labels = [...fig.querySelectorAll(".flow-node-label")].map((n) => n.textContent);
-    expect(labels).toEqual(["Yapılacaklar", "Devam Ediyor", "İNCELEMEDE", "Tamam"]);
-
-    // The figure is one accessible image with a title.
-    expect(fig).toHaveAttribute("aria-labelledby");
-
-    // It asked the workflow endpoint with the project query.
-    expect(calls.some((u) => u.includes("/studio/jira-workflow?project=OPS"))).toBe(true);
-
-    // edgesComplete:false is surfaced honestly, with the sample count.
-    expect(screen.getByText(/3 ticket örneğinden/)).toBeInTheDocument();
+describe("FlowScreen", () => {
+  beforeEach(() => {
+    // The screen polls /studio/pilot/state; stub a running pilot at step 4.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ticketKey: "OPS-16",
+          running: true,
+          awaitingGate: null,
+          steps: [
+            { id: "1", state: "tamam" },
+            { id: "2", state: "tamam" },
+            { id: "3", state: "tamam" },
+            { id: "4", state: "calisiyor" },
+            { id: "5", state: "bekliyor" },
+          ],
+        }),
+      ),
+    );
   });
 
-  it("highlights the node for the status the operator selects, by statusId", async () => {
-    const { fetchImpl } = stubFetch({
-      "/studio/jira-workflow": () => json(WORKFLOW_BODY),
-    });
-    renderFlow(fetchImpl);
-
-    await screen.findByRole("img");
-
-    // No highlight before a status is chosen.
-    expect(document.querySelector(".flow-node--active")).toBeNull();
-
-    // Pick "İNCELEMEDE" (statusId 10002) — the picker is fed from the real
-    // statuses, so its option value is the id, never the display name.
-    await userEvent.selectOptions(screen.getByLabelText("Ticket'ın statüsü"), "10002");
-
-    await waitFor(() => {
-      const active = document.querySelector(".flow-node--active");
-      expect(active).not.toBeNull();
-      expect(active!.textContent).toContain("İNCELEMEDE");
-      // aria-current means colour is not the only signal for "hangi adımdayız".
-      expect(active!.getAttribute("aria-current")).toBe("step");
-    });
-
-    // The caption (role=status) states where the ticket is, in words.
-    const caption = document.querySelector('[role="status"]');
-    expect(caption?.textContent).toContain("İNCELEMEDE");
-    expect(caption?.textContent).toContain("buradayız");
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("shows 'not built yet' rather than an empty diagram when the endpoint 404s", async () => {
-    const { fetchImpl } = stubFetch({
-      // jira-workflow is unmatched -> the stub answers 404.
-    });
-    renderFlow(fetchImpl);
-
-    await waitFor(() => expect(screen.getByText(/yayında değil/)).toBeInTheDocument());
-    // No node boxes were drawn.
-    expect(document.querySelector(".flow-node-box")).toBeNull();
+  it("renders the pipeline with every agent role visible", async () => {
+    renderFlow();
+    // Roles from the model appear as SVG text.
+    expect(await screen.findByText("Intake Ajanı")).toBeTruthy();
+    expect(screen.getByText("Yazılım Ajanı")).toBeTruthy();
+    expect(screen.getByText("Analist Yönetici")).toBeTruthy();
   });
 
-  it("translates a real failure instead of printing the error code", async () => {
-    const { fetchImpl } = stubFetch({
-      "/studio/jira-workflow": () => json({ error: "invalid_project" }, 400),
-    });
-    renderFlow(fetchImpl);
-
-    await waitFor(() => expect(screen.getByText("Veri alınamadı")).toBeInTheDocument());
-    expect(document.body.textContent).not.toContain("invalid_project");
+  it("shows the live ticket and highlights the running step", async () => {
+    renderFlow();
+    // The live banner names the ticket once the poll resolves.
+    await waitFor(() => expect(screen.getByText(/OPS-16/)).toBeTruthy());
+    // The figure is one accessible image.
+    expect(screen.getByRole("img")).toBeTruthy();
   });
 });

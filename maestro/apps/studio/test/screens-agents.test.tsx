@@ -76,6 +76,28 @@ describe("variants screen", () => {
       expect(post?.body).not.toHaveProperty("publishedBy");
     });
   });
+
+  it("offers only the ENGINE-LIVE roles; the other four are visible but disabled '(yakında)'", async () => {
+    const { fetchImpl } = stubFetch([VARIANTS_LIST]);
+    renderScreen(<VariantsScreen />, { fetchImpl, session: ADMIN });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Ajan tanımı ekle" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // The three roles the engine actually runs today are selectable…
+    for (const live of ["alım", "analist", "geliştirici"]) {
+      expect(within(dialog).getByRole("option", { name: live })).toBeEnabled();
+    }
+    // …and the dead ones are listed honestly: present, marked, unselectable.
+    for (const dead of [
+      "kod gözden geçiren (yakında)",
+      "test tasarımcısı (yakında)",
+      "test gözden geçiren (yakında)",
+      "test mühendisi (yakında)",
+    ]) {
+      expect(within(dialog).getByRole("option", { name: dead })).toBeDisabled();
+    }
+  });
 });
 
 /** A run whose g2 golden ticket regressed (85 → 79). */

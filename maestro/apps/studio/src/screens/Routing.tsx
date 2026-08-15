@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router";
 import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasRole } from "../auth/types.ts";
@@ -11,6 +12,7 @@ import type {
   DataClassPolicy,
   Page,
   ParamPutResult,
+  PendingBinding,
   RoutingUpdate,
   RoutingView,
 } from "./common/index.ts";
@@ -39,9 +41,13 @@ export function RoutingScreen(): ReactNode {
   const { session } = useAuth();
   const enumLabel = useEnumLabel();
   const phrase = usePhrase();
+  const navigate = useNavigate();
 
   const [editing, setEditing] = useState(false);
   const [pendingBy, setPendingBy] = useState<string | null>(null);
+  // After an approval, the just-bound project — drives the "add a listening
+  // rule" prompt (Faz 4), the chain's natural next step.
+  const [boundProject, setBoundProject] = useState<string | null>(null);
 
   const routing = useQuery({
     queryKey: ["routing"],
@@ -54,6 +60,18 @@ export function RoutingScreen(): ReactNode {
     queryKey: ["studio-apps"],
     queryFn: ({ signal }) => api.get<Page<ApplicationRecord>>("/studio/apps", { signal }),
   });
+
+  // Which projects have at least one listening rule. A bound project with NO
+  // rule accepts no ticket — it looks "live" but does nothing — so the table
+  // flags it and points the operator to the step that finishes the setup.
+  const listeningRules = useQuery({
+    queryKey: ["listening-rules"],
+    queryFn: ({ signal }) =>
+      api.get<{ rules: readonly { projectKey: string }[] }>("/studio/listening-rules", { signal }),
+  });
+  const projectsWithRule = new Set(
+    (listeningRules.data?.rules ?? []).map((r) => r.projectKey),
+  );
 
   const canEdit = hasRole(session, "admin");
 
@@ -86,20 +104,120 @@ export function RoutingScreen(): ReactNode {
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
+  // Onboarding packages awaiting a second approver (M93). This is the queue that
+  // was invisible before: a submitted binding sat in `params.pending` with no
+  // screen reading it, so nobody could approve it.
+  const pending = useQuery({
+    queryKey: ["onboarding-pending"],
+    queryFn: ({ signal }) =>
+      api.get<{ items: readonly PendingBinding[] }>("/onboarding/pending", { signal }),
+  });
+
+  const approve = useMutation({
+    mutationFn: (projectKey: string) =>
+      api.post<{ status: string; projectKey: string; nextStep: string }>("/onboarding/approve", {
+        projectKey,
+      }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["onboarding-pending"] });
+      void queryClient.invalidateQueries({ queryKey: ["routing"] });
+      // The chain's next step: a freshly bound project has no listening rules
+      // yet. Offer to add one, pre-filling the project (Faz 4).
+      toast.show("success", t("routing.pending.toast.bound", { project: result.projectKey }));
+      setBoundProject(result.projectKey);
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
+  const reject = useMutation({
+    mutationFn: (projectKey: string) => api.post("/onboarding/reject", { projectKey }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["onboarding-pending"] });
+      toast.show("success", t("routing.pending.toast.rejected"));
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
   return (
     <>
-      <Card title={t("routing.mechanics.title")} subtitle={t("routing.mechanics.sub")}>
-        <div className="scr-grid scr-grid--2">
-          <div>
-            <b style={{ fontSize: 13 }}>{t("routing.mechanics.webhook")}</b>
-            <p className="scr-mini">{t("routing.mechanics.webhook_body")}</p>
-          </div>
-          <div>
-            <b style={{ fontSize: 13 }}>{t("routing.mechanics.binding")}</b>
-            <p className="scr-mini">{t("routing.mechanics.binding_body")}</p>
-          </div>
+      {/* The onboarding approval queue (M93). Admins only, and only when there is
+          something to approve — a submitted package was invisible before this.
+          Approving here is what turns a proposal into a live binding. */}
+      {canEdit && (pending.data?.items.length ?? 0) > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <Card title={t("routing.pending.title")} subtitle={t("routing.pending.sub")} padded={false}>
+            <Table
+              columns={[
+                {
+                  key: "project",
+                  header: t("routing.col.project"),
+                  cell: (row: PendingBinding) => <b>{row.projectKey}</b>,
+                },
+                {
+                  key: "repo",
+                  header: t("routing.pending.col.repo"),
+                  cell: (row: PendingBinding) => <span className="scr-mono">{row.adoRepo}</span>,
+                },
+                {
+                  key: "platform",
+                  header: t("routing.pending.col.platform"),
+                  cell: (row: PendingBinding) => row.platform,
+                },
+                {
+                  key: "by",
+                  header: t("routing.pending.col.by"),
+                  cell: (row: PendingBinding) => <span className="scr-mini">{row.proposedBy}</span>,
+                },
+                {
+                  key: "act",
+                  header: "",
+                  cell: (row: PendingBinding) => (
+                    <div className="scr-row">
+                      <Button
+                        size="sm"
+                        variant="success"
+                        busy={approve.isPending}
+                        onClick={() => approve.mutate(row.projectKey)}
+                      >
+                        {t("routing.pending.approve")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        busy={reject.isPending}
+                        onClick={() => reject.mutate(row.projectKey)}
+                      >
+                        {t("routing.pending.reject")}
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+              rows={pending.data?.items ?? []}
+              rowKey={(row) => row.projectKey}
+              emptyLabel={t("routing.pending.empty")}
+            />
+            {/* Faz 4: the chain's next step. A freshly bound project has no
+                listening rules, so the ticket it now accepts would match nothing.
+                Point the operator straight at the pre-filled rule editor. */}
+            {boundProject !== null && (
+              <div className="scr-note" style={{ margin: 12 }}>
+                {t("routing.pending.next_listening", { project: boundProject })}{" "}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() =>
+                    navigate(
+                      `/projects?tab=listening&projectKey=${encodeURIComponent(boundProject)}`,
+                    )
+                  }
+                >
+                  {t("routing.pending.add_listening")}
+                </Button>
+              </div>
+            )}
+          </Card>
         </div>
-      </Card>
+      )}
 
       <div style={{ marginTop: 14 }}>
         <Card
@@ -107,7 +225,7 @@ export function RoutingScreen(): ReactNode {
           subtitle={t("routing.projects_sub")}
           padded={false}
           actions={
-            <Button size="sm" onClick={() => (window.location.hash = "#onboard")}>
+            <Button size="sm" onClick={() => navigate("/projects?tab=onboard")}>
               {t("routing.action.bind")}
             </Button>
           }
@@ -145,6 +263,25 @@ export function RoutingScreen(): ReactNode {
                   header: t("routing.col.note"),
                   cell: (row) => phrase(row.noteKey, row.noteParams),
                 },
+                {
+                  key: "status",
+                  header: t("routing.col.status"),
+                  // A bound project with no listening rule accepts no ticket. Say
+                  // so plainly and link to the step that fixes it, rather than
+                  // letting the operator believe it is working.
+                  cell: (row) =>
+                    projectsWithRule.has(row.projectKey) ? (
+                      <Badge tone="green">{t("routing.status.ready")}</Badge>
+                    ) : (
+                      <button
+                        type="button"
+                        className="scr-linkbtn"
+                        onClick={() => navigate(`/projects?tab=listening&projectKey=${row.projectKey}`)}
+                      >
+                        <Badge tone="amber">{t("routing.status.no_rule")}</Badge>
+                      </button>
+                    ),
+                },
               ]}
               rows={routing.data?.projects ?? []}
               rowKey={(row) => row.projectKey}
@@ -153,6 +290,16 @@ export function RoutingScreen(): ReactNode {
           </MaybeUnwired>
         </Card>
       </div>
+
+      {/* Everything below is reference / infrastructure, not the operator's task
+          (approve a binding, see what is bound). It is collapsed by default so
+          the two cards above are what an admin lands on; whoever needs the model
+          policy or the app inventory opens it. */}
+      <details className="scr-adv" style={{ marginTop: 14 }}>
+        <summary className="scr-adv__summary">{t("routing.advanced.summary")}</summary>
+        <p className="scr-mini" style={{ margin: "8px 2px 4px" }}>
+          {t("routing.advanced.how_it_works")}
+        </p>
 
       <div style={{ marginTop: 14 }}>
         <Card
@@ -270,6 +417,7 @@ export function RoutingScreen(): ReactNode {
       <p className="tpl-keyline" style={{ marginTop: 12 }}>
         {t("routing.config_note")}
       </p>
+      </details>
 
       {currentPolicy !== null && (
         <RoutingPolicyEditor

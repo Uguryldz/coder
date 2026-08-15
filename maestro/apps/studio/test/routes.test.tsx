@@ -9,23 +9,29 @@ import { ALL_SCREEN_IDS, LOGIN_SCREEN, SCREENS, screenById } from "../src/app/sc
  * editing the table instead of their own file.
  */
 
-/** Every view id in mock/index.html, which is the agreed scope: 37 screens. */
+/**
+ * Every view id in mock/index.html that is still its own screen. `onboard` and
+ * `routing` were in the mock but merged into the `projects` page (three tabs),
+ * so they are no longer standalone screen ids — see POST_MOCK_VIEW_IDS.
+ */
 const MOCK_VIEW_IDS = [
-  "dash", "tickets", "detail", "live", "clarify", "workmode", "fanout", "evidence",
-  "jira", "params", "users", "onboard", "yaml", "settings", "notify", "commands",
+  "dash", "detail", "live", "clarify", "workmode", "fanout", "evidence",
+  "jira", "params", "users", "yaml", "settings", "notify", "commands",
   "mcp", "runners", "sandbox", "health", "template", "doctemplate", "knowledge",
-  "audit", "pii", "security", "issues", "cost", "llm", "routing", "variant",
+  "audit", "pii", "security", "issues", "cost", "variant",
   "variants", "eval", "cache", "greenfield", "help", "login",
 ] as const;
 
 /**
- * Screens added AFTER the mock froze. `pilot` (Dalga D) is Studio's face for
- * the pilot's real-Jira flow, and `flow` draws that project's live Jira
- * workflow as SVG — both post-date the mock, which predates the pilot engine.
- * Listed explicitly so the coverage check stays honest: a dropped or accidental
- * screen still fails, an intentional addition is named.
+ * Screens added AFTER the mock froze, or reshaped after it. `pilot` (Dalga D) is
+ * Studio's face for the pilot's real-Jira flow, `flow` draws that project's live
+ * Jira workflow as SVG. `projects` is the ONE page that gathers the three
+ * project-binding steps — add application, Jira mapping & approval, listening
+ * rules — which used to be the separate `onboard`, `routing` and `listening`
+ * screens (now its tabs; their old paths redirect into it). Listed explicitly so
+ * the coverage check stays honest: a dropped or accidental screen still fails.
  */
-const POST_MOCK_VIEW_IDS = ["pilot", "flow"] as const;
+const POST_MOCK_VIEW_IDS = ["pilot", "projects"] as const;
 const EXPECTED_VIEW_IDS = [...MOCK_VIEW_IDS, ...POST_MOCK_VIEW_IDS];
 
 describe("route table", () => {

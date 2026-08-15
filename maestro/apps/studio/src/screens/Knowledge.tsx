@@ -1,11 +1,25 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useApi } from "../auth/AuthProvider.tsx";
+import { messageKeyOf } from "../api/errors.ts";
+import { useApi, useAuth } from "../auth/AuthProvider.tsx";
+import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Input, Table } from "../ui/index.ts";
+import { useToast } from "../ui/Toast.tsx";
+import { Badge, Button, Card, Input, Table } from "../ui/index.ts";
 import { partitionByDataClass, resolveDataClass, type KnowledgeDoc } from "./knowledge/classify.ts";
 import { QueryState } from "./shared/QueryState.tsx";
+
+/** Who may upload/toggle guidance notes. */
+const GUIDANCE_WRITE_ROLES = ["admin", "tech-lead"] as const;
+
+interface GuidanceNote {
+  readonly id: string;
+  readonly title: string;
+  readonly content: string;
+  readonly enabled: boolean;
+  readonly updatedAt: string;
+}
 
 /**
  * Screen: knowledge — search over the shared knowledge library.
@@ -58,6 +72,8 @@ export function KnowledgeScreen(): ReactNode {
 
   return (
     <>
+      <GuidanceLibrary />
+
       <Card title={t("knowledge.library")} subtitle={t("knowledge.library_sub")}>
         <Input
           label={t("knowledge.search")}
@@ -126,4 +142,219 @@ export function KnowledgeScreen(): ReactNode {
       )}
     </>
   );
+}
+
+/**
+ * The "öğren" library — analysis guidance an operator uploads so the AI takes it
+ * into account when preparing a NEW analysis. Upload a note, toggle whether the
+ * AI learns from it, delete it. The enabled notes are mirrored into the pilot
+ * and injected into the analyst's context ("dikkat edilecekler").
+ */
+function GuidanceLibrary(): ReactNode {
+  const t = useT();
+  const api = useApi();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const canWrite = hasAnyRole(session, GUIDANCE_WRITE_ROLES);
+
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const notes = useQuery({
+    queryKey: ["guidance"],
+    queryFn: ({ signal }) => api.get<{ notes: readonly GuidanceNote[] }>("/studio/guidance", { signal }),
+    retry: false,
+  });
+
+  const invalidate = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ["guidance"] });
+    // Push the new enabled set into the running pilot so the NEXT analysis uses it.
+    void api.post("/studio/pilot/guidance", {}).catch(() => undefined);
+  };
+
+  const add = useMutation({
+    mutationFn: (body: { title: string; content: string }) =>
+      api.post<{ note: GuidanceNote }>("/studio/guidance", { ...body, enabled: true }),
+    onSuccess: () => {
+      setTitle("");
+      setContent("");
+      invalidate();
+      toast.show("success", t("guidance.toast.added"));
+    },
+    onError: () => toast.show("error", t("guidance.toast.error")),
+  });
+
+  /**
+   * File → note ("ajan eğitimi"). The file is read in the browser and posted as
+   * `{ fileName, contentBase64 }` JSON — same pipeline (auth, error codes) as
+   * every other write; the BFF extracts the text (docx included) and stores an
+   * enabled note. `invalidate()` then refreshes the list AND pushes the enabled
+   * set into the running pilot, exactly like a typed note.
+   */
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const contentBase64 = await fileToBase64(file);
+      return api.post<{ note: GuidanceNote }>("/studio/guidance/upload", {
+        fileName: file.name,
+        contentBase64,
+      });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.show("success", t("guidance.toast.uploaded"));
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
+  const pickFile = (files: FileList | null): void => {
+    const file = files?.[0];
+    // Reset so choosing the same file again re-fires the change event.
+    if (fileInput.current !== null) fileInput.current.value = "";
+    if (file === undefined) return;
+    upload.mutate(file);
+  };
+
+  const toggle = useMutation({
+    mutationFn: (note: GuidanceNote) =>
+      api.put<{ note: GuidanceNote }>(`/studio/guidance/${note.id}`, { enabled: !note.enabled }),
+    onSuccess: () => invalidate(),
+    onError: () => toast.show("error", t("guidance.toast.error")),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/studio/guidance/${id}`),
+    onSuccess: () => {
+      invalidate();
+      toast.show("success", t("guidance.toast.removed"));
+    },
+    onError: () => toast.show("error", t("guidance.toast.error")),
+  });
+
+  const canSubmit = title.trim() !== "" && content.trim() !== "";
+  const list = notes.data?.notes ?? [];
+
+  return (
+    <Card title={t("guidance.title")} subtitle={t("guidance.subtitle")}>
+      <p className="screen-note" style={{ marginBottom: 12 }}>
+        {t("guidance.intro")}
+      </p>
+
+      {canWrite && (
+        <div className="scr-grid" style={{ gap: 8, marginBottom: 14 }}>
+          <Input
+            label={t("guidance.field.title")}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={t("guidance.field.title_ph")}
+          />
+          <label className="ui-field">
+            <span className="ui-field__label">{t("guidance.field.content")}</span>
+            <textarea
+              className="ui-input"
+              rows={4}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={t("guidance.field.content_ph")}
+            />
+            <span className="ui-field__hint">{t("guidance.field.content_hint")}</span>
+          </label>
+          <div className="scr-row" style={{ gap: 8, alignItems: "center" }}>
+            <Button
+              variant="primary"
+              busy={add.isPending}
+              disabled={!canSubmit}
+              onClick={() => add.mutate({ title: title.trim(), content: content.trim() })}
+            >
+              {t("guidance.action.add")}
+            </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".md,.txt,.docx"
+              style={{ display: "none" }}
+              onChange={(event) => pickFile(event.target.files)}
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+            <Button busy={upload.isPending} onClick={() => fileInput.current?.click()}>
+              {t("guidance.action.upload")}
+            </Button>
+            <span className="screen-note">{t("guidance.upload_hint")}</span>
+          </div>
+        </div>
+      )}
+
+      <QueryState
+        isPending={notes.isPending}
+        error={notes.error}
+        isEmpty={list.length === 0}
+        emptyTitle={t("guidance.empty")}
+        onRetry={() => void notes.refetch()}
+      >
+        <Table
+          columns={[
+            { key: "title", header: t("guidance.col.title"), cell: (n: GuidanceNote) => n.title },
+            {
+              key: "content",
+              header: t("guidance.col.content"),
+              cell: (n) => <span className="screen-note">{n.content}</span>,
+            },
+            {
+              key: "enabled",
+              header: t("guidance.col.learn"),
+              cell: (n) =>
+                canWrite ? (
+                  <button
+                    type="button"
+                    className="scr-linkbtn"
+                    onClick={() => toggle.mutate(n)}
+                    disabled={toggle.isPending}
+                  >
+                    <Badge tone={n.enabled ? "green" : "gray"}>
+                      {n.enabled ? t("guidance.learn.on") : t("guidance.learn.off")}
+                    </Badge>
+                  </button>
+                ) : (
+                  <Badge tone={n.enabled ? "green" : "gray"}>
+                    {n.enabled ? t("guidance.learn.on") : t("guidance.learn.off")}
+                  </Badge>
+                ),
+            },
+            ...(canWrite
+              ? [
+                  {
+                    key: "actions",
+                    header: "",
+                    cell: (n: GuidanceNote) => (
+                      <Button size="sm" onClick={() => remove.mutate(n.id)}>
+                        {t("guidance.action.remove")}
+                      </Button>
+                    ),
+                  },
+                ]
+              : []),
+          ]}
+          rows={list}
+          rowKey={(n) => n.id}
+          emptyLabel={t("guidance.empty")}
+        />
+      </QueryState>
+    </Card>
+  );
+}
+
+/**
+ * The file's bytes as plain base64 (no data: prefix). Chunked so a big file
+ * does not blow the argument list of `String.fromCharCode`.
+ */
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let at = 0; at < bytes.length; at += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + CHUNK));
+  }
+  return btoa(binary);
 }

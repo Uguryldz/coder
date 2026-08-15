@@ -110,10 +110,20 @@ export type PasswordViolation =
   | "no_symbol"
   | "contains_username";
 
-/** The directory groups an admin may assign, mapped to the role each grants. */
+/**
+ * The directory groups an admin may assign, mapped to the role each grants.
+ * MUST stay in sync with the BFF's `ROLE_BY_GROUP` (apps/deploy/src/stores/
+ * users.ts) — that is the authority; this mirrors it for the form + preview.
+ *
+ * A group name is free text; the AUTHORITY it grants is one of the six frozen
+ * roles. So a new team (operators, analysts) is added here without touching the
+ * Role enum — it just points at an existing role.
+ */
 export const ROLE_BY_GROUP: Readonly<Record<string, Role>> = {
   "maestro-admins": "admin",
+  operators: "tech-lead",
   "tech-leads": "tech-lead",
+  analysts: "product-owner",
   "product-owners": "product-owner",
   qa: "qa",
   developers: "developer",
@@ -256,6 +266,12 @@ export interface ManagedConnection {
   readonly lastTestedAt: string | null;
   /** null = never tested; true/false = the last live test's real result. */
   readonly lastTestOk: boolean | null;
+  /**
+   * A short, SECRET-FREE catalog key describing the last test's outcome
+   * (e.g. "connection.test.unauthorized"), or null. Rendered so a failed test
+   * shows WHY, never a token/DSN.
+   */
+  readonly lastTestNote: string | null;
 }
 
 /** The create/update payload — `token` is write-only and optional. */
@@ -305,6 +321,25 @@ export interface WaitingGate {
 export type NotifyChannel = "teams" | "smtp" | "jira" | "slack";
 
 /**
+ * The events that can raise a notification (M45), mirrored from
+ * `packages/contracts/src/notify.ts` NotifyEventKey. Listed here so the notify
+ * screen can render a row per event — including one that has no explicit routing
+ * and therefore follows `default`. Order is meaningful only for display.
+ */
+export const NOTIFY_EVENTS = [
+  "gate_open",
+  "gate_reminder",
+  "escalation",
+  "clarification_reminder",
+  "handover",
+  "ci_red",
+  "quota_wait",
+  "runner_health",
+  "kill_switch",
+] as const;
+export type NotifyEventKey = (typeof NOTIFY_EVENTS)[number];
+
+/**
  * The stored channel routing (M45/M71/M87), exactly as the BFF round-trips it.
  *
  * `default` covers every event without an explicit entry; an event mapped to an
@@ -338,6 +373,11 @@ export interface NotifyView {
   readonly routing: NotifyRouting;
   /** The stored ladder verbatim, so a threshold edit keeps every step id. */
   readonly ladderRaw: EscalationLadderRaw;
+  /**
+   * The Teams webhook URL, MASKED ("…<last 6>") when set, "" when not. The full
+   * URL is a bearer credential and never reaches the screen.
+   */
+  readonly teamsWebhookMask: string;
 }
 
 /**
@@ -360,6 +400,8 @@ export interface EscalationLadderStep {
 export interface NotifyUpdate {
   readonly ladder?: EscalationLadderRaw;
   readonly routing?: NotifyRouting;
+  /** The Teams webhook URL to store, or "" to clear it. */
+  readonly teamsWebhook?: string;
 }
 
 // ── /routing (LIVE: GET /routing, PUT /routing) ───────────────────────────────

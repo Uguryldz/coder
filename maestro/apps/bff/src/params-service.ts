@@ -2,6 +2,7 @@ import { canonicalize, humanBehind, isHumanActor } from "@maestro/audit";
 import { ParamChange, type ParamDefinition } from "@maestro/contracts";
 import type { PendingParamChange, ResolvedDeps } from "./deps.js";
 import { badRequest, conflict, forbidden, notFound } from "./errors.js";
+import { isMasterApprover } from "./platform/master-approver.js";
 
 /**
  * Operational parameters live in the database and are edited from Studio,
@@ -22,6 +23,14 @@ export interface ParamPutRequest {
   value: unknown;
   /** Audit actor of the caller; also the identity four-eyes compares. */
   actor: string;
+  /**
+   * The caller's directory groups. When present and they include the
+   * four-eyes group, a master admin may confirm their OWN guarded proposal
+   * (single-admin self-approval, recorded in the audit trail). Absent/empty =
+   * no exemption, so every existing caller keeps the strict two-person rule
+   * until it opts in by passing groups. See platform/master-approver.ts.
+   */
+  actorGroups?: readonly string[];
 }
 
 export type ParamPutResult =
@@ -34,13 +43,43 @@ export interface ParamsView {
   pending: readonly PendingParamChange[];
 }
 
+/**
+ * Parameter keys whose VALUE is a secret (a bearer credential in a URL, a
+ * token). Their stored `{ url: "..." }` must never leave the BFF in full: the
+ * params screen renders the raw value, so an unmasked secret would sit in a
+ * table a console can screenshot. Read is masked; the dedicated screen (e.g. the
+ * notify Teams webhook field) owns entry and shows only a recognition mask.
+ */
+const SECRET_PARAM_KEYS: ReadonlySet<string> = new Set(["notify.teams.webhook"]);
+
+/**
+ * Replace a secret parameter's value with a recognition mask ("…<last 6>"),
+ * never the full credential. Non-secret keys pass through untouched. The stored
+ * shape is `{ url: string }`; an empty or malformed value masks to an empty
+ * marker rather than throwing — a read must not fail on a hand-broken row.
+ */
+function maskParamValue(key: string, value: unknown): unknown {
+  if (!SECRET_PARAM_KEYS.has(key)) return value;
+  const url = typeof value === "object" && value !== null ? (value as { url?: unknown }).url : undefined;
+  const text = typeof url === "string" ? url.trim() : "";
+  return { url: text === "" ? "" : `…${text.length <= 6 ? text : text.slice(-6)}` };
+}
+
 export async function readParams(deps: ResolvedDeps): Promise<ParamsView> {
   const [definitions, values, pending] = await Promise.all([
     deps.params.definitions(),
     deps.params.values(),
     deps.params.pending(),
   ]);
-  return { definitions, values, pending };
+  // Mask secret values on the way out — the raw credential never reaches a
+  // screen. Both the history rows and any pending proposal are masked.
+  const maskedValues = values.map((change) =>
+    SECRET_PARAM_KEYS.has(change.key) ? { ...change, value: maskParamValue(change.key, change.value) } : change,
+  );
+  const maskedPending = pending.map((item) =>
+    SECRET_PARAM_KEYS.has(item.key) ? { ...item, value: maskParamValue(item.key, item.value) } : item,
+  );
+  return { definitions, values: maskedValues, pending: maskedPending };
 }
 
 export async function putParam(
@@ -79,10 +118,26 @@ export async function putParam(
   // many times they press the button and whichever token they hold. Re-proposing
   // a different value simply replaces the pending entry — it still waits for
   // somebody else.
+  //
+  // EXCEPTION: a master admin (four-eyes group) may confirm their own guarded
+  // proposal so a single-admin install is not deadlocked. It still must be a
+  // real human (an AI delegate is refused below) and the confirm must match the
+  // pending value byte for byte — the same review the second human would do.
   if (samePerson(open.proposedBy, request.actor)) {
-    const proposal: PendingParamChange = { ...open, value: request.value, at: deps.clock.now().toISOString() };
-    await deps.params.putPending(proposal);
-    return { status: "pending", pending: proposal };
+    const masterSolo =
+      isHumanActor(request.actor) &&
+      isMasterApprover(request.actorGroups ?? []) &&
+      canonicalize(open.value) === canonicalize(request.value);
+    if (!masterSolo) {
+      const proposal: PendingParamChange = { ...open, value: request.value, at: deps.clock.now().toISOString() };
+      await deps.params.putPending(proposal);
+      return { status: "pending", pending: proposal };
+    }
+    // Master admin solo-approves: apply now, recording themselves as approver,
+    // and waive the store's "approver ≠ author" guard (allowSelfApprove).
+    const soloChange = await apply(deps, { ...request, actor: open.proposedBy }, request.actor, true);
+    await deps.params.clearPending(request.key, request.scopeRef);
+    return { status: "applied", change: soloChange };
   }
 
   // A different person, but not a person: an AI delegate proposes, never
@@ -107,6 +162,7 @@ async function apply(
   deps: ResolvedDeps,
   request: ParamPutRequest,
   approvedBy: string | null,
+  allowSelfApprove = false,
 ): Promise<ParamChange> {
   const values = await deps.params.values();
   const previous = values
@@ -123,7 +179,7 @@ async function apply(
     at: deps.clock.now().toISOString(),
   });
 
-  await deps.params.apply(change);
+  await deps.params.apply(change, allowSelfApprove ? { allowSelfApprove: true } : undefined);
   await deps.audit.append({
     actor: approvedBy ?? request.actor,
     action: "PARAM_CHANGED",
@@ -135,6 +191,9 @@ async function apply(
       value: request.value,
       changedBy: change.changedBy,
       approvedBy,
+      // True only when a master admin approved a guarded change they proposed
+      // themselves — the four-eyes exemption, recorded so it is auditable.
+      soloApproval: allowSelfApprove,
     },
   });
   return change;

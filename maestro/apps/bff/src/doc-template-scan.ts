@@ -140,8 +140,11 @@ export function placeholderScan(
  * as one string. `<w:p>` becomes a newline first: without it the last word of
  * one paragraph and the first of the next would fuse into a token that is not
  * in the document.
+ *
+ * Exported because the guidance upload (routes/guidance.ts) extracts the text
+ * of an uploaded `.docx` note with the same rules — one extractor, one answer.
  */
-function visibleText(documentXml: string): string {
+export function visibleText(documentXml: string): string {
   return documentXml
     .replace(/<\/w:p>/g, "\n")
     .replace(/<[^>]*>/g, "")

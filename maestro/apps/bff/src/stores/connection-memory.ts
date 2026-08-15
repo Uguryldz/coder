@@ -41,7 +41,12 @@ export class InMemoryConnectionStore implements ConnectionStore {
   recordTest(id: string, result: ConnectionTestResult): Promise<void> {
     const row = this.rows.get(id);
     if (row !== undefined) {
-      this.rows.set(id, { ...row, lastTestedAt: result.at, lastTestOk: result.ok });
+      this.rows.set(id, {
+        ...row,
+        lastTestedAt: result.at,
+        lastTestOk: result.ok,
+        lastTestNote: result.note ?? null,
+      });
     }
     return Promise.resolve();
   }

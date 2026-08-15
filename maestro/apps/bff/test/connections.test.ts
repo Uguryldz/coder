@@ -185,10 +185,12 @@ describe("POST /studio/connections/:id/test", () => {
     expect(calls[0]?.auth).toBe(`Bearer ${TOKEN}`);
     expect(body.messageParams?.who).toBe("ugurbank-bot");
 
-    // The honest result is recorded on the row.
+    // The honest result — and its secret-free note — are recorded on the row.
     const record = await h.connections.get("github");
     expect(record?.lastTestOk).toBe(true);
     expect(record?.lastTestedAt).not.toBeNull();
+    // The note is the outcome's catalog KEY, never raw text or a token.
+    expect(record?.lastTestNote).toBe("connections.test.ok_as");
   });
 
   it("reports a failure honestly and never fakes green", async () => {
@@ -203,7 +205,12 @@ describe("POST /studio/connections/:id/test", () => {
     };
     expect(body.ok).toBe(false);
     expect(body.messageKey).toBe("connections.test.http_error");
-    expect((await h.connections.get("github"))?.lastTestOk).toBe(false);
+    const failed = await h.connections.get("github");
+    expect(failed?.lastTestOk).toBe(false);
+    // The failure note is the catalog key — it explains WHY without leaking the
+    // token, the URL's credentials, or a raw driver message.
+    expect(failed?.lastTestNote).toBe("connections.test.http_error");
+    expect(JSON.stringify(failed)).not.toContain(TOKEN);
   });
 
   it("never leaks the token, even when the transport throws", async () => {

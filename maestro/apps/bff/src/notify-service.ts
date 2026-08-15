@@ -21,7 +21,24 @@ import { putParam, type ParamPutResult } from "./params-service.js";
 export const NOTIFY_PARAM_KEYS = {
   ladder: "escalation.ladder",
   routing: "notify.routing",
+  teamsWebhook: "notify.teams.webhook",
 } as const;
+
+/** The stored Teams webhook URL shape (a bearer credential in its path). */
+const TeamsWebhook = z.object({ url: z.string() });
+
+/**
+ * A Teams webhook URL masked for read — a bearer credential lives in the path,
+ * so a GET must never return it in full. Empty stays empty (not yet set); a set
+ * URL becomes "https://…<last 6 chars>" so an admin can recognise it without the
+ * screen ever holding the secret.
+ */
+function maskWebhook(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed === "") return "";
+  const tail = trimmed.length <= 6 ? trimmed : trimmed.slice(-6);
+  return `…${tail}`;
+}
 
 export interface EscalationStepView {
   afterHours: number;
@@ -53,6 +70,12 @@ export interface NotifyView {
   /** The stored routing, so the screen's editor round-trips exactly. */
   routing: NotifyRouting;
   /**
+   * The Teams webhook URL, MASKED — "…<last 6>" when set, "" when not. The full
+   * URL is a bearer credential and never leaves the server; this tells the
+   * screen only whether one is configured and lets an admin recognise it.
+   */
+  teamsWebhookMask: string;
+  /**
    * The stored ladder verbatim (per-step id/channel/event/threshold), so the
    * editor can change a THRESHOLD and PUT the same steps back with their ids
    * intact — a projected rung has no id, and re-deriving one would re-escalate
@@ -73,10 +96,14 @@ export const NotifyUpdate = z
   .object({
     ladder: EscalationLadder.optional(),
     routing: NotifyRouting.optional(),
+    /** The Teams webhook URL to store, or "" to clear it. */
+    teamsWebhook: z.string().optional(),
   })
-  .refine((value) => value.ladder !== undefined || value.routing !== undefined, {
-    message: "send at least one of ladder or routing",
-  });
+  .refine(
+    (value) =>
+      value.ladder !== undefined || value.routing !== undefined || value.teamsWebhook !== undefined,
+    { message: "send at least one of ladder, routing or teamsWebhook" },
+  );
 export type NotifyUpdate = z.infer<typeof NotifyUpdate>;
 
 /**
@@ -90,12 +117,17 @@ export async function readNotify(deps: ResolvedDeps): Promise<NotifyView> {
   const ladder = await readParam(deps, NOTIFY_PARAM_KEYS.ladder, EscalationLadder);
   const routing = await readParam(deps, NOTIFY_PARAM_KEYS.routing, NotifyRouting);
 
+  // The Teams webhook is optional and may never have been seeded on an older
+  // database; a missing row means "not set", not an error — unlike the ladder.
+  const teamsWebhook = await readOptionalParam(deps, NOTIFY_PARAM_KEYS.teamsWebhook, TeamsWebhook);
+
   return {
     ladder: ladderView(ladder, routing),
     delegations: await delegations(deps),
     waiting: await waiting(deps),
     routing,
     ladderRaw: ladder,
+    teamsWebhookMask: maskWebhook(teamsWebhook?.url ?? ""),
   };
 }
 
@@ -129,6 +161,16 @@ export async function updateNotify(
         key: NOTIFY_PARAM_KEYS.routing,
         scopeRef: null,
         value: update.routing,
+        actor,
+      }),
+    );
+  }
+  if (update.teamsWebhook !== undefined) {
+    results.push(
+      await putParam(deps, {
+        key: NOTIFY_PARAM_KEYS.teamsWebhook,
+        scopeRef: null,
+        value: { url: update.teamsWebhook.trim() },
         actor,
       }),
     );
@@ -263,6 +305,35 @@ async function readParam<T>(deps: ResolvedDeps, key: string, schema: z.ZodType<T
     });
   }
 
+  const parsed = schema.safeParse(newest.value);
+  if (!parsed.success) {
+    throw badRequest("param_unusable", {
+      key,
+      issues: parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`),
+    });
+  }
+  return parsed.data;
+}
+
+/**
+ * Like `readParam`, but a MISSING row is `null` rather than an error.
+ *
+ * The Teams webhook is optional — a fresh or older database has no row, and that
+ * means "not configured", not "misconfigured". A row that exists but is
+ * malformed still throws, so a corrupt value is never silently treated as unset.
+ */
+async function readOptionalParam<T>(
+  deps: ResolvedDeps,
+  key: string,
+  schema: z.ZodType<T>,
+): Promise<T | null> {
+  const values = await deps.params.values();
+  const rows = values.filter((value) => value.key === key && value.scopeRef === null);
+  const newest = rows.reduce<(typeof rows)[number] | null>(
+    (best, row) => (best === null || row.version > best.version ? row : best),
+    null,
+  );
+  if (newest === null) return null;
   const parsed = schema.safeParse(newest.value);
   if (!parsed.success) {
     throw badRequest("param_unusable", {

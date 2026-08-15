@@ -29,8 +29,16 @@ export function maskToken(token: string): string {
   return token.length <= 4 ? "*".repeat(token.length) : token.slice(-4);
 }
 
+/**
+ * The read shape: the frozen contract `Connection` PLUS the secret-free
+ * `lastTestNote`. The note is a BFF/presentation field (the catalog key of the
+ * last test's outcome), so it lives here as an intersection rather than an edit
+ * to the frozen `Connection` schema.
+ */
+export type ManagedConnectionView = Connection & { readonly lastTestNote: string | null };
+
 /** The record shape a read hands back — the store record MINUS anything secret. */
-export function toConnectionView(record: ConnectionRecord): Connection {
+export function toConnectionView(record: ConnectionRecord): ManagedConnectionView {
   return {
     id: record.id,
     kind: record.kind,
@@ -48,6 +56,7 @@ export function toConnectionView(record: ConnectionRecord): Connection {
     updatedAt: record.updatedAt,
     lastTestedAt: record.lastTestedAt,
     lastTestOk: record.lastTestOk,
+    lastTestNote: record.lastTestNote,
   };
 }
 
@@ -62,7 +71,14 @@ export function toConnectionRecord(
   id: string,
   input: ConnectionInput,
   secret: { ref: string | null; mask: string | null },
-  timestamps: { createdAt: string; updatedAt: string; lastTestedAt: string | null; lastTestOk: boolean | null },
+  timestamps: {
+    createdAt: string;
+    updatedAt: string;
+    lastTestedAt: string | null;
+    lastTestOk: boolean | null;
+    /** Optional; a create/config-edit that never tested carries no note. */
+    lastTestNote?: string | null;
+  },
 ): ConnectionRecord {
   return {
     id,
@@ -78,6 +94,7 @@ export function toConnectionRecord(
     updatedAt: timestamps.updatedAt,
     lastTestedAt: timestamps.lastTestedAt,
     lastTestOk: timestamps.lastTestOk,
+    lastTestNote: timestamps.lastTestNote ?? null,
   };
 }
 
@@ -91,6 +108,12 @@ export interface TestOutcome {
    */
   messageKey: string;
   messageParams?: Record<string, string>;
+  /**
+   * The authenticated account's stable id, when the probe could read one (Jira's
+   * `accountId`). The caller persists it on the connection so a listening rule
+   * can offer "the bot" instead of asking for a hand-copied GUID. Never a secret.
+   */
+  accountId?: string;
 }
 
 /** Where each kind's identity/health probe lives, relative to `baseUrl`. */
@@ -100,6 +123,8 @@ interface Probe {
   header(token: string, config: Record<string, string>): Record<string, string>;
   /** How to read a friendly identity out of a 200 body, if any. */
   identity?(body: unknown): string | undefined;
+  /** How to read the authenticated account's stable id (Jira only, for now). */
+  accountId?(body: unknown): string | undefined;
 }
 
 /** A stored PAT under HTTP Basic (`email:token`), base64 — Jira Cloud's scheme. */
@@ -128,6 +153,9 @@ export function probeFor(kind: ConnectionKind): Probe | null {
         path: "/rest/api/3/myself",
         header: (token, config) => ({ authorization: basicAuth(config["email"] ?? "", token) }),
         identity: (body) => field(body, "displayName") ?? field(body, "emailAddress"),
+        // The bot's Jira accountId — captured so a listening rule can pre-fill it
+        // instead of an operator hand-copying a 40-char GUID from a profile URL.
+        accountId: (body) => field(body, "accountId"),
       };
     case "jira_dc":
       // Data Center takes the PAT as a bearer token.
@@ -135,6 +163,8 @@ export function probeFor(kind: ConnectionKind): Probe | null {
         path: "/rest/api/2/myself",
         header: (token) => ({ authorization: `Bearer ${token}` }),
         identity: (body) => field(body, "displayName") ?? field(body, "name"),
+        // DC identifies a user by `key`/`name`, not the Cloud accountId shape.
+        accountId: (body) => field(body, "key") ?? field(body, "name"),
       };
     case "github":
       return {
@@ -223,15 +253,19 @@ export async function runConnectionTest(
   }
 
   let identity: string | undefined;
-  if (probe.identity !== undefined) {
+  let accountId: string | undefined;
+  if (probe.identity !== undefined || probe.accountId !== undefined) {
     try {
-      identity = probe.identity(await response.json());
+      const body = await response.json();
+      identity = probe.identity?.(body);
+      accountId = probe.accountId?.(body);
     } catch {
       identity = undefined;
+      accountId = undefined;
     }
   }
 
   return identity === undefined
-    ? { ok: true, messageKey: "connections.test.ok" }
-    : { ok: true, messageKey: "connections.test.ok_as", messageParams: { who: identity } };
+    ? { ok: true, messageKey: "connections.test.ok", accountId }
+    : { ok: true, messageKey: "connections.test.ok_as", messageParams: { who: identity }, accountId };
 }

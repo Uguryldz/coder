@@ -293,14 +293,18 @@ describe("KnowledgeScreen (data class fails closed)", () => {
   };
 
   it("asks for nothing until there is a search term", async () => {
-    const fetchImpl = stubFetch({ "/studio/knowledge": RESULTS });
+    const fetchImpl = stubFetch({ "/studio/knowledge": RESULTS, "/studio/guidance": { notes: [] } });
     renderScreen(<KnowledgeScreen />, fetchImpl);
     expect(await screen.findByText("Aramak için bir kelime yaz.")).toBeInTheDocument();
-    expect(fetchImpl).not.toHaveBeenCalled();
+    // The SEARCH endpoint is not called with an empty box (it is a search, not a
+    // listing). The guidance library above it loads independently, so assert the
+    // search specifically was never hit rather than "no fetch at all".
+    const calls = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(calls.some(([u]) => String(u).includes("/studio/knowledge"))).toBe(false);
   });
 
   it("drops confidential and untagged documents from the results", async () => {
-    renderScreen(<KnowledgeScreen />, stubFetch({ "/studio/knowledge": RESULTS }));
+    renderScreen(<KnowledgeScreen />, stubFetch({ "/studio/knowledge": RESULTS, "/studio/guidance": { notes: [] } }));
     await user.type(screen.getByLabelText("Ara"), "limit");
 
     expect(await screen.findByText("api-tasarim.md")).toBeInTheDocument();
@@ -309,7 +313,7 @@ describe("KnowledgeScreen (data class fails closed)", () => {
   });
 
   it("counts both what the server withheld and what it dropped itself", async () => {
-    renderScreen(<KnowledgeScreen />, stubFetch({ "/studio/knowledge": RESULTS }));
+    renderScreen(<KnowledgeScreen />, stubFetch({ "/studio/knowledge": RESULTS, "/studio/guidance": { notes: [] } }));
     await user.type(screen.getByLabelText("Ara"), "limit");
 
     // 1 withheld by the BFF + 2 dropped here (gizli, and the untagged one).

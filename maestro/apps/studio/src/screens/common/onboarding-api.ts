@@ -11,6 +11,55 @@ export interface OnboardingOptions {
   readonly platforms: readonly string[];
 }
 
+/** GET /onboarding/scm-connections — the SCM connections a repo can be picked from. */
+export interface ScmConnection {
+  readonly id: string;
+  readonly kind: "github" | "ado";
+  readonly displayName: string;
+}
+
+/** GET /onboarding/jira-connections — the Jira connections a project can be picked from. */
+export interface JiraConnection {
+  readonly id: string;
+  readonly kind: "jira_cloud" | "jira_dc";
+  readonly displayName: string;
+}
+
+/** One Jira project a connection can reach. */
+export interface JiraProject {
+  readonly key: string;
+  readonly name: string;
+}
+
+/** GET /onboarding/jira-projects — the live project listing, or a secret-free failure. */
+export type JiraProjectsResult =
+  | { readonly ok: true; readonly projects: readonly JiraProject[] }
+  | { readonly ok: false; readonly messageKey: string; readonly messageParams?: Record<string, string> };
+
+/** GET /onboarding/pending — one onboarding package awaiting a second approver (M93). */
+export interface PendingBinding {
+  readonly projectKey: string;
+  readonly appId: string;
+  readonly adoRepo: string;
+  readonly platform: string;
+  readonly triggerMode: "opt_in" | "automatic";
+  readonly gateSet: "risk_tiered" | "always_six";
+  readonly mergeMode: "human" | "auto";
+  readonly proposedBy: string;
+  readonly at: string;
+}
+
+/** One repository a connection can reach. */
+export interface ScmRepo {
+  readonly id: string;
+  readonly fullName: string;
+}
+
+/** GET /onboarding/scm-repos — the live repo listing, or a secret-free failure. */
+export type ScmReposResult =
+  | { readonly ok: true; readonly repos: readonly ScmRepo[] }
+  | { readonly ok: false; readonly messageKey: string; readonly messageParams?: Record<string, string> };
+
 /**
  * POST /onboarding/dry-run — where the last N tickets WOULD land under the
  * proposed rules (M102). The three buckets are separate because they call for

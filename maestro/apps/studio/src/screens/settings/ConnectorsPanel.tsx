@@ -16,6 +16,7 @@ import type {
   ManagedConnectionKind,
 } from "../common/index.ts";
 import { ConfirmModal, QueryState } from "../common/index.ts";
+import { ageLabel } from "../shared/format.ts";
 
 /**
  * The connector-management section of the settings screen.
@@ -105,10 +106,33 @@ export function ConnectorsPanel(): ReactNode {
         // A just-run test wins the cell; otherwise the last recorded result.
         const ok = live !== undefined ? live.ok : row.lastTestOk;
         const { tone, icon, key } = statusOf(ok);
+        // Under the badge: when the test was last run, and — on failure — WHY,
+        // from the secret-free note. A just-run test shows its own text; the
+        // stored note (a catalog key) is translated. Never a token/DSN.
+        const age = ageLabel(row.lastTestedAt);
+        const failNote =
+          live === undefined && row.lastTestOk === false && row.lastTestNote !== null
+            ? t(row.lastTestNote)
+            : live !== undefined && !live.ok
+              ? live.text
+              : null;
         return (
-          <Badge tone={tone} icon={icon}>
-            {live !== undefined ? live.text : t(key)}
-          </Badge>
+          <div>
+            <Badge tone={tone} icon={icon}>
+              {live !== undefined ? live.text : t(key)}
+            </Badge>
+            {(age !== null || failNote !== null) && (
+              <div className="scr-mini" style={{ marginTop: 3 }}>
+                {age !== null && <span>{t(age.key, age.params)}</span>}
+                {failNote !== null && (
+                  <span style={{ color: "var(--red)" }}>
+                    {age !== null ? " · " : ""}
+                    {failNote}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         );
       },
     },

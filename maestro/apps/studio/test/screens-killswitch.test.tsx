@@ -18,13 +18,13 @@ describe("kill switch", () => {
 
     // Pressing the level button must NOT send anything on its own — it only
     // opens the confirmation.
-    await userEvent.click(await screen.findByRole("button", { name: "İş alımını durdur" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Yeni iş almayı durdur" }));
     const dialog = await screen.findByRole("dialog");
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
 
     // And the confirmation refuses to submit without a written reason.
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "İş alımını durdur" }),
+      within(dialog).getByRole("button", { name: "Yeni iş almayı durdur" }),
     );
     expect(await screen.findByText("Gerekçe zorunlu.")).toBeInTheDocument();
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
@@ -42,12 +42,12 @@ describe("kill switch", () => {
     ]);
     renderScreen(<SettingsScreen />, { fetchImpl, session: ADMIN });
 
-    await userEvent.click(await screen.findByRole("button", { name: "İş alımını durdur" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Yeni iş almayı durdur" }));
     await userEvent.type(await screen.findByLabelText("Gerekçe"), "yarın sürüm var");
     // The confirming button inside the dialog, not the row button behind it.
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(
-      await within(dialog).findByRole("button", { name: "İş alımını durdur" }),
+      await within(dialog).findByRole("button", { name: "Yeni iş almayı durdur" }),
     );
 
     await waitFor(() => {
@@ -70,7 +70,7 @@ describe("kill switch", () => {
     renderScreen(<SettingsScreen />, { fetchImpl, session: VIEWER });
 
     expect(await screen.findByText(/yalnızca admin rolüyle/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "İş alımını durdur" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Yeni iş almayı durdur" })).not.toBeInTheDocument();
   });
 
   it("warns that stopping everything cannot be undone before it is confirmed", async () => {
@@ -88,9 +88,9 @@ describe("kill switch", () => {
     ]);
     renderScreen(<SettingsScreen />, { fetchImpl, session: ADMIN });
 
-    expect(await screen.findByText("Tüm akışlar durdu")).toBeInTheDocument();
+    expect(await screen.findByText("Tüm işler durduruldu")).toBeInTheDocument();
     expect(screen.getByText("olay müdahalesi")).toBeInTheDocument();
     // Already stopped: offer the way back, not the same action again.
-    expect(await screen.findByRole("button", { name: "Yeniden aç" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Normale döndür" })).toBeInTheDocument();
   });
 });

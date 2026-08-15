@@ -143,6 +143,15 @@ export function VariantsScreen(): ReactNode {
 /** The roles a variant may take (M17/M43), from the frozen contract. */
 const ROLE_OPTIONS = LlmRole.options;
 
+/**
+ * The roles the ENGINE actually runs today: intake (fitness gate), analyst and
+ * engineer. The other four exist in the frozen contract but nothing executes
+ * them yet, so the create modal lists them DISABLED with a "(yakında)" mark —
+ * visible so the roadmap is honest, unselectable so an admin cannot configure
+ * an agent that would never run.
+ */
+const LIVE_ROLES: ReadonlySet<LlmRoleType> = new Set(["intake", "analyst", "engineer"]);
+
 function CreateVariantModal({
   onClose,
   onCreated,
@@ -221,10 +230,15 @@ function CreateVariantModal({
         label={t("variants.field.role")}
         value={role}
         onChange={(event) => setRole(event.target.value as LlmRoleType)}
-        options={ROLE_OPTIONS.map((option) => ({
-          value: option,
-          label: enumLabel("llm.role", option).text,
-        }))}
+        options={ROLE_OPTIONS.map((option) => {
+          const live = LIVE_ROLES.has(option);
+          const text = enumLabel("llm.role", option).text;
+          return {
+            value: option,
+            label: live ? text : t("variants.role.soon", { role: text }),
+            disabled: !live,
+          };
+        })}
       />
       <Input
         label={t("variants.field.platform")}

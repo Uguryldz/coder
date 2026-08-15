@@ -1,3 +1,5 @@
+import { PlatformProfile } from "@maestro/contracts";
+import type { AppRegistration, AppRegistryWriter } from "../deps.js";
 import type { PageRequest } from "../read-models.js";
 import type {
   OnboardingOptionsRecord,
@@ -23,20 +25,46 @@ import type {
  */
 
 export class InMemoryOnboardingReader implements OnboardingReader {
+  private readonly projects: OnboardingOptionsRecord["projects"];
+  private readonly repos: { appId: string; repo: string; platform: string }[];
+  private readonly platforms: Set<string>;
+
   constructor(
-    private readonly record: OnboardingOptionsRecord = {
-      projects: [],
-      repos: [],
-      platforms: [],
-    },
+    record: OnboardingOptionsRecord = { projects: [], repos: [], platforms: [] },
     private readonly samples: ReadonlyMap<string, readonly OnboardingSampleTicket[]> = new Map(),
-  ) {}
+  ) {
+    this.projects = [...record.projects];
+    this.repos = record.repos.map((repo) => ({ ...repo }));
+    this.platforms = new Set(record.platforms);
+  }
+
+  /**
+   * Add a repo to the options the way `PrismaAppRegistryWriter` adds an
+   * `Application` row: the test writer calls this so a submission that
+   * REGISTERS a repo is then visible to the same request's `assertBindable`,
+   * exactly as the Postgres reader would see the row the writer just upserted.
+   * Keyed on `appId`, so re-registering the same repo replaces rather than
+   * duplicates.
+   */
+  addRepo(entry: { appId: string; repo: string; platform: string }): void {
+    const existing = this.repos.findIndex((candidate) => candidate.appId === entry.appId);
+    if (existing >= 0) this.repos[existing] = { ...entry };
+    else this.repos.push({ ...entry });
+    this.platforms.add(entry.platform);
+  }
 
   options(request: PageRequest): Promise<OnboardingOptionsRecord> {
+    // The four platform PROFILES are a fixed contract set, not something that
+    // grows out of past bindings — a fresh install has no bindings yet, so
+    // deriving the list from `this.platforms` alone would leave the mandatory
+    // "Platform profili" dropdown EMPTY and block the very first onboarding.
+    // Union the contract's profiles with any already seen, so the field is
+    // always fillable (mirrors the Prisma reader's `[...PlatformProfile.options]`).
+    const platforms = new Set<string>([...PlatformProfile.options, ...this.platforms]);
     return Promise.resolve({
-      projects: this.record.projects.slice(0, request.limit),
-      repos: this.record.repos.slice(0, request.limit),
-      platforms: [...this.record.platforms],
+      projects: this.projects.slice(0, request.limit),
+      repos: this.repos.slice(0, request.limit),
+      platforms: [...platforms],
     });
   }
 
@@ -46,8 +74,31 @@ export class InMemoryOnboardingReader implements OnboardingReader {
 
   binding(projectKey: string): Promise<OnboardingProject | null> {
     return Promise.resolve(
-      this.record.projects.find((project) => project.projectKey === projectKey) ?? null,
+      this.projects.find((project) => project.projectKey === projectKey) ?? null,
     );
+  }
+}
+
+/**
+ * Reference `AppRegistryWriter` for the BFF's offline tests. Writes into an
+ * `InMemoryOnboardingReader` so the registration and the `assertBindable` that
+ * follows it read the same store — the in-memory stand-in for "both sit on
+ * `db.application`" in production.
+ *
+ * `repo` is stored as `<adoProject>/_git/<adoRepo>`, the exact shape the Postgres
+ * reader derives, so `assertBindable`'s `candidate.repo` match behaves the same
+ * offline as it does live.
+ */
+export class InMemoryAppRegistryWriter implements AppRegistryWriter {
+  constructor(private readonly reader: InMemoryOnboardingReader) {}
+
+  register(app: AppRegistration): Promise<void> {
+    this.reader.addRepo({
+      appId: app.appId,
+      repo: `${app.adoProject}/_git/${app.adoRepo}`,
+      platform: app.platform,
+    });
+    return Promise.resolve();
   }
 }
 

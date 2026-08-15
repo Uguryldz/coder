@@ -348,7 +348,7 @@ describe("tickets", () => {
     renderScreen(<TicketsScreen />, { fetchImpl });
 
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
-    expect(calls[0]!.url).toBe("/api/studio/runs?limit=200");
+    expect(calls[0]!.url).toBe("/api/studio/runs?limit=500");
     expect(calls.every((call) => !/^\/api\/runs\b/.test(call.url))).toBe(true);
   });
 });

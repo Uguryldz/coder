@@ -22,7 +22,10 @@ import { buildServer } from "../src/server.js";
 import { StaticJiraWorkflowReader, StaticRoutingReader, StaticSettingsReader } from "../src/stores/admin-memory.js";
 import type { JiraWorkflowGraphView } from "../src/jira-workflow-model.js";
 import { InMemoryConnectionStore, InMemorySecretStore } from "../src/stores/connection-memory.js";
+import { InMemoryListeningStore } from "../src/stores/listening-memory.js";
+import { InMemoryGuidanceStore } from "../src/guidance-store.js";
 import type { ConnectionRecord } from "../src/connection-store.js";
+import type { ListeningRuleRecord } from "../src/listening-store.js";
 import type { ConnectorFetch } from "../src/connection-service.js";
 import { InMemoryDocTemplateStore } from "../src/stores/doc-template-memory.js";
 import {
@@ -33,6 +36,7 @@ import {
   StaticJiraProjectBindings,
 } from "../src/stores/memory.js";
 import {
+  InMemoryAppRegistryWriter,
   InMemoryOnboardingReader,
   InMemoryRepoPolicyReader,
 } from "../src/stores/onboarding-memory.js";
@@ -149,6 +153,14 @@ export const PARAM_DEFINITIONS: ParamDefinition[] = [
     descriptionKey: "params.description.notify_routing",
     defaultValue: {},
   },
+  {
+    key: "notify.teams.webhook",
+    scope: "global",
+    type: "json",
+    guarded: false,
+    descriptionKey: "params.description.notify_teams_webhook",
+    defaultValue: { url: "" },
+  },
 ];
 
 export interface Harness {
@@ -171,6 +183,10 @@ export interface Harness {
   connections: InMemoryConnectionStore;
   /** The connector secret store — proves a raw token is enciphered, never stored raw. */
   connectorSecrets: InMemorySecretStore;
+  /** The listening-rules store, so a rules test can seed/assert rows. */
+  listening: InMemoryListeningStore;
+  /** The guidance store, so a guidance test can seed/assert notes. */
+  guidance: InMemoryGuidanceStore;
   bindings: StaticJiraProjectBindings;
   /** Studio's read side, as concrete stores the tests seed directly. */
   read: TestReadModels;
@@ -339,6 +355,12 @@ export interface HarnessOptions {
   templates?: readonly TemplateVersionRecord[];
   /** Onboarding options (M93); empty by default, so a test seeds what it asserts on. */
   onboarding?: OnboardingOptionsRecord;
+  /**
+   * Wire the M100 app-registry writer (default true). `false` reproduces the
+   * older proposal-only submit, where the repo must already exist in the
+   * options — the geriye-uyum path the route keeps when no writer is wired.
+   */
+  withAppRegistry?: boolean;
   /** Per-project run history the dry run replays (M102), keyed by project key. */
   samples?: ReadonlyMap<string, readonly OnboardingSampleTicket[]>;
   /** `.maestro.yaml` records per application (M52). */
@@ -350,6 +372,8 @@ export interface HarnessOptions {
   connections?: readonly ConnectionView[];
   /** Seed the managed-connector store (distinct from the read-only `connections`). */
   managedConnections?: readonly ConnectionRecord[];
+  /** Seed the listening-rules store. */
+  listeningRules?: readonly ListeningRuleRecord[];
   /** Stub the connector live-test transport; defaults to a 200-with-no-body fetch. */
   connectorFetch?: ConnectorFetch;
   notifyDrivers?: readonly NotifyDriverView[];
@@ -396,7 +420,17 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const killSwitch = new InMemoryKillSwitchStore();
   const connections = new InMemoryConnectionStore(options.managedConnections ?? []);
   const connectorSecrets = new InMemorySecretStore();
+  const listening = new InMemoryListeningStore(options.listeningRules ?? []);
+  const guidance = new InMemoryGuidanceStore();
   const bindings = new StaticJiraProjectBindings(options.bindings ?? [UGURPAY_BINDING]);
+  // The onboarding reader is shared with the app-registry writer below, the way
+  // the Postgres reader and writer both sit on `db.application`: a submission
+  // that registers a repo must be visible to the same request's `assertBindable`.
+  const onboarding = new InMemoryOnboardingReader(options.onboarding, options.samples);
+  // Wired by default so tests exercise the real M100 write path; a test that
+  // wants the older proposal-only behaviour passes `withAppRegistry: false`.
+  const appRegistry =
+    options.withAppRegistry === false ? undefined : new InMemoryAppRegistryWriter(onboarding);
 
   const read: TestReadModels = {
     runs: new InMemoryRunCatalog(),
@@ -413,7 +447,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // verify itself rather than the trail.
     audit: new AuditStoreReader(auditStore),
     health: new StaticHealthReader(options.services ?? TEST_SERVICES),
-    onboarding: new InMemoryOnboardingReader(options.onboarding, options.samples),
+    onboarding,
     repoPolicy: new InMemoryRepoPolicyReader(options.policies),
   };
 
@@ -427,6 +461,10 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     identity,
     users,
     bindings,
+    // The same in-memory store is both the binding READER and WRITER, the way
+    // PrismaJiraProjectBindings and PrismaBindingWriter both sit on the same
+    // table — an approved proposal binds, and the intake path resolves it.
+    bindingWriter: bindings,
     gates: new StaticGateDirectory(),
     params,
     templates,
@@ -437,6 +475,9 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     killSwitch,
     connections,
     connectorSecrets,
+    appRegistry,
+    listening,
+    guidance,
     read,
     messages: testCatalog,
     clock,
@@ -517,6 +558,8 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     killSwitch,
     connections,
     connectorSecrets,
+    listening,
+    guidance,
     bindings,
     read,
     platform: app.platform,

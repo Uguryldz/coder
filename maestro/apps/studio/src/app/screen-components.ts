@@ -3,14 +3,14 @@ import { AuditScreen } from "../screens/Audit.tsx";
 import { CacheScreen } from "../screens/Cache.tsx";
 import { ClarifyScreen } from "../screens/Clarify.tsx";
 import { CommandsScreen } from "../screens/Commands.tsx";
-import { CostScreen } from "../screens/Cost.tsx";
+import { AiUsageScreen } from "../screens/AiUsage.tsx";
 import { DashScreen } from "../screens/Dash.tsx";
 import { DetailScreen } from "../screens/Detail.tsx";
 import { DoctemplateScreen } from "../screens/Doctemplate.tsx";
 import { EvalScreen } from "../screens/Eval.tsx";
 import { EvidenceScreen } from "../screens/Evidence.tsx";
 import { FanoutScreen } from "../screens/Fanout.tsx";
-import { FlowScreen } from "../screens/Flow.tsx";
+import { WatchScreen } from "../screens/Watch.tsx";
 import { GreenfieldScreen } from "../screens/Greenfield.tsx";
 import { HealthScreen } from "../screens/Health.tsx";
 import { HelpScreen } from "../screens/Help.tsx";
@@ -18,20 +18,16 @@ import { IssuesScreen } from "../screens/Issues.tsx";
 import { JiraScreen } from "../screens/Jira.tsx";
 import { KnowledgeScreen } from "../screens/Knowledge.tsx";
 import { LiveScreen } from "../screens/Live.tsx";
-import { PilotScreen } from "../screens/Pilot.tsx";
-import { LlmScreen } from "../screens/Llm.tsx";
 import { McpScreen } from "../screens/Mcp.tsx";
 import { NotifyScreen } from "../screens/Notify.tsx";
-import { OnboardScreen } from "../screens/Onboard.tsx";
+import { ProjectsScreen } from "../screens/Projects.tsx";
 import { ParamsScreen } from "../screens/Params.tsx";
 import { PiiScreen } from "../screens/Pii.tsx";
-import { RoutingScreen } from "../screens/Routing.tsx";
 import { RunnersScreen } from "../screens/Runners.tsx";
 import { SandboxScreen } from "../screens/Sandbox.tsx";
 import { SecurityScreen } from "../screens/Security.tsx";
 import { SettingsScreen } from "../screens/Settings.tsx";
 import { TemplateScreen } from "../screens/Template.tsx";
-import { TicketsScreen } from "../screens/Tickets.tsx";
 import { UsersScreen } from "../screens/Users.tsx";
 import { VariantScreen } from "../screens/Variant.tsx";
 import { VariantsScreen } from "../screens/Variants.tsx";
@@ -49,9 +45,7 @@ export const SCREEN_COMPONENTS: Readonly<Record<string, ComponentType>> = {
   dash: DashScreen,
   help: HelpScreen,
   live: LiveScreen,
-  pilot: PilotScreen,
-  tickets: TicketsScreen,
-  flow: FlowScreen,
+  pilot: WatchScreen,
   fanout: FanoutScreen,
   clarify: ClarifyScreen,
   workmode: WorkmodeScreen,
@@ -69,17 +63,15 @@ export const SCREEN_COMPONENTS: Readonly<Record<string, ComponentType>> = {
   knowledge: KnowledgeScreen,
   template: TemplateScreen,
   doctemplate: DoctemplateScreen,
-  llm: LlmScreen,
   pii: PiiScreen,
-  cost: CostScreen,
+  cost: AiUsageScreen,
   audit: AuditScreen,
   evidence: EvidenceScreen,
   security: SecurityScreen,
   notify: NotifyScreen,
-  routing: RoutingScreen,
+  projects: ProjectsScreen,
   params: ParamsScreen,
   mcp: McpScreen,
-  onboard: OnboardScreen,
   users: UsersScreen,
   settings: SettingsScreen,
   health: HealthScreen,

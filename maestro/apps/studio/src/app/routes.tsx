@@ -32,6 +32,18 @@ export function AppRoutes(): ReactNode {
 
         <Route element={<Shell />}>
           <Route index element={<Navigate to="/dash" replace />} />
+          {/* The three project-binding screens became tabs of /projects. Their
+              old paths redirect to the matching tab so deep links, bookmarks and
+              any lingering in-app links keep working. */}
+          <Route path="onboard" element={<Navigate to="/projects?tab=onboard" replace />} />
+          <Route path="routing" element={<Navigate to="/projects?tab=routing" replace />} />
+          <Route path="listening" element={<Navigate to="/projects?tab=listening" replace />} />
+          {/* İş akışları list merged into the Panel; keep the old path working. */}
+          <Route path="tickets" element={<Navigate to="/dash" replace />} />
+          {/* Süreç haritası (flow) merged into Canlı akış as its map tab. */}
+          <Route path="flow" element={<Navigate to="/pilot?view=map" replace />} />
+          {/* LLM Gateway merged into AI usage & cost as its traffic tab. */}
+          <Route path="llm" element={<Navigate to="/cost?view=traffic" replace />} />
           {SCREENS.map((screen) => {
             const Component = SCREEN_COMPONENTS[screen.id];
             if (Component === undefined) return null;

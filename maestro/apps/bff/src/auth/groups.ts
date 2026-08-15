@@ -19,7 +19,9 @@ import { ROLES } from "@maestro/contracts";
  */
 export const ROLE_BY_GROUP: Readonly<Record<string, string>> = {
   "maestro-admins": "admin",
+  operators: "tech-lead",
   "tech-leads": "tech-lead",
+  analysts: "product-owner",
   "product-owners": "product-owner",
   qa: "qa",
   developers: "developer",

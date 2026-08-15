@@ -49,6 +49,17 @@ const MISSING: Readonly<Record<string, string>> = {
     "and the encrypting SecretPort over those tables. Until both are wired the routes " +
     "refuse rather than answer an empty list, which would read as \"no connections\" on a " +
     "platform that simply cannot edit them here",
+  listening:
+    "no ListeningStore is injected — the listening-rules surface (ListeningRule, migration " +
+    "0011) lets an admin define which tickets Maestro picks up and how it runs them " +
+    "(status/issuetype → flow type), and this deployment did not wire the store over that " +
+    "table. Until one is wired the routes refuse rather than answer an empty list, which " +
+    "would read as \"no rules\" on a platform that simply cannot edit them here",
+  bindingWriter:
+    "no BindingWriter is injected — approving an onboarding package turns the proposal " +
+    "into a live JiraProjectBinding, and this deployment did not wire a store that can " +
+    "write bindings. Until one is wired the approve route refuses rather than clear the " +
+    "proposal without binding anything, which would look like an approval that did nothing",
   greenfield:
     "the greenfield flow (M97) has no table and no producer. No workflow writes an " +
     "architecture proposal, a step state or a repo-setup record for a ticket whose " +

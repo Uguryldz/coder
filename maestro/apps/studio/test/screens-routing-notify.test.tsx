@@ -132,6 +132,59 @@ describe("routing screen", () => {
     expect(payload.policy.whenOnpremMissing).toBe("block");
     expect(payload.policy.whenOnpremMissing).not.toBe("degrade_ai_assist");
   });
+
+  // The onboarding approval queue (M93): a submitted package is now visible here
+  // and an admin can approve it, which is the step that turns a proposal into a
+  // live binding. Before this the queue had no reader at all.
+  const PENDING_BODY = {
+    path: "/onboarding/pending",
+    body: {
+      items: [
+        {
+          projectKey: "OPS",
+          appId: "Uguryldz/maestro-pilot",
+          adoRepo: "Uguryldz/maestro-pilot",
+          platform: "linux-node",
+          triggerMode: "opt_in",
+          gateSet: "risk_tiered",
+          mergeMode: "human",
+          proposedBy: "ayse.kaya@ugurbank.local",
+          at: "2026-08-13T10:00:00.000Z",
+        },
+      ],
+    },
+  };
+
+  it("shows a submitted onboarding package and approves it into a binding", async () => {
+    const { fetchImpl, calls } = stubFetch([
+      ROUTING_BODY,
+      APPS_BODY,
+      PENDING_BODY,
+      { path: "/onboarding/approve", method: "POST", body: { status: "bound", projectKey: "OPS", nextStep: "listening_rule" } },
+    ]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+
+    // The package is listed with its repo and proposer.
+    expect(await screen.findByText("Uguryldz/maestro-pilot")).toBeInTheDocument();
+    expect(screen.getByText("ayse.kaya@ugurbank.local")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Onayla" }));
+
+    const post = calls.find((c) => c.method === "POST" && c.url.endsWith("/onboarding/approve"));
+    expect(post).toBeDefined();
+    expect((post!.body as { projectKey: string }).projectKey).toBe("OPS");
+    // After approval the operator is offered the chain's next step.
+    expect(await screen.findByRole("button", { name: "Dinleme kuralı ekle" })).toBeInTheDocument();
+  });
+
+  it("hides the approval queue from a non-admin", async () => {
+    const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY, PENDING_BODY]);
+    renderScreen(<RoutingScreen />, { fetchImpl, session: VIEWER });
+
+    await screen.findByText("UgurPay Core");
+    // A viewer never sees an approve button.
+    expect(screen.queryByRole("button", { name: "Onayla" })).not.toBeInTheDocument();
+  });
 });
 
 const NOTIFY_BODY = {
@@ -146,6 +199,7 @@ const NOTIFY_BODY = {
       businessHoursOnly: false,
       calendar: {},
     },
+    teamsWebhookMask: "",
   },
 };
 
@@ -175,7 +229,49 @@ describe("notify screen editing", () => {
     const { fetchImpl } = stubFetch([NOTIFY_BODY]);
     renderScreen(<NotifyScreen />, { fetchImpl, session: VIEWER });
 
-    await screen.findByText(/otomatik ret yok/);
+    await screen.findByText(/otomatik reddedilmez/);
     expect(screen.queryByRole("button", { name: /Merdiveni düzenle/ })).not.toBeInTheDocument();
+    // A non-admin also gets no routing-edit button.
+    expect(screen.queryByRole("button", { name: /Eşlemeyi düzenle/ })).not.toBeInTheDocument();
+  });
+
+  it("saves a Teams webhook URL through PUT /notify (never prefilled)", async () => {
+    const { fetchImpl, calls } = stubFetch([
+      NOTIFY_BODY,
+      { path: "/notify", method: "PUT", body: { results: [{ status: "applied", change: {} }] } },
+    ]);
+    renderScreen(<NotifyScreen />, { fetchImpl });
+
+    const field = await screen.findByLabelText("Teams webhook URL");
+    await userEvent.type(field, "https://outlook.office.com/webhook/abc123");
+    await userEvent.click(screen.getByRole("button", { name: "Kaydet" }));
+
+    const put = calls.find((call) => call.method === "PUT" && call.url.endsWith("/notify"));
+    expect(put).toBeDefined();
+    expect((put!.body as { teamsWebhook?: string }).teamsWebhook).toBe(
+      "https://outlook.office.com/webhook/abc123",
+    );
+  });
+
+  it("shows the event→channel routing: each event with its channels, defaults marked", async () => {
+    const { fetchImpl } = stubFetch([
+      {
+        path: "/notify",
+        body: {
+          ...NOTIFY_BODY.body,
+          // gate_open explicitly on jira; kill_switch muted; everything else default (teams).
+          routing: { default: ["teams"], byEvent: { gate_open: ["jira"], kill_switch: [] } },
+        },
+      },
+    ]);
+    renderScreen(<NotifyScreen />, { fetchImpl });
+
+    // The routing card lists every event by its localized name.
+    expect(await screen.findByText("Onay kapısı açıldı")).toBeInTheDocument();
+    expect(screen.getByText("Kill-switch")).toBeInTheDocument();
+    // A muted event is shown as such, not blank.
+    expect(screen.getByText("susturulmuş")).toBeInTheDocument();
+    // An event with no explicit rule is marked as following the default.
+    expect(screen.getAllByText(/varsayılan/).length).toBeGreaterThan(0);
   });
 });

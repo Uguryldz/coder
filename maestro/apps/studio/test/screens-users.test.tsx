@@ -64,6 +64,30 @@ describe("users screen", () => {
     });
   });
 
+  it("offers the new teams (operators, analysts) and derives their role, not a new one", async () => {
+    const { fetchImpl, calls } = stubFetch([
+      LIST,
+      { path: "/studio/users", method: "POST", status: 201, body: { ...ACTIVE, username: "op.user" } },
+    ]);
+    renderScreen(<UsersScreen />, { fetchImpl, session: ADMIN });
+
+    await userEvent.click(await screen.findByRole("button", { name: "➕ Kullanıcı ekle" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Kullanıcı adı"), "op.user");
+    await userEvent.type(within(dialog).getByLabelText("Görünen ad"), "Op User");
+    await userEvent.type(within(dialog).getByLabelText("Parola"), "Yeni.Parola-2026!");
+
+    // The operators team is offered and grants the (existing) tech-lead role —
+    // never a role of its own name.
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /operators/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "➕ Kullanıcı ekle" }));
+
+    await waitFor(() => {
+      const post = calls.find((call) => call.method === "POST");
+      expect((post?.body as { groups: string[] }).groups).toEqual(["operators"]);
+    });
+  });
+
   it("shows each failed password rule the BFF names, not a single opaque error", async () => {
     const { fetchImpl } = stubFetch([
       LIST,

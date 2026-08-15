@@ -71,6 +71,12 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
     return relayJson(upstream, reply);
   });
 
+  /** The pilot's finished runs, newest first — the "geçmiş işler" history. */
+  app.get("/studio/pilot/runs", { preHandler }, async (_request, reply) => {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/runs`);
+    return relayJson(upstream, reply);
+  });
+
   /** Start the flow for a discovered ticket. Operator-gated; body carries the key. */
   app.post("/studio/pilot/start", { preHandler: writeHandler }, async (request, reply) => {
     const parsed = StartBody.safeParse(request.body);
@@ -96,6 +102,44 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify(request.body ?? {}),
+    });
+    return relayJson(upstream, reply);
+  });
+
+  /**
+   * Mirror the DB listening rules into the running pilot (Faz 3).
+   *
+   * The pilot cannot read Postgres, so after Studio edits a rule it calls this;
+   * the BFF reads the CURRENT rule set from its own store (the DB — the source
+   * of truth) and forwards the full list to the pilot's `/api/listening`. Studio
+   * therefore never has to send the rules itself, and the pilot always converges
+   * on what the DB holds. Operator-gated. When no ListeningStore is wired the
+   * mirror is a no-op success (the pilot keeps its empty set), not a 503 — the DB
+   * write the admin saw succeed must not be undone by a mirror hiccup.
+   */
+  app.post("/studio/pilot/listening", { preHandler: writeHandler }, async (_request, reply) => {
+    const rules = deps.listening === undefined ? [] : await deps.listening.list();
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/listening`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ rules }),
+    });
+    return relayJson(upstream, reply);
+  });
+
+  /**
+   * Mirror the ENABLED analysis-guidance notes into the running pilot, so the
+   * analyst "learns" from them on the next analysis. Same pattern as the
+   * listening mirror: the BFF reads its own store (the DB source of truth) and
+   * forwards the enabled notes to the pilot's `/api/guidance`. A missing store
+   * mirrors an empty set (no-op success), never a 503.
+   */
+  app.post("/studio/pilot/guidance", { preHandler: writeHandler }, async (_request, reply) => {
+    const notes = deps.guidance === undefined ? [] : await deps.guidance.listEnabled();
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/guidance`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ notes: notes.map((n) => ({ title: n.title, content: n.content })) }),
     });
     return relayJson(upstream, reply);
   });

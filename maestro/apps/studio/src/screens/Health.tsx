@@ -5,7 +5,7 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
 import type { HealthResponse, ServiceHealth, ServiceState } from "./common/index.ts";
-import { NotAvailable, QueryState } from "./common/index.ts";
+import { QueryState } from "./common/index.ts";
 import { useLabel } from "./common/label.ts";
 import { ageLabel } from "./shared/format.ts";
 
@@ -110,10 +110,6 @@ export function HealthScreen(): ReactNode {
           />
         </Card>
       </QueryState>
-
-      <Card title={t("health.card.backup")} subtitle={t("health.card.backup_sub")}>
-        <NotAvailable detailKey="health.backup.unavailable" />
-      </Card>
     </div>
   );
 }

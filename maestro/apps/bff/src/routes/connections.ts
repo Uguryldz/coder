@@ -108,10 +108,11 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const record = toConnectionRecord(params.data.id, body.data, secret, {
       createdAt: existing.createdAt,
       updatedAt: deps.clock.now().toISOString(),
-      // An edit does not un-test the connection; the test result stands until a
-      // new test overwrites it.
+      // An edit does not un-test the connection; the test result (and its note)
+      // stand until a new test overwrites them.
       lastTestedAt: existing.lastTestedAt,
       lastTestOk: existing.lastTestOk,
+      lastTestNote: existing.lastTestNote,
     });
     await store.put(record);
     await audit(deps, request, params.data.id, "updated");
@@ -136,7 +137,21 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const outcome = await runConnectionTest(record, token, deps.connectorFetch);
 
     const at = deps.clock.now().toISOString();
-    await store.recordTest(record.id, { at, ok: outcome.ok });
+    // `outcome.messageKey` is a catalog KEY (e.g. "connection.test.unauthorized"),
+    // never raw text — safe to persist as the row's secret-free test note.
+    await store.recordTest(record.id, { at, ok: outcome.ok, note: outcome.messageKey });
+
+    // A successful Jira test learned the bot's own accountId. Persist it in the
+    // connection's (non-secret) config so a listening rule can offer "the bot"
+    // by name instead of asking an operator to hand-copy a 40-char GUID. Only on
+    // success and only when it changed, so a failed test never wipes a good value.
+    if (outcome.ok && outcome.accountId && record.config["botAccountId"] !== outcome.accountId) {
+      await store.put({
+        ...record,
+        config: { ...record.config, botAccountId: outcome.accountId },
+        updatedAt: at,
+      });
+    }
     await audit(deps, request, record.id, outcome.ok ? "test_ok" : "test_fail");
 
     return reply.code(200).send({

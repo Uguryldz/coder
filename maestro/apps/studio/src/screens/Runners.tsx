@@ -6,8 +6,8 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Kpi, Table } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
 import type { PoolSummary, RunnerRecord, RunnersResponse, RunnerState } from "./common/index.ts";
-import { QueryState } from "./common/index.ts";
 import { useLabel } from "./common/label.ts";
+import { MaybeUnwired } from "./shared/unwired.tsx";
 
 const STATE_TONE: Readonly<Record<RunnerState, BadgeTone>> = {
   idle: "green",
@@ -90,7 +90,7 @@ export function RunnersScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
-      <QueryState
+      <MaybeUnwired
         isPending={runners.isPending}
         error={runners.error}
         isEmpty={nodes.length === 0}
@@ -135,7 +135,7 @@ export function RunnersScreen(): ReactNode {
             caption={t("runners.card.machines")}
           />
         </Card>
-      </QueryState>
+      </MaybeUnwired>
 
       <div className="scr-grid scr-grid--2">
         <Card title={t("runners.card.isolation")}>

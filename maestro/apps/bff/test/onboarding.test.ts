@@ -63,6 +63,18 @@ async function wizard(): Promise<Harness> {
   return harness({ onboarding: OPTIONS, samples: SAMPLES });
 }
 
+/**
+ * The wizard WITHOUT the M100 app-registry writer — the geriye-uyum path where
+ * the repo must already be in the options and the submit files a proposal only.
+ * The `refuse` cases below (platform mismatch, second proposer) belong here:
+ * they assert the OLDER `assertBindable`-gated behaviour against `cards`, a repo
+ * already in the fixture. The writer-on path registers whatever repo the draft
+ * names, so a mismatch cannot arise there.
+ */
+async function wizardLegacy(): Promise<Harness> {
+  return harness({ onboarding: OPTIONS, samples: SAMPLES, withAppRegistry: false });
+}
+
 async function adminToken(app: Harness): Promise<string> {
   await app.addUser({ username: "ayse.kaya", roles: ["admin"], groups: ["maestro-admins"] });
   return app.login("ayse.kaya");
@@ -80,11 +92,15 @@ describe("GET /onboarding/options", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      jiraProjects: ["UGURPAY", "NEWPROJ", "DRAFTED", "REHEARSE"],
-      adoRepos: ["ugurpay", "cards"],
-      platforms: ["linux-java", "linux-node"],
-    });
+    const options = response.json();
+    expect(options.jiraProjects).toEqual(["UGURPAY", "NEWPROJ", "DRAFTED", "REHEARSE"]);
+    expect(options.adoRepos).toEqual(["ugurpay", "cards"]);
+    // The four contract platform PROFILES are always offered (a fresh install
+    // has no bindings to derive them from), plus any already seen in the store.
+    expect(options.platforms).toEqual(
+      expect.arrayContaining(["linux-node", "linux-android", "macos-xcode", "windows-dotnet"]),
+    );
+    expect(options.platforms).toContain("linux-java"); // the extra one the store seeded
   });
 
   it("refuses an anonymous caller", async () => {
@@ -165,19 +181,22 @@ describe("POST /onboarding/dry-run", () => {
     });
   });
 
-  it("refuses a repository that is not in the registry", async () => {
+  it("rehearses a repo that is not yet in the registry (the new-onboarding case)", async () => {
     const app = await wizard();
     const token = await adminToken(app);
 
+    // A repo picked LIVE off SCM is not in the registry until submit writes it.
+    // The dry run replays the PROJECT's history and does not need the repo to
+    // exist, so it must succeed and echo the repo back as the appId.
     const response = await app.app.inject({
       method: "POST",
       url: "/onboarding/dry-run",
       headers: { authorization: `Bearer ${token}` },
-      payload: { jiraProject: "NEWPROJ", adoRepo: "no-such-repo" },
+      payload: { jiraProject: "NEWPROJ", adoRepo: "Uguryldz/brand-new" },
     });
 
-    expect(response.statusCode).toBe(404);
-    expect(response.json().error).toBe("unknown_app");
+    expect(response.statusCode).toBe(200);
+    expect(response.json().appId).toBe("Uguryldz/brand-new");
   });
 
   it("refuses a project that is already live rather than warning about it", async () => {
@@ -233,7 +252,8 @@ describe("POST /onboarding", () => {
   } as const;
 
   it("files a proposal and binds nothing", async () => {
-    const app = await wizard();
+    // Legacy path: no writer, so the repo must already be in the options.
+    const app = await wizardLegacy();
     const token = await adminToken(app);
 
     const response = await app.app.inject({
@@ -259,7 +279,7 @@ describe("POST /onboarding", () => {
   });
 
   it("writes an audit record naming the project and the app", async () => {
-    const app = await wizard();
+    const app = await wizardLegacy();
     const token = await adminToken(app);
 
     await app.app.inject({
@@ -298,7 +318,10 @@ describe("POST /onboarding", () => {
   });
 
   it("refuses a platform that is not the repository's own", async () => {
-    const app = await wizard();
+    // Legacy path only: with the writer on, the repo is registered with the
+    // draft's own platform, so it always matches — the mismatch is a property
+    // of binding to a repo somebody ELSE onboarded with a fixed profile.
+    const app = await wizardLegacy();
     const token = await adminToken(app);
 
     const response = await app.app.inject({
@@ -314,7 +337,7 @@ describe("POST /onboarding", () => {
   });
 
   it("refuses a second person's proposal for the same project", async () => {
-    const app = await wizard();
+    const app = await wizardLegacy();
     const first = await adminToken(app);
     await app.app.inject({
       method: "POST",
@@ -362,5 +385,517 @@ describe("POST /onboarding", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toBe("invalid_onboarding_body");
+  });
+
+  // ── M100: registering the app directly, then proposing the binding ──────────
+
+  /** A draft naming a repo the fixture does NOT contain, as `owner/repo`. */
+  const NEW_DRAFT = {
+    jiraProject: "NEWPROJ",
+    adoRepo: "Uguryldz/maestro-pilot",
+    platform: "linux-node",
+    triggerMode: "opt_in",
+    gateSet: "risk_tiered",
+    mergeMode: "human",
+  } as const;
+
+  it("registers a repo that was never onboarded, then proposes the binding", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+
+    // The repo is absent from the options at the start — the older wall would
+    // have refused it with `unknown_app`.
+    const before = await app.read.onboarding.options({ limit: 200, cursor: null });
+    expect(before.repos.some((repo) => repo.appId === "Uguryldz/maestro-pilot")).toBe(false);
+
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: NEW_DRAFT,
+    });
+
+    // The submit still ends in a four-eyes proposal, not a live binding.
+    expect(response.statusCode).toBe(202);
+    expect(response.json().status).toBe("pending_four_eyes");
+
+    // But the app now exists in the inventory: appId is the full name verbatim,
+    // split into owner/repo, carrying the draft's platform.
+    const after = await app.read.onboarding.options({ limit: 200, cursor: null });
+    const registered = after.repos.find((repo) => repo.appId === "Uguryldz/maestro-pilot");
+    expect(registered).toBeDefined();
+    expect(registered).toMatchObject({
+      appId: "Uguryldz/maestro-pilot",
+      repo: "Uguryldz/_git/maestro-pilot",
+      platform: "linux-node",
+    });
+
+    // And both facts are on the trail: the registration AND the proposal.
+    const events = await app.auditStore.read();
+    const reg = events.find((event) => event.subject === "application:Uguryldz/maestro-pilot");
+    expect(reg?.meta).toMatchObject({
+      registered: "application",
+      appId: "Uguryldz/maestro-pilot",
+      adoProject: "Uguryldz",
+      adoRepo: "maestro-pilot",
+      createdVia: "onboarding",
+    });
+    const proposal = events.find((event) => event.subject === "onboarding:NEWPROJ");
+    expect(proposal).toBeDefined();
+  });
+
+  it("refuses a repo name that is not owner/repo", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      // No slash: not a repository this platform can split into two columns.
+      payload: { ...NEW_DRAFT, adoRepo: "just-a-name" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("invalid_repo_name");
+    // Nothing was written: no app row, no proposal.
+    const after = await app.read.onboarding.options({ limit: 200, cursor: null });
+    expect(after.repos.some((repo) => repo.appId === "just-a-name")).toBe(false);
+    expect(await app.params.pending()).toEqual([]);
+  });
+
+  it("registers a repo for a brand-new project the binding table has never seen", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+
+    // FRESHPROJ is in neither the binding table nor the fixture's projects — a
+    // project picked LIVE off Jira that nobody has onboarded yet. That is not an
+    // error: it is exactly what the wizard exists to do, so the submit proceeds.
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...NEW_DRAFT, jiraProject: "FRESHPROJ" },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const after = await app.read.onboarding.options({ limit: 200, cursor: null });
+    expect(after.repos.some((repo) => repo.appId === "Uguryldz/maestro-pilot")).toBe(true);
+  });
+
+  it("does not register a repo when the project is already bound (no stranded app row)", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+
+    // UGURPAY is `active` in the fixture — already somebody's. The project check
+    // must fail BEFORE the repo is written, leaving no orphan row.
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...NEW_DRAFT, jiraProject: "UGURPAY" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toBe("project_already_bound");
+    const after = await app.read.onboarding.options({ limit: 200, cursor: null });
+    expect(after.repos.some((repo) => repo.appId === "Uguryldz/maestro-pilot")).toBe(false);
+  });
+
+  it("without a writer, an un-onboarded repo is still refused (geriye-uyum)", async () => {
+    const app = await wizardLegacy();
+    const token = await adminToken(app);
+
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: NEW_DRAFT,
+    });
+
+    // No writer means the older `assertBindable` wall stands: the repo was
+    // never onboarded, so the wizard cannot bind it.
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("unknown_app");
+  });
+});
+
+describe("onboarding approval chain (M93)", () => {
+  const NEW_DRAFT = {
+    jiraProject: "NEWPROJ",
+    adoRepo: "Uguryldz/maestro-pilot",
+    platform: "linux-node",
+    triggerMode: "opt_in",
+    gateSet: "risk_tiered",
+    mergeMode: "human",
+  } as const;
+
+  /** Submit a package as ayse (admin), returning the ready harness + her token. */
+  async function submitted(): Promise<Harness> {
+    const app = await harness({ onboarding: OPTIONS, samples: SAMPLES });
+    const token = await adminToken(app); // ayse.kaya, admin
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: NEW_DRAFT,
+    });
+    expect(res.statusCode).toBe(202);
+    return app;
+  }
+
+  it("lists the submitted package in the pending queue", async () => {
+    const app = await submitted();
+    const token = await app.login("ayse.kaya");
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/pending",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const items = res.json().items as { projectKey: string; appId: string; proposedBy: string }[];
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      projectKey: "NEWPROJ",
+      appId: "Uguryldz/maestro-pilot",
+      proposedBy: "ayse.kaya@ugurbank.local",
+    });
+  });
+
+  it("refuses a NON-master proposer approving their own package (four-eyes)", async () => {
+    // A tech-lead (not maestro-admins) proposes, then tries to approve their own
+    // package: the strict four-eyes rule still applies to everyone but a master
+    // admin, so this must be refused.
+    const app = await harness({ onboarding: OPTIONS, samples: SAMPLES });
+    await app.addUser({ username: "baran.tunc", roles: ["tech-lead"], groups: ["tech-leads"] });
+    const proposer = await app.login("baran.tunc");
+    const submit = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${proposer}` },
+      payload: NEW_DRAFT,
+    });
+    expect(submit.statusCode).toBe(202);
+
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/approve",
+      headers: { authorization: `Bearer ${proposer}` },
+      payload: { projectKey: "NEWPROJ" },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe("self_approval");
+    // The proposal is untouched; the project is still unbound.
+    expect(await app.bindings.resolve("NEWPROJ")).toBeNull();
+  });
+
+  it("lets a MASTER ADMIN approve their own package (single-admin exemption)", async () => {
+    // ayse.kaya is in maestro-admins; a one-admin install must not deadlock, so
+    // she may approve the package she proposed. The binding goes live and the
+    // pending clears, exactly as a second approver would produce.
+    const app = await submitted(); // proposed by ayse.kaya (maestro-admins)
+    const token = await app.login("ayse.kaya");
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/approve",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { projectKey: "NEWPROJ" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: "bound", projectKey: "NEWPROJ" });
+    // The binding is live and the pending queue is empty.
+    expect(await app.bindings.resolve("NEWPROJ")).not.toBeNull();
+    const pending = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/pending",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect((pending.json().items as unknown[]).length).toBe(0);
+  });
+
+  it("binds the project when a SECOND admin approves, and clears the pending", async () => {
+    const app = await submitted();
+    await app.addUser({ username: "mert.demir", roles: ["admin"], groups: ["maestro-admins"] });
+    const second = await app.login("mert.demir");
+
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/approve",
+      headers: { authorization: `Bearer ${second}` },
+      payload: { projectKey: "NEWPROJ" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: "bound", projectKey: "NEWPROJ", nextStep: "listening_rule" });
+
+    // The binding is now live and resolves for the intake path.
+    const binding = await app.bindings.resolve("NEWPROJ");
+    expect(binding).toMatchObject({
+      projectKey: "NEWPROJ",
+      active: true,
+      triggerMode: "opt_in", // opt_in → label → opt_in
+      appId: "Uguryldz/maestro-pilot",
+      dataClass: "gizli", // fail-closed default
+    });
+    // The pending queue is empty — the proposal was consumed.
+    const pending = await app.params.pending();
+    expect(pending.filter((p) => p.key === "onboarding.binding")).toHaveLength(0);
+  });
+
+  it("reject clears the pending without binding anything", async () => {
+    const app = await submitted();
+    await app.addUser({ username: "mert.demir", roles: ["admin"], groups: ["maestro-admins"] });
+    const second = await app.login("mert.demir");
+
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/reject",
+      headers: { authorization: `Bearer ${second}` },
+      payload: { projectKey: "NEWPROJ", reason: "wrong repo" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(await app.bindings.resolve("NEWPROJ")).toBeNull();
+    const pending = await app.params.pending();
+    expect(pending.filter((p) => p.key === "onboarding.binding")).toHaveLength(0);
+  });
+
+  it("approve 404s when there is no pending package for the project", async () => {
+    const app = await harness({ onboarding: OPTIONS });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/approve",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { projectKey: "NOPE" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("no_pending_binding");
+  });
+
+  it("refuses a developer at the approve surface", async () => {
+    const app = await submitted();
+    await app.addUser({ username: "dev3", roles: ["developer"] });
+    const token = await app.login("dev3", TEST_PASSWORD);
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/approve",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { projectKey: "NEWPROJ" },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+/** A managed SCM connection fixture for the picker endpoints. */
+const GH_CONN = {
+  id: "github",
+  kind: "github" as const,
+  displayName: "GitHub (maestro-pilot)",
+  baseUrl: "https://api.github.com",
+  authKind: "bearer" as const,
+  config: {},
+  secretRef: "connector:github:1",
+  secretMask: "fOgX",
+  enabled: true,
+  createdAt: "2026-08-13T00:00:00.000Z",
+  updatedAt: "2026-08-13T00:00:00.000Z",
+  lastTestedAt: null,
+  lastTestOk: null,
+  lastTestNote: null,
+};
+
+describe("GET /onboarding/scm-connections", () => {
+  it("lists only enabled github/ado connections, never a secret", async () => {
+    const app = await harness({
+      onboarding: OPTIONS,
+      managedConnections: [
+        GH_CONN,
+        { ...GH_CONN, id: "jira", kind: "jira_cloud", displayName: "Jira" },
+        { ...GH_CONN, id: "gh-off", enabled: false },
+      ],
+    });
+    const token = await adminToken(app);
+
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/scm-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { connections: { id: string; kind: string }[] };
+    // Only the enabled github connection — not jira, not the disabled one.
+    expect(body.connections).toEqual([{ id: "github", kind: "github", displayName: "GitHub (maestro-pilot)" }]);
+    expect(JSON.stringify(body)).not.toContain("secretRef");
+  });
+
+  it("refuses a developer", async () => {
+    const app = await harness({ managedConnections: [GH_CONN] });
+    await app.addUser({ username: "dev", roles: ["developer"] });
+    const token = await app.login("dev");
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/scm-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("refuses by name (503) when connections are not wired", async () => {
+    const app = await harness({ deps: { connections: undefined } });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/scm-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(503);
+  });
+});
+
+describe("GET /onboarding/scm-repos", () => {
+  it("lists a connection's repos LIVE, with the stored token, never leaking it", async () => {
+    const TOKEN = "ghp_stored_secret_9999";
+    let sawAuth: string | null = null;
+    const app = await harness({
+      managedConnections: [GH_CONN],
+      connectorFetch: async (_url, init) => {
+        sawAuth = (init?.headers as Record<string, string>)?.authorization ?? null;
+        return Response.json([{ id: 1, full_name: "Uguryldz/maestro-pilot" }]);
+      },
+    });
+    // Seed the stored token behind the connection's secretRef.
+    await app.connectorSecrets.set("connector:github:1", TOKEN);
+    const token = await adminToken(app);
+
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/scm-repos?connectionId=github",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; repos?: { fullName: string }[] };
+    expect(body.ok).toBe(true);
+    expect(body.repos?.[0]?.fullName).toBe("Uguryldz/maestro-pilot");
+    // The stored token was used, and it never appears in the response.
+    expect(sawAuth).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.stringify(body)).not.toContain(TOKEN);
+  });
+
+  it("400s an unknown connection id", async () => {
+    const app = await harness({ managedConnections: [GH_CONN] });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/scm-repos?connectionId=nope",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+/** A managed Jira connection fixture for the project-picker endpoints. */
+const JIRA_CONN = {
+  id: "jira",
+  kind: "jira_cloud" as const,
+  displayName: "Jira Cloud",
+  baseUrl: "https://ugurbank.atlassian.net",
+  authKind: "basic" as const,
+  config: { email: "bot@ugurbank.local" },
+  secretRef: "connector:jira:1",
+  secretMask: "z789",
+  enabled: true,
+  createdAt: "2026-08-13T00:00:00.000Z",
+  updatedAt: "2026-08-13T00:00:00.000Z",
+  lastTestedAt: null,
+  lastTestOk: null,
+  lastTestNote: null,
+};
+
+describe("GET /onboarding/jira-connections", () => {
+  it("lists only enabled jira connections, never a secret", async () => {
+    const app = await harness({
+      managedConnections: [
+        JIRA_CONN,
+        { ...JIRA_CONN, id: "gh", kind: "github", displayName: "GitHub" },
+        { ...JIRA_CONN, id: "jira-off", enabled: false },
+      ],
+    });
+    const token = await adminToken(app);
+
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { connections: { id: string; kind: string }[] };
+    // Only the enabled jira connection — not github, not the disabled one.
+    // `botAccountId` is null until the connection has been tested once.
+    expect(body.connections).toEqual([
+      { id: "jira", kind: "jira_cloud", displayName: "Jira Cloud", botAccountId: null },
+    ]);
+    expect(JSON.stringify(body)).not.toContain("secretRef");
+  });
+
+  it("refuses a developer", async () => {
+    const app = await harness({ managedConnections: [JIRA_CONN] });
+    await app.addUser({ username: "dev", roles: ["developer"] });
+    const token = await app.login("dev");
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("refuses by name (503) when connections are not wired", async () => {
+    const app = await harness({ deps: { connections: undefined } });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(503);
+  });
+});
+
+describe("GET /onboarding/jira-projects", () => {
+  it("lists a connection's projects LIVE, with the stored token, never leaking it", async () => {
+    const TOKEN = "jira_stored_secret_9999";
+    let sawAuth: string | null = null;
+    const app = await harness({
+      managedConnections: [JIRA_CONN],
+      connectorFetch: async (_url, init) => {
+        sawAuth = (init?.headers as Record<string, string>)?.authorization ?? null;
+        return Response.json({ values: [{ key: "UGURPAY", name: "Ugur Payments" }] });
+      },
+    });
+    await app.connectorSecrets.set("connector:jira:1", TOKEN);
+    const token = await adminToken(app);
+
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-projects?connectionId=jira",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; projects?: { key: string; name: string }[] };
+    expect(body.ok).toBe(true);
+    expect(body.projects?.[0]).toEqual({ key: "UGURPAY", name: "Ugur Payments" });
+    // The stored token was used under Basic, and never appears in the response.
+    expect(sawAuth).toMatch(/^Basic /);
+    expect(JSON.stringify(body)).not.toContain(TOKEN);
+  });
+
+  it("400s an unknown connection id", async () => {
+    const app = await harness({ managedConnections: [JIRA_CONN] });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-projects?connectionId=nope",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

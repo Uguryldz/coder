@@ -71,6 +71,25 @@ interface PilotStateWire {
   readonly steps: readonly PilotStep[];
 }
 
+/** Mirrors apps/pilot/src/state.ts `RunHistoryEntry` — a finished past run. */
+interface RunHistoryWire {
+  readonly runId: string;
+  readonly ticketKey: string;
+  readonly browseUrl: string | null;
+  readonly flowType: string | null;
+  readonly outcome: "tamamlandı" | "durduruldu" | "hata";
+  readonly detail: string | null;
+  readonly stepsDone: number;
+  readonly stepsTotal: number;
+  readonly finishedAt: string;
+}
+
+const OUTCOME_TONE: Readonly<Record<RunHistoryWire["outcome"], BadgeTone>> = {
+  "tamamlandı": "green",
+  "durduruldu": "amber",
+  "hata": "red",
+};
+
 const STEP_TONE: Readonly<Record<StepState, BadgeTone>> = {
   bekliyor: "gray",
   calisiyor: "blue",
@@ -93,6 +112,16 @@ export function PilotScreen(): ReactNode {
     refetchInterval: PILOT_REFRESH_MS,
     retry: false,
   });
+
+  // The finished runs — the "geçmiş işler" list, so past work is visible and
+  // not overwritten by the current run. Refreshed on the same beat as the state.
+  const historyQuery = useQuery({
+    queryKey: ["pilot-runs"],
+    queryFn: ({ signal }) => api.get<{ runs: readonly RunHistoryWire[] }>("/studio/pilot/runs", { signal }),
+    refetchInterval: PILOT_REFRESH_MS,
+    retry: false,
+  });
+  const history = historyQuery.data?.runs ?? [];
 
   const start = useMutation({
     mutationFn: (ticketKey: string) =>
@@ -237,6 +266,39 @@ export function PilotScreen(): ReactNode {
           ) : null}
         </Card>
       ) : null}
+
+      {/* Past work — the history of finished runs, so a completed job is not lost
+          the moment the next one starts. Newest first. */}
+      <Card title={t("pilot.history.title")} subtitle={t("pilot.history.subtitle")}>
+        {history.length === 0 ? (
+          <p className="screen-note">{t("pilot.history.empty")}</p>
+        ) : (
+          <div className="screen-steps">
+            {history.map((run) => (
+              <div className="screen-step" key={run.runId}>
+                <span className="screen-step__title">
+                  {run.browseUrl !== null ? (
+                    <a href={run.browseUrl} target="_blank" rel="noreferrer noopener" className="screen-mono">
+                      {run.ticketKey}
+                    </a>
+                  ) : (
+                    <b className="screen-mono">{run.ticketKey}</b>
+                  )}
+                  <span className="screen-note">
+                    {" "}
+                    {run.flowType !== null ? `${run.flowType} · ` : ""}
+                    {t("pilot.history.steps", { done: String(run.stepsDone), total: String(run.stepsTotal) })}
+                    {run.detail !== null ? ` · ${run.detail}` : ""}
+                  </span>
+                </span>
+                <span className="screen-step__state">
+                  <Badge tone={OUTCOME_TONE[run.outcome]}>{run.outcome}</Badge>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

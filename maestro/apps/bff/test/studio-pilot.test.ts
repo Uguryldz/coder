@@ -203,6 +203,53 @@ describe("settings", () => {
   });
 });
 
+describe("POST /studio/pilot/listening (mirror DB rules into the pilot)", () => {
+  it("forwards the CURRENT DB rule set to the pilot's /api/listening", async () => {
+    const pilot = pilotStub(() => json({ ok: true }));
+    const h = await harness({
+      deps: { pilotFetch: pilot.fetch },
+      listeningRules: [
+        {
+          ruleId: "lr_1",
+          projectKey: "OPS",
+          assigneeAccountId: "712020:bot",
+          matchKind: "issuetype",
+          matchValue: "Hata",
+          flowType: "duzeltme",
+          priority: 100,
+          enabled: true,
+        },
+      ],
+    });
+    await h.addUser({ username: "ops.admin", roles: ["admin"] });
+    const adminToken = await h.login("ops.admin");
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/studio/pilot/listening",
+      headers: auth(adminToken),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(pilot.calls[0]?.url).toBe("http://127.0.0.1:7020/api/listening");
+    // The DB rule was forwarded — the pilot receives the full list, not a flag.
+    const body = JSON.parse(pilot.calls[0]?.init?.body as string) as { rules: unknown[] };
+    expect(body.rules).toHaveLength(1);
+  });
+
+  it("role-gates the mirror: a viewer gets 403 and the pilot is never called", async () => {
+    const pilot = pilotStub(() => json({ ok: true }));
+    const { h, viewerToken } = await pilotHarness(pilot.fetch);
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/studio/pilot/listening",
+      headers: auth(viewerToken),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(pilot.calls).toHaveLength(0);
+  });
+});
+
 describe("GET /studio/pilot/doc/:kind", () => {
   it("constrains :kind to pdf|docx — no arbitrary segment reaches the pilot URL", async () => {
     const pilot = pilotStub(() => json({}, 404));

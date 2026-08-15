@@ -37,12 +37,22 @@ export interface ConnectionRecord {
   updatedAt: string;
   lastTestedAt: string | null;
   lastTestOk: boolean | null;
+  /**
+   * A short, SECRET-FREE note from the last test — the catalog message key of
+   * its outcome. Null until the first test. Never a token/DSN/raw driver text.
+   */
+  lastTestNote: string | null;
 }
 
 /** The last live test's honest verdict, recorded back onto the connection. */
 export interface ConnectionTestResult {
   at: string;
   ok: boolean;
+  /**
+   * The outcome's catalog message key (secret-free), stored so the panel can
+   * show WHY a test failed. Optional: a caller that has no key records none.
+   */
+  note?: string | null;
 }
 
 export interface ConnectionStore {

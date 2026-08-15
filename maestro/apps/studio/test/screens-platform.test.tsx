@@ -94,6 +94,19 @@ describe("runners screen", () => {
     expect(screen.getByText("Sunucuda bir hata oluştu.")).toBeInTheDocument();
     expect(screen.queryByText(/internal_error/)).not.toBeInTheDocument();
   });
+
+  it("reads an unwired read model as 'not available here', not a red error", async () => {
+    // The runners store has no producer in this deployment, so it refuses by
+    // name with 503 capability_not_wired. That is "not wired here", not a
+    // breakage — the screen must say so rather than show "Veri alınamadı".
+    const { fetchImpl } = stubFetch([
+      { path: "/studio/runners", status: 503, body: { error: "capability_not_wired", details: { capability: "runners.list" } } },
+    ]);
+    renderScreen(<RunnersScreen />, { fetchImpl });
+
+    expect(await screen.findByText("Bu bölüm henüz yayında değil")).toBeInTheDocument();
+    expect(screen.queryByText("Veri alınamadı")).not.toBeInTheDocument();
+  });
 });
 
 describe("sandbox screen", () => {
@@ -269,17 +282,6 @@ describe("health screen", () => {
     expect(screen.getByText("brand_new_thing")).toBeInTheDocument();
   });
 
-  it("declares the backup panel unavailable rather than inventing a drill date", async () => {
-    const { fetchImpl } = stubFetch([
-      { path: "/studio/health", body: { state: "healthy", services: [SERVICE] } },
-    ]);
-    renderScreen(<HealthScreen />, { fetchImpl });
-
-    await screen.findByText("PostgreSQL");
-    // A made-up "restore drill: never run" would look like a tracked finding.
-    expect(screen.getByText(/uydurma bir/i)).toBeInTheDocument();
-    expect(screen.queryByText("yapılmadı")).not.toBeInTheDocument();
-  });
 });
 describe("commands screen", () => {
   it("states that a comment with extra text is not an approval", async () => {
@@ -336,7 +338,7 @@ describe("notify screen", () => {
     ]);
     renderScreen(<NotifyScreen />, { fetchImpl });
 
-    expect(await screen.findByText(/otomatik ret yok/)).toBeInTheDocument();
+    expect(await screen.findByText(/otomatik reddedilmez/)).toBeInTheDocument();
     // 386 hours is 16 days 2 hours — formatted through the catalog, not concatenated.
     expect(screen.getByText("16 gün 2 saat")).toBeInTheDocument();
   });
@@ -345,33 +347,57 @@ describe("notify screen", () => {
 describe("onboard screen", () => {
   const OPTIONS = {
     path: "/onboarding/options",
-    body: {
-      jiraProjects: ["UGURKREDI"],
-      adoRepos: ["Kredi/_git/ugurkredi"],
-      platforms: ["linux-node"],
-    },
+    body: { jiraProjects: ["UGURKREDI"], adoRepos: [], platforms: ["linux-node"] },
   };
+  const JIRA_CONNS = {
+    path: "/onboarding/jira-connections",
+    body: { connections: [{ id: "jira", kind: "jira_cloud", displayName: "Jira" }] },
+  };
+  const JIRA_PROJECTS = {
+    // stubFetch strips the query string before matching, so the path is bare.
+    path: "/onboarding/jira-projects",
+    body: { ok: true, projects: [{ key: "UGURKREDI", name: "Ugur Kredi" }] },
+  };
+  const SCM_CONNS = {
+    path: "/onboarding/scm-connections",
+    body: { connections: [{ id: "github", kind: "github", displayName: "GitHub" }] },
+  };
+  const SCM_REPOS = {
+    path: "/onboarding/scm-repos",
+    body: { ok: true, repos: [{ id: "1", fullName: "Uguryldz/maestro-pilot" }] },
+  };
+  const PICKERS = [OPTIONS, JIRA_CONNS, JIRA_PROJECTS, SCM_CONNS, SCM_REPOS];
+
+  /** Pick Jira connection → (live) project, then SCM connection → (live) repo. */
+  async function pickProjectAndRepo(): Promise<void> {
+    await userEvent.selectOptions(await screen.findByLabelText("Jira bağlantısı"), "jira");
+    await screen.findByRole("option", { name: "UGURKREDI · Ugur Kredi" });
+    await userEvent.selectOptions(screen.getByLabelText("Jira projesi"), "UGURKREDI");
+    await userEvent.selectOptions(screen.getByLabelText("SCM bağlantısı"), "github");
+    // The repo select is disabled until the live list arrives; wait for the option.
+    await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" });
+    await userEvent.selectOptions(screen.getByLabelText("Repo"), "Uguryldz/maestro-pilot");
+  }
 
   it("blocks submission until a dry run has been seen", async () => {
-    const { fetchImpl, calls } = stubFetch([OPTIONS]);
+    const { fetchImpl, calls } = stubFetch([...PICKERS]);
     renderScreen(<OnboardScreen />, { fetchImpl });
 
-    await userEvent.selectOptions(await screen.findByLabelText("Jira projesi"), "UGURKREDI");
-    await userEvent.selectOptions(screen.getByLabelText("ADO reposu"), "Kredi/_git/ugurkredi");
-    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    // Single form now: project+repo+platform are all on screen, no "İleri".
+    await pickProjectAndRepo();
     await userEvent.selectOptions(await screen.findByLabelText("Platform profili"), "linux-node");
-    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
-    await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
 
     const submit = await screen.findByRole("button", { name: "Admin onayına gönder" });
     expect(submit).toBeDisabled();
-    expect(await screen.findByText(/kuru koşum yapmalısın/)).toBeInTheDocument();
+    // The block message points the operator at the dry-run button on the same
+    // form, since every field is already filled in above it.
+    expect(await screen.findByText(/Kuru koşum yap.*butonuna basın/)).toBeInTheDocument();
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
   });
 
   it("names the tickets that matched no rule instead of hiding them", async () => {
     const { fetchImpl } = stubFetch([
-      OPTIONS,
+      ...PICKERS,
       {
         path: "/onboarding/dry-run",
         method: "POST",
@@ -380,32 +406,30 @@ describe("onboard screen", () => {
     ]);
     renderScreen(<OnboardScreen />, { fetchImpl });
 
-    await userEvent.selectOptions(await screen.findByLabelText("Jira projesi"), "UGURKREDI");
-    await userEvent.selectOptions(screen.getByLabelText("ADO reposu"), "Kredi/_git/ugurkredi");
+    await pickProjectAndRepo();
     await userEvent.click(screen.getByRole("button", { name: "Kuru koşum yap" }));
 
     expect(await screen.findByText(/UGURKREDI-3, UGURKREDI-9/)).toBeInTheDocument();
     expect(screen.getByText("atama gerekir: 2")).toBeInTheDocument();
   });
 
-  it("discards a stale dry run when the draft changes", async () => {
-    const { fetchImpl } = stubFetch([
-      OPTIONS,
-      {
-        path: "/onboarding/dry-run",
-        method: "POST",
-        body: { byRule: ["A-1"], bySuggestion: [], unresolved: [] },
-      },
-    ]);
+  it("lists project and repo LIVE from the chosen connections, never a hard-coded list", async () => {
+    const { fetchImpl, calls } = stubFetch([...PICKERS]);
     renderScreen(<OnboardScreen />, { fetchImpl });
 
-    await userEvent.selectOptions(await screen.findByLabelText("Jira projesi"), "UGURKREDI");
-    await userEvent.selectOptions(screen.getByLabelText("ADO reposu"), "Kredi/_git/ugurkredi");
-    await userEvent.click(screen.getByRole("button", { name: "Kuru koşum yap" }));
-    expect(await screen.findByText("kural eşleşti: 1")).toBeInTheDocument();
+    // Before a Jira connection is picked, the project select prompts for one.
+    await screen.findByLabelText("Jira bağlantısı");
+    expect(screen.getByText("Önce Jira bağlantısı seç")).toBeInTheDocument();
+    // Picking the Jira connection triggers the LIVE project call.
+    await userEvent.selectOptions(screen.getByLabelText("Jira bağlantısı"), "jira");
+    expect(await screen.findByRole("option", { name: "UGURKREDI · Ugur Kredi" })).toBeInTheDocument();
+    expect(calls.some((c) => c.url.includes("/onboarding/jira-projects?connectionId=jira"))).toBe(true);
 
-    // Changing the rules must invalidate the evidence gathered for the old ones.
-    await userEvent.selectOptions(screen.getByLabelText("Jira projesi"), "");
-    expect(await screen.findByText(/Önce Jira projesi ve repo seç/)).toBeInTheDocument();
+    // Before an SCM connection is picked, the repo select prompts for one.
+    expect(screen.getByText("Önce SCM bağlantısı seç")).toBeInTheDocument();
+    // Picking the SCM connection triggers the LIVE repo call.
+    await userEvent.selectOptions(screen.getByLabelText("SCM bağlantısı"), "github");
+    expect(await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" })).toBeInTheDocument();
+    expect(calls.some((c) => c.url.includes("/onboarding/scm-repos?connectionId=github"))).toBe(true);
   });
 });

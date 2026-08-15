@@ -52,6 +52,9 @@ export function Sidebar(): ReactNode {
                   {screen.icon}
                 </span>
                 {t(screen.navKey as string)}
+                {screen.soon === true && (
+                  <span className="shell__soon">{t("nav.soon")}</span>
+                )}
               </NavLink>
             ))}
           </div>

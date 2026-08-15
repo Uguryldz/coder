@@ -1,121 +1,168 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Card, Table } from "../ui/index.ts";
+import { Card, TabPanel, Tabs } from "../ui/index.ts";
+import "./shared/screens.css";
 
 /**
- * Screen: help — how Maestro is used, by role.
+ * Screen: help — a guided reference to the whole platform, one tab per menu
+ * GROUP (Başla / İzle / Denetim ve Uyum / Yapay Zekâ Ayarları / Sistem). Each
+ * tab lists that group's pages, and every page is explained the same way an
+ * operator asks about it: NE İŞE YARAR (what it is for), NASIL ÇALIŞIR (how it
+ * works), ÖRNEK (a concrete example).
  *
- * This is the one screen in the cluster with no data layer: it is documentation,
- * so every sentence is a catalog entry and there is nothing to fetch. That also
- * means it has no loading or error state to handle — deliberately, not by
- * omission.
+ * No data layer — this is documentation, so every sentence is a catalog entry.
+ * The active tab lives in the URL (`?cat=`) so a deep link lands on a category.
  */
 
-/** Role guides, and where each role should go next. */
-const ROLES: readonly { readonly id: string; readonly to: string }[] = [
-  { id: "business", to: "/jira" },
-  { id: "developer", to: "/workmode" },
-  { id: "admin", to: "/settings" },
+/** The category tabs, in the sidebar's order, each with the pages it explains. */
+const CATEGORIES: readonly { readonly id: string; readonly pages: readonly string[] }[] = [
+  { id: "start", pages: ["dash", "projects", "template", "doctemplate", "notify"] },
+  { id: "watch", pages: ["pilot", "knowledge"] },
+  { id: "compliance", pages: ["audit", "evidence", "pii", "aiusage"] },
+  { id: "ai", pages: ["variants", "eval", "security"] },
+  { id: "system", pages: ["users", "settings", "params", "health", "runners", "sandbox"] },
 ];
 
-/** Jira comment commands. Descriptions live in the catalog. */
-const COMMANDS: readonly string[] = [
-  "approve",
-  "reject",
-  "status",
-  "ai_explain",
-  "ai_start",
-  "ai_assign",
-  "mode_change",
-  "ai_takeover",
-];
+/** The page a page-guide links to ("Ekrana git"), by page id. */
+const PAGE_LINK: Readonly<Record<string, string>> = {
+  dash: "/dash",
+  projects: "/projects",
+  template: "/template",
+  doctemplate: "/doctemplate",
+  notify: "/notify",
+  pilot: "/pilot",
+  knowledge: "/knowledge",
+  audit: "/audit",
+  evidence: "/evidence",
+  pii: "/pii",
+  aiusage: "/cost",
+  variants: "/variants",
+  eval: "/eval",
+  security: "/security",
+  users: "/users",
+  settings: "/settings",
+  params: "/params",
+  health: "/health",
+  runners: "/runners",
+  sandbox: "/sandbox",
+};
 
-/** Ordered first-time setup steps for an admin. */
-const SETUP_STEPS: readonly string[] = ["connections", "webhook", "permissions", "app", "binding", "dry_run"];
+const CAT_IDS = CATEGORIES.map((c) => c.id);
+
+function isCat(value: string | null): boolean {
+  return value !== null && CAT_IDS.includes(value);
+}
 
 export function HelpScreen(): ReactNode {
   const t = useT();
+  const [params, setParams] = useSearchParams();
+  const raw = params.get("cat");
+  const active = isCat(raw) ? (raw as string) : "start";
+
+  const select = (id: string): void => {
+    const next = new URLSearchParams(params);
+    next.set("cat", id);
+    setParams(next, { replace: false });
+  };
 
   return (
-    <>
-      <Card title={t("help.in_one_paragraph")}>
-        <p>{t("help.summary")}</p>
+    <div className="scr-stack">
+      <Card title={t("help.title")} subtitle={t("help.subtitle")}>
+        <p className="scr-prose">{t("help.summary")}</p>
       </Card>
 
-      <div style={{ marginTop: 14 }}>
-        <Card title={t("help.by_role")}>
-          <div className="tpl-chips">
-            {ROLES.map((role) => (
-              <section key={role.id} style={{ flex: "1 1 220px" }}>
-                <b>{t(`help.role.${role.id}`)}</b>
-                <p className="tpl-keyline">{t(`help.role_desc.${role.id}`)}</p>
-                <Link to={role.to}>{t(`help.role_link.${role.id}`)}</Link>
-              </section>
+      <Tabs
+        label={t("help.tabs.label")}
+        active={active}
+        onChange={select}
+        items={CATEGORIES.map((c) => ({ id: c.id, label: t(`nav.group.${c.id}`) }))}
+      />
+
+      {CATEGORIES.map((category) => (
+        <TabPanel key={category.id} id={category.id} active={active}>
+          <div className="scr-stack">
+            {category.pages.map((page) => (
+              <PageGuide key={page} page={page} />
             ))}
           </div>
-        </Card>
-      </div>
+        </TabPanel>
+      ))}
+    </div>
+  );
+}
 
-      <div style={{ marginTop: 14 }}>
-        <Card title={t("help.analysis_walkthrough")} subtitle={t("help.analysis_walkthrough_sub")}>
-          <ol>
-            {["open", "answer", "review", "decide", "after"].map((step) => (
-              <li key={step}>{t(`help.analysis_step.${step}`)}</li>
-            ))}
-          </ol>
-        </Card>
+/**
+ * One page's guide: title, then the three sections every operator asks for.
+ * The example is collapsible-free (always shown) — it is the part that makes the
+ * abstract concrete, so hiding it would defeat the point.
+ */
+function PageGuide({ page }: { readonly page: string }): ReactNode {
+  const t = useT();
+  const link = PAGE_LINK[page];
+  return (
+    <Card title={t(`help.page.${page}.title`)}>
+      <div className="help-guide">
+        <section className="help-guide__block">
+          <h4 className="help-guide__h">{t("help.label.purpose")}</h4>
+          <p className="scr-prose">{t(`help.page.${page}.purpose`)}</p>
+        </section>
+        <section className="help-guide__block">
+          <h4 className="help-guide__h">{t("help.label.how")}</h4>
+          <p className="scr-prose">{t(`help.page.${page}.how`)}</p>
+        </section>
+        <FieldsBlock page={page} />
+        <section className="help-guide__block help-guide__block--example">
+          <h4 className="help-guide__h">{t("help.label.example")}</h4>
+          <p className="scr-prose">{t(`help.page.${page}.example`)}</p>
+        </section>
       </div>
+      {link !== undefined && (
+        <p style={{ marginTop: 10 }}>
+          <Link to={link}>{t("help.goto")}</Link>
+        </p>
+      )}
+    </Card>
+  );
+}
 
-      <div style={{ marginTop: 14 }}>
-        <Card title={t("help.setup")} subtitle={t("help.setup_sub")}>
-          <ol>
-            {SETUP_STEPS.map((step) => (
-              <li key={step}>{t(`help.setup_step.${step}`)}</li>
-            ))}
-          </ol>
-        </Card>
-      </div>
+/**
+ * The "alanlar & adımlar" block: the page's fields/buttons, one per line. The
+ * catalog entry is a single multi-line string (one field per `\n`), each line
+ * `**Alan adı** — ne yazılır, örnek…`. Kept as one entry rather than N keys so a
+ * page's field list is edited in one place and the count can vary per page.
+ */
+function FieldsBlock({ page }: { readonly page: string }): ReactNode {
+  const t = useT();
+  const raw = t(`help.page.${page}.fields`).trim();
+  if (raw === "" || raw === "-") return null; // a screen with nothing to fill in
+  const lines = raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  return (
+    <section className="help-guide__block">
+      <h4 className="help-guide__h">{t("help.label.fields")}</h4>
+      <ul className="help-fields">
+        {lines.map((line, i) => (
+          <li key={i}>{renderFieldLine(line)}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
-      <div style={{ marginTop: 14 }}>
-        <Card title={t("help.commands")} subtitle={t("help.commands_sub")} padded={false}>
-          <Table
-            columns={[
-              {
-                key: "command",
-                header: t("help.col.command"),
-                cell: (row: string) => <code>{t(`help.command.${row}`)}</code>,
-              },
-              {
-                key: "what",
-                header: t("help.col.what"),
-                cell: (row) => t(`help.command_desc.${row}`),
-              },
-            ]}
-            rows={COMMANDS}
-            rowKey={(row) => row}
-            emptyLabel={t("empty.no_data")}
-          />
-        </Card>
-      </div>
-
-      <div style={{ marginTop: 14 }}>
-        <Card title={t("help.knowledge")} subtitle={t("help.knowledge_sub")}>
-          <p>{t("help.knowledge_body")}</p>
-          <p className="tpl-keyline">{t("help.safety_rails")}</p>
-          <Link to="/knowledge">{t("help.knowledge_link")}</Link>
-        </Card>
-      </div>
-
-      <div style={{ marginTop: 14 }}>
-        <Card title={t("help.troubleshooting")}>
-          <ul>
-            {["rejected", "stuck", "wrong_app", "quota"].map((item) => (
-              <li key={item}>{t(`help.trouble.${item}`)}</li>
-            ))}
-          </ul>
-        </Card>
-      </div>
+/**
+ * Renders a field line, turning every `**bold**` span into a real <b> — a field
+ * name may appear at the start ("**Kimlik**") or mid-sentence ("Form: **id** …"),
+ * so all of them are emphasised, not just a leading one.
+ */
+function renderFieldLine(line: string): ReactNode {
+  const parts = line.split(/(\*\*[^*]+\*\*)/g).filter((p) => p.length > 0);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = /^\*\*([^*]+)\*\*$/.exec(part);
+        return m !== null ? <b key={i}>{m[1]}</b> : <span key={i}>{part}</span>;
+      })}
     </>
   );
 }

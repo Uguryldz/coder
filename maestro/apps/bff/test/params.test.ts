@@ -42,6 +42,8 @@ describe("PUT /params/:key (M71, four eyes)", () => {
   });
 
   it("still does not apply it when the same person presses twice", async () => {
+    // These admins carry a role but no maestro-admins group, so the master-admin
+    // self-approval exemption does not apply — the strict four-eyes rule holds.
     const h = await harness();
     const { first } = await twoAdmins(h);
 
@@ -49,6 +51,45 @@ describe("PUT /params/:key (M71, four eyes)", () => {
     const second = await put(h, first, "gate.set", { kritik: ["4", "5"] });
 
     expect(second.statusCode).toBe(202);
+    expect(await h.params.values()).toHaveLength(0);
+  });
+
+  it("lets a MASTER ADMIN self-approve a guarded parameter (single-admin exemption)", async () => {
+    // A member of maestro-admins may confirm their own guarded proposal so a
+    // one-admin install is not deadlocked. The value must still match byte for
+    // byte (a real second review), and the change is recorded with the master
+    // admin as both author and approver, flagged soloApproval in the audit meta.
+    const h = await harness();
+    await h.addUser({ username: "ugur", roles: ["admin"], groups: ["maestro-admins"] });
+    const master = await h.login("ugur");
+    const value = { kritik: ["4", "5"] };
+
+    const proposed = await put(h, master, "gate.set", value);
+    expect(proposed.statusCode).toBe(202); // still queued on the first press
+    const applied = await put(h, master, "gate.set", value); // same person confirms
+
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json()).toMatchObject({
+      status: "applied",
+      change: { changedBy: "ugur@ugurbank.local", approvedBy: "ugur@ugurbank.local", version: 1 },
+    });
+    expect(await h.params.pending()).toHaveLength(0);
+
+    const recorded = (await h.auditStore.read()).filter((e) => e.action === "PARAM_CHANGED");
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.meta).toMatchObject({ soloApproval: true });
+  });
+
+  it("does NOT let a master admin self-approve a DIFFERENT value (review still real)", async () => {
+    const h = await harness();
+    await h.addUser({ username: "ugur", roles: ["admin"], groups: ["maestro-admins"] });
+    const master = await h.login("ugur");
+
+    await put(h, master, "gate.set", { kritik: ["4", "5"] });
+    const mismatch = await put(h, master, "gate.set", { kritik: ["5"] });
+
+    // Different value → not applied. It just replaces the pending entry.
+    expect(mismatch.statusCode).toBe(202);
     expect(await h.params.values()).toHaveLength(0);
   });
 
@@ -252,6 +293,22 @@ describe("GET /params", () => {
     expect(body.definitions.map((definition) => definition.key)).toContain("reminder.channel");
     expect(body.values).toHaveLength(0);
     expect(body.pending).toHaveLength(1);
+  });
+
+  it("masks a secret parameter's value — the Teams webhook URL never leaves in full", async () => {
+    const h = await harness();
+    const { first } = await twoAdmins(h);
+    const secret = "https://outlook.office.com/webhook/verysecret-abcdef";
+    await put(h, first, "notify.teams.webhook", { url: secret });
+
+    const response = await h.app.inject({ method: "GET", url: "/params", headers: auth(first) });
+    const body = response.json() as { values: { key: string; value: unknown }[] };
+    const row = body.values.find((value) => value.key === "notify.teams.webhook");
+
+    // The row exists and is MASKED — only a recognition tail, never the URL.
+    expect(row?.value).toEqual({ url: "…abcdef" });
+    expect(JSON.stringify(body)).not.toContain(secret);
+    expect(JSON.stringify(body)).not.toContain("verysecret");
   });
 
   /** The SoD keys live here (M71); a roleless account has no business reading them. */

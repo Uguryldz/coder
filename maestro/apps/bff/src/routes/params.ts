@@ -43,11 +43,15 @@ export async function paramRoutes(app: FastifyInstance, deps: ResolvedDeps): Pro
       throw badRequest("invalid_param_body");
     }
 
+    const session = sessionOf(request);
     const result = await putParam(deps, {
       key: key.data.key,
       scopeRef: body.data.scopeRef ?? null,
       value: body.data.value,
-      actor: sessionActor(sessionOf(request)),
+      actor: sessionActor(session),
+      // Groups let a master admin self-approve a guarded change; other roles
+      // still need a second person (master-approver.ts).
+      actorGroups: session.groups,
     });
 
     return result.status === "applied"

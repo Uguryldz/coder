@@ -49,7 +49,7 @@ import { resolveVariantModel, type VariantModelReader } from "./variant.js";
 import type { RoleModels } from "./wiring.js";
 import { planFor } from "./flow-plan.js";
 import type { GuidanceStore } from "./guidance.js";
-import { pollForCommand, PollAbortedError } from "./poll.js";
+import { markExistingCommentsSeen, pollForCommand, PollAbortedError } from "./poll.js";
 import type { PilotSettings, SettingsStore } from "./settings.js";
 import type { StateStore } from "./state.js";
 import {
@@ -1171,8 +1171,18 @@ export class PilotRun {
       throw error;
     }
 
-    // (b) approved → the code step is the bot's: reassign back to the Maestro Bot.
-    await this.returnTicketToBot("analysis_approved");
+    // (b) approved. WHO gets the ticket depends on what runs next:
+    //  · engineering will run → the code step is the bot's: reassign to the bot.
+    //  · analiz-only flow (no engineering) → the analysis IS the deliverable.
+    //    Reassigning to the bot here put the finished ticket straight back into
+    //    assignment-based discovery, and the next boot RE-ANALYSED it (found
+    //    live on OPS-15 — a token-burning loop). Deliver to the REQUESTER
+    //    instead; the ticket leaves the bot's court for good.
+    if (planFor(this.flow).engineering) {
+      await this.returnTicketToBot("analysis_approved");
+    } else {
+      await this.deliverAnalysisToRequester();
+    }
     store.step("3", "tamam", `onaylayan: ${envelope.author}`);
     store.log("ok", `✓ analiz onayı: ${envelope.author} · grup üyeliği doğrulandı`);
   }
@@ -1262,6 +1272,37 @@ export class PilotRun {
       await this.record("HANDOVER", { reason, reassigned: true });
     } catch (error) {
       store.log("warn", `! bota geri atama tamamlanamadı (akış etkilenmedi): ${String(error)}`);
+    }
+  }
+
+  /**
+   * ANALİZ TESLİMİ: the analiz-only flow's terminal handover. The approved
+   * analysis is the deliverable, so the ticket goes to the REQUESTER (who asked
+   * for it), never back to the bot — a bot-assigned finished ticket re-enters
+   * assignment-based discovery and gets re-analysed on the next boot. FAIL-SOFT:
+   * the approval already happened; an assign hiccup logs and records only. An
+   * empty requesterAccountId leaves the ticket with the manager (still not the
+   * bot, so the loop still cannot happen).
+   */
+  private async deliverAnalysisToRequester(): Promise<void> {
+    const { store, work } = this.deps;
+    const ticketKey = this.requireTicket();
+    const requester = (this.deps.requesterAccountId ?? "").trim();
+    try {
+      if (requester.length === 0) {
+        store.log(
+          "warn",
+          "! talep sahibi hesabı (requesterAccountId) tanımlı değil — analiz teslimi için ticket yöneticide bırakıldı",
+        );
+        await this.record("HANDOVER", { reason: "analysis_delivered", reassigned: false });
+        return;
+      }
+      await work.assign(ticketKey, requester);
+      store.log("ok", "✓ analiz teslim edildi — ticket talep sahibine atandı (bot listesinden çıktı)");
+      this.deps.onJiraChanged?.();
+      await this.record("HANDOVER", { reason: "analysis_delivered", reassigned: true });
+    } catch (error) {
+      store.log("warn", `! analiz teslim ataması tamamlanamadı (akış etkilenmedi): ${String(error)}`);
     }
   }
 
@@ -1921,6 +1962,17 @@ export class PilotRun {
     const approverGroup = this.runSettings.approverGroup;
     const signal = this.abort?.signal ?? new AbortController().signal;
     const seen = new Set<string>();
+    // STALE-APPROVAL GUARD: baseline the gate — every comment that already
+    // exists is marked seen, so only a command written AFTER this gate opened
+    // can resolve it. Without this, an old /approve from a previous run on the
+    // same ticket approved the new gate instantly (found live on OPS-15).
+    // Fail-closed: if the baseline cannot be read, the gate must not open.
+    try {
+      const baselined = await markExistingCommentsSeen(work, ticketKey, seen);
+      if (baselined > 0) store.log("dim", `→ kapı tabanı: ${baselined} mevcut yorum sayılmayacak (yalnız yenileri)`);
+    } catch (error) {
+      throw new PilotStepError(`kapı açılamadı — mevcut yorum tabanı okunamadı: ${String(error)}`);
+    }
 
     for (;;) {
       let hit;

@@ -107,6 +107,32 @@ function commentId(comment: unknown): string | null {
 }
 
 /**
+ * STALE-APPROVAL GUARD (canlı OPS-15 bulgusu). A gate's `seen` set used to
+ * start EMPTY, so an `/approve` comment left over from a PREVIOUS run on the
+ * same ticket resolved a brand-new gate instantly — a compliance gate honoured
+ * an approval that predates the thing it approves. Seeding `seen` with every
+ * comment id that exists at gate-open makes only comments written AFTER the
+ * gate count. Fail-closed: if the baseline cannot be read, the caller must not
+ * open the gate on an unbaselined set.
+ */
+export async function markExistingCommentsSeen(
+  work: JiraCloudWorkPort,
+  ticketKey: string,
+  seen: Set<string>,
+): Promise<number> {
+  const comments = await work.listComments(ticketKey);
+  let added = 0;
+  for (const comment of comments) {
+    const id = commentId(comment);
+    if (id !== null && !seen.has(id)) {
+      seen.add(id);
+      added += 1;
+    }
+  }
+  return added;
+}
+
+/**
  * ONE poll of a gate's comments. Lists the issue's comments, runs each unseen
  * one through the driver's `parseCommandFromComment` (which enforces the M105
  * rules — only a never-edited, plain top-level command counts), and returns the

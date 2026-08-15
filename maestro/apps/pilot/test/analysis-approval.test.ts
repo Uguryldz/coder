@@ -174,7 +174,7 @@ function fakeJiraCloud(): {
     // /reject <reason> — so the analysis gate REJECTS.
     if (path === "/rest/api/3/issue/OPS-6/comment" && method === "GET") {
       const reject = {
-        id: "9002",
+        id: String(nextId++), // her listelemede TAZE komut — kapı tabanı (stale-guard) eskisini eler
         author: { accountId: MANAGER },
         body: doc(paragraph(`/reject ${REJECT_REASON}`)),
         created: "2026-08-10T15:05:00.000+0300",

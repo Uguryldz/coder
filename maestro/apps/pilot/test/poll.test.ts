@@ -1,6 +1,6 @@
 import { JiraCloudConfig, JiraCloudWorkPort, doc, paragraph } from "@maestro/adapter-jira";
 import { describe, expect, it } from "vitest";
-import { discoverTickets, pollForCommandOnce } from "../src/poll.js";
+import { discoverTickets, markExistingCommentsSeen, pollForCommandOnce } from "../src/poll.js";
 import { discoveryJql } from "../src/config.js";
 import { cloudFixture, stubFetch, type FetchStub } from "./helpers.js";
 
@@ -61,6 +61,28 @@ describe("pollForCommandOnce", () => {
       updated: edited ? "2026-08-10T15:05:00.000+0300" : "2026-08-10T15:00:00.000+0300",
     };
   }
+
+  it("markExistingCommentsSeen: gate baseline makes a PRE-EXISTING /approve stale (OPS-15 bug)", async () => {
+    // Two polls against the same comment list: the first (baseline) marks the
+    // old /approve seen; the actual poll must then find NOTHING — an approval
+    // that predates the gate never resolves it.
+    const stale = commentWith(doc(paragraph("/approve")), "9001");
+    const stub = stubFetch([
+      { body: { comments: [stale] } }, // baseline listing
+      { body: { comments: [stale] } }, // gate poll
+    ]);
+    const work = port(stub);
+    const gateSeen = seen();
+    const added = await markExistingCommentsSeen(work, "OPS-15", gateSeen);
+    expect(added).toBe(1);
+    const hit = await pollForCommandOnce({
+      work,
+      ticketKey: "OPS-15",
+      seen: gateSeen,
+      accept: ["approve", "reject"],
+    });
+    expect(hit).toBeNull(); // stale approval ignored — only NEW comments count
+  });
 
   it("returns the first accepted /approve command", async () => {
     const stub = stubFetch([{ body: { comments: [commentWith(doc(paragraph("/approve")))] } }]);

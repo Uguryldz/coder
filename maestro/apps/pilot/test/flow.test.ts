@@ -278,7 +278,7 @@ function fakeJiraCloud(): {
     // operator /approve. A fresh `seen` set per gate lets both gates pick it up.
     if (path === "/rest/api/3/issue/OPS-6/comment" && method === "GET") {
       const approve = {
-        id: "9001",
+        id: String(nextId++), // her listelemede TAZE komut — kapı tabanı (stale-guard) eskisini eler
         author: { accountId: OPERATOR },
         body: doc(paragraph("/approve")),
         created: "2026-08-10T15:00:00.000+0300",

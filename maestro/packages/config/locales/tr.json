@@ -48,7 +48,7 @@
   "audit.basis.rehashed": "Kayıtlar yeniden hash'lendi.",
   "audit.broken_at_seq": "ilk uyuşmayan kayıt: #{seq}",
   "audit.chain": "Zincir durumu",
-  "audit.chain_sub": "hash zincirli · tek yazarlı · SIEM'e CEF olarak akıyor",
+  "audit.chain_sub": "hash zincirli · tek yazarlı · CEF/syslog dışa aktarıma hazır",
   "audit.checked_n": "{n} kayıt yeniden hash'lendi",
   "audit.col.action": "Eylem",
   "audit.col.actor": "Aktör",

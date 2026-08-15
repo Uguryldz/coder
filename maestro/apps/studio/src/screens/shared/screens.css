@@ -214,10 +214,25 @@
   align-items: center;
   padding: 9px 0;
   border-bottom: 1px dashed var(--border);
+  /* Satır bir <button> olarak da render ediliyor (tıklanabilir iş kaydı);
+     tarayıcının varsayılan kenarlık/zeminini sıfırla, yoksa her satır
+     kalın çerçeveli bir kutu gibi görünüyor. */
+  border-top: none;
+  border-inline: none;
+  background: none;
+  font: inherit;
+  color: inherit;
 }
 
 .screen-step:last-child {
   border-bottom: none;
+}
+
+/* Numarasız satırlar (ör. Panel'deki canlı motor işleri) yalnızca başlık +
+   durum içerir. Üç sütunlu şablonda başlık, numara için ayrılmış 46px'lik
+   sütuna düşüp kırılıyordu; bu varyant o sütunu kaldırır. */
+.screen-step:not(:has(.screen-step__num)) {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .screen-step__num {

@@ -48,7 +48,7 @@
   "audit.basis.rehashed": "Records were re-hashed.",
   "audit.broken_at_seq": "first record that did not reconcile: #{seq}",
   "audit.chain": "Chain status",
-  "audit.chain_sub": "hash-chained · single writer · streamed to SIEM as CEF",
+  "audit.chain_sub": "hash-chained · single writer · ready to export as CEF/syslog",
   "audit.checked_n": "{n} records re-hashed",
   "audit.col.action": "Action",
   "audit.col.actor": "Actor",

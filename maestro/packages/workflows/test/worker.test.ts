@@ -98,7 +98,8 @@ describe("the activity set", () => {
     expect(names).toContain("runEngineering");
     expect(names).toContain("verifyCiOrigin");
     expect(names).toContain("buildEvidencePackage");
-    expect(names).toHaveLength(25);
+    expect(names).toContain("isMasterApprover");
+    expect(names).toHaveLength(26);
     expect(Object.values(activities).every((fn) => typeof fn === "function")).toBe(true);
   });
 

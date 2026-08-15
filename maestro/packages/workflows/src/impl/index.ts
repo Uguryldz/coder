@@ -36,6 +36,7 @@ export function createActivities(deps: ActivityDeps): MaestroActivities {
 
     openGate: (ticket, step, ownerGroup) => gate.openGate(deps, ticket, step, ownerGroup),
     recordGateDecision: (ticket, decision) => gate.recordGateDecision(deps, ticket, decision),
+    isMasterApprover: (userId) => gate.isMasterApprover(deps, userId),
     escalateGate: (ticket, step, waitingHours) => gate.escalateGate(deps, ticket, step, waitingHours),
 
     runEngineering: (ticket, resumeToken, task, attempt) =>

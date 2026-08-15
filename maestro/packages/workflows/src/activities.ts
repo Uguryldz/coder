@@ -77,6 +77,17 @@ export interface MaestroActivities {
    * gate open and tell the person why, never fail the run.
    */
   recordGateDecision(ticket: TicketKey, decision: GateDecision): Promise<GateVerdict>;
+  /**
+   * Is this user a master admin (four-eyes group)? A live directory lookup, so
+   * it is an activity, not something the deterministic workflow can decide.
+   *
+   * Used ONLY to waive the cross-gate "two different signatures" rule (M32/M92)
+   * for a single master admin, so a one-admin install is not deadlocked at the
+   * analysis or QA gates. Every other gate check (step, group, membership)
+   * still applies; the solo approval is recorded in the audit trail by
+   * `recordGateDecision`.
+   */
+  isMasterApprover(userId: string): Promise<boolean>;
   /** Reminder ladder tick (M88); returns the next due moment, or null when done. */
   escalateGate(ticket: TicketKey, step: StepId, waitingHours: number): Promise<string | null>;
 

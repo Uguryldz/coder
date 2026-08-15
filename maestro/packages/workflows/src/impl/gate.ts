@@ -10,6 +10,24 @@ import { activitySeq, audit, notifyEvent, record } from "./record.js";
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
+ * The group whose members may self-approve to break a single-admin deadlock
+ * (the BFF calls it `FOUR_EYES_GROUP`). Kept as a local literal so the
+ * workflows package takes no dependency on the BFF; both must name the same
+ * group, and it is the same string the seed plants (`FIRST_ADMIN_GROUP`).
+ */
+const MASTER_APPROVER_GROUP = "maestro-admins";
+
+/**
+ * Is this user a master admin? A live directory lookup (hence an activity):
+ * true when they are a member of {@link MASTER_APPROVER_GROUP}. Used only to
+ * waive the cross-gate four-eyes rule for a single master admin.
+ */
+export async function isMasterApprover(deps: ActivityDeps, userId: string): Promise<boolean> {
+  const members = await deps.directory.membersOf(MASTER_APPROVER_GROUP);
+  return members.includes(userId);
+}
+
+/**
  * The human gates (M51/M88) and the two cross-cutting activities every step
  * uses. Nothing here ever decides anything: reminders escalate, they do not
  * approve, and a gate closes only when a person's decision arrives.

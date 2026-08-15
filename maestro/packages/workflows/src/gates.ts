@@ -62,6 +62,16 @@ export function canCloseGate(
   decision: GateDecision,
   atStep: StepId,
   previousApprovers: ReadonlyMap<StepId, string>,
+  /**
+   * When true, the cross-gate "two different signatures" rule (M32/M92) is
+   * waived for THIS decision — used only for a master admin who may sign both
+   * gates so a single-admin install is not deadlocked. The caller
+   * (gate-loop / gate-decision) sets it from the actor's group membership and
+   * records the solo approval in the audit trail. Every other axis
+   * (wrong_step, wrong_group, not_verified) still applies. Defaults false, so
+   * an ordinary caller keeps the strict four-eyes rule.
+   */
+  selfApproveAllowed = false,
 ): GateRejection {
   if (decision.step !== atStep) return { ok: false, reason: "wrong_step" };
   if (decision.decision === "reject") return { ok: true };
@@ -72,13 +82,15 @@ export function canCloseGate(
   }
   if (!decision.sodVerified) return { ok: false, reason: "not_verified" };
 
-  // M32: the analysis gates (4 and 5) must carry two different signatures.
-  if (atStep === "5" && previousApprovers.get("4") === decision.actorUserId) {
-    return { ok: false, reason: "sod_violation" };
-  }
-  // M92 (optional, parameter-driven): QA scenario approver ≠ QA result approver.
-  if (atStep === "11" && previousApprovers.get("9") === decision.actorUserId) {
-    return { ok: false, reason: "sod_violation" };
+  if (!selfApproveAllowed) {
+    // M32: the analysis gates (4 and 5) must carry two different signatures.
+    if (atStep === "5" && previousApprovers.get("4") === decision.actorUserId) {
+      return { ok: false, reason: "sod_violation" };
+    }
+    // M92 (optional, parameter-driven): QA scenario approver ≠ QA result approver.
+    if (atStep === "11" && previousApprovers.get("9") === decision.actorUserId) {
+      return { ok: false, reason: "sod_violation" };
+    }
   }
   return { ok: true };
 }

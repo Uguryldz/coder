@@ -71,6 +71,29 @@ describe("canCloseGate — fail-closed on every axis", () => {
     expect(canCloseGate(same, "11", previous)).toEqual({ ok: false, reason: "sod_violation" });
   });
 
+  it("waives the cross-gate rule for a master admin (single-admin exemption)", () => {
+    // selfApproveAllowed=true lets the same person sign both gates so a
+    // one-admin install is not deadlocked. Only the cross-gate rule is waived —
+    // the other checks still stand.
+    const step4and5 = new Map<StepId, string>([["4", "ugur@bank"]]);
+    const sameOn5 = approve("5", { actorUserId: "ugur@bank" });
+    expect(canCloseGate(sameOn5, "5", step4and5, true)).toEqual({ ok: true });
+
+    const step9and11 = new Map<StepId, string>([["9", "ugur@bank"]]);
+    const sameOn11 = approve("11", { actorGroup: "qa", actorUserId: "ugur@bank" });
+    expect(canCloseGate(sameOn11, "11", step9and11, true)).toEqual({ ok: true });
+  });
+
+  it("still enforces wrong_group even for a master admin (only SoD is waived)", () => {
+    // The exemption is narrow: a master admin signing the wrong owner group is
+    // still refused. selfApproveAllowed only touches the cross-gate signature.
+    const wrongGroup = approve("5", { actorGroup: "developers", actorUserId: "ugur@bank" });
+    expect(canCloseGate(wrongGroup, "5", new Map(), true)).toEqual({
+      ok: false,
+      reason: "wrong_group",
+    });
+  });
+
   // Stopping the flow needs no authority; letting it through does.
   it("lets any rejection close the gate, even an unverified one", () => {
     const reject: GateDecision = {

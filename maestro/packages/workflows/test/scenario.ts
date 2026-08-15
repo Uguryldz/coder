@@ -109,6 +109,12 @@ export interface ScenarioOptions {
   /** Lets a scenario make the directory refuse a decision (gate stays open). */
   directory?: (decision: GateDecision) => { accepted: true } | { accepted: false; reason: string };
   /**
+   * User ids that are master admins (four-eyes group). A member may sign both
+   * sides of the cross-gate four-eyes rule; everyone else still needs a second
+   * person. Empty by default, so the strict rule holds unless a scenario opts in.
+   */
+  masterAdmins?: ReadonlySet<string>;
+  /**
    * The build-validation results the CI gate will be given, in order. The last
    * one is repeated once the queue runs dry, which is what a real pipeline does
    * too: it reports the branch's current state every time it is asked.
@@ -233,6 +239,9 @@ export function makeActivities(
       // "gate stays open, run survives" path.
       return scenario.options.directory?.(decision) ?? { accepted: true as const };
     },
+    // No user is a master admin by default, so the strict four-eyes rule holds
+    // in every existing scenario. A scenario opts a user in via `masterAdmins`.
+    isMasterApprover: async (userId) => scenario.options.masterAdmins?.has(userId) ?? false,
     escalateGate: async (_ticket, step, waitingHours) => {
       scenario.escalations.push({ step, hours: waitingHours });
       const policy = scenario.options.gate?.(step, scenario.visits.get(step) ?? 1) ?? { kind: "approve" };

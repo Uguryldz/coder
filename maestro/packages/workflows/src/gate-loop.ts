@@ -45,7 +45,17 @@ export async function awaitGate(
     // one batch must both be processed, or the run parks holding a signal it
     // never looks at.
     for (let closed = inbox.decisions.shift(); closed !== undefined; closed = inbox.decisions.shift()) {
-      const verdict = canCloseGate(closed, at, state.approvers);
+      let verdict = canCloseGate(closed, at, state.approvers);
+      // A master admin may sign both sides of the four-eyes rule so a
+      // single-admin install is not deadlocked. Only re-check on an actual
+      // sod_violation (a directory lookup, so keep it off the happy path), and
+      // only the cross-gate rule is waived — wrong_step/wrong_group/not_verified
+      // still stand.
+      if (!verdict.ok && verdict.reason === "sod_violation") {
+        if (await acts.isMasterApprover(closed.actorUserId)) {
+          verdict = canCloseGate(closed, at, state.approvers, true);
+        }
+      }
       if (!verdict.ok) {
         // Refused, not ignored: the person is told why and the gate stays open.
         await acts.journal(ticket, "gate", "karar reddedildi", `${closed.actorUserId} · ${verdict.reason}`);

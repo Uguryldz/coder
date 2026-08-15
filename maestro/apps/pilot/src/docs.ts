@@ -6,6 +6,7 @@ import {
   renderAnalysisMarkdown,
   renderDocx,
   renderPdf,
+  type DocTemplateFile,
   type DocumentModel,
 } from "@maestro/publish";
 
@@ -91,21 +92,38 @@ export function analysisToDocModel(
 }
 
 /**
- * Render BOTH artefacts from one model. `renderDocx` is called with no corporate
- * template (the pilot has none), which produces the plain built-in layout and a
- * `no_template` warning we do not need to surface here — the pilot is a demo,
- * not the bank's approved publish path.
+ * The active corporate Word template, as the composition root loads it from the
+ * DB (`DocTemplateVersion`): the scan metadata `renderDocx` patches against plus
+ * the raw uploaded bytes. Null everywhere a deployment has none — the plain
+ * built-in layout is then used, exactly the old behaviour.
+ */
+export interface PilotDocTemplate {
+  file: DocTemplateFile;
+  bytes: Uint8Array;
+}
+
+/**
+ * Render BOTH artefacts from one model. `renderDocx` patches the corporate
+ * template when one is provided (the bank's own cover/styles survive; the
+ * analysis sections land in its `{{bolum:N}}` slots). Without one it produces
+ * the plain built-in layout and a `no_template` warning we do not need to
+ * surface here — the same behaviour the pilot always had.
  */
 export async function analysisToDocs(
   analysis: AnalysisDoc,
   ticketKey: TicketKey,
   runId: RunId,
   now: () => Date = () => new Date(),
+  template: PilotDocTemplate | null = null,
 ): Promise<GeneratedDocs> {
   const date = now().toISOString().slice(0, 10);
   const model = analysisToDocModel(analysis, ticketKey, runId, date);
 
-  const rendered = await renderDocx({ model, template: null, templateBytes: null });
+  const rendered = await renderDocx({
+    model,
+    template: template?.file ?? null,
+    templateBytes: template?.bytes ?? null,
+  });
   const pdfBytes = await renderPdf(model);
 
   return {

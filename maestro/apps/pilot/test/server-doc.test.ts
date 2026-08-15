@@ -54,6 +54,7 @@ function boot(docs: DocStore) {
     sandboxRoot: "",
     reviewStatusName: "İNCELEMEDE",
     autoMerge: false,
+    autoStart: true,
   });
   const server = createUiServer({ store, settings, listening: new ListeningRulesStore(), guidance: new GuidanceStore(), run: stubRun, docs, audit: createPilotAudit(), start: () => Promise.resolve() });
   return { store, server };

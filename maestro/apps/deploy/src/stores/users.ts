@@ -94,6 +94,11 @@ export const ROLE_BY_GROUP: Readonly<Record<string, string>> = {
   qa: "qa",
   developers: "developer",
   "internal-audit": "viewer",
+  // Additional teams mapped onto the SAME six roles (the Role enum is frozen).
+  // A group name is free; the AUTHORITY it grants is one of the fixed roles, so
+  // adding a team never invents a new privilege.
+  operators: "tech-lead", // platform operators (M87) — TL authority, not admin
+  analysts: "product-owner", // analyst managers who approve analysis (the flow's Analist Yönetici)
 };
 
 /**

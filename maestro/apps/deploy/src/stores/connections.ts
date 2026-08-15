@@ -39,6 +39,7 @@ export interface ConnectionRow {
   updatedAt: Date;
   lastTestedAt: Date | null;
   lastTestOk: boolean | null;
+  lastTestNote: string | null;
 }
 
 /**
@@ -60,7 +61,7 @@ export interface ConnectionDelegate {
   }): Promise<unknown>;
   update(args: {
     where: { id: string };
-    data: { lastTestedAt: Date; lastTestOk: boolean };
+    data: { lastTestedAt: Date; lastTestOk: boolean; lastTestNote: string | null };
   }): Promise<unknown>;
   delete(args: { where: { id: string } }): Promise<ConnectionRow>;
 }
@@ -87,7 +88,11 @@ export class PrismaConnectionStore implements ConnectionStore {
   async recordTest(id: string, result: ConnectionTestResult): Promise<void> {
     await this.connections.update({
       where: { id },
-      data: { lastTestedAt: new Date(result.at), lastTestOk: result.ok },
+      data: {
+        lastTestedAt: new Date(result.at),
+        lastTestOk: result.ok,
+        lastTestNote: result.note ?? null,
+      },
     });
   }
 
@@ -126,6 +131,7 @@ function toRecord(row: ConnectionRow): ConnectionRecord {
     updatedAt: row.updatedAt.toISOString(),
     lastTestedAt: row.lastTestedAt === null ? null : row.lastTestedAt.toISOString(),
     lastTestOk: row.lastTestOk,
+    lastTestNote: row.lastTestNote,
   };
 }
 
@@ -144,6 +150,7 @@ function toRow(record: ConnectionRecord): ConnectionWriteRow {
     updatedAt: new Date(record.updatedAt),
     lastTestedAt: record.lastTestedAt === null ? null : new Date(record.lastTestedAt),
     lastTestOk: record.lastTestOk,
+    lastTestNote: record.lastTestNote,
   };
 }
 

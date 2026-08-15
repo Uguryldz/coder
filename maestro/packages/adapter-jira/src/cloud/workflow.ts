@@ -129,6 +129,30 @@ export function normalizeProjectStatuses(raw: unknown): JiraWorkflowStatus[] {
 }
 
 /**
+ * Normalize GET /project/{key}/statuses into the project's ISSUE TYPE names.
+ *
+ * The same payload the workflow reader uses groups statuses by issue type, so
+ * the top-level `name` of each group ("Görev", "Hata") is the issue-type name a
+ * listening rule matches on. De-duplicated and order-preserving; subtask types
+ * are kept (a rule may legitimately target them). A non-array payload is not an
+ * error here — the caller falls back to free text — so this returns [] rather
+ * than throwing, unlike the status normaliser whose empty result would be a bug.
+ */
+export function normalizeProjectIssueTypes(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const group of raw) {
+    const name = nonEmptyString(record(group)?.["name"]);
+    if (name !== null && !seen.has(name)) {
+      seen.add(name);
+      out.push(name);
+    }
+  }
+  return out;
+}
+
+/**
  * Normalize one issue's GET /issue/{key}/transitions payload into edges rooted
  * at that issue's current status. `fromStatusId` is the issue's current status
  * (or null when it could not be read); a transition Jira flags `isGlobal` is

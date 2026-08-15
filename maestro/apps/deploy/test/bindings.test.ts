@@ -2,10 +2,13 @@ import { DataClass, WorkMode } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import {
   LIVE_BINDING_STATES,
+  PrismaBindingWriter,
   PrismaJiraProjectBindings,
   triggerModeOf,
   type BindingDelegate,
   type BindingRow,
+  type BindingUpsertDelegate,
+  type BindingWriteRow,
 } from "../src/stores/bindings.js";
 
 /**
@@ -160,5 +163,75 @@ describe("the literal vocabularies match the contract", () => {
       }).resolve("UGURPAY");
       expect(binding?.dataClass, `${dataClass} was rejected`).toBe(dataClass);
     }
+  });
+});
+
+/**
+ * The writer that turns an approved onboarding proposal into a binding (M93).
+ *
+ * The delegate is a Map keyed by projectKey — the `JiraProjectBinding` table. The
+ * properties under test: `bind` upserts (create then overwrite), it writes
+ * `defaultsJson` in exactly the `{appId,mode,dataClass}` shape the reader parses,
+ * and a binding it writes RESOLVES cleanly through `PrismaJiraProjectBindings`
+ * (the round-trip that proves the writer and reader agree on the column shape).
+ */
+function writerOf(): { writer: PrismaBindingWriter; rows: Map<string, BindingWriteRow> } {
+  const rows = new Map<string, BindingWriteRow>();
+  const delegate: BindingUpsertDelegate = {
+    upsert: (args) => {
+      const existing = rows.get(args.where.projectKey);
+      rows.set(
+        args.where.projectKey,
+        existing === undefined ? args.create : { ...existing, ...args.update },
+      );
+      return Promise.resolve(rows.get(args.where.projectKey));
+    },
+  };
+  return { writer: new PrismaBindingWriter(delegate), rows };
+}
+
+describe("PrismaBindingWriter", () => {
+  it("writes a binding whose defaultsJson the reader parses back", async () => {
+    const { writer, rows } = writerOf();
+    await writer.bind({
+      projectKey: "OPS",
+      trigger: "label",
+      state: "active",
+      defaults: { appId: "Uguryldz/maestro-pilot", mode: "human_lead", dataClass: "gizli" },
+    });
+
+    // Round-trip through the reader over the same row: writer + reader agree.
+    const row = rows.get("OPS")!;
+    const binding = await new PrismaJiraProjectBindings({
+      findUnique: () => Promise.resolve({ triggerLabel: "maestro", ...row } as BindingRow),
+    }).resolve("OPS");
+
+    expect(binding).toEqual({
+      projectKey: "OPS",
+      active: true, // state "active" → live
+      triggerMode: "opt_in", // trigger "label" → opt_in
+      appId: "Uguryldz/maestro-pilot",
+      mode: "human_lead",
+      dataClass: "gizli",
+    });
+  });
+
+  it("upserts: re-binding a project overwrites rather than duplicating", async () => {
+    const { writer, rows } = writerOf();
+    await writer.bind({
+      projectKey: "OPS",
+      trigger: "auto",
+      state: "active",
+      defaults: { appId: "a/one", mode: "full_auto", dataClass: "acik" },
+    });
+    await writer.bind({
+      projectKey: "OPS",
+      trigger: "label",
+      state: "paused",
+      defaults: { appId: "a/two", mode: "human_only", dataClass: "gizli" },
+    });
+
+    expect(rows.size).toBe(1);
+    expect(rows.get("OPS")).toMatchObject({ trigger: "label", state: "paused" });
   });
 });

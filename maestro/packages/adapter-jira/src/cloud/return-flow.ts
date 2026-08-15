@@ -31,6 +31,11 @@ export const TODO_CATEGORY_KEY = "new";
 /** The human-facing status-category NAME Jira Cloud reports for a To-Do status. */
 export const TODO_CATEGORY_NAME = "To Do";
 
+/** The status-category KEY / NAME Jira Cloud reports for a DONE status — where a
+ * merged ticket is moved so it does not linger open after the work is finished. */
+export const DONE_CATEGORY_KEY = "done";
+export const DONE_CATEGORY_NAME = "Done";
+
 /**
  * The status-category KEY / NAME Jira Cloud reports for an IN-PROGRESS status —
  * the category "İNCELEMEDE" (review) sits in. Used by the analysis-approval
@@ -135,6 +140,30 @@ function isTodoCategory(transition: AvailableTransition): boolean {
   return (
     transition.toCategoryKey.toLowerCase() === TODO_CATEGORY_KEY ||
     transition.toCategoryName.trim().toLowerCase() === TODO_CATEGORY_NAME.toLowerCase()
+  );
+}
+
+/**
+ * Choose the transition that CLOSES the ticket — the one whose destination sits
+ * in the `Done` category. Selection is by category, never by a hard-coded status
+ * name (a site renames "Done" to "Tamamlandı", "Kapandı" etc., but the CATEGORY
+ * key stays `done`). Returns `null` when the current status offers no Done
+ * transition (already closed, or the workflow forbids it); the caller treats
+ * that as "nothing to move", never a failure — the merge already succeeded.
+ */
+export function selectDoneTransition(
+  transitions: readonly AvailableTransition[],
+): AvailableTransition | null {
+  for (const transition of transitions) {
+    if (isDoneCategory(transition)) return transition;
+  }
+  return null;
+}
+
+function isDoneCategory(transition: AvailableTransition): boolean {
+  return (
+    transition.toCategoryKey.toLowerCase() === DONE_CATEGORY_KEY ||
+    transition.toCategoryName.trim().toLowerCase() === DONE_CATEGORY_NAME.toLowerCase()
   );
 }
 

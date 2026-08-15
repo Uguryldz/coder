@@ -25,6 +25,7 @@ const SEED: Record<keyof PilotSettings, unknown> = {
   sandboxRoot: "",
   reviewStatusName: "İNCELEMEDE",
   autoMerge: false,
+  autoStart: true,
 };
 
 describe("validateSettings — poll bounds", () => {
@@ -161,6 +162,7 @@ describe("SettingsStore", () => {
       sandboxRoot: "",
       reviewStatusName: "İNCELEMEDE",
       autoMerge: false,
+      autoStart: true,
     });
   });
 
@@ -192,7 +194,7 @@ describe("SettingsStore", () => {
   it("exposes no secret fields — only the settable settings", () => {
     const store = new SettingsStore(SEED);
     expect(Object.keys(store.snapshot()).sort()).toEqual(
-      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName", "autoMerge"].sort(),
+      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName", "autoMerge", "autoStart"].sort(),
     );
   });
 });

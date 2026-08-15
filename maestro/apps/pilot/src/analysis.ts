@@ -59,10 +59,35 @@ export function pilotAnalysisTemplate(): AnalysisTemplate {
  * ticket-sourced claims, which is the honest posture: it cannot cite a repo
  * file it was never shown.
  */
+/**
+ * One human ticket comment carried into the intake/analysis context, so the
+ * answers a reporter writes after an İADE (return) are actually SEEN when the
+ * ticket comes back to the bot — this is what breaks the return loop.
+ */
+export interface TicketComment {
+  author: string;
+  text: string;
+}
+
+/**
+ * Render the human comments as the plain-text block appended to a CLONED
+ * ticket description for the intake role (the contracts are frozen, but an
+ * object copy is free). Exported for tests.
+ */
+export function appendCommentsToDescription(
+  description: string,
+  comments: readonly TicketComment[],
+): string {
+  if (comments.length === 0) return description;
+  const lines = comments.map((c) => `- ${c.author}: ${c.text}`);
+  return `${description}\n\n--- Yorumlar (ticket üzerindeki insan yanıtları) ---\n${lines.join("\n")}`;
+}
+
 export function buildAnalysisContext(
   ticket: TicketSnapshot,
   guidance: readonly { title: string; content: string }[] = [],
   attachments: readonly { name: string; kind: string; content: string | null }[] = [],
+  comments: readonly TicketComment[] = [],
 ): AnalysisContext {
   // Turn attachments into named docs the analyst can read. A text attachment
   // carries its content; an image/PDF carries a note that it exists (its bytes
@@ -88,12 +113,16 @@ export function buildAnalysisContext(
       codingStandards: [],
       exampleAnalyses: [],
     },
-    // The clarification gate runs BEFORE analysis (see `requestIntake` and
-    // run.ts step 2): an incomplete ticket never reaches this context — the flow
-    // stops and asks the reporter. So by the time the analyst is built the ticket
-    // was judged complete, and there are no clarification ROUNDS to replay yet
-    // (a resumed round after a reporter answers is a later wave).
-    clarifications: [],
+    // Clarification rounds, replayed from the ticket's HUMAN comments (clarify-
+    // resume lite): when a returned ticket comes back to the bot, the answers
+    // the reporter wrote as comments land here, so the analyst reads them (the
+    // prompt renders each round) and may cite them (`clarification` refs). An
+    // un-returned ticket simply has no human comments — empty, as before.
+    clarifications: comments.map((c, index) => ({
+      id: `yorum-${index + 1}`,
+      question: `Ticket yorumu (${c.author})`,
+      answer: c.text,
+    })),
   };
 }
 
@@ -174,6 +203,12 @@ export interface ProduceAnalysisArgs {
    * screenshot/spec-PDF ticket is not analysed with only its text fields.
    */
   attachments?: readonly { name: string; kind: string; content: string | null }[];
+  /**
+   * The ticket's recent HUMAN comments (bot/command comments already filtered
+   * by the caller). Mapped into the context's clarification rounds so an İADE
+   * answer written on the ticket is read by the analyst. Empty/absent = none.
+   */
+  comments?: readonly TicketComment[];
 }
 
 /**
@@ -189,7 +224,12 @@ export interface ProduceAnalysisArgs {
  */
 export async function produceAnalysis(args: ProduceAnalysisArgs): Promise<AnalysisResult> {
   const template = args.template ?? pilotAnalysisTemplate();
-  const context = buildAnalysisContext(args.ticket, args.guidance ?? [], args.attachments ?? []);
+  const context = buildAnalysisContext(
+    args.ticket,
+    args.guidance ?? [],
+    args.attachments ?? [],
+    args.comments ?? [],
+  );
   const captured = captureUnmask(args.llm);
 
   const result = await runAnalyst({
@@ -255,15 +295,28 @@ export interface RequestIntakeArgs {
   ticket: TicketSnapshot;
   variantId: string;
   dataClass: DataClass;
+  /**
+   * The ticket's recent HUMAN comments. `runIntake` reads only the ticket, so
+   * the comments are appended to a CLONED snapshot's description (the frozen
+   * contract is untouched — this is an object copy). This is what lets the
+   * intake see a reporter's İADE answers and judge the ticket complete instead
+   * of returning it again forever.
+   */
+  comments?: readonly TicketComment[];
 }
 
 /** Run the real intake role and hand back its verdict for the pilot's gate. */
 export async function requestIntake(args: RequestIntakeArgs): Promise<IntakeGateResult> {
   const captured = captureUnmask(args.llm);
+  const comments = args.comments ?? [];
+  const ticket: TicketSnapshot =
+    comments.length === 0
+      ? args.ticket
+      : { ...args.ticket, description: appendCommentsToDescription(args.ticket.description, comments) };
 
   const result = await runIntake({
     llm: captured.port,
-    ticket: args.ticket,
+    ticket,
     variantId: args.variantId,
     dataClass: args.dataClass,
   });

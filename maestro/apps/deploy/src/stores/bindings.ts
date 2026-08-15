@@ -1,4 +1,4 @@
-import type { JiraBinding, JiraProjectBindings } from "@maestro/bff";
+import type { BindingWrite, BindingWriter, JiraBinding, JiraProjectBindings } from "@maestro/bff";
 
 /**
  * The Postgres-backed `JiraProjectBindings` (M102).
@@ -31,9 +31,33 @@ export interface BindingRow {
   state: string;
 }
 
-/** The one delegate method this store uses. */
+/** The one delegate method the READ store uses. */
 export interface BindingDelegate {
   findUnique(args: { where: { projectKey: string } }): Promise<BindingRow | null>;
+}
+
+/**
+ * The columns `PrismaBindingWriter` writes. `trigger`/`state` are the Prisma
+ * enums' literal unions (not bare `string`) so the delegate matches the generated
+ * client; `triggerLabel`/`dryRunSampleSize`/`version` take their schema defaults
+ * on create.
+ */
+type TriggerLiteral = "auto" | "label" | "command";
+type StateLiteral = "draft" | "dry_run" | "active" | "paused" | "unbound";
+
+export interface BindingWriteRow {
+  projectKey: string;
+  trigger: TriggerLiteral;
+  state: StateLiteral;
+  defaultsJson: object;
+}
+
+export interface BindingUpsertDelegate {
+  upsert(args: {
+    where: { projectKey: string };
+    create: BindingWriteRow;
+    update: { trigger: TriggerLiteral; state: StateLiteral; defaultsJson: object };
+  }): Promise<unknown>;
 }
 
 /**
@@ -80,6 +104,40 @@ export class PrismaJiraProjectBindings implements JiraProjectBindings {
       mode: defaults.mode,
       dataClass: defaults.dataClass,
     };
+  }
+}
+
+/**
+ * Writes a project's binding when an onboarding proposal is approved (M93).
+ *
+ * An UPSERT keyed on `projectKey`: re-approving a re-onboarded project overwrites
+ * its binding rather than failing. `defaultsJson` is written in exactly the
+ * `{ appId, mode, dataClass }` shape `parseDefaults` reads back, so a binding
+ * this writes resolves cleanly on the intake path — a mismatch would silently
+ * fail-close the project to `human_only`/`gizli`.
+ *
+ * Separate from `PrismaJiraProjectBindings` (the reader) so the read path keeps
+ * no write delegate; both sit on `db.jiraProjectBinding`.
+ */
+export class PrismaBindingWriter implements BindingWriter {
+  constructor(private readonly bindings: BindingUpsertDelegate) {}
+
+  async bind(binding: BindingWrite): Promise<void> {
+    const defaultsJson = {
+      appId: binding.defaults.appId,
+      mode: binding.defaults.mode,
+      dataClass: binding.defaults.dataClass,
+    };
+    await this.bindings.upsert({
+      where: { projectKey: binding.projectKey },
+      create: {
+        projectKey: binding.projectKey,
+        trigger: binding.trigger,
+        state: binding.state,
+        defaultsJson,
+      },
+      update: { trigger: binding.trigger, state: binding.state, defaultsJson },
+    });
   }
 }
 

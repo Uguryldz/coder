@@ -1,7 +1,16 @@
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { AuditChain } from "@maestro/audit";
-import { bootPilot, type ListeningRule, type VariantModelReader } from "@maestro/pilot";
+import {
+  bootPilot,
+  type ListeningRule,
+  type PilotDocTemplate,
+  type PilotSettings,
+  type VariantModelReader,
+} from "@maestro/pilot";
 import { createDb } from "@maestro/db";
 import { postgresChainLock, PrismaAuditStore } from "../stores/audit.js";
+import { PrismaDocTemplateStore } from "../stores/doc-template.js";
 import { prismaTransactionRunner } from "../stores/sql.js";
 import { PrismaVariantModelReader } from "../stores/variant-model-reader.js";
 import { fail, install, isEntrypoint } from "./lifecycle.js";
@@ -66,6 +75,92 @@ export interface PilotDbWiring {
     listening: ListeningRule[];
     guidance: { title: string; content: string }[];
   }>;
+  /**
+   * Lazy loader for the ACTIVE corporate Word template: the NEWEST
+   * `DocTemplateVersion` row (highest version — the store is append-only), as
+   * the scan metadata + raw bytes `renderDocx` patches. Null when no template
+   * was ever uploaded; a read error is logged and answered as null too, so the
+   * pilot falls back to the built-in layout instead of failing a run.
+   */
+  docTemplate: () => Promise<PilotDocTemplate | null>;
+}
+
+// ---------------------------------------------------------------- settings file
+//
+// PILOT SETTINGS PERSISTENCE. The `Param` table is a CATALOG: its keys are the
+// seeded `DEFAULT_PARAM_DEFINITIONS`, writes go through `writeParamVersion`
+// (four-eyes on guarded params) and `packages/db` is frozen — so an ad-hoc
+// "pilot.settings" key does not belong there. Instead the UI-edited settings
+// live in a small JSON file at the maestro repo root (git-ignored territory,
+// same place `.env` lives): written on every successful `/api/settings` update,
+// read as the boot seed. Losing the file only means falling back to env
+// defaults — never a boot failure.
+
+/** `.pilot-settings.json` at the maestro repo root (next to `maestro/.env`). */
+export function pilotSettingsFilePath(): string {
+  return fileURLToPath(new URL("../../../../.pilot-settings.json", import.meta.url));
+}
+
+const SETTINGS_KEYS: readonly (keyof PilotSettings)[] = [
+  "approverGroup",
+  "model",
+  "commandPollMs",
+  "discoveryPollMs",
+  "dataClass",
+  "operatorAccount",
+  "sandboxRoot",
+  "reviewStatusName",
+  "autoMerge",
+  "autoStart",
+];
+
+/**
+ * Read the persisted settings seed. Only KNOWN keys survive (a stale file from
+ * an older/newer pilot cannot smuggle junk into the seed); a missing or
+ * unparsable file is `undefined` — the pilot then seeds from env defaults, and
+ * the pilot's own seed validation guards the values themselves.
+ */
+export async function loadPilotSettingsFile(
+  path: string = pilotSettingsFilePath(),
+): Promise<Partial<PilotSettings> | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch {
+    return undefined; // no file yet — first boot, env defaults
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+    const record = parsed as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of SETTINGS_KEYS) {
+      if (key in record) out[key] = record[key];
+    }
+    return out as Partial<PilotSettings>;
+  } catch (error) {
+    console.warn(`[pilot] ${path} okunamadı (bozuk JSON) — env varsayılanlarıyla açılıyor: ${String(error)}`);
+    return undefined;
+  }
+}
+
+/**
+ * Persist the settings snapshot (called after every successful UI update).
+ * Write-then-rename so a crash mid-write can never leave a half-file behind.
+ * Best-effort by contract: a failure is logged, never thrown — the in-memory
+ * store already holds the new values.
+ */
+export async function persistPilotSettingsFile(
+  settings: PilotSettings,
+  path: string = pilotSettingsFilePath(),
+): Promise<void> {
+  try {
+    const tmp = `${path}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+    await rename(tmp, path);
+  } catch (error) {
+    console.warn(`[pilot] ayarlar dosyaya yazılamadı (${path}) — bellekte güncel: ${String(error)}`);
+  }
 }
 
 const MATCH_KINDS = new Set(["status", "issuetype"]);
@@ -133,6 +228,32 @@ export function pilotWiringFromEnv(
         guidance: notes.map((n) => ({ title: n.title, content: n.content })),
       };
     },
+    docTemplate: async () => {
+      try {
+        const store = new PrismaDocTemplateStore(db.docTemplateVersion, db.docTemplateOutputRow);
+        // Active = the NEWEST version: the store is append-only, so the highest
+        // version is what an admin last published in Studio.
+        const record = await store.latest();
+        if (record === null) return null;
+        return {
+          file: {
+            fileName: record.fileName,
+            version: record.version,
+            uploadedAt: record.uploadedAt,
+            uploadedBy: record.uploadedBy,
+            sizeBytes: record.sizeBytes,
+            styles: [...record.styles],
+            placeholders: record.placeholders.map((p) => ({ ...p })),
+          },
+          bytes: Uint8Array.from(record.content),
+        };
+      } catch (error) {
+        // Fail-soft: a template read must never fail a document, let alone a
+        // run — the pilot renders the built-in layout instead.
+        console.warn(`[pilot] kurumsal Word şablonu DB'den okunamadı (yerleşik düzen kullanılacak): ${String(error)}`);
+        return null;
+      }
+    },
   };
 }
 
@@ -145,9 +266,13 @@ export function variantReaderFromEnv(
 }
 
 async function main(): Promise<void> {
-  const { variantReader, audit, onLlmCall, loadSeeds } = pilotWiringFromEnv(process.env);
+  const { variantReader, audit, onLlmCall, loadSeeds, docTemplate } = pilotWiringFromEnv(process.env);
   // Boot seeds from the DB (Faz 1): rules + enabled notes survive a restart.
   const seeds = await loadSeeds();
+  // The UI-edited settings, persisted as a JSON file at the maestro root (the
+  // Param table is a locked catalog — see the note above the file helpers).
+  // Seeded here so a restart keeps what the operator saved in the panel.
+  const persistedSettings = await loadPilotSettingsFile();
 
   const stage = await bootPilot({
     startDiscovery: true,
@@ -156,6 +281,11 @@ async function main(): Promise<void> {
     onLlmCall,
     listening: seeds.listening,
     guidance: seeds.guidance,
+    ...(persistedSettings === undefined ? {} : { settings: persistedSettings }),
+    onSettingsChanged: (settings) => {
+      void persistPilotSettingsFile(settings);
+    },
+    docTemplate,
   });
   process.stdout.write(
     [

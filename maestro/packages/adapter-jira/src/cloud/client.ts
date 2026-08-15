@@ -70,6 +70,31 @@ export class JiraCloudClient {
     return this.request<T>({ method: "GET", path, query });
   }
 
+  /**
+   * GET a resource's RAW TEXT by ABSOLUTE URL (an attachment's `content` link).
+   * Unlike `get`, it does not JSON-parse and takes a full URL rather than a path,
+   * because attachment content lives at a Jira-issued absolute URL. Same Basic
+   * auth and timeout as `send`; a non-2xx is a loud error, never silent bytes.
+   */
+  async getText(absoluteUrl: string): Promise<string> {
+    const token = await this.token();
+    if (typeof token !== "string" || token.trim().length === 0) {
+      throw new JiraConfigError("the resolved API token is empty — refusing to send an unauthenticated request");
+    }
+    const res = await this.fetchImpl(absoluteUrl, {
+      method: "GET",
+      headers: {
+        authorization: `Basic ${Buffer.from(`${this.email}:${token}`, "utf8").toString("base64")}`,
+        accept: "*/*",
+      },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!res.ok) {
+      throw new JiraHttpError(res.status, "GET", absoluteUrl, (await consumeBody(res)).slice(0, BODY_SNIPPET_LIMIT));
+    }
+    return res.text();
+  }
+
   post<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>({ method: "POST", path, body });
   }

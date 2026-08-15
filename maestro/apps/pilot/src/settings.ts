@@ -61,6 +61,15 @@ export interface PilotSettings {
    * off by default, and never inferred.
    */
   autoMerge: boolean;
+  /**
+   * Auto-start (the engine's heartbeat). ON by default: when discovery lists a
+   * ticket a LISTENING RULE can classify (flowTypeFor ≠ null) and no run is in
+   * progress, the pilot starts it by itself — dragging a ticket onto the bot IS
+   * the trigger, no human click needed. A ticket NO rule classifies is never
+   * auto-started (it waits for a manual start, with a log line saying so), and
+   * a ticket that failed or was returned is not retried automatically.
+   */
+  autoStart: boolean;
 }
 
 /** Bounds for the poll intervals — a positive integer, not absurdly small/large. */
@@ -83,6 +92,7 @@ const SEED_BASE: PilotSettings = {
   sandboxRoot: "",
   reviewStatusName: "İNCELEMEDE",
   autoMerge: false,
+  autoStart: true,
 };
 
 /** Human-readable field labels, reused in validation messages (Turkish). */
@@ -96,6 +106,7 @@ const LABELS = {
   sandboxRoot: "sandbox kökü",
   reviewStatusName: "inceleme statüsü",
   autoMerge: "otomatik birleştirme",
+  autoStart: "otomatik başlatma",
 } as const;
 
 /** Thrown when a write is rejected; carries a UI-safe Turkish message. */
@@ -205,6 +216,12 @@ export function validateSettings(
       throw new SettingsValidationError(`${LABELS.autoMerge} yalnız açık/kapalı olabilir`);
     }
     next.autoMerge = patch.autoMerge;
+  }
+  if ("autoStart" in patch) {
+    if (typeof patch.autoStart !== "boolean") {
+      throw new SettingsValidationError(`${LABELS.autoStart} yalnız açık/kapalı olabilir`);
+    }
+    next.autoStart = patch.autoStart;
   }
 
   return next;

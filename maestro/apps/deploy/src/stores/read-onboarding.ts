@@ -8,6 +8,7 @@ import type {
   RepoPolicyRecord,
 } from "@maestro/bff";
 import type { TicketKey } from "@maestro/contracts";
+import { PlatformProfile } from "@maestro/contracts";
 
 /**
  * The onboarding wizard's lists and the repo-policy screen, over Postgres
@@ -128,10 +129,13 @@ export class PrismaOnboardingReader implements OnboardingReader {
     return {
       projects: bindingRows.map((row) => ({ projectKey: row.projectKey, state: row.state })),
       repos,
-      // Distinct platforms actually present in the registry, not the contract's
-      // whole `PlatformProfile` enum: offering a profile no onboarded app uses
-      // would let an operator pick a toolchain this deployment cannot build.
-      platforms: [...new Set(repos.map((repo) => repo.platform))].sort(),
+      // Every platform profile the contract defines (M60) — not just the ones
+      // already present in the registry. Deriving the list from existing apps
+      // made the FIRST onboarding impossible: an empty registry offered no
+      // profile, so no app could be created, so the registry stayed empty. The
+      // wizard is exactly the moment a new toolchain enters the platform, so it
+      // must offer all of them.
+      platforms: [...PlatformProfile.options],
     };
   }
 

@@ -11,10 +11,13 @@ import { bootPlatform } from "../boot.js";
 import { listenAddress } from "../env.js";
 import { selectIdentityProvider } from "../identity.js";
 import { PrismaKillSwitchStore } from "../stores/killswitch.js";
+import { PrismaAppRegistryWriter } from "../stores/app-registry-writer.js";
 import { PrismaConnectionStore } from "../stores/connections.js";
+import { PrismaListeningStore } from "../stores/listening.js";
+import { PrismaGuidanceStore } from "../stores/guidance.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
-import { PrismaJiraProjectBindings } from "../stores/bindings.js";
+import { PrismaBindingWriter, PrismaJiraProjectBindings } from "../stores/bindings.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
 import { PrismaParamStore } from "../stores/params-store.js";
 import { PrismaRoutingReader } from "../stores/routing.js";
@@ -46,21 +49,15 @@ import { fail, install, isEntrypoint } from "./lifecycle.js";
  * out. The kill switch in particular was the only FATAL entry, so removing it
  * is what lets the prod profile boot with a durable brake rather than refusing.
  *
- * What remains is genuinely volatile and cannot be faked durable: the open
- * four-eyes PROPOSAL queue. A proposal is a value with no approver yet, and the
- * `ParamVersion` table's CHECK refuses exactly that (a guarded version needs an
- * approver, migration 0002), so it has no row to live in. Losing one on a
- * restart costs the first approver a second click — the value was never applied
- * — so it is reported rather than made a refusal, and the APPLIED values are
- * durable (`PrismaParamStore` reads and writes `Param`/`ParamVersion`).
+ * Dalga F emptied the last entry too. The open four-eyes PROPOSAL queue used to
+ * be process-local, because a proposal is a value with no approver yet and the
+ * `ParamVersion` CHECK (migration 0002) refuses exactly that. It now has its own
+ * table — `PendingParamChange` (migration 0013) — so an open proposal (a guarded
+ * parameter change OR an onboarding binding) survives a restart. Nothing here is
+ * volatile any more; the list is kept as the seam a future volatile store would
+ * declare itself through, rather than deleted.
  */
-const VOLATILE_STORES: readonly StoreDurability[] = [
-  {
-    name: "params (pending proposals only)",
-    durable: false,
-    onRestart: "open four-eyes proposals are lost; applied parameter values survive",
-  },
-];
+const VOLATILE_STORES: readonly StoreDurability[] = [];
 
 /**
  * The BFF process — the platform's single data door (M7).
@@ -151,7 +148,7 @@ export async function main(): Promise<void> {
     // data-class policy that were in the database the whole time. A restart
     // also silently discarded anything an operator had changed. The pending
     // four-eyes queue is still process-local — see `PrismaParamStore`.
-    params: new PrismaParamStore(db.param, db.paramVersion),
+    params: new PrismaParamStore(db.param, db.paramVersion, db.pendingParamChange),
     // Postgres-backed, where it used to be an `InMemoryTemplateStore`.
     //
     // A template version is what an approved analysis was judged against
@@ -194,6 +191,19 @@ export async function main(): Promise<void> {
     // deployment secrets through: a console writes here, and must not be able to
     // rewrite the Vault mount the operator manages.
     connections: new PrismaConnectionStore(db.connection),
+    // The M100 app-registry writer: submitting the onboarding wizard registers
+    // the picked repo into the `Application` table this reads elsewhere, so a
+    // new repo no longer has to be onboarded through another path before it can
+    // be bound. The binding itself stays a four-eyes proposal.
+    appRegistry: new PrismaAppRegistryWriter(db.application),
+    // Turns an APPROVED onboarding proposal into a live JiraProjectBinding (M93).
+    // Reader (PrismaJiraProjectBindings) stays resolve-only; both sit on the same
+    // table. Without this the approve path would 503-by-name rather than bind.
+    bindingWriter: new PrismaBindingWriter(db.jiraProjectBinding),
+    // The listening-rules store (Ayarlar > Dinleme Kuralları): status/issuetype
+    // → flow-type rows an admin edits from Studio, backing the real DB table.
+    listening: new PrismaListeningStore(db.listeningRule),
+    guidance: new PrismaGuidanceStore(db.analysisGuidance),
     connectorSecrets: new EncryptedSecretStore(
       resolveMasterKey({
         envValue: process.env["CONNECTOR_MASTER_KEY"],

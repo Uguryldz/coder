@@ -62,6 +62,7 @@ function record(over: Partial<ConnectionRecord> = {}): ConnectionRecord {
     updatedAt: "2026-08-10T09:00:00.000Z",
     lastTestedAt: null,
     lastTestOk: null,
+    lastTestNote: null,
     ...over,
   };
 }

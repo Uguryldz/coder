@@ -237,6 +237,7 @@ export function defaultSettings(): {
   sandboxRoot: string;
   reviewStatusName: string;
   autoMerge: boolean;
+  autoStart: boolean;
 } {
   return {
     approverGroup: APPROVER_GROUP,
@@ -250,5 +251,9 @@ export function defaultSettings(): {
     // Human-merge by default (B14). Only an explicit PILOT_AUTO_MERGE=true seeds
     // it on; anything else — unset, "false", "0" — stays off.
     autoMerge: process.env["PILOT_AUTO_MERGE"] === "true",
+    // Auto-start ON by default (the engine's heartbeat): only an explicit
+    // PILOT_AUTO_START=false turns it off. The guard is elsewhere — only a
+    // ticket a listening rule can classify is ever auto-started.
+    autoStart: process.env["PILOT_AUTO_START"] !== "false",
   };
 }

@@ -11,6 +11,10 @@ export { bootPilot } from "./boot.js";
 export type { BootOptions, PilotStage } from "./boot.js";
 export type { VariantModelReader, ResolvedVariantModel } from "./variant.js";
 export type { ListeningRule, FlowType } from "./listening.js";
+// The launcher persists these: the UI-edited settings (seed + change hook) and
+// the corporate Word template loader's shape.
+export type { PilotSettings } from "./settings.js";
+export type { PilotDocTemplate } from "./docs.js";
 
 // The canonical nine step definitions live in the side-effect-free `./state`
 // subpath (see package.json exports) so a consumer — Studio's agent-pipeline map

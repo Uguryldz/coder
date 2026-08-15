@@ -144,6 +144,43 @@ describe("JiraCloudWorkPort", () => {
     });
   });
 
+  it("creates a child issue ASSIGNED to the bot when assigneeAccountId is given", async () => {
+    const stub = stubFetch([{ status: 201, body: { id: "10021", key: "OPS-10" } }]);
+    const res = await port(stub).createChildIssue({
+      projectKey: "OPS",
+      parentKey: "OPS-6",
+      summary: "[mobil] fan-out",
+      description: "OPS-6 analizinden türetildi.",
+      assigneeAccountId: ACCOUNT_ID,
+    });
+
+    expect(res.key).toBe("OPS-10");
+    const fields = (stub.calls[0]!.body as { fields: Record<string, unknown> }).fields;
+    // Cloud's create-issue API addresses the assignee as `{ id }` (v3).
+    expect(fields["assignee"]).toEqual({ id: ACCOUNT_ID });
+    expect(fields["parent"]).toEqual({ key: "OPS-6" });
+  });
+
+  it("omits the assignee entirely when assigneeAccountId is absent or blank", async () => {
+    const stub = stubFetch([
+      { status: 201, body: { id: "10022", key: "OPS-11" } },
+      { status: 201, body: { id: "10023", key: "OPS-12" } },
+    ]);
+    const jira = port(stub);
+    await jira.createChildIssue({ projectKey: "OPS", parentKey: "OPS-6", summary: "çocuk" });
+    await jira.createChildIssue({
+      projectKey: "OPS",
+      parentKey: "OPS-6",
+      summary: "çocuk",
+      assigneeAccountId: "   ",
+    });
+
+    for (const call of stub.calls) {
+      const fields = (call.body as { fields: Record<string, unknown> }).fields;
+      expect(fields).not.toHaveProperty("assignee");
+    }
+  });
+
   it("refuses fan-out labels Jira would reject, before any request", async () => {
     const stub = stubFetch([]);
     await expect(

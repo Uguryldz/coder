@@ -5,7 +5,8 @@
   "type": "module",
   "description": "First real-Jira pilot: the shortened delivery flow against a live Jira Cloud site, ADO faked, model real",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./state": "./src/state.ts"
   },
   "scripts": {
     "start": "tsx src/main.ts",

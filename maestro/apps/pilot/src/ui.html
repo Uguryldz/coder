@@ -146,6 +146,10 @@ code{background:var(--panel2);border-radius:5px;padding:1px 5px;font-size:12.5px
         <input id="s-autoMerge" type="checkbox">
         <span>Otomatik birleştirme (yalnız CI yeşil + onaylıysa; <b>kapalıyken merge insana bırakılır</b>)</span>
       </label>
+      <label class="set-f" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px">
+        <input id="s-autoStart" type="checkbox">
+        <span>Otomatik başlatma (dinleme kuralıyla sınıflanabilen keşfedilen ticket'lar kendiliğinden başlar; <b>kural eşleşmeyen ticket elle başlatılır</b>)</span>
+      </label>
       <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
         <button class="btn p" id="set-save" type="button">Kaydet</button>
         <span class="mini" id="set-msg"></span>
@@ -303,10 +307,13 @@ function renderJira(state) {
   if (go) go.onclick = async () => {
     if (!PICKED) return;
     go.disabled = true;
+    // The selected discovery row's STATUS travels as a hint so a status
+    // listening rule can classify the flow (the ticket read has no status).
+    const picked = (STATE?.discovered ?? []).find((t) => t.key === PICKED);
     await fetch("/api/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ticketKey: PICKED }),
+      body: JSON.stringify({ ticketKey: PICKED, ...(picked && picked.status ? { status: picked.status } : {}) }),
     });
   };
 }
@@ -352,6 +359,8 @@ function fillSettings(s) {
   }
   const am = $("s-autoMerge");
   if (am && document.activeElement !== am) am.checked = !!s.autoMerge;
+  const as = $("s-autoStart");
+  if (as && document.activeElement !== as) as.checked = !!s.autoStart;
 }
 
 async function loadSettings() {
@@ -371,6 +380,7 @@ function readSettingsForm() {
     operatorAccount: $("s-operatorAccount").value.trim(),
     sandboxRoot: $("s-sandboxRoot").value.trim(),
     autoMerge: $("s-autoMerge").checked,
+    autoStart: $("s-autoStart").checked,
   };
 }
 

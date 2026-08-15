@@ -20,8 +20,8 @@ import {
   type ScmMode,
 } from "./config.js";
 import { resolveVariantModel, type VariantModelReader } from "./variant.js";
-import { SettingsStore } from "./settings.js";
-import { ListeningRulesStore } from "./listening.js";
+import { SettingsStore, SettingsValidationError, type PilotSettings } from "./settings.js";
+import { flowTypeLabel, ListeningRulesStore, type FlowType } from "./listening.js";
 import { GuidanceStore } from "./guidance.js";
 import {
   loadRepoEnv,
@@ -36,10 +36,10 @@ import {
   type OpenRouterEnv,
 } from "./env.js";
 import type { CreateWorkspaceOptions } from "./workspace.js";
-import { DocStore } from "./docs.js";
+import { DocStore, type PilotDocTemplate } from "./docs.js";
 import { createFakeAdo, type FakeAdo } from "./fake-ado.js";
 import { close, listen } from "./http.js";
-import { discoverTickets } from "./poll.js";
+import { discoverTickets, type DiscoveredTicket } from "./poll.js";
 import { PilotRun } from "./run.js";
 import { createUiServer } from "./server.js";
 import { initialState, StateStore } from "./state.js";
@@ -100,6 +100,26 @@ export interface BootOptions {
   ciTimeoutMs?: number;
   /** Arm auto-merge at boot (B14). Defaults to the env/settings value (off). */
   autoMerge?: boolean;
+  /**
+   * PERSISTED settings seed (Faz: ayarlar kalıcılığı). Applied ON TOP of the
+   * env defaults, so what an operator saved in the UI before a restart wins
+   * over the env bootstrap. The MODEL stays DB-first regardless (the variant
+   * resolution below overrides it), and an invalid persisted value falls back
+   * to the env defaults with a loud log — a stale file must never brick boot.
+   */
+  settings?: Partial<PilotSettings>;
+  /**
+   * Called after every successful UI settings update with the new snapshot.
+   * The composition root persists it so a restart keeps the operator's values.
+   * Best-effort by contract — it must never fail the update.
+   */
+  onSettingsChanged?: (settings: PilotSettings) => void;
+  /**
+   * Lazy loader for the ACTIVE corporate Word template (DocTemplateVersion),
+   * wired by the composition root. Read at document-generation time; absent or
+   * resolving null keeps the plain built-in layout.
+   */
+  docTemplate?: () => Promise<PilotDocTemplate | null>;
   /** Seed the knowledge library ("öğren") at boot — the analyst + engineer read it. */
   guidance?: readonly { title: string; content: string }[];
   /**
@@ -145,8 +165,42 @@ export interface PilotStage {
   audit: AuditChain;
   /** One discovery pass on demand (also used by the running app's loop). */
   refreshDiscovery(): Promise<void>;
-  start(ticketKey: TicketKey): Promise<void>;
+  start(ticketKey: TicketKey, hint?: { status?: string }): Promise<void>;
   close(): Promise<void>;
+}
+
+/**
+ * AUTO-START selection (the engine's heartbeat), pure so it is testable alone.
+ *
+ * From a discovery pass, pick the FIRST ticket that (a) has not been attempted
+ * by auto-start before (failed/returned tickets are never retried
+ * automatically — a human restarts them) and (b) a LISTENING RULE can classify
+ * from the discovery row (project + status; the row carries no issue type).
+ * Tickets NO rule classifies are returned in `unmatched` so the caller can log
+ * "kural eşleşmedi, elle başlatılmalı" — they wait for a manual start.
+ */
+export function selectAutoStartTicket(
+  rows: readonly DiscoveredTicket[],
+  listening: ListeningRulesStore,
+  botAccountId: string,
+  attempted: ReadonlySet<string>,
+): { pick: { key: string; status: string | null; flow: FlowType } | null; unmatched: string[] } {
+  const unmatched: string[] = [];
+  let pick: { key: string; status: string | null; flow: FlowType } | null = null;
+  for (const row of rows) {
+    if (attempted.has(row.key)) continue;
+    const flow = listening.flowTypeFor(botAccountId, {
+      projectKey: row.key.split("-")[0] ?? "",
+      status: row.status,
+      issueType: null,
+    });
+    if (flow === null) {
+      unmatched.push(row.key);
+      continue;
+    }
+    if (pick === null) pick = { key: row.key, status: row.status, flow };
+  }
+  return { pick, unmatched };
 }
 
 export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> {
@@ -246,11 +300,25 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
   // analyst variant (not the raw env constant) so the settings panel and the
   // status display agree with the model the gateway actually calls — the env
   // `PILOT_MODEL` only survives as the fallback baked into `analyst.model`.
-  const settings = new SettingsStore({
-    ...envDefaults,
-    model: analyst.model,
-    ...(options.autoMerge === undefined ? {} : { autoMerge: options.autoMerge }),
-  });
+  // PERSISTED settings (options.settings — what the operator saved in the UI
+  // before the restart) layer OVER the env defaults; the model stays the
+  // DB-resolved one so the panel never disagrees with the gateway. A persisted
+  // map that fails validation is dropped with a loud log, never a boot failure.
+  const makeSettings = (persisted: Partial<PilotSettings> | undefined): SettingsStore =>
+    new SettingsStore({
+      ...envDefaults,
+      ...(persisted ?? {}),
+      model: analyst.model,
+      ...(options.autoMerge === undefined ? {} : { autoMerge: options.autoMerge }),
+    });
+  let settings: SettingsStore;
+  try {
+    settings = makeSettings(options.settings);
+  } catch (error) {
+    if (!(error instanceof SettingsValidationError) || options.settings === undefined) throw error;
+    console.warn(`[pilot] kalıcı ayarlar geçersiz, env varsayılanlarına dönüldü: ${error.message}`);
+    settings = makeSettings(undefined);
+  }
   const seeded = settings.snapshot();
 
   // Listening rules live here too (Faz 3): the pilot cannot read the DB, so the
@@ -344,6 +412,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     listening,
     guidance,
     docs,
+    ...(options.docTemplate ? { docTemplate: options.docTemplate } : {}),
     ...(analystPersona !== null ? { analystPersona } : {}),
     ...(engineerPersona !== null ? { engineerPersona } : {}),
     completePullRequest: (prId) => ado.completePullRequest(prId),
@@ -365,6 +434,42 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     ...(options.sleep ? { sleep: options.sleep } : {}),
   });
 
+  // AUTO-START bookkeeping: tickets auto-start has already tried (kept for the
+  // process lifetime, per ticket, so a failed/returned ticket is never retried
+  // automatically), and tickets whose "no rule matched" line was already logged
+  // (so the discovery loop does not repeat it every cycle).
+  const autoStartAttempted = new Set<string>();
+  const autoStartUnmatchedLogged = new Set<string>();
+
+  const maybeAutoStart = (): void => {
+    if (!settings.snapshot().autoStart) return;
+    if (store.snapshot().running) return;
+    const { pick, unmatched } = selectAutoStartTicket(
+      store.snapshot().discovered,
+      listening,
+      botAccountId,
+      autoStartAttempted,
+    );
+    for (const key of unmatched) {
+      if (autoStartUnmatchedLogged.has(key)) continue;
+      autoStartUnmatchedLogged.add(key);
+      store.log("dim", `→ oto-başlatma: ${key} için dinleme kuralı eşleşmedi — elle başlatılmalı`);
+    }
+    if (pick === null) return;
+    autoStartAttempted.add(pick.key);
+    store.log(
+      "info",
+      `⚡ oto-başlatma: ${pick.key} bir dinleme kuralıyla '${flowTypeLabel(pick.flow)}' olarak sınıflandı — akış otomatik başlıyor`,
+    );
+    // Fire-and-forget: start() has its own catch-all; a synchronous "already
+    // running" race is caught here so the discovery loop never dies on it.
+    void run
+      .start(pick.key as TicketKey, pick.status === null ? undefined : { status: pick.status })
+      .catch((error: unknown) => {
+        store.log("warn", `! oto-başlatma başarısız (${pick.key}): ${String(error)}`);
+      });
+  };
+
   const refreshDiscovery = async (): Promise<void> => {
     try {
       // The JQL is derived from the listening rules each cycle: when a `status`
@@ -376,12 +481,25 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
       store.update((state) => {
         state.discovered = rows;
       });
+      // The heartbeat: with auto-start on, an idle pilot picks up the first
+      // rule-classifiable discovered ticket by itself (guarded above).
+      maybeAutoStart();
     } catch (error) {
       store.log("warn", `! keşif yoklaması başarısız: ${String(error)}`);
     }
   };
 
-  const ui: Server = createUiServer({ store, settings, listening, guidance, run, docs, audit, start: (ticketKey) => run.start(ticketKey) });
+  const ui: Server = createUiServer({
+    store,
+    settings,
+    listening,
+    guidance,
+    run,
+    docs,
+    audit,
+    start: (ticketKey, hint) => run.start(ticketKey, hint),
+    ...(options.onSettingsChanged ? { onSettingsChanged: options.onSettingsChanged } : {}),
+  });
   const uiPort = await listen(ui, options.uiPort ?? UI_PORT);
   uiBase = `http://127.0.0.1:${uiPort}`;
 
@@ -414,7 +532,7 @@ export async function bootPilot(options: BootOptions = {}): Promise<PilotStage> 
     ado,
     audit,
     refreshDiscovery,
-    start: (ticketKey) => run.start(ticketKey),
+    start: (ticketKey, hint) => run.start(ticketKey, hint),
     async close(): Promise<void> {
       discoveryStopped = true;
       if (discoveryTimer !== null) clearTimeout(discoveryTimer);

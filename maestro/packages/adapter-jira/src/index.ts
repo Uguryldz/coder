@@ -1,5 +1,6 @@
 export * from "./adf.js";
 export * from "./client.js";
+export * from "./cloud/attachments.js";
 export * from "./cloud/client.js";
 export * from "./cloud/comment-command.js";
 export * from "./cloud/config.js";

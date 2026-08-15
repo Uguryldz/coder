@@ -1,5 +1,6 @@
 import { createJiraDcWorkPort } from "@maestro/adapter-jira";
 import { t } from "@maestro/config";
+import type { FetchLike } from "@maestro/notify";
 import { defaultPiiPolicy, maskOutbound, type LoadedPiiPolicy } from "@maestro/pii";
 import type { SecretPort, WorkPort } from "@maestro/ports";
 import type { PublishDeps } from "@maestro/publish";
@@ -98,7 +99,18 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
       mask: (payload, context) =>
         maskOutbound(payload, { policy, dataClass: context.dataClass, boundary: context.boundary }),
     },
-    notify: { secrets, work },
+    // `notify` needs `work` (the jira channel posts through it), `secrets` (the
+    // webhook channels read their URL through a SecretPort), and now `fetchImpl`
+    // — the transport the teams/slack drivers POST their Adaptive Card / message
+    // over. Without it those channels refuse at registration (requireDep); with
+    // the real fetch wired here, an admin who activates the teams channel gets a
+    // driver that actually delivers. A deployment can override the transport via
+    // options.fetchImpl (tests inject a stub); otherwise the platform's fetch.
+    notify: {
+      secrets,
+      work,
+      fetchImpl: (options.fetchImpl as FetchLike | undefined) ?? (fetch as unknown as FetchLike),
+    },
     publish: { ...buildPublishDeps(secrets, policy, options.publishRunDeps), work },
     scan: { runner: options.containerRunner ?? unbridgedScanRunner() },
   });

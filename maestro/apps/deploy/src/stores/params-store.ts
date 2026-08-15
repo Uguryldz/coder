@@ -61,18 +61,13 @@ export interface ParamVersionReadDelegate {
 }
 
 /**
- * How a four-eyes PROPOSAL is written.
+ * How a four-eyes version is APPLIED (the approved write).
  *
  * A proposal is not a version: it has no approver yet, and the database's own
- * CHECK refuses a guarded version without one (migration 0002). So it cannot
- * live in `ParamVersion`, and it is deliberately NOT given a table of its own
- * here — the pending queue is process-local, and that is declared in the
- * composition root's `VOLATILE_STORES` rather than hidden.
- *
- * INTERFACE REQUEST: a `PendingParamChange` table. Losing an open proposal on
- * a restart means the first approver has to propose again, which is an
- * annoyance rather than a safety hole — the value was never applied — but it
- * is still state a bank would expect to survive.
+ * CHECK refuses a guarded version without one (migration 0002). So an open
+ * proposal cannot live in `ParamVersion` — it lives in `PendingParamChange`
+ * (migration 0013, `PendingDelegate` below), durable across restarts. This
+ * delegate writes the FINAL version once a second human has approved it.
  */
 export interface ParamApplyDelegate {
   create(args: {
@@ -89,18 +84,40 @@ export interface ParamApplyDelegate {
   }): Promise<unknown>;
 }
 
-export class PrismaParamStore implements ParamStore {
-  /**
-   * Open four-eyes proposals, in memory.
-   *
-   * See `ParamApplyDelegate` above for why: a proposal is by definition a value
-   * with no approver, and the table that holds versions refuses exactly that.
-   */
-  private readonly proposals = new Map<string, PendingParamChange>();
+/** One open proposal row, as `PendingParamChange` stores it (scopeRef "" = global). */
+export interface PendingRow {
+  key: string;
+  scopeRef: string;
+  valueJson: unknown;
+  proposedBy: string;
+  at: Date;
+}
 
+/**
+ * The `PendingParamChange` table (migration 0013). A proposal is a value with
+ * no approver, which `ParamVersion`'s CHECK refuses — so the open queue is its
+ * own table, keyed `(key, scopeRef)` for at most one open proposal per slot.
+ */
+export interface PendingDelegate {
+  findMany(args: { orderBy: { key: "asc" } }): Promise<PendingRow[]>;
+  upsert(args: {
+    where: { key_scopeRef: { key: string; scopeRef: string } };
+    create: { key: string; scopeRef: string; valueJson: object; proposedBy: string; at: Date };
+    update: { valueJson: object; proposedBy: string; at: Date };
+  }): Promise<unknown>;
+  deleteMany(args: { where: { key: string; scopeRef: string } }): Promise<unknown>;
+}
+
+export class PrismaParamStore implements ParamStore {
   constructor(
     private readonly defs: ParamDefinitionDelegate,
     private readonly versions: ParamVersionReadDelegate & ParamApplyDelegate,
+    /**
+     * The durable open-proposal queue (migration 0013). Replaces the former
+     * process-local Map so an open four-eyes proposal — a guarded parameter
+     * change or an onboarding binding — survives a BFF restart.
+     */
+    private readonly proposals: PendingDelegate,
   ) {}
 
   /**
@@ -147,18 +164,30 @@ export class PrismaParamStore implements ParamStore {
     }));
   }
 
-  pending(): Promise<readonly PendingParamChange[]> {
-    return Promise.resolve([...this.proposals.values()]);
+  async pending(): Promise<readonly PendingParamChange[]> {
+    const rows = await this.proposals.findMany({ orderBy: { key: "asc" } });
+    return rows.map((row) => ({
+      key: row.key,
+      scopeRef: toScopeRef(row.scopeRef),
+      value: row.valueJson,
+      proposedBy: row.proposedBy,
+      at: row.at.toISOString(),
+    }));
   }
 
-  putPending(change: PendingParamChange): Promise<void> {
-    this.proposals.set(slot(change.key, change.scopeRef), { ...change });
-    return Promise.resolve();
+  async putPending(change: PendingParamChange): Promise<void> {
+    const scopeRef = fromScopeRef(change.scopeRef);
+    const at = new Date(change.at);
+    const value = change.value as object;
+    await this.proposals.upsert({
+      where: { key_scopeRef: { key: change.key, scopeRef } },
+      create: { key: change.key, scopeRef, valueJson: value, proposedBy: change.proposedBy, at },
+      update: { valueJson: value, proposedBy: change.proposedBy, at },
+    });
   }
 
-  clearPending(key: string, scopeRef: string | null): Promise<void> {
-    this.proposals.delete(slot(key, scopeRef));
-    return Promise.resolve();
+  async clearPending(key: string, scopeRef: string | null): Promise<void> {
+    await this.proposals.deleteMany({ where: { key, scopeRef: fromScopeRef(scopeRef) } });
   }
 
   /**
@@ -170,7 +199,13 @@ export class PrismaParamStore implements ParamStore {
    * satisfies that constraint or is refused by Postgres, which is the point of
    * having it there rather than only here.
    */
-  async apply(change: ParamChange): Promise<void> {
+  // `_options.allowSelfApprove` is accepted for interface parity with the
+  // ParamStore port. This store writes the version row directly (it does not go
+  // through `writeParamVersion`, so the "approver ≠ author" application check
+  // never runs here); the only DB guard is the `approvedBy IS NOT NULL` CHECK,
+  // which a master-admin self-approval satisfies by recording itself as
+  // approver. The flag therefore needs no branch here — the BFF already decided.
+  async apply(change: ParamChange, _options?: { allowSelfApprove?: boolean }): Promise<void> {
     const definitions = await this.defs.findMany({ orderBy: { key: "asc" } });
     const definition = definitions.find((row) => row.key === change.key);
     if (definition === undefined) {
@@ -190,10 +225,6 @@ export class PrismaParamStore implements ParamStore {
       },
     });
   }
-}
-
-function slot(key: string, scopeRef: string | null): string {
-  return `${key} ${scopeRef ?? ""}`;
 }
 
 function asRecord(value: unknown, key: string): Record<string, unknown> {

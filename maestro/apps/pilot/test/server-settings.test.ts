@@ -33,6 +33,7 @@ function boot() {
     sandboxRoot: "",
     reviewStatusName: "İNCELEMEDE",
     autoMerge: false,
+    autoStart: true,
   });
   const server = createUiServer({ store, settings, listening: new ListeningRulesStore(), guidance: new GuidanceStore(), run: stubRun, docs: new DocStore(), audit: createPilotAudit(), start: () => Promise.resolve() });
   return { store, settings, server };
@@ -61,7 +62,7 @@ describe("GET /api/settings", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(Object.keys(body).sort()).toEqual(
-      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName", "autoMerge"].sort(),
+      ["approverGroup", "commandPollMs", "dataClass", "discoveryPollMs", "model", "operatorAccount", "sandboxRoot", "reviewStatusName", "autoMerge", "autoStart"].sort(),
     );
     // No token/secret leaks through.
     for (const key of Object.keys(body)) {

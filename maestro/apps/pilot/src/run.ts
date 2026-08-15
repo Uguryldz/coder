@@ -1,9 +1,12 @@
 import type { AdoCiDriver } from "@maestro/adapter-ado";
 import {
+  adfToPlainText,
   bulletList,
+  cloudUserIdOf,
   doc,
   heading,
   inlineCode,
+  isAdfDoc,
   isTextAttachment,
   paragraph,
   selectDoneTransition,
@@ -37,9 +40,9 @@ import {
   PILOT_VARIANT,
   type ScmMode,
 } from "./config.js";
-import { produceAnalysis, requestIntake } from "./analysis.js";
+import { produceAnalysis, requestIntake, type TicketComment } from "./analysis.js";
 import { type ChangeTypeMatch, classifyChangeTypes } from "./change-type.js";
-import { analysisToDocs, attachAnalysisDocs, type DocStore } from "./docs.js";
+import { analysisToDocs, attachAnalysisDocs, type DocStore, type PilotDocTemplate } from "./docs.js";
 import { flowTypeLabel, type FlowType, type ListeningRulesStore } from "./listening.js";
 import { planFor } from "./flow-plan.js";
 import type { GuidanceStore } from "./guidance.js";
@@ -257,6 +260,13 @@ export interface PilotRunDeps {
   engineerPersona?: string;
   /** Holds the generated .docx/.pdf so the download route can stream them. */
   docs: DocStore;
+  /**
+   * Lazy loader for the ACTIVE corporate Word template (DocTemplateVersion in
+   * the DB, wired by the composition root). Read at document-generation time so
+   * a template uploaded in Studio is used on the very next run, no restart.
+   * Absent or resolving null = the plain built-in layout, as before.
+   */
+  docTemplate?: () => Promise<PilotDocTemplate | null>;
   /** Stands in for the human who presses "Complete" in the ADO PR screen. */
   completePullRequest: (prId: number) => boolean;
   /** Called whenever the Jira side changed, so the UI can refresh its pane. */
@@ -304,6 +314,14 @@ export class PilotRun {
    */
   private flow: FlowType | null = null;
   /**
+   * The optional START HINT: the discovery row's ticket STATUS at the moment the
+   * run was started (auto-start and the UI's start button both pass it). The
+   * ticket snapshot (`getTicket`) does not carry the status, so without this a
+   * STATUS listening rule could never classify the flow. Null = no hint (older
+   * callers) — classification then matches on issue type only, as before.
+   */
+  private startHint: { status?: string } | null = null;
+  /**
    * The settings this run was started with, snapshotted at start(). Because a
    * settings change is refused WHILE a run is in progress (server.ts guard), the
    * six values are fixed for a whole run: reading them once here keeps approver
@@ -318,13 +336,14 @@ export class PilotRun {
 
   // ---------------------------------------------------------------- run
 
-  async start(ticketKey: TicketKey): Promise<void> {
+  async start(ticketKey: TicketKey, hint?: { status?: string }): Promise<void> {
     const { store } = this.deps;
     if (store.snapshot().running) throw new Error("akış zaten çalışıyor");
     // Snapshot the settings for the whole run (they cannot change mid-run — the
     // server refuses a settings write while running), so every step sees one
     // consistent approver group / model / data class / operator / poll interval.
     this.runSettings = this.deps.settings.snapshot();
+    this.startHint = hint ?? null;
     this.ticketKey = ticketKey;
     this.runId = `pilot-${new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14)}`;
     this.progressCommentId = null;
@@ -430,6 +449,11 @@ export class PilotRun {
           state.failure = message;
           state.running = false;
         });
+        // ERROR VISIBILITY on the Jira side, best-effort: the stakeholder who
+        // watches only the ticket must see the flow died — update the standing
+        // progress comment and leave a short error note. Both writes are
+        // swallowed on failure (Jira may be the very thing that broke).
+        await this.reportFailureToJira(message);
       }
     } finally {
       this.abort?.abort();
@@ -458,6 +482,37 @@ export class PilotRun {
   private requireTicket(): TicketKey {
     if (this.ticketKey === null) throw new PilotStepError("ticket seçilmeden akış başlatılamaz");
     return this.ticketKey;
+  }
+
+  /**
+   * Best-effort Jira-side failure report: refresh the standing progress comment
+   * (M75) with the failure and add ONE short error comment, so the flow's death
+   * is visible on the ticket, not only on the pilot screen. Every Jira error
+   * here is swallowed — the run already failed; reporting must not throw again.
+   */
+  private async reportFailureToJira(message: string): Promise<void> {
+    if (this.ticketKey === null) return;
+    const short = message.length > 300 ? `${message.slice(0, 300)}…` : message;
+    try {
+      await this.updateProgress(`❌ akış durdu: ${short}`);
+    } catch {
+      // progress comment unreachable — the note below may still land
+    }
+    try {
+      await this.deps.work.addComment(
+        this.ticketKey,
+        doc(
+          heading(3, "❌ Maestro akışı durdu"),
+          paragraph([strong("Sebep: "), text(short)]),
+          paragraph(
+            "Akış bir hata ile kesildi; ayrıntı pilot ekranındaki log'dadır. Sorun giderilince ticket yeniden başlatılabilir.",
+          ),
+        ),
+      );
+      this.deps.onJiraChanged?.();
+    } catch {
+      // Jira unreachable — the screen still shows the failure
+    }
   }
 
   /**
@@ -519,16 +574,16 @@ export class PilotRun {
     // blocked by classification. The behaviour BRANCH on flow type is a later
     // phase — here it is visibility only.
     // `getTicket` (TicketSnapshot) carries the issue type but NOT the current
-    // status, so classification here matches on issue type; a status rule does
-    // its job earlier, in the discovery JQL (it decides whether the ticket is
-    // listed at all). `status: null` means a status rule simply does not match
-    // at this point, which is correct — it already matched to get here.
+    // status, so the status comes from the START HINT — the discovery row's
+    // status the caller passed to `start()` (auto-start and the UI both do).
+    // Without a hint the status stays null and a status rule simply does not
+    // match here (the pre-hint behaviour), never a block.
     const flow =
       this.deps.listening?.flowTypeFor(this.deps.botAccountId ?? "", {
         // Project key is the ticket key's prefix ("OPS-123" → "OPS"), so a rule
         // only classifies its own project's tickets.
         projectKey: ticketKey.split("-")[0] ?? "",
-        status: null,
+        status: this.startHint?.status ?? null,
         issueType: ticket.issueType,
       }) ?? null;
     if (flow !== null) {
@@ -569,11 +624,25 @@ export class PilotRun {
       store.log("info", `📎 ${attachments.length} ek analize katıldı: ${attachments.map((a) => a.name).join(", ")}`);
     }
 
+    // Read the ticket's HUMAN comments (clarify-resume lite): when a returned
+    // ticket comes back to the bot, the reporter's answers live in the comments
+    // — without reading them the intake would judge the same thin ticket
+    // incomplete forever (the İADE loop). Bot comments and command envelopes
+    // are filtered out; the last ~10 human comments feed intake AND analysis.
+    const comments = await this.readHumanComments(ticketKey);
+    if (comments.length > 0) {
+      store.log("info", `💬 ${comments.length} insan yorumu intake/analiz bağlamına katıldı`);
+    }
+
     // ---- ⓪ ticket-level PII gate (B10). BEFORE any LLM sees the ticket: if the
     // ticket's own text carries a TCKN/IBAN etc. (regardless of the project's
     // configured class), raise this run's data class to "gizli" so intake and
-    // analysis route to a gizli-approved model, not a cloud one.
-    this.escalateDataClassForPii(ticket, attachments);
+    // analysis route to a gizli-approved model, not a cloud one. The human
+    // comments travel to the model too, so they are scanned alongside.
+    this.escalateDataClassForPii(ticket, [
+      ...attachments,
+      ...comments.map((c) => ({ content: c.text })),
+    ]);
 
     // ---- ② intake / CLARIFY gate (M98), by the REAL agent-roles intake role.
     // An incomplete ticket must NOT get a nine-section analysis over guesses:
@@ -586,6 +655,7 @@ export class PilotRun {
       ticket,
       variantId: PILOT_VARIANT,
       dataClass: this.effectiveDataClass(),
+      comments,
     });
     if (!intake.complete) {
       // The AGENT LOOKED and judged the ticket unfit → İADE (return), not
@@ -629,6 +699,7 @@ export class PilotRun {
       dataClass: this.effectiveDataClass(),
       guidance: analystGuidance,
       attachments,
+      comments,
     });
     store.log(
       "ok",
@@ -711,6 +782,11 @@ export class PilotRun {
     if (projectKey === "") return;
 
     this.deps.store.log("info", `🌿 fan-out: ${extras.length} etkilenen uygulama için alt-ticket açılıyor`);
+    // Fan-out OWNERSHIP: children open ASSIGNED to the Maestro Bot (the same
+    // account discovery follows), so each child immediately enters the bot's
+    // queue instead of sitting unassigned. Empty botAccountId = unassigned, as
+    // before.
+    const childAssignee = (this.deps.botAccountId ?? "").trim();
     for (const appId of extras) {
       const cell = analysis.impactMatrix.find((c) => c.appId === appId && c.impacted);
       try {
@@ -719,6 +795,7 @@ export class PilotRun {
           parentKey: ticketKey,
           summary: `[${appId}] ${cell?.summary ?? analysis.purpose}`.slice(0, 240),
           description: `${ticketKey} analizinden türetildi. Etkilenen uygulama: ${appId}.\n\n${cell?.summary ?? ""}`,
+          ...(childAssignee.length > 0 ? { assigneeAccountId: childAssignee } : {}),
         });
         this.deps.store.log("ok", `✓ alt-ticket açıldı: ${child.key} (${appId})`);
       } catch (error) {
@@ -840,7 +917,21 @@ export class PilotRun {
     const { store, docs, work } = this.deps;
     const ticketKey = this.requireTicket();
     try {
-      const generated = await analysisToDocs(analysis, ticketKey, this.runId);
+      // The ACTIVE corporate Word template, read lazily from the composition
+      // root's loader (DocTemplateVersion). Best-effort: a loader error only
+      // means the built-in layout — never a failed document.
+      let template: PilotDocTemplate | null = null;
+      if (this.deps.docTemplate !== undefined) {
+        try {
+          template = await this.deps.docTemplate();
+          if (template !== null) {
+            store.log("info", `📐 kurumsal Word şablonu kullanılıyor: ${template.file.fileName} (v${template.file.version})`);
+          }
+        } catch (error) {
+          store.log("warn", `! kurumsal şablon okunamadı (yerleşik düzen kullanılacak): ${String(error)}`);
+        }
+      }
+      const generated = await analysisToDocs(analysis, ticketKey, this.runId, undefined, template);
       docs.put(this.runId, generated);
       store.update((state) => {
         state.docsReady = true;
@@ -1600,6 +1691,48 @@ export class PilotRun {
       out.push({ name: meta.filename, kind: meta.mimeType, content });
     }
     return out;
+  }
+
+  /**
+   * The ticket's recent HUMAN comments for the intake/analysis context
+   * (clarify-resume lite). Reads the same comment list the gate poller reads,
+   * then filters out what is NOT a human answer: the bot's own comments
+   * (author = botAccountId — the progress/analysis/clarification notes Maestro
+   * itself wrote) and command envelopes (a first line starting with `/`, e.g.
+   * `/approve` — those are gate commands, not context). Only the LAST 10
+   * survive, newest last, so a chatty ticket cannot blow the prompt.
+   * Best-effort: an unreadable comment list yields [] — the flow proceeds on
+   * the ticket alone, exactly as before.
+   */
+  private async readHumanComments(ticketKey: TicketKey): Promise<TicketComment[]> {
+    const MAX_COMMENTS = 10;
+    const MAX_TEXT = 2_000;
+    let raw: unknown[];
+    try {
+      raw = await this.deps.work.listComments(ticketKey);
+    } catch (error) {
+      this.deps.store.log("dim", `→ ticket yorumları okunamadı: ${String(error)}`);
+      return [];
+    }
+    const bot = (this.deps.botAccountId ?? "").trim();
+    const out: TicketComment[] = [];
+    for (const comment of raw) {
+      const resource =
+        typeof comment === "object" && comment !== null && !Array.isArray(comment)
+          ? (comment as Record<string, unknown>)
+          : null;
+      if (resource === null) continue;
+      const author = cloudUserIdOf(resource["author"]) ?? "";
+      if (author.length === 0) continue;
+      if (bot.length > 0 && author === bot) continue; // Maestro's own notes
+      const body = resource["body"];
+      const bodyText = isAdfDoc(body) ? adfToPlainText(body) : typeof body === "string" ? body : "";
+      const trimmed = bodyText.trim();
+      if (trimmed.length === 0) continue;
+      if (trimmed.startsWith("/")) continue; // command envelope (/approve, /reject, …)
+      out.push({ author, text: trimmed.length > MAX_TEXT ? `${trimmed.slice(0, MAX_TEXT)}…` : trimmed });
+    }
+    return out.slice(-MAX_COMMENTS);
   }
 
   // ---------------------------------------------------- gate: comment polling

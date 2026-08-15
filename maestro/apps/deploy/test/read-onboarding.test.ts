@@ -76,7 +76,7 @@ const APPS: ApplicationListRow[] = [
 ];
 
 describe("PrismaOnboardingReader", () => {
-  it("renders the ADO repo path and offers only platforms the registry holds", async () => {
+  it("renders the ADO repo path and offers every platform profile the contract defines", async () => {
     const reader = new PrismaOnboardingReader(
       bindings([{ projectKey: "UGURPAY", state: "active" }]),
       applications(APPS),
@@ -88,9 +88,15 @@ describe("PrismaOnboardingReader", () => {
       { appId: "ugurpay", repo: "Odeme/_git/ugurpay", platform: "linux-node" },
       { appId: "cards", repo: "Kart/_git/cards", platform: "linux-java" },
     ]);
-    // Sorted, deduplicated, and drawn from the registry rather than from the
-    // contract's whole PlatformProfile enum.
-    expect(options.platforms).toEqual(["linux-java", "linux-node"]);
+    // The whole contract enum, NOT just the profiles already in the registry:
+    // deriving from existing apps made the first onboarding impossible (empty
+    // registry → no profile → no app could ever be created).
+    expect(options.platforms).toEqual([
+      "linux-node",
+      "linux-android",
+      "macos-xcode",
+      "windows-dotnet",
+    ]);
     expect(options.projects).toEqual([{ projectKey: "UGURPAY", state: "active" }]);
   });
 

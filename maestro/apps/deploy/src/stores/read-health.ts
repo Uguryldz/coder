@@ -70,6 +70,58 @@ export function temporalProbe(
   };
 }
 
+/**
+ * A probe over a plain HTTP endpoint (a sibling service's own liveness URL).
+ *
+ * The check is a real GET: a 2xx/3xx/4xx response proves the process is up and
+ * answering (even a 404 means "the server is there"), while a network error —
+ * connection refused, DNS failure, timeout — means it is not. A 5xx is treated
+ * as down: the service answered but is failing. The URL is a fixed deployment
+ * fact, never caller-supplied, so this is not an SSRF surface.
+ */
+export function httpProbe(
+  service: string,
+  url: string,
+  options: {
+    version?: string;
+    timeoutMs?: number;
+    fetchImpl?: typeof fetch;
+    /** Extra request headers — e.g. a Basic-auth header to probe an authenticated endpoint. */
+    headers?: Record<string, string>;
+    /**
+     * When true, a 401/403 counts as UP: the server answered and rejected us,
+     * which still proves it is reachable. Use for an unauthenticated liveness
+     * ping against an endpoint that would otherwise demand auth. Default false —
+     * an authenticated probe (with `headers`) wants a 401 to read as "auth
+     * broke", i.e. down.
+     */
+    authOptional?: boolean;
+  } = {},
+): ServiceProbe {
+  const { version = service, timeoutMs = 3_000, fetchImpl = fetch, headers, authOptional = false } = options;
+  return {
+    service,
+    version,
+    async check(): Promise<void> {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetchImpl(url, {
+          method: "GET",
+          signal: controller.signal,
+          ...(headers ? { headers } : {}),
+        });
+        if (res.status >= 500) throw new Error(`http ${res.status}`);
+        if (!authOptional && (res.status === 401 || res.status === 403)) {
+          throw new Error(`http ${res.status} (auth)`);
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
 export class ProbeHealthReader implements HealthReader {
   constructor(
     private readonly probes: readonly ServiceProbe[],

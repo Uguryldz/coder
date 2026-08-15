@@ -9,6 +9,7 @@ import {
   JiraResponseError,
 } from "../errors.js";
 import { ISSUE_FIELDS } from "../mapping.js";
+import { normalizeAttachments, type JiraAttachment } from "./attachments.js";
 import { JiraCloudClient } from "./client.js";
 import { commandFromCloudPayload, parseCommandFromComment, type CloudCommentCommand } from "./comment-command.js";
 import type { JiraCloudConfig } from "./config.js";
@@ -63,6 +64,74 @@ export class JiraCloudWorkPort implements WorkPort {
       fields: ISSUE_FIELDS,
     });
     return mapCloudIssueToSnapshot(raw);
+  }
+
+  /**
+   * The ticket's ATTACHMENTS — filename, mime type, size and a download URL —
+   * read live from the issue. A concrete capability (not on the frozen
+   * `WorkPort`, same posture as `readProjectWorkflow`/`addAttachment`): the
+   * analyst wants to know a screenshot or a spec PDF is attached, since a bank
+   * ticket often says "this screen shows this error (screenshot)". A missing or
+   * malformed `attachment` field yields [] rather than throwing — an issue with
+   * no attachments is normal, not an error.
+   */
+  async readAttachments(key: TicketKey): Promise<JiraAttachment[]> {
+    const issueKey = requireTicketKey(key, "key");
+    const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}`, {
+      fields: "attachment",
+    });
+    return normalizeAttachments(raw);
+  }
+
+  /**
+   * Download an attachment's raw text via its `content` URL (authenticated, same
+   * host). Used only for text attachments the analyst reads inline; the caller
+   * decides which. Returns the body as a string — the caller caps size before
+   * asking. Not on the frozen port (concrete capability, like readAttachments).
+   */
+  async downloadAttachment(contentUrl: string): Promise<string> {
+    return this.client.getText(contentUrl);
+  }
+
+  /**
+   * Create a CHILD issue under a parent — the fan-out capability (M100): when an
+   * analysis finds a work item spans several applications, one sub-ticket is
+   * opened per impacted app so each has its own tracked flow. Concrete capability
+   * (not on the frozen WorkPort). `POST /rest/api/3/issue` with `parent` linking
+   * it to the analysed ticket. Returns the created key. The issue type defaults
+   * to "Alt görev"/"Sub-task"; the caller may override for a site that renames it.
+   */
+  async createChildIssue(args: {
+    projectKey: string;
+    parentKey: string;
+    summary: string;
+    description?: string;
+    issueType?: string;
+    /**
+     * Cloud accountId the child opens ASSIGNED to (fan-out ownership — the
+     * Maestro Bot, so each child lands straight in the bot's queue). Absent =
+     * unassigned, the old behaviour.
+     */
+    assigneeAccountId?: string;
+  }): Promise<{ key: string }> {
+    const created = await this.client.post<{ key?: string }>(`${API}/issue`, {
+      fields: {
+        project: { key: args.projectKey },
+        parent: { key: args.parentKey },
+        summary: args.summary.slice(0, 250),
+        issuetype: { name: args.issueType ?? "Alt görev" },
+        ...(args.description !== undefined
+          ? { description: toAdfDocument(args.description) }
+          : {}),
+        // Cloud's create-issue API addresses the assignee as `{ id }` (v3).
+        ...(args.assigneeAccountId !== undefined && args.assigneeAccountId.trim().length > 0
+          ? { assignee: { id: args.assigneeAccountId.trim() } }
+          : {}),
+      },
+    });
+    const key = typeof created?.key === "string" ? created.key : null;
+    if (key === null) throw new JiraResponseError("create child issue", ["response carried no issue key"]);
+    return { key };
   }
 
   /**

@@ -10,7 +10,7 @@ import {
 import { DOC_CONTENT_TYPE, type DocKind, type DocStore } from "./docs.js";
 import { headerValue, readRawBody, requestUrl, sendJson, sendText } from "./http.js";
 import type { PilotRun } from "./run.js";
-import { SettingsValidationError, type SettingsStore } from "./settings.js";
+import { SettingsValidationError, type PilotSettings, type SettingsStore } from "./settings.js";
 import { isValidRule, type ListeningRulesStore } from "./listening.js";
 import { GuidanceStore } from "./guidance.js";
 import type { PilotState, StateStore } from "./state.js";
@@ -49,8 +49,18 @@ export interface UiServerOptions {
    * `/api/audit.csv`.
    */
   audit: AuditChain;
-  /** Starts the flow for the chosen ticket; rejects if one is already running. */
-  start: (ticketKey: TicketKey) => Promise<void>;
+  /**
+   * Starts the flow for the chosen ticket; rejects if one is already running.
+   * The optional hint carries the discovery row's STATUS so a status listening
+   * rule can classify the flow (the ticket snapshot itself has no status).
+   */
+  start: (ticketKey: TicketKey, hint?: { status?: string }) => Promise<void>;
+  /**
+   * Called AFTER every successful settings update, with the new snapshot. The
+   * composition root persists it (DB/file) so a restart keeps the UI's values.
+   * Best-effort: a persistence failure must never fail the update itself.
+   */
+  onSettingsChanged?: (settings: PilotSettings) => void;
 }
 
 function isDocKind(value: string): value is DocKind {
@@ -157,6 +167,14 @@ export function createUiServer(options: UiServerOptions): Server {
             ? "⚙ ayarlar POST edildi — değişiklik yok"
             : `⚙ ayarlar güncellendi (operatör): ${changed.join(", ")}`,
         );
+        // Persist the new values through the composition root's hook (settings
+        // survive a restart). Guarded: a persistence hiccup is logged and the
+        // update still answers 200 — the in-memory store IS updated.
+        try {
+          options.onSettingsChanged?.(updated);
+        } catch (error) {
+          options.store.log("warn", `! ayarlar kalıcılaştırılamadı (bellekte güncel): ${String(error)}`);
+        }
         sendJson(res, 200, updated);
       } catch (error) {
         if (error instanceof SettingsValidationError) {
@@ -269,8 +287,13 @@ export function createUiServer(options: UiServerOptions): Server {
         sendJson(res, 400, { error: "geçerli bir ticketKey gerekli" });
         return;
       }
+      // Optional, backwards-compatible STATUS hint: the UI sends the selected
+      // discovery row's status so a status listening rule can classify the
+      // flow. Absent/malformed = no hint, exactly the old behaviour.
+      const rawStatus = body?.["status"];
+      const status = typeof rawStatus === "string" && rawStatus.trim().length > 0 ? rawStatus.trim() : undefined;
       sendJson(res, 202, { ok: true });
-      void options.start(parsed.data);
+      void options.start(parsed.data, status === undefined ? undefined : { status });
       return;
     }
 

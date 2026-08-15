@@ -18,7 +18,7 @@ import {
   type WaitingGate,
 } from "./common/index.ts";
 import { useEnumLabel, useLabel } from "./common/label.ts";
-import { MaybeUnwired } from "./shared/unwired.tsx";
+import { MaybeUnwired, UnwiredNote } from "./shared/unwired.tsx";
 import { NotifyEditor } from "./notify/NotifyEditor.tsx";
 
 /**
@@ -160,6 +160,10 @@ export function NotifyScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
+      {/* Honest strip: the settings below persist, but no channel actually
+          delivers yet — an operator must not rely on a reminder arriving. */}
+      <UnwiredNote>{t("notify.unwired_note")}</UnwiredNote>
+
       {/* A plain-language intro: what this whole page decides. */}
       <Card title={t("notify.intro.title")}>
         <p className="scr-prose" style={{ margin: 0 }}>{t("notify.intro.body")}</p>

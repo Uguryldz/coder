@@ -5,7 +5,7 @@ import { messageKeyOf } from "../api/errors.ts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
-import { MaybeUnwired } from "./shared/unwired.tsx";
+import { MaybeUnwired, UnwiredNote } from "./shared/unwired.tsx";
 import { SectionEditor } from "./template/SectionEditor.tsx";
 import { SectionList } from "./template/SectionList.tsx";
 import { TemplatePreview } from "./template/TemplatePreview.tsx";
@@ -111,6 +111,12 @@ export function TemplateScreen(): ReactNode {
 
   return (
     <>
+      {/* Honest strip: the designer edits a template the engine does not read
+          yet — the engine still runs the built-in corporate template. Saying so
+          up front beats letting an author believe their edits steer runs. */}
+      <div style={{ marginBottom: 14 }}>
+        <UnwiredNote>{t("template.unwired_note")}</UnwiredNote>
+      </div>
       <Card
         title={t("template.designer")}
         subtitle={t("template.designer_sub")}

@@ -14,6 +14,7 @@ import {
 } from "../onboarding-service.js";
 import { assertWritable, FOUR_EYES_GROUP } from "../platform/propose.js";
 import { isMasterApprover } from "../platform/master-approver.js";
+import { mirrorListeningToPilot, seedProjectDefaults } from "../listening-seed.js";
 import { listScmRepos } from "../scm-repos-service.js";
 import { listJiraProjects } from "../jira-projects-service.js";
 import { listJiraMatchValues } from "../jira-match-values-service.js";
@@ -578,10 +579,42 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
       },
     });
 
-    // The chain's next natural step: this project has no listening rules yet.
-    return reply
-      .code(200)
-      .send({ status: "bound", projectKey: parsed.data.projectKey, nextStep: "listening_rule" });
+    // "Works out of the box": seed the project's default listening rules right
+    // here, so a freshly bound project is listened to without anyone writing a
+    // rule by hand. FAIL-SOFT by contract — the binding above is already live
+    // and audited, and a seed that cannot run (no Jira connection, untested
+    // connection, Jira unreachable) must never turn a successful approval into
+    // an error. Failures are logged, nothing more; the admin can re-run the
+    // seed later via POST /studio/listening-rules/seed-defaults.
+    let listeningSeed: { created: number; skipped: number } | null = null;
+    try {
+      const seeded = await seedProjectDefaults(deps, parsed.data.projectKey);
+      if (seeded.ok) {
+        listeningSeed = { created: seeded.created, skipped: seeded.skipped };
+        // Converge the running pilot on the new rules; itself fail-soft.
+        if (seeded.created > 0) await mirrorListeningToPilot(deps);
+      } else {
+        request.log.warn(
+          { projectKey: parsed.data.projectKey, reason: seeded.reason },
+          "listening seed skipped after onboarding approve",
+        );
+      }
+    } catch (error) {
+      request.log.warn(
+        { projectKey: parsed.data.projectKey, err: error },
+        "listening seed failed after onboarding approve",
+      );
+    }
+
+    // The chain's next natural step: this project has no listening rules yet
+    // (or, when the seed above ran, they were just created — `listeningSeed`
+    // tells the screen which sentence is true).
+    return reply.code(200).send({
+      status: "bound",
+      projectKey: parsed.data.projectKey,
+      nextStep: "listening_rule",
+      listeningSeed,
+    });
   });
 
   /**

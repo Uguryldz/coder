@@ -143,6 +143,10 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   self_approval: "error.self_approval",
   invalid_listening_rule: "error.invalid_listening_rule",
   invalid_listening_rule_id: "error.invalid_listening_rule_id",
+  invalid_listening_seed: "error.invalid_listening_seed",
+  // Seed-defaults 409s: deployment facts the operator can act on.
+  no_jira_connection: "error.no_jira_connection",
+  bot_account_unknown: "error.bot_account_unknown",
   duplicate_listening_rule: "error.duplicate_listening_rule",
   no_such_listening_rule: "error.no_such_listening_rule",
   invalid_guidance: "error.invalid_guidance",

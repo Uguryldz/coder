@@ -122,6 +122,15 @@ describe("TemplateScreen (M108 designer)", () => {
     expect(screen.getByText("Kapsam")).toBeInTheDocument();
   });
 
+  it("wears the honest 'not wired to the engine yet' strip at the top", async () => {
+    renderScreen(<TemplateScreen />, stubFetch({ "/template": TEMPLATE_BODY }));
+    // The strip renders unconditionally — the designer edits a template the
+    // engine does not read yet, and the page must say so.
+    expect(
+      await screen.findByText(/buradaki düzenlemeler henüz motora bağlı değil/),
+    ).toBeInTheDocument();
+  });
+
   /** The section list is the only <ol> on the screen. */
   function listItems(): readonly HTMLElement[] {
     return within(screen.getByRole("list")).getAllByRole("listitem");

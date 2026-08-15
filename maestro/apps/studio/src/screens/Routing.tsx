@@ -115,15 +115,32 @@ export function RoutingScreen(): ReactNode {
 
   const approve = useMutation({
     mutationFn: (projectKey: string) =>
-      api.post<{ status: string; projectKey: string; nextStep: string }>("/onboarding/approve", {
-        projectKey,
-      }),
+      api.post<{
+        status: string;
+        projectKey: string;
+        nextStep: string;
+        /** Ready-made rules auto-seeded on approval; null when nothing ran. */
+        listeningSeed?: { created: number; skipped: number } | null;
+      }>("/onboarding/approve", { projectKey }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["onboarding-pending"] });
       void queryClient.invalidateQueries({ queryKey: ["routing"] });
-      // The chain's next step: a freshly bound project has no listening rules
-      // yet. Offer to add one, pre-filling the project (Faz 4).
-      toast.show("success", t("routing.pending.toast.bound", { project: result.projectKey }));
+      void queryClient.invalidateQueries({ queryKey: ["listening-rules"] });
+      // Approval now seeds the ready-made listening rules server-side; when it
+      // did, say so — the admin learns the project is already listening rather
+      // than assuming a manual rule step is still ahead.
+      const seeded = result.listeningSeed;
+      if (seeded != null && seeded.created > 0) {
+        toast.show(
+          "success",
+          t("routing.pending.toast.bound_seeded", {
+            project: result.projectKey,
+            n: String(seeded.created),
+          }),
+        );
+      } else {
+        toast.show("success", t("routing.pending.toast.bound", { project: result.projectKey }));
+      }
       setBoundProject(result.projectKey);
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),

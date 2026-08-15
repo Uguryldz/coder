@@ -57,11 +57,24 @@ function renderScreen(session: Session): void {
   );
 }
 
+/** What the stub answers on POST /studio/listening-rules/seed-defaults. */
+interface SeedAnswer {
+  readonly status?: number;
+  readonly body?: object;
+}
+
 /** A fetch stub that records POSTs and answers GET with the seeded rule. */
-function stubFetch(rules: object[]): ReturnType<typeof vi.fn> {
+function stubFetch(rules: object[], seedAnswer: SeedAnswer = {}): ReturnType<typeof vi.fn> {
   const fn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url);
     const method = init?.method ?? "GET";
+    // Must be matched BEFORE the generic listening-rules POST — the seed URL
+    // contains "/studio/listening-rules" as a substring.
+    if (u.includes("/studio/listening-rules/seed-defaults")) {
+      return Response.json(seedAnswer.body ?? { created: 4, skipped: 1, rules: [] }, {
+        status: seedAnswer.status ?? 200,
+      });
+    }
     if (u.includes("/studio/listening-rules") && method === "GET") {
       return Response.json({ rules });
     }
@@ -189,6 +202,84 @@ describe("ListeningScreen", () => {
       expect(body.analystVariantId).toBe("analyst-node-v2");
       expect(body.engineerVariantId).toBe("engineer-node-v1");
     });
+  });
+
+  it("seeds the ready-made rules for the chosen project and reports the counts", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+
+    // Pick the project explicitly, then load the defaults for it.
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await userEvent.click(screen.getByRole("button", { name: "Hazır kuralları yükle" }));
+
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) =>
+          String(c[0]).includes("/studio/listening-rules/seed-defaults") &&
+          (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      const body = JSON.parse((posted![1] as RequestInit).body as string);
+      expect(body).toEqual({ projectKey: "OPS" });
+    });
+    // The result toast spells out what actually happened.
+    expect(await screen.findByText("4 kural eklendi, 1 zaten vardı.")).toBeTruthy();
+  });
+
+  it("seeds without an explicit pick when exactly one project is bound", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+
+    // OPS is the only bound project — no selection needed, it is used as-is.
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.click(screen.getByRole("button", { name: "Hazır kuralları yükle" }));
+
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) =>
+          String(c[0]).includes("/studio/listening-rules/seed-defaults") &&
+          (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string).projectKey).toBe("OPS");
+    });
+  });
+
+  it("warns instead of celebrating when Jira's type list could not be read", async () => {
+    // The fail-soft 200: nothing was seeded and the response names why.
+    stubFetch([], { body: { created: 0, skipped: 0, rules: [], reason: "issue_types_unavailable" } });
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.click(screen.getByRole("button", { name: "Hazır kuralları yükle" }));
+
+    expect(
+      await screen.findByText(/Jira iş türleri okunamadı.*Bağlantıyı test edip yeniden deneyin/),
+    ).toBeTruthy();
+    // Never the cheerful "0 kural eklendi" success line.
+    expect(screen.queryByText(/kural eklendi/)).toBeNull();
+  });
+
+  it("shows the named 409 (no Jira connection) as an actionable Turkish message", async () => {
+    stubFetch([], { status: 409, body: { error: "no_jira_connection" } });
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.click(screen.getByRole("button", { name: "Hazır kuralları yükle" }));
+
+    expect(await screen.findByText(/Etkin bir Jira bağlantısı yok/)).toBeTruthy();
+  });
+
+  it("hides the seed button from a viewer", async () => {
+    stubFetch([SEED]);
+    renderScreen(VIEWER);
+    await waitFor(() => expect(screen.getByText("Hata")).toBeTruthy());
+    expect(screen.queryByText("Hazır kuralları yükle")).toBeNull();
   });
 
   it("shows the rule's chosen agents in the list, or 'varsayılan' when unset", async () => {

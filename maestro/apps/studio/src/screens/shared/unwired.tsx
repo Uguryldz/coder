@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ApiError } from "../../api/errors.ts";
 import { NotAvailable, QueryState } from "./QueryState.tsx";
+import "../common/screens.css";
 
 /**
  * Renders a screen section whose BFF read model may not exist yet.
@@ -49,6 +50,22 @@ export function isNotBuilt(error: unknown): boolean {
   // A read model that refuses by name (unwired store) answers 503 with this
   // exact code. Any other 503 is a real outage and stays an error.
   return error.status === 503 && error.code === "capability_not_wired";
+}
+
+/**
+ * An honest "not wired yet" strip for screens whose UI is COMPLETE but whose
+ * effect on the engine is not live: the page renders and saves, yet the thing
+ * it configures does not fire yet (template edits the engine ignores, notify
+ * settings no channel delivers). `MaybeUnwired` covers the missing-READ case;
+ * this covers the missing-EFFECT case — without it the screen quietly poses as
+ * a working control panel.
+ */
+export function UnwiredNote({ children }: { readonly children: ReactNode }): ReactNode {
+  return (
+    <div className="scr-note scr-note--warn" role="note">
+      {children}
+    </div>
+  );
 }
 
 export function MaybeUnwired({

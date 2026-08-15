@@ -225,6 +225,16 @@ describe("notify screen editing", () => {
     expect(payload.ladder.steps[0]?.afterHours).toBe(48);
   });
 
+  it("wears the honest 'delivery not live yet' strip at the top", async () => {
+    const { fetchImpl } = stubFetch([NOTIFY_BODY]);
+    renderScreen(<NotifyScreen />, { fetchImpl });
+    // Renders unconditionally: the settings persist but nothing delivers yet,
+    // so an operator must not rely on a reminder arriving.
+    expect(
+      await screen.findByText(/bildirim gönderimi henüz devrede değil/),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the edit button from a non-admin", async () => {
     const { fetchImpl } = stubFetch([NOTIFY_BODY]);
     renderScreen(<NotifyScreen />, { fetchImpl, session: VIEWER });

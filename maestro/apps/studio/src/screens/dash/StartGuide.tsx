@@ -11,11 +11,13 @@ import "../shared/screens.css";
  * platform has no work yet.
  *
  * A manager who just logged in used to see a bare "no workflows yet" message and
- * no idea what to do about it. This card answers that: bind a connection → bind
- * an application → add a listening rule → watch it run. Each step reports its OWN
- * real state (a connection exists? a project is bound? a rule exists?) so it is a
- * live checklist, not a static tutorial — a checked step stays checked, and the
- * FIRST unfinished step is highlighted as "do this next".
+ * no idea what to do about it. This card answers that: wire the connections →
+ * bind a project (the ready-made listening rules come with it) → train the
+ * agents with documents → open a ticket in Jira and watch it here. Each step
+ * reports its OWN real state (a connection exists? a project is bound? an agent
+ * has knowledge files?) so it is a live checklist, not a static tutorial — a
+ * checked step stays checked, and the FIRST unfinished step is highlighted as
+ * "do this next".
  *
  * The reads are the same lightweight endpoints the binding screens already use;
  * a failure on any of them just leaves that step unchecked rather than breaking
@@ -52,23 +54,29 @@ export function StartGuide(): ReactNode {
       api.get<{ projects: readonly unknown[] }>("/routing", { signal }),
     retry: false,
   });
-  // Step 3 — at least one listening rule exists.
-  const rules = useQuery({
-    queryKey: ["listening-rules"],
+  // Step 3 — at least one agent has been trained with documents (a variant
+  // whose knowledge library holds files). The listening rules no longer make a
+  // step of their own: binding a project seeds the ready-made rules, so the
+  // rule step collapsed into step 2 and the freed slot asks for the one thing
+  // only a human can supply — the institution's documents.
+  const variants = useQuery({
+    queryKey: ["variants"],
     queryFn: ({ signal }) =>
-      api.get<{ rules: readonly unknown[] }>("/studio/listening-rules", { signal }),
+      api.get<{ variants: readonly { knowledgeFiles?: number }[] }>("/variants", { signal }),
     retry: false,
   });
 
   const hasConn =
     (jiraConns.data?.connections.length ?? 0) > 0 || (scmConns.data?.connections.length ?? 0) > 0;
   const hasBinding = (routing.data?.projects.length ?? 0) > 0;
-  const hasRule = (rules.data?.rules.length ?? 0) > 0;
+  const hasTrainedAgent = (variants.data?.variants ?? []).some(
+    (v) => (v.knowledgeFiles ?? 0) > 0,
+  );
 
   const steps: readonly StepState[] = [
     { done: hasConn, to: "/settings" },
     { done: hasBinding, to: "/projects?tab=onboard" },
-    { done: hasRule, to: "/projects?tab=listening" },
+    { done: hasTrainedAgent, to: "/variants" },
     { done: false, to: "/pilot" }, // "watch" — never auto-checked; it is the goal
   ];
   // The first step that is not done yet is the one to nudge.

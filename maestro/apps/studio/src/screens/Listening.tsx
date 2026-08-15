@@ -172,6 +172,56 @@ export function ListeningScreen(): ReactNode {
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
+  // One-click defaults: the BFF reads the project's Jira issue types and seeds
+  // a rule per type (bug-like types → düzeltme, the rest → analiz), skipping
+  // any value that already has a rule. The server mirrors to the live pilot
+  // itself, so there is no client-side reload call here.
+  //
+  // The response is 200 in TWO shapes: `{created, skipped, rules}` on a real
+  // seed, and `{created: 0, skipped: 0, rules: [], reason:
+  // "issue_types_unavailable"}` when Jira's type list could not be read — the
+  // fail-soft case where nothing was written rather than inventing type names.
+  // That one is a WARNING with its own message, not a cheerful "0 kural
+  // eklendi". Named 409s (no connection / untested connection) and the 400 come
+  // through the error catalog as actionable Turkish messages.
+  const seed = useMutation({
+    mutationFn: (key: string) =>
+      api.post<{
+        created: number;
+        skipped: number;
+        rules: readonly ListeningRule[];
+        reason?: string;
+      }>("/studio/listening-rules/seed-defaults", { projectKey: key }),
+    onSuccess: ({ created, skipped, reason }) => {
+      invalidate();
+      if (reason === "issue_types_unavailable") {
+        toast.show("warning", t("listening.seed.issue_types_unavailable"));
+        return;
+      }
+      toast.show(
+        "success",
+        t("listening.seed.toast", { created: String(created), skipped: String(skipped) }),
+      );
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
+  const onSeed = (): void => {
+    // Prefer the project picked in the form; with exactly one bound project
+    // there is nothing to choose, so use it without making the admin pick.
+    const key =
+      projectKey.trim() !== ""
+        ? projectKey.trim()
+        : boundProjects.length === 1
+          ? boundProjects[0]!
+          : "";
+    if (key === "") {
+      toast.show("error", t("listening.seed.no_project"));
+      return;
+    }
+    seed.mutate(key);
+  };
+
   const remove = useMutation({
     mutationFn: (ruleId: string) =>
       api.delete<{ ok?: boolean }>(`/studio/listening-rules/${ruleId}`),
@@ -267,6 +317,24 @@ export function ListeningScreen(): ReactNode {
     <div className="screen-stack">
       <Card title={t("listening.title")} subtitle={t("listening.sub")}>
         <p className="screen-note">{t("listening.intro")}</p>
+        {canWrite && (
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              gap: 12,
+              alignItems: "flex-start",
+              flexWrap: "wrap",
+            }}
+          >
+            <Button variant="primary" busy={seed.isPending} onClick={onSeed}>
+              {t("listening.seed.action")}
+            </Button>
+            <p className="screen-note" style={{ margin: 0, flex: "1 1 280px" }}>
+              {t("listening.seed.desc")}
+            </p>
+          </div>
+        )}
       </Card>
 
       {canWrite && (

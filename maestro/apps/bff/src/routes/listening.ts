@@ -5,8 +5,9 @@ import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ListeningRuleRecord, ListeningStore } from "../listening-store.js";
 import { FLOW_TYPES, MATCH_KINDS } from "../listening-store.js";
+import { mirrorListeningToPilot, seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
-import { badRequest, notFound } from "../errors.js";
+import { badRequest, conflict, notFound } from "../errors.js";
 import { assertWritable } from "../platform/propose.js";
 import { unwired } from "./unwired.js";
 
@@ -27,6 +28,17 @@ import { unwired } from "./unwired.js";
 
 const READ_ROLES = ["admin", "tech-lead"] as const;
 const WRITE_ROLES = ["admin"] as const;
+/**
+ * Who may trigger the default-rule seed. Wider than `WRITE_ROLES` on purpose:
+ * seeding is the "works out of the box" step of onboarding (an admin/tech-lead
+ * surface), it only ADDS the platform's own conservative defaults and never
+ * touches an existing rule, so it is gated like onboarding rather than like a
+ * free-form rule edit.
+ */
+const SEED_ROLES = ["admin", "tech-lead"] as const;
+
+/** The seed endpoint's body: which project to seed defaults for. */
+const SeedBody = z.object({ projectKey: z.string().trim().min(1).max(32) }).strict();
 
 /** The `:id` path param — a rule id is an opaque token. */
 const IdParam = z.object({ ruleId: z.string().min(1).max(64) });
@@ -99,6 +111,61 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
     await audit(deps, request, ruleId, "created");
     return reply.code(201).send({ rule: record });
   });
+
+  /**
+   * Seed the DEFAULT rules for a project — the "works out of the box" step.
+   *
+   * Reads the project's real issue types off live Jira (via the stored Jira
+   * connection that knows the bot account) and creates one `issuetype` rule per
+   * non-subtask type: bug-like types run `duzeltme`, everything else `analiz`,
+   * and `gelistirme` is never assigned automatically (see listening-seed.ts).
+   * IDEMPOTENT — existing triggers are skipped, so an admin's hand-edited flow
+   * type survives any number of re-seeds.
+   *
+   * Honesty rules: a missing Jira connection or an untested one (no bot
+   * account) is a NAMED 409 the operator can fix; a Jira read that fails is the
+   * fail-soft fallback — NO rules are written (never invented type names) and
+   * the response says why with `created: 0`. After a successful seed the full
+   * rule set is mirrored into the running pilot, fail-soft like the
+   * `/studio/pilot/listening` mirror: a mirror hiccup never undoes the DB write.
+   */
+  app.post(
+    "/studio/listening-rules/seed-defaults",
+    { preHandler: [authGuard(deps), requireAnyRole(...SEED_ROLES)] },
+    async (request, reply) => {
+      await assertWritable(deps);
+      listeningDeps(deps); // 503-by-name before anything else when unwired
+
+      const body = SeedBody.safeParse(request.body);
+      if (!body.success) throw badRequest("invalid_listening_seed");
+
+      const outcome = await seedProjectDefaults(deps, body.data.projectKey);
+      if (!outcome.ok) {
+        if (outcome.reason === "listening_unwired") unwired("listening");
+        if (outcome.reason === "connections_unwired") unwired("connections");
+        if (outcome.reason === "issue_types_unavailable") {
+          // The fallback: Jira's type list could not be read, so nothing was
+          // seeded and no type name was invented. Not an error status — the
+          // store is exactly as the caller left it, and the reason is named.
+          return reply
+            .code(200)
+            .send({ created: 0, skipped: 0, rules: [], reason: outcome.reason });
+        }
+        // no_jira_connection / bot_account_unknown: deployment facts an
+        // operator can act on (add a Jira connection / run its live test).
+        throw conflict(outcome.reason, { projectKey: body.data.projectKey });
+      }
+
+      if (outcome.created > 0) {
+        await audit(deps, request, `seed:${body.data.projectKey}`, "seeded");
+        // Converge the running pilot on the new rule set; fail-soft by contract.
+        await mirrorListeningToPilot(deps);
+      }
+      return reply
+        .code(200)
+        .send({ created: outcome.created, skipped: outcome.skipped, rules: outcome.rules });
+    },
+  );
 
   /** Replace a rule by id. */
   app.put("/studio/listening-rules/:ruleId", { preHandler: writeHandler }, async (request, reply) => {

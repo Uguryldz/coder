@@ -87,7 +87,42 @@ export interface RunUpdate {
   resumeToken?: string | null;
 }
 
-/** The two `PrismaClient.workflowRun` methods this store uses, and no more. */
+/**
+ * The columns `create` writes.
+ *
+ * Deliberately smaller than `RunUpdate`: everything the run learns LATER —
+ * branch, workspace, risk, prId, resumeToken — is left to the schema defaults
+ * and filled by `patch` as the workflow discovers it. Writing invented values
+ * here would put a branch name in the row before anything created a branch.
+ *
+ * `appId` is nullable in the schema (a run may start before matching resolves
+ * an application, M99) but is required here: the only caller is intake, which
+ * has already resolved one. A run created without it would fail `get` with
+ * `IncompleteRunContextError` on the first activity — later, and further from
+ * the cause.
+ */
+export interface RunCreate {
+  id: string;
+  ticketKey: string;
+  appId: string;
+  mode: NonNullable<RunContext["mode"]>;
+  dataClass: NonNullable<RunContext["dataClass"]>;
+  step: string;
+  /**
+   * Literal rather than `string`, for the reason `TERMINAL_STATUSES` gives:
+   * the column is a Prisma enum and the generated client rejects a widened
+   * `string`. A run opens `running` and nothing else, so the type says so —
+   * a typo'd status is then a compile error rather than a row the store's own
+   * `notIn` filter would never match.
+   */
+  status: "running";
+  startedAt: Date;
+  locale?: string;
+  variantId?: string;
+  templateVersion?: string;
+}
+
+/** The three `PrismaClient.workflowRun` methods this store uses, and no more. */
 export interface RunDelegate {
   findFirst(args: {
     where: { ticketKey: string; status: { notIn: TerminalStatus[] } };
@@ -95,6 +130,7 @@ export interface RunDelegate {
     include: { application: true };
   }): Promise<RunRow | null>;
   update(args: { where: { id: string }; data: RunUpdate }): Promise<unknown>;
+  create(args: { data: RunCreate }): Promise<unknown>;
 }
 
 /**
@@ -110,6 +146,35 @@ export interface RunDelegate {
  */
 export const TERMINAL_STATUSES = ["done", "cancelled"] as const;
 export type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
+
+/**
+ * What intake knows when a run opens, and nothing more.
+ *
+ * Mirrors `SignalWithStartInput` (`apps/bff/src/gateway.ts`) plus the ids
+ * Temporal minted, so the caller passes through what it already has rather
+ * than assembling a `RunContext` it cannot yet fill.
+ */
+export interface NewRun {
+  readonly runId: string;
+  readonly ticket: string;
+  readonly appId: string;
+  readonly mode: NonNullable<RunContext["mode"]>;
+  readonly dataClass: NonNullable<RunContext["dataClass"]>;
+  readonly startedAt: Date;
+  readonly locale?: string;
+}
+
+/**
+ * Prisma's unique-constraint failure, recognised without importing the client.
+ *
+ * This package's stores are structural over their delegates (see `RunDelegate`)
+ * so that they typecheck before `prisma generate` has run; importing
+ * `PrismaClientKnownRequestError` for one error code would give that up. P2002
+ * is the documented code and is stable across Prisma 5/6.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+}
 
 export class RunNotFoundError extends Error {
   constructor(ticket: string) {
@@ -145,6 +210,50 @@ export class PrismaRunContextStore implements RunContextStore {
     if (row === null) throw new RunNotFoundError(ticket);
     if (row.application === null) throw new IncompleteRunContextError(ticket, "application");
     return toRunContext(row, row.application);
+  }
+
+  /**
+   * Open the run's row. Called once, by intake, when Temporal reports that
+   * `signalWithStart` actually STARTED an execution (`apps/bff/src/jira-intake.ts`).
+   *
+   * Every activity reads its context back from this row, so without it the
+   * first activity of the first real run fails with `RunNotFoundError` — which
+   * is precisely the state this deployment was in: a worker polling an empty
+   * task queue because nothing ever wrote a run.
+   *
+   * Idempotent by intent, not by hope. Two webhook deliveries racing on one
+   * ticket both reach here after Temporal has already collapsed them into one
+   * execution, so both would try to insert. The pre-check makes the second one
+   * a no-op; the partial unique index from migration 0002 is what makes it
+   * SAFE, since it rejects a second live row even if both callers pass the
+   * check simultaneously. Catching that rejection is deliberate: a unique
+   * violation here means the row exists, which is the outcome the caller wanted.
+   */
+  async create(input: NewRun): Promise<void> {
+    if ((await this.liveRun(input.ticket)) !== null) return;
+    try {
+      await this.runs.create({
+        data: {
+          id: input.runId,
+          ticketKey: input.ticket,
+          appId: input.appId,
+          mode: input.mode,
+          dataClass: input.dataClass,
+          // The workflow's own first step and status. Anything else here would
+          // make the row disagree with the execution it describes.
+          step: "0",
+          status: "running",
+          startedAt: input.startedAt,
+          ...(input.locale === undefined ? {} : { locale: input.locale }),
+        },
+      });
+    } catch (error) {
+      // Only the race is tolerated. Any other failure — a dead connection, a
+      // constraint this code does not know about — must reach the caller, or
+      // intake reports a started run that has no row and the failure surfaces
+      // one activity later as "no live run".
+      if (!isUniqueViolation(error)) throw error;
+    }
   }
 
   /**

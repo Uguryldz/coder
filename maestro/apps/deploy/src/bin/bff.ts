@@ -15,6 +15,7 @@ import { PrismaAppRegistryWriter } from "../stores/app-registry-writer.js";
 import { PrismaConnectionStore } from "../stores/connections.js";
 import { PrismaListeningStore } from "../stores/listening.js";
 import { PrismaGuidanceStore } from "../stores/guidance.js";
+import { PrismaRunContextStore } from "../stores/run-context.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
 import { PrismaBindingWriter, PrismaJiraProjectBindings } from "../stores/bindings.js";
@@ -84,10 +85,25 @@ export async function main(): Promise<void> {
   const warning = volatileStoreWarning(VOLATILE_STORES);
   if (warning !== null) console.warn(warning);
 
+  // The run's row is opened here, on the way in, because this is the only
+  // place that learns a start actually created an execution. Activities read
+  // their context back from that row, so a started workflow without one fails
+  // on its first activity — see `TemporalGatewayOptions.onRunOpened`.
+  const runContext = new PrismaRunContextStore(db.workflowRun);
+
   const temporal = await connectTemporal({
     address: required(env.base.TEMPORAL_ADDRESS, "TEMPORAL_ADDRESS"),
     namespace: env.TEMPORAL_NAMESPACE,
     ...(env.TEMPORAL_TASK_QUEUE === undefined ? {} : { taskQueue: env.TEMPORAL_TASK_QUEUE }),
+    onRunOpened: (run) =>
+      runContext.create({
+        runId: run.runId,
+        ticket: run.ticket,
+        appId: run.appId,
+        mode: run.mode,
+        dataClass: run.dataClass,
+        startedAt: new Date(),
+      }),
   });
 
   const users = new PrismaUserDirectory(db.user);

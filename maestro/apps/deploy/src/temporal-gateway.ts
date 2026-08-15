@@ -46,17 +46,63 @@ export interface TemporalGatewayOptions {
   readonly taskQueue?: string;
   /** Workflow type name; must match what the worker registers. */
   readonly workflowType?: string;
+  /**
+   * Called after — and only after — a start actually created an execution.
+   *
+   * Every activity reads its run context back from the `WorkflowRun` row
+   * (`RunContextStore`, packages/workflows/src/impl/deps.ts), so a started
+   * execution with no row fails on its first activity with `RunNotFoundError`.
+   * Something has to open that row, and this is the one place that knows a
+   * start was real rather than a join onto a live run.
+   *
+   * It hangs off the gateway rather than off intake because the BFF must not
+   * reach into Postgres: `apps/bff` depends on ports, not on `@maestro/db`
+   * (M44). The composition root wires this to `PrismaRunContextStore.create`.
+   *
+   * Failures propagate. A run whose row was not written is a run that will
+   * fail one activity later, further from the cause — reporting "started" for
+   * it would be the silent kind of wrong.
+   */
+  readonly onRunOpened?: (run: OpenedRun) => Promise<void>;
+}
+
+/** What the gateway knows about a run at the moment Temporal accepted it. */
+export interface OpenedRun {
+  readonly runId: string;
+  readonly ticket: string;
+  readonly appId: string;
+  readonly mode: SignalWithStartInput["mode"];
+  readonly dataClass: SignalWithStartInput["dataClass"];
 }
 
 export class TemporalRunGateway implements RunGateway {
   private readonly client: Client;
   private readonly taskQueue: string;
   private readonly workflowType: string;
+  private readonly onRunOpened: ((run: OpenedRun) => Promise<void>) | undefined;
 
   constructor(options: TemporalGatewayOptions) {
     this.client = options.client;
     this.taskQueue = options.taskQueue ?? MAESTRO_TASK_QUEUE;
     this.workflowType = options.workflowType ?? "ticketWorkflow";
+    this.onRunOpened = options.onRunOpened;
+  }
+
+  /**
+   * Open the run's row for a start that really started one.
+   *
+   * `started: false` means the caller joined a live execution, which already
+   * has its row — calling again would be a second insert for one run.
+   */
+  private async openRun(input: SignalWithStartInput, outcome: StartOutcome): Promise<void> {
+    if (!outcome.started || this.onRunOpened === undefined) return;
+    await this.onRunOpened({
+      runId: outcome.workflowId,
+      ticket: input.ticket,
+      appId: input.appId,
+      mode: input.mode,
+      dataClass: input.dataClass,
+    });
   }
 
   /**
@@ -189,7 +235,9 @@ export class TemporalRunGateway implements RunGateway {
           taskQueue: this.taskQueue,
           args,
         });
-        return { workflowId, started: true };
+        const outcome: StartOutcome = { workflowId, started: true };
+        await this.openRun(input, outcome);
+        return outcome;
       } catch (error) {
         if (error instanceof WorkflowExecutionAlreadyStartedError) {
           return { workflowId, started: false };
@@ -219,7 +267,15 @@ export class TemporalRunGateway implements RunGateway {
       signalArgs: [...signal.args],
     });
 
-    return { workflowId, started: before === null || before !== handle.signaledRunId };
+    const outcome: StartOutcome = {
+      workflowId,
+      started: before === null || before !== handle.signaledRunId,
+    };
+    // `started` is best-effort here (see above), and `create` is written to
+    // match: it re-checks for a live run and treats the unique violation as
+    // success, so a false positive from a stale pre-read writes nothing.
+    await this.openRun(input, outcome);
+    return outcome;
   }
 
   /** Run id of the current execution, or `null` when there is none. */
@@ -249,12 +305,15 @@ export async function connectTemporal(options: {
   address: string;
   namespace?: string;
   taskQueue?: string;
+  /** Forwarded to the gateway; see `TemporalGatewayOptions.onRunOpened`. */
+  onRunOpened?: (run: OpenedRun) => Promise<void>;
 }): Promise<{ gateway: TemporalRunGateway; close: () => Promise<void> }> {
   const connection = await Connection.connect({ address: options.address });
   const client = new Client({ connection, namespace: options.namespace ?? "default" });
   const gateway = new TemporalRunGateway({
     client,
     ...(options.taskQueue === undefined ? {} : { taskQueue: options.taskQueue }),
+    ...(options.onRunOpened === undefined ? {} : { onRunOpened: options.onRunOpened }),
   });
   return { gateway, close: () => connection.close() };
 }

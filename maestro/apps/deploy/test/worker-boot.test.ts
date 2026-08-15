@@ -274,7 +274,7 @@ function stubDb(): Parameters<typeof buildCoreStores>[0] {
     throw new Error("not called");
   };
   return {
-    workflowRun: { findFirst: never, update: never, findUnique: never },
+    workflowRun: { findFirst: never, update: never, findUnique: never, create: never },
     gate: { findUnique: never, update: never },
     auditLog: { findFirst: never, findMany: never, create: never },
     paramVersion: { findMany: never },

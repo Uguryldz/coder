@@ -6,6 +6,7 @@ import {
   toRunUpdate,
   type ApplicationRow,
   type RunRow,
+  type RunCreate,
   type RunUpdate,
 } from "../src/stores/run-context.js";
 
@@ -56,13 +57,14 @@ function row(over: Partial<RunRow> = {}): RunRow {
 interface Recorded {
   queries: unknown[];
   updates: Array<{ where: { id: string }; data: RunUpdate }>;
+  creates: RunCreate[];
 }
 
 function fakeDelegate(result: RunRow | null): {
   delegate: ConstructorParameters<typeof PrismaRunContextStore>[0];
   recorded: Recorded;
 } {
-  const recorded: Recorded = { queries: [], updates: [] };
+  const recorded: Recorded = { queries: [], updates: [], creates: [] };
   return {
     recorded,
     delegate: {
@@ -72,6 +74,10 @@ function fakeDelegate(result: RunRow | null): {
       },
       update: (args) => {
         recorded.updates.push(args);
+        return Promise.resolve(undefined);
+      },
+      create: (args) => {
+        recorded.creates.push(args.data);
         return Promise.resolve(undefined);
       },
     },
@@ -207,5 +213,70 @@ describe("toRunUpdate", () => {
   it("converts readonly command specs into a writable JSON shape", () => {
     const update = toRunUpdate({ verification: [{ name: "t", command: ["pnpm", "t"] }] });
     expect(update.verificationJson).toEqual([{ name: "t", command: ["pnpm", "t"] }]);
+  });
+});
+
+/**
+ * `create` — the row that has to exist before any activity can read a context.
+ *
+ * The deployment this method was written for had a worker polling an empty
+ * queue: `signalWithStart` started executions and nothing wrote a run, so the
+ * first activity of every run failed with `RunNotFoundError`. These tests pin
+ * the two properties that failure mode needs — the row is written with the
+ * workflow's own opening state, and calling twice for one ticket writes once.
+ */
+describe("PrismaRunContextStore.create", () => {
+  const newRun = {
+    runId: "run-1",
+    ticket: "OPS-1",
+    appId: "payments",
+    mode: "ai_assist",
+    dataClass: "gizli",
+    startedAt: new Date("2026-01-01T00:00:00.000Z"),
+  } as const;
+
+  it("opens the row at step 0 and status running", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create(newRun);
+
+    expect(recorded.creates).toHaveLength(1);
+    const created = recorded.creates[0] as RunCreate;
+    expect(created.id).toBe("run-1");
+    expect(created.ticketKey).toBe("OPS-1");
+    expect(created.appId).toBe("payments");
+    expect(created.step).toBe("0");
+    expect(created.status).toBe("running");
+  });
+
+  it("is a no-op when the ticket already has a live run", async () => {
+    // The second of two racing webhook deliveries: Temporal collapsed them into
+    // one execution, so a second row would be the bug.
+    const { delegate, recorded } = fakeDelegate(row());
+    await new PrismaRunContextStore(delegate).create(newRun);
+    expect(recorded.creates).toHaveLength(0);
+  });
+
+  it("treats a unique violation as success", async () => {
+    // Both callers passed the pre-check simultaneously; the partial unique
+    // index from migration 0002 rejected the loser. The row exists, which is
+    // what the caller wanted, so the rejection must not propagate.
+    const store = new PrismaRunContextStore({
+      findFirst: () => Promise.resolve(null),
+      update: () => Promise.resolve(undefined),
+      create: () => Promise.reject(Object.assign(new Error("unique"), { code: "P2002" })),
+    });
+    await expect(store.create(newRun)).resolves.toBeUndefined();
+  });
+
+  it("propagates any other write failure", async () => {
+    // A dead connection must not read as "run opened": intake would report a
+    // started run whose row never existed, and the failure would surface one
+    // activity later as "no live run" — far from its cause.
+    const store = new PrismaRunContextStore({
+      findFirst: () => Promise.resolve(null),
+      update: () => Promise.resolve(undefined),
+      create: () => Promise.reject(new Error("connection reset")),
+    });
+    await expect(store.create(newRun)).rejects.toThrow("connection reset");
   });
 });

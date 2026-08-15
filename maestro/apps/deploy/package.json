@@ -21,6 +21,7 @@
     "@maestro/adapter-ldap": "workspace:*",
     "@maestro/audit": "workspace:*",
     "@maestro/bff": "workspace:*",
+    "@maestro/claude-driver": "workspace:*",
     "@maestro/config": "workspace:*",
     "@maestro/contracts": "workspace:*",
     "@maestro/db": "workspace:*",

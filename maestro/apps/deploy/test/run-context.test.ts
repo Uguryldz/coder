@@ -233,6 +233,8 @@ describe("PrismaRunContextStore.create", () => {
     mode: "ai_assist",
     dataClass: "gizli",
     startedAt: new Date("2026-01-01T00:00:00.000Z"),
+    variantId: "analyst-default",
+    templateVersion: "1",
   } as const;
 
   it("opens the row at step 0 and status running", async () => {
@@ -246,6 +248,19 @@ describe("PrismaRunContextStore.create", () => {
     expect(created.appId).toBe("payments");
     expect(created.step).toBe("0");
     expect(created.status).toBe("running");
+  });
+
+  it("pins the variant and template the run will use", async () => {
+    // Found live: the column defaults to "" and the row was written without
+    // these, so the FIRST model call failed the gateway's contract with
+    // `variantId: Too small` — three activity retries deep, reading as a model
+    // problem rather than a run opened without saying which agent it runs.
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create(newRun);
+
+    const created = recorded.creates[0] as RunCreate;
+    expect(created.variantId).toBe("analyst-default");
+    expect(created.templateVersion).toBe("1");
   });
 
   it("is a no-op when the ticket already has a live run", async () => {

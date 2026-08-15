@@ -1,4 +1,4 @@
-import { createJiraDcWorkPort } from "@maestro/adapter-jira";
+import { createJiraCloudWorkPort, createJiraDcWorkPort } from "@maestro/adapter-jira";
 import { t } from "@maestro/config";
 import type { LlmCallLog } from "@maestro/contracts";
 import type { FetchLike } from "@maestro/notify";
@@ -7,8 +7,10 @@ import type { SecretPort, WorkPort } from "@maestro/ports";
 import type { PublishDeps } from "@maestro/publish";
 import type { ContainerRunner } from "@maestro/scanners";
 import { describeWiring, resolveDeployment, type Deployment, type DeploymentInputs } from "./compose.js";
-import { jiraConfig } from "./driver-config.js";
+import { buildAgentRunner } from "./agent-runner.js";
+import { jiraCloudConfig, jiraConfig } from "./driver-config.js";
 import { loadDeployEnv, type DeployEnv } from "./env.js";
+import { PROFILE_DRIVERS } from "./profile.js";
 import { buildRegistry } from "./registry.js";
 import { buildSecretPort } from "./secrets.js";
 
@@ -101,6 +103,7 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
    * failure mode this file exists to prevent.
    */
   const work = buildWorkPort(env, secrets);
+  const agentRunner = buildAgentRunner(env, secrets);
 
   const registry = buildRegistry({
     secrets,
@@ -117,6 +120,11 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
       // on the gateway: a deployment without a database pool (compose.test.ts)
       // still boots, it just records nothing.
       ...(options.onLlmCall === undefined ? {} : { onCallLog: options.onLlmCall }),
+      // Agent SESSIONS (M17/M30/M100): step 3ö reads the repository before the
+      // analysis is written, step 6a writes the change in the same conversation.
+      // Absent, `agentSession` throws and those steps refuse — which is what
+      // every deployment did until this was wired.
+      ...(agentRunner === undefined ? {} : { agentRunner }),
     },
     // `notify` needs `work` (the jira channel posts through it), `secrets` (the
     // webhook channels read their URL through a SecretPort), and now `fetchImpl`
@@ -148,7 +156,7 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
 }
 
 /**
- * The work port, built ahead of the registry.
+ * The work port, built ahead of the registry — Data Center or Cloud.
  *
  * It is built from the same factory and the same config the registry would
  * use, so the instance the notifier posts through and the instance the
@@ -156,8 +164,22 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
  * own from the registry rather than reusing this one — two clients against one
  * Jira is not a correctness problem, and sharing it would make the registry's
  * `work` entry a lie about where the port came from.
+ *
+ * The driver used to be a hard-coded `createJiraDcWorkPort`, which made the
+ * production path unusable against a Cloud site even though the adapter for
+ * one exists and `@maestro/adapter-jira` registers both drivers. A deployment
+ * whose Jira is Cloud could then only be driven by the pilot — which is how a
+ * shortcut engine ends up being the only one anybody can run.
+ *
+ * The choice is `WORK_DRIVER`, defaulting to Data Center: on-premise is what a
+ * bank deploys, and a default that reaches the internet is the wrong way round.
  */
 function buildWorkPort(env: DeployEnv, secrets: SecretPort): WorkPort {
+  // The profile is the answer to "which driver serves which port"; `WORK_DRIVER`
+  // overrides it for a deployment whose Jira is not what its profile assumes —
+  // a bank on Data Center running the analysis profile, most of all.
+  const driver = env.source["WORK_DRIVER"]?.trim() ?? PROFILE_DRIVERS[env.profile].work;
+  if (driver === "jira-cloud") return createJiraCloudWorkPort(jiraCloudConfig(env, secrets));
   return createJiraDcWorkPort(jiraConfig(env, secrets));
 }
 

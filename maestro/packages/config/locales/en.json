@@ -2177,5 +2177,14 @@
   "yaml.read_only": "This file lives in the repository; Studio only reads it. Changing it goes through the team's own pull request process.",
   "yaml.tabs.label": "Applications",
   "yaml.toast.path_added": "{path} added to the protected paths.",
-  "yaml.toast.path_removed": "{path} removed."
+  "yaml.toast.path_removed": "{path} removed.",
+  "intake.manual_completion": "I could not assess this request automatically (the model response was unusable). Please complete the missing details by hand.",
+  "jira.gate_open": "Maestro is waiting for approval at gate {gate}. Deciding group: {group}.",
+  "jira.clarification": "One thing needs clarifying before I can continue:\n\n{question}",
+  "jira.closed": "{ticket} is complete. The documents produced and the decision history are in the audit trail.",
+  "jira.child_summary": "{ticket} — impact on {app}",
+  "pr.title": "Prepared by Maestro",
+  "pr.description": "This change was prepared by Maestro for {ticket}. The analysis, decision history and tests are in the audit trail.",
+  "agent.discovery_task": "Examine the {appId} repository for {ticket}: identify the files that change, the dependencies and the risks.",
+  "agent.test_task": "Run the tests for {ticket} and report the result."
 }

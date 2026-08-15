@@ -120,6 +120,8 @@ export interface RunCreate {
   locale?: string;
   variantId?: string;
   templateVersion?: string;
+  workspacePath?: string;
+  workspacePresent?: boolean;
 }
 
 /** The three `PrismaClient.workflowRun` methods this store uses, and no more. */
@@ -162,6 +164,32 @@ export interface NewRun {
   readonly dataClass: NonNullable<RunContext["dataClass"]>;
   readonly startedAt: Date;
   readonly locale?: string;
+  /**
+   * The prompt variant and analysis template this run is PINNED to (M38/M83).
+   *
+   * Both are pinned at the start rather than read per activity, so publishing a
+   * new agent version mid-run cannot change the rules under a ticket that is
+   * already being analysed — and the document a reviewer approves is the one
+   * the run was configured to produce.
+   *
+   * They are required, not optional. The column defaults to `""`, and an empty
+   * variant reaches the gateway as a contract violation on the FIRST model
+   * call: `variantId: Too small: expected string to have >=1 characters`,
+   * three activity attempts deep, where it reads as a model problem rather
+   * than a run that was opened without saying which agent it runs.
+   */
+  readonly variantId: string;
+  readonly templateVersion: string;
+  /**
+   * The checkout step 3ö reads (M100), when there is one.
+   *
+   * Optional because the analysis is worse without a repository but not wrong:
+   * `discoverRepo` treats an unavailable session as degraded and the analyst
+   * carries on from the ticket alone — which is exactly what the pilot has
+   * always done. A clone that failed must not stop a ticket from being
+   * analysed.
+   */
+  readonly workspacePath?: string;
 }
 
 /**
@@ -244,7 +272,12 @@ export class PrismaRunContextStore implements RunContextStore {
           step: "0",
           status: "running",
           startedAt: input.startedAt,
+          variantId: input.variantId,
+          templateVersion: input.templateVersion,
           ...(input.locale === undefined ? {} : { locale: input.locale }),
+          ...(input.workspacePath === undefined
+            ? {}
+            : { workspacePath: input.workspacePath, workspacePresent: true }),
         },
       });
     } catch (error) {

@@ -7,8 +7,9 @@ import {
   type BffDeps,
 } from "@maestro/bff";
 import { createDb } from "@maestro/db";
+import type { SecretPort } from "@maestro/ports";
 import { bootPlatform } from "../boot.js";
-import { listenAddress } from "../env.js";
+import { listenAddress, type DeployEnv } from "../env.js";
 import { selectIdentityProvider } from "../identity.js";
 import { PrismaKillSwitchStore } from "../stores/killswitch.js";
 import { PrismaAppRegistryWriter } from "../stores/app-registry-writer.js";
@@ -16,6 +17,8 @@ import { PrismaConnectionStore } from "../stores/connections.js";
 import { PrismaListeningStore } from "../stores/listening.js";
 import { PrismaGuidanceStore } from "../stores/guidance.js";
 import { PrismaRunContextStore } from "../stores/run-context.js";
+import { activeAnalystVariantId, activeTemplateVersion } from "../stores/run-pins.js";
+import { prepareWorkspace } from "../stores/workspace-prepare.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
 import { PrismaBindingWriter, PrismaJiraProjectBindings } from "../stores/bindings.js";
@@ -95,15 +98,31 @@ export async function main(): Promise<void> {
     address: required(env.base.TEMPORAL_ADDRESS, "TEMPORAL_ADDRESS"),
     namespace: env.TEMPORAL_NAMESPACE,
     ...(env.TEMPORAL_TASK_QUEUE === undefined ? {} : { taskQueue: env.TEMPORAL_TASK_QUEUE }),
-    onRunOpened: (run) =>
-      runContext.create({
+    onRunOpened: async (run) => {
+      // Pinned at the start, read once: publishing a new agent version or a new
+      // analysis template must not change the rules under a ticket that is
+      // already being analysed (M38/M83).
+      const [variantId, templateVersion] = await Promise.all([
+        activeAnalystVariantId(db),
+        activeTemplateVersion(db),
+      ]);
+      // The checkout step 3ö reads. Best-effort: an analysis is worse without
+      // it but still correct, and a repository that cannot be cloned must not
+      // stop a ticket from being analysed at all — `discoverRepo` already
+      // treats a missing session as degraded and carries on.
+      const workspacePath = await checkoutOrNull(env, secrets, run);
+      await runContext.create({
         runId: run.runId,
         ticket: run.ticket,
         appId: run.appId,
         mode: run.mode,
         dataClass: run.dataClass,
         startedAt: new Date(),
-      }),
+        variantId,
+        templateVersion,
+        ...(workspacePath === null ? {} : { workspacePath }),
+      });
+    },
   });
 
   const users = new PrismaUserDirectory(db.user);
@@ -316,6 +335,44 @@ function notifyChannels(deployment: { selection: { notify: { driver: string; con
   const { driver, config } = deployment.selection.notify;
   if (driver !== "multi") return [driver];
   return typeof config === "object" && config !== null ? Object.keys(config) : [];
+}
+
+/**
+ * Clone the run's repository, or report that there is none.
+ *
+ * Best-effort on purpose. A repository the platform cannot reach — no token, a
+ * private repo, a network that refuses — makes the analysis WORSE, because the
+ * analyst then reasons from the ticket alone. It does not make the analysis
+ * wrong, and `discoverRepo` already carries on when the session is unavailable.
+ * Failing the run here would turn a degraded analysis into no analysis.
+ *
+ * The failure is logged rather than swallowed: an operator who expected the
+ * analyst to read the repository needs to know it did not.
+ */
+async function checkoutOrNull(
+  env: DeployEnv,
+  secrets: SecretPort,
+  run: { runId: string; appId: string },
+): Promise<string | null> {
+  const root = env.source["WORKSPACE_ROOT"]?.trim();
+  if (root === undefined || root === "") return null;
+
+  const tokenRef = env.source["SCM_TOKEN_REF"]?.trim();
+  try {
+    const token = tokenRef === undefined || tokenRef === "" ? undefined : await secrets.get(tokenRef);
+    return await prepareWorkspace({
+      repo: run.appId,
+      root,
+      runId: run.runId,
+      ...(env.source["SCM_HOST"]?.trim() === undefined ? {} : { host: env.source["SCM_HOST"]!.trim() }),
+      ...(token === undefined ? {} : { token }),
+    });
+  } catch (error) {
+    console.warn(
+      `[maestro] ${run.runId}: depo çekilemedi, analiz depoyu görmeden yapılacak — ${String(error)}`,
+    );
+    return null;
+  }
 }
 
 function required<T>(value: T | undefined, name: string): T {

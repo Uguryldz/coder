@@ -1,10 +1,11 @@
 import { JournalActor, TicketKey, type WorkflowRunState } from "@maestro/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { authGuard, sessionOf } from "../auth/guard.js";
+import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, notFound } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
+import { runIntake } from "../jira-intake.js";
 import { assertProjectAccess } from "./access.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
 
@@ -15,9 +16,53 @@ import { pageBody, pageOf, visibleProjects } from "./paging.js";
  * projects the caller belongs to (M86) — a session is not a licence to read a
  * stranger's ticket, and the filtering happens in the STORE rather than after,
  * so the page size a caller asked for is a page of rows they may actually see.
+ *
+ * It also holds the one WRITE on this surface: starting a run by hand.
  */
+
+/** Who may put a ticket on the engine by hand. Mirrors the pilot's write roles. */
+export const RUN_START_ROLES = ["admin", "tech-lead"] as const;
+
 export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps): Promise<void> {
   const preHandler = authGuard(deps);
+
+  /**
+   * Start a run for a ticket, by hand.
+   *
+   * Intake has one caller today — the Jira webhook — and that is not enough on
+   * its own. Jira Cloud's driver cannot verify a webhook signature at all
+   * (`verifyWebhook` throws `CapabilityNotSupported`), and a Data Center behind
+   * a firewall may not be able to reach this service either. Without an
+   * operator-triggered path, such a deployment has a workflow engine nothing
+   * can put work on.
+   *
+   * It goes through `runIntake` rather than straight to `signalWithStart`, so a
+   * hand-started run passes the same gates a webhook-started one does: the
+   * project must be bound and active, the kill switch must be off, and an
+   * application must resolve. `explicit: true` says a person asked for this by
+   * name, which is what satisfies the opt-in rule (M48a) — the same thing
+   * `/ai-start` does from a Jira comment.
+   */
+  app.post(
+    "/studio/runs/:ticket/start",
+    { preHandler: [preHandler, requireAnyRole(...RUN_START_ROLES)] },
+    async (request, reply) => {
+      const parsed = TicketKey.safeParse((request.params as { ticket?: string }).ticket);
+      if (!parsed.success) throw badRequest("ticket_key");
+      const ticket = parsed.data;
+
+      assertProjectAccess(sessionOf(request), ticket);
+
+      const outcome = await runIntake(deps, {
+        ticket,
+        actor: sessionOf(request).userId,
+        explicit: true,
+      });
+      // 202, not 200: the run is accepted onto the engine, and what happens
+      // next is a workflow's business rather than this request's result.
+      return reply.code(202).send(outcome);
+    },
+  );
 
   /**
    * The ticket list (Studio's `tickets` screen). Joins the workflow's own state

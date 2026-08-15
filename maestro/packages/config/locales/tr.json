@@ -2177,5 +2177,14 @@
   "yaml.read_only": "Bu dosya repoda yaşar; Studio yalnız okur. Değiştirmek için takımın kendi PR süreci kullanılır.",
   "yaml.tabs.label": "Uygulamalar",
   "yaml.toast.path_added": "{path} korumalı yollara eklendi.",
-  "yaml.toast.path_removed": "{path} kaldırıldı."
+  "yaml.toast.path_removed": "{path} kaldırıldı.",
+  "intake.manual_completion": "Talebi otomatik değerlendiremedim (model yanıtı kullanılabilir değildi). Lütfen eksikleri elle tamamlayın.",
+  "jira.gate_open": "Maestro {gate} kapısında onay bekliyor. Karar verecek grup: {group}.",
+  "jira.clarification": "Devam edebilmem için netleşmesi gereken bir konu var:\n\n{question}",
+  "jira.closed": "{ticket} tamamlandı. Üretilen belgeler ve karar geçmişi denetim izinde.",
+  "jira.child_summary": "{ticket} — {app} uygulamasındaki etki",
+  "pr.title": "Maestro tarafından hazırlandı",
+  "pr.description": "Bu değişiklik {ticket} için Maestro tarafından hazırlandı. Analiz, karar geçmişi ve testler denetim izinde.",
+  "agent.discovery_task": "{ticket} için {appId} deposunu incele: değişecek dosyaları, bağımlılıkları ve riskleri çıkar.",
+  "agent.test_task": "{ticket} için testleri çalıştır ve sonucu raporla."
 }

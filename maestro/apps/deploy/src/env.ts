@@ -139,6 +139,27 @@ export const DeployEnvSchema = z.object({
    */
   RUNNER_IMAGE_LINUX: optionalSetting(),
   /**
+   * The Docker network the sandbox joins (M26).
+   *
+   * Must be `Internal: true`; the driver inspects it and refuses otherwise, so
+   * a misnamed network fails closed. Absent, the sandbox joins the daemon's
+   * DEFAULT bridge — which reaches the internet, and an agent session reading a
+   * bank's repository must not. Name one for any deployment that runs the
+   * sandbox: `docker network create --internal maestro-sandbox`.
+   */
+  RUNNER_NETWORK: optionalSetting(),
+  /**
+   * Sandbox hardening an operator has deliberately switched off, comma-separated
+   * (`readonly-rootfs`, `no-new-privileges`, `cap-add`, `seccomp`,
+   * `direct-egress`).
+   *
+   * The runner's own schema refuses every one of them when the process runs in
+   * production, so this cannot weaken a bank deployment — it exists so a
+   * development stack can run the sandbox without standing up an egress proxy
+   * first. Anything named here is stated, not inherited.
+   */
+  RUNNER_ALLOW_UNSAFE: optionalSetting(),
+  /**
    * M23 budget for one verification command. The runner enforces its own
    * ceiling on top of this, so a value above it is refused rather than
    * silently clamped.
@@ -159,6 +180,16 @@ export interface DeployEnv extends DeployEnvRaw {
   /** The shared connection values, validated by `@maestro/config` (M6). */
   readonly base: Env;
   readonly profile: Profile;
+  /**
+   * The variables this env was read from.
+   *
+   * Carried so that driver configs can reach names outside the shared schema —
+   * Jira Cloud's `JIRA_CLOUD_*` triple, for one — without importing
+   * `process.env` themselves. A module that reads the global directly is a
+   * module no test can point at a different environment, and the deployment
+   * tests do exactly that.
+   */
+  readonly source: Record<string, string | undefined>;
 }
 
 /**
@@ -182,7 +213,7 @@ export function loadDeployEnv(source: Record<string, string | undefined> = proce
   const requested = parsed.data.MAESTRO_PROFILE ?? (base.NODE_ENV === "production" ? "prod" : "dev");
   const profile = parseProfile(requested);
   assertProfileMatchesNodeEnv(profile, base.NODE_ENV);
-  return { ...parsed.data, base, profile };
+  return { ...parsed.data, base, profile, source };
 }
 
 /**

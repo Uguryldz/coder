@@ -163,6 +163,36 @@ export function buildTurnRunner(env: DeployEnv, db: Db, ports: TurnPorts): Built
   const runnerConfig = {
     socketPath: env.DOCKER_SOCKET_PATH,
     platforms: { "linux-node": { image } },
+    /**
+     * The network the sandbox runs on (M26).
+     *
+     * Passing it is what turns egress confinement ON: `verifyEgressNetwork`
+     * returns immediately when no name is configured, and a container with no
+     * network setting joins the daemon's default bridge — which reaches the
+     * internet. An agent session reading a bank's repository must not.
+     *
+     * The driver verifies the network is `Internal: true` before it runs
+     * anything, so a name that points at a bridge with egress fails closed
+     * rather than confining nothing.
+     */
+    ...(env.RUNNER_NETWORK === undefined
+      ? {}
+      : { egress: { networkName: env.RUNNER_NETWORK } }),
+    /**
+     * Relaxations an operator has named, and the runner's schema will only
+     * honour outside production (M6).
+     *
+     * `direct-egress` is the one a development stack needs: the network is
+     * already `Internal: true`, so nothing reaches the internet, but the driver
+     * still wants an egress PROXY — because an internal network stops the
+     * traffic while a proxy is what RECORDS the attempt. That record is the
+     * part a bank audit asks for, which is why the relaxation exists as a
+     * named opt-in rather than a default, and why production refuses it
+     * outright no matter what this variable says.
+     */
+    ...(env.RUNNER_ALLOW_UNSAFE === undefined
+      ? {}
+      : { sandbox: { allowUnsafeProfile: env.RUNNER_ALLOW_UNSAFE.split(",").map((entry) => entry.trim()) } }),
   };
   const fleet = createDockerLinuxRunner(runnerConfig);
 

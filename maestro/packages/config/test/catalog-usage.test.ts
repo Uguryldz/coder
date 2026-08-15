@@ -27,8 +27,27 @@ const APPS_DIR = join(import.meta.dirname, "..", "..", "..", "apps");
  * published document would have thrown `MissingMessageError` at a human gate.
  * Adding a namespace to a package means adding it here too.
  */
+/**
+ * Which string literals count as message keys.
+ *
+ * The prefix list is an allow-list rather than a shape match, because a bare
+ * `foo.bar` pattern would sweep up module paths, MIME types and Prisma field
+ * selectors. That makes the list load-bearing: a family missing from it is a
+ * family the scan cannot see.
+ *
+ * `intake`, `jira`, `pr` and `agent` were missing, and all nine keys
+ * `packages/workflows` emits went uncatalogued because of it — found live,
+ * three activity retries deep, as `missing message "intake.manual_completion"
+ * for locale "tr"` on a run that had already reached the model. A key that is
+ * only exercised on the workflow path is exactly the key a unit test does not
+ * reach, which is what this scan exists to cover.
+ *
+ * `pr.` is enumerated rather than opened up: `pr.number` is a field name in an
+ * Azure DevOps webhook payload (`adapter-ado/src/ci.ts`), not a message key,
+ * and a prefix match would report it as permanently missing.
+ */
 const KEY_LITERAL =
-  /"((?:steps|notify|gate|command|match|params|run|evidence|llm|publish|runner_agent)\.[a-z0-9_.]+)"/g;
+  /"((?:steps|notify|gate|command|match|params|run|evidence|llm|publish|runner_agent|intake|jira|agent)\.[a-z0-9_.]+|pr\.(?:title|description))"/g;
 
 function sourceFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -59,11 +78,23 @@ function parameterKeys(): Set<string> {
   return keys;
 }
 
+/**
+ * Packages that ship their OWN message catalogue.
+ *
+ * `@maestro/agent-roles` renders prompts from `prompts.tr.json`, a separate
+ * file with its own keys (`intake.sistem`, `ortak.uydurmaYasak`). Those are not
+ * missing from this catalogue — they belong to a different one, and its own
+ * tests cover it. Scanning them here would report a permanent, unfixable
+ * failure, which is how a guard gets disabled.
+ */
+const OWN_CATALOGUE = [join(PACKAGES_DIR, "agent-roles", "src")];
+
 describe("message catalog usage (M104)", () => {
   const PARAM_KEYS = parameterKeys();
   const used = new Map<string, string>(); // key -> first file that emits it
   for (const file of [...sourceFiles(PACKAGES_DIR), ...sourceFiles(APPS_DIR)]) {
     if (file.includes(join("config", "src"))) continue; // the catalog itself
+    if (OWN_CATALOGUE.some((dir) => file.startsWith(dir))) continue;
     const text = readFileSync(file, "utf8");
     for (const match of text.matchAll(KEY_LITERAL)) {
       const key = match[1]!;

@@ -17,7 +17,7 @@ import { z } from "zod";
  * `NODE_ENV` checks scattered through the wiring.
  */
 
-export const PROFILES = ["prod", "dev"] as const;
+export const PROFILES = ["prod", "dev", "analiz"] as const;
 export type Profile = (typeof PROFILES)[number];
 
 export const ProfileName = z.enum(PROFILES);
@@ -56,6 +56,24 @@ export type DriverMap = Readonly<Record<PortKey, string>>;
  * graph. `test/profile.test.ts` pins each id against the exporting package's
  * own constant, so a rename fails the suite rather than the deployment.
  */
+/**
+ * Driver ids for the two ports the analysis-only release does not serve.
+ *
+ * They are registered (`registry.ts`) as ports whose every method rejects with
+ * a named error, so the failure reads as "this release does not do that"
+ * rather than as a connection timeout to an Azure DevOps that was never
+ * configured.
+ */
+export const SCM_UNAVAILABLE_DRIVER = "unavailable";
+export const CI_UNAVAILABLE_DRIVER = "unavailable";
+/**
+ * Scanning is part of the engineering turn — it reads a diff — so the
+ * analysis-only release does not serve it either. Its real driver demands a
+ * digest-pinned image (M27), correctly, and demanding one for a port nothing
+ * in this release calls is the same wall as `ADO_BASE_URL`.
+ */
+export const SCAN_UNAVAILABLE_DRIVER = "unavailable";
+
 const PROD_DRIVERS: DriverMap = {
   work: "jira-dc",
   scm: "ado",
@@ -83,9 +101,41 @@ const DEV_DRIVERS: DriverMap = {
   publish: "jira",
 };
 
+/**
+ * The analysis-only deployment: ticket in, analysis document out.
+ *
+ * This is what the product ships today — intake, analysis, the human gate and
+ * delivery. The engineering half (write code, open a PR, merge) exists in the
+ * workflow but is not part of this release, so the two ports that serve it get
+ * a driver that REFUSES rather than one that is configured.
+ *
+ * Refusing beats omitting. A profile with a hole in it is rejected by
+ * `assertProfileComplete` before a connection opens (M6), and a profile that
+ * named a real ADO driver would demand `ADO_BASE_URL` from an operator who has
+ * no Azure DevOps — which is exactly the wall this profile removes. What is
+ * left is a deployment that runs the analysis line end to end and answers any
+ * attempt to reach the engineering line with a named error instead of a
+ * connection attempt to nowhere.
+ *
+ * `work` is Cloud here because that is the site this profile was written
+ * against. A bank on Data Center overrides it with `WORK_DRIVER=jira-dc`.
+ */
+const ANALYSIS_DRIVERS: DriverMap = {
+  work: "jira-cloud",
+  scm: SCM_UNAVAILABLE_DRIVER,
+  ci: CI_UNAVAILABLE_DRIVER,
+  llm: "gateway",
+  scan: SCAN_UNAVAILABLE_DRIVER,
+  storage: "pg-blob",
+  secret: "env-file",
+  notify: "jira",
+  publish: "jira",
+};
+
 export const PROFILE_DRIVERS: Readonly<Record<Profile, DriverMap>> = {
   prod: PROD_DRIVERS,
   dev: DEV_DRIVERS,
+  analiz: ANALYSIS_DRIVERS,
 };
 
 export function driversFor(profile: Profile): DriverMap {

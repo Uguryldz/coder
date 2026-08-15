@@ -2,12 +2,14 @@ import { registerAdoDrivers } from "@maestro/adapter-ado";
 import { registerJiraDrivers } from "@maestro/adapter-jira";
 import { registerLlmDrivers } from "@maestro/llm-gateway";
 import { registerNotifyDrivers } from "@maestro/notify";
-import { PortRegistry, type SecretPort, type WorkPort } from "@maestro/ports";
+import { PortRegistry, type CiPort, type ScanPort, type ScmPort, type SecretPort, type WorkPort } from "@maestro/ports";
 import { registerPublishDrivers } from "@maestro/publish";
 import { registerScanDrivers } from "@maestro/scanners";
 import { registerRunnerDrivers } from "@maestro/runners";
 import { registerSecretDrivers } from "@maestro/secrets";
 import { registerStorageDrivers } from "@maestro/storage";
+import { CI_UNAVAILABLE_DRIVER, SCAN_UNAVAILABLE_DRIVER, SCM_UNAVAILABLE_DRIVER } from "./profile.js";
+import { unavailableCiPort, unavailableScanPort, unavailableScmPort } from "./stores/unavailable-ports.js";
 import type { PublishDeps } from "@maestro/publish";
 import type { ScanDeps } from "@maestro/scanners";
 import type { NotifyDeps } from "@maestro/notify";
@@ -80,6 +82,14 @@ export function buildRegistry(deps: RegistrationDeps): PortRegistry {
   registerPublishDrivers(registry, deps.publish);
   registerScanDrivers(registry, deps.scan);
   registerRunnerDrivers(registry);
+
+  // The analysis-only release's scm/ci: every method rejects with a named
+  // error. Registered here, next to the real drivers, because a port with no
+  // driver at all is refused by `assertProfileComplete` before boot — see
+  // `stores/unavailable-ports.ts` for why refusing beats omitting.
+  registry.register<ScmPort>("scm", SCM_UNAVAILABLE_DRIVER, () => unavailableScmPort());
+  registry.register<CiPort>("ci", CI_UNAVAILABLE_DRIVER, () => unavailableCiPort());
+  registry.register<ScanPort>("scan", SCAN_UNAVAILABLE_DRIVER, () => unavailableScanPort());
 
   return registry;
 }

@@ -50,7 +50,20 @@ export async function discoverRepo(
   const session = await deps.llm.agentSession({
     workspacePath: run.workspacePath,
     task: deps.translate(run.locale, "agent.discovery_task", { ticket, appId }),
-    mcpServers: ["workspace"],
+    /**
+     * No MCP server for the discovery pass.
+     *
+     * Reading a checkout is what the agent's own file tools already do, and
+     * `@maestro/mcp-servers`' workspace server has no runnable entry point —
+     * asking for it made every deployment fail with "mcpServers were requested
+     * but no --mcp-config path was given", which reads as a configuration
+     * mistake rather than as a server nobody starts.
+     *
+     * The engineering turn is where an MCP surface earns its keep: it needs
+     * tools the CLI does not ship (the platform's own read model, the ticket).
+     * This step needs a directory, and it has one.
+     */
+    mcpServers: [],
     dataClass: run.dataClass,
     variantId: run.variantId,
   });

@@ -36,6 +36,50 @@ export function jiraConfig(env: DeployEnv, secrets: unknown): Record<string, unk
 }
 
 /**
+ * Jira Cloud's config, from the same `JIRA_CLOUD_*` variables the pilot reads.
+ *
+ * Cloud authenticates with HTTP Basic — the token owner's e-mail as username,
+ * an Atlassian API token as password — so it needs an address the Data Center
+ * config has no field for. Reusing the pilot's variable names is deliberate:
+ * a deployment that already runs the pilot against a Cloud site must not have
+ * to restate the same three facts under new names to run the workflow engine
+ * against it.
+ *
+ * The token reaches the port as a SecretPort REFERENCE, never a value. The
+ * env-file secret driver resolves `env:JIRA_CLOUD_API_TOKEN` back to the
+ * variable, which keeps this identical in shape to the Vault-backed path a
+ * bank would use.
+ */
+export function jiraCloudConfig(env: DeployEnv, secrets: unknown): Record<string, unknown> {
+  const read = (name: string): string | undefined => {
+    const value = env.source[name];
+    return value === undefined || value.trim() === "" ? undefined : value;
+  };
+  return {
+    baseUrl: required(
+      read("JIRA_CLOUD_BASE_URL") ?? env.base.JIRA_BASE_URL,
+      "JIRA_CLOUD_BASE_URL",
+      "the Jira Cloud work port has no default site",
+    ),
+    // The bot identity is what posts and transitions; the personal token is the
+    // documented fallback (see apps/pilot/src/env.ts) and the same order applies
+    // here so both engines act as the same Jira user.
+    email: required(
+      read("MAESTRO_BOT_EMAIL") ?? read("JIRA_CLOUD_EMAIL"),
+      "JIRA_CLOUD_EMAIL",
+      "Cloud authenticates with the token owner's e-mail",
+    ),
+    // A SecretPort key, not a variable name: `<mount>/<path>[#<field>]`
+    // (packages/secrets/src/keys.ts). The env-file driver maps it back to
+    // `MAESTRO_SECRET_KV_JIRA__TOKEN`; a Vault deployment reads the same key
+    // from its own mount, which is the point of naming secrets this way.
+    apiTokenRef: env.JIRA_TOKEN_REF ?? "kv/jira#token",
+    webhookSecretRef: env.JIRA_WEBHOOK_SECRET_REF,
+    deps: { secrets },
+  };
+}
+
+/**
  * ADO serves both the `scm` and the `ci` port from one config.
  *
  * `ci.prValidationBuilds` is an allow-list the driver refuses to leave empty:
@@ -135,10 +179,56 @@ export function storageConfig(
  * on-prem model at all; a real deployment must not inherit that choice, so it
  * is left at the default here deliberately.
  */
+/** The CLI-backed agent-session driver, as `@maestro/claude-driver` registers it. */
+const AGENT_DRIVER = "claude-sub";
+
+/**
+ * The seat that is the machine's own interactive `claude login`.
+ *
+ * Shaped as a SecretPort key because the subscription pool's schema demands
+ * one, but never resolved as a secret: `buildAgentRunner` matches this exact
+ * value and returns a seat with `oauthToken: null`, which is how the CLI reads
+ * the login already on the host. A bank names a real key instead
+ * (`CLAUDE_SEAT_REF=kv/claude#seat1`) and the token comes from Vault.
+ */
+export const LOCAL_SEAT_REF = "kv/claude#local-login";
+
+/**
+ * Whether this deployment can run agent sessions at all.
+ *
+ * The same condition `buildAgentRunner` uses: an operator who has not named a
+ * CLI binary gets no `claude-sub` driver, no binding to it and no route
+ * through it — rather than a configuration that promises a session backend the
+ * process cannot build.
+ */
+function agentDriverAvailable(env: DeployEnv): boolean {
+  const bin = env.source["CLAUDE_BIN_PATH"]?.trim();
+  return bin !== undefined && bin !== "";
+}
+
+/** Drivers a data class may be routed to, agent driver included when present. */
+function allowed(env: DeployEnv, driver: string): string[] {
+  return agentDriverAvailable(env) ? [driver, AGENT_DRIVER] : [driver];
+}
+
 export function llmConfig(env: DeployEnv): Record<string, unknown> {
   const baseUrl = required(env.LLM_BASE_URL, "LLM_BASE_URL", "the llm port has no default endpoint");
   const driver = "openai-compat";
   return {
+    /**
+     * Two kinds of backend, because there are two kinds of call.
+     *
+     * `openai-compat` answers a single request: intake's verdict, the analysis
+     * document. Any OpenAI-shaped endpoint serves it, which is what makes the
+     * on-prem story a URL change.
+     *
+     * An agent SESSION is not that. Steps 3ö and 6a hand a model a working
+     * directory and let it read, search and edit across many turns, and that
+     * is a CLI running beside the repository rather than a chat completion.
+     * `claude-sub` is the driver for it, and it only exists when the operator
+     * has named a binary (`CLAUDE_BIN_PATH`) — absent it, the session steps
+     * refuse with `AgentRunnerNotWiredError` and everything else still runs.
+     */
     drivers: [
       {
         driver,
@@ -147,15 +237,68 @@ export function llmConfig(env: DeployEnv): Record<string, unknown> {
         onPrem: env.LLM_ON_PREM,
         timeoutMs: 90_000,
       },
+      // `claude-sub` is deliberately NOT listed here. This array configures HTTP
+      // backends — base URL, API key, timeout — and the gateway's schema is a
+      // discriminated union over the four it knows how to call. An agent session
+      // is not an HTTP call the gateway makes: it is a CLI the injected
+      // `AgentRunner` spawns, which holds its own endpoint and seat credential.
+      // The driver name only has to appear in the binding and the route below,
+      // which is what `policy.resolve` reads.
     ],
     bindings: [
       { role: "intake", driver, model: env.LLM_MODEL },
       { role: "analyst", driver, model: env.LLM_MODEL },
-      { role: "engineer", driver, model: env.LLM_MODEL },
+      // `engineer` is the role an agent session runs under (`agentRole`), so it
+      // binds to the CLI driver when there is one.
+      {
+        role: "engineer",
+        driver: agentDriverAvailable(env) ? AGENT_DRIVER : driver,
+        model: env.source["CLAUDE_MODEL"]?.trim() ?? env.LLM_MODEL,
+      },
     ],
+    /**
+     * The seat the CLI runs on (M55).
+     *
+     * An agent session goes through a subscription account rather than a
+     * metered API key, so the gateway tracks it as quota rather than dollars —
+     * which is also why `LlmCall.usd` is null for these rows.
+     */
+    ...(agentDriverAvailable(env)
+      ? {
+          subscriptionPool: {
+            accounts: [
+              {
+                accountId: env.source["CLAUDE_SEAT_ID"]?.trim() ?? "claude-seat-1",
+                driver: AGENT_DRIVER,
+                // How the seat authenticates underneath. The CLI holds the
+                // credential; this names the shape for the pool's bookkeeping.
+                transport: driver,
+                // A SecretPort key (`<mount>/<path>[#<field>]`), because the
+                // pool's schema requires one and the port parses it. A
+                // deployment whose seat is the machine's own `claude login`
+                // has no secret to name — `buildAgentRunner` recognises this
+                // key and resolves it to the interactive session instead of
+                // asking the SecretPort for a value nobody stored.
+                credentialRef: env.source["CLAUDE_SEAT_REF"]?.trim() ?? LOCAL_SEAT_REF,
+                windows: [{ kind: "5h", costPctPerCall: 1 }],
+              },
+            ],
+          },
+        }
+      : {}),
+    /**
+     * `gizli` is NOT routed to the seat, deliberately.
+     *
+     * A subscription account is an outside account: the gateway refuses to let
+     * one serve the confidential class, and that refusal is the correct one to
+     * keep. The consequence is worth stating plainly — a `gizli` ticket gets no
+     * repository reading, because the only session backend this deployment has
+     * is one a bank's confidential data may not reach. `discoverRepo` degrades,
+     * the analysis is written from the ticket alone, and the run continues.
+     */
     routes: [
-      { dataClass: "acik", allowedDrivers: [driver] },
-      { dataClass: "dahili", allowedDrivers: [driver] },
+      { dataClass: "acik", allowedDrivers: allowed(env, driver) },
+      { dataClass: "dahili", allowedDrivers: allowed(env, driver) },
       { dataClass: "gizli", allowedDrivers: [driver] },
     ],
   };
@@ -171,6 +314,10 @@ export function llmConfig(env: DeployEnv): Record<string, unknown> {
  * same way once they are selectable.
  */
 export function scanConfig(env: DeployEnv, driver: string): Record<string, unknown> {
+  // The refusing driver of the analysis-only release reads no config: it has no
+  // container to pin, because it never runs one. Demanding a digest from a
+  // deployment that does not scan is the same wall `ADO_BASE_URL` was.
+  if (driver === "unavailable") return {};
   const byTool: Record<string, string | undefined> = {
     trivy: env.SCAN_IMAGE_TRIVY,
     semgrep: env.SCAN_IMAGE_SEMGREP,

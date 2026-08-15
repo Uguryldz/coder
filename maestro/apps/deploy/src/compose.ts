@@ -2,6 +2,7 @@ import type { CiPort, PortRegistry, SecretPort } from "@maestro/ports";
 import { resolvePorts, type PortBundle, type PortSelection } from "@maestro/workflows";
 import {
   adoConfig,
+  jiraCloudConfig,
   jiraConfig,
   llmConfig,
   notifyConfig,
@@ -53,9 +54,22 @@ export function buildPortSelection(inputs: DeploymentInputs): DeploymentSelectio
   const drivers: DriverMap = driversFor(profile);
   assertProfileComplete(drivers, profile);
 
-  const ado = adoConfig(env);
+  // Both configs are built ONLY when a driver that reads them is selected.
+  //
+  // `adoConfig` demands `ADO_BASE_URL` and refuses without it — correct for a
+  // deployment that opens pull requests, wrong for one whose scm/ci ports are
+  // the refusing stubs of the analysis-only release. Building it unconditionally
+  // made that release impossible to boot over a port nothing in it calls.
+  //
+  // Same for Jira: Cloud authenticates with an e-mail and an API token, Data
+  // Center with a PAT, and asking for the Data Center shape while the Cloud
+  // driver is selected fails on a variable the operator was right not to set.
+  const usesAdo = drivers.scm === "ado" || drivers.ci === "ado";
+  const ado = usesAdo ? adoConfig(env) : {};
+  const work =
+    drivers.work === "jira-cloud" ? jiraCloudConfig(env, secrets) : jiraConfig(env, secrets);
   return {
-    work: { driver: drivers.work, config: jiraConfig(env, secrets) },
+    work: { driver: drivers.work, config: work },
     scm: { driver: drivers.scm, config: ado },
     ci: { driver: drivers.ci, config: ado },
     llm: { driver: drivers.llm, config: llmConfig(env) },

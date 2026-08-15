@@ -272,6 +272,18 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     },
   },
   {
+    // The Teams Incoming Webhook URL the teams channel posts to (M45). Empty
+    // until an admin enters one on the notify screen; while empty the teams
+    // channel is configured-but-inert. A bearer credential lives in the URL's
+    // path, so a read NEVER returns it in full — the screen shows only a mask.
+    key: "notify.teams.webhook",
+    scope: "global",
+    type: "json",
+    guarded: false,
+    descriptionKey: "params.description.notify_teams_webhook",
+    defaultValue: { url: "" },
+  },
+  {
     // M47 — where a generated document is published, per document kind.
     //
     // The two kinds are the two `ParamReader.publishTargets` asks for. Both

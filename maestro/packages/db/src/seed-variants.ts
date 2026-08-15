@@ -109,7 +109,7 @@ export async function seedDefaultVariants(
           configJson: {
             persona: variant.persona,
             knowledgeRefs: [],
-            note: "ilk sürüm (kurulum)",
+            note: "Kurulumla gelen varsayılan ajan. İstediğin an düzenleyip yeni sürüm yayınlayabilirsin.",
             publishedBy,
           },
           evalScore: null,

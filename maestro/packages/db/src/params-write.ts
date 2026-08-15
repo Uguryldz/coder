@@ -44,6 +44,14 @@ export interface WriteParamVersionInput {
   /** Required — and required to be somebody else — when the definition is guarded. */
   approvedBy?: string | null;
   at: Date;
+  /**
+   * When true, the guarded "approver must differ from author" rule is waived —
+   * used ONLY for a master-admin self-approval, which the BFF has already
+   * authorised by group membership. `approvedBy` must still be present (the
+   * CHECK constraint and the audit trail both need it). Defaults to false, so
+   * every existing caller keeps the strict two-person rule.
+   */
+  allowSelfApprove?: boolean;
 }
 
 export type ParamWriteDb = Pick<PrismaClient, "param" | "paramVersion">;
@@ -77,7 +85,7 @@ export async function writeParamVersion(
     if (approvedBy === null || approvedBy.trim().length === 0) {
       throw new GuardedParamError(input.key, "approvedBy is required");
     }
-    if (approvedBy === input.changedBy) {
+    if (approvedBy === input.changedBy && input.allowSelfApprove !== true) {
       throw new GuardedParamError(input.key, "the approver may not be the person changing it");
     }
   }

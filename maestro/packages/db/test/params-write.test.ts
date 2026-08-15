@@ -78,6 +78,43 @@ describe("writeParamVersion (M71 four-eyes)", () => {
     ).rejects.toThrow(/approver may not be/);
   });
 
+  it("allows self-approval when allowSelfApprove is set (master-admin exemption)", async () => {
+    // The BFF authorises this by group membership; the store then waives the
+    // "approver ≠ author" rule so a single master admin can approve their own
+    // guarded change. approvedBy is still required (the CHECK/audit need it).
+    const { db, created } = fakeDb({ "merge.mode": true });
+    const result = await writeParamVersion(db, {
+      key: "merge.mode",
+      version: 2,
+      value: "auto_merge",
+      changedBy: "ugur.yildiz@ugurbank.local",
+      approvedBy: "ugur.yildiz@ugurbank.local",
+      at,
+      allowSelfApprove: true,
+    });
+    expect(result).toMatchObject({ key: "merge.mode", version: 2, guarded: true });
+    expect(created[0]).toMatchObject({
+      guarded: true,
+      changedBy: "ugur.yildiz@ugurbank.local",
+      approvedBy: "ugur.yildiz@ugurbank.local",
+    });
+  });
+
+  it("still requires approvedBy even with allowSelfApprove (CHECK needs it)", async () => {
+    const { db } = fakeDb({ "merge.mode": true });
+    await expect(
+      writeParamVersion(db, {
+        key: "merge.mode",
+        version: 2,
+        value: "auto_merge",
+        changedBy: "ugur.yildiz@ugurbank.local",
+        approvedBy: null,
+        at,
+        allowSelfApprove: true,
+      }),
+    ).rejects.toThrow(GuardedParamError);
+  });
+
   it("writes a guarded version with a second approver, copying `guarded`", async () => {
     const { db, created } = fakeDb({ "merge.mode": true });
     const result = await writeParamVersion(db, {

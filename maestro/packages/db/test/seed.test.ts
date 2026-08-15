@@ -70,6 +70,10 @@ const DECISION_ONLY_KEYS: Record<string, string> = {
   "subscription.queue_enabled": "M55",
   "notify.reminder_channel": "M45",
   "notify.routing": "M45/M87",
+  // M45/M87 — the Teams incoming-webhook URL the notifier posts to. Not a mock
+  // row; it is a guarded secret param (masked in /params) added with the Teams
+  // notification wiring, so it belongs to the decision-only source here.
+  "notify.teams.webhook": "M45/M87",
   // M47 — which targets a generated document is published to. The mock screen
   // did not list it; `ParamReader.publishTargets` requires it, and without a
   // stored row the analysis and evidence-summary activities had no answer.

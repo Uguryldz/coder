@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useT } from "../i18n/I18nProvider.tsx";
@@ -7,23 +6,34 @@ import "./shared/screens.css";
 
 /**
  * Screen: help — a guided reference to the whole platform, one tab per menu
- * GROUP (Başla / İzle / Denetim ve Uyum / Yapay Zekâ Ayarları / Sistem). Each
- * tab lists that group's pages, and every page is explained the same way an
- * operator asks about it: NE İŞE YARAR (what it is for), NASIL ÇALIŞIR (how it
- * works), ÖRNEK (a concrete example).
+ * GROUP, mirroring the sidebar's four groups (İşler / Ajanlar / Denetim /
+ * Kurulum — see app/screens.ts). Each tab lists that group's pages, and every
+ * page is explained the same way an operator asks about it: NE İŞE YARAR (what
+ * it is for), NASIL ÇALIŞIR (how it works), ÖRNEK (a concrete example). Above
+ * the tabs, a "capabilities" card walks through the newer behaviours —
+ * auto-start on binding, the two approval paths, per-agent training, the
+ * clarification loop and the audit CSV export.
  *
  * No data layer — this is documentation, so every sentence is a catalog entry.
  * The active tab lives in the URL (`?cat=`) so a deep link lands on a category.
  */
 
-/** The category tabs, in the sidebar's order, each with the pages it explains. */
+/**
+ * The category tabs, in the sidebar's order (app/screens.ts NAV_GROUPS), each
+ * with the pages it explains — the same pages the sidebar puts in that group,
+ * plus the routable-but-hidden `params`. Tab labels come from the SAME
+ * `nav.group.*` catalog keys the sidebar renders, so the guide can never name
+ * a group the menu does not.
+ */
 const CATEGORIES: readonly { readonly id: string; readonly pages: readonly string[] }[] = [
-  { id: "start", pages: ["dash", "projects", "template", "doctemplate", "notify"] },
-  { id: "watch", pages: ["pilot", "knowledge"] },
-  { id: "compliance", pages: ["audit", "evidence", "pii", "aiusage"] },
-  { id: "ai", pages: ["variants", "eval", "security"] },
-  { id: "system", pages: ["users", "settings", "params", "health", "runners", "sandbox"] },
+  { id: "start", pages: ["dash", "pilot", "sandbox"] },
+  { id: "ai", pages: ["variants", "knowledge", "template", "doctemplate", "eval"] },
+  { id: "compliance", pages: ["audit", "pii", "aiusage", "security", "evidence"] },
+  { id: "system", pages: ["projects", "notify", "users", "settings", "params", "health", "runners"] },
 ];
+
+/** The newer platform behaviours the guide walks through, in reading order. */
+const FEATURES = ["autostart", "approval", "training", "clarify", "auditcsv"] as const;
 
 /** The page a page-guide links to ("Ekrana git"), by page id. */
 const PAGE_LINK: Readonly<Record<string, string>> = {
@@ -71,6 +81,17 @@ export function HelpScreen(): ReactNode {
     <div className="scr-stack">
       <Card title={t("help.title")} subtitle={t("help.subtitle")}>
         <p className="scr-prose">{t("help.summary")}</p>
+      </Card>
+
+      <Card title={t("help.features")} subtitle={t("help.features_sub")}>
+        <div className="help-guide">
+          {FEATURES.map((feature) => (
+            <section key={feature} className="help-guide__block">
+              <h4 className="help-guide__h">{t(`help.feature.${feature}.title`)}</h4>
+              <p className="scr-prose">{t(`help.feature.${feature}.body`)}</p>
+            </section>
+          ))}
+        </div>
       </Card>
 
       <Tabs

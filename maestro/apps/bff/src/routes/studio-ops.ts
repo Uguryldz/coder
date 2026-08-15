@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { auditCsvFileName, auditEventsToCsv, filterAuditEvents } from "../audit-filter.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest } from "../errors.js";
@@ -89,12 +90,16 @@ export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps):
     return reply.code(200).send({ state: worst, services });
   });
 
+  const auditHandler = [preHandler, requireAnyRole(...AUDIT_ROLES)];
+
   /**
    * The audit trail (M33). Narrower than the rest of the ops surface: the trail
    * records who approved what, so reading all of it is an auditor's privilege
-   * rather than an operator's convenience.
+   * rather than an operator's convenience. Filterable by a time window, an
+   * exact actor/action and a free-text needle (B13) — the same filter the CSV
+   * export honours, so the screen and the file can never disagree.
    */
-  app.get("/studio/audit", { preHandler: [preHandler, requireAnyRole(...AUDIT_ROLES)] }, async (request, reply) => {
+  app.get("/studio/audit", { preHandler: auditHandler }, async (request, reply) => {
     const filter = AuditQuery.safeParse(request.query);
     if (!filter.success) throw badRequest("invalid_query");
 
@@ -102,8 +107,34 @@ export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ...pageOf(request.query),
       actor: filter.data.actor ?? null,
       subject: filter.data.subject ?? null,
+      from: filter.data.from ?? null,
+      to: filter.data.to ?? null,
+      action: filter.data.action ?? null,
+      q: filter.data.q ?? null,
     });
     return reply.code(200).send(pageBody(page));
+  });
+
+  /**
+   * The regulator export (B13): the SAME filters, but the WHOLE filtered
+   * window as one CSV file — the deliberate exception to the paging rule in
+   * paging.ts, because a regulator asks for a file, not page one of it. Rows
+   * come out in chain order (ascending seq), read through the chain itself so
+   * the export can never show a record the trail does not contain.
+   */
+  app.get("/studio/audit.csv", { preHandler: auditHandler }, async (request, reply) => {
+    const filter = AuditQuery.safeParse(request.query);
+    if (!filter.success) throw badRequest("invalid_query");
+
+    const events = filterAuditEvents(await deps.audit.read(), filter.data);
+    return reply
+      .code(200)
+      .header("content-type", "text/csv; charset=utf-8")
+      .header(
+        "content-disposition",
+        `attachment; filename="${auditCsvFileName(deps.clock.now())}"`,
+      )
+      .send(auditEventsToCsv(events));
   });
 
   /**
@@ -113,7 +144,7 @@ export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps):
    */
   app.get(
     "/studio/audit/verification",
-    { preHandler: [preHandler, requireAnyRole(...AUDIT_ROLES)] },
+    { preHandler: auditHandler },
     async (_request, reply) => {
       const result = await deps.read.audit.verify();
       // 200 either way: "the chain is broken" is a successful answer to the
@@ -129,6 +160,11 @@ const GateQuery = z.object({ ownerGroup: z.string().trim().min(1).max(128).optio
 const AuditQuery = z.object({
   actor: z.string().trim().min(1).max(256).optional(),
   subject: z.string().trim().min(1).max(256).optional(),
+  /** ISO instants, compared lexically against `at`, both bounds inclusive. */
+  from: z.string().trim().min(1).max(64).optional(),
+  to: z.string().trim().min(1).max(64).optional(),
+  action: z.string().trim().min(1).max(128).optional(),
+  q: z.string().trim().min(1).max(256).optional(),
 });
 
 /** Whole days a gate has been open; floored, because "0 days" is honest on day one. */

@@ -262,6 +262,116 @@ describe("GET /studio/audit", () => {
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.subject).toBe(TICKET);
   });
+
+  /** B13: window + exact action + needle, combined with AND. */
+  it("filters by an inclusive time window, action and free-text needle", async () => {
+    const h = await studioHarness();
+    await h.chain.append({ actor: "maestro-worker", action: "RUN_STARTED", subject: TICKET, at: "2026-08-07T10:00:00.000Z" });
+    await h.chain.append({ actor: "ayse@corp", action: "GATE_APPROVE", subject: TICKET, at: "2026-08-08T10:00:00.000Z" });
+    await h.chain.append({ actor: "ayse@corp", action: "GATE_REJECT", subject: "UGURWEB-1", at: "2026-08-09T10:00:00.000Z" });
+    const token = await adminToken(h);
+
+    const windowed = await h.app.inject({
+      method: "GET",
+      url: "/studio/audit?from=2026-08-08T00:00:00.000Z&to=2026-08-08T23:59:59.999Z",
+      headers: auth(token),
+    });
+    expect((windowed.json() as { items: { action: string }[] }).items.map((i) => i.action)).toEqual([
+      "GATE_APPROVE",
+    ]);
+
+    const byAction = await h.app.inject({
+      method: "GET",
+      url: "/studio/audit?action=GATE_REJECT",
+      headers: auth(token),
+    });
+    expect((byAction.json() as { items: { subject: string }[] }).items[0]?.subject).toBe("UGURWEB-1");
+
+    const byNeedle = await h.app.inject({
+      method: "GET",
+      url: "/studio/audit?q=ugurweb&actor=ayse@corp",
+      headers: auth(token),
+    });
+    const needleItems = (byNeedle.json() as { items: { action: string }[] }).items;
+    expect(needleItems).toHaveLength(1);
+    expect(needleItems[0]?.action).toBe("GATE_REJECT");
+  });
+
+  it("rejects an over-long needle instead of querying with it", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/studio/audit?q=${"x".repeat(300)}`,
+      headers: auth(token),
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});
+
+describe("GET /studio/audit.csv", () => {
+  it("refuses an operator who is not an auditor", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "lider", roles: ["tech-lead"], groups: [] });
+    const token = await h.login("lider");
+
+    const response = await h.app.inject({ method: "GET", url: "/studio/audit.csv", headers: auth(token) });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("downloads the whole trail as an attachment stamped with the clock's date", async () => {
+    const h = await studioHarness();
+    await h.chain.append({ actor: "maestro-worker", action: "RUN_STARTED", subject: TICKET, at: AT });
+    await h.chain.append({ actor: "ayse@corp", action: "GATE_APPROVE", subject: TICKET, at: AT });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({ method: "GET", url: "/studio/audit.csv", headers: auth(token) });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("text/csv; charset=utf-8");
+    // The harness clock is 2026-08-09 — the stamp comes from the clock, not Date.now.
+    expect(response.headers["content-disposition"]).toBe(
+      'attachment; filename="maestro-denetim-2026-08-09.csv"',
+    );
+    const lines = response.body.trim().split("\n");
+    expect(lines[0]).toBe("seq,at,actor,action,subject,hash");
+    // Chain order (ascending seq), header + both rows.
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toContain("RUN_STARTED");
+    expect(lines[2]).toContain("GATE_APPROVE");
+  });
+
+  it("applies the same filters as the JSON page and ignores paging", async () => {
+    const h = await studioHarness();
+    await h.chain.append({ actor: "maestro-worker", action: "RUN_STARTED", subject: TICKET, at: AT });
+    await h.chain.append({ actor: "ayse@corp", action: "GATE_APPROVE", subject: TICKET, at: AT });
+    await h.chain.append({ actor: "ayse@corp", action: "GATE_APPROVE", subject: "UGURWEB-1", at: AT });
+    const token = await adminToken(h);
+
+    // `limit=1` must NOT truncate the file: the export is the whole window.
+    const response = await h.app.inject({
+      method: "GET",
+      url: "/studio/audit.csv?actor=ayse@corp&limit=1",
+      headers: auth(token),
+    });
+
+    const lines = response.body.trim().split("\n");
+    expect(lines).toHaveLength(3); // header + the two ayse rows
+    expect(response.body).not.toContain("RUN_STARTED");
+    expect(response.body).toContain("UGURWEB-1");
+  });
+
+  it("rejects a malformed filter instead of exporting with it", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/studio/audit.csv?actor=${"x".repeat(300)}`,
+      headers: auth(token),
+    });
+    expect(response.statusCode).toBe(400);
+  });
 });
 
 describe("GET /studio/audit/verification", () => {

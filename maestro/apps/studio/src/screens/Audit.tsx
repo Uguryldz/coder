@@ -1,13 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { AuditEvent } from "@maestro/contracts";
+import { messageKeyOf } from "../api/errors.ts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Button, Card, Table } from "../ui/index.ts";
+import { Badge, Button, Card, Input, Table, useToast } from "../ui/index.ts";
 import { assess, type ChainVerification } from "./audit/verification.ts";
 import { useEnumLabel } from "./common/label.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { shortHash } from "./shared/format.ts";
+import "./shared/screens.css";
 
 /**
  * Screen: audit — the hash-chained audit trail (M33).
@@ -21,6 +24,11 @@ import { shortHash } from "./shared/format.ts";
  *
  * Both endpoints are auditor-only in the BFF (403 for everyone else); that
  * failure surfaces translated, like any other.
+ *
+ * B13: the trail is filterable (date window, exact actor/action, free-text
+ * needle) and the applied window is downloadable whole as CSV over
+ * `GET /studio/audit.csv` — same filters, no paging, bearer-authenticated via
+ * `getBlob` because a bare `<a href>` would arrive without the session token.
  */
 
 /** `GET /studio/audit` — a page of the trail. */
@@ -36,15 +44,91 @@ const ACTION_TONE = (action: string): "green" | "red" | "amber" | "gray" => {
   return "gray";
 };
 
+/**
+ * The auditor's filter row (B13): a date window, exact actor/action, and a
+ * free-text needle. Draft values live in the inputs; only "Getir" applies them,
+ * so typing never fires a query per keystroke.
+ */
+interface AuditFilters {
+  readonly from: string;
+  readonly to: string;
+  readonly actor: string;
+  readonly action: string;
+  readonly q: string;
+}
+
+const EMPTY_FILTERS: AuditFilters = { from: "", to: "", actor: "", action: "", q: "" };
+
+/**
+ * The wire params an applied filter produces. `<input type="date">` gives
+ * YYYY-MM-DD; the bounds are widened to the day's edges in ISO so the window is
+ * inclusive of everything that happened on the chosen dates (the BFF compares
+ * ISO strings lexically, both bounds inclusive). Empty fields are omitted —
+ * the ApiClient drops `undefined` query values.
+ */
+function filterQuery(filters: AuditFilters): Record<string, string | undefined> {
+  return {
+    from: filters.from === "" ? undefined : `${filters.from}T00:00:00.000Z`,
+    to: filters.to === "" ? undefined : `${filters.to}T23:59:59.999Z`,
+    actor: filters.actor.trim() === "" ? undefined : filters.actor.trim(),
+    action: filters.action.trim() === "" ? undefined : filters.action.trim(),
+    q: filters.q.trim() === "" ? undefined : filters.q.trim(),
+  };
+}
+
 export function AuditScreen(): ReactNode {
   const t = useT();
   const api = useApi();
+  const toast = useToast();
   const enumLabel = useEnumLabel();
 
+  const [draft, setDraft] = useState<AuditFilters>(EMPTY_FILTERS);
+  const [applied, setApplied] = useState<AuditFilters>(EMPTY_FILTERS);
+  const [downloading, setDownloading] = useState(false);
+
+  const query = filterQuery(applied);
   const events = useQuery({
-    queryKey: ["audit", "events"],
-    queryFn: ({ signal }) => api.get<AuditPage>("/studio/audit", { signal }),
+    // The applied filters are part of the key: changing them is a different
+    // question, and TanStack caches the answers separately.
+    queryKey: ["audit", "events", query],
+    queryFn: ({ signal }) => api.get<AuditPage>("/studio/audit", { signal, query }),
   });
+
+  const applyFilters = (): void => {
+    if (JSON.stringify(draft) === JSON.stringify(applied)) {
+      // Same filters twice — the auditor still asked for fresh rows.
+      void events.refetch();
+      return;
+    }
+    setApplied(draft);
+  };
+
+  /**
+   * The CSV goes through `getBlob` rather than a plain `<a href>` because the
+   * session token travels in a header the browser would not attach on its own.
+   * It exports the APPLIED filters — the same window the table shows.
+   */
+  const downloadCsv = async (): Promise<void> => {
+    setDownloading(true);
+    try {
+      const search = new URLSearchParams();
+      for (const [key, value] of Object.entries(filterQuery(applied))) {
+        if (value !== undefined) search.set(key, value);
+      }
+      const qs = search.toString();
+      const blob = await api.getBlob(`/studio/audit.csv${qs === "" ? "" : `?${qs}`}`);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `maestro-denetim-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.show("error", t(messageKeyOf(error)));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   /**
    * The verification is a GET because it changes nothing — it recomputes and
@@ -99,6 +183,51 @@ export function AuditScreen(): ReactNode {
 
       <div style={{ marginTop: 14 }}>
         <Card title={t("audit.events")} padded={false}>
+          <form
+            className="screen-filters"
+            style={{ alignItems: "flex-end", padding: "12px 14px" }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              applyFilters();
+            }}
+          >
+            <Input
+              label={t("audit.filter.from")}
+              type="date"
+              value={draft.from}
+              onChange={(e) => setDraft({ ...draft, from: e.target.value })}
+            />
+            <Input
+              label={t("audit.filter.to")}
+              type="date"
+              value={draft.to}
+              onChange={(e) => setDraft({ ...draft, to: e.target.value })}
+            />
+            <Input
+              label={t("audit.filter.actor")}
+              placeholder={t("audit.filter.actor_ph")}
+              value={draft.actor}
+              onChange={(e) => setDraft({ ...draft, actor: e.target.value })}
+            />
+            <Input
+              label={t("audit.filter.action")}
+              placeholder={t("audit.filter.action_ph")}
+              value={draft.action}
+              onChange={(e) => setDraft({ ...draft, action: e.target.value })}
+            />
+            <Input
+              label={t("audit.filter.q")}
+              placeholder={t("audit.filter.q_ph")}
+              value={draft.q}
+              onChange={(e) => setDraft({ ...draft, q: e.target.value })}
+            />
+            <Button type="submit" variant="primary" busy={events.isFetching}>
+              {t("audit.filter.fetch")}
+            </Button>
+            <Button busy={downloading} onClick={() => void downloadCsv()}>
+              {t("audit.filter.csv")}
+            </Button>
+          </form>
           <QueryState
             isPending={events.isPending}
             error={events.error}

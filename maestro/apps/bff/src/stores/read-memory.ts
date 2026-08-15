@@ -39,6 +39,7 @@ import type {
   ScanRecord,
   ServiceHealth,
 } from "../read-models.js";
+import { filterAuditEvents } from "../audit-filter.js";
 import { inScope, paginate } from "./cursor.js";
 export { decodeCursor, encodeCursor, paginate } from "./cursor.js";
 
@@ -274,11 +275,19 @@ export class AuditStoreReader implements AuditReader {
 
   async list(filter: AuditFilter): Promise<Page<AuditEvent>> {
     const events = await this.store.read();
-    const rows = events
-      .filter((event) => filter.actor === null || event.actor === filter.actor)
-      .filter((event) => filter.subject === null || event.subject === filter.subject)
-      .sort((left, right) => right.seq - left.seq);
-    return paginate(rows, filter, `audit:${filter.actor ?? ""}:${filter.subject ?? ""}`);
+    // The B13 filter semantics live in audit-filter.ts so the JSON page and the
+    // CSV export can never disagree about what "matches".
+    const rows = filterAuditEvents(events, filter).sort((left, right) => right.seq - left.seq);
+    const fingerprint = [
+      "audit",
+      filter.actor ?? "",
+      filter.subject ?? "",
+      filter.from ?? "",
+      filter.to ?? "",
+      filter.action ?? "",
+      filter.q ?? "",
+    ].join(":");
+    return paginate(rows, filter, fingerprint);
   }
 
   async verify(): Promise<{ ok: boolean; checked: number; brokenAtSeq: number | null }> {

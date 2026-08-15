@@ -234,6 +234,14 @@ export interface EvidenceReader {
 export interface AuditFilter extends PageRequest {
   readonly actor: string | null;
   readonly subject: string | null;
+  /** ISO lower bound on `at`, inclusive (B13 regulator window). */
+  readonly from: string | null;
+  /** ISO upper bound on `at`, inclusive. */
+  readonly to: string | null;
+  /** Exact action match. */
+  readonly action: string | null;
+  /** Case-insensitive substring over subject + actor + action. */
+  readonly q: string | null;
 }
 
 /**

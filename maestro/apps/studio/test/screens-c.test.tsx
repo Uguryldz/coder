@@ -1,13 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, type ReactNode } from "react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import { AuthProvider } from "../src/auth/AuthProvider.tsx";
 import type { Session } from "../src/auth/types.ts";
 import { I18nProvider } from "../src/i18n/I18nProvider.tsx";
 import { AuditScreen } from "../src/screens/Audit.tsx";
+import { HelpScreen } from "../src/screens/Help.tsx";
 import { KnowledgeScreen } from "../src/screens/Knowledge.tsx";
 import { PiiScreen } from "../src/screens/Pii.tsx";
 import { TemplateScreen } from "../src/screens/Template.tsx";
@@ -122,12 +123,13 @@ describe("TemplateScreen (M108 designer)", () => {
     expect(screen.getByText("Kapsam")).toBeInTheDocument();
   });
 
-  it("wears the honest 'not wired to the engine yet' strip at the top", async () => {
+  it("wears the honest wiring strip at the top (overlay reality)", async () => {
     renderScreen(<TemplateScreen />, stubFetch({ "/template": TEMPLATE_BODY }));
-    // The strip renders unconditionally — the designer edits a template the
-    // engine does not read yet, and the page must say so.
+    // The strip renders unconditionally and tells the OVERLAY truth: titles +
+    // AI instructions are wired (per run, restart-free); the section structure
+    // stays the engine's fixed corporate skeleton.
     expect(
-      await screen.findByText(/buradaki düzenlemeler henüz motora bağlı değil/),
+      await screen.findByText(/BAŞLIKLARI ve AI TALİMATLARI motora bağlıdır/),
     ).toBeInTheDocument();
   });
 
@@ -415,5 +417,106 @@ describe("AuditScreen", () => {
 
     expect(await screen.findByText("Zincir bozuk")).toBeInTheDocument();
     expect(screen.getByText("UGURPAY-501")).toBeInTheDocument();
+  });
+
+  /** The fetch stub records string URLs — the ApiClient always calls with one. */
+  const calledUrls = (fetchImpl: typeof fetch): string[] =>
+    (fetchImpl as unknown as Mock).mock.calls.map((call) => String(call[0]));
+
+  it("sends the applied filters with the trail query, widening dates to full days", async () => {
+    const fetchImpl = stubFetch({
+      "/studio/audit/verification": { ok: true, checked: 5, brokenAtSeq: null },
+      "/studio/audit": EVENTS,
+    });
+    renderScreen(<AuditScreen />, fetchImpl);
+    await screen.findByText("UGURPAY-501");
+
+    await user.type(screen.getByLabelText("Aktör"), "ayse@corp");
+    await user.type(screen.getByLabelText("Ara"), "ugurpay");
+    fireEvent.change(screen.getByLabelText("Başlangıç"), { target: { value: "2026-08-09" } });
+    // Typing alone must not query: the draft is applied only by "Getir".
+    expect(calledUrls(fetchImpl).some((u) => u.includes("actor="))).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Getir" }));
+
+    await waitFor(() => {
+      const filtered = calledUrls(fetchImpl).find((u) => u.includes("actor="));
+      expect(filtered).toBeDefined();
+      expect(filtered).toContain("actor=ayse%40corp");
+      expect(filtered).toContain("q=ugurpay");
+      // The date input's YYYY-MM-DD is widened to the day's first instant.
+      expect(filtered).toContain(`from=${encodeURIComponent("2026-08-09T00:00:00.000Z")}`);
+    });
+  });
+
+  it("downloads the applied window as one CSV through the authenticated client", async () => {
+    const fetchImpl = stubFetch({
+      "/studio/audit/verification": { ok: true, checked: 5, brokenAtSeq: null },
+      "/studio/audit.csv": "seq,at,actor,action,subject,hash\n",
+      "/studio/audit": EVENTS,
+    });
+    // jsdom implements neither object URLs nor anchor navigation; both are
+    // stubbed so the test can assert the wiring rather than the browser.
+    const createObjectURL = vi.fn(() => "blob:denetim");
+    const revokeObjectURL = vi.fn();
+    (URL as unknown as Record<string, unknown>).createObjectURL = createObjectURL;
+    (URL as unknown as Record<string, unknown>).revokeObjectURL = revokeObjectURL;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    try {
+      renderScreen(<AuditScreen />, fetchImpl);
+      await screen.findByText("UGURPAY-501");
+
+      await user.type(screen.getByLabelText("Aktör"), "ayse@corp");
+      await user.click(screen.getByRole("button", { name: "Getir" }));
+      await user.click(screen.getByRole("button", { name: "CSV indir" }));
+
+      await waitFor(() => {
+        const csvCall = calledUrls(fetchImpl).find((u) => u.includes("/studio/audit.csv"));
+        // The export carries the SAME applied filter the table shows.
+        expect(csvCall).toContain("actor=ayse%40corp");
+        expect(createObjectURL).toHaveBeenCalledTimes(1);
+        expect(revokeObjectURL).toHaveBeenCalledWith("blob:denetim");
+        expect(click).toHaveBeenCalled();
+      });
+    } finally {
+      click.mockRestore();
+      delete (URL as unknown as Record<string, unknown>).createObjectURL;
+      delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+    }
+  });
+});
+
+describe("HelpScreen", () => {
+  it("mirrors the sidebar's four groups as tabs, with the old ones gone", () => {
+    renderScreen(<HelpScreen />, stubFetch({}));
+
+    for (const name of ["İşler", "Ajanlar", "Denetim", "Kurulum"]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
+    // The start tab (default) now explains the daily-work pages.
+    expect(screen.getByText("Canlı akış")).toBeInTheDocument();
+    expect(screen.getByText("Canlı oturumlar")).toBeInTheDocument();
+  });
+
+  it("moves a group's pages with it — agents own the knowledge and template pages", async () => {
+    renderScreen(<HelpScreen />, stubFetch({}));
+
+    await user.click(screen.getByRole("tab", { name: "Ajanlar" }));
+
+    expect(screen.getByText("Ajan tanımları")).toBeInTheDocument();
+    expect(screen.getByText("Analiz şablonu")).toBeInTheDocument();
+  });
+
+  it("walks through the newer capabilities", () => {
+    renderScreen(<HelpScreen />, stubFetch({}));
+
+    expect(screen.getByText("Öne çıkan yetenekler")).toBeInTheDocument();
+    expect(screen.getByText("Oto-başlatma ve hazır kurallar")).toBeInTheDocument();
+    expect(screen.getByText("Onayın iki yolu: /approve yorumu ya da botla atama")).toBeInTheDocument();
+    expect(screen.getByText("Ajan eğitimi: ajana özel ya da ortak bilgi")).toBeInTheDocument();
+    expect(screen.getByText("Netleştirme döngüsü: bot sorar, sen cevaplarsın")).toBeInTheDocument();
+    expect(screen.getByText("Denetim raporu: süz ve CSV indir")).toBeInTheDocument();
   });
 });

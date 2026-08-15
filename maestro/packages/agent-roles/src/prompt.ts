@@ -1,6 +1,6 @@
 import type { AnalysisContext, KnowledgePack } from "./context.js";
 import type { Deficiency } from "./validate.js";
-import type { AnalysisTemplate, TemplateSection } from "./template.js";
+import { type AnalysisTemplate, type TemplateSection, claimSections } from "./template.js";
 import { DEFAULT_PROMPT_TEXTS, type PromptTexts, text } from "./texts.js";
 
 /**
@@ -74,6 +74,19 @@ export function renderTemplateSpec(template: AnalysisTemplate, texts: PromptText
     ];
     if (section.description) lines.push(section.description);
     lines.push(`🤖 ${section.aiInstruction}`);
+    // CANLI BULGU-1: a real run filled sections and skipped their source rows,
+    // so the source section spells the obligation out mechanically — every
+    // claim-carrying section, by key, straight from the template (no hardcoded
+    // names; a section added in Studio lands in this list without a code change).
+    if (section.format === "source_list") {
+      lines.push(
+        text(texts, "kaynak.zorunluBolumler", {
+          liste: claimSections(template)
+            .map((s) => `sections.${s.key} (${s.title})`)
+            .join(" · "),
+        }),
+      );
+    }
     if (section.example) {
       lines.push(`${text(texts, "ortak.baslik.ornek")}:\n${section.example}`);
     }
@@ -163,9 +176,11 @@ export function buildAnalysisPrompt(args: AnalysisPromptArgs): string {
 }
 
 /**
- * The single repair round (M43): the model gets its own answer back with the
- * concrete list of what is missing. There is no second repair — the next
- * failure is an error, not another attempt.
+ * A repair round (M43): the model gets its own answer back with the concrete
+ * list of what is missing, plus the order to keep everything it already wrote
+ * and only fill the gaps. The attempt budget lives in `run.ts`
+ * (MAX_ROLE_ATTEMPTS) — past it, the next failure is an error, not another
+ * attempt.
  */
 export function buildRepairPrompt(
   basePrompt: string,
@@ -176,6 +191,9 @@ export function buildRepairPrompt(
   return [
     basePrompt,
     text(texts, "duzeltme.giris"),
+    // CANLI BULGU-1: without this, a repair round may "fix" a missing source
+    // row by deleting the section it belonged to. Preserve everything, only add.
+    text(texts, "duzeltme.koru"),
     block(text(texts, "duzeltme.oncekiCevap"), JSON.stringify(previous, null, 2)),
     block(
       text(texts, "duzeltme.eksikBasligi"),

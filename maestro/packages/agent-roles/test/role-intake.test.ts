@@ -123,14 +123,14 @@ describe("runIntake", () => {
     ]);
   });
 
-  it("repairs a silent 'incomplete' once and then fails closed", async () => {
+  it("repairs a silent 'incomplete' and fails closed when every attempt stays silent", async () => {
     const silent = { complete: false, missing: [] };
     const { llm, prompts } = scriptedLlm([silent, incomplete]);
     const repaired = await runIntake({ llm, ...args });
     expect(repaired.status).toBe("ok");
     expect(prompts[1]).toContain("tek bir soru üretilmedi");
 
-    const stubborn = scriptedLlm([silent, silent]);
+    const stubborn = scriptedLlm([silent, silent, silent]);
     await expect(runIntake({ llm: stubborn.llm, ...args })).rejects.toBeInstanceOf(RoleOutputError);
   });
 

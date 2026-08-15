@@ -25,7 +25,7 @@
 
   "analyst.sistem": "Sen bir finans kuruluşunun kıdemli yazılım analistisin. Kurumsal analiz şablonuna birebir uyan, denetime dayanacak bir analiz dokümanı yazıyorsun. Doküman bir insan kapısına (PO ve Teknik Lider onayı) gidecek.",
   "analyst.gorev": "Aşağıdaki şablonun HER bölümünü, bölümün kendi talimatına ve beklenen biçimine göre doldur. Zorunlu bölümlerin hiçbirini atlama. Opsiyonel bölüm konuyla ilgisizse alanı hiç üretme.",
-  "analyst.kurallar": "Her iddian bir kaynağa dayanmalı ve 'Kaynaklar' bölümünde o kaynağı göstermelisin: kaynak gösteremeyeceğin bir cümleyi yazma. Referans olarak yalnızca bağlamda birebir geçen bir değer kullan (dosya yolu, repo kartı uygulama kimliği, knowledge dokümanı adı, ticket anahtarı, netleştirme kimliği). Cevaplanmamış ve ertelenmiş her konuyu 'Netleştirilecek açık maddeler' bölümüne yaz. Risk seviyesini (riskTier) dusuk/orta/kritik olarak belirle ve gerekçesini riskReason alanına yaz; kullandığın netleştirme cevaplarını clarificationsUsed listesine ekle.",
+  "analyst.kurallar": "Her iddian bir kaynağa dayanmalı ve 'Kaynaklar' bölümünde o kaynağı göstermelisin: kaynak gösteremeyeceğin bir cümleyi yazma. DOLDURDUĞUN her bölüm için 'Kaynaklar' bölümünde EN AZ BİR satır zorunludur — kaynak satırı olmayan dolu bölüm doğrulamada REDDEDİLİR. Referans olarak yalnızca bağlamda birebir geçen bir değer kullan (dosya yolu, repo kartı uygulama kimliği, knowledge dokümanı adı, ticket anahtarı, netleştirme kimliği). Cevaplanmamış ve ertelenmiş her konuyu 'Netleştirilecek açık maddeler' bölümüne yaz. Risk seviyesini (riskTier) dusuk/orta/kritik olarak belirle ve gerekçesini riskReason alanına yaz; kullandığın netleştirme cevaplarını clarificationsUsed listesine ekle.",
 
   "devReviewer.sistem": "Sen kıdemli bir yazılım gözden geçiricisisin. Sana verilen GERÇEK diff'i satır satır inceliyorsun.",
   "devReviewer.gorev": "Diff'i incele ve bulgularını yaz. Yalnızca diff'te GERÇEKTEN geçen dosyalar hakkında bulgu yaz; diff'te olmayan bir dosya veya satır hakkında yorum yapma. Bulgu yoksa boş liste döndür ve approved=true ver.",
@@ -49,11 +49,14 @@
   "bicim.impact_matrix": "etki matrisi — her uygulama için bir satır (uygulama, etkileniyor mu, özet, kaynak); fan-out alt ticket'ları bu bölümden açılır",
   "bicim.source_list": "kaynak listesi — her satır: hangi bölüm, hangi iddia, kaynak türü, birebir referans",
   "bicim.open_items": "açık madde listesi — her satır: madde, neden açık, kimden cevap bekleniyor",
+  "kaynak.zorunluBolumler": "ZORUNLU MEKANİK KURAL: Aşağıda tek tek sayılan bölümlerden DOLDURDUĞUN her biri için bu listeye EN AZ BİR kaynak satırı yaz — {liste}. Opsiyonel olup hiç üretmediğin bölüm için satır gerekmez; ama doldurduğun HİÇBİR bölümü kaynaksız bırakma. Bir bölümün tek dayanağı ticket metniyse bölümü boş bırakma: ticket'ı kaynak göster (tür: ticket, referans: ticket anahtarı). Kaynak satırı olmayan dolu bölüm doğrulamada REDDEDİLİR ve analiz insan kapısına ulaşamaz.",
+
   "bicim.enAzMadde": "en az {n} madde",
   "bicim.sutunlar": "sütunlar: {liste}",
   "bicim.altAlanlar": "alanlar: {liste}",
 
   "duzeltme.giris": "Önceki cevabın aşağıdaki eksikleri taşıyor. Eksiklerin TAMAMINI gider ve dokümanın tamamını yeniden üret.",
+  "duzeltme.koru": "Önceki cevabının TAMAMINI koru: dolu bölümleri SİLME, içeriklerini gereksiz yere değiştirme; YALNIZCA aşağıda listelenen eksikleri gider. Eksik kaynak satırı bildirilen her bölüm için Kaynaklar bölümüne yeni satır EKLE — bölümü silerek eksikten kurtulmak yasaktır.",
   "duzeltme.eksikBasligi": "GİDERİLECEK EKSİKLER",
   "duzeltme.oncekiCevap": "ÖNCEKİ CEVABIN",
 

@@ -95,6 +95,42 @@ describe("analysis prompt", () => {
     expect(payload).toBeLessThan(fenceEnd);
   });
 
+  it("lists every claim section as source-mandatory, straight from the template (CANLI BULGU-1)", () => {
+    // The live failure: sections filled, source rows skipped. The source
+    // section now names each claim-carrying section mechanically.
+    expect(prompt).toContain("ZORUNLU MEKANİK KURAL");
+    for (const section of DEFAULT_ANALYSIS_TEMPLATE.sections) {
+      if (section.format === "source_list" || section.format === "open_items") {
+        expect(prompt).not.toContain(`sections.${section.key} (${section.title})`);
+      } else {
+        expect(prompt).toContain(`sections.${section.key} (${section.title})`);
+      }
+    }
+    // The fallback when nothing else can be cited: the ticket itself.
+    expect(prompt).toContain("ticket'ı kaynak göster");
+  });
+
+  it("grows the mandatory-source list with the template, not with the code (M108)", () => {
+    const extended = AnalysisTemplate.parse({
+      ...DEFAULT_ANALYSIS_TEMPLATE,
+      version: "v4",
+      sections: [
+        ...DEFAULT_ANALYSIS_TEMPLATE.sections,
+        {
+          key: "compliance",
+          title: "Mevzuat etkisi",
+          aiInstruction: "BDDK ve KVKK etkisini yaz.",
+          required: true,
+          format: "bullet_list",
+          minItems: 2,
+        },
+      ],
+    });
+    const grown = buildAnalysisPrompt({ template: extended, context });
+    expect(prompt).not.toContain("sections.compliance (Mevzuat etkisi)");
+    expect(grown).toContain("sections.compliance (Mevzuat etkisi)");
+  });
+
   it("renders the template spec on its own for Studio preview", () => {
     expect(renderTemplateSpec(DEFAULT_ANALYSIS_TEMPLATE, DEFAULT_PROMPT_TEXTS)).toContain(
       "Kurumsal analiz şablonu v3",
@@ -112,6 +148,13 @@ describe("repair prompt", () => {
     expect(repair).toContain('"a": 1');
     expect(repair).toContain("Kaynaklar bölümü boş.");
     expect(repair).toContain("GİDERİLECEK EKSİKLER");
+  });
+
+  it("orders the model to preserve its previous answer and only add (CANLI BULGU-1)", () => {
+    const repair = buildRepairPrompt("TEMEL", { a: 1 }, [{ code: "x", message: "Eksik." }]);
+    expect(repair).toContain(text(DEFAULT_PROMPT_TEXTS, "duzeltme.koru"));
+    expect(repair).toContain("TAMAMINI koru");
+    expect(repair).toContain("Kaynaklar bölümüne yeni satır EKLE");
   });
 });
 

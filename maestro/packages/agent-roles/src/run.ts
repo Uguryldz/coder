@@ -4,7 +4,7 @@ import type { LlmPort } from "@maestro/ports";
 import { RoleOutputError } from "./errors.js";
 import { buildRepairPrompt } from "./prompt.js";
 import { DEFAULT_PROMPT_TEXTS, type PromptTexts } from "./texts.js";
-import type { Validation } from "./validate.js";
+import type { Deficiency, Validation } from "./validate.js";
 
 /**
  * Result of a thinking-role call.
@@ -45,37 +45,51 @@ export interface RoleCall<T> {
 }
 
 /**
- * One call, at most one repair round, then an error (M43).
+ * The attempt budget: one call plus at most two repair rounds (M43).
  *
- * The repair prompt carries the CONCRETE deficiency list rather than "try
+ * Raised from 2 to 3 after CANLI BULGU-1: a real analyst filled every section
+ * but skipped source rows, and a single repair round was not enough to recover.
+ * The budget stays a constant on purpose — callers cannot loosen the fail-closed
+ * gate, and there is never a partial document returned.
+ */
+export const MAX_ROLE_ATTEMPTS = 3;
+
+/**
+ * One call, at most `MAX_ROLE_ATTEMPTS - 1` repair rounds, then an error (M43).
+ *
+ * Every repair prompt carries the CONCRETE deficiency list rather than "try
  * again": a model told what is missing fixes it, a model told to retry
- * rewrites the same document. A second deficient answer is a hard failure —
- * there is no third attempt and no partially valid document is ever returned.
+ * rewrites the same document. A still-deficient final answer is a hard failure —
+ * there is no extra attempt and no partially valid document is ever returned.
  */
 export async function runRole<T>(call: RoleCall<T>): Promise<RoleResult<T>> {
   const texts = call.texts ?? DEFAULT_PROMPT_TEXTS;
-  const first = await generate(call, call.prompt);
-  if (first.status !== "ok") return withLogs(first, []);
+  // Logs of the calls that landed so far. An early call BURNED quota even if a
+  // later round hits a full pool — they travel with every outcome so nothing
+  // downstream sees a call that never happened (M55).
+  const logs: LlmCallLog[] = [];
+  let prompt = call.prompt;
+  let deficiencies: readonly Deficiency[] = [];
 
-  const firstCheck = call.check(first.value);
-  if (firstCheck.ok) {
-    return { status: "ok", value: firstCheck.value, attempts: 1, logs: [first.log] };
+  for (let attempt = 1; attempt <= MAX_ROLE_ATTEMPTS; attempt++) {
+    const generated = await generate(call, prompt);
+    if (generated.status !== "ok") return withLogs(generated, logs);
+    logs.push(generated.log);
+
+    const checked = call.check(generated.value);
+    if (checked.ok) {
+      return { status: "ok", value: checked.value, attempts: attempt, logs };
+    }
+    deficiencies = checked.deficiencies;
+    // Always repaired against the ORIGINAL prompt plus the latest answer — the
+    // model never sees a repair-of-a-repair chain, only base + newest state.
+    prompt = buildRepairPrompt(call.prompt, generated.value, deficiencies, texts);
   }
 
-  const repairPrompt = buildRepairPrompt(call.prompt, first.value, firstCheck.deficiencies, texts);
-  const second = await generate(call, repairPrompt);
-  // The first call already burned quota — its log travels with the non-ok
-  // outcome so nothing downstream sees a call that never happened (M55).
-  if (second.status !== "ok") return withLogs(second, [first.log]);
-
-  const secondCheck = call.check(second.value);
-  if (secondCheck.ok) {
-    return { status: "ok", value: secondCheck.value, attempts: 2, logs: [first.log, second.log] };
-  }
   throw new RoleOutputError(
     call.role,
-    2,
-    secondCheck.deficiencies.map((d) => d.message),
+    MAX_ROLE_ATTEMPTS,
+    deficiencies.map((d) => d.message),
   );
 }
 

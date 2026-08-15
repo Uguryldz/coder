@@ -106,7 +106,7 @@ describe("validateDevReview", () => {
 describe("runDevReviewer", () => {
   const args = { context, variantId: "backend", dataClass: "dahili" as const };
 
-  it("repairs an off-diff finding once and then fails closed", async () => {
+  it("repairs an off-diff finding and fails closed when every attempt hallucinates", async () => {
     const hallucinated = {
       ...withFinding,
       findings: [{ ...withFinding.findings[0]!, file: "src/hayali.ts" }],
@@ -116,7 +116,7 @@ describe("runDevReviewer", () => {
     expect(result.status).toBe("ok");
     expect(prompts[1]).toContain("src/hayali.ts");
 
-    const stubborn = scriptedLlm([hallucinated, hallucinated]);
+    const stubborn = scriptedLlm([hallucinated, hallucinated, hallucinated]);
     await expect(runDevReviewer({ llm: stubborn.llm, ...args })).rejects.toBeInstanceOf(
       RoleOutputError,
     );

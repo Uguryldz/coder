@@ -80,7 +80,7 @@ describe("test design", () => {
     expect(result.deficiencies.map((d) => d.code)).toContain("no_negative");
   });
 
-  it("repairs an uncovered criterion once, then fails closed", async () => {
+  it("repairs an uncovered criterion and fails closed when every attempt stays partial", async () => {
     const partial = { ...design, scenarios: [scenario(1, true)] };
     const { llm, prompts } = scriptedLlm([partial, design]);
     const result = await runTestDesigner({
@@ -92,7 +92,7 @@ describe("test design", () => {
     expect(result.status).toBe("ok");
     expect(prompts[1]).toContain("2 numaralı kabul kriterini karşılayan senaryo yok");
 
-    const stubborn = scriptedLlm([partial, partial]);
+    const stubborn = scriptedLlm([partial, partial, partial]);
     await expect(
       runTestDesigner({ llm: stubborn.llm, context, variantId: "web", dataClass: "dahili" }),
     ).rejects.toBeInstanceOf(RoleOutputError);

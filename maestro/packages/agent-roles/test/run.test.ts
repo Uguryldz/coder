@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMockLlm } from "@maestro/test-kit";
 import { RoleOutputError } from "../src/errors.js";
+import { MAX_ROLE_ATTEMPTS } from "../src/run.js";
 import { runAnalyst } from "../src/role-analyst.js";
 import type { SourceEntry } from "../src/schema-builder.js";
 import { analysisSchemaName } from "../src/schema-builder.js";
@@ -59,22 +60,40 @@ describe("runAnalyst", () => {
     expect(prompts[1]).toContain("GİDERİLECEK EKSİKLER");
     expect(prompts[1]).toContain("Test yaklaşımı");
     expect(prompts[1]).toContain("ÖNCEKİ CEVABIN");
+    // CANLI BULGU-1: the repair round must order "keep everything, only add".
+    expect(prompts[1]).toContain("TAMAMINI koru");
+    expect(prompts[1]).toContain("Kaynaklar bölümüne yeni satır EKLE");
   });
 
-  it("fails closed after the single repair round — no third attempt", async () => {
+  it("recovers on the second repair round — the budget is three attempts", async () => {
     const bad = withoutSection("testApproach");
     const { llm, prompts } = scriptedLlm([bad, bad, validAnalysis()]);
+    const result = await runAnalyst({ llm, ...base });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.attempts).toBe(3);
+    expect(result.logs).toHaveLength(3);
+    expect(prompts).toHaveLength(3);
+    // Both repair prompts are built on the ORIGINAL prompt, not on each other.
+    expect(prompts[2]).toContain("GİDERİLECEK EKSİKLER");
+    expect((prompts[2] ?? "").match(/GİDERİLECEK EKSİKLER/g)).toHaveLength(1);
+  });
+
+  it("fails closed after MAX_ROLE_ATTEMPTS — no fourth attempt", async () => {
+    expect(MAX_ROLE_ATTEMPTS).toBe(3);
+    const bad = withoutSection("testApproach");
+    const { llm, prompts } = scriptedLlm([bad, bad, bad, validAnalysis()]);
     await expect(runAnalyst({ llm, ...base })).rejects.toBeInstanceOf(RoleOutputError);
-    expect(prompts).toHaveLength(2);
+    expect(prompts).toHaveLength(MAX_ROLE_ATTEMPTS);
   });
 
   it("reports the deficiencies on the error it throws", async () => {
     const doc = validAnalysis();
     doc.sections["sources"] = [];
-    const { llm } = scriptedLlm([doc, doc]);
+    const { llm } = scriptedLlm([doc, doc, doc]);
     await expect(runAnalyst({ llm, ...base })).rejects.toMatchObject({
       role: "analyst",
-      attempts: 2,
+      attempts: MAX_ROLE_ATTEMPTS,
       deficiencies: [expect.stringContaining("Kaynaklar")],
     });
   });
@@ -86,7 +105,7 @@ describe("runAnalyst", () => {
       ref: "src/uydurma/dosya.ts",
       kind: "repo_file" as const,
     }));
-    const { llm } = scriptedLlm([doc, doc]);
+    const { llm } = scriptedLlm([doc, doc, doc]);
     await expect(runAnalyst({ llm, ...base })).rejects.toBeInstanceOf(RoleOutputError);
   });
 

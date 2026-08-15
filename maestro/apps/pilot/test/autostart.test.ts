@@ -27,8 +27,8 @@ function rule(overrides: Partial<ListeningRule> = {}): ListeningRule {
   };
 }
 
-function row(key: string, status: string | null): DiscoveredTicket {
-  return { key, summary: `özet ${key}`, status, createdAt: null };
+function row(key: string, status: string | null, issueType: string | null = null): DiscoveredTicket {
+  return { key, summary: `özet ${key}`, status, issueType, createdAt: null };
 }
 
 describe("selectAutoStartTicket — oto-başlatma guard'ı", () => {
@@ -98,5 +98,20 @@ describe("selectAutoStartTicket — oto-başlatma guard'ı", () => {
     const listening = new ListeningRulesStore([rule({ assigneeAccountId: "712020:other" })]);
     const { pick } = selectAutoStartTicket([row("OPS-1", "Yapılacaklar")], listening, BOT, new Set());
     expect(pick).toBeNull();
+  });
+
+  it("classifies an ISSUETYPE rule from the discovery row's issueType (the live OPS-15 bug)", () => {
+    // The row carries the issue-type NAME from discovery; before the fix the
+    // guard always passed issueType:null, so issuetype rules never auto-started.
+    const listening = new ListeningRulesStore([
+      rule({ matchKind: "issuetype", matchValue: "Task", flowType: "analiz" }),
+    ]);
+    const { pick } = selectAutoStartTicket(
+      [row("OPS-15", "İNCELEMEDE", "Task")],
+      listening,
+      BOT,
+      new Set(),
+    );
+    expect(pick).toEqual({ key: "OPS-15", status: "İNCELEMEDE", flow: "analiz" });
   });
 });

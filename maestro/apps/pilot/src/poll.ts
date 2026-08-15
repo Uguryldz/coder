@@ -18,6 +18,12 @@ export interface DiscoveredTicket {
   key: string;
   summary: string;
   status: string | null;
+  /**
+   * Issue type NAME (e.g. "Task"). Requested from Jira all along but never
+   * mapped — without it the auto-start guard could not evaluate issuetype
+   * listening rules and silently never started anything.
+   */
+  issueType: string | null;
   createdAt: string | null;
 }
 
@@ -60,7 +66,14 @@ export async function discoverTickets(
     const fields = record(record(raw)?.["fields"]);
     const summary = typeof fields?.["summary"] === "string" ? fields["summary"] : key;
     const created = typeof fields?.["created"] === "string" ? fields["created"] : null;
-    rows.push({ key, summary, status: statusOf(raw), createdAt: created });
+    const issueTypeName = record(fields?.["issuetype"])?.["name"];
+    rows.push({
+      key,
+      summary,
+      status: statusOf(raw),
+      issueType: typeof issueTypeName === "string" ? issueTypeName : null,
+      createdAt: created,
+    });
   }
   return rows;
 }

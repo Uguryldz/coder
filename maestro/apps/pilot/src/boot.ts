@@ -193,7 +193,7 @@ export function selectAutoStartTicket(
     const flow = listening.flowTypeFor(botAccountId, {
       projectKey: row.key.split("-")[0] ?? "",
       status: row.status,
-      issueType: null,
+      issueType: row.issueType,
     });
     if (flow === null) {
       unmatched.push(row.key);

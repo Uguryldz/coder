@@ -25,6 +25,8 @@ export interface DiscoveredTicketView {
   key: string;
   summary: string;
   status: string | null;
+  /** Issue type NAME — the auto-start guard classifies issuetype rules with it. */
+  issueType: string | null;
   createdAt: string | null;
 }
 

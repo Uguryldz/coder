@@ -456,6 +456,54 @@ model RoutingRule {
 }
 
 // ---------------------------------------------------------------------------
+// Listening rules — status/issuetype → flow-type routing (UI-managed)
+// ---------------------------------------------------------------------------
+
+/// One "listen to this" rule: when a ticket in `projectKey` is assigned to
+/// `assigneeAccountId` (the Maestro Bot) AND its `matchKind` field equals
+/// `matchValue`, Maestro should pick it up and run it as the given `flowType`
+/// (analiz | duzeltme | gelistirme). This turns the hard-coded, single-project,
+/// type-blind discovery (`apps/pilot/src/config.ts` `discoveryJql`) into rows an
+/// admin edits from Studio — the "tüm ayarlar UI'dan" posture.
+///
+/// Modelled on `RoutingRule` (its own table, not a Param and not a contract
+/// change): the frozen `RuleCondition` only knows always|component|label, and a
+/// multi-row rule list does not fit the single-value Param model. `flowType`,
+/// `matchKind` and `matchValue` are presentation strings guarded by a CHECK in
+/// the migration, never a Prisma enum, so a new flow type needs no schema
+/// migration of an enum type.
+///
+/// `matchKind` = "status" matches the ticket's current status NAME (needs the
+/// status to exist on the board); "issuetype" matches the issue type NAME
+/// (works on any project with no board change). Deliberately NOT a foreign key
+/// to any binding, for the same reason `RoutingRule` is not.
+model ListeningRule {
+  ruleId            String  @id @db.VarChar(64)
+  projectKey        String  @db.VarChar(32)
+  /// The account the ticket must be assigned to (the Maestro Bot accountId).
+  assigneeAccountId String  @db.VarChar(128)
+  /// "status" | "issuetype" — which ticket field `matchValue` is compared to.
+  matchKind         String  @db.VarChar(16)
+  /// The status name or issue-type name that triggers this rule.
+  matchValue        String  @db.VarChar(128)
+  /// "analiz" | "duzeltme" | "gelistirme" — the flow Maestro runs.
+  flowType          String  @db.VarChar(16)
+  priority          Int     @default(100)
+  enabled           Boolean @default(true)
+  /// Faz 3 (akış→ajan): the ANALYST variant this rule's flow runs under.
+  /// NULL = the platform default (`analyst-default`) — today's behaviour.
+  analystVariantId  String? @db.VarChar(64)
+  /// Faz 3: the ENGINEER variant for this rule's flow. NULL = default.
+  engineerVariantId String? @db.VarChar(64)
+
+  /// One rule per (project, assignee, match target): a given trigger maps to
+  /// exactly one flow, so a second rule for the same trigger is a mistake, not
+  /// an ambiguity the runtime has to resolve.
+  @@unique([projectKey, assigneeAccountId, matchKind, matchValue])
+  @@index([projectKey, enabled])
+}
+
+// ---------------------------------------------------------------------------
 // Parameters (M71) — versioned + audited operational settings
 // ---------------------------------------------------------------------------
 
@@ -487,6 +535,24 @@ model ParamVersion {
   param Param @relation(fields: [key], references: [key], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([key, scopeRef, version])
+}
+
+/// An OPEN four-eyes proposal: a value with no approver yet (M71/M78).
+///
+/// Separate from `ParamVersion` on purpose — that table's CHECK refuses a
+/// guarded row with no approver, which is exactly what a pending proposal is.
+/// Making the queue durable means an open proposal (a guarded parameter change
+/// OR an onboarding binding, both keyed generically) survives a BFF restart
+/// instead of forcing the first proposer to start over. No FK to `Param`: an
+/// `onboarding.binding` proposal is not a parameter, it just shares the queue.
+model PendingParamChange {
+  key        String   @db.VarChar(64)
+  scopeRef   String   @default("") @db.VarChar(64) // "" = global scope
+  valueJson  Json
+  proposedBy String
+  at         DateTime @db.Timestamptz(3)
+
+  @@id([key, scopeRef])
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +651,26 @@ model KnowledgeDoc {
 
   @@id([id, version])
   @@index([kind])
+}
+
+/// Analysis guidance ("öğren" notes) — the knowledge library an operator uploads
+/// so the AI takes it into account when preparing a NEW analysis. Each row is a
+/// short instruction/knowledge document ("dikkat edilecekler"); when `enabled`,
+/// its text is injected into the analyst's context (agent-roles KnowledgePack
+/// `knowledgeDocs`). Unlike KnowledgeDoc this holds the CONTENT inline (small
+/// text notes, not stored blobs) — that is the whole point: an admin types or
+/// pastes a rule and the analyst leans on it, no storage plumbing.
+model AnalysisGuidance {
+  id        String   @id @db.VarChar(64)
+  title     String
+  /// The guidance text itself — injected verbatim into the analysis prompt.
+  content   String
+  /// True = the AI learns from it (injected into new analyses). False = kept but
+  /// ignored, so an admin can pause a note without deleting it.
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @db.Timestamptz(3)
+
+  @@index([enabled])
 }
 
 model EvidencePackageRow {
@@ -802,6 +888,12 @@ model Connection {
   /// broken", so it is a nullable Boolean rather than a default false.
   lastTestedAt DateTime? @db.Timestamptz(3)
   lastTestOk   Boolean?
+  /// A short, SECRET-FREE note from the last test — the catalog message KEY of
+  /// its outcome (e.g. "connection.test.unauthorized"), never a token, DSN or
+  /// raw driver message. Null until the first test. It lets the panel show WHY a
+  /// test failed ("✗ 401 unauthorized") instead of a bare red dot, without ever
+  /// putting a credential on a row a console can read.
+  lastTestNote String?  @db.VarChar(128)
 }
 
 /// The AES-256-GCM ciphertext of one connector token (migration 0010).

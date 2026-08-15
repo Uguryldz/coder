@@ -73,7 +73,7 @@ export interface PilotDbWiring {
    */
   loadSeeds: () => Promise<{
     listening: ListeningRule[];
-    guidance: { title: string; content: string }[];
+    guidance: { title: string; content: string; variantId?: string }[];
   }>;
   /**
    * Lazy loader for the ACTIVE corporate Word template: the NEWEST
@@ -234,7 +234,15 @@ export function pilotWiringFromEnv(
               ? { engineerVariantId: r.engineerVariantId }
               : {}),
           })),
-        guidance: notes.map((n) => ({ title: n.title, content: n.content })),
+        // Ajan-hedefli not (variantId dolu) restart'ta da hedefiyle birlikte
+        // yüklenir; NULL = global not, alan hiç konmaz (pilot şekli).
+        guidance: notes.map((n) => ({
+          title: n.title,
+          content: n.content,
+          ...(typeof n.variantId === "string" && n.variantId.trim() !== ""
+            ? { variantId: n.variantId }
+            : {}),
+        })),
       };
     },
     docTemplate: async () => {

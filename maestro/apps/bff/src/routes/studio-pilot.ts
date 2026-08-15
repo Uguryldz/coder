@@ -133,13 +133,23 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
    * listening mirror: the BFF reads its own store (the DB source of truth) and
    * forwards the enabled notes to the pilot's `/api/guidance`. A missing store
    * mirrors an empty set (no-op success), never a 503.
+   *
+   * Each note carries its `variantId` (null = global, every agent) so the pilot
+   * can scope a targeted note to that one agent's context; a pilot that predates
+   * the field simply ignores it.
    */
   app.post("/studio/pilot/guidance", { preHandler: writeHandler }, async (_request, reply) => {
     const notes = deps.guidance === undefined ? [] : await deps.guidance.listEnabled();
     const upstream = await callPilot(deps.pilotFetch, `${base}/api/guidance`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ notes: notes.map((n) => ({ title: n.title, content: n.content })) }),
+      body: JSON.stringify({
+        notes: notes.map((n) => ({
+          title: n.title,
+          content: n.content,
+          variantId: n.variantId ?? null,
+        })),
+      }),
     });
     return relayJson(upstream, reply);
   });

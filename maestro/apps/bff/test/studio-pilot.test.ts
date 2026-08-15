@@ -356,3 +356,41 @@ describe("base URL is config, not request-supplied (no SSRF)", () => {
     expect(pilot.calls[0]?.url).toBe("http://pilot.internal:9999/api/state");
   });
 });
+
+describe("POST /studio/pilot/guidance — the mirror payload", () => {
+  it("forwards each enabled note WITH its variantId (null = global) to the pilot", async () => {
+    const pilot = pilotStub(() => json({ ok: true }));
+    const { h, adminToken } = await pilotHarness(pilot.fetch);
+
+    // One global note, one targeted at a single agent variant, one disabled.
+    await h.guidance.create({ title: "genel", content: "herkese", enabled: true });
+    await h.guidance.create({
+      title: "web-özel",
+      content: "yalnız web ajanına",
+      enabled: true,
+      variantId: "analyst-web",
+    });
+    await h.guidance.create({ title: "kapalı", content: "gitmez", enabled: false });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/studio/pilot/guidance",
+      headers: auth(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+
+    const call = pilot.calls.find((c) => c.url.endsWith("/api/guidance"));
+    expect(call).toBeDefined();
+    const body = JSON.parse(String(call?.init?.body)) as {
+      notes: { title: string; content: string; variantId: string | null }[];
+    };
+    // Only the ENABLED notes travel, and every one carries its scope.
+    expect(body.notes).toHaveLength(2);
+    expect(body.notes).toContainEqual({ title: "genel", content: "herkese", variantId: null });
+    expect(body.notes).toContainEqual({
+      title: "web-özel",
+      content: "yalnız web ajanına",
+      variantId: "analyst-web",
+    });
+  });
+});

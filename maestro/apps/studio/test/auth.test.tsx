@@ -221,9 +221,10 @@ describe("navigation role filtering", () => {
   it("hides an admin-only entry from a tech-lead (usability, not security)", async () => {
     renderApp({ route: "/dash", session: SESSION, token: "tok" });
     await screen.findAllByText("Panel");
-    // params is admin+tech-lead: visible. users is admin-only: hidden.
-    expect(screen.getByText("Parametreler (DB)")).toBeInTheDocument();
+    // users is admin-only: hidden from a tech-lead. params is menu-hidden for
+    // everyone (no navKey until it is wired to the engine), role or not.
     expect(screen.queryByText("Kullanıcılar & roller")).not.toBeInTheDocument();
+    expect(screen.queryByText("Parametreler (DB)")).not.toBeInTheDocument();
   });
 
   it("shows admin entries to an admin", async () => {

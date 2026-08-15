@@ -42,6 +42,12 @@ const IdParam = z.object({ id: z.string().trim().min(1).max(64) });
 const UploadBody = z.object({
   fileName: z.string().trim().min(1).max(200),
   contentBase64: z.string().min(1),
+  /**
+   * Target agent variant — the note then feeds ONLY that agent's context.
+   * Optional; empty/whitespace collapses to null = global (all agents),
+   * which is exactly what the pre-variantId Studio kept sending.
+   */
+  variantId: z.string().trim().max(64).optional(),
 });
 
 /** File types an operator may upload as a guidance note. */
@@ -99,6 +105,8 @@ export async function guidanceRoutes(app: FastifyInstance, deps: ResolvedDeps): 
     const body = UploadBody.safeParse(request.body);
     if (!body.success) throw badRequest("invalid_guidance_upload");
     const { fileName, contentBase64 } = body.data;
+    const variantId =
+      body.data.variantId === undefined || body.data.variantId === "" ? null : body.data.variantId;
 
     const extension = fileName.toLowerCase().split(".").pop() ?? "";
     if (!UPLOAD_EXTENSIONS.has(extension)) throw badRequest("guidance_upload_type");
@@ -112,7 +120,12 @@ export async function guidanceRoutes(app: FastifyInstance, deps: ResolvedDeps): 
       throw badRequest("guidance_upload_too_large");
     }
 
-    const note = await guidanceStore(deps).create({ title: fileName, content: text, enabled: true });
+    const note = await guidanceStore(deps).create({
+      title: fileName,
+      content: text,
+      enabled: true,
+      variantId,
+    });
     return reply.code(201).send({ note });
   });
 

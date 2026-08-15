@@ -8,6 +8,7 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { useToast } from "../ui/Toast.tsx";
 import { Badge, Button, Card, Input, Table } from "../ui/index.ts";
 import { partitionByDataClass, resolveDataClass, type KnowledgeDoc } from "./knowledge/classify.ts";
+import { fileToBase64 } from "./shared/file-base64.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 
 /** Who may upload/toggle guidance notes. */
@@ -19,6 +20,8 @@ interface GuidanceNote {
   readonly content: string;
   readonly enabled: boolean;
   readonly updatedAt: string;
+  /** Target agent variant; null/absent = global (every agent learns from it). */
+  readonly variantId?: string | null;
 }
 
 /**
@@ -283,6 +286,9 @@ function GuidanceLibrary(): ReactNode {
             </Button>
             <span className="screen-note">{t("guidance.upload_hint")}</span>
           </div>
+          <p className="screen-note" style={{ margin: 0 }}>
+            {t("guidance.upload_scope_note")}
+          </p>
         </div>
       )}
 
@@ -295,7 +301,21 @@ function GuidanceLibrary(): ReactNode {
       >
         <Table
           columns={[
-            { key: "title", header: t("guidance.col.title"), cell: (n: GuidanceNote) => n.title },
+            {
+              key: "title",
+              header: t("guidance.col.title"),
+              cell: (n: GuidanceNote) => (
+                <>
+                  {n.title}
+                  {typeof n.variantId === "string" && n.variantId !== "" && (
+                    <>
+                      {" "}
+                      <Badge tone="blue">{t("guidance.scope.variant", { id: n.variantId })}</Badge>
+                    </>
+                  )}
+                </>
+              ),
+            },
             {
               key: "content",
               header: t("guidance.col.content"),
@@ -345,16 +365,3 @@ function GuidanceLibrary(): ReactNode {
   );
 }
 
-/**
- * The file's bytes as plain base64 (no data: prefix). Chunked so a big file
- * does not blow the argument list of `String.fromCharCode`.
- */
-async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  const CHUNK = 0x8000;
-  for (let at = 0; at < bytes.length; at += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(at, at + CHUNK));
-  }
-  return btoa(binary);
-}

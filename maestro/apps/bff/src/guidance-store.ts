@@ -11,6 +11,13 @@ export interface GuidanceRecord {
   content: string;
   enabled: boolean;
   updatedAt: string;
+  /**
+   * Which agent variant this note targets. `null` (or absent) = global, every
+   * agent learns from it — today's behaviour; a variant id = only that agent.
+   * Optional (not `| null` required) so the Prisma store in apps/deploy keeps
+   * compiling until it maps the new `AnalysisGuidance.variantId` column.
+   */
+  variantId?: string | null;
 }
 
 /** What a create/update carries — the store stamps id/updatedAt. */
@@ -18,6 +25,8 @@ export interface GuidanceWrite {
   title: string;
   content: string;
   enabled: boolean;
+  /** Target agent variant; omitted/null = global (all agents). */
+  variantId?: string | null;
 }
 
 export interface GuidanceStore {
@@ -52,7 +61,12 @@ export class InMemoryGuidanceStore implements GuidanceStore {
 
   create(write: GuidanceWrite): Promise<GuidanceRecord> {
     const id = `ag_${++this.counter}`;
-    const row: GuidanceRecord = { id, ...write, updatedAt: this.now().toISOString() };
+    const row: GuidanceRecord = {
+      id,
+      ...write,
+      variantId: write.variantId ?? null,
+      updatedAt: this.now().toISOString(),
+    };
     this.rows.set(id, row);
     return Promise.resolve(row);
   }

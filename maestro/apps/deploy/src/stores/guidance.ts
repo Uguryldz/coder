@@ -13,6 +13,8 @@ export interface GuidanceRow {
   title: string;
   content: string;
   enabled: boolean;
+  /** Ajan hedefi (migration 0016): NULL = global; dolu = yalnız o variant. */
+  variantId?: string | null;
   updatedAt: Date;
 }
 
@@ -72,6 +74,9 @@ function toRecord(row: GuidanceRow): GuidanceRecord {
     title: row.title,
     content: row.content,
     enabled: row.enabled,
+    // Yazma yolu `...write` spread'iyle zaten DB'ye geçiyordu; okuma yolu bu
+    // eşleme olmadan hedefi DÜŞÜRÜYORDU — ajan-hedefli not global görünürdü.
+    variantId: row.variantId ?? null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }

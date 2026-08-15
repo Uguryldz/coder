@@ -127,13 +127,23 @@ describe("analysis guidance", () => {
  * the corporate template scan uses; everything else is refused by extension.
  */
 describe("POST /studio/guidance/upload", () => {
-  function upload(h: Harness, token: string, fileName: string, bytes: Uint8Array | string) {
+  function upload(
+    h: Harness,
+    token: string,
+    fileName: string,
+    bytes: Uint8Array | string,
+    variantId?: string,
+  ) {
     const raw = typeof bytes === "string" ? Buffer.from(bytes, "utf8") : Buffer.from(bytes);
     return h.app.inject({
       method: "POST",
       url: "/studio/guidance/upload",
       headers: { authorization: `Bearer ${token}` },
-      payload: { fileName, contentBase64: raw.toString("base64") },
+      payload: {
+        fileName,
+        contentBase64: raw.toString("base64"),
+        ...(variantId === undefined ? {} : { variantId }),
+      },
     });
   }
 
@@ -211,5 +221,45 @@ describe("POST /studio/guidance/upload", () => {
     const token = await h.login("viewer1");
     const res = await upload(h, token, "x.md", "içerik");
     expect(res.statusCode).toBe(403);
+  });
+
+  /**
+   * Targeted upload — `variantId` scopes the note to ONE agent variant. The
+   * round trip is asserted end to end: the create answers with the target, and
+   * the note comes back with it on the library GET.
+   */
+  it("stores the target variant and returns it on GET /studio/guidance", async () => {
+    const h = await harness();
+    const token = await adminToken(h);
+
+    const res = await upload(h, token, "web-kurallari.md", "Web ajanına özel kural.", "analyst-web");
+    expect(res.statusCode).toBe(201);
+    expect(res.json().note).toMatchObject({ title: "web-kurallari.md", variantId: "analyst-web" });
+
+    const list = await h.app.inject({
+      method: "GET",
+      url: "/studio/guidance",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().notes[0]).toMatchObject({ variantId: "analyst-web" });
+  });
+
+  it("keeps an upload WITHOUT variantId global — variantId null, today's behaviour", async () => {
+    const h = await harness();
+    const token = await adminToken(h);
+
+    const res = await upload(h, token, "genel.md", "Herkese giden not.");
+    expect(res.statusCode).toBe(201);
+    expect(res.json().note.variantId).toBeNull();
+  });
+
+  it("collapses a whitespace-only variantId to null (global), never an empty-string target", async () => {
+    const h = await harness();
+    const token = await adminToken(h);
+
+    const res = await upload(h, token, "bosluk.md", "içerik", "   ");
+    expect(res.statusCode).toBe(201);
+    expect(res.json().note.variantId).toBeNull();
   });
 });

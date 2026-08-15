@@ -1,16 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import type { LlmRole } from "@maestro/contracts";
 import { messageKeyOf } from "../api/errors.ts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useAuth } from "../auth/AuthProvider.tsx";
-import { hasRole } from "../auth/types.ts";
+import { hasAnyRole, hasRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, EmptyState, Input, Modal, TabPanel, Table, Tabs, useToast } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
+import { fileToBase64 } from "./shared/file-base64.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
+import { QueryState } from "./shared/QueryState.tsx";
 import { TextArea } from "./shared/TextArea.tsx";
 import { parseKnowledge } from "./variants/knowledge.ts";
 
@@ -43,6 +45,23 @@ interface KnowledgeLink {
   readonly version: number;
 }
 
+/**
+ * A guidance note from the shared "öğren" library (/studio/guidance). Here only
+ * the notes whose `variantId` equals THIS variant are shown — the document an
+ * operator uploads on this screen feeds this one agent, not all of them.
+ */
+interface GuidanceNote {
+  readonly id: string;
+  readonly title: string;
+  readonly content: string;
+  readonly enabled: boolean;
+  readonly updatedAt: string;
+  readonly variantId?: string | null;
+}
+
+/** Who may upload/toggle/delete guidance notes — same gate as the BFF's. */
+const GUIDANCE_WRITE_ROLES = ["admin", "tech-lead"] as const;
+
 interface VariantDetail {
   readonly variantId: string;
   readonly role: LlmRole;
@@ -72,6 +91,18 @@ export function VariantScreen(): ReactNode {
     queryFn: ({ signal }) =>
       api.get<VariantDetail>(`/variants/${encodeURIComponent(variantId ?? "")}`, { signal }),
   });
+
+  // The shared guidance library — this screen shows (and counts) only the notes
+  // targeted at THIS variant. Same query key as the Knowledge screen's library,
+  // so a write here refreshes there too.
+  const guidance = useQuery({
+    queryKey: ["guidance"],
+    enabled: variantId !== null,
+    retry: false,
+    queryFn: ({ signal }) =>
+      api.get<{ notes: readonly GuidanceNote[] }>("/studio/guidance", { signal }),
+  });
+  const targeted = (guidance.data?.notes ?? []).filter((n) => n.variantId === variantId);
 
   if (variantId === null) {
     return (
@@ -117,7 +148,12 @@ export function VariantScreen(): ReactNode {
               onChange={setTab}
               items={[
                 { id: "persona", label: t("variant.tab.persona") },
-                { id: "knowledge", label: t("variant.tab.knowledge"), count: data.knowledge.length },
+                {
+                  id: "knowledge",
+                  label: t("variant.tab.knowledge"),
+                  // Targeted guidance notes + the version's written file names.
+                  count: targeted.length + data.knowledge.length,
+                },
                 { id: "versions", label: t("variant.tab.versions"), count: data.versions.length },
               ]}
             />
@@ -134,6 +170,23 @@ export function VariantScreen(): ReactNode {
             </TabPanel>
 
             <TabPanel id="knowledge" active={tab}>
+              <VariantGuidance
+                variantId={data.variantId}
+                notes={targeted}
+                isPending={guidance.isPending}
+                error={guidance.error}
+                onRetry={() => void guidance.refetch()}
+              />
+
+              {/* The version's knowledgeRefs — file NAMES written onto the
+                  published version. Labels, not content: the agent's real
+                  targeted knowledge is the guidance list above. */}
+              <h4 className="scr-mini" style={{ marginTop: 18 }}>
+                {t("variant.knowledge.refs_title")}
+              </h4>
+              <p className="screen-note" style={{ marginTop: 0, marginBottom: 8 }}>
+                {t("variant.knowledge.refs_hint")}
+              </p>
               <Table
                 columns={[
                   {
@@ -207,6 +260,167 @@ export function VariantScreen(): ReactNode {
         />
       )}
     </Card>
+  );
+}
+
+/**
+ * "Bu ajana belge yükle" — the targeted knowledge of ONE agent variant.
+ *
+ * A document uploaded here becomes a guidance note with `variantId` set to this
+ * variant, so it is injected only into THIS agent's context (the Knowledge
+ * screen's upload stays global — every agent). After a successful write the
+ * enabled set is mirrored into the running pilot, exactly like the general
+ * library does, and the shared ["guidance"] query refreshes both screens.
+ */
+function VariantGuidance({
+  variantId,
+  notes,
+  isPending,
+  error,
+  onRetry,
+}: {
+  readonly variantId: string;
+  readonly notes: readonly GuidanceNote[];
+  readonly isPending: boolean;
+  readonly error: unknown;
+  readonly onRetry: () => void;
+}): ReactNode {
+  const t = useT();
+  const api = useApi();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const canWrite = hasAnyRole(session, GUIDANCE_WRITE_ROLES);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const invalidate = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ["guidance"] });
+    // Push the new enabled set into the running pilot so the NEXT analysis uses it.
+    void api.post("/studio/pilot/guidance", {}).catch(() => undefined);
+  };
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const contentBase64 = await fileToBase64(file);
+      return api.post<{ note: GuidanceNote }>("/studio/guidance/upload", {
+        fileName: file.name,
+        contentBase64,
+        variantId,
+      });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.show("success", t("variant.knowledge.toast.uploaded"));
+    },
+    onError: (err) => toast.show("error", t(messageKeyOf(err))),
+  });
+
+  const pickFile = (files: FileList | null): void => {
+    const file = files?.[0];
+    // Reset so choosing the same file again re-fires the change event.
+    if (fileInput.current !== null) fileInput.current.value = "";
+    if (file === undefined) return;
+    upload.mutate(file);
+  };
+
+  const toggle = useMutation({
+    mutationFn: (note: GuidanceNote) =>
+      api.put<{ note: GuidanceNote }>(`/studio/guidance/${note.id}`, { enabled: !note.enabled }),
+    onSuccess: () => invalidate(),
+    onError: () => toast.show("error", t("guidance.toast.error")),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/studio/guidance/${id}`),
+    onSuccess: () => {
+      invalidate();
+      toast.show("success", t("guidance.toast.removed"));
+    },
+    onError: () => toast.show("error", t("guidance.toast.error")),
+  });
+
+  return (
+    <>
+      <h4 className="scr-mini" style={{ marginTop: 0 }}>
+        {t("variant.knowledge.targeted_title")}
+      </h4>
+      <p className="screen-note" style={{ marginTop: 0, marginBottom: 8 }}>
+        {t("variant.knowledge.targeted_hint")}
+      </p>
+
+      {canWrite && (
+        <div className="scr-row" style={{ gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".md,.txt,.docx"
+            style={{ display: "none" }}
+            onChange={(event) => pickFile(event.target.files)}
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+          <Button variant="primary" busy={upload.isPending} onClick={() => fileInput.current?.click()}>
+            {t("variant.knowledge.action.upload")}
+          </Button>
+          <span className="screen-note">{t("guidance.upload_hint")}</span>
+        </div>
+      )}
+
+      <QueryState
+        isPending={isPending}
+        error={error}
+        isEmpty={notes.length === 0}
+        emptyTitle={t("variant.knowledge.targeted_empty")}
+        onRetry={onRetry}
+      >
+        <Table
+          columns={[
+            {
+              key: "title",
+              header: t("guidance.col.title"),
+              cell: (n: GuidanceNote) => n.title,
+            },
+            {
+              key: "enabled",
+              header: t("guidance.col.learn"),
+              cell: (n) =>
+                canWrite ? (
+                  <button
+                    type="button"
+                    className="scr-linkbtn"
+                    onClick={() => toggle.mutate(n)}
+                    disabled={toggle.isPending}
+                  >
+                    <Badge tone={n.enabled ? "green" : "gray"}>
+                      {n.enabled ? t("guidance.learn.on") : t("guidance.learn.off")}
+                    </Badge>
+                  </button>
+                ) : (
+                  <Badge tone={n.enabled ? "green" : "gray"}>
+                    {n.enabled ? t("guidance.learn.on") : t("guidance.learn.off")}
+                  </Badge>
+                ),
+            },
+            ...(canWrite
+              ? [
+                  {
+                    key: "actions",
+                    header: "",
+                    cell: (n: GuidanceNote) => (
+                      <Button size="sm" onClick={() => remove.mutate(n.id)}>
+                        {t("guidance.action.remove")}
+                      </Button>
+                    ),
+                  },
+                ]
+              : []),
+          ]}
+          rows={notes}
+          rowKey={(n) => n.id}
+          emptyLabel={t("variant.knowledge.targeted_empty")}
+        />
+      </QueryState>
+    </>
   );
 }
 

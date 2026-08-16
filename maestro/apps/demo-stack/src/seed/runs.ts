@@ -51,6 +51,11 @@ export function runRecordOf(run: DemoRun, now: Date): RunRecord {
     dataClass: run.ticketKey.startsWith("UGURPAY") || run.ticketKey.startsWith("UGURDESK")
       ? "gizli"
       : "dahili",
+    // The demo's catalog row and its engine state are derived from the SAME
+    // `DemoRun`, so the two agree by construction — which is what makes the
+    // demo a fair rehearsal of production, where they can disagree and the
+    // route has to decide between them.
+    status: run.status,
     parentTicketKey: run.parentTicketKey,
     childTicketKeys: run.childTicketKeys,
     reporter: run.reporter,

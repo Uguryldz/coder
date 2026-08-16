@@ -14,6 +14,7 @@ import type {
   SubscriptionAccount,
   TicketKey,
   WorkMode,
+  WorkflowRunStatus,
 } from "@maestro/contracts";
 
 /**
@@ -59,6 +60,24 @@ export interface RunRecord {
   readonly mode: WorkMode;
   readonly risk: RiskTier;
   readonly dataClass: DataClass;
+  /**
+   * The PLATFORM's verdict on the run — `WorkflowRun.status`, the column the
+   * reconciler writes when it compares the catalog against the engine.
+   *
+   * It is here because the engine's answer is not the whole truth. A workflow
+   * whose activity exhausted its retries dies INSIDE that activity and cannot
+   * write its own epitaph, so Temporal keeps answering `queryRunState` with the
+   * last step it remembers — `running`, forever. Eleven dead runs read as live
+   * work on the operator's board because the list had no second opinion to
+   * consult. `WorkflowRunStatus` (frozen contract) is that second opinion, and
+   * it is the SAME vocabulary the engine speaks so the route can compare them
+   * without translating.
+   *
+   * `null` when the store cannot say — a catalog that has no status column to
+   * read from must not invent one, and the route already knows how to render a
+   * row whose status nobody can supply.
+   */
+  readonly status: WorkflowRunStatus | null;
   /** Parent ticket for a fan-out child (M100); `null` for a standalone run. */
   readonly parentTicketKey: TicketKey | null;
   readonly childTicketKeys: readonly TicketKey[];

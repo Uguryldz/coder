@@ -71,6 +71,7 @@ function run(ticketKey: string, updatedAt: string, extra: Partial<RunCatalogRow>
     mode: "full_auto",
     risk: "orta",
     dataClass: "dahili",
+    status: "running",
     prId: null,
     matchJson: { via: "rule", ruleId: "rule-1", appId: "ugurpay" },
     startedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -309,6 +310,29 @@ describe("run catalog: totals and the fan-out family", () => {
 
     expect(parent?.childTicketKeys).toEqual(["UGURPAY-501"]);
     expect(child?.parentTicketKey).toBe("UGURPAY-500");
+  });
+
+  /**
+   * The status column is the platform's verdict on a run, and the read model is
+   * the only way it reaches Studio's list. A store that dropped it would leave
+   * the route with nothing but the engine's answer — and a run that died inside
+   * an activity answers `running` from the engine forever.
+   */
+  it("carries the row's own status through rather than dropping it", async () => {
+    const catalog = new PrismaRunCatalog(
+      fakeRuns([
+        run("UGURPAY-1", "2026-01-01T00:00:00.000Z", { status: "fail" }),
+        run("UGURPAY-2", "2026-01-02T00:00:00.000Z", { status: "gate" }),
+      ]),
+      noCosts,
+    );
+
+    const page = await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null });
+
+    // Read off the ROW, not defaulted: two rows with different statuses must
+    // come back different, which a hardcoded value could not manage.
+    expect(page.items.find((item) => item.ticketKey === "UGURPAY-1")?.status).toBe("fail");
+    expect(page.items.find((item) => item.ticketKey === "UGURPAY-2")?.status).toBe("gate");
   });
 
   it("does not claim a run was assessed low risk when it has not been assessed", () => {

@@ -65,6 +65,43 @@ Kullanıcı "motor ayarları neden yok?" diye sordu. İki gerçek kusur bulundu:
 Veritabanı `postgresql://maestro:***@...` ● bağlı; Jira/LLM/Kimlik/Confluence yapılandırıldı;
 ADO/Vault/Depolama/Egress/SIEM kurulmadı (doğru — o değişkenler gerçekten yok). Ham parola yok.
 
+
+## Jira "çat çat" hattı (16 Ağustos, kullanıcı isteği)
+Kullanıcı: *"Jira ayarlayacağım, connection'ları yapılandıracağım, analizler gelecek çat çat."*
+
+**Canlı kanıt — analiz akışı ÜÇ gerçek ticket'ta uçtan uca çalıştı** (OPS-42, OPS-49, OPS-51):
+intake → repo keşfi → analiz → kapı 4 (Jira'dan `/approve`) → kapı 5 → adım 13 → `done`.
+Onaylar gerçek Jira yorumlarından geldi, poller yakaladı.
+
+**Kapatılan engeller:**
+1. **Cloud `verifyWebhook` yoktu** — `CapabilityNotSupportedError` fırlatıyordu, yani webhook
+   kurulsa bile reddedilirdi. Context7/Atlassian dokümanıyla doğrulandı: şema DC ile **birebir
+   aynı** (HMAC-SHA256, `X-Hub-Signature: sha256=<hex>`, ham gövde). Yeni doğrulayıcı yazılmadı,
+   Cloud var olana bağlandı. **Sessiz kopukluk:** `driver-config.ts` `webhookSecretRef` gönderiyordu
+   ama `JiraCloudConfig`'de o alan yoktu → **Zod sessizce düşürüyordu**.
+2. **objectLock yapılandırılmamıştı** (M56/M57: 10 yıl COMPLIANCE). Kilit **iki ayrı yerde**
+   kompoze ediliyor; belgeyi yazan yol `boot.ts`'teki `deps.sink`, registry'nin portu değil.
+3. **`storage_blob` tablosu YOK** — `pgBlobTableDdl()` var ama yalnız testlerde çağrılıyor.
+   **Bir ajan bunu kapatıyor** (bu satır yazılırken).
+4. **Kurulum rehberi gizliydi** — `{empty && <StartGuide/>}`, yani "hiç koşu yoksa". 19 koşu
+   varken kurulum eksikken bile görünmüyordu. Artık `!setup.complete` ile görünüyor, kapatılabilir,
+   "gizle" ≠ "tamamlandı". Tarayıcıda doğrulandı: 5 adım, 1-2 ✓, **adım 3 (webhook) vurgulu**.
+5. **Yardım sayfasına Jira talimatı** eklendi — `GET /studio/listening-rules`'tan **canlı** okunuyor,
+   sabit metin değil. Bot e-postası gösterilmiyor (PII), sadece accountId.
+
+**Ticket'ın düşmesi için üç şart** (canlı `ListeningRule`): proje `OPS` + tip `Görev` +
+bot'a atanmış (`712020:b836c135-c9d3-499a-a665-aed43d362cfd`) → akış `analiz`.
+
+**Webhook sırrı üretildi ve env'e eklendi** (`MAESTRO_SECRET_KV_JIRA__WEBHOOK`, 64 hex).
+Kopyası: `/tmp/jira-webhook-secret.txt`. **Jira'da webhook kaydında AYNI değer girilecek.**
+BFF artık `0.0.0.0:7091` dinliyor (Jira'nın ulaşabilmesi için). İmzasız POST → **401** (doğrulandı).
+
+**Kurulum belgesi:** `maestro/docs/jira-webhook-kurulum.md` (TR, 6 bölüm, curl testi dahil).
+
+**AÇIK BULGU (ürün kararı):** Studio bağlantı kaydındaki `botAccountId`
+(`712020:7ee7a2ab-…`) ile kuralın beklediği hesap (`712020:b836c135-…`) **FARKLI**. Kural ve
+gerçek Jira bot'u eşleşiyor; bağlantı kaydı yanlış. Hangisinin doğru olduğuna karar verilmeli.
+
 ## Tuzaklar
 - **`/tmp/worker-v5.log` ÇÖKMÜŞ ESKİ worker'a ait** ("Not running. Current state: STOPPED").
   Canlı worker `/tmp/worker-flow.log`'a yazıyor. Yanlış loga bakan sistemin çöktüğünü sanır.

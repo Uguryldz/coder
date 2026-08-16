@@ -7,7 +7,7 @@ import { Badge, Card, Input, Select, Table, riskTone, runStatusTone, workModeTon
 import type { Column } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
 import { ageLabel, dateTimeLabel } from "./shared/format.ts";
-import { projectKeyOf, useRuns, type RunRow, type RunStatus } from "./shared/runs.ts";
+import { MAX_RUN_PAGE, projectKeyOf, useRuns, type RunRow, type RunStatus } from "./shared/runs.ts";
 import { RUN_STATUS_PREFIX } from "./tickets/status.ts";
 import "./shared/screens.css";
 
@@ -76,7 +76,7 @@ export function TicketsList(): ReactNode {
   const [project, setProject] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
 
-  const RUN_PAGE = 500;
+  const RUN_PAGE = MAX_RUN_PAGE;
   const { data, isPending, error, refetch } = useRuns(RUN_PAGE);
   const runs = useMemo(() => data?.runs ?? [], [data]);
   // The list is capped at one page; if the cap is hit there may be more the

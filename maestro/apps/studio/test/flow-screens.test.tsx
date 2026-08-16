@@ -15,7 +15,7 @@ import { FanoutScreen } from "../src/screens/Fanout.tsx";
 import { LiveScreen } from "../src/screens/Live.tsx";
 import { TicketsScreen } from "../src/screens/Tickets.tsx";
 import { WorkmodeScreen } from "../src/screens/Workmode.tsx";
-import { toRunList, toRunRow } from "../src/screens/shared/runs.ts";
+import { toRunList, toRunRow, MAX_RUN_PAGE } from "../src/screens/shared/runs.ts";
 import { ToastProvider } from "../src/ui/Toast.tsx";
 
 /**
@@ -348,7 +348,10 @@ describe("tickets", () => {
     renderScreen(<TicketsScreen />, { fetchImpl });
 
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
-    expect(calls[0]!.url).toBe("/api/studio/runs?limit=500");
+    // Bound to the shared constant, not a literal: the screen asked for 500
+    // against a server ceiling of 200 and every request 400'd. A literal here
+    // would have passed while the live screen showed nothing.
+    expect(calls[0]!.url).toBe(`/api/studio/runs?limit=${MAX_RUN_PAGE}`);
     expect(calls.every((call) => !/^\/api\/runs\b/.test(call.url))).toBe(true);
   });
 });

@@ -177,6 +177,21 @@ export interface UseRunsOptions {
  * The ticket list. `select` does the flattening so every consumer gets `runs`
  * already in {@link RunRow} shape and no screen has to know the envelope.
  */
+/**
+ * The server's page ceiling, mirrored.
+ *
+ * `MAX_PAGE_SIZE` lives in `apps/bff/src/routes/paging.ts` and Studio cannot
+ * import it — the BFF is a Node package and this is browser code. So it is
+ * duplicated here, once, with the reason: the tickets screen asked for 500
+ * against a ceiling of 200 and every request came back 400, so the archive list
+ * rendered "0" in every bucket while the rows were right there. A number
+ * repeated in five screens would drift again; a number repeated once, next to
+ * the hook that sends it, does not.
+ *
+ * Raising the server's ceiling means raising this too.
+ */
+export const MAX_RUN_PAGE = 200;
+
 export function useRuns(
   limit?: number,
   options: UseRunsOptions = {},

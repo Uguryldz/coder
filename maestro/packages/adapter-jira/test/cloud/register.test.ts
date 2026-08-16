@@ -7,7 +7,9 @@ import {
   JiraCloudConfig,
   JiraCloudWorkPort,
   JiraConfigError,
+  JiraWebhookVerificationError,
   registerJiraDrivers,
+  signWebhookBody,
   WORK_PORT,
 } from "../../src/index.js";
 import { fixture, stubFetch } from "../helpers.js";
@@ -51,6 +53,33 @@ describe("jira-cloud driver registration", () => {
       requestTimeoutMs: 15_000,
       groupPageSize: 50,
     });
+  });
+
+  it("resolves the webhook secret through the SecretPort reference when one is declared", async () => {
+    const driver = createJiraCloudWorkPort({
+      ...baseConfig,
+      webhookSecretRef: "kv/jira#webhook",
+      deps: { secrets },
+    });
+    const body = '{"webhookEvent":"jira:issue_created"}';
+
+    // Verifies only against the value the SecretPort returned for that key —
+    // proof the reference was resolved rather than the literal string used.
+    await expect(
+      driver.verifyWebhook(body, { "x-hub-signature": signWebhookBody(body, "resolved:kv/jira#webhook") }),
+    ).resolves.toBeUndefined();
+    await expect(
+      driver.verifyWebhook(body, { "x-hub-signature": signWebhookBody(body, "kv/jira#webhook") }),
+    ).rejects.toBeInstanceOf(JiraWebhookVerificationError);
+  });
+
+  it("builds without a webhook secret — and that driver REFUSES deliveries", async () => {
+    const driver = createJiraCloudWorkPort({ ...baseConfig, deps: { secrets } });
+    const body = '{"webhookEvent":"jira:issue_created"}';
+
+    await expect(
+      driver.verifyWebhook(body, { "x-hub-signature": signWebhookBody(body, "anything") }),
+    ).rejects.toThrow(/missing_secret/);
   });
 
   it("rejects an invalid config with the offending fields", () => {

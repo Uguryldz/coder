@@ -12,8 +12,10 @@ import {
   JiraLinkFailedError,
   JiraMembershipUnresolvedError,
   JiraResponseError,
+  JiraWebhookVerificationError,
   paragraph,
   sanitizeAttachmentFilename,
+  signWebhookBody,
 } from "../../src/index.js";
 import { fixture, stubFetch, type FetchStub } from "../helpers.js";
 
@@ -368,9 +370,98 @@ describe("JiraCloudWorkPort", () => {
     expect(page.issues).toHaveLength(6);
   });
 
-  it("refuses webhook verification — the pilot polls, nothing is verifiable", async () => {
+  // ------------------------------------------------------- webhook signatures
+  //
+  // Jira Cloud signs a registered webhook with HMAC-SHA256 over the RAW body
+  // and sends `X-Hub-Signature: sha256=<hex>`. Every case below is offline —
+  // the fixture is signed here, no network call is made.
+
+  const WEBHOOK_SECRET = "G8j4166a5OkXRD4WbqV3";
+
+  /** A driver that HAS a webhook secret, i.e. a site with a registered hook. */
+  function signedPort(secret: string = WEBHOOK_SECRET): JiraCloudWorkPort {
+    return new JiraCloudWorkPort({
+      config,
+      token: () => "api-token-123",
+      webhookSecret: () => secret,
+      fetchImpl: stubFetch([]).fetchImpl,
+    });
+  }
+
+  /** A live-shaped `jira:issue_created` delivery — the body Jira signs. */
+  const CREATED_BODY = JSON.stringify({
+    webhookEvent: "jira:issue_created",
+    issue: { key: "OPS-42", fields: { labels: ["maestro"], status: { name: "Görev" } } },
+  });
+
+  it("accepts a delivery signed with the registered secret", async () => {
+    const signature = signWebhookBody(CREATED_BODY, WEBHOOK_SECRET);
+
+    await expect(
+      signedPort().verifyWebhook(CREATED_BODY, { "X-Hub-Signature": signature }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reads the signature header case-insensitively, as Node lower-cases it", async () => {
+    const signature = signWebhookBody(CREATED_BODY, WEBHOOK_SECRET);
+
+    await expect(
+      signedPort().verifyWebhook(CREATED_BODY, { "x-hub-signature": signature }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("verifies over the RAW bytes — a re-serialised body no longer matches", async () => {
+    const signature = signWebhookBody(CREATED_BODY, WEBHOOK_SECRET);
+    const reserialised = JSON.stringify(JSON.parse(CREATED_BODY), null, 2);
+
+    await expect(
+      signedPort().verifyWebhook(reserialised, { "x-hub-signature": signature }),
+    ).rejects.toBeInstanceOf(JiraWebhookVerificationError);
+  });
+
+  it("refuses a forged, altered or absent signature — fail-closed on every path", async () => {
+    const signature = signWebhookBody(CREATED_BODY, WEBHOOK_SECRET);
+    const cases: Array<[string, Record<string, string>, string]> = [
+      ["signed with another secret", { "x-hub-signature": signWebhookBody(CREATED_BODY, "attacker") }, "mismatch"],
+      ["no signature header at all", {}, "missing_signature"],
+      ["a blank header", { "x-hub-signature": "   " }, "missing_signature"],
+      ["a non-hex digest", { "x-hub-signature": "sha256=not-hex" }, "malformed_signature"],
+    ];
+
+    for (const [why, headers, reason] of cases) {
+      const error = await signedPort()
+        .verifyWebhook(CREATED_BODY, headers)
+        .then(() => null, (e: unknown) => e);
+      expect(error, why).toBeInstanceOf(JiraWebhookVerificationError);
+      expect((error as Error).message, why).toContain(reason);
+    }
+
+    // A body tampered with after signing must not verify either.
+    await expect(
+      signedPort().verifyWebhook(`${CREATED_BODY} `, { "x-hub-signature": signature }),
+    ).rejects.toBeInstanceOf(JiraWebhookVerificationError);
+  });
+
+  it("REFUSES when no webhook secret is configured — absent never means 'skip the check'", async () => {
     const stub = stubFetch([]);
-    await expect(port(stub).verifyWebhook("{}", {})).rejects.toBeInstanceOf(CapabilityNotSupportedError);
+    const error = await port(stub)
+      .verifyWebhook(CREATED_BODY, { "x-hub-signature": signWebhookBody(CREATED_BODY, WEBHOOK_SECRET) })
+      .then(() => null, (e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JiraWebhookVerificationError);
+    expect((error as Error).message).toContain("missing_secret");
+    // Specifically NOT the old capability refusal: the BFF maps that to a
+    // different failure, and an unconfigured platform is not a missing feature.
+    expect(error).not.toBeInstanceOf(CapabilityNotSupportedError);
+  });
+
+  it("refuses when the secret resolves to an empty string", async () => {
+    const error = await signedPort("")
+      .verifyWebhook(CREATED_BODY, { "x-hub-signature": signWebhookBody(CREATED_BODY, "") })
+      .then(() => null, (e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JiraWebhookVerificationError);
+    expect((error as Error).message).toContain("missing_secret");
   });
 
   it("does not support transitions (M102 parity with the DC driver)", async () => {

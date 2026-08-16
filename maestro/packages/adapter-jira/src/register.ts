@@ -41,8 +41,13 @@ export function createJiraDcWorkPort(input: unknown): JiraDcWorkPort {
 
 /**
  * Build a Cloud driver instance from a validated config object plus deps.
- * Cloud needs no webhook secret — the pilot polls comments instead — and no
- * sleep: the Cloud client never retries in-process.
+ * No sleep: the Cloud client never retries in-process.
+ *
+ * `webhookSecretRef` is passed through only when the deployment declared one.
+ * A Cloud site with no registered webhook has no secret, and handing the driver
+ * a resolver for a reference that does not exist would turn a missing
+ * configuration into a SecretPort error at delivery time. Leaving it absent
+ * makes the driver refuse such a delivery by name (`missing_secret`) instead.
  */
 export function createJiraCloudWorkPort(input: unknown): JiraCloudWorkPort {
   const parsed = JiraCloudConfig.safeParse(input);
@@ -51,10 +56,12 @@ export function createJiraCloudWorkPort(input: unknown): JiraCloudWorkPort {
   }
   const config = parsed.data;
   const deps = extractDeps(input);
+  const webhookSecretRef = config.webhookSecretRef;
 
   return new JiraCloudWorkPort({
     config,
     token: () => deps.secrets.get(config.apiTokenRef),
+    ...(webhookSecretRef === undefined ? {} : { webhookSecret: () => deps.secrets.get(webhookSecretRef) }),
     fetchImpl: deps.fetchImpl,
   });
 }

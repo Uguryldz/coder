@@ -219,6 +219,7 @@
   "connections.test.ok": "Connection succeeded",
   "connections.test.ok_as": "Connection succeeded — {who}",
   "connections.test.ok_bot_fixed": "Connection succeeded, but the bot account was wrong — it was {was}, corrected to the token's real owner {now}. Check your listening rules.",
+  "connections.test.ok_engine_mismatch": "Connection succeeded, but the identities have split: this connection authenticates as {connection}, while the engine acts as {engine}. Listening rules created from this connection will not match tickets assigned to the engine — the rule silently catches nothing and the flow falls back to the default. Replace the connection's token with one belonging to the engine's account (or point MAESTRO_BOT_ACCOUNT_ID at this connection's account), then run the test again.",
   "connections.test.unreachable": "Could not reach the URL",
   "connections.toast.created": "{name} added",
   "connections.toast.deleted": "{name} deleted",

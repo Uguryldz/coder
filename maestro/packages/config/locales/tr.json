@@ -219,6 +219,7 @@
   "connections.test.ok": "Bağlantı başarılı",
   "connections.test.ok_as": "Bağlantı başarılı — {who}",
   "connections.test.ok_bot_fixed": "Bağlantı başarılı, ancak bot hesabı yanlıştı — {was} yazılıydı, token'in gerçek sahibi {now} ile düzeltildi. Dinleme kurallarınızı gözden geçirin.",
+  "connections.test.ok_engine_mismatch": "Bağlantı başarılı, ancak kimlikler ayrışmış: bu bağlantı {connection} hesabı olarak kimlik doğruluyor, motor ise {engine} hesabı olarak çalışıyor. Bu bağlantıdan oluşturulan dinleme kuralları, motora atanan ticket'larla eşleşmez — kural sessizce hiçbir şey yakalamaz ve akış varsayılana düşer. Bağlantının token'ını motorun hesabına ait olanla değiştirin (veya MAESTRO_BOT_ACCOUNT_ID'yi bu bağlantının hesabına eşitleyin), sonra testi yeniden çalıştırın.",
   "connections.test.unreachable": "Adrese ulaşılamadı",
   "connections.toast.created": "{name} eklendi",
   "connections.toast.deleted": "{name} silindi",

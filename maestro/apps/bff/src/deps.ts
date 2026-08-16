@@ -638,6 +638,20 @@ export interface BffConfig {
    * loopback the pilot listens on.
    */
   pilotBaseUrl: string;
+  /**
+   * The accountId the ENGINE acts as (`MAESTRO_BOT_ACCOUNT_ID`), or "" when the
+   * deployment never configured one.
+   *
+   * Read-only deployment fact, carried here for a single comparison: the
+   * connector test checks the managed Jira connection's real owner against it
+   * and warns when they differ. The BFF never authenticates as this account and
+   * never calls Jira with it — it is a value to compare, not a credential.
+   *
+   * Empty means "not configured", which disables the check rather than failing
+   * it: an install that predates the assignment-based flow has nothing to
+   * compare and must not be told its connection is wrong.
+   */
+  engineBotAccountId: string;
 }
 
 /**

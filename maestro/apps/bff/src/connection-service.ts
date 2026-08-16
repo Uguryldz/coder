@@ -120,6 +120,50 @@ export interface TestOutcome {
    * value so the panel can name what was wrong; never an email.
    */
   accountIdCorrected?: { from: string };
+  /**
+   * The connection's real owner is NOT the account the engine acts as. Both
+   * halves are internally consistent — the connection has faithfully learned
+   * its own token's owner — but they are two DIFFERENT Jira identities, so a
+   * listening rule built from this connection can never match a ticket the
+   * engine was assigned. Carries both ids so the operator can see the split;
+   * never an email. Advisory: the connection itself still works, so `ok` stays
+   * true (see `engineIdentityWarning`).
+   */
+  engineMismatch?: { connection: string; engine: string };
+}
+
+/**
+ * Does this connection act as somebody other than the engine?
+ *
+ * THE INVARIANT: the account a managed Jira connection authenticates as must be
+ * the account the engine is assigned work as. When it is not, nothing anywhere
+ * throws — and that is exactly the danger. The connection is questioned by
+ * nothing, because it is telling the truth about its own token; the engine is
+ * questioned by nothing, because it is telling the truth about its own env. The
+ * failure appears only much later and much quieter: `/onboarding/jira-connections`
+ * serves the connection's id, the setup wizard pre-fills it into a rule's
+ * `assigneeAccountId`, and `flow-decision.ts` compares that to an assignee it
+ * can never equal. The rule matches nothing, no error is raised, and the run
+ * falls back to the deployment default — a silence that is very hard to trace
+ * back from "the wizard's rule does nothing".
+ *
+ * So the comparison is made HERE, at the one moment an operator is looking at
+ * this connection's identity on purpose, and reported as a WARNING rather than
+ * a failure: a deployment may legitimately be mid-migration between the two
+ * accounts, and a test that refused would block the very screen used to fix it.
+ *
+ * An unconfigured engine account (`""`) means there is nothing to compare, not
+ * that the two disagree — an install predating the assignment-based flow must
+ * never be told its connection is wrong.
+ */
+export function engineIdentityWarning(
+  connectionAccountId: string | undefined,
+  engineAccountId: string,
+): { connection: string; engine: string } | undefined {
+  const connection = connectionAccountId?.trim() ?? "";
+  const engine = engineAccountId.trim();
+  if (connection === "" || engine === "" || connection === engine) return undefined;
+  return { connection, engine };
 }
 
 /** Where each kind's identity/health probe lives, relative to `baseUrl`. */
@@ -231,6 +275,12 @@ export async function runConnectionTest(
   record: ConnectionRecord,
   token: string | null,
   fetchImpl: ConnectorFetch,
+  /**
+   * The account the ENGINE acts as (`config.engineBotAccountId`), for the
+   * identity-split warning. Defaults to "" — "not configured", which skips the
+   * check — so every existing caller and test keeps its current behaviour.
+   */
+  engineAccountId = "",
 ): Promise<TestOutcome> {
   const probe = probeFor(record.kind);
   if (probe === null) {
@@ -282,6 +332,17 @@ export async function runConnectionTest(
   // instead of returning a bare green that hides a misattribution.
   const claimed = record.config["botAccountId"]?.trim();
 
+  // The engine-split check, layered on top and deliberately ORTHOGONAL to the
+  // one above. That one asks "does the stored field match this token?"; this one
+  // asks "is this token even the account the engine works as?". Both can be true
+  // at once, and the second survives the first being clean — a connection whose
+  // stored id is perfectly consistent with its own token is precisely the case
+  // that fooled everyone, because there is nothing self-contradictory to find.
+  // It is measured against the LIVE `accountId`, never the stored value: the
+  // question is who this credential really is, not who it was labelled as.
+  const engineMismatch = engineIdentityWarning(accountId, engineAccountId);
+  const warn = engineMismatch === undefined ? {} : { engineMismatch };
+
   if (accountId !== undefined && claimed !== undefined && claimed !== "" && claimed !== accountId) {
     return {
       ok: true,
@@ -291,6 +352,26 @@ export async function runConnectionTest(
       messageParams: { was: claimed, now: accountId, ...(identity === undefined ? {} : { who: identity }) },
       accountId,
       accountIdCorrected: { from: claimed },
+      ...warn,
+    };
+  }
+
+  // A split identity REPLACES the plain success message. `ok` stays true — the
+  // credential genuinely works — but the operator must not be shown a bare green
+  // over a connection whose rules are guaranteed to match nothing.
+  if (engineMismatch !== undefined) {
+    return {
+      ok: true,
+      messageKey: "connections.test.ok_engine_mismatch",
+      // Account ids and, at most, the display name the probe returned — the same
+      // PII rule as every other outcome here: never the `/myself` email.
+      messageParams: {
+        connection: engineMismatch.connection,
+        engine: engineMismatch.engine,
+        ...(identity === undefined ? {} : { who: identity }),
+      },
+      accountId,
+      ...warn,
     };
   }
 

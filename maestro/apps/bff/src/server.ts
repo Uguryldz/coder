@@ -43,6 +43,10 @@ export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
   sessionTtlMs: SESSION_TTL_MS,
   optInLabel: "maestro",
   pilotBaseUrl: DEFAULT_PILOT_BASE_URL,
+  // No default identity. An unset engine account means "nothing to compare
+  // against", and the connector test skips its identity check entirely — the
+  // alternative (guessing an id) would let the test accuse a correct connection.
+  engineBotAccountId: "",
 };
 
 /**
@@ -75,6 +79,12 @@ export function resolveDeps(deps: BffDeps): ResolvedDeps {
       env,
       ...DEFAULT_CONFIG,
       ...(env.PILOT_BASE_URL !== undefined ? { pilotBaseUrl: env.PILOT_BASE_URL } : {}),
+      // The engine's own account, read straight off the validated env — the same
+      // variable `apps/pilot` boots its discovery JQL from, so the two halves of
+      // the deployment are compared against ONE source rather than two copies.
+      ...(env.MAESTRO_BOT_ACCOUNT_ID !== undefined
+        ? { engineBotAccountId: env.MAESTRO_BOT_ACCOUNT_ID }
+        : {}),
       ...config,
     },
     // The internal service call to the pilot. Real `fetch` unless a test injects

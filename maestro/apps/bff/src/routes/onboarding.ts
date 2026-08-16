@@ -19,6 +19,7 @@ import { listScmRepos } from "../scm-repos-service.js";
 import { listJiraProjects } from "../jira-projects-service.js";
 import { listJiraMatchValues } from "../jira-match-values-service.js";
 import type { ConnectionStore } from "../connection-store.js";
+import { engineIdentityWarning } from "../connection-service.js";
 import type { SecretPort } from "@maestro/ports";
 import { pageOf } from "./paging.js";
 import { unwired } from "./unwired.js";
@@ -254,12 +255,36 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
       // `botAccountId` (learned on connection test) lets a listening rule offer
       // "the bot" instead of a hand-copied GUID. Absent until the connection has
       // been tested once; the rule form falls back to free text then.
-      .map((c) => ({
-        id: c.id,
-        kind: c.kind,
-        displayName: c.displayName,
-        botAccountId: c.config["botAccountId"] ?? null,
-      }));
+      .map((c) => {
+        const botAccountId = c.config["botAccountId"] ?? null;
+        // The value is served STILL, with a flag beside it, never blanked.
+        //
+        // This endpoint is what the wizard pre-fills a rule's assignee from, so
+        // it is the last place a doomed id can be caught before it is written
+        // into a rule that will match nothing. But it is a pure store read — no
+        // token, no `/myself` — so it cannot re-derive who the connection really
+        // is; all it can honestly compare is the id already learned against the
+        // account the engine works as. That is enough for the case that matters,
+        // because the learned id IS the connection's true owner whenever the
+        // test has run at all.
+        //
+        // Blanking it was the alternative and is worse: the wizard would fall
+        // back to a free-text box and an operator would hand-copy the very same
+        // wrong GUID, with the tool now silent about it. A value plus "this
+        // disagrees with the engine" lets the screen explain the problem; a
+        // missing value explains nothing.
+        const engineMismatch = engineIdentityWarning(
+          botAccountId ?? undefined,
+          deps.config.engineBotAccountId,
+        );
+        return {
+          id: c.id,
+          kind: c.kind,
+          displayName: c.displayName,
+          botAccountId,
+          ...(engineMismatch === undefined ? {} : { engineMismatch }),
+        };
+      });
     return reply.code(200).send({ connections: jira });
   });
 

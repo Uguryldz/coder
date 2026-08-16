@@ -67,6 +67,27 @@ export const EnvSchema = z.object({
    */
   PILOT_BASE_URL: z.url().optional(),
 
+  /**
+   * The Cloud accountId the ENGINE acts as — the account the pilot's discovery
+   * JQL filters on (`assignee = "<id>"`, see `apps/pilot/src/env.ts`).
+   *
+   * The BFF does not run discovery, so it never USES this to fetch anything.
+   * It reads it for one purpose: to notice when the managed Jira connection
+   * authenticates as somebody else. A deployment can hold two Jira identities
+   * at once — a human's personal token on the connection, the bot's token on
+   * the engine — and nothing then contradicts either. The connection faithfully
+   * learns its own owner, the wizard pre-fills that id into a listening rule,
+   * and the rule is compared against an assignee it can never equal. Every such
+   * rule matches nothing, silently, and the run falls back to the deployment
+   * default with no error anywhere. The connector test compares the two and
+   * WARNS; this is the only channel by which it can know the engine's half.
+   *
+   * Optional and NOT in `REQUIRED_IN_PROD`: an install that never adopted the
+   * assignment-based flow has no such id, and the check simply does not run —
+   * absent means "nothing to compare", never "they disagree".
+   */
+  MAESTRO_BOT_ACCOUNT_ID: OptionalText,
+
   // ── identity: AD/LDAPS (M8) ─────────────────────────────────────────────
   /**
    * Which identity driver the deployment uses. `local` is the MVP bcrypt

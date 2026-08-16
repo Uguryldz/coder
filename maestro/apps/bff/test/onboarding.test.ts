@@ -858,6 +858,70 @@ describe("GET /onboarding/jira-connections", () => {
     });
     expect(res.statusCode).toBe(503);
   });
+
+  /**
+   * This endpoint is what the setup wizard pre-fills a listening rule's
+   * assignee from, so it is the last gate before a doomed id is written into a
+   * rule. It cannot re-probe `/myself` — it is a pure store read with no token
+   * — but it can compare the id already learned against the engine's account,
+   * which catches the case that matters: a connection tested successfully as
+   * somebody who is not the engine.
+   */
+  const ENGINE = "712020:b836c135-c9d3-499a-a665-aed43d362cfd";
+  const HUMAN = "712020:7ee7a2ab-23e7-47aa-a61e-38b79b7eb4d1";
+
+  it("flags a learned botAccountId that is not the engine's account", async () => {
+    const app = await harness({
+      managedConnections: [{ ...JIRA_CONN, config: { ...JIRA_CONN.config, botAccountId: HUMAN } }],
+      deps: { config: { actorDomain: "ugurbank.local", engineBotAccountId: ENGINE } },
+    });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    const body = res.json() as {
+      connections: { botAccountId: string | null; engineMismatch?: { connection: string; engine: string } }[];
+    };
+    // The value is still SERVED, not blanked: a wizard with no pre-fill sends
+    // the operator to hand-copy the same wrong GUID with nothing to warn them.
+    expect(body.connections[0]?.botAccountId).toBe(HUMAN);
+    // ...but it is served with the reason to doubt it attached.
+    expect(body.connections[0]?.engineMismatch).toEqual({ connection: HUMAN, engine: ENGINE });
+  });
+
+  it("carries no flag when the connection IS the engine's account", async () => {
+    const app = await harness({
+      managedConnections: [{ ...JIRA_CONN, config: { ...JIRA_CONN.config, botAccountId: ENGINE } }],
+      deps: { config: { actorDomain: "ugurbank.local", engineBotAccountId: ENGINE } },
+    });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const body = res.json() as { connections: { botAccountId: string | null; engineMismatch?: unknown }[] };
+    expect(body.connections[0]?.botAccountId).toBe(ENGINE);
+    expect(body.connections[0]?.engineMismatch).toBeUndefined();
+  });
+
+  it("carries no flag when the deployment names no engine account", async () => {
+    // Nothing to disagree with; an unconfigured engine is not a mismatch.
+    const app = await harness({
+      managedConnections: [{ ...JIRA_CONN, config: { ...JIRA_CONN.config, botAccountId: HUMAN } }],
+    });
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/jira-connections",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const body = res.json() as { connections: { engineMismatch?: unknown }[] };
+    expect(body.connections[0]?.engineMismatch).toBeUndefined();
+  });
 });
 
 describe("GET /onboarding/jira-projects", () => {

@@ -140,7 +140,12 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     // The token is fetched here and passed to the test; it is never logged and
     // never returned. A connection with no secretRef tests as "no token".
     const token = record.secretRef === null ? null : await readToken(secrets, record.secretRef);
-    const outcome = await runConnectionTest(record, token, deps.connectorFetch);
+    const outcome = await runConnectionTest(
+      record,
+      token,
+      deps.connectorFetch,
+      deps.config.engineBotAccountId,
+    );
 
     const at = deps.clock.now().toISOString();
 
@@ -181,6 +186,16 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
       ...(outcome.accountIdCorrected === undefined
         ? {}
         : { botAccountIdWas: outcome.accountIdCorrected.from, botAccountIdNow: outcome.accountId }),
+      // A split identity is recorded even though the test passed: it is the
+      // condition under which every rule built from this connection is dead, so
+      // the trail must show WHEN it started and when it stopped, not just that
+      // somebody once tested the connection successfully.
+      ...(outcome.engineMismatch === undefined
+        ? {}
+        : {
+            engineMismatchConnection: outcome.engineMismatch.connection,
+            engineMismatchEngine: outcome.engineMismatch.engine,
+          }),
     });
 
     return reply.code(200).send({
@@ -192,6 +207,9 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
       ...(outcome.accountIdCorrected === undefined || outcome.accountId === undefined
         ? {}
         : { botAccountCorrected: { from: outcome.accountIdCorrected.from, to: outcome.accountId } }),
+      // The identity split, as structured data beside the sentence — the panel
+      // renders it as a warning without having to parse the message.
+      ...(outcome.engineMismatch === undefined ? {} : { engineMismatch: outcome.engineMismatch }),
     });
   });
 

@@ -407,6 +407,191 @@ describe("POST /studio/connections/:id/test — the bot account it claims", () =
     expect(edit.statusCode).toBe(200);
     expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(REAL_OWNER);
   });
+
+  /**
+   * The identity SPLIT — the failure the check above cannot see.
+   *
+   * The correction above asks "does the stored field match this token?". A
+   * deployment can answer yes and still be broken: the connection holds a
+   * human's personal token and faithfully learns the human's accountId, while
+   * the engine is assigned work as the bot (`MAESTRO_BOT_ACCOUNT_ID`). Nothing
+   * is self-contradictory, so nothing complains — and every rule the wizard
+   * builds from that connection compares a human's id against a bot's assignee
+   * and matches nothing, silently, forever.
+   *
+   * This is the live incident these tests were written from: connection
+   * `jira` authenticated as the operator (`0uguryldz94@…`) while the pilot ran
+   * as `uyildiz2054@…`, and three SAM1 rules were dead on arrival with a green
+   * connection test above them.
+   */
+  describe("when the connection and the engine are different accounts", () => {
+    /** The engine's own account — what `MAESTRO_BOT_ACCOUNT_ID` names. */
+    const ENGINE = REAL_OWNER;
+    /** A human's account: the connection's token really does belong to them. */
+    const HUMAN = OPERATORS_OWN;
+    /**
+     * The address the CONNECTION is configured with. Operator-entered config,
+     * not probe output — a connection read legitimately echoes it back, so it
+     * is not what the PII assertions below chase.
+     */
+    const HUMAN_EMAIL = "0uguryldz94@gmail.com";
+    /**
+     * The address the `/myself` BODY carries. THIS is the PII that must never
+     * escape: it comes from the probe, not from anything an operator typed.
+     */
+    const PROBE_EMAIL = "probe-only@gmail.com";
+
+    function humanFetch(): ConnectorFetch {
+      return () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ accountId: HUMAN, displayName: "Uğur Yıldız", emailAddress: PROBE_EMAIL }),
+            { status: 200 },
+          ),
+        );
+    }
+
+    async function splitHarness(fetchImpl: ConnectorFetch): Promise<Harness> {
+      return harness({
+        connectorFetch: fetchImpl,
+        deps: { config: { actorDomain: "ugurbank.local", engineBotAccountId: ENGINE } },
+      });
+    }
+
+    it("warns and NAMES both identities when the token is not the engine's account", async () => {
+      const h = await splitHarness(humanFetch());
+      const admToken = await admin(h);
+      // Internally consistent: the stored id IS this token's real owner. The
+      // older check has nothing to correct — which is exactly the blind spot.
+      await createJira(h, admToken, { email: HUMAN_EMAIL, botAccountId: HUMAN });
+
+      const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+        ok: boolean;
+        messageKey: string;
+        messageParams?: Record<string, string>;
+        engineMismatch?: { connection: string; engine: string };
+        botAccountCorrected?: unknown;
+      };
+
+      // A warning, NOT a failure: the credential works, and a test that refused
+      // would block the screen an operator fixes this on.
+      expect(body.ok).toBe(true);
+      expect(body.messageKey).toBe("connections.test.ok_engine_mismatch");
+      // Both halves named, so the operator can see WHICH two accounts split.
+      expect(body.messageParams?.["connection"]).toBe(HUMAN);
+      expect(body.messageParams?.["engine"]).toBe(ENGINE);
+      expect(body.engineMismatch).toEqual({ connection: HUMAN, engine: ENGINE });
+      // Nothing was "corrected" — the stored value was never inconsistent.
+      expect(body.botAccountCorrected).toBeUndefined();
+      // And the stored id is left exactly as it was: it is not wrong ABOUT the
+      // token, so overwriting it would replace a true value with another one.
+      expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(HUMAN);
+    });
+
+    it("stays quiet when the connection IS the engine's account", async () => {
+      const h = await splitHarness(myselfFetch());
+      const admToken = await admin(h);
+      await createJira(h, admToken, { email: "bot@ugurbank.local", botAccountId: ENGINE });
+
+      const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+        ok: boolean;
+        messageKey: string;
+        engineMismatch?: unknown;
+      };
+      expect(body.ok).toBe(true);
+      // The ordinary success message — no warning invented over a healthy pair.
+      expect(body.messageKey).toBe("connections.test.ok_as");
+      expect(body.engineMismatch).toBeUndefined();
+    });
+
+    it("says nothing when the deployment configured no engine account", async () => {
+      // An install predating the assignment-based flow: there is no second
+      // identity to disagree with, so an absent id must not read as a mismatch.
+      const h = await harness({ connectorFetch: humanFetch() });
+      const admToken = await admin(h);
+      await createJira(h, admToken, { email: HUMAN_EMAIL, botAccountId: HUMAN });
+
+      const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+        messageKey: string;
+        engineMismatch?: unknown;
+      };
+      expect(body.messageKey).toBe("connections.test.ok_as");
+      expect(body.engineMismatch).toBeUndefined();
+    });
+
+    it("does not fabricate a verdict when /myself could not be reached", async () => {
+      // No live answer means the connection's real owner is UNKNOWN. An
+      // unreachable probe must not be read as "it disagrees" — the check needs
+      // evidence, and a failed reach is not evidence of a split.
+      const h = await splitHarness(() => Promise.reject(new Error("ECONNREFUSED")));
+      const admToken = await admin(h);
+      await createJira(h, admToken, { email: HUMAN_EMAIL, botAccountId: HUMAN });
+
+      const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+        ok: boolean;
+        messageKey: string;
+        engineMismatch?: unknown;
+      };
+      expect(body.ok).toBe(false);
+      expect(body.messageKey).toBe("connections.test.unreachable");
+      expect(body.engineMismatch).toBeUndefined();
+      expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(HUMAN);
+    });
+
+    it("warns on TOP of a correction — the two checks are independent", async () => {
+      // Stored id wrong about its own token AND the token is not the engine's:
+      // both are true, and reporting only the first would leave the operator
+      // fixing a field while the real split went unmentioned.
+      const h = await splitHarness(humanFetch());
+      const admToken = await admin(h);
+      await createJira(h, admToken, { email: HUMAN_EMAIL, botAccountId: "712020:stale-hand-typed-id" });
+
+      const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+        messageKey: string;
+        engineMismatch?: { connection: string; engine: string };
+        botAccountCorrected?: { from: string; to: string };
+      };
+      expect(body.messageKey).toBe("connections.test.ok_bot_fixed");
+      expect(body.botAccountCorrected).toEqual({ from: "712020:stale-hand-typed-id", to: HUMAN });
+      // The correction happened, and the split is still reported beside it.
+      expect(body.engineMismatch).toEqual({ connection: HUMAN, engine: ENGINE });
+    });
+
+    it("records the split in the audit trail, with both ids and no email", async () => {
+      const h = await splitHarness(humanFetch());
+      const admToken = await admin(h);
+      await createJira(h, admToken, { email: HUMAN_EMAIL, botAccountId: HUMAN });
+      await post(h, "/studio/connections/jira/test", admToken);
+
+      const entries = await h.auditStore.read();
+      // The TEST row, not the create that precedes it on the same subject.
+      const row = entries.find(
+        (entry) => (entry.meta as Record<string, unknown> | undefined)?.["verb"] === "test_ok",
+      );
+      const meta = row?.meta as Record<string, unknown>;
+      expect(meta["engineMismatchConnection"]).toBe(HUMAN);
+      expect(meta["engineMismatchEngine"]).toBe(ENGINE);
+      // Account ids are opaque; the probe's `/myself` email never reaches the trail.
+      expect(JSON.stringify(entries)).not.toContain(PROBE_EMAIL);
+    });
+
+    it("keeps the token and the email out of the warning entirely", async () => {
+      const h = await splitHarness(humanFetch());
+      const admToken = await admin(h);
+      await createJira(h, admToken, { email: HUMAN_EMAIL, botAccountId: HUMAN });
+
+      const test = await post(h, "/studio/connections/jira/test", admToken);
+      // The warning names two account ids and nothing else that identifies a
+      // person — and never the credential that produced them.
+      expect(test.body).not.toContain(PROBE_EMAIL);
+      expect(test.body).not.toContain(TOKEN);
+      // The connection read that follows may echo the operator's own config, but
+      // still never the probe's email or the token.
+      const read = await get(h, "/studio/connections", admToken);
+      expect(read.body).not.toContain(PROBE_EMAIL);
+      expect(read.body).not.toContain(TOKEN);
+    });
+  });
 });
 
 describe("DELETE /studio/connections/:id", () => {

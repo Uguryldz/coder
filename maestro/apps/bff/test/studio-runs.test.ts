@@ -1,7 +1,10 @@
+import type { TicketSnapshot } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
+import type { ListeningRuleRecord } from "../src/listening-store.js";
 import { PageQuery } from "../src/routes/paging.js";
 import { reconciledState } from "../src/routes/studio-runs.js";
 import { auth } from "./helpers.js";
+import type { Harness } from "./helpers.js";
 import {
   AT,
   CALL,
@@ -10,12 +13,25 @@ import {
   OTHER_RUN,
   RUN,
   RUN_ID,
+  SNAPSHOT,
   TICKET,
   adminToken,
   memberToken,
   outsiderToken,
   studioHarness,
 } from "./studio-fixtures.js";
+
+/**
+ * The `RUN_STARTED` meta from the real audit CHAIN, not a spy: WHY a run took
+ * the flow it did has to survive where an operator will look for it months
+ * later, and a log line would be long gone.
+ */
+async function runStartedMeta(h: Harness, ticket: string): Promise<Record<string, unknown>> {
+  const entries = await h.auditStore.read();
+  const entry = entries.find((e) => e.action === "RUN_STARTED" && e.subject === ticket);
+  expect(entry, `no RUN_STARTED audit entry for ${ticket}`).toBeDefined();
+  return (entry?.meta ?? {}) as Record<string, unknown>;
+}
 
 /**
  * Studio's run surface. Three questions per endpoint, in the order they
@@ -601,6 +617,206 @@ describe("GET /studio/runs/:ticket/cost", () => {
     const body = response.json() as { items: { usd: number | null }[]; totals: { usd: number } };
     expect(body.items[0]?.usd).toBeNull();
     expect(body.totals.usd).toBe(0);
+  });
+});
+
+/**
+ * Starting a run BY HAND, and the ticket read that makes it classify the same
+ * way a webhook-started one does.
+ *
+ * The defect these pin down was measured on the live board. This route called
+ * `runIntake` with a ticket key, an actor and `explicit: true` — and nothing
+ * else. `flow-decision.ts` matches a ListeningRule on issue type, assignee and
+ * status, so a hand start matched NO rule, fell through to the deployment
+ * default, and lost both the rule's `flow` and its `statusMap`. OPS-57 was
+ * started this way under a project whose rule carries a full map: the ticket
+ * never moved and no status journal line was ever written, with nothing on the
+ * run to say why.
+ *
+ * The assertions therefore go through the intake SEAM — the start input the
+ * engine actually received — rather than spying on `getTicket`. That a snapshot
+ * was fetched is an implementation detail; that the rule matched is the bug.
+ */
+describe("POST /studio/runs/:ticket/start", () => {
+  /** A rule keyed on the two fields a hand start used to omit. */
+  const BOT_RULE: ListeningRuleRecord = {
+    ruleId: "lr_ops",
+    projectKey: "UGURPAY",
+    assigneeAccountId: SNAPSHOT.assignee ?? "",
+    matchKind: "issuetype",
+    matchValue: SNAPSHOT.issueType,
+    flowType: "duzeltme",
+    priority: 10,
+    enabled: true,
+    statusMap: { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" },
+  };
+
+  /** The harness with a rule seeded and the deployment default set to something ELSE,
+   * so "the rule matched" and "the default applied" cannot be confused. */
+  async function startHarness(
+    options: { rules?: readonly ListeningRuleRecord[]; snapshot?: TicketSnapshot | null } = {},
+  ): Promise<Harness> {
+    const h = await studioHarness({
+      listeningRules: options.rules ?? [BOT_RULE],
+      deps: { config: { actorDomain: "ugurbank.local", defaultFlow: "analiz" } },
+    });
+    // `null` means "Jira will not answer" — the fake throws for an unseeded key.
+    if (options.snapshot !== null) h.work.putTicket(options.snapshot ?? SNAPSHOT);
+    return h;
+  }
+
+  async function start(h: Harness, token: string, ticket = TICKET) {
+    const before = h.runs.started.length;
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/studio/runs/${ticket}/start`,
+      headers: auth(token),
+    });
+    return { response, started: h.runs.started[before] };
+  }
+
+  it("refuses a caller without a start role", async () => {
+    const h = await startHarness();
+    const token = await memberToken(h);
+
+    const { response } = await start(h, token);
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  /**
+   * The forwarding itself, asserted on the intake call rather than the route:
+   * the snapshot's issue type, labels and assignee have to REACH `runIntake`,
+   * because those three are the only thing standing between a hand start and
+   * the deployment default.
+   */
+  it("forwards the snapshot's issue type, assignee and labels into intake", async () => {
+    // No rules at all, so nothing about the flow can mask what was forwarded —
+    // this test is only about the fields travelling.
+    const h = await startHarness({ rules: [] });
+    const token = await adminToken(h);
+
+    const { response, started } = await start(h, token);
+
+    expect(response.statusCode).toBe(202);
+    expect(h.work.ticketReads).toContain(TICKET);
+    // The audit entry is where the classification is preserved; the run input is
+    // where it took effect. Both are read below — here, that the run happened.
+    expect(started?.ticket).toBe(TICKET);
+  });
+
+  /**
+   * THE REGRESSION. A rule keyed on issuetype+assignee matches a hand start,
+   * so the run carries the rule's flow and the rule's status map — the two
+   * things OPS-57 silently lost.
+   */
+  it("matches a rule keyed on issuetype and assignee, carrying its flow and status map", async () => {
+    const h = await startHarness();
+    const token = await adminToken(h);
+
+    const { response, started } = await start(h, token);
+
+    expect(response.statusCode).toBe(202);
+    const input = started as { flow?: unknown; statusMap?: unknown } | undefined;
+    // `duzeltme` is the RULE's flow; the deployment default is `analiz`. Before
+    // the fix this read `analiz`, which is the whole defect in one assertion.
+    expect(input?.flow).toBe("duzeltme");
+    expect(input?.statusMap).toEqual(BOT_RULE.statusMap);
+  });
+
+  /**
+   * The same match, on a ticket with no execution yet — so the run actually
+   * STARTS and the decision reaches the audit chain. `studioHarness` parks its
+   * default ticket at a gate, which makes `signalWithStart` a no-op start and
+   * writes no `RUN_STARTED`; a fresh key is the only way to see the entry.
+   *
+   * This is the half an operator reads months later. `flowReason: "rule"`
+   * naming `lr_ops` is the difference between "a rule chose this" and "nothing
+   * matched, so the default applied" — the sentence OPS-57 could not produce.
+   */
+  it("records the matched rule and its map in the audit chain", async () => {
+    const FRESH = "UGURPAY-902";
+    const h = await startHarness({ snapshot: { ...SNAPSHOT, key: FRESH } });
+    const token = await adminToken(h);
+
+    const { response } = await start(h, token, FRESH);
+    expect(response.statusCode).toBe(202);
+
+    const meta = await runStartedMeta(h, FRESH);
+    expect(meta["flow"]).toBe("duzeltme");
+    expect(meta["flowReason"]).toBe("rule");
+    expect(meta["flowRuleId"]).toBe("lr_ops");
+    // Recorded as JSON rather than the string "yorum", which is what a
+    // comment-only (unmatched) run writes.
+    expect(JSON.parse(String(meta["statusMap"]))).toEqual(BOT_RULE.statusMap);
+  });
+
+  /**
+   * The same start, with the snapshot withheld: this is what the route did
+   * BEFORE the fix, and it is what a failing Jira still produces. Keeping it as
+   * a test means the fallback stays a deliberate behaviour rather than an
+   * accident nobody would notice if it changed.
+   */
+  it("falls back to the deployment default when the ticket cannot be classified", async () => {
+    const h = await startHarness({ snapshot: null });
+    const token = await adminToken(h);
+
+    const { started } = await start(h, token);
+
+    const input = started as { flow?: unknown } | undefined;
+    expect(input?.flow).toBe("analiz");
+    expect(Object.hasOwn(input ?? {}, "statusMap")).toBe(false);
+  });
+
+  /**
+   * A Jira that will not answer must not cost the run. Losing the snapshot
+   * costs rule matching — the behaviour this route had all along — and nothing
+   * more; turning a reachable engine into a 500 would mean a degraded Jira
+   * leaves an operator unable to start anything at all.
+   */
+  it("still accepts the start when the ticket read throws", async () => {
+    const h = await startHarness({ snapshot: null });
+    const token = await adminToken(h);
+
+    const { response, started } = await start(h, token);
+
+    expect(response.statusCode).toBe(202);
+    // Intake still ran: the run reached the engine.
+    expect(started).toBeDefined();
+    expect(started?.ticket).toBe(TICKET);
+    // And no snapshot field was invented to fill the gap: the bot rule wants an
+    // issue type this start could not read, so it does not claim the ticket.
+    expect((started as { flow?: unknown } | undefined)?.flow).toBe("analiz");
+  });
+
+  /**
+   * An unassigned ticket sends NO assignee rather than a null one.
+   * `IntakeRequest.assignee` is optional and has no null to give it — absent
+   * already means "not known here" — and a rule with a non-empty
+   * `assigneeAccountId` must not match a ticket nobody is assigned to.
+   */
+  it("omits an absent assignee instead of sending null", async () => {
+    const h = await startHarness({ snapshot: { ...SNAPSHOT, assignee: null } });
+    const token = await adminToken(h);
+
+    const { response, started } = await start(h, token);
+
+    expect(response.statusCode).toBe(202);
+    // The bot rule wants `712020:maestro-bot`; an UNASSIGNED ticket is not the
+    // bot's, so the rule does not claim it and the default applies. A null
+    // forwarded as a value would have matched nothing either — but this also
+    // proves the request stayed well-formed rather than throwing on the way in.
+    expect((started as { flow?: unknown } | undefined)?.flow).toBe("analiz");
+
+    // The issue type still travelled, so a rule that keys on type ALONE still
+    // matches an unassigned ticket — the omission is scoped to the assignee.
+    const open = await startHarness({
+      rules: [{ ...BOT_RULE, ruleId: "lr_any", assigneeAccountId: "" }],
+      snapshot: { ...SNAPSHOT, assignee: null },
+    });
+    const openToken = await adminToken(open);
+    const second = await start(open, openToken);
+    expect((second.started as { flow?: unknown } | undefined)?.flow).toBe("duzeltme");
   });
 });
 

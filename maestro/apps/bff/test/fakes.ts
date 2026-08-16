@@ -82,8 +82,27 @@ export class FakeWorkPort implements WorkPort, CommandDiagnostics {
     return this.comments.filter((comment) => comment.ticket === ticket).at(-1)?.body;
   }
 
-  getTicket(_key: TicketKey): Promise<TicketSnapshot> {
-    throw new CapabilityNotSupportedError("WorkPort", "getTicket");
+  /**
+   * Snapshots a test has seeded with `putTicket`. Unseeded, `getTicket` throws
+   * the way it always has — that is the DEGRADED path (a Jira that will not
+   * answer), and it stays the default so every test written before the ticket
+   * read existed goes on exercising the behaviour it was written for.
+   */
+  private readonly tickets = new Map<string, TicketSnapshot>();
+  /** Records every `getTicket`, so a test can prove a path did not ask. */
+  readonly ticketReads: string[] = [];
+
+  putTicket(snapshot: TicketSnapshot): void {
+    this.tickets.set(snapshot.key, snapshot);
+  }
+
+  getTicket(key: TicketKey): Promise<TicketSnapshot> {
+    this.ticketReads.push(key);
+    const snapshot = this.tickets.get(key);
+    // Unseeded is "this Jira will not answer for that ticket", which is exactly
+    // what the real DC driver does for an issue the token cannot see.
+    if (snapshot === undefined) throw new CapabilityNotSupportedError("WorkPort", "getTicket");
+    return Promise.resolve(snapshot);
   }
   updateComment(_key: TicketKey, _commentId: string, _body: unknown): Promise<void> {
     throw new CapabilityNotSupportedError("WorkPort", "updateComment");

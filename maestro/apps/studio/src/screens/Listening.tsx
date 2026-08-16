@@ -22,6 +22,15 @@ import "./shared/screens.css";
  * pilot to actually pick the rules up — mirrored to the pilot's own live store
  * via `/studio/pilot/listening` on every write (the pilot cannot read the DB).
  *
+ * Each rule also carries an OPTIONAL Jira status map — which status the ticket
+ * moves to at each point of the flow. Absent is the default and means
+ * comment-only: Maestro writes its comments and never touches the board. The
+ * server has accepted the map since it was added, but nothing here could set
+ * it, so the only way to use the feature was to write jsonb into Postgres by
+ * hand — which in practice meant an operator could not use it at all. The
+ * collapsed opt-in section in the form, the "Düzenle" path out of the table and
+ * the "Jira durumu" column are that gap closed.
+ *
  * WRITES ARE ADMIN-ONLY, mirroring the BFF's WRITE_ROLES. A tech-lead can read
  * the table but the form is hidden; the BFF is the real gate (a viewer who
  * forged the request still gets a 403).
@@ -32,6 +41,41 @@ const WRITE_ROLES = ["admin"] as const;
 
 type FlowType = "analiz" | "duzeltme" | "gelistirme";
 type MatchKind = "status" | "issuetype";
+
+/**
+ * The Jira status map, mirroring `StatusMapSchema` in the BFF's listening-store.
+ * Every point is optional on purpose: an empty field means "bu adımda ticket'ı
+ * oynatma", so an operator can move the ticket at two points and leave the
+ * other three to the comment-only default.
+ */
+interface StatusMap {
+  readonly onStart?: string;
+  readonly onNeedInfo?: string;
+  readonly onReview?: string;
+  readonly onRejected?: string;
+  readonly onDone?: string;
+  readonly reassignOnNeedInfo?: boolean;
+}
+
+/**
+ * The five status points, in the order the flow actually walks them. Rendering
+ * from this list rather than five hand-written blocks is what keeps the form,
+ * the round-trip and the table cell from drifting apart when a sixth point is
+ * added on the server.
+ */
+const STATUS_POINTS = ["onStart", "onNeedInfo", "onReview", "onRejected", "onDone"] as const;
+type StatusPoint = (typeof STATUS_POINTS)[number];
+
+/** The form's own view of the map: every point a string, "" meaning unset. */
+type StatusDraft = Readonly<Record<StatusPoint, string>>;
+
+const EMPTY_STATUS_DRAFT: StatusDraft = {
+  onStart: "",
+  onNeedInfo: "",
+  onReview: "",
+  onRejected: "",
+  onDone: "",
+};
 
 interface ListeningRule {
   readonly ruleId: string;
@@ -46,6 +90,12 @@ interface ListeningRule {
   readonly analystVariantId?: string | null;
   /** Agent variant for the engineering side; null/absent → the default agent. */
   readonly engineerVariantId?: string | null;
+  /**
+   * Which Jira status the ticket is moved to at each point of the flow.
+   * null/absent is the DEFAULT and means comment-only: Maestro writes its
+   * comments and never touches the ticket's status.
+   */
+  readonly statusMap?: StatusMap | null;
 }
 
 /** The slice of `GET /variants` this screen needs: id + role, for filtering. */
@@ -123,6 +173,27 @@ export function ListeningScreen(): ReactNode {
   const [analystVariantId, setAnalystVariantId] = useState("");
   const [engineerVariantId, setEngineerVariantId] = useState("");
 
+  // The Jira status map. `statusOn` is the opt-in: OFF by default, because
+  // comment-only is the behaviour every existing rule already has and moving a
+  // customer's tickets is not something a form should start doing on its own.
+  // The draft survives toggling off and on again, so an operator who collapses
+  // the section to re-read a hint does not lose what they typed — only what is
+  // sent depends on the toggle.
+  const [statusOn, setStatusOn] = useState(false);
+  // Whether the disclosure is expanded, tracked separately from `statusOn`: an
+  // operator opens the section to READ what it does long before deciding to use
+  // it, and closing it must never be read as "turn this off".
+  const [statusPanelOpen, setStatusPanelOpen] = useState(false);
+  const [statusDraft, setStatusDraft] = useState<StatusDraft>(EMPTY_STATUS_DRAFT);
+  const [reassignOnNeedInfo, setReassignOnNeedInfo] = useState(false);
+  const setStatusAt = (point: StatusPoint, value: string): void =>
+    setStatusDraft((prev) => ({ ...prev, [point]: value }));
+
+  // Editing an existing rule: its id, or null while the form is adding a new
+  // one. The BFF's PUT is a full replace, so the form carries EVERY field of
+  // the rule being edited — a half-filled edit would silently blank the rest.
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+
   // The agent-variant catalogue, for the two per-role dropdowns. A platform
   // without the variants surface (503) simply leaves both lists empty and the
   // selects offer only "default agent" — the rule still saves.
@@ -153,12 +224,53 @@ export function ListeningScreen(): ReactNode {
   });
   const valueOptions = matchValues.data?.ok ? (matchValues.data.values ?? []) : [];
 
+  // The project's real STATUS names, for the status-map fields. Same endpoint as
+  // "Değer", pinned to kind=status regardless of what the rule matches on: a
+  // rule can trigger on an issue type and still move the ticket through
+  // statuses, so the map can never borrow `matchValues` — that one follows
+  // `matchKind` and would offer issue types half the time. Only fetched once the
+  // section is actually opened; a closed section must not spend a Jira call.
+  // Any failure leaves the list empty and the five fields fall back to free
+  // text, which is why the "birebir aynı yazın" warning stays on screen either
+  // way.
+  const statusNames = useQuery({
+    queryKey: ["jira-match-values", jiraConnId, projectKey, "status"],
+    enabled: statusOn && jiraConnId !== null && projectKey.trim() !== "",
+    retry: false,
+    queryFn: ({ signal }) =>
+      api.get<{ ok: boolean; values?: readonly string[] }>(
+        `/onboarding/jira-match-values?connectionId=${encodeURIComponent(jiraConnId ?? "")}` +
+          `&project=${encodeURIComponent(projectKey.trim())}&kind=status`,
+        { signal },
+      ),
+  });
+  const statusOptions = statusNames.data?.ok ? (statusNames.data.values ?? []) : [];
+
   const invalidate = (): void => {
     void queryClient.invalidateQueries({ queryKey: ["listening-rules"] });
   };
 
+  /** The status-map half of the form, back to "this rule only comments". */
+  const clearStatusForm = (): void => {
+    setStatusOn(false);
+    setStatusPanelOpen(false);
+    setStatusDraft(EMPTY_STATUS_DRAFT);
+    setReassignOnNeedInfo(false);
+  };
+
+  /** Leave edit mode and hand the form back to "add a new rule". */
+  const cancelEdit = (): void => {
+    setEditingRuleId(null);
+    setMatchValue("");
+    setAnalystVariantId("");
+    setEngineerVariantId("");
+    clearStatusForm();
+  };
+
+  type RuleBody = Omit<ListeningRule, "ruleId" | "priority" | "enabled">;
+
   const create = useMutation({
-    mutationFn: (body: Omit<ListeningRule, "ruleId" | "priority" | "enabled">) =>
+    mutationFn: (body: RuleBody) =>
       api.post<{ rule: ListeningRule }>("/studio/listening-rules", body),
     onSuccess: () => {
       invalidate();
@@ -168,9 +280,57 @@ export function ListeningScreen(): ReactNode {
       void api.post("/studio/pilot/listening", { action: "reload" }).catch(() => undefined);
       toast.show("success", t("listening.toast.created"));
       setMatchValue("");
+      // The status map is per-rule, not a form default: leaving it filled after
+      // a save would quietly attach the previous rule's transitions to the next
+      // one an operator adds.
+      clearStatusForm();
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
+
+  // Editing replaces the whole rule (the BFF's PUT is a replace, not a patch),
+  // which is exactly what the form holds — every field of the rule that was
+  // loaded into it. This is the only way to reach the status map from the UI for
+  // a rule that already exists, which until now meant hand-editing jsonb in
+  // Postgres.
+  const update = useMutation({
+    mutationFn: ({ ruleId, body }: { ruleId: string; body: RuleBody }) =>
+      api.put<{ rule: ListeningRule }>(`/studio/listening-rules/${ruleId}`, body),
+    onSuccess: () => {
+      invalidate();
+      void api.post("/studio/pilot/listening", { action: "reload" }).catch(() => undefined);
+      toast.show("success", t("listening.toast.updated"));
+      cancelEdit();
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
+  /** Load an existing rule into the form — the round trip out of the table. */
+  const onEdit = (rule: ListeningRule): void => {
+    setEditingRuleId(rule.ruleId);
+    setProjectKey(rule.projectKey);
+    setAssigneeTouched(true); // never let the bot-id pre-fill overwrite the rule's own
+    setAssigneeAccountId(rule.assigneeAccountId);
+    setMatchKind(rule.matchKind);
+    setMatchValue(rule.matchValue);
+    setFlowType(rule.flowType);
+    setAnalystVariantId(rule.analystVariantId ?? "");
+    setEngineerVariantId(rule.engineerVariantId ?? "");
+    const map = rule.statusMap ?? null;
+    // A rule with no map opens with the section CLOSED — the form must show what
+    // the rule actually does today (comment only), not invite an edit nobody
+    // asked for.
+    setStatusOn(map !== null);
+    setStatusPanelOpen(map !== null);
+    setStatusDraft(
+      map === null
+        ? EMPTY_STATUS_DRAFT
+        : (Object.fromEntries(
+            STATUS_POINTS.map((point) => [point, map[point] ?? ""]),
+          ) as StatusDraft),
+    );
+    setReassignOnNeedInfo(map?.reassignOnNeedInfo === true);
+  };
 
   // One-click defaults: the BFF reads the project's Jira issue types and seeds
   // a rule per type (bug-like types → düzeltme, the rest → analiz), skipping
@@ -240,7 +400,7 @@ export function ListeningScreen(): ReactNode {
       toast.show("error", t("listening.form.incomplete"));
       return;
     }
-    create.mutate({
+    const body: RuleBody = {
       projectKey: projectKey.trim(),
       assigneeAccountId: assigneeAccountId.trim(),
       matchKind,
@@ -249,7 +409,10 @@ export function ListeningScreen(): ReactNode {
       // "" is the "default agent" choice — normalised to null on the wire.
       analystVariantId: analystVariantId === "" ? null : analystVariantId,
       engineerVariantId: engineerVariantId === "" ? null : engineerVariantId,
-    });
+      statusMap: buildStatusMap(statusOn, statusDraft, reassignOnNeedInfo),
+    };
+    if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
+    else create.mutate(body);
   };
 
   const columns: readonly Column<ListeningRule>[] = [
@@ -285,6 +448,26 @@ export function ListeningScreen(): ReactNode {
       ),
     },
     {
+      key: "statusMap",
+      header: t("listening.col.status"),
+      // The whole point of surfacing the map: whether a rule MOVES tickets or
+      // only comments has to be visible from the list, not something an operator
+      // discovers by opening each rule. A mapped rule shows the statuses it walks
+      // through, in flow order; an unmapped one says "yorum" outright rather than
+      // leaving a blank that could read as "not loaded yet".
+      cell: (r) => {
+        const steps = statusSummary(r.statusMap);
+        if (steps.length === 0) {
+          return <span className="screen-note">{t("listening.status.comment_only_short")}</span>;
+        }
+        return (
+          <span className="screen-note" title={steps.join(" → ")}>
+            {steps.join(" → ")}
+          </span>
+        );
+      },
+    },
+    {
       key: "assignee",
       header: t("listening.col.assignee"),
       // The raw accountId is a 40-char id that overruns the column and means
@@ -301,14 +484,22 @@ export function ListeningScreen(): ReactNode {
       align: "right",
       cell: (r) =>
         canWrite ? (
-          <Button
-            variant="danger"
-            size="sm"
-            busy={remove.isPending}
-            onClick={() => remove.mutate(r.ruleId)}
-          >
-            {t("listening.action.delete")}
-          </Button>
+          <span style={{ display: "inline-flex", gap: 6 }}>
+            {/* "Düzenle" loads the rule back into the form above — the only way
+                to reach an EXISTING rule's status map, which until now meant
+                editing jsonb in the database by hand. */}
+            <Button size="sm" onClick={() => onEdit(r)}>
+              {t("listening.action.edit")}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              busy={remove.isPending}
+              onClick={() => remove.mutate(r.ruleId)}
+            >
+              {t("listening.action.delete")}
+            </Button>
+          </span>
         ) : null,
     },
   ];
@@ -338,7 +529,10 @@ export function ListeningScreen(): ReactNode {
       </Card>
 
       {canWrite && (
-        <Card title={t("listening.form.title")} subtitle={t("listening.form.sub")}>
+        <Card
+          title={editingRuleId === null ? t("listening.form.title") : t("listening.form.title_edit")}
+          subtitle={t("listening.form.sub")}
+        >
           <div className="screen-filters">
             {boundProjects.length > 0 ? (
               <Select
@@ -435,11 +629,109 @@ export function ListeningScreen(): ReactNode {
               ]}
               hint={t("listening.agent.hint")}
             />
-            <div style={{ display: "flex", alignItems: "flex-end" }}>
-              <Button variant="primary" busy={create.isPending} onClick={onSubmit}>
-                {t("listening.action.add")}
-              </Button>
+          </div>
+
+          {/* The Jira status map. Collapsed, and OPT-IN: the checkbox inside is
+              off unless the rule being edited already has a map, because
+              comment-only is what every rule does today and a form must not
+              start moving a bank's tickets because it rendered.
+              `open` is CONTROLLED (with onToggle), not left to the browser: the
+              disclosure has to spring open by itself when "Düzenle" loads a rule
+              that already has a map — a configured map hidden behind a closed
+              summary is exactly the invisibility this screen is here to fix. */}
+          <details
+            className="scr-adv"
+            style={{ marginTop: 14 }}
+            open={statusPanelOpen}
+            onToggle={(e) => setStatusPanelOpen((e.currentTarget as HTMLDetailsElement).open)}
+          >
+            <summary className="scr-adv__summary">{t("listening.status.summary")}</summary>
+            <div style={{ padding: "12px 2px 2px" }}>
+              <p className="screen-note" style={{ marginTop: 0 }}>
+                {t("listening.status.intro")}
+              </p>
+              <label
+                className="screen-note"
+                style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0 0" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={statusOn}
+                  onChange={(e) => {
+                    setStatusOn(e.target.checked);
+                    // Turning it off never rewrites what was typed — the draft
+                    // is kept so re-opening restores it. Only what `onSubmit`
+                    // builds depends on the toggle.
+                  }}
+                />
+                {t("listening.status.enable")}
+              </label>
+
+              {statusOn && (
+                <>
+                  <p className="screen-note">{t("listening.status.exact")}</p>
+                  <div className="screen-filters" style={{ marginTop: 10 }}>
+                    {STATUS_POINTS.map((point) =>
+                      statusOptions.length > 0 ? (
+                        <Select
+                          key={point}
+                          label={t(`listening.status.${point}`)}
+                          value={statusDraft[point]}
+                          onChange={(e) => setStatusAt(point, e.target.value)}
+                          options={[
+                            { value: "", label: t("listening.status.skip") },
+                            ...statusOptions.map((v) => ({ value: v, label: v })),
+                          ]}
+                          hint={t(`listening.status.hint.${point}`)}
+                        />
+                      ) : (
+                        // Jira's status list could not be read (no connection,
+                        // no project picked yet, project unreadable). Free text
+                        // rather than an empty dropdown, so the map can still be
+                        // written — the "birebir aynı" warning above is what
+                        // carries the risk in that case.
+                        <Input
+                          key={point}
+                          label={t(`listening.status.${point}`)}
+                          value={statusDraft[point]}
+                          onChange={(e) => setStatusAt(point, e.target.value)}
+                          hint={t(`listening.status.hint.${point}`)}
+                        />
+                      ),
+                    )}
+                  </div>
+                  <label
+                    className="screen-note"
+                    style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={reassignOnNeedInfo}
+                      onChange={(e) => setReassignOnNeedInfo(e.target.checked)}
+                    />
+                    {t("listening.status.reassign")}
+                  </label>
+                  <p className="screen-note" style={{ marginTop: 4 }}>
+                    {t("listening.status.reassign_hint")}
+                  </p>
+                </>
+              )}
             </div>
+          </details>
+
+          <div className="screen-actions">
+            <Button
+              variant="primary"
+              busy={create.isPending || update.isPending}
+              onClick={onSubmit}
+            >
+              {editingRuleId === null ? t("listening.action.add") : t("listening.action.save")}
+            </Button>
+            {editingRuleId !== null && (
+              <Button size="sm" onClick={cancelEdit}>
+                {t("listening.action.cancel_edit")}
+              </Button>
+            )}
           </div>
         </Card>
       )}
@@ -471,4 +763,51 @@ export function ListeningScreen(): ReactNode {
 function shortAccount(accountId: string): string {
   if (accountId.length <= 14) return accountId;
   return `${accountId.slice(0, 12)}…`;
+}
+
+/**
+ * Turn the form's five text fields into the wire shape — or into `null`.
+ *
+ * `null` is not a stylistic choice: it is the ONE representation of
+ * "comment-only mode" the BFF and the store agree on. Sending `{}` would be a
+ * second, differently-shaped way to say the same thing, and a rule that had a
+ * map and then had every field cleared has to end up indistinguishable from a
+ * rule that never had one — otherwise an operator who emptied the form would
+ * look at the table and still see a rule that claims to move tickets. (The BFF
+ * normalises `{}` to null as well; we send null anyway so the request says
+ * plainly what it means rather than relying on the far side to clean up.)
+ *
+ * Empty fields are OMITTED rather than sent as "": `StatusMapSchema` requires
+ * a non-empty string, so an empty one is a 400 for the whole rule instead of
+ * the intended "bu adımda ticket'ı oynatma".
+ */
+function buildStatusMap(
+  enabled: boolean,
+  draft: StatusDraft,
+  reassignOnNeedInfo: boolean,
+): StatusMap | null {
+  if (!enabled) return null;
+  const map: Record<string, string | boolean> = {};
+  for (const point of STATUS_POINTS) {
+    const value = draft[point].trim();
+    if (value !== "") map[point] = value;
+  }
+  // `reassignOnNeedInfo` alone is a real configuration: hand the ticket back to
+  // its reporter without moving it on the board. It counts as a filled map.
+  if (reassignOnNeedInfo) map.reassignOnNeedInfo = true;
+  return Object.keys(map).length === 0 ? null : (map as StatusMap);
+}
+
+/**
+ * The table's one-glance answer to "does this rule move tickets?".
+ *
+ * Deliberately compact — the flow order, arrows between the statuses that are
+ * actually set, nothing for the points left blank. A rule with no map reads as
+ * "yorum" so the two modes are told apart at a distance without a legend.
+ */
+function statusSummary(map: StatusMap | null | undefined): readonly string[] {
+  if (!map) return [];
+  return STATUS_POINTS.map((point) => map[point]).filter(
+    (value): value is string => typeof value === "string" && value !== "",
+  );
 }

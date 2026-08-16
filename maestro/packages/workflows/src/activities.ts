@@ -51,6 +51,45 @@ export interface TestRunResult {
 
 export type GateVerdict = { accepted: true } | { accepted: false; reason: string };
 
+/**
+ * The five moments a listening rule may map to a Jira status. They are named
+ * after what HAPPENED to the ticket, not after the step number that happened to
+ * be running: a step is an implementation detail that gets renumbered, while
+ * "Maestro is now waiting on the reporter" is the fact an operator's board is
+ * modelling. The names match `StatusMap`'s fields in `apps/bff` minus the `on`
+ * prefix, so a journal line and the rule's JSON read as the same vocabulary.
+ */
+export type StatusMovePoint = "start" | "need_info" | "review" | "rejected" | "done";
+
+/**
+ * One request to move the ticket on the board.
+ *
+ * `status` is OPTIONAL because the two halves of `need_info` are independent:
+ * an operator may map `reassignOnNeedInfo` without `onNeedInfo` (their board
+ * models "waiting on the reporter" as an assignee, not as a column), and asking
+ * for the assignment alone must not invent a status to move to.
+ */
+export interface StatusMoveRequest {
+  at: StatusMovePoint;
+  /** The status NAME the rule asked for; absent means "do not move, only assign". */
+  status?: string;
+  /** `reassignOnNeedInfo`: hand the ticket back to its reporter as well. */
+  toReporter?: boolean;
+}
+
+/**
+ * What the move actually did. Returned rather than thrown — see
+ * `moveTicketStatus` — so a caller could branch on it; today nobody does,
+ * because the policy is the same everywhere: warn, and carry on.
+ */
+export interface StatusMoveResult {
+  moved: boolean;
+  /** Why not, when `moved` is false: `already`, `forbidden`, `no_capability`… */
+  reason?: string;
+  /** Whether the ticket was also handed back to its reporter. */
+  reassigned: boolean;
+}
+
 export interface PrRef {
   adoProject: string;
   adoRepo: string;
@@ -130,6 +169,21 @@ export interface MaestroActivities {
   closeTicket(ticket: TicketKey): Promise<void>;
 
   // ── cross-cutting ────────────────────────────────────────────────────────
+  /**
+   * Move the ticket to the status the run's listening rule asked for, and say
+   * what happened.
+   *
+   * WARN BUT CONTINUE, without exception. This resolves rather than rejects for
+   * every outcome — a status the board does not offer, a service account that
+   * may not transition, a driver with no transition API at all — and journals
+   * the reason itself. A failed board move is a cosmetic loss; the analysis and
+   * the approvals are the deliverable, and neither is worth losing to it.
+   *
+   * The workflow only calls this when the rule NAMED something for that point,
+   * so a comment-only run schedules no activity here at all — the run's history
+   * is then byte-identical to what it was before the status map existed.
+   */
+  moveTicketStatus(ticket: TicketKey, move: StatusMoveRequest): Promise<StatusMoveResult>;
   journal(ticket: TicketKey, kind: string, title: string, detail: string): Promise<void>;
   handOverToHuman(ticket: TicketKey, reason: string): Promise<void>;
 }

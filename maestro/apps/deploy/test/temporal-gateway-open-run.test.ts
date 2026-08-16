@@ -90,3 +90,44 @@ describe("TemporalRunGateway.signalWithStart — opening the run row", () => {
     await expect(gateway.signalWithStart({ ...INPUT })).resolves.toMatchObject({ started: true });
   });
 });
+
+/**
+ * What actually reaches the workflow as its start argument.
+ *
+ * The `flow` and the status map are both decided in the BFF, before the run
+ * exists, and PINNED here. This is the last hop; if the gateway drops either
+ * of them the workflow silently falls back to the full pipeline in comment-only
+ * mode, which looks exactly like a rule nobody configured.
+ */
+describe("TemporalRunGateway.signalWithStart — the workflow's start argument", () => {
+  function capturingGateway(seen: unknown[]): TemporalRunGateway {
+    return gatewayWith({
+      start: (_type: unknown, options: { args: unknown[] }) => {
+        seen.push(options.args[0]);
+        return Promise.resolve({});
+      },
+    } as unknown as Partial<Client["workflow"]>);
+  }
+
+  it("carries the flow and the status map through to the workflow", async () => {
+    const seen: unknown[] = [];
+    const map = { onStart: "Devam Ediyor", onDone: "Tamam" };
+    await capturingGateway(seen).signalWithStart({ ...INPUT, flow: "analiz", statusMap: map });
+
+    expect(seen[0]).toEqual({ ...INPUT, flow: "analiz", statusMap: map });
+  });
+
+  /**
+   * Absent, not null. The workflow reads an absent map as comment-only mode,
+   * and an explicit null would mean the same thing while looking like a choice
+   * somebody made — the same treatment `flow` already gets.
+   */
+  it("omits both fields rather than sending nulls", async () => {
+    const seen: unknown[] = [];
+    await capturingGateway(seen).signalWithStart({ ...INPUT, flow: null, statusMap: null });
+
+    expect(seen[0]).toEqual({ ...INPUT });
+    expect(Object.hasOwn(seen[0] as object, "statusMap")).toBe(false);
+    expect(Object.hasOwn(seen[0] as object, "flow")).toBe(false);
+  });
+});

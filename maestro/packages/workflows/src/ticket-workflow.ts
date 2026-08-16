@@ -9,7 +9,12 @@ import type {
   WorkflowRunState,
   WorkflowRunStatus,
 } from "@maestro/contracts";
-import type { EngineeringResult, MaestroActivities, PrRef } from "./activities.js";
+import type {
+  EngineeringResult,
+  MaestroActivities,
+  PrRef,
+  StatusMovePoint,
+} from "./activities.js";
 import { awaitGreenBuild, runEngineeringLoop } from "./engineering-loop.js";
 import { answerModeRequests, assertNotKilled, awaitGate } from "./gate-loop.js";
 import { gatesFor, planFor } from "./gates.js";
@@ -120,6 +125,46 @@ export interface TicketWorkflowInput {
    * matched.
    */
   flow?: FlowType | null;
+  /**
+   * Where the listening rule wants the ticket to SIT on the board at each point
+   * of the flow ("durum eşlemesi"). Absent, null or empty is comment-only mode
+   * — what every run did before this existed, and still the default.
+   *
+   * It travels in the input for the same three reasons `flow` does, and one
+   * more:
+   *
+   *  - `packages/workflows` may not read a database (M44), so the rules cannot
+   *    be looked up from in here.
+   *  - Re-reading them from an ACTIVITY would work, but it would mean a run
+   *    could close under a different rule than the one that started it: an
+   *    admin editing a rule at lunchtime would change where a morning's tickets
+   *    land, and the run's own history would not say why.
+   *  - Pinning the map at start makes the whole thing REPLAYABLE. The workflow
+   *    decides whether to move at all, and a decision derived from an argument
+   *    replays identically forever.
+   *
+   * The shape is declared here rather than imported from `apps/bff` (which owns
+   * `StatusMap`, and depends on this package, not the other way round). It is
+   * deliberately a plain optional-string record: this side never validates the
+   * names — the BFF's Zod schema did that on the way in — it only decides which
+   * of them to hand to the activity.
+   */
+  statusMap?: TicketStatusMap | null;
+}
+
+/**
+ * The five points a rule may map, as the workflow reads them. Mirrors
+ * `StatusMapSchema` in `apps/bff/src/listening-store.ts`; that file is the
+ * validator and this is the consumer, so a field added there and not here is
+ * simply a point this workflow does not act on yet.
+ */
+export interface TicketStatusMap {
+  onStart?: string;
+  onNeedInfo?: string;
+  onReview?: string;
+  onRejected?: string;
+  onDone?: string;
+  reassignOnNeedInfo?: boolean;
 }
 
 export async function ticketWorkflow(input: TicketWorkflowInput): Promise<WorkflowRunStatus> {
@@ -155,6 +200,37 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
 
   const gate = (at: StepId) => awaitGate(acts, state, inbox, ticket, at);
   const stopIfKilled = () => assertNotKilled(acts, state, ticket);
+
+  /**
+   * Move the ticket on the operator's board, if their rule asked for it.
+   *
+   * Two things are load-bearing about this being a local function rather than
+   * an unconditional activity call at each point.
+   *
+   * First, an unmapped point schedules NOTHING. A run in comment-only mode
+   * (every rule written before the status map existed, and every rule that
+   * deliberately stays that way) produces exactly the history it produced
+   * before — no activity, no journal line, no retry budget spent on a decision
+   * that was already "do not move". "Absent means do not move at that point" is
+   * the map's central promise, and it is kept HERE, in the deterministic half,
+   * rather than by an activity that would have to be scheduled to say no.
+   *
+   * Second, the result is DISCARDED on purpose, and nothing branches on it. The
+   * policy the user chose is warn-but-continue: a ticket that could not be
+   * moved is a board that is out of date, while a run that stopped over it is
+   * work that did not get done. The activity never rejects (see
+   * `impl/status-move.ts`) and writes its own journal line with the reason, so
+   * the operator learns why without the flow ever learning it happened.
+   */
+  const moveStatus = async (at: StatusMovePoint, to: string | undefined): Promise<void> => {
+    const alsoReporter = at === "need_info" && input.statusMap?.reassignOnNeedInfo === true;
+    if (to === undefined && !alsoReporter) return;
+    await acts.moveTicketStatus(ticket, {
+      at,
+      ...(to === undefined ? {} : { status: to }),
+      ...(alsoReporter ? { toReporter: true } : {}),
+    });
+  };
 
   /**
    * Every step transition goes through here, which is what makes this the one
@@ -201,6 +277,11 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   if (!intake.complete) {
     await goto("2b", "reporter'a soru soruldu");
     state.status = "gate";
+    // Before the question, not after: the board should say "waiting on the
+    // reporter" by the time the reporter is looking at the comment that asks
+    // them for something. `reassignOnNeedInfo` rides along here too, so the
+    // ticket lands in their queue as well as in their column.
+    await moveStatus("need_info", input.statusMap?.onNeedInfo);
     await acts.askClarification(ticket, intake.question ?? "");
     // Unbounded on purpose (M61): no auto-reject, no timeout into a decision.
     await condition(() => inbox.clarified);
@@ -209,6 +290,12 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
 
   // ── 3ö · discovery, 3 · analysis ─────────────────────────────────────────
   await goto("3o", "salt-okunur repo keşfi");
+  // The ticket is being WORKED now — intake either passed or was answered — so
+  // this is the first honest moment to claim the card. Moving it at step 0
+  // instead would put a ticket in "Devam Ediyor" that is still only being read,
+  // and a ticket that then goes back to the reporter would have visited the
+  // in-progress column for nothing.
+  await moveStatus("start", input.statusMap?.onStart);
   await acts.discoverRepo(ticket, input.appId);
 
   await goto("3", "analiz üretiliyor");
@@ -225,6 +312,13 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   const required = gatesFor(state.risk);
   const plan = planFor(input.flow);
   const analysisGates = plan.analysisGate ? required.filter((g) => g === "4" || g === "5") : [];
+  // Once, on the way INTO the gate set, not once per gate: `onReview` says
+  // "a human is now looking at this", and a `yuksek` ticket that opens 4 and
+  // then 5 has not stopped being reviewed in between. A per-gate call would
+  // also be a second transition to the column the ticket is already in, which
+  // the driver answers `already` — a journal line saying nothing happened,
+  // written every time something did.
+  if (analysisGates.length > 0) await moveStatus("review", input.statusMap?.onReview);
   for (const at of analysisGates) {
     await goto(at, "insan onayı bekleniyor");
     const verdict = await gate(at);
@@ -232,6 +326,12 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
       const strike = countRejection(state, at);
       if (strike.exhausted) return handOver(`${at} kapısında ${strike.count} ret (M54)`);
 
+      // Off the review column before the rewrite starts, so the board stops
+      // showing an approver something they have already answered. Ahead of
+      // `goto` on purpose: the rewrite is minutes of thinking, and a ticket
+      // that sits in "İNCELEMEDE" through all of it invites a second reviewer
+      // to pick up work that is already back with the agent.
+      await moveStatus("rejected", input.statusMap?.onRejected);
       // Back to analysis with the reason — the agent keeps its context (M30).
       await goto("3", `ret: ${verdict.reason ?? ""} — analiz yeniden yazılıyor`);
       const redone = await thinkActs.writeAnalysis(ticket, input.appId);
@@ -259,6 +359,10 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     await goto("13", "analiz teslim edildi");
     await acts.deliverAnalysis(ticket, state.analysis);
     await acts.journal(ticket, "closure", "analiz teslim edildi", "akış: analiz");
+    // Before `closeTicket`, so the ticket is already in its final column when
+    // the closing comment tells the requester it is finished. Afterwards the
+    // reporter would read "tamamlandı" on a card still sitting in review.
+    await moveStatus("done", input.statusMap?.onDone);
     await acts.closeTicket(ticket);
     state.status = "done";
     return state.status;
@@ -311,6 +415,10 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   await goto("13", "kanıt paketi");
   const evidence = await acts.buildEvidencePackage(ticket);
   await acts.journal(ticket, "closure", "kanıt paketi", `${evidence.files} dosya`);
+  // The engineering flow's `onDone`, for the same reason as the analysis one
+  // above: the merge is done and the evidence is packaged, so the card belongs
+  // in the finished column before the closing comment says it is.
+  await moveStatus("done", input.statusMap?.onDone);
   await acts.closeTicket(ticket);
   state.status = "done";
   return state.status;

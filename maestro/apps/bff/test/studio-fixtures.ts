@@ -1,4 +1,10 @@
-import type { ApplicationRecord, JournalEntry, LlmCallLog, SubscriptionAccount } from "@maestro/contracts";
+import type {
+  ApplicationRecord,
+  JournalEntry,
+  LlmCallLog,
+  SubscriptionAccount,
+  TicketSnapshot,
+} from "@maestro/contracts";
 import type {
   KnowledgeDoc,
   OpenGate,
@@ -57,6 +63,29 @@ export const RUN: RunRecord = {
   tokensIn: 48_200,
   tokensOut: 6_100,
   startedAt: AT,
+  updatedAt: AT,
+};
+
+/**
+ * The ticket as JIRA holds it — the answer `deps.work.getTicket` gives.
+ *
+ * Distinct from `RUN` on purpose: `RUN` is the platform's own catalog row, and
+ * a hand start must classify the ticket from what Jira says about it, not from
+ * what Maestro already recorded. `issueType` and `assignee` are the fields a
+ * listening rule matches on, so they are the ones a test asserts travelled.
+ */
+export const SNAPSHOT: TicketSnapshot = {
+  key: TICKET,
+  projectKey: "UGURPAY",
+  issueType: "Hata",
+  summary: RUN.title,
+  description: "Kredi limiti hesabı yanlış sonuç veriyor.",
+  reporter: RUN.reporter,
+  assignee: "712020:maestro-bot",
+  components: [],
+  labels: ["maestro", "odeme"],
+  parentKey: null,
+  createdAt: AT,
   updatedAt: AT,
 };
 

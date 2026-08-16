@@ -8,6 +8,7 @@ import {
   allMigrationSql,
   readGuardsMigration,
   readMigration,
+  readMigrationNamed,
   readSchema,
 } from "./paths.js";
 
@@ -149,6 +150,56 @@ describe("append-only + guard migration (hand-written, 0002)", () => {
   it("adds nothing Prisma could have generated itself", () => {
     expect(guards).not.toMatch(/^\s*CREATE TABLE/im);
     expect(guards).not.toMatch(/^\s*CREATE TYPE/im);
+  });
+});
+
+describe("listening-rule Jira status map (hand-written, 0018)", () => {
+  const sql = allMigrationSql();
+  const migration = readMigrationNamed("0018_listening_rule_status_map");
+  /**
+   * The EXECUTABLE half, with `--` comment lines removed. The prose in this
+   * migration names the down direction ("DROP COLUMN …") on purpose, and a
+   * guard that read the comments would either fail on that or push the author
+   * into deleting the most useful sentence in the file to keep the test green.
+   * What must be free of destructive statements is the SQL, not the reasoning.
+   */
+  const statements = migration
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n");
+
+  it("adds the column as NULLABLE jsonb — NULL is comment-only mode", () => {
+    // Nullable is the whole safety argument: NULL means "do not move tickets",
+    // which is what every pre-0018 row already did, so no row needs a backfill
+    // and no running pilot changes behaviour on deploy.
+    expect(sql).toMatch(
+      /ALTER TABLE "ListeningRule" ADD COLUMN IF NOT EXISTS "statusMapJson" JSONB;/,
+    );
+    expect(sql).not.toMatch(/"statusMapJson"\s+JSONB\s+NOT NULL/i);
+    expect(sql).not.toMatch(/"statusMapJson"\s+JSONB\s+DEFAULT/i);
+  });
+
+  it("only ADDS — it never drops or rewrites a table a live pilot is reading", () => {
+    expect(migration).toContain("HAND-WRITTEN MIGRATION");
+    expect(statements).not.toMatch(/\bDROP\s+(TABLE|COLUMN|CONSTRAINT)\b/i);
+    expect(statements).not.toMatch(/\b(UPDATE|DELETE FROM|TRUNCATE)\b/i);
+    // One table only: 0018 must not reach into anything else on a live system.
+    const touched = [...statements.matchAll(/ALTER TABLE "(\w+)"/g)].map((m) => m[1]);
+    expect([...new Set(touched)]).toEqual(["ListeningRule"]);
+  });
+
+  it("stores status NAMES, not transition ids, and says why", () => {
+    // Load-bearing enough to pin: transition ids are per-workflow, so a rule
+    // copied to a second project would drive the wrong transitions silently.
+    expect(migration).toMatch(/STATUS NAMES/);
+    expect(migration).toMatch(/never Jira\s+-- transition ids/);
+  });
+
+  it("keeps the schema and the migration agreeing that the column is optional", () => {
+    // The pair that actually protects the live table: a `Json` (not `Json?`) in
+    // the schema would make Prisma demand a value on every write against rows
+    // the migration deliberately left NULL.
+    expect(schema).toMatch(/statusMapJson\s+Json\?/);
   });
 });
 

@@ -8,9 +8,9 @@ import type {
   ScanResult,
   StepId,
 } from "@maestro/contracts";
-import type { MaestroActivities } from "../src/activities.js";
-import { gateDecisionSignal } from "../src/signals.js";
-import type { TicketWorkflowInput } from "../src/ticket-workflow.js";
+import type { MaestroActivities, StatusMoveRequest, StatusMoveResult } from "../src/activities.js";
+import { clarificationAnsweredSignal, gateDecisionSignal } from "../src/signals.js";
+import type { TicketStatusMap, TicketWorkflowInput } from "../src/ticket-workflow.js";
 
 /**
  * The world one workflow run happens in: the fixtures it is fed, the record of
@@ -97,6 +97,18 @@ export interface ScenarioOptions {
   risk?: RiskTier;
   /** What the listening rule asked for; absent is the full pipeline. */
   flow?: FlowType;
+  /**
+   * The rule's Jira status map ("durum eşlemesi"). Absent is comment-only mode
+   * — the ticket is never moved — which is what every scenario written before
+   * the map existed expects, and what `scenario.moves` then proves stayed true.
+   */
+  statusMap?: TicketStatusMap;
+  /**
+   * What the driver answers for a given move. Defaults to a clean `moved:true`.
+   * A scenario returns `{moved:false, reason:"forbidden"}` to exercise the
+   * warn-but-continue policy — the run must finish anyway.
+   */
+  statusMove?: (move: StatusMoveRequest) => StatusMoveResult;
   mode?: TicketWorkflowInput["mode"];
   gate?: (step: StepId, visit: number) => GatePolicy;
   /**
@@ -123,11 +135,30 @@ export interface ScenarioOptions {
    * too: it reports the branch's current state every time it is asked.
    */
   ci?: readonly Partial<CiResultSignal>[];
+  /**
+   * Whether the reporter eventually answers the step 2b question.
+   *
+   * The 2b wait is UNBOUNDED by design (M61) — nothing auto-rejects and nothing
+   * times out into a decision — so a scenario that puts a run there and never
+   * answers hangs until the driver's turn ceiling, which is a stuck test rather
+   * than a failed assertion. Answering from the stub is the reporter typing
+   * their reply; `false` is what a test asking "does it really wait?" wants.
+   */
+  answerClarification?: boolean;
 }
 
 /** Records what the workflow asked for, and drives it through its stubs. */
 export class Scenario {
   readonly opened: StepId[] = [];
+  /**
+   * Every board move the workflow ASKED for, in order.
+   *
+   * Recording the requests rather than the results is what makes "a run with no
+   * status map attempts no transition" assertable: an empty array proves the
+   * workflow never scheduled the activity at all, which is a stronger claim
+   * than "the activity decided to do nothing".
+   */
+  readonly moves: StatusMoveRequest[] = [];
   /** Set when the `analiz` flow handed the analysis back to the requester. */
   delivered = false;
   readonly escalations: Array<{ step: StepId; hours: number }> = [];
@@ -219,7 +250,21 @@ export function makeActivities(
     resolveWorkMode: async () => ({ mode: "full_auto", dataClass: "dahili" }),
     matchApplication: async () => ({ via: "rule", ruleId: "r1", appId: "pay" }),
     runIntake: async () => ({ complete: true }),
-    askClarification: async () => {},
+    /**
+     * The reporter, answering. Sent from HERE rather than from the driver loop
+     * because this is the moment the question actually reaches them — the
+     * workflow's `condition` is armed the instant this activity returns, and a
+     * signal sent any earlier would be testing a race instead of the flow.
+     */
+    askClarification: async () => {
+      if (scenario.options.answerClarification !== true) return;
+      await scenario.handle?.signal(clarificationAnsweredSignal, {
+        ticketKey: TICKET,
+        answeredBy: "reporter@bank",
+        text: "prod ortamı",
+        at: "2026-08-09T09:30:00+03:00",
+      });
+    },
     discoverRepo: async () => ({ files: 12, modules: ["pay-core"] }),
     writeAnalysis: async () => ({ analysis: analysisDoc(scenario.risk), risk: scenario.risk }),
     publishAnalysis: async () => {},
@@ -287,6 +332,19 @@ export function makeActivities(
       scenario.delivered = true;
     },
     closeTicket: async () => {},
+
+    /**
+     * The board move, as the real activity behaves: it NEVER rejects. A
+     * scenario that wants a refusal returns `moved:false` with a reason, and
+     * the run must still reach `done` — that is the warn-but-continue policy
+     * under test, and a stub that threw would test the opposite.
+     */
+    moveTicketStatus: async (_ticket, move) => {
+      scenario.moves.push(move);
+      const answer = scenario.options.statusMove?.(move);
+      if (answer !== undefined) return answer;
+      return { moved: move.status !== undefined, reassigned: move.toReporter === true };
+    },
 
     journal: async (_ticket, kind, title, detail) => {
       scenario.journal.push({ kind, title, detail });

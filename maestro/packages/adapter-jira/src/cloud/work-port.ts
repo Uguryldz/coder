@@ -1,9 +1,10 @@
 import { TicketKey, type CommandEnvelope, type TicketSnapshot } from "@maestro/contracts";
-import { CapabilityNotSupportedError, type WorkPort } from "@maestro/ports";
+import { type WorkPort } from "@maestro/ports";
 import { toAdfDocument } from "../adf.js";
 import type { FetchLike, TokenProvider } from "../client.js";
 import {
   JiraArgumentError,
+  JiraForbiddenError,
   JiraLinkFailedError,
   JiraMembershipUnresolvedError,
   JiraResponseError,
@@ -20,10 +21,12 @@ import { searchIssues, type CloudSearchPage, type CloudSearchRequest } from "./s
 import { JiraCloudWorkflowReader, type JiraWorkflowGraph, type JiraWorkflowReadOptions } from "./workflow.js";
 import {
   DEFAULT_REVIEW_STATUS_NAME,
+  foldStatusName,
   parseAvailableTransitions,
   requireTransitionId,
   selectReturnTransition,
   selectReviewTransition,
+  selectTransitionByStatusName,
   type AvailableTransition,
 } from "./return-flow.js";
 
@@ -580,10 +583,114 @@ export class JiraCloudWorkPort implements WorkPort {
     verifyWebhookSignature(rawBody, header, await this.webhookSecret());
   }
 
-  /** Not supported for now (M102 parity): progress is shown via labels/comments. */
-  async transition(_key: TicketKey, _transitionId: string): Promise<void> {
-    throw new CapabilityNotSupportedError("WorkPort", "transition");
+  /**
+   * Move the issue by TRANSITION ID — the frozen port's `transition`, now real
+   * on Cloud rather than a capability refusal. It is `applyTransition` under the
+   * port's name: one `POST /issue/{key}/transitions` with `{transition:{id}}`,
+   * answered 204.
+   *
+   * Kept as a thin delegation on purpose. A caller holding a plain `WorkPort`
+   * reference can now move a ticket, while everything that already addresses the
+   * concrete driver keeps working — one request shape, one place to change it.
+   *
+   * By-id remains the LOW-level entry: a transition id is a per-workflow number
+   * (the live OPS workflow's 11/21/31/41 mean nothing on another project), so a
+   * caller that knows only WHERE it wants the ticket should reach for
+   * `transitionToStatus` instead of hard-coding one of these.
+   */
+  async transition(key: TicketKey, transitionId: string): Promise<void> {
+    await this.applyTransition(key, transitionId);
   }
+
+  /**
+   * Move the issue to a STATUS BY NAME, and report what happened instead of
+   * throwing — the entry point a workflow step uses when its policy is "warn but
+   * continue".
+   *
+   * DRIVER-SPECIFIC CAPABILITY, not a WorkPort method — the same shape as
+   * `addAttachment` / `readProjectWorkflow`. `WorkPort` is FROZEN
+   * (packages/ports), and this returns a RESULT rather than `void`, which the
+   * frozen signature cannot express.
+   *
+   * Why by name and not by id: a transition id is meaningless outside the one
+   * workflow that issued it, so a hard-coded id silently moves the wrong ticket
+   * (or nothing) the moment a project uses a different workflow. The caller names
+   * the destination it wants; this method asks Jira which edge leads there.
+   *
+   * The contract is total — it NEVER throws, and every outcome is a reason:
+   *
+   *   - `{moved:true}`                     — a matching transition was applied.
+   *   - `{moved:false, reason:"already"}`  — the issue is ALREADY in that status,
+   *     so no POST is sent at all. The step may be retried (a workflow replay, a
+   *     manual re-run), and a re-POST of an already-made move is at best a 400;
+   *     short-circuiting is what makes the call idempotent.
+   *   - `{moved:false, reason:"no_transition"}` — the workflow offers no edge to
+   *     that status from where the issue stands. Not an error: a site may simply
+   *     not have the column, or the issue may sit somewhere the move is illegal.
+   *   - `{moved:false, reason:"forbidden"}` — Jira answered 403. The service
+   *     account may browse the issue but not transition it; the analysis is still
+   *     worth delivering, so the caller warns and carries on.
+   *   - `{moved:false, reason:"read_failed" | "transition_failed"}` — anything
+   *     else (5xx, 404, a malformed body), split by WHICH call failed so the log
+   *     says whether we never learned the options or could not apply the one we
+   *     picked.
+   */
+  async transitionToStatus(
+    key: TicketKey,
+    statusName: string,
+  ): Promise<{ moved: boolean; reason?: string }> {
+    // The key and the status name are validated up front and reported as a
+    // reason, not raised: a caller that must not throw would otherwise still get
+    // an exception out of the argument guards.
+    const parsed = TicketKey.safeParse(key);
+    if (!parsed.success) return { moved: false, reason: "bad_key" };
+    const issueKey = parsed.data;
+    const wanted = statusName.trim();
+    if (wanted.length === 0) return { moved: false, reason: "bad_status_name" };
+
+    // Read the CURRENT status first, so an already-there issue costs one GET and
+    // no write. `fields=status` keeps it to the one field the decision needs
+    // rather than dragging the whole issue across.
+    let current: string | null;
+    let transitions: AvailableTransition[];
+    try {
+      const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}`, {
+        fields: "status",
+      });
+      current = currentStatusNameOf(raw);
+      if (current !== null && foldStatusName(current) === foldStatusName(wanted)) {
+        return { moved: false, reason: "already" };
+      }
+      transitions = await this.readAvailableTransitions(issueKey);
+    } catch {
+      return { moved: false, reason: "read_failed" };
+    }
+
+    const target = selectTransitionByStatusName(transitions, wanted);
+    if (target === null) return { moved: false, reason: "no_transition" };
+
+    try {
+      await this.applyTransition(issueKey, target.id);
+    } catch (error) {
+      // 403 is called out by itself because it is the one failure an operator
+      // fixes in Jira (grant the service account "Transition Issues") rather
+      // than in Maestro — worth its own reason in the log.
+      if (error instanceof JiraForbiddenError) return { moved: false, reason: "forbidden" };
+      return { moved: false, reason: "transition_failed" };
+    }
+    return { moved: true };
+  }
+}
+
+/**
+ * The issue's current status NAME from a `fields=status` read. Returns null when
+ * the site answered without one: unknown is not "already there", so the caller
+ * goes on to look for a transition rather than short-circuiting on a guess.
+ */
+function currentStatusNameOf(raw: unknown): string | null {
+  const status = asRecord(asRecord(asRecord(raw)?.["fields"])?.["status"]);
+  const name = status?.["name"];
+  return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
 }
 
 function requireTicketKey(value: string, argument: string): TicketKey {

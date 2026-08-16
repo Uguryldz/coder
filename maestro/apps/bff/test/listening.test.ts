@@ -151,6 +151,109 @@ describe("POST /studio/listening-rules", () => {
   });
 });
 
+describe("the Jira status map on a listening rule", () => {
+  /**
+   * The optional durum eşlemesi. The whole design rests on presence: NO map is
+   * comment-only mode (Maestro narrates and never touches the board — what every
+   * rule did before this landed), a map opts that ONE rule into moving tickets.
+   * These tests hold both halves of that, plus the reason the schema is strict.
+   */
+  const FULL_MAP = {
+    onStart: "Devam Ediyor",
+    onNeedInfo: "Yapılacaklar",
+    onReview: "İNCELEMEDE",
+    onRejected: "Devam Ediyor",
+    onDone: "Tamam",
+    reassignOnNeedInfo: true,
+  } as const;
+
+  it("creates a rule carrying the full map and reads it back", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    const res = await post(h, "/studio/listening-rules", token, { ...RULE, statusMap: FULL_MAP });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as { rule: { statusMap: unknown } }).rule.statusMap).toEqual(FULL_MAP);
+    expect((await h.listening.get((res.json() as { rule: { ruleId: string } }).rule.ruleId))?.statusMap).toEqual(FULL_MAP);
+  });
+
+  it("accepts a PARTIAL map — an operator maps only the points they care about", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    const res = await post(h, "/studio/listening-rules", token, {
+      ...RULE,
+      statusMap: { onDone: "Tamam" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as { rule: { statusMap: unknown } }).rule.statusMap).toEqual({ onDone: "Tamam" });
+  });
+
+  it("an absent or empty map is null — comment-only mode stays the default", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    const bare = await post(h, "/studio/listening-rules", token, RULE);
+    expect(bare.statusCode).toBe(201);
+    expect((bare.json() as { rule: { statusMap: unknown } }).rule.statusMap).toBeNull();
+
+    // An editor that submits an untouched form must not look like a configured
+    // map: `{}` moves nothing, so it stores as the same NULL as "no map".
+    const empty = await post(h, "/studio/listening-rules", token, {
+      ...RULE,
+      matchValue: "Hikaye",
+      statusMap: {},
+    });
+    expect(empty.statusCode).toBe(201);
+    expect((empty.json() as { rule: { statusMap: unknown } }).rule.statusMap).toBeNull();
+  });
+
+  it("rejects a malformed map with a 400, never a 500 or a silent drop", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    const malformed = [
+      // A misspelt key. Dropping it silently is the worst outcome: the operator
+      // watches tickets never reach 'Tamam' with nothing on screen to explain it.
+      { onDoneX: "Tamam" },
+      { onDone: 42 }, // a non-string value
+      { onStart: "" }, // an empty status name names no status
+      { reassignOnNeedInfo: "evet" }, // a string where the flag belongs
+      { onDone: ["Tamam"] },
+      "Tamam", // not an object at all
+    ];
+    for (const statusMap of malformed) {
+      const res = await post(h, "/studio/listening-rules", token, { ...RULE, statusMap });
+      expect(res.statusCode, JSON.stringify(statusMap)).toBe(400);
+    }
+    expect(await h.listening.list()).toHaveLength(0);
+  });
+
+  it("a PUT replaces the map along with the rest of the rule, and can clear it", async () => {
+    const h = await harness({ listeningRules: [{ ruleId: "lr_seed", ...RULE }] });
+    const token = await admin(h);
+
+    const set = await put(h, "/studio/listening-rules/lr_seed", token, { ...RULE, statusMap: FULL_MAP });
+    expect(set.statusCode).toBe(200);
+    expect((await h.listening.get("lr_seed"))?.statusMap).toEqual(FULL_MAP);
+
+    // Back to comment-only: dropping the field is how an operator turns board
+    // driving OFF again, and it must actually clear the stored map.
+    const cleared = await put(h, "/studio/listening-rules/lr_seed", token, RULE);
+    expect(cleared.statusCode).toBe(200);
+    expect((await h.listening.get("lr_seed"))?.statusMap).toBeNull();
+  });
+
+  it("a malformed map on PUT leaves the stored rule untouched", async () => {
+    const h = await harness({ listeningRules: [{ ruleId: "lr_seed", ...RULE, statusMap: { onDone: "Tamam" } }] });
+    const token = await admin(h);
+    const res = await put(h, "/studio/listening-rules/lr_seed", token, {
+      ...RULE,
+      statusMap: { onDone: "Tamam", onWhatever: "Bir Şey" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((await h.listening.get("lr_seed"))?.statusMap).toEqual({ onDone: "Tamam" });
+  });
+});
+
 describe("GET /studio/listening-rules", () => {
   it("lists rules for admin and tech-lead", async () => {
     const h = await harness({

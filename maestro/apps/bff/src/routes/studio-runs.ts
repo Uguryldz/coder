@@ -11,7 +11,7 @@ import type { ResolvedDeps } from "../deps.js";
 import type { RunRecord } from "../read-models.js";
 import { badRequest, notFound } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
-import { runIntake } from "../jira-intake.js";
+import { classifyingFields, runIntake } from "../jira-intake.js";
 import { assertProjectAccess } from "./access.js";
 import { blankAsAbsent } from "./paging.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
@@ -49,6 +49,14 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
    * application must resolve. `explicit: true` says a person asked for this by
    * name, which is what satisfies the opt-in rule (M48a) — the same thing
    * `/ai-start` does from a Jira comment.
+   *
+   * The ticket is READ before intake so this path can answer the question
+   * `flow-decision.ts` asks: which ListeningRule matches? A caller that omits
+   * `issueType`/`assignee` matches NO rule and silently falls back to the
+   * deployment default — which cost OPS-57 its status map. The webhook knows
+   * these fields because the event carries them; pressing Start does not, so
+   * we fetch them. Without this the two entry points run the same ticket under
+   * two different flows, and the hand-started one is the quiet, wrong half.
    */
   app.post(
     "/studio/runs/:ticket/start",
@@ -64,6 +72,12 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
         ticket,
         actor: sessionOf(request).userId,
         explicit: true,
+        // Best-effort: a Jira that will not answer must not block a hand start.
+        // See `classifyingFields` — it degrades to the pre-existing behaviour
+        // rather than turning a reachable engine into a 500.
+        ...(await classifyingFields(deps, ticket, (error) => {
+          request.log.warn({ err: error, ticket }, "ticket snapshot unavailable at hand start");
+        })),
       });
       // 202, not 200: the run is accepted onto the engine, and what happens
       // next is a workflow's business rather than this request's result.

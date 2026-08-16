@@ -1,4 +1,22 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
+
+/**
+ * How a caller clears a nullable Json column.
+ *
+ * Prisma REFUSES a bare `null` on a Json field, and the refusal is a good one:
+ * there, `null` is ambiguous between "store the JSON value null" and "set the
+ * column to SQL NULL". It makes you name the intent — `JsonNull` for the first,
+ * `DbNull` for the second.
+ *
+ * Re-exported here rather than imported from `@prisma/client` at the call site,
+ * for the same reason `Db` is: this package exists so the client stays an
+ * implementation detail. A store that invented its own sentinel instead would
+ * type-check and pass its tests against a fake, then write the literal object
+ * `{"_tag":"DbNull"}` into the column — which is exactly what happened to
+ * `ListeningRule.statusMapJson` before this export existed.
+ */
+export const DB_NULL = Prisma.DbNull;
+export type DbNull = typeof Prisma.DbNull;
 
 /**
  * The one database handle the platform passes around. Packages depend on

@@ -201,3 +201,54 @@ describe("the flow decision is visible to an operator", () => {
     expect(String(meta["flowConflictingRuleIds"]).split(",").sort()).toEqual(["lr_status", "lr_type"]);
   });
 });
+
+/**
+ * The rule's Jira status map, riding the SAME path as the flow: read once from
+ * the rule row on the way in, and pinned into the run's start input.
+ *
+ * That path is the whole design. `packages/workflows` may not read a database
+ * (M44), and a run that re-read the rules later could finish under a rule it
+ * did not start under — an admin editing a rule at lunchtime would change where
+ * the morning's tickets land, with the run's own history unable to say why.
+ */
+describe("intake pins the rule's status map into the run input", () => {
+  const MAP = { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" } as const;
+
+  it("carries the deciding rule's map to the engine", async () => {
+    const h = await harness({ listeningRules: [rule({ matchValue: "Hata", statusMap: MAP })] });
+
+    const started = (await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" })) as
+      | { statusMap?: unknown }
+      | undefined;
+
+    expect(started?.statusMap).toEqual(MAP);
+  });
+
+  /**
+   * Comment-only mode is the ABSENCE of the field, not a null in it. Absent
+   * already means "do not move the ticket" to the workflow, and an explicit
+   * null would say the same thing while looking like a choice somebody made.
+   */
+  it("omits the field entirely for a rule that maps nothing", async () => {
+    const h = await harness({ listeningRules: [rule({ matchValue: "Hata" })] });
+
+    const started = (await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" })) as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(started).toBeDefined();
+    expect(Object.hasOwn(started ?? {}, "statusMap")).toBe(false);
+  });
+
+  /** A ticket no rule matched has no operator-configured board to be driven around. */
+  it("omits the field when the deployment default decided the flow", async () => {
+    const h = await harness({ listeningRules: [rule({ matchValue: "Hata", statusMap: MAP })] });
+
+    const started = (await deliver(h, { ticket: "UGURPAY-9", issueType: "Görev" })) as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(started).toBeDefined();
+    expect(Object.hasOwn(started ?? {}, "statusMap")).toBe(false);
+  });
+});

@@ -1,4 +1,4 @@
-import { ProjectKey, type TicketKey } from "@maestro/contracts";
+import { ProjectKey, type TicketKey, type TicketSnapshot } from "@maestro/contracts";
 import type { ResolvedDeps } from "./deps.js";
 import { badRequest } from "./errors.js";
 import { BFF_MESSAGE_KEYS } from "./messages.js";
@@ -47,6 +47,65 @@ export function projectKeyOf(ticket: TicketKey): string {
   const parsed = ProjectKey.safeParse(ticket.split("-")[0]);
   if (!parsed.success) throw badRequest("ticket_key", { ticket });
   return parsed.data;
+}
+
+/**
+ * The fields a listening rule matches on, READ from the ticket, for the callers
+ * that were not handed them.
+ *
+ * The webhook knows `issueType`/`assignee`/`labels` because the delivery
+ * carries them. Every other entry point — Studio's Start button, `/ai-start`
+ * and `/ai-assign` from a Jira comment, the MCP operate tools — knows only a
+ * ticket key, and a caller that omits these matches NO rule: `matches()` in
+ * `flow-decision.ts` compares them against `null`, so the ticket falls through
+ * to the deployment default and loses both the rule's flow and its status map.
+ * Measured on the live board: OPS-57 was hand-started under a project whose OPS
+ * rule carries a full map, and the ticket never moved — no transition, no
+ * status journal line, and nothing on the run to say why.
+ *
+ * So the hand paths ASK. One read of the ticket buys them the same rule
+ * matching the webhook has always had, and the two entry points stop running
+ * the same ticket under two different flows.
+ *
+ * Best-effort by construction. A Jira that will not answer costs rule matching
+ * — which is exactly the behaviour these callers had before this existed — and
+ * must not cost the run: refusing a hand start because a snapshot read failed
+ * would turn a degraded Jira into an operator who cannot start anything.
+ *
+ * `onError` is where a caller that HAS a logger writes the reason down; there
+ * is no logger on `ResolvedDeps`, so this seam cannot write one itself. It is
+ * optional because two of the three callers genuinely have nowhere to put it:
+ * a Jira comment command and an MCP tool both run outside a request. That is
+ * not a quiet failure in the M14 sense — the fallback is recorded where an
+ * operator actually looks for it, in the `RUN_STARTED` audit entry, whose
+ * `flowReason` reads `default` instead of `rule`.
+ *
+ * `status` is deliberately NOT among them. The frozen `TicketSnapshot`
+ * (M46/M102) carries no status field, so a `matchKind: "status"` rule still
+ * cannot match on these paths. Rules keyed on issue type or assignee — the
+ * shape the platform seeds — now do, and inventing a status here would be
+ * worse than admitting we do not know it.
+ */
+export async function classifyingFields(
+  deps: ResolvedDeps,
+  ticket: TicketKey,
+  onError: (error: unknown) => void = () => {},
+): Promise<Pick<IntakeRequest, "issueType" | "labels" | "assignee">> {
+  let snapshot: TicketSnapshot;
+  try {
+    snapshot = await deps.work.getTicket(ticket);
+  } catch (error) {
+    onError(error);
+    return {};
+  }
+  return {
+    issueType: snapshot.issueType,
+    labels: snapshot.labels,
+    // Omitted rather than sent as null, for the reason `flow` and `statusMap`
+    // are omitted below: `assignee` is an OPTIONAL field whose absence already
+    // means "not known here", and `IntakeRequest` has no null to give it.
+    ...(snapshot.assignee === null ? {} : { assignee: snapshot.assignee }),
+  };
 }
 
 export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Promise<IntakeOutcome> {
@@ -114,6 +173,13 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     mode: binding.mode,
     dataClass: binding.dataClass,
     ...(flowDecision.flow === null ? {} : { flow: flowDecision.flow }),
+    // Omitted rather than sent as null when the rule maps nothing, for the
+    // same reason `flow` is: absent already MEANS comment-only mode, and an
+    // explicit null would say the same thing while looking like a choice
+    // somebody made.
+    ...(flowDecision.statusMap === undefined || flowDecision.statusMap === null
+      ? {}
+      : { statusMap: flowDecision.statusMap }),
   });
 
   if (outcome.started) {
@@ -139,6 +205,19 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
         ...(flowDecision.conflictingRuleIds === undefined
           ? {}
           : { flowConflictingRuleIds: flowDecision.conflictingRuleIds.join(",") }),
+        /**
+         * WHICH board columns this run was pinned to, recorded next to the
+         * flow that was pinned with them. A ticket that moved to a status
+         * nobody expected is answered from here — the rule may have been
+         * edited since, and the map that actually drove this run is otherwise
+         * unrecoverable. Comment-only mode is recorded too, as "yorum" (there
+         * IS no map), because "the operator configured nothing" and "the
+         * audit did not say" have to be distinguishable.
+         */
+        statusMap:
+          flowDecision.statusMap === undefined || flowDecision.statusMap === null
+            ? "yorum"
+            : JSON.stringify(flowDecision.statusMap),
       },
     });
   }

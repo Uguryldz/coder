@@ -499,6 +499,21 @@ model ListeningRule {
   analystVariantId  String? @db.VarChar(64)
   /// Faz 3: the ENGINEER variant for this rule's flow. NULL = default.
   engineerVariantId String? @db.VarChar(64)
+  /// OPTIONAL Jira status map: which target status the ticket is MOVED to at
+  /// each point of the flow (onStart / onNeedInfo / onReview / onRejected /
+  /// onDone, plus `reassignOnNeedInfo`). NULL is the default and means
+  /// comment-only mode — Maestro narrates progress in comments and never
+  /// touches the board, which is exactly today's behaviour for every existing
+  /// row. A non-null map opts that one rule into transition mode.
+  ///
+  /// Json, not columns: the set of flow points is a product decision that has
+  /// already moved once (Faz 3 added the variant pair) and will move again;
+  /// five more nullable VARCHARs per point would make each new point a
+  /// migration against a live table. The values are STATUS NAMES, never Jira
+  /// transition ids — ids are per-workflow and meaningless the moment a rule is
+  /// copied to another project, whereas a name the operator typed is the same
+  /// thing they read on the board.
+  statusMapJson     Json?
 
   /// One rule per (project, assignee, match target): a given trigger maps to
   /// exactly one flow, so a second rule for the same trigger is a mistake, not

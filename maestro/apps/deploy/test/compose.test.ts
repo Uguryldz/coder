@@ -9,6 +9,7 @@ import { loadDeployEnv, vaultMounts } from "../src/env.js";
 import { ALL_PORT_KEYS, driversFor, WORKER_PORT_KEYS } from "../src/profile.js";
 import { buildSecretPort } from "../src/secrets.js";
 import { docAttacherFor } from "../src/stores/doc-attacher.js";
+import { statusMoverFor } from "../src/stores/status-mover.js";
 import { DEV_ENV, envWithout, OFFLINE_SQL, PROD_ENV } from "./fixtures.js";
 
 /**
@@ -191,6 +192,29 @@ describe("composition root: dev profile", () => {
     const attacher = docAttacherFor(cloud);
     expect(attacher).toBeDefined();
     expect(typeof attacher?.addAttachment).toBe("function");
+  });
+
+  /**
+   * The listening rule's status map, wired the same way and at the same risk:
+   * if the concrete Cloud port stops carrying `transitionToStatus`, the seam
+   * silently becomes `undefined` and every mapped run degrades to comment-only
+   * mode — the exact behaviour operators configured the map to get away from.
+   */
+  it("gives the worker a status mover only when the work driver can transition", async () => {
+    // Data Center: no transition-by-name capability, so no seam. M102 — the
+    // driver has no workflow permissions there, and progress is a label.
+    const dc = await boot({ ...DEV_ENV });
+    expect(statusMoverFor(dc.deployment.ports.work)).toBeUndefined();
+
+    const cloud = createJiraCloudWorkPort({
+      baseUrl: "https://jira.invalid",
+      email: "maestro-bot@bank.invalid",
+      apiTokenRef: "kv/jira#token",
+      deps: { secrets: buildSecretPort(loadDeployEnv(DEV_ENV)) },
+    });
+    const mover = statusMoverFor(cloud);
+    expect(mover).toBeDefined();
+    expect(typeof mover?.move).toBe("function");
   });
 
   it("resolves ports that actually carry their interface's methods", async () => {

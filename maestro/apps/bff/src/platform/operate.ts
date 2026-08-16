@@ -3,7 +3,7 @@ import type { MaestroPlatform } from "@maestro/mcp-servers";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
-import { runIntake } from "../jira-intake.js";
+import { classifyingFields, runIntake } from "../jira-intake.js";
 import { BFF_MESSAGE_KEYS } from "../messages.js";
 import { assertProjectAccess } from "../routes/access.js";
 import { SIGNALS } from "../signal-names.js";
@@ -104,7 +104,19 @@ function rawOperateHalf(deps: ResolvedDeps): OperateHalf {
       // The same intake the Jira command path uses, so an unbound project is
       // refused here too (M102). A tool that could start a run in a project
       // nobody bound would be a way around the binding entirely.
-      const outcome = await runIntake(deps, { ticket, explicit: true, actor: actingUser });
+      //
+      // And the same ticket read, for the same reason: an MCP tool is handed a
+      // ticket key and nothing else, so without it this run matches no
+      // listening rule and loses the rule's flow and status map
+      // (`classifyingFields`). A run started from a chat client must not take a
+      // different path through the board than the same ticket started anywhere
+      // else.
+      const outcome = await runIntake(deps, {
+        ticket,
+        explicit: true,
+        actor: actingUser,
+        ...(await classifyingFields(deps, ticket)),
+      });
       if (!outcome.accepted) throw conflict(`intake_${outcome.reason}`, { ticket });
 
       const state = await deps.runs.queryRunState(outcome.workflowId);
@@ -132,6 +144,8 @@ function rawOperateHalf(deps: ResolvedDeps): OperateHalf {
         explicit: true,
         appId: args.appId,
         actor: actingUser,
+        // Naming the application does not name the flow — see `startWorkflow`.
+        ...(await classifyingFields(deps, ticket)),
       });
       if (!outcome.accepted) throw conflict(`intake_${outcome.reason}`, { ticket });
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ListeningRuleRecord, ListeningStore } from "../listening-store.js";
-import { FLOW_TYPES, MATCH_KINDS } from "../listening-store.js";
+import { FLOW_TYPES, MATCH_KINDS, StatusMapSchema } from "../listening-store.js";
 import { mirrorListeningToPilot, seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, conflict, notFound } from "../errors.js";
@@ -60,6 +60,22 @@ const VariantRef = z
   .nullish()
   .transform((value) => (value == null || value === "" ? null : value));
 
+/**
+ * The Jira status map (durum eşlemesi), optional per rule. Absent, null and the
+ * empty object all normalise to `null` — comment-only mode, today's behaviour —
+ * so the DB stores ONE shape for "this rule does not move tickets" and a UI that
+ * renders an empty form does not accidentally look like a configured map.
+ *
+ * `StatusMapSchema` is `.strict()`, so a misspelt key (`onDoneX`) and a
+ * non-string value are both a 400 through the same `invalid_listening_rule`
+ * code the rest of this body already uses. That is deliberate: a silently
+ * dropped key would show up much later as tickets that mysteriously never move,
+ * with nothing on the screen to explain why.
+ */
+const StatusMapRef = StatusMapSchema.nullish().transform((value) =>
+  value == null || Object.keys(value).length === 0 ? null : value,
+);
+
 const RuleBody = z.object({
   projectKey: z.string().trim().min(1).max(32),
   assigneeAccountId: z.string().trim().min(1).max(128),
@@ -72,6 +88,8 @@ const RuleBody = z.object({
   analystVariantId: VariantRef,
   /** Which agent variant runs the engineering side; null → default agent. */
   engineerVariantId: VariantRef,
+  /** The Jira status map; null → comment-only mode (Maestro never moves the ticket). */
+  statusMap: StatusMapRef,
 });
 
 function listeningDeps(deps: ResolvedDeps): { store: ListeningStore } {

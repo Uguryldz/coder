@@ -5,6 +5,7 @@ import type {
   WorkMode,
   WorkflowRunState,
 } from "@maestro/contracts";
+import type { StatusMap } from "./listening-store.js";
 
 /**
  * The workflow engine as the BFF sees it. Temporal lives behind this interface
@@ -56,6 +57,18 @@ export interface StartRunInput {
    * under-processed because nothing named a flow.
    */
   flow?: FlowType | null;
+  /**
+   * Where the deciding listening rule wants the ticket to SIT on the board at
+   * each point of the flow ("durum eşlemesi"). Absent or `null` is comment-only
+   * mode — Maestro narrates in comments and never moves the ticket, which is
+   * what every run did before the map existed.
+   *
+   * It travels beside `flow` and for the same reason: both are read off the
+   * rule set once, on the way in, and PINNED into the start input. A workflow
+   * cannot read the rules itself (M44), and a run that re-read them later could
+   * finish under a rule it did not start under.
+   */
+  statusMap?: StatusMap | null;
 }
 
 export interface SignalWithStartInput extends StartRunInput {

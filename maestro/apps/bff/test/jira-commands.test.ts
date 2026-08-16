@@ -1,5 +1,6 @@
-import type { AuditEvent } from "@maestro/contracts";
+import type { AuditEvent, TicketSnapshot } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
+import type { ListeningRuleRecord } from "../src/listening-store.js";
 import { harness, type Harness } from "./helpers.js";
 import { commentEvent, signed } from "./payloads.js";
 
@@ -251,6 +252,96 @@ describe("Jira command path (M105)", () => {
     expect(h.runs.started[0]).toMatchObject({ appId: "ugurweb" });
     const events = await h.auditStore.read();
     expect(events.map((event) => event.action)).toContain("ASSIGN_APP");
+  });
+
+  /**
+   * `/ai-start` had the SAME defect Studio's Start button did, and for the same
+   * reason: a comment delivery carries the comment, not the issue's fields, so
+   * intake was handed a ticket key and nothing else. `flow-decision.ts` matches
+   * on issue type and assignee, so the command matched no listening rule and
+   * silently ran the deployment default — losing the rule's flow and, worse, its
+   * status map, which is why a hand-started OPS ticket never moved on the board.
+   *
+   * Asserted through the intake seam (the engine's start input), not by spying
+   * on the ticket read: that a snapshot was fetched is an implementation detail;
+   * that the rule matched is the behaviour.
+   */
+  describe("a comment command classifies the ticket it was written on", () => {
+    const RULE: ListeningRuleRecord = {
+      ruleId: "lr_bot",
+      projectKey: "UGURPAY",
+      assigneeAccountId: "712020:maestro-bot",
+      matchKind: "issuetype",
+      matchValue: "Hata",
+      flowType: "duzeltme",
+      priority: 10,
+      enabled: true,
+      statusMap: { onStart: "Devam Ediyor", onDone: "Tamam" },
+    };
+
+    const SNAP: TicketSnapshot = {
+      key: TICKET,
+      projectKey: "UGURPAY",
+      issueType: "Hata",
+      summary: "Kredi limiti hatası",
+      description: "",
+      reporter: "can.ozturk",
+      assignee: "712020:maestro-bot",
+      components: [],
+      labels: [],
+      parentKey: null,
+      createdAt: "2026-08-09T09:00:00.000Z",
+      updatedAt: "2026-08-09T09:00:00.000Z",
+    };
+
+    /** The default is deliberately NOT the rule's flow, so the two are telling apart. */
+    async function commandHarness(snapshot: TicketSnapshot | null = SNAP): Promise<Harness> {
+      const h = await harness({
+        listeningRules: [RULE],
+        deps: { config: { actorDomain: "ugurbank.local", defaultFlow: "analiz" } },
+      });
+      if (snapshot !== null) h.work.putTicket(snapshot);
+      return h;
+    }
+
+    it("runs /ai-start on the rule's flow and map, not the deployment default", async () => {
+      const h = await commandHarness();
+
+      const response = await deliver(h, "/ai-start");
+
+      expect(response.json()).toMatchObject({ accepted: true, command: "ai-start" });
+      const started = h.runs.started[0] as { flow?: unknown; statusMap?: unknown } | undefined;
+      // Before the fix both of these were the default's: `analiz`, and no map.
+      expect(started?.flow).toBe("duzeltme");
+      expect(started?.statusMap).toEqual(RULE.statusMap);
+    });
+
+    it("classifies /ai-assign too — naming an application does not name the flow", async () => {
+      const h = await commandHarness();
+
+      const response = await deliver(h, "/ai-assign ugurweb");
+
+      expect(response.json()).toMatchObject({ accepted: true, command: "ai-assign" });
+      const started = h.runs.started[0] as { flow?: unknown; appId?: unknown } | undefined;
+      expect(started?.appId).toBe("ugurweb");
+      expect(started?.flow).toBe("duzeltme");
+    });
+
+    /**
+     * A Jira that will not answer for the ticket must not cost the command. The
+     * run still starts on the deployment default — exactly what `/ai-start` did
+     * before it read the ticket at all — rather than the author's command
+     * vanishing because a snapshot read failed.
+     */
+    it("still starts the run when the ticket read throws", async () => {
+      const h = await commandHarness(null);
+
+      const response = await deliver(h, "/ai-start");
+
+      expect(response.json()).toMatchObject({ accepted: true, command: "ai-start" });
+      expect(h.runs.started).toHaveLength(1);
+      expect((h.runs.started[0] as { flow?: unknown }).flow).toBe("analiz");
+    });
   });
 
   it("tells the author that /ai-explain has no workflow signal yet", async () => {

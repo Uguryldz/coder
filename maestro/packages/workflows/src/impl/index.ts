@@ -6,6 +6,7 @@ import * as engineering from "./engineering.js";
 import * as gate from "./gate.js";
 import * as intake from "./intake.js";
 import * as scan from "./scan.js";
+import * as statusMove from "./status-move.js";
 
 export * from "./deps.js";
 export { InMemoryIdempotency } from "./idempotency.js";
@@ -65,6 +66,7 @@ export function createActivities(deps: ActivityDeps): MaestroActivities {
     deliverAnalysis: (ticket, doc) => delivery.deliverAnalysis(deps, ticket, doc),
     closeTicket: (ticket) => delivery.closeTicket(deps, ticket),
 
+    moveTicketStatus: (ticket, move) => statusMove.moveTicketStatus(deps, ticket, move),
     journal: (ticket, kind, title, detail) => gate.journal(deps, ticket, kind, title, detail),
     handOverToHuman: (ticket, reason) => gate.handOverToHuman(deps, ticket, reason),
   };

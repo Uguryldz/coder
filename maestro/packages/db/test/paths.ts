@@ -28,6 +28,17 @@ export function readGuardsMigration(): string {
 }
 
 /**
+ * ONE migration's SQL, by directory name. `allMigrationSql()` is the right tool
+ * for drift ("does the schema reach the database at all"), but a hand-written
+ * migration also has properties that only hold WITHIN its own file — "0018 adds
+ * a column and touches nothing else" is false of the concatenation, where every
+ * earlier CREATE TABLE is in scope. Those assertions need the file alone.
+ */
+export function readMigrationNamed(name: string): string {
+  return readFileSync(join(PACKAGE_ROOT, "prisma", "migrations", name, "migration.sql"), "utf8");
+}
+
+/**
  * Every migration's SQL, in order. Drift guards read this rather than only the
  * initial migration: a type added in 0003 is not drift, it is history.
  */

@@ -192,6 +192,33 @@ export interface DocAttacher {
   ): Promise<{ ids: string[] }>;
 }
 
+/**
+ * Moving the ticket ITSELF — the desk-to-desk part of "dinleme kuralı" mode B.
+ *
+ * The same shape and the same reason as `DocAttacher` above: `WorkPort` is
+ * FROZEN and its `transition()` takes a per-workflow transition ID, which is
+ * meaningless outside the one project that issued it. What a listening rule
+ * names is a STATUS ("İNCELEMEDE"), so the capability this package needs is
+ * "move to the status called X" — real on the concrete Jira Cloud driver
+ * (`transitionToStatus`), absent on Data Center. The composition root matches
+ * the shape to a driver; this package imports no adapter.
+ *
+ * `move` NEVER throws, and that is the whole contract rather than a nicety: the
+ * policy the ticket workflow was built for is "warn but continue". A status the
+ * operator's board does not offer, a service account without Transition Issues,
+ * a 5xx — none of them may cost a run whose analysis is finished and approved.
+ * So the outcome comes back as data (`moved` plus a `reason`) and the caller
+ * writes it into the journal, where an operator can read WHY the ticket stayed
+ * where it was.
+ *
+ * OPTIONAL, like `DocAttacher`: a deployment on a driver that cannot transition
+ * is a supported deployment. It stays in comment-only mode, which is exactly
+ * what every rule did before the status map existed.
+ */
+export interface StatusMover {
+  move(ticket: TicketKey, statusName: string): Promise<{ moved: boolean; reason?: string }>;
+}
+
 export interface ActivityDeps {
   readonly runs: RunContextStore;
   readonly gates: GateStore;
@@ -222,6 +249,12 @@ export interface ActivityDeps {
    * ticket — and the journal says so.
    */
   readonly docAttacher?: DocAttacher;
+  /**
+   * Absent on a deployment whose work driver cannot move a ticket between
+   * statuses. The flow then runs exactly as it always has — comments only — and
+   * the journal says the move was skipped for want of the capability.
+   */
+  readonly statusMover?: StatusMover;
   readonly translate: Translate;
   readonly now: () => Date;
 }

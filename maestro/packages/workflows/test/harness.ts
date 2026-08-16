@@ -143,6 +143,10 @@ export async function runTicket(
         // Absent means the full pipeline, which is what every existing
         // scenario expects; `flow` only narrows it.
         ...(scenario.options.flow === undefined ? {} : { flow: scenario.options.flow }),
+        // Absent is comment-only mode, which is what every scenario written
+        // before the status map existed expects — and what those scenarios
+        // still assert by finding `scenario.moves` empty.
+        ...(scenario.options.statusMap === undefined ? {} : { statusMap: scenario.options.statusMap }),
       },
     ],
   });

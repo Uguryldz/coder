@@ -3,7 +3,7 @@ import { toActorOrNull } from "./actor.js";
 import type { ResolvedDeps } from "./deps.js";
 import { decideGate, type GateResult } from "./gate-decision.js";
 import { workflowIdFor } from "./gateway.js";
-import { projectKeyOf, runIntake, type IntakeOutcome } from "./jira-intake.js";
+import { classifyingFields, projectKeyOf, runIntake, type IntakeOutcome } from "./jira-intake.js";
 import { BFF_MESSAGE_KEYS, stepTitleKey } from "./messages.js";
 import { SIGNALS } from "./signal-names.js";
 
@@ -136,16 +136,29 @@ export async function handleCommand(
       });
 
     case "ai-start": {
-      const outcome = await runIntake(deps, { ticket, explicit: true, actor });
+      // The comment says only "/ai-start"; the delivery that carried it is a
+      // COMMENT event, so it holds no issue fields to classify the ticket by.
+      // Without the read below this command matched no listening rule and ran
+      // the deployment default — the same defect the Studio Start button had,
+      // and the one that cost OPS-57 its status map. See `classifyingFields`.
+      const outcome = await runIntake(deps, {
+        ticket,
+        explicit: true,
+        actor,
+        ...(await classifyingFields(deps, ticket)),
+      });
       return intakeCommand(deps, "ai-start", outcome, ticket);
     }
 
     case "ai-assign": {
+      // Same read, same reason: naming the APPLICATION does not name the flow,
+      // and `/ai-assign` is otherwise as blind to the ticket as `/ai-start`.
       const outcome = await runIntake(deps, {
         ticket,
         explicit: true,
         appId: command.appId,
         actor,
+        ...(await classifyingFields(deps, ticket)),
       });
       if (outcome.accepted) {
         await deps.audit.append({

@@ -46,6 +46,8 @@ export interface Recorded {
   stored: Array<{ key: string; bytes: number }>;
   /** Files that reached the ticket through the `DocAttacher` seam (M103r). */
   attached: Array<{ ticket: string; fileName: string; bytes: number; contentType: string }>;
+  /** Board moves that reached the driver through the `StatusMover` seam. */
+  moved: Array<{ ticket: string; statusName: string }>;
   children: Array<{ summary: string; description: string }>;
   turns: AgentTurnRequest[];
   scans: string[];
@@ -80,6 +82,21 @@ export interface FakeOptions {
   noDocAttacher?: boolean;
   /** Makes every attachment upload reject, for the fail-soft document path. */
   attachFails?: boolean;
+  /**
+   * Omit the `StatusMover` seam entirely — the Data Center deployment, whose
+   * driver cannot transition a ticket at all (M102). The flow must then stay in
+   * comment-only mode without anything failing.
+   */
+  noStatusMover?: boolean;
+  /**
+   * What the driver answers for a move. Defaults to a clean `moved:true`. The
+   * real driver NEVER throws, so a scenario that wants a refusal returns
+   * `{moved:false, reason}` — `statusMoverThrows` is the separate, harsher
+   * case: a driver that breaks its own contract.
+   */
+  statusMove?: (statusName: string) => { moved: boolean; reason?: string };
+  /** A driver that throws despite the contract saying it cannot. */
+  statusMoverThrows?: boolean;
   /** Bytes the binary publish targets produce; defaults to a plausible file. */
   docBytes?: (target: "docx" | "pdf") => Uint8Array;
   /** Role -> directory group, when a test needs the two to differ. */
@@ -105,6 +122,7 @@ function emptyRecord(): Recorded {
     scans: [],
     llm: [],
     attached: [],
+    moved: [],
   };
 }
 
@@ -288,6 +306,21 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
               if (options.attachFails === true) return Promise.reject(new Error("jira: attachment 413"));
               recorded.attached.push({ ticket, fileName, bytes: bytes.byteLength, contentType });
               return Promise.resolve({ ids: [`att-${String(recorded.attached.length)}`] });
+            },
+          },
+        }),
+    // The Cloud driver's OTHER capability, wired the same way. Left out
+    // entirely for `noStatusMover`, which is the Data Center deployment.
+    ...(options.noStatusMover === true
+      ? {}
+      : {
+          statusMover: {
+            move: (ticket, statusName) => {
+              if (options.statusMoverThrows === true) {
+                return Promise.reject(new Error("jira: transitions 500"));
+              }
+              recorded.moved.push({ ticket, statusName });
+              return Promise.resolve(options.statusMove?.(statusName) ?? { moved: true });
             },
           },
         }),

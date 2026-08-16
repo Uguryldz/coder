@@ -14,7 +14,9 @@ import { ListeningScreen } from "../src/screens/Listening.tsx";
  *
  * The behaviours under test: the table renders the rules the endpoint returns,
  * the add-form is visible only to an admin (a viewer sees the read-only table),
- * and creating a rule POSTs the typed fields.
+ * creating a rule POSTs the typed fields, and the Jira status map round-trips
+ * between the form and the wire without ever turning comment-only mode into
+ * something else by accident (see the "Jira status map" block below).
  */
 
 const ADMIN: Session = {
@@ -79,6 +81,9 @@ function stubFetch(rules: object[], seedAnswer: SeedAnswer = {}): ReturnType<typ
     }
     if (u.includes("/studio/listening-rules") && method === "POST") {
       return Response.json({ rule: { ...SEED, ruleId: "lr_new" } }, { status: 201 });
+    }
+    if (u.includes("/studio/listening-rules") && method === "PUT") {
+      return Response.json({ rule: { ...SEED } }, { status: 200 });
     }
     if (u.includes("/studio/pilot/listening")) return Response.json({ ok: true });
     // The assignee field pre-fills from a tested Jira connection's botAccountId.
@@ -279,6 +284,221 @@ describe("ListeningScreen", () => {
     renderScreen(VIEWER);
     await waitFor(() => expect(screen.getByText("Hata")).toBeTruthy());
     expect(screen.queryByText("Hazır kuralları yükle")).toBeNull();
+  });
+
+  /**
+   * The Jira status map (durum eşlemesi).
+   *
+   * Until this landed the map could only be set by writing jsonb into Postgres
+   * by hand, so the behaviours that matter are exactly the ones an operator
+   * cannot verify from the outside: that the DEFAULT stays comment-only (the
+   * key sends `statusMap: null`, never a map nobody asked for), that only the
+   * points actually filled in are sent, that an existing rule's map comes BACK
+   * into the form, and that emptying it returns the rule to comment-only rather
+   * than leaving a `{}` that reads as "configured" in the table.
+   */
+  describe("Jira status map", () => {
+    /** Fill the two required text fields and pick the project. */
+    async function fillRequired(): Promise<void> {
+      await screen.findByRole("option", { name: "OPS" });
+      await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+      const inputs = screen.getAllByRole("textbox");
+      await userEvent.type(inputs[0]!, "712020:bot");
+      await userEvent.type(inputs[1]!, "Hata");
+    }
+
+    /**
+     * Open the collapsed section and tick the opt-in — the two separate acts an
+     * operator performs, in that order, before any status field exists.
+     */
+    async function optIn(): Promise<void> {
+      await userEvent.click(screen.getByText("Jira durumunu da değiştir (isteğe bağlı)"));
+      await userEvent.click(
+        screen.getByLabelText("Bu kuralda ticket'ın Jira durumunu da değiştir"),
+      );
+    }
+
+    /** The body of the one write the screen made, POST or PUT. */
+    async function writtenBody(fn: ReturnType<typeof vi.fn>): Promise<Record<string, unknown>> {
+      let body: Record<string, unknown> | undefined;
+      await waitFor(() => {
+        const call = fn.mock.calls.find((c) => {
+          const method = (c[1] as RequestInit | undefined)?.method;
+          return (
+            String(c[0]).includes("/studio/listening-rules") &&
+            (method === "POST" || method === "PUT") &&
+            !String(c[0]).includes("seed-defaults")
+          );
+        });
+        expect(call).toBeTruthy();
+        body = JSON.parse((call![1] as RequestInit).body as string) as Record<string, unknown>;
+      });
+      return body!;
+    }
+
+    it("sends no map at all when the operator never opts in", async () => {
+      const fn = stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+      await fillRequired();
+      await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+      const body = await writtenBody(fn);
+      // null, not {} and not a half-filled map: comment-only is the default and
+      // the wire has to say so in the one shape the store recognises.
+      expect(body.statusMap).toBeNull();
+    });
+
+    it("keeps the five status fields hidden until the toggle is on", async () => {
+      stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+      // The section's summary is always there, and it starts CLOSED — the
+      // default a rule gets is comment-only, so the map is not in the way.
+      const summary = screen.getByText("Jira durumunu da değiştir (isteğe bağlı)");
+      expect((summary.closest("details") as HTMLDetailsElement).open).toBe(false);
+      expect(screen.queryByLabelText("İş başladığında")).toBeNull();
+
+      // Opening the disclosure explains the feature but does NOT enable it —
+      // reading about moving tickets must not be the same act as opting in.
+      await userEvent.click(summary);
+      expect(screen.queryByLabelText("İş başladığında")).toBeNull();
+
+      await userEvent.click(
+        screen.getByLabelText("Bu kuralda ticket'ın Jira durumunu da değiştir"),
+      );
+      expect(await screen.findByLabelText("İş başladığında")).toBeTruthy();
+      expect(screen.getByLabelText("İş bittiğinde")).toBeTruthy();
+    });
+
+    it("sends exactly the points that were filled in, and no key for the blank ones", async () => {
+      const fn = stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+      await fillRequired();
+
+      await optIn();
+      await userEvent.type(await screen.findByLabelText("İş başladığında"), "Devam Ediyor");
+      await userEvent.type(screen.getByLabelText("Analiz onaya çıktığında"), "İNCELEMEDE");
+      await userEvent.type(screen.getByLabelText("İş bittiğinde"), "Tamam");
+      await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+      const body = await writtenBody(fn);
+      // Three of five: the untouched points are ABSENT, not "" — an empty
+      // string is a 400 from StatusMapSchema, not "leave the ticket alone".
+      expect(body.statusMap).toEqual({
+        onStart: "Devam Ediyor",
+        onReview: "İNCELEMEDE",
+        onDone: "Tamam",
+      });
+    });
+
+    it("sends reassignOnNeedInfo on its own, without any status name", async () => {
+      const fn = stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+      await fillRequired();
+
+      await optIn();
+      await userEvent.click(
+        await screen.findByLabelText("Bilgi eksikken ticket'ı rapor edene geri ata"),
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+      // Handing the ticket back without moving it on the board is a real
+      // configuration, so it must not collapse to "no map".
+      expect((await writtenBody(fn)).statusMap).toEqual({ reassignOnNeedInfo: true });
+    });
+
+    it("loads an existing rule's map back into the form when it is edited", async () => {
+      stubFetch([
+        {
+          ...SEED,
+          statusMap: {
+            onStart: "Devam Ediyor",
+            onNeedInfo: "Yapılacaklar",
+            onDone: "Tamam",
+            reassignOnNeedInfo: true,
+          },
+        },
+      ]);
+      renderScreen(ADMIN);
+      await screen.findByText("Hata");
+      await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+
+      // The disclosure springs open by itself — a configured map hidden behind
+      // a closed summary is exactly the invisibility this screen exists to fix.
+      const details = screen
+        .getByText("Jira durumunu da değiştir (isteğe bağlı)")
+        .closest("details") as HTMLDetailsElement;
+      expect(details.open).toBe(true);
+
+      const onStart = (await screen.findByLabelText("İş başladığında")) as HTMLInputElement;
+      expect(onStart.value).toBe("Devam Ediyor");
+      expect((screen.getByLabelText("Bilgi eksik olduğunda") as HTMLInputElement).value).toBe(
+        "Yapılacaklar",
+      );
+      expect((screen.getByLabelText("İş bittiğinde") as HTMLInputElement).value).toBe("Tamam");
+      // Points the stored map never had come back blank, not filled with junk.
+      expect((screen.getByLabelText("Ret gelince") as HTMLInputElement).value).toBe("");
+      expect(
+        (screen.getByLabelText("Bilgi eksikken ticket'ı rapor edene geri ata") as HTMLInputElement)
+          .checked,
+      ).toBe(true);
+    });
+
+    it("returns a rule to comment-only mode when every field is cleared", async () => {
+      const fn = stubFetch([
+        { ...SEED, statusMap: { onStart: "Devam Ediyor", onDone: "Tamam" } },
+      ]);
+      renderScreen(ADMIN);
+      await screen.findByText("Hata");
+      await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+
+      await userEvent.clear(await screen.findByLabelText("İş başladığında"));
+      await userEvent.clear(screen.getByLabelText("İş bittiğinde"));
+      await userEvent.click(screen.getByRole("button", { name: "Kuralı kaydet" }));
+
+      const body = await writtenBody(fn);
+      // null, NOT {}. An empty object would be a second way of saying
+      // "comment-only" and the table would have to guess which one it is.
+      expect(body.statusMap).toBeNull();
+      expect(body.matchValue).toBe("Hata"); // the PUT is a full replace: the rest survives
+    });
+
+    it("also drops the map when the toggle itself is switched back off", async () => {
+      const fn = stubFetch([{ ...SEED, statusMap: { onStart: "Devam Ediyor" } }]);
+      renderScreen(ADMIN);
+      await screen.findByText("Hata");
+      await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+      await screen.findByLabelText("İş başladığında");
+
+      await userEvent.click(
+        screen.getByLabelText("Bu kuralda ticket'ın Jira durumunu da değiştir"),
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Kuralı kaydet" }));
+
+      expect((await writtenBody(fn)).statusMap).toBeNull();
+    });
+
+    it("tells mapped rules from comment-only ones in the list", async () => {
+      stubFetch([
+        {
+          ...SEED,
+          ruleId: "lr_mapped",
+          matchValue: "Hata",
+          statusMap: { onStart: "Devam Ediyor", onDone: "Tamam" },
+        },
+        { ...SEED, ruleId: "lr_plain", matchValue: "Görev", statusMap: null },
+      ]);
+      renderScreen(VIEWER); // read-only: only the table renders, no form to confuse the query
+      await screen.findByText("Hata");
+
+      // The mapped rule shows the statuses it walks, in flow order.
+      expect(screen.getByText("Devam Ediyor → Tamam")).toBeTruthy();
+      // The unmapped one says so outright rather than leaving a blank cell.
+      expect(screen.getByText("yorum")).toBeTruthy();
+    });
   });
 
   it("shows the rule's chosen agents in the list, or 'varsayılan' when unset", async () => {

@@ -1,4 +1,4 @@
-import type { FlowType, ListeningRuleRecord, MatchKind } from "./listening-store.js";
+import type { FlowType, ListeningRuleRecord, MatchKind, StatusMap } from "./listening-store.js";
 
 /**
  * Per-ticket flow selection: which of Maestro's flows a single ticket runs.
@@ -58,6 +58,25 @@ export interface FlowDecision {
    * `rule_conflict`, so the audit entry can name the rules an admin must fix.
    */
   conflictingRuleIds?: readonly string[];
+  /**
+   * Where the DECIDING rule wants the ticket to sit on the board at each point
+   * of the flow. `null` — including for every no-rule outcome — is comment-only
+   * mode: Maestro narrates and never moves the ticket, which is what every run
+   * did before the map existed.
+   *
+   * It rides along with the flow rather than being fetched separately for the
+   * reason the flow itself is decided here: this is the one moment the rule set
+   * is read, and the answer is pinned into the run's start input. A workflow
+   * that asked for its map later could get a different one — an admin editing a
+   * rule at lunchtime would change where the morning's tickets land, with the
+   * run's own history unable to say why.
+   *
+   * The map belongs to whichever rule WON, including under `rule_conflict`:
+   * "which flow" and "which board columns" must come from the same row, or a
+   * ticket would run the narrow flow of one rule while being driven around
+   * another's board.
+   */
+  statusMap?: StatusMap | null;
 }
 
 /**
@@ -172,7 +191,12 @@ export function flowDecisionFor(
   const flows = new Set(matched.map((rule) => rule.flowType));
   if (flows.size === 1) {
     const winner = matched[0]!;
-    return { flow: winner.flowType, reason: "rule", ruleId: winner.ruleId };
+    return {
+      flow: winner.flowType,
+      reason: "rule",
+      ruleId: winner.ruleId,
+      statusMap: winner.statusMap ?? null,
+    };
   }
 
   // Disagreement: take the narrowest flow any matching rule asked for, and name
@@ -185,5 +209,9 @@ export function flowDecisionFor(
     reason: "rule_conflict",
     ruleId: narrowest.ruleId,
     conflictingRuleIds: matched.map((rule) => rule.ruleId),
+    // From the rule that WON, not merged across the matching set: two maps
+    // combined would drive the ticket to a column no single rule asked for,
+    // which is a board move nobody configured and nobody can explain.
+    statusMap: narrowest.statusMap ?? null,
   };
 }

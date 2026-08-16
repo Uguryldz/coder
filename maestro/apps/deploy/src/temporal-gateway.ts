@@ -228,6 +228,13 @@ export class TemporalRunGateway implements RunGateway {
         // workflow reads an absent `flow` as the full pipeline, and an
         // explicit null would mean the same thing while looking like a choice.
         ...(input.flow === undefined || input.flow === null ? {} : { flow: input.flow }),
+        // Same treatment as `flow`, and the same reason: an absent status map
+        // already means comment-only mode in the workflow, so sending an
+        // explicit null would add a field that says nothing the omission does
+        // not already say.
+        ...(input.statusMap === undefined || input.statusMap === null
+          ? {}
+          : { statusMap: input.statusMap }),
       },
     ];
     const signal = input.signal;

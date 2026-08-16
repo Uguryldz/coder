@@ -112,7 +112,18 @@ export function AuthProvider({
         setStatus("authenticated");
       })
       .catch(() => {
-        // A failed probe means no usable session; onSessionLost already cleared.
+        // An ABORT is not a verdict. This effect aborts its own request on
+        // cleanup, and React runs mount→cleanup→mount twice under StrictMode,
+        // so the first probe of every cold load rejects with AbortError while
+        // the second one is still in flight. Treating that as "no session"
+        // flipped status to `anonymous` for the ~30 ms until the real answer
+        // arrived — long enough for RequireSession to fire its <Navigate>, which
+        // is what bounced an operator with a perfectly valid token from a
+        // deep-linked URL to /login. The replacement leaves status at
+        // "loading"; the surviving request decides.
+        if (controller.signal.aborted) return;
+        // A genuinely failed probe means no usable session; onSessionLost
+        // already cleared the token.
         setStatus("anonymous");
       });
     return () => controller.abort();

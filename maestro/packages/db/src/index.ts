@@ -3,8 +3,8 @@
  * seed, the typed client factory, and the row↔contract mappers. Nothing else
  * in the monorepo imports `@prisma/client` directly.
  */
-export { createDb, assertPostgresUrl, InvalidDatabaseUrlError } from "./client.js";
-export type { CreateDbOptions, Db, DbLogLevel } from "./client.js";
+export { createDb, assertPostgresUrl, InvalidDatabaseUrlError, DB_NULL } from "./client.js";
+export type { CreateDbOptions, Db, DbLogLevel, DbNull } from "./client.js";
 
 // Append-only surfaces (M30/M33) — the type-level half of the trigger guard.
 export { appendOnly, APPEND_ONLY_METHODS } from "./append-only.js";

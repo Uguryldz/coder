@@ -7,6 +7,7 @@ import { Button } from "../ui/Button.tsx";
 import { Card } from "../ui/Card.tsx";
 import { Input } from "../ui/Input.tsx";
 import { Select } from "../ui/Select.tsx";
+import { Skeleton } from "../ui/Skeleton.tsx";
 import { useAuth } from "./AuthProvider.tsx";
 import "./LoginForm.css";
 
@@ -33,6 +34,14 @@ export function LoginForm(): ReactNode {
   const from = (location.state as LocationState | null)?.from ?? "/dash";
 
   if (status === "authenticated") return <Navigate to={from} replace />;
+  // "loading" is NOT "signed out". /login is a PUBLIC route with no guard in
+  // front of it, so a cold load that lands here — or is sent here by a guard
+  // that has since changed its mind — would otherwise paint a credential form
+  // at an operator whose stored token is still being checked. Defence in depth
+  // behind the AuthProvider fix: RequireSession draws the same skeleton for the
+  // same reason, and the two together mean no code path renders a login prompt
+  // on an unresolved session.
+  if (status === "loading") return <Skeleton rows={4} />;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();

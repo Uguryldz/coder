@@ -464,9 +464,13 @@ describe("JiraCloudWorkPort", () => {
     expect((error as Error).message).toContain("missing_secret");
   });
 
-  it("does not support transitions (M102 parity with the DC driver)", async () => {
-    const stub = stubFetch([]);
-    await expect(port(stub).transition("OPS-6", "31")).rejects.toBeInstanceOf(CapabilityNotSupportedError);
+  it("moves the issue by transition id through the port's own transition()", async () => {
+    const stub = stubFetch([{ status: 204 }]);
+    await port(stub).transition("OPS-6", "31");
+
+    expect(stub.calls[0]!.method).toBe("POST");
+    expect(stub.calls[0]!.url).toBe("https://uyildiz.atlassian.net/rest/api/3/issue/OPS-6/transitions");
+    expect(stub.calls[0]!.body).toEqual({ transition: { id: "31" } });
   });
 
   // ------------------------------------------------- return-to-reporter (İADE)
@@ -608,6 +612,127 @@ describe("JiraCloudWorkPort", () => {
     const stub = stubFetch([]);
     await expect(port(stub).sendToReview("OPS-6", "   ")).rejects.toBeInstanceOf(JiraArgumentError);
     expect(stub.calls).toHaveLength(0); // no assign, no half-done handover
+  });
+
+  // -------------------------------------------------- transitionToStatus (by name)
+
+  /** A `fields=status` read — what the "already there?" short-circuit reads. */
+  function statusBody(name: string): unknown {
+    return { fields: { status: { id: "10004", name, statusCategory: { key: "new", name: "Yapılacaklar" } } } };
+  }
+
+  /**
+   * The LIVE OPS shape: the transition's own name and its destination status name
+   * genuinely differ (id 31 is "In Review" but lands on "İNCELEMEDE"), which is
+   * precisely why a caller must not hard-code ids or assume the two names agree.
+   */
+  function liveTransitionsBody(): unknown {
+    return {
+      transitions: [
+        { id: "11", name: "Yapılacaklar", to: { id: "10004", name: "Yapılacaklar", statusCategory: { key: "new", name: "To Do" } } },
+        { id: "21", name: "Devam Ediyor", to: { id: "10005", name: "Devam Ediyor", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+        { id: "31", name: "In Review", to: { id: "10001", name: "İNCELEMEDE", statusCategory: { key: "indeterminate", name: "In Progress" } } },
+        { id: "41", name: "Tamam", to: { id: "10002", name: "Tamam", statusCategory: { key: "done", name: "Done" } } },
+      ],
+    };
+  }
+
+  it("moves to a status matched on the DESTINATION status name, not the transition name", async () => {
+    // status read → transitions read → POST. The destination "İNCELEMEDE" is
+    // reached by transition 31, whose own name ("In Review") is something else.
+    const stub = stubFetch([{ body: statusBody("Yapılacaklar") }, { body: liveTransitionsBody() }, { status: 204 }]);
+    const result = await port(stub).transitionToStatus("OPS-6", "İNCELEMEDE");
+
+    expect(result).toEqual({ moved: true });
+    expect(stub.calls[0]!.url).toContain("/rest/api/3/issue/OPS-6?fields=status");
+    expect(stub.calls[2]!.method).toBe("POST");
+    expect(stub.calls[2]!.body).toEqual({ transition: { id: "31" } });
+  });
+
+  it("falls back to the TRANSITION name when no destination status matches", async () => {
+    // "In Review" names no destination status here — only transition 31 — so the
+    // second pass must find it rather than reporting no_transition.
+    const stub = stubFetch([{ body: statusBody("Yapılacaklar") }, { body: liveTransitionsBody() }, { status: 204 }]);
+    const result = await port(stub).transitionToStatus("OPS-6", "In Review");
+
+    expect(result).toEqual({ moved: true });
+    expect(stub.calls[2]!.body).toEqual({ transition: { id: "31" } });
+  });
+
+  it("matches the Turkish dotted İ against every casing a caller might write", async () => {
+    // The trap: plain toLowerCase() leaves "İ" as i+combining-dot and
+    // toLocaleLowerCase("tr") maps "I" onto "ı" — either alone fails one of these.
+    for (const spelling of ["İNCELEMEDE", "İncelemede", "incelemede", "InCeLeMeDe", "ıncelemede"]) {
+      const stub = stubFetch([{ body: statusBody("Yapılacaklar") }, { body: liveTransitionsBody() }, { status: 204 }]);
+      const result = await port(stub).transitionToStatus("OPS-6", spelling);
+
+      expect(result, `spelling: ${spelling}`).toEqual({ moved: true });
+      expect(stub.calls[2]!.body).toEqual({ transition: { id: "31" } });
+    }
+  });
+
+  it("is idempotent: an issue already in the status is not POSTed again", async () => {
+    // Only the status read happens — no transitions read, no write. A retried
+    // workflow step must not re-POST a move Jira already made.
+    const stub = stubFetch([{ body: statusBody("İNCELEMEDE") }]);
+    const result = await port(stub).transitionToStatus("OPS-6", "İncelemede");
+
+    expect(result).toEqual({ moved: false, reason: "already" });
+    expect(stub.calls).toHaveLength(1);
+    expect(stub.calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("reports no_transition instead of throwing when the workflow offers no such move", async () => {
+    const stub = stubFetch([{ body: statusBody("Yapılacaklar") }, { body: liveTransitionsBody() }]);
+    const result = await port(stub).transitionToStatus("OPS-6", "Buzdolabında");
+
+    expect(result).toEqual({ moved: false, reason: "no_transition" });
+    expect(stub.calls).toHaveLength(2); // read, read — no write
+  });
+
+  it("reports forbidden instead of throwing when Jira answers 403 on the move", async () => {
+    // The service account may browse the issue but lacks "Transition Issues".
+    const stub = stubFetch([
+      { body: statusBody("Yapılacaklar") },
+      { body: liveTransitionsBody() },
+      { status: 403, body: { errorMessages: ["You do not have permission"] } },
+    ]);
+    const result = await port(stub).transitionToStatus("OPS-6", "İNCELEMEDE");
+
+    expect(result).toEqual({ moved: false, reason: "forbidden" });
+  });
+
+  it("never throws on any other failure — a 5xx becomes a reason, not an exception", async () => {
+    const failed = stubFetch([
+      { body: statusBody("Yapılacaklar") },
+      { body: liveTransitionsBody() },
+      { status: 500, body: { errorMessages: ["boom"] } },
+    ]);
+    await expect(port(failed).transitionToStatus("OPS-6", "İNCELEMEDE")).resolves.toEqual({
+      moved: false,
+      reason: "transition_failed",
+    });
+
+    // A failing READ is reported separately, so the log says whether we never
+    // learned the options or could not apply the one we picked.
+    const unread = stubFetch([{ status: 404, body: { errorMessages: ["no issue"] } }]);
+    await expect(port(unread).transitionToStatus("OPS-6", "İNCELEMEDE")).resolves.toEqual({
+      moved: false,
+      reason: "read_failed",
+    });
+
+    // Even a malformed key is a reason, never a throw — the caller's policy is
+    // "warn and continue", and an argument guard that raised would break it.
+    const untouched = stubFetch([]);
+    await expect(port(untouched).transitionToStatus("not-a-key", "İNCELEMEDE")).resolves.toEqual({
+      moved: false,
+      reason: "bad_key",
+    });
+    await expect(port(untouched).transitionToStatus("OPS-6", "  ")).resolves.toEqual({
+      moved: false,
+      reason: "bad_status_name",
+    });
+    expect(untouched.calls).toHaveLength(0);
   });
 
   // ---------------------------------------------------------- addAttachment

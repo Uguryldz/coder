@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../src/app/routes.tsx";
-import { AuthProvider } from "../src/auth/AuthProvider.tsx";
+import type { AuthStatus } from "../src/auth/AuthProvider.tsx";
+import { AuthProvider, useAuth } from "../src/auth/AuthProvider.tsx";
 import type { Session } from "../src/auth/types.ts";
 import { hasAnyRole, hasRole, sessionFromLogin } from "../src/auth/types.ts";
 import { I18nProvider } from "../src/i18n/I18nProvider.tsx";
@@ -70,6 +73,136 @@ describe("session redirect", () => {
   it("shows a translated 404 for an unknown in-shell route", async () => {
     renderApp({ route: "/nope", session: SESSION, token: "tok" });
     expect(await screen.findByText("Sayfa bulunamadı")).toBeInTheDocument();
+  });
+});
+
+/**
+ * COLD LOAD — the path the real app takes and every test above skips.
+ *
+ * `renderApp` passes `initialSession`, which short-circuits the provider's boot
+ * probe entirely. The browser never does: it mounts with `initialSession`
+ * undefined, reads the bearer out of `sessionStorage` and asks `/auth/session`
+ * whether it is still alive. That round trip is the window in which an operator
+ * who IS signed in was being bounced to /login, so it needs its own harness —
+ * one that mounts under <StrictMode>, because the double-invoked effect is half
+ * of what made the bug fire.
+ */
+describe("cold load of a deep link", () => {
+  const TOKEN_KEY = "maestro.token";
+
+  beforeEach(() => {
+    globalThis.sessionStorage.clear();
+  });
+
+  /**
+   * Answers `/auth/session`, with the timing that makes the race deterministic.
+   *
+   * The FIRST probe settles on the next tick and the SECOND takes far longer.
+   * That ordering is the whole point, and it is not artificial — it is what a
+   * warm local BFF does to StrictMode's double-invoked effect: probe 1 has
+   * already resolved when the effect's cleanup aborts it, so its AbortError is
+   * delivered while probe 2 is still outstanding, and the catch that treats an
+   * abort as a verdict has nothing but that abort to go on.
+   *
+   * Timing-dependent tests are usually a smell, so it is worth saying why this
+   * one is not flaky: it does not race the scheduler, it PINS the order. Give
+   * both probes the same delay and they finish together, the success overtakes
+   * the abort, and the defect becomes invisible — which is exactly how it hid
+   * from this suite until now.
+   */
+  function sessionFetch(answer: () => Response): typeof fetch {
+    let probes = 0;
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auth/session")) {
+        probes += 1;
+        const slow = probes > 1;
+        await new Promise((resolve) => setTimeout(resolve, slow ? 40 : 0));
+        // The provider aborts its own probe on effect cleanup; a real fetch
+        // rejects in that case rather than resolving, so the stub must too.
+        if (init?.signal?.aborted === true) throw new DOMException("aborted", "AbortError");
+        return answer();
+      }
+      return new Response(JSON.stringify({ level: "off" }), { status: 200 });
+    }) as unknown as typeof fetch;
+  }
+
+  /** Records every DISTINCT status the provider commits, in order. */
+  function StatusRecorder({ into }: { readonly into: AuthStatus[] }): ReactNode {
+    const { status } = useAuth();
+    if (into[into.length - 1] !== status) into.push(status);
+    return null;
+  }
+
+  function renderCold(route: string, fetchImpl: typeof fetch): AuthStatus[] {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const statuses: AuthStatus[] = [];
+    render(
+      <StrictMode>
+        <I18nProvider initialLocale="tr">
+          <QueryClientProvider client={queryClient}>
+            {/* No initialSession: this is a real boot, probe and all. */}
+            <AuthProvider fetchImpl={fetchImpl}>
+              {/* OUTSIDE the router on purpose: <Navigate> unmounts and
+                  remounts whatever sits inside it, and a recorder that dies
+                  with the redirect loses the very render it exists to catch. */}
+              <StatusRecorder into={statuses} />
+              <ToastProvider>
+                <MemoryRouter initialEntries={[route]}>
+                  <AppRoutes />
+                </MemoryRouter>
+              </ToastProvider>
+            </AuthProvider>
+          </QueryClientProvider>
+        </I18nProvider>
+      </StrictMode>,
+    );
+    return statuses;
+  }
+
+  it("never reports `anonymous` for a stored token that turns out to be valid", async () => {
+    globalThis.sessionStorage.setItem(TOKEN_KEY, "tok");
+    const statuses = renderCold(
+      "/change-password",
+      sessionFetch(() => new Response(JSON.stringify(SESSION), { status: 200 })),
+    );
+
+    // The deep-linked screen renders, which is the user-visible half.
+    expect(await screen.findByText("Parolanızı belirleyin")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Kullanıcı adı")).not.toBeInTheDocument();
+
+    // The half that actually pins the bug, and the reason this test asserts on
+    // a status sequence rather than on the DOM: the bad state lasts one round
+    // trip, and `findBy*`/`waitFor` retry straight past it — the suite went
+    // green against the unfixed provider because the login form it briefly
+    // rendered was gone by the time the first retry looked.
+    //
+    // Before the fix this read ["loading", "anonymous", "authenticated"]. The
+    // `anonymous` in the middle is a committed render, and it is the one in
+    // which RequireSession fires <Navigate to="/login"> at an operator holding
+    // a perfectly good token. "loading" must lead straight to "authenticated".
+    await waitFor(() => {
+      expect(statuses).toContain("authenticated");
+    });
+    expect(statuses).toEqual(["loading", "authenticated"]);
+  });
+
+  it("DOES send a visitor with no stored token to /login", async () => {
+    renderCold("/change-password", sessionFetch(() => new Response(JSON.stringify(SESSION), { status: 200 })));
+    // Nothing in sessionStorage: there is no token to check, so the verdict is
+    // immediate and the login form is correct.
+    expect(await screen.findByLabelText("Kullanıcı adı")).toBeInTheDocument();
+  });
+
+  it("sends a visitor whose stored token the BFF rejects to /login", async () => {
+    globalThis.sessionStorage.setItem(TOKEN_KEY, "stale");
+    renderCold(
+      "/change-password",
+      sessionFetch(() => new Response(JSON.stringify({ error: "session_expired" }), { status: 401 })),
+    );
+    // A real 401 IS a verdict — an 8-hour session that lapsed lands here — and
+    // it must still reach the login form rather than hanging on the skeleton.
+    expect(await screen.findByLabelText("Kullanıcı adı")).toBeInTheDocument();
   });
 });
 

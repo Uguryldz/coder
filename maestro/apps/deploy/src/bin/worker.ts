@@ -7,6 +7,7 @@ import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.j
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
 import { docAttacherFor } from "../stores/doc-attacher.js";
+import { statusMoverFor } from "../stores/status-mover.js";
 import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
 import { reconcileRunStatuses } from "../stores/reconcile.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
@@ -85,10 +86,19 @@ export async function main(): Promise<void> {
      * the ticket. See `stores/doc-attacher.ts` for why the check is structural.
      */
     const docAttacher = docAttacherFor(deployment.ports.work);
+    /**
+     * The listening rule's status map, made real: the ticket actually moves
+     * desk to desk on the operator's board. `undefined` on Data Center, where
+     * the driver cannot transition — the flow then narrates in comments as it
+     * always has, and the journal says the move was skipped for want of the
+     * capability. See `stores/status-mover.ts` for why the check is structural.
+     */
+    const statusMover = statusMoverFor(deployment.ports.work);
     const workerCore: CoreDeps = {
       ...core,
       execution: execution.runner,
       ...(docAttacher === undefined ? {} : { docAttacher }),
+      ...(statusMover === undefined ? {} : { statusMover }),
     };
 
     if (MISSING_CORE_DEPS.length > 0) {

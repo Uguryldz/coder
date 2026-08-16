@@ -38,12 +38,14 @@ describe("flowDecisionFor — two tickets, one project, different flows", () => 
 
   it("routes a 'Hata' ticket to the engineering fix flow", () => {
     const decision = flowDecisionFor(rules, ticket({ issueType: "Hata" }), null);
-    expect(decision).toEqual({ flow: "duzeltme", reason: "rule", ruleId: "lr_bug" });
+    // `statusMap: null` is comment-only mode — these rules map no columns, so
+    // the decision says so explicitly rather than leaving the field absent.
+    expect(decision).toEqual({ flow: "duzeltme", reason: "rule", ruleId: "lr_bug", statusMap: null });
   });
 
   it("routes an 'Analiz' ticket in the SAME project to the analysis flow", () => {
     const decision = flowDecisionFor(rules, ticket({ issueType: "Analiz" }), null);
-    expect(decision).toEqual({ flow: "analiz", reason: "rule", ruleId: "lr_analysis" });
+    expect(decision).toEqual({ flow: "analiz", reason: "rule", ruleId: "lr_analysis", statusMap: null });
   });
 
   it("gives the two tickets genuinely different flows", () => {
@@ -209,5 +211,64 @@ describe("rulesFor / ruleFor", () => {
     const found = ruleFor(rules, ticket({ issueType: "Hata" }));
     expect(found?.analystVariantId).toBe("analist-v2");
     expect(found?.engineerVariantId).toBe("kodcu-v1");
+  });
+});
+
+/**
+ * The status map travels with the flow, out of the same rule row and in the
+ * same decision.
+ *
+ * It has to be one read and one answer: "which flow does this ticket run" and
+ * "which columns does it move through" are both properties of the rule that
+ * matched, and asking for them separately would let a rule edit between the two
+ * reads give a ticket one rule's flow and another rule's board.
+ */
+describe("flowDecisionFor — the deciding rule's status map", () => {
+  const MAP = { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" } as const;
+
+  it("carries the winning rule's map into the decision", () => {
+    const rules = [rule({ ruleId: "lr_map", matchValue: "Hata", statusMap: MAP })];
+    expect(flowDecisionFor(rules, ticket({ issueType: "Hata" }), null).statusMap).toEqual(MAP);
+  });
+
+  it("answers null — comment-only mode — for a rule that maps nothing", () => {
+    const rules = [rule({ ruleId: "lr_bare", matchValue: "Hata" })];
+    expect(flowDecisionFor(rules, ticket({ issueType: "Hata" }), null).statusMap).toBeNull();
+  });
+
+  /**
+   * A ticket that matched NO rule has no operator-configured board, and the
+   * deployment default names a flow but never a column set. Inventing one would
+   * mean every unclassified ticket in the bank started being driven around
+   * somebody's Jira uninvited.
+   */
+  it("leaves the map absent when the deployment default decided", () => {
+    const decision = flowDecisionFor([rule({ matchValue: "Hata" })], ticket({ issueType: "Görev" }), "analiz");
+    expect(decision.reason).toBe("default");
+    expect(decision.statusMap).toBeUndefined();
+  });
+
+  it("leaves the map absent when nothing decided at all", () => {
+    const decision = flowDecisionFor([], ticket({ issueType: "Hata" }), null);
+    expect(decision.reason).toBe("none");
+    expect(decision.statusMap).toBeUndefined();
+  });
+
+  /**
+   * Under a conflict the map comes from the rule that WON the flow, never
+   * merged across the matching set: a merged map would drive the ticket to a
+   * column no single rule asked for, which is a board move nobody configured
+   * and nobody can explain afterwards.
+   */
+  it("takes the map from the rule that won a conflict, unmerged", () => {
+    const rules = [
+      rule({ ruleId: "lr_fix", matchKind: "issuetype", matchValue: "Hata", flowType: "duzeltme", priority: 1, statusMap: { onDone: "Bitti" } }),
+      rule({ ruleId: "lr_an", matchKind: "status", matchValue: "Yapılacak", flowType: "analiz", priority: 2, statusMap: MAP }),
+    ];
+    const decision = flowDecisionFor(rules, ticket({ issueType: "Hata", status: "Yapılacak" }), null);
+    // `analiz` is the narrowest flow, so `lr_an` decides — board included.
+    expect(decision.reason).toBe("rule_conflict");
+    expect(decision.ruleId).toBe("lr_an");
+    expect(decision.statusMap).toEqual(MAP);
   });
 });

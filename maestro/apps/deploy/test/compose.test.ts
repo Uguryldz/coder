@@ -1,3 +1,5 @@
+import { createJiraCloudWorkPort } from "@maestro/adapter-jira";
+import { MaestroPublishPort } from "@maestro/publish";
 import { describe, expect, it } from "vitest";
 import { bootPlatform } from "../src/boot.js";
 import { assertAllPortsPresent, CompositionError, describeWiring, workerSelection } from "../src/compose.js";
@@ -5,6 +7,7 @@ import { storageConfig } from "../src/driver-config.js";
 import { loadDeployEnv, vaultMounts } from "../src/env.js";
 import { ALL_PORT_KEYS, driversFor, WORKER_PORT_KEYS } from "../src/profile.js";
 import { buildSecretPort } from "../src/secrets.js";
+import { docAttacherFor } from "../src/stores/doc-attacher.js";
 import { DEV_ENV, envWithout, OFFLINE_SQL, PROD_ENV } from "./fixtures.js";
 
 /**
@@ -51,8 +54,62 @@ describe("composition root: dev profile", () => {
       storage: "pg-blob",
       secret: "env-file",
       notify: "jira",
-      publish: "jira",
+      // `multi`, not `jira`: the analysis deliverable is a Word/PDF as well as
+      // a comment (M103r), and a port composed for the `jira` target alone
+      // answered the delivery step's request for a file with
+      // `CapabilityNotSupportedError`. See `publishConfig`.
+      publish: "multi",
     });
+  });
+
+  /**
+   * M103r. The analysis Word/PDF only exist if the publish port was COMPOSED
+   * to serve them — `MaestroPublishPort` refuses a target it has no publisher
+   * for, so a port built for `jira` alone makes the delivery step's document
+   * request fail at run time, on a ticket, every time.
+   *
+   * This asserts against the real port built by the real registry, so a
+   * missing storage sink (which `registerPublishDrivers` refuses at
+   * composition) fails here rather than in front of an analyst.
+   */
+  it("composes a publish port that can actually serve docx and pdf (M103r)", async () => {
+    const { deployment } = await boot({ ...DEV_ENV });
+    // The concrete port, not the `PublishPort` interface: `targets()` is what
+    // says which publishers were actually BUILT, which is the fact under test.
+    const publish = deployment.ports.publish;
+    expect(publish).toBeInstanceOf(MaestroPublishPort);
+    expect((publish as MaestroPublishPort).targets()).toEqual(
+      expect.arrayContaining(["jira", "docx", "pdf"]),
+    );
+  });
+
+  /**
+   * M103r/M44. The core declares the SHAPE (`DocAttacher`); this is where it
+   * is matched to a driver. Asserted against the REAL drivers rather than
+   * stubs, because the whole risk is that the concrete Cloud port stops
+   * carrying `addAttachment` and the seam silently becomes `undefined` — which
+   * would read, on a live ticket, as "this deployment cannot attach files".
+   */
+  it("gives the worker a doc attacher only when the work driver can carry a file", async () => {
+    // Data Center: no attachment endpoint on the driver, so no seam. The
+    // documents are still generated and stored; the journal says they did not
+    // reach the ticket, which is honest rather than a stub that throws.
+    const dc = await boot({ ...DEV_ENV });
+    expect(driversFor("dev").work).toBe("jira-dc");
+    expect(docAttacherFor(dc.deployment.ports.work)).toBeUndefined();
+
+    // Cloud — the driver the `analiz` profile runs on: `addAttachment` exists,
+    // so the seam is wired and the analysis Word/PDF land on the ticket.
+    const cloud = createJiraCloudWorkPort({
+      baseUrl: "https://jira.invalid",
+      email: "maestro-bot@bank.invalid",
+      apiTokenRef: "kv/jira#token",
+      deps: { secrets: buildSecretPort(loadDeployEnv(DEV_ENV)) },
+    });
+    expect(driversFor("analiz").work).toBe("jira-cloud");
+    const attacher = docAttacherFor(cloud);
+    expect(attacher).toBeDefined();
+    expect(typeof attacher?.addAttachment).toBe("function");
   });
 
   it("resolves ports that actually carry their interface's methods", async () => {

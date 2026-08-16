@@ -165,6 +165,33 @@ export interface IdempotencyGuard {
 /** Message-catalog lookup (M104), injected so this package owns no catalog. */
 export type Translate = (locale: Locale, key: string, params?: Record<string, string>) => string;
 
+/**
+ * Putting a FILE on the ticket (M103r) — the analysis Word/PDF, so nobody has
+ * to drag them in by hand.
+ *
+ * A seam rather than a `WorkPort` method, because `WorkPort` is FROZEN
+ * (packages/ports) and attaching a binary is not part of it. The capability is
+ * real on the concrete Jira Cloud driver (`addAttachment`), and the
+ * composition root — the one place allowed to name a driver (M44) — passes
+ * that method in. This package still imports nothing from an adapter: it
+ * declares the SHAPE it needs and takes whatever satisfies it, which is also
+ * what keeps the tests offline.
+ *
+ * OPTIONAL on purpose. A deployment on a driver with no attachment API (the DC
+ * driver today) is a supported deployment: the documents are still generated
+ * and still stored durably, and the delivery says in the journal that the
+ * ticket did not get them. Making this required would either break those
+ * deployments or force a no-op stub that lies about what happened.
+ */
+export interface DocAttacher {
+  addAttachment(
+    ticket: TicketKey,
+    fileName: string,
+    bytes: Uint8Array,
+    contentType: string,
+  ): Promise<{ ids: string[] }>;
+}
+
 export interface ActivityDeps {
   readonly runs: RunContextStore;
   readonly gates: GateStore;
@@ -189,6 +216,12 @@ export interface ActivityDeps {
   readonly execution: AgentTurnRunner;
   readonly audit: AuditChain;
   readonly idempotency: IdempotencyGuard;
+  /**
+   * Absent on a deployment whose work driver cannot attach files (M103r). The
+   * analysis documents are then generated and stored, but not put on the
+   * ticket — and the journal says so.
+   */
+  readonly docAttacher?: DocAttacher;
   readonly translate: Translate;
   readonly now: () => Date;
 }

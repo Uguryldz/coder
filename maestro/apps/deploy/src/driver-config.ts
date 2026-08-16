@@ -337,9 +337,23 @@ export function notifyConfig(profile: Profile): Record<string, unknown> {
   return profile === "prod" ? { jira: {} } : {};
 }
 
-/** Publish config; `multi` needs the project's explicit target set (M47). */
-export function publishConfig(profile: Profile): Record<string, unknown> {
-  return profile === "prod" ? { targets: ["jira"] } : {};
+/**
+ * Publish config; `multi` needs the project's explicit target set (M47).
+ *
+ * The set is what the port can SERVE, not what a given document is published
+ * to — that stays the `publish.targets` parameter each project owns, read per
+ * run by `ParamReader.publishTargets`. The two are different questions, and
+ * conflating them is what used to make `docx`/`pdf` unreachable: the port was
+ * composed for `jira` alone, so the delivery step's request for a Word file
+ * came back as `CapabilityNotSupportedError` no matter what the project had
+ * configured.
+ *
+ * `docx`/`pdf` are therefore always in the servable set (M103r) — the analysis
+ * document is the deliverable of the `analiz` release, and a deployment that
+ * cannot render it to a file has nothing to hand the analyst.
+ */
+export function publishConfig(_profile: Profile): Record<string, unknown> {
+  return { targets: ["jira", "docx", "pdf"] };
 }
 
 /** The secret driver's own config, so the registry can rebuild it by name. */

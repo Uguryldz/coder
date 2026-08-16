@@ -98,7 +98,7 @@ const DEV_DRIVERS: DriverMap = {
   // this choice cannot leak into a bank deployment by way of a stale profile.
   secret: "env-file",
   notify: "jira",
-  publish: "jira",
+  publish: "multi",
 };
 
 /**
@@ -129,7 +129,7 @@ const ANALYSIS_DRIVERS: DriverMap = {
   storage: "pg-blob",
   secret: "env-file",
   notify: "jira",
-  publish: "jira",
+  publish: "multi",
 };
 
 export const PROFILE_DRIVERS: Readonly<Record<Profile, DriverMap>> = {

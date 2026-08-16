@@ -11,6 +11,16 @@ export * from "./deps.js";
 export { InMemoryIdempotency } from "./idempotency.js";
 export { LLM_BLOCKED, QUOTA_WAIT, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 export { AI_ASSIST_REQUIRED } from "./analysis.js";
+export {
+  DOC_TARGETS,
+  MIN_DOC_BYTES,
+  assertRealDocument,
+  deliverAnalysisDocs,
+  docFileName,
+  type AnalysisDocFile,
+  type AnalysisDocsResult,
+  type DocTarget,
+} from "./analysis-docs.js";
 export { scannerErrorResult } from "./scan.js";
 export { MIN_SUGGESTION_CONFIDENCE, pickRule, ruleApplies } from "./intake.js";
 

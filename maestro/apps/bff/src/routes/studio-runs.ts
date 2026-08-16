@@ -1,8 +1,14 @@
-import { JournalActor, TicketKey, type WorkflowRunState } from "@maestro/contracts";
+import {
+  JournalActor,
+  TicketKey,
+  type WorkflowRunState,
+  type WorkflowRunStatus,
+} from "@maestro/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ResolvedDeps } from "../deps.js";
+import type { RunRecord } from "../read-models.js";
 import { badRequest, notFound } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
 import { runIntake } from "../jira-intake.js";
@@ -105,6 +111,7 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
           "run state unreadable; listing the row without it",
         );
       }
+      state = reconciledState(record, state);
       // A platform record with no execution is a run that has not started yet;
       // it is still the caller's ticket, so it is listed with a null state
       // rather than hidden — hiding it would make the queue look empty.
@@ -137,7 +144,10 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
     // build made this route answer 500 for six of twenty-two tickets — the
     // first row of the list among them, so the first click a reviewer made
     // landed on an error page for a run whose record was right there.
-    const state = await queryStateOrNull(deps, request, ticket);
+    // The same reconciliation the list applies, for the same reason and so the
+    // two can never disagree: a row the list shows as `fail` must not turn back
+    // into `running` the moment a reviewer clicks it.
+    const state = reconciledState(record, await queryStateOrNull(deps, request, ticket));
     const app_ = record.appId === null ? null : await deps.read.apps.get(record.appId);
 
     return reply.code(200).send({ run: record, state, application: app_ });
@@ -252,6 +262,71 @@ async function runIdOf(deps: ResolvedDeps, ticket: string): Promise<string> {
  * null`, the detail route threw, and the same ticket therefore appeared in the
  * list and 500'd when clicked.
  */
+/**
+ * The statuses that mean "this run is over" — the same set the run-context
+ * store enforces on the database side (`TERMINAL_STATUSES`, run-context.ts).
+ * Kept as a literal here rather than imported because the BFF does not depend
+ * on `apps/deploy`; the two agreeing is asserted by a test rather than by a
+ * shared import that would invert the dependency.
+ */
+const TERMINAL: readonly WorkflowRunStatus[] = ["fail", "done", "cancelled"];
+
+/**
+ * Which of two sources tells the truth about a run's status.
+ *
+ * THE RULE: a TERMINAL platform record wins; anything else defers to the
+ * engine.
+ *
+ * Both halves earn their place.
+ *
+ * **Terminal record wins.** A workflow whose activity exhausted its retries
+ * dies inside that activity, so it never reaches the code that would record
+ * how it ended. Temporal answers `queryRunState` from the last state the
+ * workflow managed to write, which is the step it was on when it died — so a
+ * dead run answers `running` indefinitely. That is not the engine lying; it is
+ * the engine faithfully reporting a history that stopped. The reconciler
+ * compares the two at boot and writes the verdict to `WorkflowRun.status`, and
+ * that verdict is the platform's: once the platform considers a run closed, it
+ * is closed whether or not the engine's own history says so. Measured on the
+ * live board before this rule existed: eleven `fail` rows rendered as twelve
+ * "running" and three "gate".
+ *
+ * **Otherwise the engine wins.** Step progress happens IN the engine and
+ * reaches the row afterwards, so for a run that is genuinely alive the engine's
+ * answer is the fresher of the two. A row still reading `running` while the
+ * workflow has parked at a gate is a stale row, not a contradiction — and
+ * showing `running` there would hide a gate waiting on a human, which is the
+ * expensive direction to be wrong in.
+ *
+ * FAIL-CLOSED, and this is the asymmetry that decides ties: showing a finished
+ * run as active buries a pending approval among work nobody needs to look at,
+ * while showing an active run as finished merely draws an extra glance. So when
+ * the two sources disagree about whether a run is OVER, "over" wins.
+ *
+ * `state === null` is preserved exactly: an engine that cannot answer must not
+ * cost the row its place in the list (that regression blanked Studio over a
+ * catalog of twenty-two runs). The record's own status is enough to synthesise
+ * a state only when it is terminal — and even then only the fields the record
+ * actually holds; `step` and `runId` are the engine's to know, and this route
+ * does not invent them.
+ */
+export function reconciledState(
+  record: RunRecord,
+  state: WorkflowRunState | null,
+): WorkflowRunState | null {
+  // Neither source has a status: `null`, not a guess. A row still lists.
+  if (record.status === null) return state;
+  if (!TERMINAL.includes(record.status)) return state;
+  // Terminal record, no engine answer: there is no `WorkflowRunState` to
+  // return — `runId` and `step` are required and the catalog holds neither, and
+  // filling them in would attribute a made-up step to a real run. The row is
+  // listed with `state: null`, exactly as before.
+  if (state === null) return null;
+  // Terminal record over a live engine answer: keep the engine's step, runId
+  // and clocks — they are real — and correct only the verdict.
+  return { ...state, status: record.status };
+}
+
 async function queryStateOrNull(
   deps: ResolvedDeps,
   request: { log: { warn: (obj: unknown, msg: string) => void } },

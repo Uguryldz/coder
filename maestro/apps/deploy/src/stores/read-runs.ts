@@ -1,4 +1,12 @@
-import type { AppId, DataClass, MatchResult, RiskTier, TicketKey, WorkMode } from "@maestro/contracts";
+import type {
+  AppId,
+  DataClass,
+  MatchResult,
+  RiskTier,
+  TicketKey,
+  WorkMode,
+  WorkflowRunStatus,
+} from "@maestro/contracts";
 import {
   encodeCursor,
   decodeCursor,
@@ -37,6 +45,14 @@ export interface RunCatalogRow {
   mode: WorkMode;
   risk: RiskTier | null;
   dataClass: DataClass;
+  /**
+   * `WorkflowRun.status` — the Prisma enum, whose members are exactly
+   * `WorkflowRunStatus`'s. Selected because Studio's list needs the platform's
+   * verdict alongside the engine's: the reconciler writes `fail` here for a run
+   * that died inside an activity, and the engine goes on reporting that run as
+   * `running` because a crashed workflow cannot correct its own history.
+   */
+  status: WorkflowRunStatus;
   prId: number | null;
   matchJson: unknown;
   startedAt: Date;
@@ -263,6 +279,10 @@ export function toRunRecord(
     // unassessed run to elsewhere.
     risk: row.risk ?? "orta",
     dataClass: row.dataClass,
+    // Straight through, NOT defaulted. The column is NOT NULL and carries the
+    // platform's verdict; passing it verbatim is what lets the route notice
+    // that the row says `fail` while the engine still says `running`.
+    status: row.status,
     parentTicketKey: parentOf(row.matchJson),
     childTicketKeys: children ?? [],
     reporter: "",

@@ -467,6 +467,24 @@ export interface WorkEvent {
   kind: "issue" | "comment" | "other";
   ticketKey?: TicketKey;
   labels?: readonly string[];
+  /**
+   * The issue's current status name, e.g. "Yapılacak". Carried because a
+   * listening rule may key on it (`matchKind: "status"`), and the frozen
+   * `TicketSnapshot` has no status field — so the webhook payload is the only
+   * place the BFF can learn it without a second Jira round-trip.
+   *
+   * Absent means "the delivery did not say", which matches NO rule rather than
+   * matching an empty one (see `flow-decision.ts`).
+   */
+  status?: string;
+  /** The issue type name, e.g. "Hata"/"Bug" — the other thing a rule may key on. */
+  issueType?: string;
+  /**
+   * Who the issue is assigned to, in the same account form the listening rules
+   * store. A rule naming an assignee only fires for tickets actually handed to
+   * that account.
+   */
+  assignee?: string;
 }
 
 export interface WorkEventReader {
@@ -605,8 +623,9 @@ export interface BffConfig {
    * run fails after the analysis has already been written and approved
    * (OPS-38). Absent means the full pipeline.
    *
-   * A per-ticket listening rule is the finer-grained answer and belongs above
-   * this one; it is not wired yet (plan Faz 4/19).
+   * A per-ticket listening rule is the finer-grained answer and now OVERRIDES
+   * this one: `jira-intake.ts` matches the rules first and only falls back here
+   * when no rule claims the ticket (`flow-decision.ts`).
    */
   defaultFlow?: FlowType | null;
   /** Label that opts a ticket into Maestro in `opt_in` projects (M48a). */

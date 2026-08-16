@@ -58,7 +58,13 @@ interface BlobRow {
 
 interface LockRow {
   object_lock: boolean;
-  retain_until: string | null;
+  /**
+   * A `timestamptz` comes back as an ISO string from a raw `pg` client and as a
+   * `Date` from Prisma's. Both are accepted rather than normalised at the seam:
+   * `new Date(...)` below handles either, and narrowing this to one of them
+   * would make the WORM check silently wrong on the other adapter.
+   */
+  retain_until: string | Date | null;
 }
 
 /** DDL for the backing table; applied by the `db` packet's migration. */
@@ -111,7 +117,16 @@ export class PgBlobStorage implements StoragePort {
     await this.deps.sql.query(
       `INSERT INTO ${this.options.table} AS ${EXISTING} ` +
         `(key, data, content_type, tags, object_lock, retain_until, created_at, updated_at) ` +
-        `VALUES ($1, $2, $3, $4, $5, $6, $7, $7) ` +
+        // The casts are not decoration. `tags` is bound as a JSON *string* and
+        // the three instants as ISO *strings*; an adapter that binds parameters
+        // as text — Prisma's `$queryRawUnsafe`, which is the executor the worker
+        // actually composes — then hands Postgres `text` for a `jsonb` and a
+        // `timestamptz` column, and it refuses to infer the conversion:
+        // `column "tags" is of type jsonb but expression is of type text`
+        // (42804). Every put failed on that, which is how a finished analysis
+        // came to attach nothing. Stating the type makes the statement correct
+        // for every binding style instead of relying on one driver's inference.
+        `VALUES ($1, $2, $3, $4::jsonb, $5, $6::timestamptz, $7::timestamptz, $7::timestamptz) ` +
         `ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, ` +
         `content_type = EXCLUDED.content_type, tags = EXCLUDED.tags, ` +
         // WORM columns are merged, never replaced: an ordinary put must not be

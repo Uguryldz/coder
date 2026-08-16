@@ -183,6 +183,26 @@ describe("configuration validation", () => {
     return expect(port.put("a.json", new Uint8Array([1]))).resolves.toBeUndefined();
   });
 
+  /**
+   * Regression, offline mirror of `apps/deploy/test/live-storage-blob.test.ts`.
+   *
+   * `tags` and the three instants are bound as STRINGS. An adapter that binds
+   * parameters as text — Prisma's `$queryRawUnsafe`, the executor the worker
+   * composes — makes Postgres reject the insert with 42804 ("is of type jsonb
+   * but expression is of type text") unless the statement says what it means.
+   * The in-memory fake cannot catch this: it stores whatever it is handed, so
+   * this asserts on the SQL TEXT the driver emits.
+   */
+  it("declares the jsonb and timestamptz parameter types, so a text-binding adapter works", async () => {
+    const { fake, port } = build({ objectLock: LOCK });
+    await port.put("a.json", new Uint8Array([1]), { objectLock: true });
+    const insert = fake.statements.find((s) => s.startsWith("INSERT INTO"));
+    expect(insert).toBeDefined();
+    expect(insert).toContain("$4::jsonb");
+    expect(insert).toContain("$6::timestamptz");
+    expect(insert).toContain("$7::timestamptz");
+  });
+
   it("emits DDL matching the columns the driver reads and writes", () => {
     const ddl = pgBlobTableDdl();
     for (const column of [

@@ -1,6 +1,22 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+
+/**
+ * How long `findBy*` waits before declaring an element absent.
+ *
+ * Testing Library's default is 1000 ms, and that was enough while a screen
+ * mounted one or two panels. The settings screen now mounts four, each with its
+ * own query, and the kill switch is the last of them — so under the gate's
+ * four-package parallelism its button had not rendered within the second, and
+ * the suite reported "Unable to find role=button" for a button that appears
+ * every time when the file runs alone (5/5) or as the whole suite (336/336).
+ *
+ * This is the ASYNC-UTIL budget, not the per-test one (`vitest.config.ts` sets
+ * that): a genuinely missing element still fails, five seconds later instead of
+ * one, while a slow-but-correct render stops being reported as a defect.
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 afterEach(() => {
   cleanup();

@@ -214,7 +214,16 @@ export async function main(): Promise<void> {
     // There is no settings table on purpose: an endpoint and a credential path
     // are deployment facts, and a console able to rewrite them could point the
     // bank's Jira integration elsewhere without a deploy.
-    settings: new EnvSettingsReader(env.base, read.health, notifyChannels(deployment)),
+    // The LLM triple is passed separately because it is declared by
+    // `DeployEnvSchema`, not by `@maestro/config`'s `EnvSchema` — see
+    // `LlmWiring`. `LLM_API_KEY_REF` is a SecretPort KEY (`kv/llm#api-key`),
+    // a pointer the settings screen may show; the key it resolves to never
+    // leaves the process (M9).
+    settings: new EnvSettingsReader(env.base, read.health, notifyChannels(deployment), {
+      baseUrl: env.LLM_BASE_URL,
+      model: env.LLM_MODEL,
+      apiKeyRef: env.LLM_API_KEY_REF,
+    }),
     routing: new PrismaRoutingReader(db.jiraProjectBinding, db.routingRule),
     // Postgres-backed, where it used to be an `InMemoryKillSwitchStore` (Dalga
     // E, migration 0008). This is the store `assertStoresDurable` refused a

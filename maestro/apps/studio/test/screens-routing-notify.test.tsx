@@ -185,6 +185,71 @@ describe("routing screen", () => {
     // A viewer never sees an approve button.
     expect(screen.queryByRole("button", { name: "Onayla" })).not.toBeInTheDocument();
   });
+
+  /**
+   * "Düzenle" on a bound project — the affordance the list never had.
+   *
+   * The bound-projects table was read-only: once a project was bound there was
+   * no way to change anything about it from the UI, and no way to find out why.
+   * What it can honestly become is bounded by the API, which was measured:
+   * `POST /onboarding` is a CREATE path that refuses an already-bound project
+   * (`project_already_bound`), and there is no update endpoint at all. So the
+   * one thing this must NOT do is offer a save button that files nothing — on a
+   * four-eyes decision about which repository an agent may push to, a silent
+   * no-op is the worst possible outcome. These tests pin both halves: the
+   * editable path is wired, and the gap is named rather than faked.
+   */
+  describe("editing a bound project", () => {
+    it("offers Düzenle on each bound project, to an admin only", async () => {
+      const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY]);
+      renderScreen(<RoutingScreen />, { fetchImpl });
+      await screen.findByText("UgurPay Core");
+      expect(screen.getByRole("button", { name: "Düzenle" })).toBeInTheDocument();
+    });
+
+    it("does not offer it to a non-admin", async () => {
+      const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY]);
+      renderScreen(<RoutingScreen />, { fetchImpl, session: VIEWER });
+      await screen.findByText("UgurPay Core");
+      expect(screen.queryByRole("button", { name: "Düzenle" })).not.toBeInTheDocument();
+    });
+
+    it("routes to the one thing that IS editable, and names what is not", async () => {
+      const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY]);
+      renderScreen(<RoutingScreen />, { fetchImpl });
+      await screen.findByText("UgurPay Core");
+
+      await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+
+      // The project it is about is named, not implied.
+      expect(await screen.findByText("UGURPAY bağlamasını düzenle")).toBeInTheDocument();
+      // The editable half: listening rules, reachable in one click.
+      expect(screen.getByRole("button", { name: "Dinleme kurallarını aç" })).toBeInTheDocument();
+      // The locked half, named FIELD BY FIELD — "bazı ayarlar değiştirilemez"
+      // is the sentence that generates a support ticket instead of resolving
+      // one — and with the reason, so nobody hunts for a hidden button.
+      expect(
+        screen.getByText(/tetikleme kipi, uygulama\/depo eşlemesi ve veri sınıfı/),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/sunucuda bunu yapan bir uç nokta da yok/)).toBeInTheDocument();
+      // And crucially: NO save button, because there is nothing to save to.
+      expect(screen.queryByRole("button", { name: /Kaydet/ })).not.toBeInTheDocument();
+    });
+
+    it("writes nothing at all — opening the panel is not a change", async () => {
+      const { fetchImpl, calls } = stubFetch([ROUTING_BODY, APPS_BODY]);
+      renderScreen(<RoutingScreen />, { fetchImpl });
+      await screen.findByText("UgurPay Core");
+
+      await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+      await screen.findByText("UGURPAY bağlamasını düzenle");
+
+      // A binding is four-eyes governed; an "edit" screen that quietly filed a
+      // proposal on open would put a decision in front of an approver that
+      // nobody made.
+      expect(calls.filter((c) => c.method !== "GET")).toEqual([]);
+    });
+  });
 });
 
 const NOTIFY_BODY = {

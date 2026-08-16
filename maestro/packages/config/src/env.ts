@@ -21,6 +21,30 @@ const OptionalText = z
   .pipe(z.string().min(1).optional())
   .optional();
 
+/**
+ * The same rule for an optional ENDPOINT. Blank means unset; anything present is
+ * still held to being a real URL.
+ *
+ * `OptionalText` fixed the LDAP half of this problem and the URL fields were
+ * left on a plain `.optional()`, so the bank bundle refused to boot with four
+ * lines of `Invalid URL` for four variables the operator had never set. Compose
+ * forwards `ADO_BASE_URL: ${ADO_BASE_URL:-}`, the process receives `""`, and
+ * `.optional()` accepts `undefined` while rejecting the empty string — the one
+ * value Compose can actually produce for an unset variable.
+ *
+ * This is deliberately NOT a licence to skip these settings in production: the
+ * three that a production deployment cannot work without are listed in
+ * `REQUIRED_IN_PROD` below, and blank now reaches that check as absent. The
+ * difference is the failure an operator reads. "Invalid URL" describes the empty
+ * string Compose synthesised and points at nothing; "VAULT_ADDR: required in
+ * production" names the variable the operator has to go and fill in.
+ */
+const BlankableUrl = z
+  .string()
+  .transform((value) => (value.trim() === "" ? undefined : value))
+  .pipe(z.url().optional())
+  .optional();
+
 export const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /**
@@ -31,9 +55,9 @@ export const EnvSchema = z.object({
    */
   BFF_PORT: z.coerce.number().int().min(1).max(65535).default(7001),
   BFF_HOST: z.string().min(1).default("127.0.0.1"),
-  DATABASE_URL: z.url().optional(),
+  DATABASE_URL: BlankableUrl,
   TEMPORAL_ADDRESS: z.string().min(1).optional(),
-  JIRA_BASE_URL: z.url().optional(),
+  JIRA_BASE_URL: BlankableUrl,
   /**
    * The Jira CLOUD site, when the deployment talks to Cloud rather than to a
    * Data Center instance. Two variables because they are two DRIVERS with two
@@ -48,11 +72,11 @@ export const EnvSchema = z.object({
    * "a Jira is configured", and demanding both would refuse to boot every
    * Data-Center deployment there is.
    */
-  JIRA_CLOUD_BASE_URL: z.url().optional(),
-  ADO_BASE_URL: z.url().optional(),
-  VAULT_ADDR: z.url().optional(),
-  STORAGE_ENDPOINT: z.url().optional(),
-  EGRESS_PROXY_URL: z.url().optional(),
+  JIRA_CLOUD_BASE_URL: BlankableUrl,
+  ADO_BASE_URL: BlankableUrl,
+  VAULT_ADDR: BlankableUrl,
+  STORAGE_ENDPOINT: BlankableUrl,
+  EGRESS_PROXY_URL: BlankableUrl,
   /**
    * Where the pilot flow engine listens (M-Dalga D). Studio's "Canlı akış /
    * Pilot" screen does not talk to the pilot directly — the BFF proxies to it
@@ -65,7 +89,7 @@ export const EnvSchema = z.object({
    * "not running" rather than a fabricated state. It is a CONFIG value, never
    * request-supplied, so the proxy is not an open SSRF.
    */
-  PILOT_BASE_URL: z.url().optional(),
+  PILOT_BASE_URL: BlankableUrl,
 
   /**
    * The Cloud accountId the ENGINE acts as — the account the pilot's discovery
@@ -186,6 +210,28 @@ const REQUIRED_IN_PROD = [
  */
 const REQUIRED_FOR_LDAP = ["LDAP_URL", "LDAP_USER_BASE_DN", "LDAP_BIND_DN"] as const;
 
+/**
+ * What each production requirement is FOR, in one clause.
+ *
+ * An operator staring at `VAULT_ADDR: required in production` knows a name and
+ * nothing else — not which system it points at, not why the process would rather
+ * die than start without it. The bank bundle made this concrete: four blank
+ * endpoints produced four lines that named variables the operator had never
+ * heard of, in a file where three of them sat commented out. Naming the variable
+ * is the minimum; saying what fills it is what turns the error into an action.
+ */
+const PROD_REQUIREMENT_PURPOSE: Record<(typeof REQUIRED_IN_PROD)[number], string> = {
+  DATABASE_URL: "the Postgres the schema and every run record live in",
+  TEMPORAL_ADDRESS: "the Temporal frontend the workflows are scheduled on",
+  JIRA_BASE_URL: "the Jira the work port reads and writes tickets against",
+  ADO_BASE_URL: "the Azure DevOps / TFS collection the source and CI ports use",
+  VAULT_ADDR: "the Vault the `prod` profile resolves every secret reference from",
+  STORAGE_ENDPOINT: "the S3-compatible endpoint evidence documents are written to",
+  REDIS_URL:
+    "the Redis every replica shares its rate limits and capacity semaphore through — " +
+    "without it each replica silently grants the full quota on its own",
+};
+
 export class EnvValidationError extends Error {
   constructor(readonly issues: string[]) {
     super(`environment validation failed:\n- ${issues.join("\n- ")}`);
@@ -203,7 +249,12 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
 
   if (env.NODE_ENV === "production") {
     for (const k of REQUIRED_IN_PROD) {
-      if (env[k] === undefined) issues.push(`${k}: required in production (M6 fail-closed)`);
+      if (env[k] === undefined) {
+        issues.push(
+          `${k}: required in production (M6 fail-closed) — ${PROD_REQUIREMENT_PURPOSE[k]}. ` +
+            "Set it, or leave production: an empty value counts as unset.",
+        );
+      }
     }
   }
 

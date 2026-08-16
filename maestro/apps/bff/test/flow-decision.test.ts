@@ -272,3 +272,131 @@ describe("flowDecisionFor — the deciding rule's status map", () => {
     expect(decision.statusMap).toEqual(MAP);
   });
 });
+
+/**
+ * "Bota atanan her ticket" — `matchKind: "assigned"` (migration 0020).
+ *
+ * The rule that names no condition. Before it existed, the only way to say "if
+ * a human hands this to the bot, work it" was to enumerate every issue type in
+ * the project — which is a rule set that goes stale the day somebody adds a
+ * type, and silently ignores the tickets carrying it.
+ *
+ * Two things make it safe to add. It compares NO field, so `matchValue` is a
+ * placeholder nobody reads; and it is the LEAST SPECIFIC rule there is, so a
+ * rule an operator wrote on purpose always beats it. The second is what stops
+ * the catch-all from turning every deliberate rule in a project into a
+ * `rule_conflict` the moment it is added.
+ */
+describe("flowDecisionFor — every ticket assigned to the bot", () => {
+  const CATCH_ALL = rule({
+    ruleId: "lr_any",
+    matchKind: "assigned",
+    // The literal the BFF pins. It must be irrelevant, and this is where that
+    // is proved: no ticket below carries anything remotely like it.
+    matchValue: "*",
+    assigneeAccountId: "712020:bot",
+    flowType: "analiz",
+  });
+
+  it("matches a ticket of any type and any status, so long as the bot has it", () => {
+    for (const t of [
+      ticket({ assignee: "712020:bot", issueType: "Görev" }),
+      ticket({ assignee: "712020:bot", issueType: "Talep", status: "Onay Bekliyor" }),
+      // The field the payload never delivered. A conditioned rule matches
+      // nothing here (a null field matches nothing, deliberately); the
+      // catch-all does not care, because it reads no field at all.
+      ticket({ assignee: "712020:bot" }),
+    ]) {
+      const decision = flowDecisionFor([CATCH_ALL], t, null);
+      expect(decision.reason).toBe("rule");
+      expect(decision.ruleId).toBe("lr_any");
+      expect(decision.flow).toBe("analiz");
+    }
+  });
+
+  it("still respects the assignee — a ticket on a human is not Maestro's", () => {
+    const decision = flowDecisionFor(
+      [CATCH_ALL],
+      ticket({ assignee: "712020:ayse", issueType: "Görev" }),
+      null,
+    );
+    // Falls through to "no rule matched", not to the catch-all. The assignment
+    // IS the condition; without it the rule says nothing about this ticket.
+    expect(decision.reason).toBe("none");
+  });
+
+  it("loses to a rule that names a condition, with NO conflict reported", () => {
+    const specific = rule({
+      ruleId: "lr_bug",
+      matchKind: "issuetype",
+      matchValue: "Hata",
+      assigneeAccountId: "712020:bot",
+      flowType: "duzeltme",
+      // Deliberately WORSE priority than the catch-all's default, to prove
+      // specificity outranks priority rather than merely tie-breaking it.
+      priority: 500,
+    });
+    const decision = flowDecisionFor(
+      [CATCH_ALL, specific],
+      ticket({ assignee: "712020:bot", issueType: "Hata" }),
+      null,
+    );
+
+    expect(decision.flow).toBe("duzeltme");
+    expect(decision.ruleId).toBe("lr_bug");
+    // The headline: "Hata runs düzeltme, everything else assigned runs analiz"
+    // is one coherent setup — the very setup the wizard produces — not a
+    // misconfiguration to warn about on every single bug ticket.
+    expect(decision.reason).toBe("rule");
+    expect(decision.conflictingRuleIds).toBeUndefined();
+  });
+
+  it("catches the tickets the specific rule does not", () => {
+    const specific = rule({
+      ruleId: "lr_bug",
+      matchValue: "Hata",
+      assigneeAccountId: "712020:bot",
+      flowType: "duzeltme",
+    });
+    const decision = flowDecisionFor(
+      [CATCH_ALL, specific],
+      ticket({ assignee: "712020:bot", issueType: "Görev" }),
+      null,
+    );
+    expect(decision.ruleId).toBe("lr_any");
+    expect(decision.flow).toBe("analiz");
+  });
+
+  it("carries its own status map, like any other deciding rule", () => {
+    const mapped = { ...CATCH_ALL, statusMap: { onDone: "Tamam" } };
+    const decision = flowDecisionFor([mapped], ticket({ assignee: "712020:bot" }), null);
+    expect(decision.statusMap).toEqual({ onDone: "Tamam" });
+  });
+
+  it("still reports a real conflict between two catch-alls that disagree", () => {
+    // The unique index stops this at the database for one (project, bot), but
+    // two different bot accounts on one project can both match an unassigned-
+    // agnostic rule — specificity must not swallow a genuine disagreement.
+    const a = { ...CATCH_ALL, ruleId: "lr_a", assigneeAccountId: "", flowType: "analiz" as const };
+    const b = { ...CATCH_ALL, ruleId: "lr_b", assigneeAccountId: "", flowType: "gelistirme" as const };
+    const decision = flowDecisionFor([a, b], ticket({ assignee: "712020:bot" }), null);
+
+    expect(decision.reason).toBe("rule_conflict");
+    // Fail-closed, exactly as before: the narrowest flow of the matching set.
+    expect(decision.flow).toBe("analiz");
+    expect(decision.conflictingRuleIds).toEqual(["lr_a", "lr_b"]);
+  });
+
+  it("sorts the catch-all last in rulesFor, whatever its priority says", () => {
+    const specific = rule({ ruleId: "lr_bug", matchValue: "Hata", assigneeAccountId: "712020:bot", priority: 900 });
+    const matched = rulesFor(
+      [CATCH_ALL, specific],
+      ticket({ assignee: "712020:bot", issueType: "Hata" }),
+    );
+    expect(matched.map((r) => r.ruleId)).toEqual(["lr_bug", "lr_any"]);
+    // `ruleFor` is the "first match wins" projection, so it follows.
+    expect(ruleFor([CATCH_ALL, specific], ticket({ assignee: "712020:bot", issueType: "Hata" }))?.ruleId).toBe(
+      "lr_bug",
+    );
+  });
+});

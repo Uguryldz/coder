@@ -16,10 +16,19 @@ import type {
   ScmReposResult,
 } from "./common/index.ts";
 import { buildStatusMap } from "./common/status-map.ts";
+import { StartGuide } from "./setup/StartGuide.tsx";
+import {
+  GUIDE_DISMISSED_KEY,
+  readFlag,
+  useSetupState,
+  webhookAcked,
+  writeFlag,
+} from "./dash/setup-state.ts";
 import { FlowPane, ProjectPane, StatusPane, TicketsPane } from "./setup/SetupPanes.tsx";
 import type { PaneData } from "./setup/SetupPanes.tsx";
 import { DonePane, ReviewPane } from "./setup/ReviewPane.tsx";
 import {
+  ASSIGNED_MATCH_VALUE,
   EMPTY_SETUP_DRAFT,
   SETUP_STEPS,
   flowDefaults,
@@ -72,6 +81,21 @@ export function SetupScreen(): ReactNode {
   const queryClient = useQueryClient();
   const { session } = useAuth();
   const canWrite = hasAnyRole(session, WRITE_ROLES);
+
+  /**
+   * The start-guide's state, moved here with the guide itself.
+   *
+   * `useSetupState` is REUSED, never re-derived: it is the one place that
+   * measures whether a step is finished, and a second implementation on this
+   * screen would be the drift that made the old Panel disagree with the old
+   * guide about the same platform. The webhook acknowledgement is held in state
+   * because the checkbox inside the guide flips it and the checklist has to
+   * re-render when it does.
+   */
+  const [webhookAck, setWebhookAck] = useState(() => webhookAcked());
+  const [guideDismissed, setGuideDismissed] = useState(() => readFlag(GUIDE_DISMISSED_KEY));
+  const setupState = useSetupState(webhookAck);
+  const setupIncomplete = !setupState.loading && !setupState.complete;
 
   const [draft, setDraft] = useState<SetupDraft>(EMPTY_SETUP_DRAFT);
   const [stepIndex, setStepIndex] = useState(0);
@@ -170,9 +194,12 @@ export function SetupScreen(): ReactNode {
 
   // The project's real issue types / statuses, so step 3 is a dropdown of the
   // names Jira actually uses rather than a text box that accepts a typo.
+  // Not fetched for `assigned`: that rule has no value to pick, and the
+  // endpoint only understands status|issuetype anyway — asking it for a third
+  // kind would be a 400 on a step the operator has already answered.
   const matchValues = useQuery({
     queryKey: ["jira-match-values", matchConnId, draft.jiraProject, draft.matchKind],
-    enabled: matchConnId !== null && draft.jiraProject !== "",
+    enabled: matchConnId !== null && draft.jiraProject !== "" && draft.matchKind !== "assigned",
     retry: false,
     queryFn: ({ signal }) =>
       api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(
@@ -269,7 +296,13 @@ export function SetupScreen(): ReactNode {
         projectKey: input.jiraProject,
         assigneeAccountId: input.assigneeAccountId.trim(),
         matchKind: input.matchKind,
-        matchValue: input.matchValue.trim(),
+        // An `assigned` rule compares no field, but `matchValue` is NOT NULL and
+        // carries the unique trigger index, so it gets the literal both sides
+        // agree on. The BFF pins it to the same value regardless of what
+        // arrives — this is the client not sending something the server would
+        // only have to overwrite.
+        matchValue:
+          input.matchKind === "assigned" ? ASSIGNED_MATCH_VALUE : input.matchValue.trim(),
         flowType: input.flowType,
         // The wizard never offers per-role agent overrides: the default agent is
         // right for a first setup, and the expert screen is where a variant gets
@@ -293,6 +326,11 @@ export function SetupScreen(): ReactNode {
         // The picked repo travels in `adoRepo` — the wire field the BFF reads.
         adoRepo: input.repoFullName,
         platform: input.platform,
+        // The operator's ANSWER, not a default filled in on their behalf. The
+        // BFF still falls back to `gizli` when the field is absent, but it must
+        // not be absent here: this wizard asked the question, showed the
+        // consequence, and has to send what was chosen.
+        dataClass: input.dataClass,
         ...defaults,
       });
       return { awaitingApproval: true };
@@ -413,6 +451,26 @@ export function SetupScreen(): ReactNode {
         <Card>
           <div className="scr-note scr-note--warn">{t("setup.blocked.read_only")}</div>
         </Card>
+      )}
+
+      {/* The "where do I start" checklist, moved here from the Panel.
+          It belongs with the work, not on the report screen: the five steps it
+          lists are the five things this page and its siblings DO, and the Panel
+          is where an operator goes to read numbers. The Panel keeps one line
+          saying setup is open, pointing here.
+          It appears only while something is actually open, and only until the
+          operator hides it — both the state and the two localStorage keys are
+          the ones it already used, so a dismissal made on the old Panel is
+          still honoured here. */}
+      {setupIncomplete && !guideDismissed && (
+        <StartGuide
+          setup={setupState}
+          onWebhookAck={setWebhookAck}
+          onDismiss={() => {
+            writeFlag(GUIDE_DISMISSED_KEY, true);
+            setGuideDismissed(true);
+          }}
+        />
       )}
 
       {step === "flow" && <FlowPane draft={draft} data={data} onChange={patch} />}

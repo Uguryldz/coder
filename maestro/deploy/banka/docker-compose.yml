@@ -1,5 +1,6 @@
 # =============================================================================
 # Maestro — Banka içi (internetsiz) kurulum
+# BUNDLE_VERSION: 2026-08-16
 # =============================================================================
 # Bu compose HİÇBİR ŞEY BUILD ETMEZ. Tüm imajlar `docker load` ile yüklenmiş
 # ya da kurum registry'sinden çekilmiş olmalıdır (bkz. README.md §1).
@@ -9,6 +10,13 @@
 #   - imaj adresleri .env'de       → registry/etiket değişince compose'a dokunulmaz
 #   - node imajı TEK              → BFF/worker/migrate rolleri MAESTRO_ENTRYPOINT ile ayrılır
 #   - studio → bff proxy'si       → tarayıcının /api çağrıları BFF'e gider
+#
+# ⚠ BURADA OLMAYAN DEĞİŞKEN, KONTEYNERE GİRMEZ.
+#   .env'de dolu olması yetmez: bir değişken aşağıdaki `environment:` bloğunda
+#   ADIYLA yazılı değilse süreç onu hiç görmez. Bu, paketin geçmişte en pahalı
+#   arıza biçimiydi — operatör .env'de değeri görür, sistem ise sanki hiç
+#   yazılmamış gibi davranır. Yeni bir ayar eklerken .env.example'a yazmak
+#   YARIM iştir; buraya da eklenmelidir.
 #
 # Kurulum:  cp .env.example .env && <doldur> && ./install.sh
 # =============================================================================
@@ -36,62 +44,126 @@ x-node-hardening: &node-hardening
 
 # ── Tüm Node servislerinin paylaştığı ortam ──────────────────────────────────
 x-node-env: &node-env
-  NODE_ENV: production
-  MAESTRO_PROFILE: ${MAESTRO_PROFILE:?MAESTRO_PROFILE gerekli (.env) — banka kurulumunda prod olmali}
+  # NODE_ENV .env'den GELİR, burada sabitlenmez.
+  #
+  # Eski sürümde burada `production` yazılıydı ve paket hiç açılamıyordu:
+  # `analiz` profili sırları env-file sürücüsüyle okur, o sürücü ise
+  # NODE_ENV=production altında yapıcısında (constructor) reddeder (M6/M80).
+  # İkisi birlikte seçilmek zorunda olduğu için karar .env'de, tek yerde durur.
+  NODE_ENV: ${NODE_ENV:-development}
+  # Hangi sürücünün hangi porta bakacağını belirleyen TEK değer.
+  # `analiz` sahaya çıkan sürüm; `prod` Vault+S3+ADO ister.
+  MAESTRO_PROFILE: ${MAESTRO_PROFILE:?MAESTRO_PROFILE gerekli (.env) — analiz veya prod}
   DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER gerekli}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD gerekli}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB gerekli}
   TEMPORAL_ADDRESS: temporal:7233
   TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
   REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD gerekli}@redis:6379/0
+
+  # Panelden girilen bağlantı jetonlarını şifreleyen anahtar. Prod profilinde
+  # yokluğu açılışı durdurur; analiz profilinde yoksa kod türetilmiş bir DEV
+  # anahtarı üretip uyarır — yani jetonlar gerçekte korunmaz. Bankada her iki
+  # durumda da dolu olmalıdır, bu yüzden `:?` ile zorunlu tutuluyor.
+  CONNECTOR_MASTER_KEY: ${CONNECTOR_MASTER_KEY:?CONNECTOR_MASTER_KEY gerekli — openssl rand -base64 32}
 
   # Kurumsal TLS: banka kendi CA'sıyla imzalı Jira DC / TFS sertifikası
   # kullanıyorsa bu ŞART. Yoksa her çağrı "unable to verify the first
   # certificate" ile düşer. Dosya aşağıda mount ediliyor.
   NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
 
-  # ── İş takibi (Jira Data Center) ───────────────────────────────────────────
+  # ── İş takibi (Jira) ───────────────────────────────────────────────────────
   WORK_DRIVER: ${WORK_DRIVER:-jira-dc}
   JIRA_BASE_URL: ${JIRA_BASE_URL:?JIRA_BASE_URL gerekli}
-  JIRA_TOKEN_REF: ${JIRA_TOKEN_REF:?JIRA_TOKEN_REF gerekli}
+  # Cloud sürücüsünün adresi. JIRA_BASE_URL ile AYNI ŞEY DEĞİLDİR: ikisi iki
+  # ayrı sürücüyü besler (DC `Bearer PAT`, Cloud `Basic e-posta:jeton`).
+  # Boşsa Cloud sürücüsü JIRA_BASE_URL'e düşer.
+  JIRA_CLOUD_BASE_URL: ${JIRA_CLOUD_BASE_URL:-}
+  JIRA_TOKEN_REF: ${JIRA_TOKEN_REF:-kv/jira#token}
+  JIRA_WEBHOOK_SECRET_REF: ${JIRA_WEBHOOK_SECRET_REF:-kv/jira#webhook}
+
+  # ── Motorun Jira kimliği ───────────────────────────────────────────────────
+  # Keşif sorgusu `assignee = "<MAESTRO_BOT_ACCOUNT_ID>"` ile çalışır; panel
+  # ise dinleme kuralını BAĞLANTININ sahibiyle doldurur. İkisi ayrışırsa her
+  # kural eşleşmeyen bir atanana bakar ve HİÇBİR HATA ÜRETMEDEN hiçbir şey
+  # yakalamaz. Bu yüzden ikisi de konteynere girmek zorundadır: BFF bu değeri
+  # yalnızca bağlantı testinde karşılaştırıp uyarmak için okur ve değişken
+  # konteynere ulaşmazsa uyarı da hiç çıkmaz.
+  MAESTRO_BOT_ACCOUNT_ID: ${MAESTRO_BOT_ACCOUNT_ID:-}
+  # Cloud'da Basic kimlik doğrulamanın kullanıcı adı. Boşsa kod
+  # JIRA_CLOUD_EMAIL'e düşer (driver-config.ts) — canlıda iki kimliğin
+  # ayrışma yolu tam olarak buydu.
+  MAESTRO_BOT_EMAIL: ${MAESTRO_BOT_EMAIL:-}
+  JIRA_CLOUD_EMAIL: ${JIRA_CLOUD_EMAIL:-}
 
   # ── Kaynak kodu (Azure DevOps Server / TFS) ────────────────────────────────
+  # `analiz` profilinde scm/ci portları REDDEDEN sürücülerdir ve bunlar
+  # okunmaz — bu yüzden `:?` ile zorunlu tutulmazlar. Zorunlu tutulsalardı,
+  # Azure DevOps'u olmayan bir analiz kurulumu açılamazdı.
   SCM_DRIVER: ${SCM_DRIVER:-ado}
-  ADO_BASE_URL: ${ADO_BASE_URL:?ADO_BASE_URL gerekli}
-  ADO_TOKEN_REF: ${ADO_TOKEN_REF:?ADO_TOKEN_REF gerekli}
+  ADO_BASE_URL: ${ADO_BASE_URL:-}
+  ADO_ORG: ${ADO_ORG:-}
+  ADO_PROJECT: ${ADO_PROJECT:-}
+  ADO_PR_VALIDATION_BUILDS: ${ADO_PR_VALIDATION_BUILDS:-}
+  ADO_TOKEN_REF: ${ADO_TOKEN_REF:-kv/ado#token}
+  ADO_WEBHOOK_SECRET_REF: ${ADO_WEBHOOK_SECRET_REF:-kv/ado#webhook}
 
   # ── Yapay zekâ uç noktası (kurum içi) ──────────────────────────────────────
   # DİKKAT: LLM_BASE_URL sonunda `/v1` OLMAYACAK — sürücü kendisi ekler.
   LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL gerekli — sonunda /v1 OLMADAN}
   LLM_MODEL: ${LLM_MODEL:?LLM_MODEL gerekli}
-  LLM_API_KEY_REF: ${LLM_API_KEY_REF:?LLM_API_KEY_REF gerekli}
+  LLM_API_KEY_REF: ${LLM_API_KEY_REF:-kv/llm#api-key}
   # Uç nokta gerçekten kurum içindeyse true. false kalırsa `gizli` sınıflı
-  # işler maskelenir ya da reddedilir.
+  # işler on-prem model yok sayılır ve analiz "elle tamamlayın" diye bozularak
+  # biter — hata değil, EKSİK ÇIKTI.
   LLM_ON_PREM: ${LLM_ON_PREM:?LLM_ON_PREM gerekli — kurum içi endpoint icin true}
 
   # ── Kimlik (LDAP/AD) ───────────────────────────────────────────────────────
-  IDENTITY_DRIVER: ${IDENTITY_DRIVER:-ldaps-bind}
+  # Varsayılan `local`: pilot kurulum yerel hesapla başlar, LDAP sonradan
+  # devreye alınır. `ldaps-bind` seçilirse LDAP_URL + LDAP_USER_BASE_DN +
+  # LDAP_BIND_DN zorunlu olur ve süreç bunlarsız açılmaz.
+  IDENTITY_DRIVER: ${IDENTITY_DRIVER:-local}
   LDAP_URL: ${LDAP_URL:-}
+  # Kodun okuduğu ad LDAP_USER_BASE_DN'dir. Eski paketteki `LDAP_BASE_DN` hiçbir
+  # şema tarafından okunmuyordu: LDAP dolu görünüp hiç çalışmıyordu.
+  LDAP_USER_BASE_DN: ${LDAP_USER_BASE_DN:-}
+  LDAP_GROUP_BASE_DN: ${LDAP_GROUP_BASE_DN:-}
   LDAP_BIND_DN: ${LDAP_BIND_DN:-}
-  LDAP_BIND_PASSWORD_REF: ${LDAP_BIND_PASSWORD_REF:-}
-  LDAP_BASE_DN: ${LDAP_BASE_DN:-}
+  LDAP_BIND_PASSWORD_REF: ${LDAP_BIND_PASSWORD_REF:-kv/ldap#service-password}
   LDAP_CA_CERT_PATH: ${LDAP_CA_CERT_PATH:-}
+  LDAP_USER_FILTER: ${LDAP_USER_FILTER:-}
+  LDAP_GROUP_FILTER: ${LDAP_GROUP_FILTER:-}
+  LDAP_ROLE_MAPPINGS: ${LDAP_ROLE_MAPPINGS:-}
 
-  # ── Sırlar ────────────────────────────────────────────────────────────────
-  # Değerler değil, REFERANSLAR taşınır. env-file sürücüsü bunları .env'deki
-  # MAESTRO_SECRET_* değişkenlerinden çözer. Vault kullanılacaksa
-  # SECRET_DRIVER=vault yapıp VAULT_* değişkenlerini doldurun.
-  SECRET_DRIVER: ${SECRET_DRIVER:-env-file}
+  # ── Vault (yalnızca MAESTRO_PROFILE=prod) ─────────────────────────────────
+  # Sır sürücüsü ORTAM DEĞİŞKENİYLE SEÇİLMEZ; profilden gelir
+  # (apps/deploy/src/profile.ts). Eski paketteki `SECRET_DRIVER` değişkenini
+  # hiçbir kod okumuyordu — kaldırıldı, çünkü okunmayan bir değişken operatöre
+  # yanlış bir seçim yaptığını düşündürür.
   VAULT_ADDR: ${VAULT_ADDR:-}
   VAULT_ROLE_ID: ${VAULT_ROLE_ID:-}
   VAULT_SECRET_ID: ${VAULT_SECRET_ID:-}
-  VAULT_NAMESPACE: ${VAULT_NAMESPACE:-}
+  VAULT_MOUNTS: ${VAULT_MOUNTS:-kv,git}
+
+  # ── Depolama (yalnızca MAESTRO_PROFILE=prod) ──────────────────────────────
+  # `analiz` profilinde belgeler Postgres'te tutulur (`pg-blob`).
+  STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
+  STORAGE_BUCKET: ${STORAGE_BUCKET:-maestro-evidence}
+  STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
 
 # Sır değerleri (env-file sürücüsü için). Ayrı anchor: yalnızca uygulama
 # servislerine verilir, veritabanı/temporal konteynerlerine sızmaz.
+#
+# ⚠ BU ADLAR ELLE SEÇİLMEZ. Sürücü değişken adını referanstan türetir
+#   (packages/secrets/src/keys.ts): `kv/jira#token` → MAESTRO_SECRET_KV_JIRA__TOKEN,
+#   '#' ÇİFT alt çizgi, '-' ise `__2D_` olur. Eski paketteki
+#   MAESTRO_SECRET_JIRA_TOKEN gibi adlar hiçbir zaman aranmıyordu; sürücü
+#   "secret not found" derken operatör .env'de değeri dolu görüyordu.
 x-node-secrets: &node-secrets
-  MAESTRO_SECRET_JIRA_TOKEN: ${MAESTRO_SECRET_JIRA_TOKEN:-}
-  MAESTRO_SECRET_ADO_TOKEN: ${MAESTRO_SECRET_ADO_TOKEN:-}
-  MAESTRO_SECRET_LLM_API_KEY: ${MAESTRO_SECRET_LLM_API_KEY:-}
-  MAESTRO_SECRET_LDAP_BIND_PASSWORD: ${MAESTRO_SECRET_LDAP_BIND_PASSWORD:-}
+  MAESTRO_SECRET_KV_JIRA__TOKEN: ${MAESTRO_SECRET_KV_JIRA__TOKEN:-}
+  MAESTRO_SECRET_KV_JIRA__WEBHOOK: ${MAESTRO_SECRET_KV_JIRA__WEBHOOK:-}
+  MAESTRO_SECRET_KV_LLM__API__2D_KEY: ${MAESTRO_SECRET_KV_LLM__API__2D_KEY:-}
+  MAESTRO_SECRET_KV_ADO__TOKEN: ${MAESTRO_SECRET_KV_ADO__TOKEN:-}
+  MAESTRO_SECRET_KV_ADO__WEBHOOK: ${MAESTRO_SECRET_KV_ADO__WEBHOOK:-}
+  MAESTRO_SECRET_KV_LDAP__SERVICE__2D_PASSWORD: ${MAESTRO_SECRET_KV_LDAP__SERVICE__2D_PASSWORD:-}
 
 # Kurumsal CA + LDAP CA dosyalarını salt-okunur mount et.
 x-ca-volumes: &ca-volumes
@@ -189,8 +261,28 @@ services:
     environment:
       <<: [*node-env, *node-secrets]
       MAESTRO_ENTRYPOINT: apps/deploy/src/bin/bff.ts
+      # 7001 SABİT — .env'den GELMEZ, ve bu bilinçli bir kısıtlamadır.
+      #
+      # Bu, BFF'in KONTEYNER İÇİNDEKİ dinleme portudur; dışarıya hiç
+      # yayınlanmaz (`ports:` yalnızca studio'da vardır). Yani operatörün onu
+      # değiştirmekle kazanacağı hiçbir şey yoktur — kaybedeceği şey ise
+      # yığının tamamıdır: bu port iki ayrı yerde daha, SABİT olarak yazılıdır.
+      #   1) aşağıdaki healthcheck  → 127.0.0.1:7001/readyz
+      #   2) studio-nginx.conf      → proxy_pass http://bff:7001/
+      # Değişken buradan besleniyorken .env'de BFF_PORT="17011" yazan bir
+      # kurulum tam olarak şunu yaşadı: süreç 17011'i dinledi, healthcheck
+      # 7001'i yokladı, konteyner hiç 'healthy' olmadı ve studio ona bağımlı
+      # olduğu için hiç başlamadı. Panel açılsaydı bile her /api çağrısı 502
+      # dönecekti. Tek bir değişkeni değiştirmenin bedeli, açılmayan bir yığın.
+      #
+      # Dışarıya açılan tek port STUDIO_PORT'tur; değiştirilecek port odur.
       BFF_PORT: "7001"
-      BFF_HOST: "0.0.0.0"
+      # Kodun varsayılanı 127.0.0.1'dir ve bu bilinçlidir: değişken unutulduğu
+      # için 0.0.0.0'a bağlanan servis, ihmal yüzünden ağa açılmış demektir.
+      # Konteyner içinde loopback'i studio'nun nginx'i göremez — panel açılır,
+      # her istek 502 döner. Varsayılan burada 0.0.0.0'dır ÇÜNKÜ maruziyet
+      # konteyner ağıyla sınırlıdır; dışarıya açılan tek şey STUDIO_PORT'tur.
+      BFF_HOST: ${BFF_HOST:-0.0.0.0}
     volumes: *ca-volumes
     depends_on:
       postgres: { condition: service_healthy }

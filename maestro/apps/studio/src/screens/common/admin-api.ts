@@ -69,6 +69,17 @@ export interface KillSwitchResult {
 export interface DirectoryUser {
   readonly username: string;
   readonly userId: string;
+  /**
+   * How the account reads in the table. It differs from the username only for
+   * accounts nobody typed — notably the connector-provisioned Jira bot, whose
+   * username is a machine id and whose name comes from Jira.
+   *
+   * OPTIONAL, even though the current BFF always sends one (it falls back to
+   * the username server-side). Studio is deployed separately from the BFF, so a
+   * newer screen can meet an older directory response; typing this as required
+   * would make the compiler promise something the wire cannot.
+   */
+  readonly displayName?: string;
   readonly roles: readonly string[];
   readonly groups: readonly string[];
   /** False when the account has been off-boarded (deactivated). */

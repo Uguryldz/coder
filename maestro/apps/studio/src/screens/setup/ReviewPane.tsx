@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card } from "../../ui/index.ts";
+import { matchValueLabel } from "../common/jira-english.ts";
 import { STATUS_POINTS, buildStatusMap } from "../common/status-map.ts";
 import { flowDefaults, type SetupDraft } from "./model.ts";
 
@@ -43,15 +44,26 @@ export function ReviewPane({ draft, alreadyBound }: ReviewPaneProps): ReactNode 
     <Card title={t("setup.review.title")} subtitle={t("setup.review.sub")}>
       <p className="scr-prose">{t("setup.review.intro")}</p>
 
-      {/* 1 — the listening rule, in one sentence an operator can check. */}
+      {/* 1 — the listening rule, in one sentence an operator can check. The
+          catch-all gets its OWN sentence rather than the conditioned one with an
+          empty value spliced in: `değeri "" olan ticket'lar` is a sentence that
+          describes nothing and would read as a bug in the summary. */}
       <h4 className="setup-review__h">{t("setup.review.rule_heading")}</h4>
       <p className="scr-prose">
-        {t("setup.review.rule_sentence", {
-          project: draft.jiraProject,
-          kind: t(`setup.tickets.kind.${draft.matchKind}`),
-          value: draft.matchValue.trim(),
-          flow: t(`setup.flow.name.${draft.flowType}`),
-        })}
+        {draft.matchKind === "assigned"
+          ? t("setup.review.rule_sentence_assigned", {
+              project: draft.jiraProject,
+              flow: t(`setup.flow.name.${draft.flowType}`),
+            })
+          : t("setup.review.rule_sentence", {
+              project: draft.jiraProject,
+              kind: t(`setup.tickets.kind.${draft.matchKind}`),
+              // The stored value, with the English name in the same aside the
+              // rest of the platform uses — so what the operator signs off on
+              // reads the same as what the listening table will show.
+              value: matchValueLabel(draft.matchValue.trim()),
+              flow: t(`setup.flow.name.${draft.flowType}`),
+            })}
       </p>
       <p className="scr-note">{t(`setup.flow.desc.${draft.flowType}`)}</p>
 
@@ -95,6 +107,11 @@ export function ReviewPane({ draft, alreadyBound }: ReviewPaneProps): ReactNode 
             <li>{t(`setup.review.trigger.${defaults.triggerMode}`)}</li>
             <li>{t(`setup.review.gates.${defaults.gateSet}`)}</li>
             <li>{t(`setup.review.merge.${defaults.mergeMode}`)}</li>
+            {/* The data class, in the same list as the other three derived
+                facts — but this one the operator ANSWERED, and it is the only
+                item here that can stop analysis from running at all, so the
+                summary states its consequence rather than its name. */}
+            <li>{t(`setup.review.dataclass.${draft.dataClass}`)}</li>
           </ul>
           {/* The four-eyes fact, stated BEFORE the button rather than as a toast
               afterwards. An operator who submits and sees nothing appear on the
@@ -137,11 +154,13 @@ export function DonePane({ draft, awaitingApproval }: DonePaneProps): ReactNode 
       <h4 className="setup-review__h">{t("setup.done.next_heading")}</h4>
       <ol className="setup-review__list">
         <li>
-          {t("setup.done.next_open_ticket", {
-            project: draft.jiraProject,
-            kind: t(`setup.tickets.kind.${draft.matchKind}`),
-            value: draft.matchValue.trim(),
-          })}
+          {draft.matchKind === "assigned"
+            ? t("setup.done.next_open_ticket_assigned", { project: draft.jiraProject })
+            : t("setup.done.next_open_ticket", {
+                project: draft.jiraProject,
+                kind: t(`setup.tickets.kind.${draft.matchKind}`),
+                value: matchValueLabel(draft.matchValue.trim()),
+              })}
         </li>
         <li>{t("setup.done.next_assign")}</li>
         <li>{t("setup.done.next_watch")}</li>

@@ -140,13 +140,29 @@ function writeBlock(doc: Doc, block: Block): void {
       doc.moveDown(0.5);
       return;
     case "list": {
-      block.items.forEach((item, index) => {
+      // Blank items are dropped, not bulleted — see `blockToDocx`. A lone `•`
+      // with no text beside it is what a reviewer reads as a lost sentence.
+      const items = block.items.filter((item) => plainText(item).trim().length > 0);
+      items.forEach((item, index) => {
         const marker = block.ordered ? `${String(index + 1)}.` : "•";
-        ensureRoom(doc, 16);
+        // The marker and the item's FIRST LINE are placed together or not at
+        // all. Reserving only the marker's own 16pt used to let the glyph fit at
+        // the bottom of a page while the text — measured at its full wrapped
+        // height inside `writeRuns` — did not, so `writeRuns` opened a new page
+        // and left the bullet stranded on the previous one. A real OPS-72 render
+        // did this twice: a `•` alone above the page-1 footer, and another above
+        // the page-2 footer whose "Geri dönüş planı: …" text began on page 3.
+        // Both read as a sentence that went missing at a human gate.
+        //
+        // Only the first line is required to fit, not the whole item: a five-line
+        // risk statement that cannot fit anywhere would otherwise be pushed to a
+        // fresh page for nothing, or loop forever on a page that is never big
+        // enough. Widow control, deliberately not orphan control.
+        keepWithFirstLine(doc, contentWidth(doc) - 26);
         const top = doc.y;
         doc.font("body").fontSize(10.5).fillColor("black").text(marker, MARGIN + 6, top, { width: 16 });
         doc.y = top;
-        writeRuns(doc, item, MARGIN + 26, contentWidth(doc) - 26);
+        writeRuns(doc, item, MARGIN + 26, contentWidth(doc) - 26, true);
       });
       doc.moveDown(0.5);
       return;
@@ -166,6 +182,22 @@ function writeBlock(doc: Doc, block: Block): void {
 }
 
 /**
+ * Break the page BEFORE a bullet whose first line would not fit beside it.
+ *
+ * `ensureRoom` is called with ONE line's height rather than the whole item's,
+ * which is what keeps this from being orphan control: an item taller than a
+ * page must still be allowed to start where it is and flow over, otherwise it
+ * could never be placed at all. What is guaranteed is only that a marker is
+ * never drawn on a page that has no room for the text it introduces.
+ */
+function keepWithFirstLine(doc: Doc, width: number): void {
+  doc.font("body").fontSize(10.5);
+  // pdfkit has no "height of the first line" call; a one-line measurement of a
+  // non-empty string is the line height, and `currentLineHeight` agrees.
+  ensureRoom(doc, doc.heightOfString("X", { width }));
+}
+
+/**
  * Inline runs as one flowing line, honouring bold/code/link.
  *
  * pdfkit's `continued: true` chain does NOT leave `doc.y` after the wrapped
@@ -173,13 +205,21 @@ function writeBlock(doc: Doc, block: Block): void {
  * second bullet on top of the first ("Mobil artırım / Limit ekran servisi" in a
  * real render), which is unreadable and, in an approved analysis, wrong. So the
  * height is measured up front and `doc.y` is set explicitly afterwards.
+ *
+ * `anchored` says a caller has ALREADY committed ink at this position — the
+ * bullet glyph — so the text may not start by turning the page. Without it the
+ * full-height `ensureRoom` below broke the page after the marker was drawn and
+ * stranded it: two bare `•` glyphs in the OPS-72 PDF, each with its sentence on
+ * the following page. An anchored run flows past the bottom margin instead,
+ * which pdfkit continues onto the next page as normal wrapping — the item stays
+ * attached to its marker.
  */
-function writeRuns(doc: Doc, inline: readonly Inline[], x: number, width: number): void {
+function writeRuns(doc: Doc, inline: readonly Inline[], x: number, width: number, anchored = false): void {
   const text = inline.map((run) => (run.kind === "link" ? linkText(run) : run.text)).join("");
   if (text.length === 0) return;
   doc.font("body").fontSize(10.5);
   const height = doc.heightOfString(text, { width });
-  ensureRoom(doc, height);
+  if (!anchored) ensureRoom(doc, height);
 
   const start = doc.y;
   doc.fillColor("black");

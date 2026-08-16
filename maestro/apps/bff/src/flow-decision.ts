@@ -111,6 +111,14 @@ function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean
   const wanted = rule.assigneeAccountId.trim();
   if (wanted !== "" && wanted !== (ticket.assignee ?? "").trim()) return false;
 
+  // `assigned` is the whole rule: the assignment check above IS the condition,
+  // so there is nothing further to compare. It reaches this line only after
+  // passing that check, which is why a rule with an EMPTY `assigneeAccountId`
+  // and this kind matches every ticket in its project — deliberately, since
+  // "whoever it is assigned to" plus "no further condition" is exactly what
+  // such a rule says. `matchValue` is not consulted; see ASSIGNED_MATCH_VALUE.
+  if (rule.matchKind === "assigned") return true;
+
   const field = fieldOf(rule.matchKind, ticket);
   // A field the payload did not carry matches NOTHING. Treating a missing
   // status as an empty string would let a rule with an empty `matchValue`
@@ -118,17 +126,42 @@ function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean
   return field !== null && field === rule.matchValue;
 }
 
+/**
+ * The ticket field a rule of this kind compares against. Never called for
+ * `assigned`, which compares no field — `matches` returns before it gets here.
+ */
 function fieldOf(kind: MatchKind, ticket: ClassifiableTicket): string | null {
   return kind === "status" ? ticket.status : ticket.issueType;
 }
 
 /**
+ * How SPECIFIC a rule is — the ordering that keeps a catch-all from shouting
+ * down the rule an operator wrote on purpose.
+ *
+ * Lower is more specific. A `status` or `issuetype` rule names a condition the
+ * ticket had to satisfy; an `assigned` rule names none, so it is the answer of
+ * last resort among the rules that matched. This is NOT a tie-break — it
+ * outranks `priority`, because the two express different things: priority
+ * orders rules an admin considers comparable, while specificity says one of
+ * them was not really a competitor at all.
+ *
+ * Without it, the intended configuration — "Hata tickets get düzeltme, anything
+ * else assigned to the bot gets analiz" — would report `rule_conflict` on EVERY
+ * bug ticket, filling the audit trail with misconfiguration warnings about a
+ * setup that is correct and that the wizard itself now produces.
+ */
+function specificityOf(rule: ListeningRuleRecord): number {
+  return rule.matchKind === "assigned" ? 1 : 0;
+}
+
+/**
  * Every rule that matches this ticket, most important first.
  *
- * Ordered by `priority` (lower wins, as the pilot and the Studio screen both
- * present it), then by `ruleId` so two rules sharing a priority still order
- * DETERMINISTICALLY — the same rule set must always produce the same decision,
- * whatever order the store handed the rows over in.
+ * Ordered by specificity (a named condition beats the catch-all), then by
+ * `priority` (lower wins, as the pilot and the Studio screen both present it),
+ * then by `ruleId` so two rules sharing both still order DETERMINISTICALLY —
+ * the same rule set must always produce the same decision, whatever order the
+ * store handed the rows over in.
  */
 export function rulesFor(
   rules: readonly ListeningRuleRecord[],
@@ -136,7 +169,12 @@ export function rulesFor(
 ): readonly ListeningRuleRecord[] {
   return rules
     .filter((rule) => matches(rule, ticket))
-    .sort((a, b) => a.priority - b.priority || a.ruleId.localeCompare(b.ruleId));
+    .sort(
+      (a, b) =>
+        specificityOf(a) - specificityOf(b) ||
+        a.priority - b.priority ||
+        a.ruleId.localeCompare(b.ruleId),
+    );
 }
 
 /**
@@ -164,15 +202,21 @@ export function ruleFor(
  *
  * Precedence, highest first:
  *  1. A single matching rule decides.
- *  2. Several rules matching with DIFFERENT flows is a misconfiguration. It is
- *     resolved fail-closed — the narrowest flow of the matching set — and
- *     reported as `rule_conflict` so an admin can fix the rules. It is not
- *     refused: refusing would strand the ticket, and the narrow flow is safe.
- *     (The unique index on (projectKey, assigneeAccountId, matchKind,
+ *  2. A rule that names a CONDITION beats the `assigned` catch-all outright,
+ *     with no conflict reported. The two are not competing claims about the
+ *     same ticket: "Hata tickets run düzeltme" and "anything else assigned to
+ *     the bot runs analiz" is one coherent setup — the very setup the wizard
+ *     produces — and calling it a misconfiguration on every bug ticket would
+ *     bury the real conflicts in noise.
+ *  3. Several rules of the SAME specificity matching with DIFFERENT flows is a
+ *     misconfiguration. It is resolved fail-closed — the narrowest flow of that
+ *     set — and reported as `rule_conflict` so an admin can fix the rules. It is
+ *     not refused: refusing would strand the ticket, and the narrow flow is
+ *     safe. (The unique index on (projectKey, assigneeAccountId, matchKind,
  *     matchValue) stops the COMMON case at the database, but two rules can
  *     still match one ticket through different `matchKind`s — a status rule and
  *     an issuetype rule — which no index can prevent.)
- *  3. No rule matched: the deployment default (`flowOf(env)`) still applies, so
+ *  4. No rule matched: the deployment default (`flowOf(env)`) still applies, so
  *     an install that has no rules yet behaves exactly as it did before.
  */
 export function flowDecisionFor(
@@ -180,13 +224,19 @@ export function flowDecisionFor(
   ticket: ClassifiableTicket,
   defaultFlow: FlowType | null | undefined,
 ): FlowDecision {
-  const matched = rulesFor(rules, ticket);
+  const all = rulesFor(rules, ticket);
 
-  if (matched.length === 0) {
+  if (all.length === 0) {
     return defaultFlow === undefined || defaultFlow === null
       ? { flow: null, reason: "none" }
       : { flow: defaultFlow, reason: "default" };
   }
+
+  // Only the most specific tier competes. `rulesFor` has already sorted, so the
+  // head's specificity is the winning tier and the catch-all drops out of the
+  // conflict question entirely whenever a conditioned rule matched.
+  const best = specificityOf(all[0]!);
+  const matched = all.filter((rule) => specificityOf(rule) === best);
 
   const flows = new Set(matched.map((rule) => rule.flowType));
   if (flows.size === 1) {

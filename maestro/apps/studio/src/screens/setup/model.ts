@@ -20,7 +20,32 @@ import {
 export const FLOW_TYPES = ["analiz", "duzeltme", "gelistirme"] as const;
 export type FlowType = (typeof FLOW_TYPES)[number];
 
-export type MatchKind = "status" | "issuetype";
+/**
+ * Which ticket field the rule matches on. Mirrors the BFF's `MATCH_KINDS` and
+ * the DB CHECK (migration 0020).
+ *
+ * `assigned` is the third answer the wizard could not give: "her ticket" — no
+ * type, no status, just the fact that a human assigned it to the Maestro bot.
+ * It is the trigger most first-time operators actually want, and forcing them
+ * to name an issue type instead is how a project ends up listening to a type
+ * nobody uses.
+ */
+export type MatchKind = "status" | "issuetype" | "assigned";
+
+/**
+ * The value an `assigned` rule sends. The BFF pins it to the same literal
+ * anyway (the unique trigger index needs one), so this is the wizard agreeing
+ * with the server rather than the wizard deciding — it is never shown to an
+ * operator and never compared to a ticket.
+ */
+export const ASSIGNED_MATCH_VALUE = "*";
+
+/**
+ * The data classes a binding can carry — `DataClassE` in the Prisma schema
+ * (M18), most open first. There is no fourth.
+ */
+export const DATA_CLASSES = ["acik", "dahili", "gizli"] as const;
+export type DataClass = (typeof DATA_CLASSES)[number];
 
 /** The five panes, in the order an operator walks them. */
 export const SETUP_STEPS = ["flow", "project", "tickets", "status", "review"] as const;
@@ -36,6 +61,21 @@ export interface SetupDraft {
   readonly connectionId: string;
   readonly repoFullName: string;
   readonly platform: string;
+  /**
+   * Step 2 — how confidential this application's tickets are (M18).
+   *
+   * Asked rather than assumed because the assumption was wrong in the one way
+   * the operator could not see. The binding used to fail closed to `gizli`, and
+   * `packages/llm-gateway/src/policy.ts` refuses — correctly, on-prem only, no
+   * exceptions — to send `gizli` content to a cloud model. On a deployment with
+   * no on-prem model that is not a safe default, it is a SILENT one: the run
+   * degraded to `ai_assist` and told the operator "modeli kullanamadım, elle
+   * tamamlayın" with nothing anywhere naming the data class as the cause.
+   * (Measured: SAM1-12 stalled; after SAM1 was moved to `dahili`, SAM1-13 ran
+   * analysis normally.) A question with the CONSEQUENCE written next to each
+   * answer is the only honest version of this field.
+   */
+  readonly dataClass: DataClass;
   /** Step 3 — which tickets the rule picks up. */
   readonly assigneeAccountId: string;
   readonly matchKind: MatchKind;
@@ -59,6 +99,12 @@ export const EMPTY_SETUP_DRAFT: SetupDraft = {
   connectionId: "",
   repoFullName: "",
   platform: "",
+  // `dahili` is the safe-but-WORKABLE default. `gizli` is safer on paper and is
+  // what the server used to assume, but on an install with no on-prem model it
+  // silently disables analysis altogether — a default that stops the product
+  // from working is not a conservative default, it is a broken one. `acik`
+  // would be the genuinely permissive choice and is never a default.
+  dataClass: "dahili",
   assigneeAccountId: "",
   matchKind: "issuetype",
   matchValue: "",
@@ -128,7 +174,12 @@ export function stepBlockedReason(step: SetupStep, draft: SetupDraft): string | 
       return null;
     case "tickets":
       if (draft.assigneeAccountId.trim() === "") return "setup.blocked.no_assignee";
-      if (draft.matchValue.trim() === "") return "setup.blocked.no_match_value";
+      // "Bota atanan her ticket" has no second condition to fill in — the
+      // assignee above IS the whole rule — so demanding a value here would make
+      // the third choice impossible to get past.
+      if (draft.matchKind !== "assigned" && draft.matchValue.trim() === "") {
+        return "setup.blocked.no_match_value";
+      }
       return null;
     case "status":
       // The whole step is optional; an operator who turned the map ON and then

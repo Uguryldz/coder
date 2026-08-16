@@ -309,3 +309,70 @@ describe("durable sessions + kill switch (hand-written, 0008)", () => {
     );
   });
 });
+
+describe("listening-rule catch-all matchKind (hand-written, 0020)", () => {
+  const sql = allMigrationSql();
+  const migration = readMigrationNamed("0020_listening_rule_match_kind_assigned");
+  /**
+   * The EXECUTABLE half, `--` comment lines removed — the same split 0018 and
+   * 0019 make. This migration's prose spells out its own down direction and
+   * explains why a nullable `matchValue` was rejected, so a guard reading the
+   * comments would fail on words that are the most useful thing in the file.
+   */
+  const statements = migration
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n");
+
+  it("widens the closed domain to three members, keeping the original two", () => {
+    // The whole change. Dropping either of the first two would orphan every
+    // rule on this deployment, so the new list is asserted verbatim rather
+    // than by "contains 'assigned'".
+    expect(statements).toMatch(
+      /ADD CONSTRAINT "ListeningRule_matchKind_domain"\s+CHECK \("matchKind" IN \('status', 'issuetype', 'assigned'\)\);/,
+    );
+  });
+
+  it("keeps matchKind a CLOSED domain — widening is not opening", () => {
+    // A migration that simply removed the CHECK would also make `assigned`
+    // work, and would let a typo like "assinged" through to a matcher that
+    // silently classifies nothing. The constraint has to come back.
+    const drops = [...statements.matchAll(/DROP CONSTRAINT IF EXISTS "(\w+)"/g)].map((m) => m[1]);
+    const adds = [...statements.matchAll(/ADD CONSTRAINT "(\w+)"/g)].map((m) => m[1]);
+    expect(drops).toEqual(["ListeningRule_matchKind_domain"]);
+    expect(adds).toEqual(["ListeningRule_matchKind_domain"]);
+  });
+
+  it("drops ONLY the constraint it re-adds — never a column, a table or a row", () => {
+    expect(migration).toContain("HAND-WRITTEN MIGRATION");
+    expect(statements).not.toMatch(/\bDROP\s+(TABLE|COLUMN)\b/i);
+    expect(statements).not.toMatch(/\b(UPDATE|DELETE FROM|TRUNCATE)\b/i);
+  });
+
+  it("touches exactly one table, so a live deployment risks nothing else", () => {
+    const touched = [...statements.matchAll(/ALTER TABLE "(\w+)"/g)].map((m) => m[1]);
+    expect([...new Set(touched)]).toEqual(["ListeningRule"]);
+  });
+
+  it("is re-appliable, because 0008-0016 were half-applied on this deployment", () => {
+    // `IF EXISTS` on the drop is what makes a re-run a no-op rather than a
+    // failed migration that blocks every later one.
+    expect(statements).toContain("DROP CONSTRAINT IF EXISTS");
+  });
+
+  it("leaves matchValue NOT NULL, which is what the unique trigger index needs", () => {
+    // The design decision worth pinning: an `assigned` rule stores the literal
+    // '*' rather than NULL, because NULLs do not collide in a Postgres unique
+    // index — a nullable column would let one project accumulate any number of
+    // identical catch-all rules, every one of them matching every ticket.
+    expect(statements).not.toMatch(/ALTER COLUMN "matchValue"/i);
+    expect(sql).toMatch(/"matchValue"\s+VARCHAR\(128\)\s+NOT NULL/);
+    expect(migration).toMatch(/NULLs do not collide/);
+  });
+
+  it("keeps the schema's own comment agreeing that a third kind exists", () => {
+    // Prisma carries no CHECK, so the schema's doc comment is the only place a
+    // reader of `schema.prisma` learns the domain — it must not still claim two.
+    expect(schema).toMatch(/"status" \| "issuetype" \| "assigned"/);
+  });
+});

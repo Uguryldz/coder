@@ -1,8 +1,16 @@
 import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card, Input, Select } from "../../ui/index.ts";
+import { englishAside, matchValueLabel } from "../common/jira-english.ts";
 import { STATUS_POINTS, type StatusPoint } from "../common/status-map.ts";
-import { FLOW_TYPES, type FlowType, type MatchKind, type SetupDraft } from "./model.ts";
+import {
+  DATA_CLASSES,
+  FLOW_TYPES,
+  type DataClass,
+  type FlowType,
+  type MatchKind,
+  type SetupDraft,
+} from "./model.ts";
 
 /**
  * The wizard's panes. Presentational on purpose: every one of them takes the
@@ -194,6 +202,48 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
           hint={t("setup.project.platform_hint")}
         />
       </div>
+      {/* The data class (M18). A radio list for the same reason step 1 is one:
+          the three answers differ in what Maestro is ALLOWED to do with the
+          ticket's content, and a collapsed select shows one at a time — the
+          operator would take the first without ever reading that the third
+          turns the analysis off on an install with no on-prem model. Each
+          option carries its CONSEQUENCE, not its policy name. */}
+      <h4 className="setup-review__h" style={{ marginTop: 18 }}>
+        {t("setup.dataclass.heading")}
+      </h4>
+      <p className="scr-prose">{t("setup.dataclass.intro")}</p>
+      <div className="setup-choices" role="radiogroup" aria-label={t("setup.dataclass.heading")}>
+        {DATA_CLASSES.map((cls) => (
+          <label
+            key={cls}
+            className={"setup-choice" + (draft.dataClass === cls ? " setup-choice--on" : "")}
+          >
+            <input
+              type="radio"
+              name="setup-dataclass"
+              value={cls}
+              checked={draft.dataClass === cls}
+              onChange={() => onChange({ dataClass: cls as DataClass })}
+            />
+            <span className="setup-choice__body">
+              <span className="setup-choice__label">{t(`setup.dataclass.name.${cls}`)}</span>
+              <span className="setup-choice__desc">{t(`setup.dataclass.desc.${cls}`)}</span>
+              <span className="setup-choice__meta">{t(`setup.dataclass.meta.${cls}`)}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {/* `gizli` is the answer that can stop the product working, so its warning
+          is not a hint under a field — it is a block the operator cannot scroll
+          past, shown only when they have actually chosen it. This is the exact
+          gap that left SAM1-12 stalled with "modeli kullanamadım" and nothing
+          on any screen connecting that message to the data class. */}
+      {draft.dataClass === "gizli" && (
+        <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
+          {t("setup.dataclass.gizli_warning")}
+        </div>
+      )}
+
       <div className="scr-note" style={{ marginTop: 12 }}>
         {t("setup.project.four_eyes_note")}
       </div>
@@ -211,6 +261,10 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
  */
 export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
+  // "Bota atanan her ticket" has no second question, so the value field is not
+  // merely disabled — it is GONE. A greyed-out box the operator cannot fill
+  // reads as an unfinished form; an absent one reads as an answered question.
+  const anyAssigned = draft.matchKind === "assigned";
   return (
     <Card title={t("setup.tickets.title")} subtitle={t("setup.tickets.sub")}>
       <p className="scr-prose">{t("setup.tickets.intro")}</p>
@@ -221,23 +275,30 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
           onChange={(e) =>
             // Switching the question invalidates the answer: an issue-type name
             // is not a status name, and keeping it would silently save a rule
-            // that can never match a ticket.
+            // that can never match a ticket. Switching TO `assigned` clears it
+            // for the same reason from the other side — the value is not part
+            // of that rule, and a leftover "Hata" riding along in the draft
+            // would show up in the summary as a condition nobody set.
             onChange({ matchKind: e.target.value as MatchKind, matchValue: "" })
           }
           options={[
             { value: "issuetype", label: t("setup.tickets.kind.issuetype") },
             { value: "status", label: t("setup.tickets.kind.status") },
+            { value: "assigned", label: t("setup.tickets.kind.assigned") },
           ]}
           hint={t(`setup.tickets.kind_hint.${draft.matchKind}`)}
         />
-        {data.matchValues.length > 0 ? (
+        {anyAssigned ? null : data.matchValues.length > 0 ? (
           <Select
             label={t("setup.tickets.match_value")}
             value={draft.matchValue}
+            // The option's VALUE is the localised name Jira serves and the rule
+            // stores; only its LABEL carries the English aside. A dropdown that
+            // sent "Görev (Task)" would write a matchValue no ticket can equal.
             onChange={(e) => onChange({ matchValue: e.target.value })}
             options={[
               { value: "", label: t("setup.common.choose") },
-              ...data.matchValues.map((v) => ({ value: v, label: v })),
+              ...data.matchValues.map((v) => ({ value: v, label: matchValueLabel(v) })),
             ]}
             hint={data.matchValuesNote ?? t("setup.tickets.match_value_hint_live")}
           />
@@ -246,10 +307,24 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
             label={t("setup.tickets.match_value")}
             value={draft.matchValue}
             onChange={(e) => onChange({ matchValue: e.target.value })}
-            hint={t("setup.tickets.match_value_hint_manual")}
+            // Typed by hand, so the English name cannot be offered up front —
+            // but once what they typed IS a name we know, saying so confirms
+            // they hit the right one.
+            hint={
+              englishAside(draft.matchValue) === null
+                ? t("setup.tickets.match_value_hint_manual")
+                : t("setup.tickets.match_value_hint_english", {
+                    english: englishAside(draft.matchValue) ?? "",
+                  })
+            }
           />
         )}
       </div>
+      {anyAssigned && (
+        <div className="scr-note" style={{ marginTop: 12 }}>
+          {t("setup.tickets.assigned_note")}
+        </div>
+      )}
       <div style={{ marginTop: 12 }}>
         <Input
           label={t("setup.tickets.assignee")}

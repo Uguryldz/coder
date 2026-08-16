@@ -51,6 +51,62 @@ describe("loadEnv (M6 fail-closed)", () => {
     // one process, and demanding Redis on a laptop would buy nothing.
     expect(() => loadEnv({ ...withoutRedis, NODE_ENV: "development" })).not.toThrow();
   });
+
+  /**
+   * Docker Compose has no way to say "unset". `ADO_BASE_URL: ${ADO_BASE_URL:-}`
+   * reaches the process as the empty string, so every optional endpoint the bank
+   * compose forwards arrives as `""` on a deployment that does not use it.
+   *
+   * A plain `.optional()` accepts `undefined` and rejects `""` — the one value
+   * Compose can actually produce — and the bank bundle therefore refused to boot
+   * with four lines of `Invalid URL` naming variables the operator had never set.
+   * `OptionalText` already solved this for the LDAP fields; this is the same rule
+   * for the endpoints.
+   */
+  it("treats a blank endpoint as unset, the way Compose delivers one", () => {
+    const env = loadEnv({
+      JIRA_CLOUD_BASE_URL: "",
+      ADO_BASE_URL: "",
+      VAULT_ADDR: "",
+      STORAGE_ENDPOINT: "",
+      EGRESS_PROXY_URL: "",
+      PILOT_BASE_URL: "",
+      DATABASE_URL: "  ",
+    });
+    expect(env.ADO_BASE_URL).toBeUndefined();
+    expect(env.VAULT_ADDR).toBeUndefined();
+    expect(env.STORAGE_ENDPOINT).toBeUndefined();
+    expect(env.JIRA_CLOUD_BASE_URL).toBeUndefined();
+    expect(env.DATABASE_URL).toBeUndefined();
+  });
+
+  it("still rejects a non-empty endpoint that is not a URL", () => {
+    // Blank means unset; it does not mean "stop checking". A typo must still fail.
+    expect(() => loadEnv({ VAULT_ADDR: "vault.corp.local" })).toThrow(/VAULT_ADDR/);
+  });
+
+  /**
+   * Blank must keep failing in PRODUCTION — it just has to fail legibly. Before
+   * this, an empty VAULT_ADDR died in the schema with "Invalid URL", which
+   * describes the empty string Compose synthesised and points the operator at
+   * nothing. It now reaches the fail-closed check as absent, which names the
+   * variable and says what fills it.
+   */
+  it("fails production on a blank requirement, naming it and what it is for", () => {
+    const blanked = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://maestro:x@db:5432/maestro",
+      TEMPORAL_ADDRESS: "temporal:7233",
+      JIRA_BASE_URL: "https://jira.corp.local",
+      REDIS_URL: "redis://redis:6379/0",
+      ADO_BASE_URL: "",
+      VAULT_ADDR: "",
+      STORAGE_ENDPOINT: "",
+    };
+    expect(() => loadEnv(blanked)).toThrow(/VAULT_ADDR: required in production/);
+    expect(() => loadEnv(blanked)).toThrow(/secret reference/);
+    expect(() => loadEnv(blanked)).not.toThrow(/Invalid URL/);
+  });
 });
 
 describe("LDAPS identity configuration (M8)", () => {

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ListeningRuleRecord, ListeningStore } from "../listening-store.js";
-import { FLOW_TYPES, MATCH_KINDS, StatusMapSchema } from "../listening-store.js";
+import { ASSIGNED_MATCH_VALUE, FLOW_TYPES, MATCH_KINDS, StatusMapSchema } from "../listening-store.js";
 import { mirrorListeningToPilot, seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, conflict, notFound } from "../errors.js";
@@ -80,6 +80,11 @@ const RuleBody = z.object({
   projectKey: z.string().trim().min(1).max(32),
   assigneeAccountId: z.string().trim().min(1).max(128),
   matchKind: z.enum(MATCH_KINDS as unknown as [string, ...string[]]),
+  /**
+   * The status or issue-type name that triggers the rule. Still required for an
+   * `assigned` rule, whose value is normalised below — the column is NOT NULL
+   * and the unique trigger index needs a real string to collide on.
+   */
   matchValue: z.string().trim().min(1).max(128),
   flowType: z.enum(FLOW_TYPES as unknown as [string, ...string[]]),
   priority: z.number().int().min(0).max(10_000).default(100),
@@ -91,6 +96,23 @@ const RuleBody = z.object({
   /** The Jira status map; null → comment-only mode (Maestro never moves the ticket). */
   statusMap: StatusMapRef,
 });
+
+/**
+ * The rule as it is STORED, from the rule as it was sent.
+ *
+ * One normalisation, and it exists for the unique index rather than for taste.
+ * An `assigned` rule ("bota atanan her ticket") compares no field, so whatever
+ * the client put in `matchValue` is meaningless — but if two clients send two
+ * different meaningless strings, the (projectKey, assigneeAccountId, matchKind,
+ * matchValue) index sees two distinct triggers and a project quietly ends up
+ * with several catch-all rules that all match every ticket. Pinning the value
+ * to one literal here makes "at most one catch-all per project and bot" a
+ * database guarantee, enforced against every client including a hand-rolled
+ * curl, instead of a rule the Studio form happens to follow.
+ */
+function storedRule<T extends { matchKind: string; matchValue: string }>(body: T): T {
+  return body.matchKind === "assigned" ? { ...body, matchValue: ASSIGNED_MATCH_VALUE } : body;
+}
 
 function listeningDeps(deps: ResolvedDeps): { store: ListeningStore } {
   if (deps.listening === undefined) unwired("listening");
@@ -117,7 +139,10 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
     if (!body.success) throw badRequest("invalid_listening_rule");
 
     const ruleId = `lr_${randomBytes(9).toString("hex")}`;
-    const record: ListeningRuleRecord = { ruleId, ...(body.data as Omit<ListeningRuleRecord, "ruleId">) };
+    const record: ListeningRuleRecord = {
+      ruleId,
+      ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
+    };
     try {
       await store.put(record);
     } catch (error) {
@@ -199,7 +224,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
 
     const record: ListeningRuleRecord = {
       ruleId: params.data.ruleId,
-      ...(body.data as Omit<ListeningRuleRecord, "ruleId">),
+      ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
     };
     try {
       await store.put(record);

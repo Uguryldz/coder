@@ -2,16 +2,25 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Button, Card } from "../../ui/index.ts";
-import { setWebhookAcked, type SetupState } from "./setup-state.ts";
+import { setWebhookAcked, type SetupState } from "../dash/setup-state.ts";
 import "../shared/screens.css";
 
 /**
- * The "where do I start" checklist on the Panel.
+ * The "where do I start" checklist — on the KURULUM SİHİRBAZI.
  *
- * It used to appear only while the platform had NO runs, which hid it from the
- * deployment that needs it most: one with tickets flowing but the setup half
- * finished. It now appears whenever a step is still open (see `useSetupState`),
- * and steps aside once everything is done.
+ * It lived on the Panel, above the numbers, which was the wrong screen: the
+ * Panel is a report, and an operator opening it to see what their platform did
+ * overnight was met with a tutorial for work they may have finished weeks ago.
+ * The five steps it lists are the five things the setup surfaces DO, so it now
+ * sits at the top of the wizard, where somebody is already doing them. The
+ * Panel keeps one line saying setup is open, with a link here.
+ *
+ * Only the LOCATION changed. It still appears whenever a step is open (see
+ * `useSetupState`) and steps aside once everything is done; it still keeps its
+ * two localStorage keys, so an operator who dismissed it from the old Panel
+ * does not find it back. The class names stay `dash-start__*` because the
+ * styles are the same styles — renaming them would be churn with no behaviour
+ * behind it.
  *
  * Each step reports its OWN real state, so this is a live checklist rather than
  * a static tutorial: a checked step stays checked and the FIRST unfinished step

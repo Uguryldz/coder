@@ -22,8 +22,14 @@
 /** The three flows the pilot can run a ticket through. Mirrors the DB CHECK. */
 export type FlowType = "analiz" | "duzeltme" | "gelistirme";
 
-/** Which ticket field a rule matches on. Mirrors the DB CHECK. */
-export type MatchKind = "status" | "issuetype";
+/**
+ * Which ticket field a rule matches on. Mirrors the DB CHECK (migration 0020).
+ *
+ * `assigned` compares no field at all: the rule fires because a human handed
+ * the ticket to the bot, which is the trigger the two-member domain could not
+ * express. Its `matchValue` is a placeholder the matcher never reads.
+ */
+export type MatchKind = "status" | "issuetype" | "assigned";
 
 /** One listening rule, as mirrored from the BFF/DB. */
 export interface ListeningRule {
@@ -85,7 +91,13 @@ export class ListeningRulesStore {
           ...(engineer !== undefined ? { engineerVariantId: engineer } : {}),
         };
       })
-      .sort((a, b) => a.priority - b.priority);
+      // Specificity BEFORE priority, mirroring `flow-decision.ts` on the BFF
+      // side: a rule that names a condition must be considered before the
+      // `assigned` catch-all, or a single "bota atanan her ticket" rule would
+      // shadow every deliberate issue-type rule in the project simply by
+      // sharing the default priority of 100. `ruleFor` below takes the first
+      // match, so this sort is where that precedence actually lives.
+      .sort((a, b) => specificityOf(a) - specificityOf(b) || a.priority - b.priority);
   }
 
   snapshot(): readonly ListeningRule[] {
@@ -143,6 +155,10 @@ export class ListeningRulesStore {
       // rule on any bound project classifies its tickets.
       if (rule.projectKey !== ticket.projectKey) continue;
       if (rule.assigneeAccountId !== "" && rule.assigneeAccountId !== botAccountId.trim()) continue;
+      // `assigned`: the project + assignee checks above ARE the whole rule, so
+      // a ticket that got this far already satisfies it. No field is compared,
+      // and `matchValue` is never read.
+      if (rule.matchKind === "assigned") return { ...rule };
       const field = rule.matchKind === "status" ? ticket.status : ticket.issueType;
       if (field !== null && field === rule.matchValue) return { ...rule };
     }
@@ -171,7 +187,16 @@ function normalizeVariantId(value: string | null | undefined): string | undefine
 }
 
 const FLOW_TYPES: readonly FlowType[] = ["analiz", "duzeltme", "gelistirme"];
-const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype"];
+const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype", "assigned"];
+
+/**
+ * How specific a rule is — lower is more specific. A rule naming a status or an
+ * issue type beats the `assigned` catch-all, which names no condition and is
+ * therefore the answer of last resort among the rules that matched.
+ */
+function specificityOf(rule: ListeningRule): number {
+  return rule.matchKind === "assigned" ? 1 : 0;
+}
 
 /**
  * Whether an unknown value is a well-formed `ListeningRule`.

@@ -46,33 +46,52 @@ describe("PilotScreen", () => {
     expect(screen.getByText("Ödeme hatası")).toBeInTheDocument();
   });
 
-  it("shows a Başlat button to an operator and starts the flow with the ticket key", async () => {
-    const { fetchImpl, calls } = stubFetch([
-      { path: "/studio/pilot/state", body: IDLE_STATE },
-      { path: "/studio/pilot/start", method: "POST", status: 202, body: { ok: true } },
-    ]);
+  /**
+   * WATCH-ONLY. "Canlı akış" is a window onto what Maestro is already doing —
+   * the record of work happening in Jira — not a console for launching it. The
+   * screen used to carry a per-ticket "Başlat" button; it is gone, and these
+   * tests are what keep it gone. Work enters the platform through the listening
+   * rules on a real ticket, and a second way in from here invited an operator to
+   * re-run a job the engine had already taken.
+   *
+   * `POST /studio/pilot/start` still exists at the BFF (and keeps its own tests
+   * in apps/bff/test/studio-pilot.test.ts) — this is about the screen's claim to
+   * be the place you use it, not about removing the capability.
+   */
+  it("offers NO start control — not to an admin either", async () => {
+    const { fetchImpl, calls } = stubFetch([{ path: "/studio/pilot/state", body: IDLE_STATE }]);
     renderScreen(<PilotScreen />, { session: ADMIN, fetchImpl });
 
-    const startButtons = await screen.findAllByRole("button", { name: /Başlat/ });
-    expect(startButtons.length).toBeGreaterThan(0);
-    await userEvent.click(startButtons[0]!);
+    // The list is there; the button is not — for the most privileged session.
+    expect(await screen.findByText("OPS-42")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Başlat/ })).not.toBeInTheDocument();
 
+    // And nothing on the screen posts a start, whether or not it is clicked.
+    await userEvent.click(screen.getByText("OPS-42"));
     await waitFor(() => {
-      const post = calls.find((c) => c.url.endsWith("/studio/pilot/start") && c.method === "POST");
-      expect(post).toBeDefined();
-      expect(post?.body).toEqual({ ticketKey: "OPS-42" });
+      expect(calls.some((c) => c.url.endsWith("/studio/pilot/start"))).toBe(false);
     });
   });
 
-  it("hides the start button from a viewer (role-gated in the UI, enforced at the BFF)", async () => {
+  it("reads the same to a viewer — the screen has no role-gated affordance left", async () => {
     const { fetchImpl, calls } = stubFetch([{ path: "/studio/pilot/state", body: IDLE_STATE }]);
     renderScreen(<PilotScreen />, { session: VIEWER, fetchImpl });
 
-    // The discovered list renders, but no start button exists for a viewer.
     expect(await screen.findByText("OPS-42")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Başlat/ })).not.toBeInTheDocument();
-    // And the viewer never issued a start call.
     expect(calls.some((c) => c.url.endsWith("/studio/pilot/start"))).toBe(false);
+  });
+
+  it("does not leave a blank column where the button was — a watcher is told what the engine is on", async () => {
+    // A screen whose only action disappears can look broken. The column now
+    // carries state instead of a control: the live ticket is badged, the others
+    // are marked as waiting.
+    const { fetchImpl } = stubFetch([{ path: "/studio/pilot/state", body: STATE }]);
+    renderScreen(<PilotScreen />, { session: ADMIN, fetchImpl });
+
+    // OPS-42 is the running one; OPS-43 is merely discovered.
+    expect((await screen.findAllByText("çalışıyor")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("bekliyor").length).toBeGreaterThan(0);
   });
 
   it("shows the open human gate with the /approve instruction and a real Jira link", async () => {

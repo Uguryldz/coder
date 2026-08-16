@@ -1,5 +1,6 @@
 import type { Connection, ConnectionInput, ConnectionKind } from "@maestro/contracts";
 import type { ConnectionRecord } from "./connection-store.js";
+import type { UserDirectory, UserRecord } from "./deps.js";
 
 /**
  * The connector service: turning a validated `ConnectionInput` into a stored
@@ -114,6 +115,14 @@ export interface TestOutcome {
    * can offer "the bot" instead of asking for a hand-copied GUID. Never a secret.
    */
   accountId?: string;
+  /**
+   * The friendly name the probe read for the authenticated account (Jira's
+   * `/myself` `displayName`). It is the DEFAULT name for the provisioned bot
+   * row, so it is carried out of the probe as data rather than only baked into
+   * a message parameter. A name is not a secret; the email that sits beside it
+   * in the same response never travels (see `probeFor`).
+   */
+  identity?: string;
   /**
    * The stored `config.botAccountId` did NOT match the account the token
    * actually belongs to, and was corrected to `accountId`. Carries the DISPLACED
@@ -351,6 +360,7 @@ export async function runConnectionTest(
       // replaced, or a silent correction looks like nothing happened.
       messageParams: { was: claimed, now: accountId, ...(identity === undefined ? {} : { who: identity }) },
       accountId,
+      ...(identity === undefined ? {} : { identity }),
       accountIdCorrected: { from: claimed },
       ...warn,
     };
@@ -371,11 +381,193 @@ export async function runConnectionTest(
         ...(identity === undefined ? {} : { who: identity }),
       },
       accountId,
+      ...(identity === undefined ? {} : { identity }),
       ...warn,
     };
   }
 
   return identity === undefined
     ? { ok: true, messageKey: "connections.test.ok", accountId }
-    : { ok: true, messageKey: "connections.test.ok_as", messageParams: { who: identity }, accountId };
+    : {
+        ok: true,
+        messageKey: "connections.test.ok_as",
+        messageParams: { who: identity },
+        accountId,
+        // The name the panel should show for the provisioned bot row, when the
+        // operator did not supply one. Carried out of the probe here because
+        // this is the only place the live `/myself` body is read.
+        identity,
+      };
+}
+
+// ── the bot's Maestro account (provisioning) ─────────────────────────────────
+
+/**
+ * The Jira bot needs a Maestro USER ROW, and nothing used to create one.
+ *
+ * The connection knows the bot's Jira identity — `runConnectionTest` already
+ * probes `/rest/api/3/myself` and already writes the answer back onto
+ * `config.botAccountId`. But knowing the account is not the same as HAVING one:
+ * every surface that resolves an actor goes through `UserDirectory.find`, so a
+ * bot with no row is an actor the platform cannot name. On the pilot deployment
+ * the row was created BY HAND; on any other install it simply does not exist,
+ * and the absence is silent — exactly the class of failure this file already
+ * fights elsewhere (see `engineIdentityWarning`).
+ *
+ * So provisioning rides the mechanism that already learns the identity, rather
+ * than becoming a second, competing source of truth about who the bot is.
+ */
+
+/**
+ * The username (and hence directory key) for a connection's bot account.
+ *
+ * Derived from the CONNECTION ID, not from the Jira accountId: the account id is
+ * a 128-char opaque GUID that would make an unreadable local part, and it
+ * CHANGES when an operator re-points the connection at a different bot — which
+ * would strand the old row and silently mint a second one. The connection id is
+ * stable, already URL-safe by its contract grammar, and unique per connection,
+ * so re-testing the same connection always lands on the same row.
+ */
+export function botUsernameFor(connectionId: string): string {
+  return `jira-bot-${connectionId}`;
+}
+
+/**
+ * The groups a provisioned bot is given: NONE.
+ *
+ * This is the deliberate part, and it is a reversal of what the pilot did by
+ * hand. The hand-made row sat in `maestro-admins`, and that group is not just a
+ * label: `ROLE_BY_GROUP` maps it to the `admin` role, and
+ * `platform/master-approver.ts` + `workflows/src/impl/gate.ts` both read
+ * membership of it as the ONE self-approval exemption in the system. A bot in
+ * that group can therefore satisfy four-eyes on its own — an automated account
+ * that approves its own work is precisely the finding a bank audit exists to
+ * raise, and M32 says approval is a human-only channel.
+ *
+ * What does the bot actually need? Nothing that a group grants. Trace the flow:
+ * it acts on Jira through the connection's stored TOKEN (Jira's own permissions
+ * govern that, not Maestro's), and it reaches the platform through the webhook
+ * and the engine, neither of which authorises by directory membership. It never
+ * holds a Maestro session, so `hasRole` and `canDecideGate` are never asked
+ * about it. The row exists so an ACTOR RESOLVES — so the audit trail, the run
+ * list and "Kullanıcılar & roller" can put a readable name to the thing that
+ * did the work — and resolution needs a row, not a privilege.
+ *
+ * An empty group list still yields `viewer` through `rolesOf` (the floor, read
+ * only), which is the correct authority for an account whose whole job is to be
+ * NAMED. If a future flow genuinely needs the bot to hold a role, that should be
+ * an explicit, argued change to this constant — which is why the test asserts
+ * this exact set rather than merely "not admin".
+ */
+export const BOT_GROUPS: readonly string[] = [];
+
+/** What a caller must hand `ensureBotUser` — the identity the live probe read. */
+export interface BotIdentity {
+  /** The bot's Jira `accountId`, from `/myself`. Never invented. */
+  accountId: string;
+  /** Jira's own `displayName` for the bot — the default when nothing is supplied. */
+  jiraDisplayName?: string;
+  /** The operator's chosen name from the connection form, when they gave one. */
+  operatorDisplayName?: string;
+}
+
+/**
+ * The name the row carries, in priority order: what the operator typed, then
+ * what Jira calls the account, and only then the username as a last resort.
+ *
+ * The fallback chain never produces an empty string — a blank heading in the
+ * users table would read as a broken row rather than an unnamed one.
+ */
+export function botDisplayName(identity: BotIdentity, username: string): string {
+  const operator = identity.operatorDisplayName?.trim();
+  if (operator !== undefined && operator !== "") return operator;
+  const jira = identity.jiraDisplayName?.trim();
+  if (jira !== undefined && jira !== "") return jira;
+  return username;
+}
+
+/**
+ * What `ensureBotUser` did, so the caller can audit it honestly rather than
+ * logging "provisioned" over a row it did not touch.
+ */
+export interface BotProvisionOutcome {
+  username: string;
+  /** True only when a row was CREATED; false when an existing one was left in place. */
+  created: boolean;
+  /** The display name now on the row (updated even for an existing account). */
+  displayName: string;
+}
+
+/**
+ * Create the bot's account if it is absent; if it is present, touch only what is
+ * safe to touch.
+ *
+ * THE RULE ON AN EXISTING ROW. An operator may have adjusted this account after
+ * it was provisioned — put it in a group deliberately, or deactivated it while
+ * investigating something. Re-testing a connection must not undo either. So:
+ *
+ *  · `groups`/`roles` — NEVER written on an existing row. Whatever authority the
+ *    operator granted or removed stands. (This is also why a bot that somebody
+ *    already put in `maestro-admins` is not silently demoted here: taking away
+ *    an approval right behind an operator's back is as bad as granting one.
+ *    The provisioner refuses to be the thing that decides it either way.)
+ *  · `active` — NEVER written. A deactivated bot stays deactivated; a test is
+ *    not a re-enablement.
+ *  · `passwordHash` — NEVER touched. The bot has no interactive login at all;
+ *    the row is minted with an unusable hash and that value is preserved.
+ *  · `displayName` — DOES get updated. It is pure presentation, it carries no
+ *    authority, and it is the one field the operator is explicitly being asked
+ *    for on the connection form. A rename that did not take effect would make
+ *    the form look broken.
+ *
+ * Returns `null` when there is nothing to provision — no account id means the
+ * probe did not identify anybody, and a row invented without a real identity
+ * behind it is worse than no row.
+ */
+export async function ensureBotUser(
+  users: UserDirectory,
+  connectionId: string,
+  identity: BotIdentity,
+  /** `user@corp` for the row's audit actor — built by the caller from `actorDomain`. */
+  userId: string,
+): Promise<BotProvisionOutcome | null> {
+  if (identity.accountId.trim() === "") return null;
+
+  const username = botUsernameFor(connectionId);
+  const displayName = botDisplayName(identity, username);
+  const existing = await users.find(username);
+
+  if (existing !== null) {
+    // Present: only the name may move. Spreading `existing` first is what makes
+    // that a guarantee rather than an intention — every other field is carried
+    // through verbatim, including any group an operator added by hand.
+    if (existing.displayName === displayName) {
+      return { username, created: false, displayName };
+    }
+    await users.upsert({ ...existing, displayName });
+    return { username, created: false, displayName };
+  }
+
+  const record: UserRecord = {
+    username,
+    userId,
+    // A hash no password can ever produce. bcrypt output is always `$2…` and
+    // exactly 60 chars, so this string cannot be the hash of anything a login
+    // could supply — the account is unlogin-able by construction rather than by
+    // a flag somebody could flip. `LocalIdentityProvider.authenticate` will run
+    // its verify against it and fail, which is the intended and only outcome.
+    passwordHash: "!bot-no-login",
+    groups: [...BOT_GROUPS],
+    // Derived the same way every other account's are; with no groups this is the
+    // `viewer` floor. Written explicitly rather than left empty so a directory
+    // that reads roles off the row (the in-memory one does) agrees with the
+    // Prisma one, which re-derives them from groups on every read.
+    roles: ["viewer"],
+    active: true,
+    displayName,
+    // Never a bootstrap account: there is no password to change.
+    mustChangePassword: false,
+  };
+  await users.upsert(record);
+  return { username, created: true, displayName };
 }

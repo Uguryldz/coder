@@ -22,11 +22,30 @@ import { z } from "zod";
 /** The three flows Maestro can run a ticket through. Mirrors the DB CHECK. */
 export type FlowType = "analiz" | "duzeltme" | "gelistirme";
 
-/** Which ticket field a rule matches on. Mirrors the DB CHECK. */
-export type MatchKind = "status" | "issuetype";
+/**
+ * Which ticket field a rule matches on. Mirrors the DB CHECK (migration 0020).
+ *
+ * `assigned` is the odd one and is deliberately in the same enum rather than a
+ * separate flag: it matches NO field at all. The rule fires on the assignment
+ * alone — "whatever this ticket is, a human handed it to the bot, work it" —
+ * which is the trigger most first-time operators actually want and the one the
+ * two-member domain made unsayable. See `ASSIGNED_MATCH_VALUE` for why such a
+ * rule still carries a value.
+ */
+export type MatchKind = "status" | "issuetype" | "assigned";
 
 export const FLOW_TYPES: readonly FlowType[] = ["analiz", "duzeltme", "gelistirme"];
-export const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype"];
+export const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype", "assigned"];
+
+/**
+ * The value an `assigned` rule stores. NOT a wildcard anybody interprets — no
+ * matcher ever reads it — but the column is NOT NULL and the unique index on
+ * (projectKey, assigneeAccountId, matchKind, matchValue) is what makes "one
+ * catch-all rule per project and bot" a database fact instead of a convention
+ * the UI is trusted to keep. A NULL would defeat that index outright, since
+ * NULLs never collide in Postgres.
+ */
+export const ASSIGNED_MATCH_VALUE = "*";
 
 /**
  * A status NAME as a rule may name it. Names, never Jira transition ids: an id

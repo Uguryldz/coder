@@ -215,3 +215,71 @@ describe("flowTypeLabel", () => {
     expect(flowTypeLabel("gelistirme")).toBe("geliştirme");
   });
 });
+
+/**
+ * "Bota atanan her ticket" in the ENGINE — `matchKind: "assigned"` (0020).
+ *
+ * The BFF decides the flow for webhook-driven tickets; the pilot decides it for
+ * the ones it discovers itself. Both matchers must agree, or a ticket would run
+ * one flow when Jira pushed it and another when the poll found it.
+ *
+ * The discovery JQL is deliberately NOT extended for this kind. `discoveryJqlFor`
+ * narrows to explicit statuses only when status rules exist; with none, it falls
+ * back to `assignee = <bot> AND statusCategory != Done`, which already finds
+ * every open ticket the bot holds. A catch-all needs no clause of its own — and
+ * adding one would narrow discovery for a rule whose whole point is not to.
+ */
+describe("a rule on the assignment alone", () => {
+  const CATCH_ALL = rule({ matchKind: "assigned", matchValue: "*", flowType: "analiz" });
+
+  it("classifies a ticket of any type, including one with no type at all", () => {
+    const store = new ListeningRulesStore([CATCH_ALL]);
+    for (const ticket of [
+      { projectKey: PROJECT_KEY, status: "Devam Ediyor", issueType: "Görev" },
+      { projectKey: PROJECT_KEY, status: "Onay Bekliyor", issueType: "Talep" },
+      // A conditioned rule matches nothing here; the catch-all reads no field.
+      { projectKey: PROJECT_KEY, status: null, issueType: null },
+    ]) {
+      expect(store.flowTypeFor(BOT, ticket)).toBe("analiz");
+    }
+  });
+
+  it("still belongs to its own project and its own bot", () => {
+    const store = new ListeningRulesStore([CATCH_ALL]);
+    expect(store.flowTypeFor(BOT, { projectKey: "OTHER", status: null, issueType: "Görev" })).toBeNull();
+    expect(
+      store.flowTypeFor("712020:ayse", { projectKey: PROJECT_KEY, status: null, issueType: "Görev" }),
+    ).toBeNull();
+  });
+
+  it("loses to a rule that names a condition, whatever the priorities say", () => {
+    // The catch-all is given the BETTER priority on purpose: specificity has to
+    // outrank it, or one catch-all would shadow every deliberate rule in the
+    // project the moment an operator added it.
+    const store = new ListeningRulesStore([
+      { ...CATCH_ALL, priority: 1 },
+      rule({ matchValue: "Hata", flowType: "duzeltme", priority: 900 }),
+    ]);
+    expect(
+      store.flowTypeFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Hata" }),
+    ).toBe("duzeltme");
+    // …and it still catches everything the specific rule does not.
+    expect(
+      store.flowTypeFor(BOT, { projectKey: PROJECT_KEY, status: null, issueType: "Görev" }),
+    ).toBe("analiz");
+  });
+
+  it("survives the mirror's validator instead of being dropped as malformed", () => {
+    // `isValidRule` is the boundary the BFF mirror crosses. A kind it did not
+    // know would drop the rule silently — present in the database and on the
+    // Studio screen, absent from the engine.
+    expect(isValidRule(CATCH_ALL)).toBe(true);
+  });
+
+  it("does not narrow the discovery JQL, which already finds every assigned ticket", () => {
+    const store = new ListeningRulesStore([CATCH_ALL]);
+    // Unchanged fallback: `statusCategory != Done` on the bot's own queue is a
+    // superset of "every ticket assigned to the bot", so there is nothing to add.
+    expect(store.discoveryJqlFor(BOT, FALLBACK)).toBe(FALLBACK);
+  });
+});

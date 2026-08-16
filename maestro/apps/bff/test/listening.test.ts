@@ -312,6 +312,77 @@ describe("PUT/DELETE /studio/listening-rules/:ruleId", () => {
   });
 });
 
+/**
+ * "Bota atanan her ticket" — `matchKind: "assigned"` (migration 0020).
+ *
+ * The route's half of the round trip. `matchValue` is still required by the
+ * schema (the column is NOT NULL) but is meaningless for this kind, so the
+ * server PINS it: whatever a client sends, the row stores one literal. That is
+ * not tidiness — it is what makes "at most one catch-all per (project, bot)" a
+ * database guarantee via the unique trigger index, enforced against a
+ * hand-rolled curl and not just against the Studio form.
+ */
+describe("a rule on the assignment alone", () => {
+  const ANY = { ...RULE, matchKind: "assigned", matchValue: "*" } as const;
+
+  it("accepts the third kind and stores it", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    const res = await post(h, "/studio/listening-rules", token, ANY);
+    expect(res.statusCode).toBe(201);
+
+    const stored = await h.listening.list();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.matchKind).toBe("assigned");
+    expect(stored[0]!.matchValue).toBe("*");
+  });
+
+  it("pins matchValue whatever the client sent, so the unique index can bite", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    // Two clients, two different meaningless values for the SAME catch-all.
+    expect((await post(h, "/studio/listening-rules", token, { ...ANY, matchValue: "her sey" })).statusCode).toBe(201);
+    const second = await post(h, "/studio/listening-rules", token, { ...ANY, matchValue: "anything" });
+
+    // Without the pin these would be two distinct triggers in the index and the
+    // project would quietly hold two catch-alls, both matching every ticket.
+    expect(second.statusCode).toBe(400);
+    expect(second.json().error).toBe("duplicate_listening_rule");
+    const stored = await h.listening.list();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.matchValue).toBe("*");
+  });
+
+  it("pins it on replace too, not only on create", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    const created = await post(h, "/studio/listening-rules", token, ANY);
+    const ruleId = created.json().rule.ruleId as string;
+
+    const res = await put(h, `/studio/listening-rules/${ruleId}`, token, {
+      ...ANY,
+      matchValue: "bir sey",
+      flowType: "analiz",
+    });
+    expect(res.statusCode).toBe(200);
+
+    const stored = await h.listening.list();
+    expect(stored[0]!.matchValue).toBe("*");
+    expect(stored[0]!.flowType).toBe("analiz");
+  });
+
+  it("leaves the conditioned kinds' values exactly as sent", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    // The one thing the pin must never touch. `Görev` is what OPS-66 carries;
+    // a server that "helpfully" rewrote a matchValue would recreate today's bug.
+    await post(h, "/studio/listening-rules", token, { ...RULE, matchValue: "Görev" });
+    expect((await h.listening.list())[0]!.matchValue).toBe("Görev");
+  });
+});
+
 describe("listening surface unwired", () => {
   it("refuses by name (503) when no ListeningStore is wired", async () => {
     const h = await harness({ deps: { listening: undefined } });

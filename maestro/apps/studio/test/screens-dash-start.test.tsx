@@ -1,18 +1,27 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DashScreen } from "../src/screens/Dash.tsx";
-import { StartGuide } from "../src/screens/dash/StartGuide.tsx";
+import { StartGuide } from "../src/screens/setup/StartGuide.tsx";
 import { GUIDE_DISMISSED_KEY, type SetupState } from "../src/screens/dash/setup-state.ts";
 import { renderScreen, stubFetch } from "./harness.tsx";
 
 /**
- * The start guide on the Panel.
+ * The start guide, and what the Panel keeps of it.
  *
- * The rule these tests pin down is the one that was wrong: the guide appears
- * while the SETUP is incomplete, not while the run list is empty. A deployment
- * with real runs but a missing webhook is exactly the case that used to hide
- * it, so that case gets its own test.
+ * The guide itself MOVED to the setup wizard (`screens-setup.test.tsx` covers
+ * it there). What these tests pin down is the boundary that move created: the
+ * Panel is a REPORT screen now, so the five-step checklist must not render on
+ * it — while the platform's incompleteness must not become invisible either. A
+ * Panel that quietly dropped the setup gap would be a worse regression than the
+ * tutorial it replaced, so the one-line note and its link are asserted just as
+ * hard as the guide's absence.
+ *
+ * The dismissal semantics are unchanged and still measured here: hiding is a
+ * display preference, never a completion claim.
  */
+
+const GUIDE_TITLE = "Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin";
+const PANEL_NOTE = "Kurulum henüz tamamlanmadı. Adımların tamamı Kurulum sihirbazında.";
 
 const DONE: SetupState = {
   hasConn: true,
@@ -63,47 +72,55 @@ beforeEach(() => {
   globalThis.localStorage?.clear();
 });
 
-describe("start guide — visibility", () => {
-  it("shows on the Panel while a step is open, even with runs present", async () => {
-    // Connections, binding and training are done; the WEBHOOK is not acked.
+describe("panel — setup guidance lives in the wizard now", () => {
+  it("does NOT render the five-step guide, however incomplete the setup is", async () => {
+    // Connections, binding and training are done; the WEBHOOK is not acked, so
+    // this is the most "unfinished" a live platform gets — and still no guide.
     const { fetchImpl } = stubFetch(panelRoutes());
     renderScreen(<DashScreen />, { fetchImpl });
 
-    expect(
-      await screen.findByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
-    ).toBeInTheDocument();
-    // …and the runs really did load, so this is not an "empty dashboard".
+    // The note proves the setup reads settled and the Panel KNOWS it is open…
+    expect(await screen.findByText(PANEL_NOTE)).toBeInTheDocument();
+    // …and the checklist is not what it chose to say about it.
+    expect(screen.queryByText(GUIDE_TITLE)).not.toBeInTheDocument();
+    expect(screen.queryByText("Bağlantıları kur")).not.toBeInTheDocument();
+    expect(screen.queryByText("Jira webhook'unu kur")).not.toBeInTheDocument();
+    // The runs really did load, so this is a report screen showing its report.
     expect(screen.getByText("Aktif iş akışı")).toBeInTheDocument();
   });
 
-  it("hides once every step is finished", async () => {
+  it("links to the wizard rather than leaving the operator to find it", async () => {
+    const { fetchImpl } = stubFetch(panelRoutes());
+    renderScreen(<DashScreen />, { fetchImpl });
+
+    const link = await screen.findByRole("link", { name: "Kurulum sihirbazını aç" });
+    expect(link.getAttribute("href")).toBe("/setup");
+  });
+
+  it("says nothing at all once every step is finished", async () => {
     globalThis.localStorage.setItem("maestro.setup.webhookAcked", "1");
     const { fetchImpl } = stubFetch(panelRoutes());
     renderScreen(<DashScreen />, { fetchImpl });
 
-    // Wait for the setup reads to settle, then assert the guide never appears.
     expect(await screen.findByText("Aktif iş akışı")).toBeInTheDocument();
     await waitFor(() => {
-      expect(
-        screen.queryByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText(PANEL_NOTE)).not.toBeInTheDocument();
     });
+    expect(screen.queryByText(GUIDE_TITLE)).not.toBeInTheDocument();
     // Nothing was hidden behind a "still incomplete" note either.
     expect(screen.queryByText("Kurulum hâlâ eksik; başlangıç rehberi gizlendi.")).toBeNull();
   });
 
-  it("stays hidden across a remount once dismissed, but still admits the gap", async () => {
+  it("keeps admitting the gap after the note is dismissed", async () => {
     const { fetchImpl } = stubFetch(panelRoutes());
     renderScreen(<DashScreen />, { fetchImpl });
 
     fireEvent.click(await screen.findByText("Anladım, gizle"));
 
-    // The preference is persisted…
+    // The preference is persisted, under the SAME key the guide always used —
+    // a dismissal made here is one the wizard's guide honours too.
     expect(globalThis.localStorage.getItem(GUIDE_DISMISSED_KEY)).toBe("1");
-    // …the guide is gone…
-    expect(
-      screen.queryByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(PANEL_NOTE)).not.toBeInTheDocument();
     // …but "hide" did NOT become "done": the Panel still says setup is open.
     expect(screen.getByText("Kurulum hâlâ eksik; başlangıç rehberi gizlendi.")).toBeInTheDocument();
   });
@@ -116,9 +133,8 @@ describe("start guide — visibility", () => {
     expect(
       await screen.findByText("Kurulum hâlâ eksik; başlangıç rehberi gizlendi."),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(PANEL_NOTE)).not.toBeInTheDocument();
+    expect(screen.queryByText(GUIDE_TITLE)).not.toBeInTheDocument();
   });
 });
 

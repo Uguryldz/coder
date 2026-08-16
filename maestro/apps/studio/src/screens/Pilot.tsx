@@ -1,8 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { messageKeyOf } from "../api/errors.ts";
-import { useApi, useAuth } from "../auth/AuthProvider.tsx";
-import { hasAnyRole } from "../auth/types.ts";
+import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
@@ -26,17 +25,24 @@ import "./shared/screens.css";
  * live picture, over a channel that carries the session token. The SSE
  * passthrough stays available for a future auth-carrying client.
  *
- * The roles gate is on the START button, not the screen: a viewer may WATCH the
- * flow (state/events are open to any session) but not start it or change
- * settings — those are refused at the BFF for anyone below operator, and the
- * button is hidden so a viewer is not handed one that only 403s.
+ * WATCH-ONLY, ON PURPOSE. This screen used to carry a "Başlat" button per
+ * discovered ticket. It is gone, and its absence is the feature: "Canlı akış"
+ * is a WINDOW onto what Maestro is already doing — the record of work happening
+ * in Jira — not a console for launching it. Work enters the platform where the
+ * work actually lives: somebody labels or comments on a real ticket and the
+ * listening rules pick it up. A start button here offered a second, contrary
+ * way in, and one that quietly invited an operator to re-run a job the engine
+ * had already taken.
+ *
+ * `POST /studio/pilot/start` still EXISTS at the BFF and is still admin/
+ * tech-lead gated; nothing here removes a capability from the platform. What is
+ * removed is this screen's claim to be the place you use it. So there is no
+ * roles gate on this screen at all any more: every session may read state and
+ * events, and there is nothing left to refuse.
  */
 
 /** Poll while the tab is open; a run at a gate is the one worth watching live. */
 export const PILOT_REFRESH_MS = 4_000;
-
-/** The pilot's operator roles, mirrored from the BFF `PILOT_WRITE_ROLES`. */
-const PILOT_WRITE_ROLES = ["admin", "tech-lead"] as const;
 
 type StepState = "bekliyor" | "calisiyor" | "onay" | "tamam" | "hata";
 
@@ -101,10 +107,6 @@ const STEP_TONE: Readonly<Record<StepState, BadgeTone>> = {
 export function PilotScreen(): ReactNode {
   const t = useT();
   const api = useApi();
-  const toast = useToast();
-  const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const canStart = hasAnyRole(session, PILOT_WRITE_ROLES);
 
   const query = useQuery({
     queryKey: ["pilot-state"],
@@ -122,16 +124,6 @@ export function PilotScreen(): ReactNode {
     retry: false,
   });
   const history = historyQuery.data?.runs ?? [];
-
-  const start = useMutation({
-    mutationFn: (ticketKey: string) =>
-      api.post<{ ok: boolean }>("/studio/pilot/start", { ticketKey }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["pilot-state"] });
-      toast.show("success", t("pilot.toast.started"));
-    },
-    onError: (error) => toast.show("error", t(messageKeyOf(error))),
-  });
 
   const state = query.data;
   const running = state?.running ?? false;
@@ -154,22 +146,26 @@ export function PilotScreen(): ReactNode {
       cell: (ticket) => ticket.status ?? "—",
     },
     {
-      key: "start",
+      // What replaced the start button. A row that ends in blank space reads as
+      // a control that failed to render; saying which ticket the engine is
+      // actually on turns the same column into information — and it is the one
+      // thing a watcher wants from this list.
+      key: "live",
       header: "",
       align: "right",
       cell: (ticket) =>
-        canStart ? (
-          <Button
-            variant="primary"
-            size="sm"
-            busy={start.isPending}
-            disabled={running}
-            onClick={() => start.mutate(ticket.key)}
-          >
-            {t("pilot.action.start")}
-          </Button>
+        ticket.key === state?.ticketKey ? (
+          <Badge tone={running ? "blue" : "gray"}>
+            {running ? t("pilot.badge.running") : t("pilot.badge.idle")}
+          </Badge>
         ) : (
-          <span className="screen-note">{t("pilot.start.viewer")}</span>
+          // `pilot.step.bekliyor` ("bekliyor" / "waiting") rather than a key of
+          // this column's own: `packages/config/locales` is owned by another
+          // agent this cycle and `t` THROWS on a key it does not have, so a new
+          // one would take the screen down until both files landed. The word is
+          // the right word; a dedicated `pilot.discovered.waiting` can replace
+          // this once the catalog can be edited.
+          <span className="screen-note">{t("pilot.step.bekliyor")}</span>
         ),
     },
   ];

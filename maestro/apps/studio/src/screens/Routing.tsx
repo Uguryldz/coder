@@ -48,6 +48,8 @@ export function RoutingScreen(): ReactNode {
   // After an approval, the just-bound project — drives the "add a listening
   // rule" prompt (Faz 4), the chain's natural next step.
   const [boundProject, setBoundProject] = useState<string | null>(null);
+  // Which bound project's "Düzenle" is open, or null. See `BindingEdit`.
+  const [editingBinding, setEditingBinding] = useState<string | null>(null);
 
   const routing = useQuery({
     queryKey: ["routing"],
@@ -281,6 +283,22 @@ export function RoutingScreen(): ReactNode {
                   cell: (row) => phrase(row.noteKey, row.noteParams),
                 },
                 {
+                  key: "edit",
+                  header: "",
+                  // The edit affordance the bound list never had (Listening.tsx
+                  // gained the same "Düzenle" for its rules). It opens the panel
+                  // below rather than a form, because most of what an operator
+                  // wants to change here HAS no endpoint — see `BindingEdit`.
+                  // A button that pretended otherwise would be worse than the
+                  // read-only table it replaces.
+                  cell: (row) =>
+                    canEdit ? (
+                      <Button size="sm" onClick={() => setEditingBinding(row.projectKey)}>
+                        {t("routing.action.edit_binding")}
+                      </Button>
+                    ) : null,
+                },
+                {
                   key: "status",
                   header: t("routing.col.status"),
                   // A bound project with no listening rule accepts no ticket. Say
@@ -305,6 +323,15 @@ export function RoutingScreen(): ReactNode {
               emptyLabel={t("routing.no_projects")}
             />
           </MaybeUnwired>
+          {editingBinding !== null && (
+            <BindingEdit
+              projectKey={editingBinding}
+              onClose={() => setEditingBinding(null)}
+              onOpenRules={(key) =>
+                navigate(`/projects?tab=listening&projectKey=${encodeURIComponent(key)}`)
+              }
+            />
+          )}
         </Card>
       </div>
 
@@ -447,5 +474,67 @@ export function RoutingScreen(): ReactNode {
         />
       )}
     </>
+  );
+}
+
+/**
+ * "Düzenle" on a bound project — what can be changed, and what honestly cannot.
+ *
+ * This is NOT a form, and the reason is a measurement rather than a preference.
+ * Once a project is bound, the platform offers no way to change the binding:
+ *
+ *  · `POST /onboarding` is the only path that writes one, and it refuses an
+ *    already-bound project outright (`assertProjectBindable` →
+ *    `project_already_bound`, apps/bff/src/onboarding-service.ts). It is a
+ *    CREATE path, not an update path.
+ *  · `bindingWriter.bind` is an upsert and could physically overwrite the row,
+ *    but nothing reachable from a client calls it except the four-eyes APPROVE
+ *    step, which needs a pending proposal that the create path will not file.
+ *  · There is no `PUT /routing/projects/:key`, and `RoutingProjectView` does not
+ *    even carry the repo mapping or the data class, so a form here would have
+ *    nothing to load and nowhere to save.
+ *
+ * A "Kaydet" button over that would file nothing and report success, which on a
+ * four-eyes-governed decision — where a repo mapping says which repository an
+ * agent may push to — is the worst possible lie. So the panel does the two true
+ * things instead: it sends the operator to the one thing that IS editable per
+ * project (its listening rules, which decide which tickets are picked up and
+ * how they run), and it names the gap and the way round it in plain Turkish,
+ * so nobody spends an afternoon looking for a button that does not exist.
+ *
+ * The gap is written up for the API owners as ARAYÜZ İSTEĞİ: a real
+ * `POST /onboarding/rebind` filing a four-eyes proposal against a LIVE binding
+ * would let this panel become the form it looks like it should be. Governance
+ * is the reason it cannot simply be a PUT: changing where an agent pushes is
+ * exactly the decision the second approver exists for.
+ */
+function BindingEdit({
+  projectKey,
+  onClose,
+  onOpenRules,
+}: {
+  readonly projectKey: string;
+  readonly onClose: () => void;
+  readonly onOpenRules: (projectKey: string) => void;
+}): ReactNode {
+  const t = useT();
+  return (
+    <div className="scr-note" style={{ margin: 12 }} role="note">
+      <b>{t("routing.edit.title", { project: projectKey })}</b>
+      {/* What IS editable, first — an operator who came here to change which
+          tickets Maestro takes gets their answer before the bad news. */}
+      <p style={{ marginTop: 6 }}>{t("routing.edit.rules_body")}</p>
+      <div className="scr-row" style={{ marginTop: 8 }}>
+        <Button size="sm" variant="primary" onClick={() => onOpenRules(projectKey)}>
+          {t("routing.edit.open_rules")}
+        </Button>
+        <Button size="sm" onClick={onClose}>
+          {t("routing.edit.close")}
+        </Button>
+      </div>
+      {/* What is NOT, named field by field rather than as "bazı ayarlar". */}
+      <p style={{ marginTop: 10 }}>{t("routing.edit.binding_locked")}</p>
+      <p style={{ marginTop: 6 }}>{t("routing.edit.workaround")}</p>
+    </div>
   );
 }

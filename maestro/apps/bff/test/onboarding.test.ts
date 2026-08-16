@@ -634,11 +634,111 @@ describe("onboarding approval chain (M93)", () => {
       active: true,
       triggerMode: "opt_in", // opt_in → label → opt_in
       appId: "Uguryldz/maestro-pilot",
-      dataClass: "gizli", // fail-closed default
+      // NEW_DRAFT sends no `dataClass`, and a missing field is still not
+      // evidence that the tickets are safe for a cloud model — so the FALLBACK
+      // stands, unchanged. This is the backward-compatibility guarantee for
+      // every proposal filed before the wizard started asking.
+      dataClass: "gizli",
     });
     // The pending queue is empty — the proposal was consumed.
     const pending = await app.params.pending();
     expect(pending.filter((p) => p.key === "onboarding.binding")).toHaveLength(0);
+  });
+
+  /**
+   * The data class the proposer ANSWERED (M18).
+   *
+   * The measured defect: the wizard never asked, `DraftBody` had no field for
+   * it, and `bindingFromProposal` hard-coded `gizli`. Every binding the wizard
+   * ever filed came out confidential, and `packages/llm-gateway/src/policy.ts`
+   * then correctly refused to send that content to a cloud model — on-prem
+   * only, no exceptions. On a deployment with no on-prem model that silently
+   * turned the analysis off: SAM1-12 stalled and told the operator "modeli
+   * kullanamadım, elle tamamlayın" with nothing naming the cause. Setting SAM1
+   * to `dahili` let SAM1-13 run analysis normally.
+   *
+   * So the field is now accepted, carried through the four-eyes queue, shown to
+   * the approver, recorded in the chain, and written to the binding.
+   */
+  describe("the data class the proposer chose", () => {
+    async function submittedWith(dataClass: string): Promise<Harness> {
+      const app = await harness({ onboarding: OPTIONS, samples: SAMPLES });
+      const token = await adminToken(app);
+      const res = await app.app.inject({
+        method: "POST",
+        url: "/onboarding",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ...NEW_DRAFT, dataClass },
+      });
+      expect(res.statusCode).toBe(202);
+      return app;
+    }
+
+    it("writes the chosen class into the binding, not the hard-coded gizli", async () => {
+      const app = await submittedWith("dahili");
+      await app.addUser({ username: "mert.demir", roles: ["admin"], groups: ["maestro-admins"] });
+      const second = await app.login("mert.demir");
+
+      const res = await app.app.inject({
+        method: "POST",
+        url: "/onboarding/approve",
+        headers: { authorization: `Bearer ${second}` },
+        payload: { projectKey: "NEWPROJ" },
+      });
+      expect(res.statusCode).toBe(200);
+      // The whole point: this binding CAN reach a cloud model, because a human
+      // said its tickets carry no customer data.
+      expect(await app.bindings.resolve("NEWPROJ")).toMatchObject({ dataClass: "dahili" });
+    });
+
+    it("shows the approver which class they are approving", async () => {
+      const app = await submittedWith("acik");
+      const token = await app.login("ayse.kaya");
+      const res = await app.app.inject({
+        method: "GET",
+        url: "/onboarding/pending",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      // Four eyes only works if the second human can see what they confirm.
+      expect(res.json().items[0]).toMatchObject({ projectKey: "NEWPROJ", dataClass: "acik" });
+    });
+
+    it("resolves an ABSENT class to gizli in the queue, matching what approval would write", async () => {
+      const app = await submitted(); // NEW_DRAFT, no dataClass
+      const token = await app.login("ayse.kaya");
+      const res = await app.app.inject({
+        method: "GET",
+        url: "/onboarding/pending",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      // Never "the field is missing" — that is not something an approver can
+      // act on, and it must agree with `bindingFromProposal` exactly.
+      expect(res.json().items[0]).toMatchObject({ dataClass: "gizli" });
+    });
+
+    it("records the choice in the audit chain, not just in the pending value", async () => {
+      const app = await submittedWith("dahili");
+      const entries = await app.auditStore.read();
+      const proposal = entries.find(
+        (e) => (e.meta as Record<string, unknown> | undefined)?.["proposal"] === "onboarding_binding",
+      );
+      // "Who asked for this class on a bank system, and when" is a question the
+      // chain has to answer months later.
+      expect(proposal?.meta).toMatchObject({ dataClass: "dahili" });
+    });
+
+    it("refuses a class outside the enum rather than storing free text", async () => {
+      const app = await harness({ onboarding: OPTIONS, samples: SAMPLES });
+      const token = await adminToken(app);
+      const res = await app.app.inject({
+        method: "POST",
+        url: "/onboarding",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ...NEW_DRAFT, dataClass: "cok_gizli" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe("invalid_onboarding_body");
+    });
   });
 
   it("reject clears the pending without binding anything", async () => {

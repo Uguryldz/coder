@@ -11,7 +11,7 @@ import {
   WidthType,
   type ParagraphChild,
 } from "docx";
-import type { DocSection, DocumentModel, Imprint } from "./doc-model.js";
+import { plainText, type DocSection, type DocumentModel, type Imprint } from "./doc-model.js";
 import type { Block, Inline } from "./parse.js";
 import { safeHref } from "./parse.js";
 
@@ -74,14 +74,20 @@ export function blockToDocx(block: Block): (Paragraph | Table)[] {
     case "paragraph":
       return [new Paragraph({ children: inlineRuns(block.inline), spacing: { after: 120 } })];
     case "list":
-      return block.items.map(
-        (item) =>
-          new Paragraph({
-            children: inlineRuns(item),
-            bullet: block.ordered ? undefined : { level: 0 },
-            numbering: block.ordered ? { reference: "maestro-ordered", level: 0 } : undefined,
-          }),
-      );
+      // A blank item is dropped rather than bulleted. `- ` with nothing after it
+      // is legal markdown and a model emits it between two labelled fields; it
+      // reached the reference PDF as a bare `•` sitting alone before a page
+      // break, which reads as content that went missing.
+      return block.items
+        .filter((item) => plainText(item).trim().length > 0)
+        .map(
+          (item) =>
+            new Paragraph({
+              children: inlineRuns(item),
+              bullet: block.ordered ? undefined : { level: 0 },
+              numbering: block.ordered ? { reference: "maestro-ordered", level: 0 } : undefined,
+            }),
+        );
     case "code":
       return codeParagraphs(block.text);
   }

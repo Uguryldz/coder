@@ -47,6 +47,7 @@ const EditUserBody = z.object({
 function publicUser(record: UserRecord): {
   username: string;
   userId: string;
+  displayName: string;
   roles: readonly string[];
   groups: readonly string[];
   active: boolean;
@@ -54,6 +55,11 @@ function publicUser(record: UserRecord): {
   return {
     username: record.username,
     userId: record.userId,
+    // Always a string, never optional on the wire: the screen renders this as
+    // the account's heading, and a client that had to decide between a name and
+    // a username would be re-implementing the fallback in a second place. The
+    // ONE place that decision is made is here.
+    displayName: record.displayName ?? record.username,
     roles: record.roles,
     groups: record.groups,
     active: record.active,

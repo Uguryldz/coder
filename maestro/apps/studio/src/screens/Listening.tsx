@@ -9,6 +9,7 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Input, Select, Table, useToast } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
 import type { RoutingView } from "./common/index.ts";
+import { englishAside, matchValueLabel } from "./common/jira-english.ts";
 import {
   EMPTY_STATUS_DRAFT,
   STATUS_POINTS,
@@ -49,7 +50,16 @@ import "./shared/screens.css";
 const WRITE_ROLES = ["admin"] as const;
 
 type FlowType = "analiz" | "duzeltme" | "gelistirme";
-type MatchKind = "status" | "issuetype";
+/**
+ * Mirrors the BFF's `MATCH_KINDS` and the DB CHECK (migration 0020).
+ * `assigned` compares no field: the rule fires because the ticket was handed to
+ * the bot, full stop. Its `matchValue` is the fixed literal `*` the server
+ * pins, carried only so the unique trigger index keeps one such rule per
+ * (project, bot) — it is never shown and never compared.
+ */
+type MatchKind = "status" | "issuetype" | "assigned";
+/** The value the BFF stores for an `assigned` rule. See ASSIGNED_MATCH_VALUE. */
+const ASSIGNED_MATCH_VALUE = "*";
 
 /**
  * The status map's shape, point list, empty draft and the `buildStatusMap` /
@@ -194,7 +204,9 @@ export function ListeningScreen(): ReactNode {
   // the field falls back to free text.
   const matchValues = useQuery({
     queryKey: ["jira-match-values", jiraConnId, projectKey, matchKind],
-    enabled: jiraConnId !== null && projectKey.trim() !== "",
+    // Never for `assigned`: that rule has no value to pick, and the endpoint
+    // only understands status|issuetype — asking for a third kind is a 400.
+    enabled: jiraConnId !== null && projectKey.trim() !== "" && matchKind !== "assigned",
     retry: false,
     queryFn: ({ signal }) =>
       api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(
@@ -383,7 +395,14 @@ export function ListeningScreen(): ReactNode {
   const rules = query.data?.rules ?? [];
 
   const onSubmit = (): void => {
-    if (projectKey.trim() === "" || assigneeAccountId.trim() === "" || matchValue.trim() === "") {
+    // An `assigned` rule has no value to check for — the assignee IS the whole
+    // condition — so requiring one here would make the third kind unsaveable.
+    const needsValue = matchKind !== "assigned";
+    if (
+      projectKey.trim() === "" ||
+      assigneeAccountId.trim() === "" ||
+      (needsValue && matchValue.trim() === "")
+    ) {
       toast.show("error", t("listening.form.incomplete"));
       return;
     }
@@ -391,7 +410,9 @@ export function ListeningScreen(): ReactNode {
       projectKey: projectKey.trim(),
       assigneeAccountId: assigneeAccountId.trim(),
       matchKind,
-      matchValue: matchValue.trim(),
+      // The server pins this to the same literal for `assigned`; sending it
+      // means the client is not asking the server to fix up its payload.
+      matchValue: needsValue ? matchValue.trim() : ASSIGNED_MATCH_VALUE,
       flowType,
       // "" is the "default agent" choice — normalised to null on the wire.
       analystVariantId: analystVariantId === "" ? null : analystVariantId,
@@ -407,12 +428,30 @@ export function ListeningScreen(): ReactNode {
     {
       key: "trigger",
       header: t("listening.col.trigger"),
-      cell: (r) => (
-        <>
-          <span className="screen-note">{t(`listening.match.${r.matchKind}`)}</span>{" "}
-          <b>{r.matchValue}</b>
-        </>
-      ),
+      // The stored value in bold, the English name beside it in the note voice.
+      // A rule holding `Görev` is what MATCHES, and it stays the thing the cell
+      // shouts; `(Task)` is there for the half of the bank whose Jira UI is in
+      // English and who would otherwise not recognise their own trigger. Two
+      // spans rather than one interpolated string so the value a reader copies
+      // out of the table is the value the rule holds.
+      cell: (r) => {
+        // The catch-all's `*` is a storage detail, not a trigger anybody set;
+        // printing it would invite an operator to look for a Jira status named
+        // "*". The kind's own label already says everything the rule does.
+        if (r.matchKind === "assigned") {
+          return <b>{t("listening.match.assigned")}</b>;
+        }
+        const english = englishAside(r.matchValue);
+        return (
+          <>
+            <span className="screen-note">{t(`listening.match.${r.matchKind}`)}</span>{" "}
+            <b>{r.matchValue}</b>
+            {english !== null && (
+              <span className="screen-note"> {t("jira.english.aside", { english })}</span>
+            )}
+          </>
+        );
+      },
     },
     {
       key: "flowType",
@@ -559,20 +598,36 @@ export function ListeningScreen(): ReactNode {
             <Select
               label={t("listening.form.matchKind")}
               value={matchKind}
-              onChange={(e) => setMatchKind(e.target.value as MatchKind)}
+              onChange={(e) => {
+                // Switching the question invalidates the answer: an issue-type
+                // name is not a status name, and a value left over from the
+                // previous kind would silently save a rule that matches nothing.
+                setMatchKind(e.target.value as MatchKind);
+                setMatchValue("");
+              }}
               options={[
                 { value: "issuetype", label: t("listening.match.issuetype") },
                 { value: "status", label: t("listening.match.status") },
+                { value: "assigned", label: t("listening.match.assigned") },
               ]}
+              hint={matchKind === "assigned" ? t("listening.match.assigned_hint") : undefined}
             />
-            {valueOptions.length > 0 ? (
+            {/* "Bota atanan her ticket" has no value to give, so the field is
+                absent rather than disabled — a greyed box reads as a form the
+                operator failed to finish. */}
+            {matchKind === "assigned" ? null : valueOptions.length > 0 ? (
               <Select
                 label={t("listening.form.matchValue")}
                 value={matchValue}
                 onChange={(e) => setMatchValue(e.target.value)}
+                // `value` is the Turkish name Jira serves and the rule stores;
+                // `label` adds the English one for the reader. They are
+                // DELIBERATELY different strings — a dropdown whose value was
+                // "Görev (Task)" would write a matchValue no ticket can equal,
+                // which is the bug this screen was fixed for today.
                 options={[
                   { value: "", label: t("listening.form.matchValue_choose") },
-                  ...valueOptions.map((v) => ({ value: v, label: v })),
+                  ...valueOptions.map((v) => ({ value: v, label: matchValueLabel(v) })),
                 ]}
                 hint={
                   valuesDegradedKey !== undefined

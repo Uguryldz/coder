@@ -79,8 +79,14 @@ export const DeployEnvSchema = z.object({
   // The one bootstrap credential that cannot itself come from Vault. It is
   // required by `requireVaultApprole`, not by the schema, so the dev profile
   // does not have to invent one.
-  VAULT_ROLE_ID: z.string().min(1).optional(),
-  VAULT_SECRET_ID: z.string().min(1).optional(),
+  // `optionalSetting()`, not `.min(1).optional()`: the bank compose forwards
+  // these as `${VAULT_ROLE_ID:-}`, so an `analiz` deployment — which has no
+  // Vault at all — delivers them as empty strings and `min(1)` refused to boot
+  // over credentials that profile never reads. `requireVaultApprole` below is
+  // what demands them, and it demands them only from the profile that uses
+  // Vault; that is the check that should fire, and it names both variables.
+  VAULT_ROLE_ID: optionalSetting(),
+  VAULT_SECRET_ID: optionalSetting(),
   /**
    * KV mounts the deployment may read, comma separated (least privilege, M6).
    *
@@ -91,8 +97,12 @@ export const DeployEnvSchema = z.object({
   VAULT_MOUNTS: z.string().min(1).default("kv,git"),
 
   // ── ADO topology ────────────────────────────────────────────────────────
-  ADO_ORG: z.string().min(1).optional(),
-  ADO_PROJECT: z.string().min(1).optional(),
+  // Blank means unset, for the same reason as the Vault pair above: in the
+  // `analiz` profile the scm and ci ports are refusing drivers and nothing here
+  // is read, yet compose still forwards `${ADO_ORG:-}` as an empty string. The
+  // deployment that legitimately has no Azure DevOps must boot.
+  ADO_ORG: optionalSetting(),
+  ADO_PROJECT: optionalSetting(),
   ADO_WEBHOOK_USERNAME: z.string().min(1).default("maestro-ci"),
   /**
    * Allow-list of PR-validation build definitions, as `repo:definitionId`

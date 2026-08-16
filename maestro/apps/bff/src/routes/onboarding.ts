@@ -56,6 +56,20 @@ const DraftBody = z
     triggerMode: z.enum(["opt_in", "automatic"]),
     gateSet: z.enum(["risk_tiered", "always_six"]),
     mergeMode: z.enum(["human", "auto"]),
+    /**
+     * The binding's data class (M18). OPTIONAL, and its absence still means
+     * `gizli` — an older client that does not send the field must keep getting
+     * the fail-closed answer it has always got, since a missing field is not
+     * evidence that the tickets are safe to send to a cloud model.
+     *
+     * A client that DOES send it is answering a question a human was asked, and
+     * that answer is the one that binds. This is the field whose absence cost
+     * SAM1 an analysis: the wizard never asked, every binding came out `gizli`,
+     * and `packages/llm-gateway/src/policy.ts` then correctly refused to send
+     * the content to a cloud model — leaving the operator with "modeli
+     * kullanamadım, elle tamamlayın" and no way to learn why.
+     */
+    dataClass: z.enum(["acik", "dahili", "gizli"]).optional(),
   })
   .strict();
 
@@ -103,9 +117,16 @@ function splitRepoFullName(
  *
  * `triggerMode automatic` → `auto` (every ticket starts a run); `opt_in` → `label`
  * (wait for the maestro label / a command, M48a). `mergeMode auto` → `full_auto`;
- * `human` → `human_lead` (a person owns the merge). `dataClass` is NOT in the
- * draft, so it fails closed to `gizli` — the same safe default the intake path
- * applies to an unlabelled binding, because guessing low is the guess that leaks.
+ * `human` → `human_lead` (a person owns the merge).
+ *
+ * `dataClass` is the proposer's ANSWER when the draft carried one, and `gizli`
+ * when it did not. That order matters: the fallback is still the fail-closed
+ * one — guessing low is the guess that leaks — but a fallback is not the same
+ * thing as an assumption, and this used to be an assumption. Every binding the
+ * wizard filed came out `gizli`, which on an install with no on-prem model
+ * means the analysis silently cannot run (M18, no exceptions). The wizard now
+ * asks the question with the consequence spelled out, and an answered question
+ * beats a default that nobody could see.
  */
 function bindingFromProposal(value: OnboardingProposalValue): BindingWrite {
   return {
@@ -115,7 +136,7 @@ function bindingFromProposal(value: OnboardingProposalValue): BindingWrite {
     defaults: {
       appId: value.appId,
       mode: value.mergeMode === "auto" ? "full_auto" : "human_lead",
-      dataClass: "gizli",
+      dataClass: value.dataClass ?? "gizli",
     },
   };
 }
@@ -128,6 +149,13 @@ interface OnboardingProposalValue {
   triggerMode: "opt_in" | "automatic";
   gateSet: "risk_tiered" | "always_six";
   mergeMode: "human" | "auto";
+  /**
+   * Absent on proposals filed before the wizard asked, and on any client that
+   * does not send it. `bindingFromProposal` reads that absence as `gizli`, so a
+   * proposal filed yesterday approves today into exactly the binding it always
+   * would have — the field is additive, not a re-interpretation of the queue.
+   */
+  dataClass?: "acik" | "dahili" | "gizli";
   appId: string;
 }
 
@@ -502,6 +530,12 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
         triggerMode: parsed.data.triggerMode,
         gateSet: parsed.data.gateSet,
         mergeMode: parsed.data.mergeMode,
+        // Which data class the proposer chose, in the chain rather than only in
+        // the pending value: the class decides whether this project's tickets
+        // may reach a cloud model at all, so "who asked for `acik` on a bank
+        // system, and when" is a question the audit trail has to be able to
+        // answer months later.
+        dataClass: parsed.data.dataClass ?? "gizli",
       },
     });
 
@@ -536,6 +570,12 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
         triggerMode: value.triggerMode,
         gateSet: value.gateSet,
         mergeMode: value.mergeMode,
+        // Shown to the APPROVER, and resolved here rather than left absent: the
+        // second human is confirming what the binding will actually be, and
+        // "the field is missing" is not something they can act on. The `??`
+        // mirrors `bindingFromProposal` exactly, so the queue can never display
+        // a class other than the one approval would write.
+        dataClass: value.dataClass ?? "gizli",
         proposedBy: entry.proposedBy,
         at: entry.at,
       };

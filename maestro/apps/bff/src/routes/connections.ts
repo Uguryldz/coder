@@ -6,11 +6,14 @@ import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ConnectionRecord, ConnectionStore } from "../connection-store.js";
 import {
+  botUsernameFor,
+  ensureBotUser,
   maskToken,
   runConnectionTest,
   toConnectionRecord,
   toConnectionView,
 } from "../connection-service.js";
+import { toActor } from "../actor.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, notFound } from "../errors.js";
 import type { SecretPort } from "@maestro/ports";
@@ -87,8 +90,30 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
       lastTestOk: null,
     });
     await store.put(record);
-    await audit(deps, request, id.data, "created");
-    return reply.code(201).send({ connection: toConnectionView(record) });
+
+    // Provision the bot's account at CREATE too, not only at test.
+    //
+    // The operator's mental model is "I connected Jira" — they do not
+    // necessarily press Test afterwards, and a bot that only exists once
+    // somebody remembers to is the same silent gap this whole change closes. So
+    // the create path probes the identity the same way the test does: the row is
+    // still only ever minted from a LIVE `/myself` answer, never from what the
+    // form claimed. A connection created without a working token simply
+    // provisions nothing, and the operator's later Test provisions it then.
+    const created = await provisionFromProbe(deps, record, body.data.token ?? null);
+    await audit(deps, request, id.data, "created", botMeta(created));
+    return reply.code(201).send({
+      connection: toConnectionView(record),
+      ...(created === null
+        ? {}
+        : {
+            botUser: {
+              username: created.username,
+              displayName: created.displayName,
+              created: created.created,
+            },
+          }),
+    });
   });
 
   /** Update a connection. A new token replaces the old ref; an absent token keeps it. */
@@ -172,6 +197,22 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
       });
     }
 
+    // The bot's own Maestro account. A successful probe has just told us who
+    // this token is; that identity is worth a directory ROW, because every
+    // surface that resolves an actor goes through `UserDirectory.find` and a bot
+    // without a row is an actor nothing can name. It rides the same success-and-
+    // accountId condition as the self-heal above for exactly that reason: both
+    // are things we may only claim when the live answer told us so.
+    //
+    // Deliberately NOT fatal. Provisioning is a convenience on top of a test
+    // whose real job is to say whether the credential works; a directory that
+    // refuses a write must not turn a green connection into a red one. The
+    // failure is recorded in the audit meta instead of thrown.
+    const provisioned =
+      outcome.ok && outcome.accountId !== undefined
+        ? await provisionBot(deps, record, outcome.accountId, outcome.identity)
+        : null;
+
     // `outcome.messageKey` is a catalog KEY (e.g. "connection.test.unauthorized"),
     // never raw text — safe to persist as the row's secret-free test note.
     await store.recordTest(record.id, { at, ok: outcome.ok, note: outcome.messageKey });
@@ -196,6 +237,12 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
             engineMismatchConnection: outcome.engineMismatch.connection,
             engineMismatchEngine: outcome.engineMismatch.engine,
           }),
+      // A minted account is a governance event: an account that can appear as an
+      // actor came into existence, and the trail has to say when and under whose
+      // hand. An account that was already there is recorded too, as `existing` —
+      // "we looked and did not need to" is a different fact from "we never
+      // looked", and only one of them means the bot has a row.
+      ...botMeta(provisioned),
     });
 
     return reply.code(200).send({
@@ -210,6 +257,20 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
       // The identity split, as structured data beside the sentence — the panel
       // renders it as a warning without having to parse the message.
       ...(outcome.engineMismatch === undefined ? {} : { engineMismatch: outcome.engineMismatch }),
+      // The bot's account, so the panel can say "this connection acts as
+      // <name>" and point at a row that now demonstrably exists. A username and
+      // a display name only — no groups, because the answer to "what may this
+      // bot do" is a directory question the users screen owns, not a line item
+      // on a connection test.
+      ...(provisioned === null
+        ? {}
+        : {
+            botUser: {
+              username: provisioned.username,
+              displayName: provisioned.displayName,
+              created: provisioned.created,
+            },
+          }),
     });
   });
 
@@ -229,6 +290,92 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     await audit(deps, request, params.data.id, "deleted");
     return reply.code(204).send();
   });
+}
+
+/**
+ * Run the identity probe and provision from what it found — the CREATE path's
+ * version of what the test route does inline.
+ *
+ * It deliberately runs the same `runConnectionTest` rather than a lighter,
+ * bespoke `/myself` call: one mechanism decides who a connection is, and a
+ * second one would be free to disagree with it. The outcome is thrown away
+ * except for the identity, because a create is not a test — the row's
+ * `lastTestOk` stays `null` ("never tested"), which is the honest state.
+ */
+async function provisionFromProbe(
+  deps: ResolvedDeps,
+  record: ConnectionRecord,
+  token: string | null,
+): Promise<Awaited<ReturnType<typeof ensureBotUser>>> {
+  if (record.kind !== "jira_cloud" && record.kind !== "jira_dc") return null;
+  if (token === null) return null;
+  let outcome;
+  try {
+    outcome = await runConnectionTest(record, token, deps.connectorFetch, deps.config.engineBotAccountId);
+  } catch {
+    // A create must not fail because the target was unreachable. The connection
+    // is stored either way; the bot gets its row on the first successful test.
+    return null;
+  }
+  if (!outcome.ok || outcome.accountId === undefined) return null;
+  return provisionBot(deps, record, outcome.accountId, outcome.identity);
+}
+
+/** The audit meta a provisioning outcome contributes, or nothing at all. */
+function botMeta(
+  provisioned: Awaited<ReturnType<typeof ensureBotUser>>,
+): Record<string, string> {
+  return provisioned === null
+    ? {}
+    : {
+        botUser: provisioned.username,
+        botUserState: provisioned.created ? "created" : "existing",
+        botUserDisplayName: provisioned.displayName,
+      };
+}
+
+/**
+ * Give the connection's bot a Maestro account, if its kind has one.
+ *
+ * ONLY the Jira kinds. The bot account exists because Jira is where Maestro is
+ * ASSIGNED work and where its comments and transitions appear under a name — a
+ * GitHub token or an LLM key is a credential the platform uses, not an identity
+ * that acts inside it, and minting directory rows for those would fill the users
+ * table with accounts that never appear as an actor anywhere.
+ *
+ * The display name is the operator's, from the connection's own config bag
+ * (`config.botDisplayName` — a non-secret field like `email` and `botAccountId`
+ * beside it), falling back to the name Jira itself reports. A deployment that
+ * has not wired a user directory provisions nothing rather than failing.
+ */
+async function provisionBot(
+  deps: ResolvedDeps,
+  record: ConnectionRecord,
+  accountId: string,
+  jiraDisplayName: string | undefined,
+): Promise<Awaited<ReturnType<typeof ensureBotUser>>> {
+  if (record.kind !== "jira_cloud" && record.kind !== "jira_dc") return null;
+  try {
+    return await ensureBotUser(
+      deps.users,
+      record.id,
+      {
+        accountId,
+        ...(jiraDisplayName === undefined ? {} : { jiraDisplayName }),
+        // Absent/blank means "no preference" — `botDisplayName` then falls
+        // through to Jira's own name, which is the documented default.
+        ...(record.config["botDisplayName"] === undefined
+          ? {}
+          : { operatorDisplayName: record.config["botDisplayName"] }),
+      },
+      toActor(botUsernameFor(record.id), deps.config.actorDomain),
+    );
+  } catch {
+    // See the call site: a directory write that fails must not turn a green
+    // credential test red. The connection genuinely works; the row can be
+    // provisioned by the next test or created by hand.
+    return null;
+  }
 }
 
 /**

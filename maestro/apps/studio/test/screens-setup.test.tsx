@@ -95,11 +95,19 @@ async function fillProject(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 }
 
-/** Fill step 3 (which tickets) and move on. */
-async function fillTickets(value = "Hata"): Promise<void> {
+/**
+ * Fill step 3 (which tickets) and move on.
+ *
+ * `value` is the LOCALISED name Jira serves and the rule stores; `label` is
+ * what the operator reads, which now carries the English name beside it. The
+ * two are looked up separately on purpose — selecting by value while finding by
+ * label is the round trip that proves the dropdown shows one string and sends
+ * another.
+ */
+async function fillTickets(value = "Hata", label = "Hata (Bug)"): Promise<void> {
   await screen.findByText("Hangi ticket'ları alsın?");
   // The value list is read live off the project, so it is a dropdown.
-  await screen.findByRole("option", { name: value });
+  await screen.findByRole("option", { name: label });
   await userEvent.selectOptions(screen.getByLabelText("Hangi değer?"), value);
   await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 }
@@ -150,7 +158,7 @@ describe("setup wizard", () => {
     await screen.findByText("Özet");
     expect(
       screen.getByText(
-        "OPS projesinde, bota atanmış ve İş tipi değeri \"Hata\" olan ticket'lar Hata düzeltme akışıyla çalışacak.",
+        "OPS projesinde, bota atanmış ve İş tipi değeri \"Hata (Bug)\" olan ticket'lar Hata düzeltme akışıyla çalışacak.",
       ),
     ).toBeTruthy();
     expect(
@@ -198,6 +206,10 @@ describe("setup wizard", () => {
         triggerMode: "opt_in",
         gateSet: "always_six",
         mergeMode: "human",
+        // The data class the operator was ASKED for, defaulted to the
+        // safe-but-workable class rather than left to the server's fail-closed
+        // `gizli` — the assumption that silently disabled SAM1's analysis.
+        dataClass: "dahili",
       });
     });
   });
@@ -222,7 +234,7 @@ describe("setup wizard", () => {
     expect(screen.getByText(/ikinci bir yöneticinin onayını bekliyor/)).toBeTruthy();
     expect(
       screen.getByText(
-        "OPS projesinde İş tipi değeri \"Hata\" olan bir ticket açın (ya da mevcut birini o değere getirin).",
+        "OPS projesinde İş tipi değeri \"Hata (Bug)\" olan bir ticket açın (ya da mevcut birini o değere getirin).",
       ),
     ).toBeTruthy();
     expect(screen.getByText(/Ticket'ı Maestro botuna atayın/)).toBeTruthy();
@@ -372,7 +384,7 @@ describe("setup wizard", () => {
       await chooseFlow();
       await fillProject();
       // With a live list every value is picked, never spelled.
-      await fillTickets("İNCELEMEDE");
+      await fillTickets("İNCELEMEDE", "İNCELEMEDE (In Review)");
       await screen.findByText("Jira durumlarını da değiştirsin mi?");
       await userEvent.click(screen.getByLabelText("Ticket'ın Jira durumunu da değiştirsin"));
 
@@ -561,5 +573,295 @@ describe("setup wizard", () => {
     // than no approval at all: somebody would approve a binding whose rule
     // does not exist.
     expect(calls.find((c) => c.url.endsWith("/onboarding") && c.method === "POST")).toBeUndefined();
+  });
+
+  /**
+   * The English name beside the Turkish one.
+   *
+   * The whole feature is one rule with one failure mode, and it is the failure
+   * mode we shipped and fixed today: the SAVED value must stay the localised
+   * name Jira serves. `Görev` is what OPS-66 carries; a rule holding `Task` — or
+   * `Görev (Task)` — matches nothing, silently, forever. So every test here
+   * asserts BOTH halves in the same breath: what the operator read, and what
+   * went on the wire.
+   */
+  describe("the English name beside the Turkish one", () => {
+    it("labels the dropdown with both names while keeping the option's value Turkish", async () => {
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await fillProject();
+      await screen.findByText("Hangi ticket'ları alsın?");
+
+      const select = (await screen.findByLabelText("Hangi değer?")) as HTMLSelectElement;
+      const options = [...select.options].filter((o) => o.value !== "");
+      // The label is what a bank employee running Jira in English can find…
+      expect(options.map((o) => o.textContent)).toEqual([
+        "Hata (Bug)",
+        "Görev (Task)",
+        // Jira serves this one untranslated, so there is nothing to add. An
+        // invented aside here would be the module's one forbidden behaviour.
+        "Alt görev (Subtask)",
+      ]);
+      // …and the value is what the rule will hold, untouched.
+      expect(options.map((o) => o.value)).toEqual(OPS_ISSUE_TYPES);
+    });
+
+    it("saves the Turkish value even though the operator read the English one", async () => {
+      const { fetchImpl, calls } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await fillProject();
+      // Picked through the label `Görev (Task)` — the exact pair that produced
+      // the live bug when a rule was written from the English list.
+      await fillTickets("Görev", "Görev (Task)");
+      await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+      await screen.findByText("Özet");
+      await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+      await waitFor(() => {
+        // `Görev`, not `Task`, and not `Görev (Task)`. This single assertion is
+        // the reason the whole feature is presentation-only.
+        expect(ruleBody(calls).matchValue).toBe("Görev");
+      });
+    });
+
+    it("adds nothing for a name outside the standard set", async () => {
+      const { fetchImpl } = stubFetch(
+        baseRoutes([
+          { path: "/onboarding/jira-match-values", body: { ok: true, values: ["Talep", "Hata"] } },
+        ]),
+      );
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await fillProject();
+      await screen.findByText("Hangi ticket'ları alsın?");
+
+      // A bank's own custom type. Guessing "Request" for it would be exactly
+      // the confident wrong answer this screen must never produce.
+      expect(await screen.findByRole("option", { name: "Talep" })).toBeTruthy();
+      expect(screen.queryByRole("option", { name: /Talep \(/ })).toBeNull();
+      // …while the name we HAVE measured still gets its aside.
+      expect(screen.getByRole("option", { name: "Hata (Bug)" })).toBeTruthy();
+    });
+  });
+
+  /**
+   * "Bota atanan her ticket" — the third answer step 3 could not give.
+   *
+   * The measured gap: `ListeningRule.matchKind` allowed only status|issuetype,
+   * so an operator whose real rule is "if a human hands it to the bot, work it"
+   * had to invent a condition. Migration 0020 adds the third kind; these tests
+   * pin the wizard's half of the round trip.
+   */
+  describe("every ticket assigned to the bot", () => {
+    async function chooseAnyAssigned(): Promise<void> {
+      await screen.findByText("Hangi ticket'ları alsın?");
+      await userEvent.selectOptions(
+        screen.getByLabelText("Ticket'ın nesine baksın?"),
+        "assigned",
+      );
+    }
+
+    it("drops the value question entirely rather than greying it out", async () => {
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await fillProject();
+      await screen.findByText("Hangi ticket'ları alsın?");
+      // Present for the conditioned kinds …
+      expect(screen.getByLabelText("Hangi değer?")).toBeTruthy();
+
+      await chooseAnyAssigned();
+      // … and GONE, not disabled, for the catch-all: a greyed box reads as a
+      // form the operator failed to finish.
+      expect(screen.queryByLabelText("Hangi değer?")).toBeNull();
+    });
+
+    it("lets the operator past step 3 with no value to give", async () => {
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await fillProject();
+      await chooseAnyAssigned();
+
+      // The blocker that used to demand a match value must not fire here.
+      expect(
+        screen.queryByText("Devam etmek için Maestro'yu hangi değerin tetikleyeceğini belirtin."),
+      ).toBeNull();
+      const next = screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement;
+      expect(next.disabled).toBe(false);
+    });
+
+    it("summarises it as a rule with no condition, then saves it that way", async () => {
+      const { fetchImpl, calls } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await fillProject();
+      await chooseAnyAssigned();
+      await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+      await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+
+      // Its OWN sentence — the conditioned one with an empty value spliced in
+      // (`değeri "" olan ticket'lar`) would describe nothing.
+      await screen.findByText("Özet");
+      expect(
+        screen.getByText(
+          "OPS projesinde bota atanan her ticket Yalnızca analiz akışıyla çalışacak; başka bir koşul aranmayacak.",
+        ),
+      ).toBeTruthy();
+
+      await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+      await waitFor(() => {
+        const body = ruleBody(calls);
+        expect(body.matchKind).toBe("assigned");
+        // The placeholder both sides agree on. It is never compared to a
+        // ticket; it exists so the unique trigger index keeps ONE catch-all
+        // per (project, bot).
+        expect(body.matchValue).toBe("*");
+        expect(body.assigneeAccountId).toBe("712020:bot");
+      });
+    });
+  });
+
+  /**
+   * The data class — the question that was never asked, and the measured cost
+   * of not asking it.
+   *
+   * The wizard used to send no `dataClass` at all, so every binding it filed
+   * came out `gizli`, and `packages/llm-gateway/src/policy.ts` then correctly
+   * refused to send the content to a cloud model. SAM1-12 stalled with "modeli
+   * kullanamadım, elle tamamlayın" and nothing on any screen named the cause;
+   * moving SAM1 to `dahili` let SAM1-13 run analysis normally.
+   */
+  describe("the data class", () => {
+    it("defaults to the safe-but-workable class, not the one that stops analysis", async () => {
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+
+      // Scoped to the group: several options mention "kurum içi" in their prose
+      // (that is the point — they explain each other), so the assertion is
+      // about which radio is CHECKED, by its own value.
+      const group = screen.getByRole("radiogroup", {
+        name: "Bu uygulamanın verisi ne kadar gizli?",
+      });
+      const checked = within(group)
+        .getAllByRole("radio")
+        .filter((r) => (r as HTMLInputElement).checked)
+        .map((r) => (r as HTMLInputElement).value);
+      // Exactly one, and it is the class that is safe AND lets Maestro work.
+      // `gizli` was the old implicit answer and is the one that stalled SAM1.
+      expect(checked).toEqual(["dahili"]);
+    });
+
+    it("describes the consequence rather than the policy name", async () => {
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+
+      // The sentence the operator needed and never had.
+      expect(
+        screen.getByText(
+          "Yapay zekâ bulut modeli KULLANILAMAZ. Kurum içi (on-prem) model kurulu değilse Maestro bu projede analiz üretemez.",
+        ),
+      ).toBeTruthy();
+      // And no jargon standing in for it.
+      expect(screen.queryByText(/degrade_ai_assist|ai_assist|M18/)).toBeNull();
+    });
+
+    it("makes the gizli consequence unmissable, and only once it is chosen", async () => {
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+      expect(screen.queryByText(/modeli kullanamadım, elle tamamlayın/)).toBeNull();
+
+      await userEvent.click(screen.getByRole("radio", { name: /Gizli/ }));
+
+      // The exact message the operator saw on SAM1-12, now quoted back BEFORE
+      // they can cause it rather than after.
+      expect(
+        await screen.findByText(/modeli kullanamadım, elle tamamlayın/),
+      ).toBeTruthy();
+    });
+
+    it("carries the operator's choice into the binding payload", async () => {
+      const { fetchImpl, calls } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await chooseFlow();
+      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+      await userEvent.click(screen.getByRole("radio", { name: /Açık/ }));
+      await fillProject();
+      await fillTickets();
+      await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+
+      // Stated on the summary before it is sent — the class decides whether a
+      // cloud model may see the tickets, so it is not a hidden field.
+      await screen.findByText("Özet");
+      expect(
+        screen.getByText("Veri sınıfı: Açık — ticket içeriği her modele gönderilebilir."),
+      ).toBeTruthy();
+
+      await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+      await waitFor(() => {
+        const call = calls.find((c) => c.url.endsWith("/onboarding") && c.method === "POST");
+        expect((call!.body as Record<string, unknown>).dataClass).toBe("acik");
+      });
+    });
+  });
+
+  /**
+   * The start guide, moved here from the Panel.
+   *
+   * `screens-dash-start.test.tsx` asserts the other half — that the Panel no
+   * longer renders it. This is where it now has to appear, and the dismissal
+   * has to keep meaning what it always did.
+   */
+  describe("the start guide", () => {
+    /** Routes for the guide's own reads; nothing is set up, so it shows. */
+    function guideRoutes(): Route[] {
+      return baseRoutes([
+        { path: "/onboarding/scm-connections", body: { connections: [SCM_CONN] } },
+        { path: "/variants", body: { variants: [] } },
+      ]);
+    }
+
+    it("renders the five-step checklist on the wizard while setup is open", async () => {
+      const { fetchImpl } = stubFetch(guideRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      expect(
+        await screen.findByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
+      ).toBeTruthy();
+      expect(screen.getByText("Jira webhook'unu kur")).toBeTruthy();
+      // The wizard is still a wizard: the guide sits ABOVE the first question,
+      // it does not replace it.
+      expect(screen.getByText("Ne yapmak istiyorsunuz?")).toBeTruthy();
+    });
+
+    it("honours the dismissal the Panel used to own, under the same key", async () => {
+      globalThis.localStorage.setItem("maestro.setup.guideDismissed", "1");
+      const { fetchImpl } = stubFetch(guideRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await screen.findByText("Ne yapmak istiyorsunuz?");
+      expect(
+        screen.queryByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
+      ).toBeNull();
+      globalThis.localStorage.removeItem("maestro.setup.guideDismissed");
+    });
   });
 });

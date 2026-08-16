@@ -1,10 +1,27 @@
 # Maestro — Banka İçi (İnternetsiz) Kurulum
 
-Bu paket, Maestro'yu **internete çıkmayan** bir sunucuya kurmak içindir.
-Referans desen: `wendoc.ai/Docker/ugurdocker` (imaj adresleri `.env`'de, sırlar
-`.env`'de, named volume, tek komut kurulum).
+**Paket sürümü: 2026-08-16**
+*(Bu tarih `.env.example` içindeki `BUNDLE_VERSION` ve `install.sh` başlığıyla
+aynı olmalıdır. Üçü tutmuyorsa elinizdeki paket karışıktır — kurmayın.)*
 
-**Kurulum yapan kişinin bilmesi gerekenler bu dosyada; sırayla okuyun.**
+Bu paket, Maestro'yu **internete çıkmayan** bir sunucuya kurmak içindir.
+Kurulumu yapan kişinin bilmesi gereken her şey bu dosyadadır; sırayla okuyun.
+
+---
+
+## Maestro ne yapar?
+
+Kısaca: **Jira'ya düşen bir talebi alır, analiz dokümanı üretir, onaya sunar.**
+
+1. Bir kullanıcı Jira'da talep açar ve onu Maestro bot hesabına **atar**.
+2. Maestro talebi görür (webhook ya da yoklama ile), sınıflandırır.
+3. Kurum içi yapay zekâ uç noktasını kullanarak analiz dokümanı yazar.
+4. Dokümanı Jira'ya iliştirir ve bir **insan onayına** sunar.
+
+Bugün sahaya çıkan sürüm (`analiz` profili) bu hattı uçtan uca çalıştırır.
+Kod yazma / PR açma / birleştirme hattı yazılıdır ama bu sürümün parçası
+değildir; o portlar "bu sürüm bunu yapmaz" diye **adıyla reddeder** — yanlış
+yapılandırılmış bir sunucuya bağlanmayı denemez.
 
 ---
 
@@ -19,96 +36,100 @@ ister). Akış şudur:
 ```
 
 Ya da bankanın kendi registry'si (Nexus/Harbor) varsa: dışarıda build → push →
-sunucuda pull. İkisi de aşağıda anlatılıyor.
+sunucuda pull.
 
 ---
 
-## 1. Dışarıda imaj hazırlama (internetli makinede)
+## 1. Ön koşullar (banka sunucusu)
 
-### 1.1 Kaynağı al ve sürümü sabitle
+| Gereklilik | Değer |
+|---|---|
+| Docker Engine + Compose v2 | `docker compose version` çalışmalı |
+| CPU / RAM | 4 CPU / 16 GB önerilir (asgari 2 CPU / 8 GB) |
+| Disk | imajlar ~3 GB + veritabanı büyümesi |
+| Açık port | yalnızca panel portu (varsayılan 7000) |
+
+**Sunucudan erişilebilmesi gerekenler:**
+
+- **Jira** (Data Center ya da Cloud) — talepleri okur, yorum yazar
+- **Kurum içi LLM uç noktası** — analizi bu üretir
+- **LDAP/AD** — yalnızca LDAP ile giriş kullanacaksanız
+- **Azure DevOps Server/TFS** — yalnızca `prod` profiline geçerseniz
+
+> Maestro dışarıya **çıkmaz**. `install.sh` de internete bağlanmaz: imaj
+> indirmez, sürüm sorgulamaz, telemetri göndermez.
+
+---
+
+## 2. Dışarıda imaj hazırlama (internetli makinede)
+
+### 2.1 Kaynağı al ve sürümü sabitle
 
 ```bash
 git clone <maestro-repo> maestro && cd maestro
-git checkout <sürüm-etiketi>          # hangi commit'ten build edildiği kayda geçsin
-git rev-parse --short HEAD            # bu değeri not edin — imaj etiketi olacak
+git checkout <sürüm-etiketi>
+export TAG=$(git rev-parse --short HEAD)   # imaj etiketi olacak, not edin
 ```
 
-### 1.2 İki imajı build et
+### 2.2 İki imajı build et
 
 `node` imajı tek tanedir; **BFF, worker ve migration** rolleri aynı imajdan
-`MAESTRO_ENTRYPOINT` env'i ile ayrılır (bkz. `deploy/docker/Dockerfile.node`).
-Bu yüzden üç değil **iki** imaj taşınır.
+`MAESTRO_ENTRYPOINT` env'i ile ayrılır. Bu yüzden üç değil **iki** imaj taşınır.
 
 ```bash
-export TAG=$(git rev-parse --short HEAD)
-
 docker build -f deploy/docker/Dockerfile.node   -t maestro/node:$TAG   .
 docker build -f deploy/docker/Dockerfile.studio -t maestro/studio:$TAG .
 ```
 
-### 1.3 Build'i DOĞRULA (bu adımı atlamayın)
+### 2.3 Build'i DOĞRULA (bu adımı atlamayın)
 
-Geçmişte imaj sessizce bozuk çıktı: `apt-get` başarısız olduğu hâlde build
-"başarılı" göründü ve Prisma yanlış OpenSSL tahminiyle çalıştı.
+Geçmişte imaj sessizce bozuk çıktı ve arıza haftalar sonra fark edildi.
 
 ```bash
 # a) OpenSSL gerçekten kurulu mu (Prisma query engine için şart)
 docker run --rm --entrypoint sh maestro/node:$TAG -c "openssl version"
-#    Beklenen: OpenSSL 3.x ...    Hata verirse imaj KULLANILMAZ.
+#    Beklenen: OpenSSL 3.x ...
 
-# b) Migration dosyalarının TAMAMI imajda mı
+# b) Migration klasörlerinin TAMAMI imajda mı
 docker run --rm --entrypoint sh maestro/node:$TAG \
-  -c "ls /app/packages/db/prisma/migrations | wc -l"
-#    Beklenen: depodaki migration klasör sayısıyla AYNI sayı.
-#    Az çıkarsa imaj bayattır — yeniden build edin.
+  -c "ls /app/packages/db/prisma/migrations | grep -c '^[0-9]'"
+#    Beklenen: 21  (son migration 0020'dir; iki klasör 0011 önekini paylaşır)
 
-# c) Studio bundle'ı üretilmiş mi
+# c) Prisma istemcisi üretilmiş mi  ← EN KRİTİK KONTROL
+#    (pnpm istemciyi .pnpm deposunun içine koyar; yol sürüme göre değişir,
+#     bu yüzden sabit yol yerine arama yapılır)
+docker run --rm --entrypoint sh maestro/node:$TAG \
+  -c "find /app -path '*/.prisma/client/index.js' -print -quit"
+#    Boş çıkarsa imaj KULLANILMAZ. Bayat bir Prisma istemcisi yeni sütunları
+#    YOK SAYAR: kod hatasız çalışır, veriyi yazdığını sanır, değer veritabanına
+#    hiç ulaşmaz. Sessiz veri kaybıdır.
+
+# d) Studio bundle'ı üretilmiş mi
 docker run --rm --entrypoint sh maestro/studio:$TAG \
   -c "ls /usr/share/nginx/html/index.html && echo VAR"
 ```
 
-### 1.4 Yan imajları da topla
-
-Bunlar Docker Hub'dan gelir, bankada yoktur:
+### 2.4 Yan imajları topla ve paketle
 
 ```bash
 docker pull postgres:17-alpine
 docker pull redis:7-alpine
 docker pull temporalio/auto-setup:1.25.2
-docker pull temporalio/ui:2.32.0
-```
 
-### 1.5 Tek tar dosyasına paketle
-
-```bash
-docker save \
-  maestro/node:$TAG \
-  maestro/studio:$TAG \
-  postgres:17-alpine \
-  redis:7-alpine \
-  temporalio/auto-setup:1.25.2 \
-  temporalio/ui:2.32.0 \
+docker save maestro/node:$TAG maestro/studio:$TAG \
+  postgres:17-alpine redis:7-alpine temporalio/auto-setup:1.25.2 \
   | gzip > maestro-imajlar-$TAG.tar.gz
 
 sha256sum maestro-imajlar-$TAG.tar.gz > maestro-imajlar-$TAG.sha256
 ```
 
-Taşınacak dosyalar: `maestro-imajlar-$TAG.tar.gz`, `.sha256` ve bu `banka/`
-klasörü (compose + .env.example + install.sh + README).
+Taşınacaklar: `maestro-imajlar-$TAG.tar.gz`, `.sha256` ve bu `banka/` klasörü.
 
 ---
 
-## 2. Banka sunucusunda kurulum
+## 3. Banka sunucusunda kurulum
 
-### 2.1 Ön koşullar
-
-- Docker Engine + Compose v2 (`docker compose version` çalışmalı)
-- 4 CPU / 16 GB RAM önerilir (asgari 2 CPU / 8 GB)
-- Disk: imajlar ~3 GB + veritabanı büyümesi
-- Sunucudan erişilebilmesi gerekenler: **Jira Data Center**, **Azure DevOps
-  Server/TFS**, **LDAP/AD**, **kurum içi LLM uç noktası**
-
-### 2.2 İmajları yükle
+### 3.1 İmajları yükle
 
 ```bash
 sha256sum -c maestro-imajlar-<TAG>.sha256     # bütünlük kontrolü
@@ -116,85 +137,219 @@ gunzip -c maestro-imajlar-<TAG>.tar.gz | docker load
 docker images | grep maestro                  # iki imaj görünmeli
 ```
 
-### 2.3 Yapılandır
+### 3.2 Yapılandır
 
 ```bash
 cd banka
 cp .env.example .env
-# .env'i doldurun — ZORUNLU alanlar dosyada "ZORUNLU" diye işaretli
+chmod 600 .env
 ```
 
-### 2.4 Kur
+`.env`'i açın ve **`DEGISTIR`** yazan her satırı doldurun. `install.sh` dosyada
+`DEGISTIR` kalırsa çalışmayı reddeder.
+
+Doldururken dikkat edilecek dört alan:
+
+| Alan | Neden önemli |
+|---|---|
+| `MAESTRO_BOT_ACCOUNT_ID` | Motor bu kimliğe atanan talepleri arar. Yanlışsa **hiçbir kural eşleşmez ve hata da çıkmaz.** |
+| `CONNECTOR_MASTER_KEY` | Bağlantı jetonlarını şifreler. Kaybolursa jetonlar bir daha çözülemez. `openssl rand -base64 32` |
+| `LLM_BASE_URL` | Sonuna `/v1` **yazmayın** — sürücü kendisi ekler. |
+| `LLM_ON_PREM` | `false` kalırsa `gizli` işlerin analizi eksik biter. |
+
+`MAESTRO_SECRET_*` değişkenlerinin **adlarını değiştirmeyin**. Bu adlar sır
+adresinden türetilir (`kv/jira#token` → `MAESTRO_SECRET_KV_JIRA__TOKEN`, `#`
+çift alt çizgi olur). Bir harf şaşarsa sistem "sır bulunamadı" der, siz `.env`'de
+değeri dolu görürsünüz ve aradaki farkı anlamanın yolu olmaz.
+
+### 3.3 Kur
 
 ```bash
 ./install.sh          # ön kontrolleri yapar, sırayla başlatır, sağlığı bekler
+./install.sh --yes    # otomasyon için (soru sormaz)
 ```
 
-Panel: `http://<SUNUCU_IP>:7000`
+`install.sh` **önce doğrular, sonra çalıştırır.** Şunlardan biri eksikse hiçbir
+konteyner başlatmadan durur:
+
+- `.env` yok, ya da içinde `DEGISTIR` kalmış
+- Zorunlu değişkenlerden biri boş (**`MAESTRO_BOT_ACCOUNT_ID` dâhil**)
+- `MAESTRO_PROFILE` ile `NODE_ENV` uyumsuz
+- `CONNECTOR_MASTER_KEY` 32 bayt değil
+- `.env`'de eski biçimli sır adı (`MAESTRO_SECRET_JIRA_TOKEN`) ya da eski
+  referans biçimi (`env:JIRA_TOKEN`) var
+- Bir imaj `docker load` ile yüklenmemiş
+- İmajda migration eksik ya da **Prisma istemcisi üretilmemiş**
+- `LLM_BASE_URL` sonunda `/v1` var
+- Kurumsal CA dosyası `.env`'de yazılı ama diskte yok
+- **Ortam, uygulamanın kendi açılış şemasından geçemiyor** — bkz. aşağıdaki not
+
+Son maddedeki kontrol, listedeki diğerlerinden farklı bir işi yapar ve bu fark
+önemlidir. Yukarıdakilerin her biri belirli bir değişkeni ADIYLA kontrol eder;
+böyle bir liste ise ancak yazıldığı günkü kadar günceldir. Nitekim bir kez tam
+olarak bu oldu: betik 24 değişkeni doğruladı, hepsi yeşil geçti ve `migrate`
+konteyneri açılışta dört satırlık bir şema hatasıyla öldü — çünkü hata, listede
+adı hiç geçmeyen değişkenlerdeydi.
+
+Bu yüzden `install.sh` artık yığını başlatmadan önce, `bff` servisinin ortamını
+compose'un kurduğu **hâliyle** ayağa kaldırıp uygulamanın açılışta çalıştırdığı
+doğrulamanın **aynısını** çalıştırır. Elle tutulan bir değişken listesi yoktur;
+doğrulayan şey şemanın kendisidir, dolayısıyla bayatlayamaz. Burada geçen bir
+`.env` ile sistem açılır.
+
+> **`.env`'de boş bırakmak = satırı hiç yazmamak.** Compose, isteğe bağlı
+> değişkenleri `${DEGISKEN:-}` biçiminde iletir; `.env`'de olmayan bir değişken
+> konteynere **boş dize** olarak girer ve uygulama bunu "ayarlanmamış" diye
+> okur. Kullanmadığınız isteğe bağlı satırları yorumda bırakın — ama bir adrese
+> değer yazacaksanız geçerli bir URL yazın (`https://…`), çünkü dolu bir alan
+> artık şemaya göre denetlenir.
 
 ---
 
-## 3. Kurulum sonrası doğrulama
+## 4. Kurulum sonrası doğrulama
 
 ```bash
 docker compose ps                    # hepsi healthy/running olmalı
 docker compose logs migrate          # "migrations applied" görmelisiniz
-curl -f http://localhost:7001/readyz # BFF hazır mı
-curl -f http://localhost:7000/healthz
+docker compose exec bff node -e "fetch('http://127.0.0.1:7001/readyz').then(r=>console.log(r.status))"
 ```
 
-**İlk giriş:** `.env`'deki `BOOTSTRAP_ADMIN_*` değerleriyle. İlk oturumda parola
-değiştirmeniz istenir.
+**Panel:** `http://<SUNUCU_IP>:7000`
+**İlk giriş:** `admin` / `admin123` — ilk oturumda parola değiştirmeniz istenir.
 
 ---
 
-## 4. Bilinen tuzaklar (sahada yaşandı)
+## 5. ⚠ KURULUMDAN SONRA MUTLAKA YAPIN
 
-| Belirti | Sebep | Çözüm |
-|---|---|---|
-| LLM çağrısı 404 | `LLM_BASE_URL` sonunda `/v1` var; sürücü zaten ekliyor | Sonundaki `/v1`'i **silin** |
-| `gizli` işler maskeleniyor/reddediliyor | `LLM_ON_PREM=false` kalmış | `true` yapın (endpoint gerçekten kurum içiyse) |
-| `SecretNotFoundError` | LLM anahtarı boş bırakılmış | Yerel endpoint yetki istemese de **dolu bir değer** yazın |
-| `unable to verify the first certificate` | Banka CA'sı Node'un listesinde yok | `NODE_EXTRA_CA_CERTS` ayarlayın + CA'yı mount edin |
-| `migrate` konteyneri exit 1 | Bayat imaj | Güncel koddan yeniden build (§1.3-b ile doğrulayın) |
-| Prisma "failed to detect libssl" | İmajda OpenSSL yok | §1.3-a doğrulaması; imajı yeniden build edin |
+Bu dört maddeyi yapmadan sistem **çalışıyor görünür ama güvenli ya da işlevsel
+değildir.** Sırayla uygulayın.
 
----
+### 5.1 `admin` / `admin123` parolasını değiştirin
 
-## 5. Güncelleme (veri korunarak)
+Kurulum, ilk girişi mümkün kılmak için `admin` / `admin123` hesabını ekler.
+Bu parola **paketin kaynağında yazılıdır** — yani gizli değildir.
+
+Panele `admin` / `admin123` ile girin; sistem parola değiştirmenizi ister,
+yeni parolayı belirleyin. Değiştirene kadar bu hesap yalnızca üç uca erişir,
+ama yine de **kurulumun ilk işi** budur.
+
+### 5.2 Bot hesabı `maestro-admins` grubunda OLMASIN
+
+Maestro'da korumalı parametreleri değiştirmek **dört-göz kuralına** tabidir:
+öneren ve onaylayan **farklı** kişiler olmalıdır.
+
+Bot hesabı da `maestro-admins` grubundaysa bu kural **tek başına sağlanabilir**
+hâle gelir: bot önerir, bot onaylar. Kural teknik olarak çalışır, denetim
+kaydı düzgün görünür, ama ikinci göz diye bir şey kalmaz.
+
+AD tarafında kontrol edin — bot hesabı `maestro-admins` içinde **olmamalıdır**.
+LDAP kullanmıyorsanız, panelde bot için ayrı bir hesap açmayın; bot Jira
+tarafında bir kimliktir, Maestro'da bir yönetici hesabı değildir.
+
+### 5.3 Jira webhook'unu kaydedin
+
+Webhook olmadan Maestro talepleri **anında** görmez. Kayıt adımları ve imza
+sırrının nasıl üretileceği ayrı belgede:
+
+**→ [`docs/jira-webhook-kurulum.md`](../../docs/jira-webhook-kurulum.md)**
+
+Özet: `.env`'deki `MAESTRO_SECRET_KV_JIRA__WEBHOOK` değeri ile Jira'daki webhook
+kaydının `secret` alanı **aynı** olmalıdır. `POST /webhooks/jira` ucu
+fail-closed'dır: sır tanımlı değilse gövde ayrıştırılmadan reddedilir. "Sırrı
+sonra tanımlarım" diye bir mod yoktur.
+
+### 5.4 `MAESTRO_BOT_ACCOUNT_ID` ile bağlantı kimliğinin AYNI olduğunu doğrulayın
+
+**Bu, bugüne kadarki en sessiz arızadır.** Sistem iki Jira kimliği taşıyabilir:
+
+- **Bağlantının kimliği** — panelden girdiğiniz jetonun sahibi
+- **Motorun kimliği** — `.env`'deki `MAESTRO_BOT_ACCOUNT_ID`
+
+Keşif sorgusu `assignee = "<MAESTRO_BOT_ACCOUNT_ID>"` ile çalışır; panel ise
+dinleme kuralını **bağlantının** kimliğiyle doldurur. İkisi farklıysa her kural
+asla eşleşmeyecek bir atanana bakar. Sonuç: **hiçbir talep işlenmez ve hiçbir
+yerde hata görünmez.**
+
+Doğrulama: panelde **Ayarlar → Bağlantılar → (Jira bağlantısı) → Test**.
+Ekran iki kimliği karşılaştırır ve farklıysa **uyarır**. Uyarı görüyorsanız ya
+`.env`'deki `MAESTRO_BOT_ACCOUNT_ID`'yi bağlantının sahibiyle eşitleyin, ya da
+bağlantıya bot hesabının jetonunu girin. `.env`'i değiştirdiyseniz:
 
 ```bash
-# Yeni imaj tar'ını yükleyin, sonra:
-# .env'de MAESTRO_NODE_IMAGE / MAESTRO_STUDIO_IMAGE etiketini yeni sürüme çevirin
-docker compose up -d          # migrate otomatik çalışır, veri korunur
+docker compose up -d --force-recreate bff worker
 ```
+
+---
+
+## 6. Sessiz arızalar — belirtiye göre teşhis
+
+Buradaki arızaların ortak özelliği: **hiçbiri hata vermez.** Sistem açıktır,
+loglar temizdir, panel çalışır — ama iş görülmez.
+
+| Belirti | Gerçek sebep | Çözüm |
+|---|---|---|
+| Kural kurdum, **hiçbir talep yakalanmıyor**, log temiz | Motorun kimliği (`MAESTRO_BOT_ACCOUNT_ID`) ile bağlantının kimliği farklı | §5.4 |
+| Talepler işleniyor ama **yanlış kişinin** talepleri | `MAESTRO_BOT_ACCOUNT_ID` boş → keşif `currentUser()` ile çalışır | `.env`'e bot accountId'sini yazın |
+| Analiz **"elle tamamlayın"** diye bitiyor | Talep `gizli` sınıfta, on-prem model yok sayılıyor (`LLM_ON_PREM=false`) | `LLM_ON_PREM="true"` + `docker compose up -d --force-recreate` |
+| Panel açılıyor, **her istek 502** | BFF konteyner içinde `127.0.0.1`'e bağlanmış; nginx ulaşamıyor | `.env`'de `BFF_HOST="0.0.0.0"` |
+| Panele hiç erişilemiyor | `STUDIO_PORT` yayınlanmamış ya da güvenlik duvarı kapalı | `docker compose ps` ile port eşlemesini kontrol edin |
+| `SecretNotFoundError` — ama `.env`'de değer dolu | Sır değişkeninin **adı** yanlış (`MAESTRO_SECRET_JIRA_TOKEN` gibi) | Adları `.env.example`'dan **birebir** kopyalayın |
+| Açılışta `SecretKeyError` | Referans biçimi `env:JIRA_TOKEN` gibi; `<mount>/<yol>#alan` olmalı | `JIRA_TOKEN_REF="kv/jira#token"` |
+| BFF açılmıyor, env-file hatası | `MAESTRO_PROFILE=analiz` ile `NODE_ENV=production` birlikte | `NODE_ENV="development"` (bkz. `.env.example` §2) |
+| Yeni bir alan kaydediliyor ama **veritabanına yazılmıyor** | İmajdaki Prisma istemcisi bayat, yeni sütunu yok sayıyor | Güncel koddan yeniden build (§2.3-c) |
+| Model çağrıları **404** | `LLM_BASE_URL` sonunda `/v1` var, sürücü de ekliyor | Sondaki `/v1`'i silin |
+| `unable to verify the first certificate` | Banka kök CA'sı Node'un listesinde yok | `NODE_EXTRA_CA_CERTS` + CA'yı `certs/` içine koyun |
+| Panelde jetonlar bozuk / çözülemiyor | `CONNECTOR_MASTER_KEY` değişti ya da kayboldu | Eski anahtarı geri koyun; yoksa jetonları yeniden girin |
+
+---
+
+## 7. Güncelleme (veri korunarak)
+
+```bash
+# 1) Yeni imaj tar'ını yükleyin
+gunzip -c maestro-imajlar-<YENI_TAG>.tar.gz | docker load
+
+# 2) .env'de etiketleri yeni sürüme çevirin
+#    MAESTRO_NODE_IMAGE / MAESTRO_STUDIO_IMAGE
+
+# 3) Yeni paketin .env.example'ında EKLENMİŞ alan var mı, karşılaştırın:
+diff <(grep -oE '^[A-Z_]+=' .env.example | sort) <(grep -oE '^[A-Z_]+=' .env | sort)
+
+# 4) Uygulayın — migrate otomatik çalışır, veri korunur
+./install.sh --yes
+```
+
+> Yeni bir sürüm yeni bir **zorunlu** değişken getirebilir. 3. adımı atlamayın:
+> eski bir `.env`, yeni pakette eksik kalır. `install.sh`, `.env` ile paketin
+> `BUNDLE_VERSION`'ı tutmuyorsa zaten uyarır.
 
 **ASLA `docker compose down -v` çalıştırmayın** — `-v` veritabanı volume'ünü siler.
 
 ---
 
-## 6. Yedekleme
+## 8. Yedekleme
 
 ```bash
 # Veritabanı
 docker compose exec -T postgres pg_dump -U maestro maestro | gzip > maestro-$(date +%F).sql.gz
 
-# .env dosyası da yedeklenmeli (sırlar orada) — güvenli yerde saklayın
+# .env dosyası — CONNECTOR_MASTER_KEY burada. Kaybolursa kayıtlı bağlantı
+# jetonlarının hiçbiri çözülemez. Şifreli ve ayrı bir yerde saklayın.
 ```
 
 ---
 
-## 7. Bu kurulumda ÇALIŞMAYAN şeyler
+## 9. Bu kurulumda ÇALIŞMAYAN şeyler
 
 Dürüst liste — sunum değil, kurulum gerçeği:
 
 - **SIEM'e otomatik log akışı yok.** CEF/syslog biçimlendirici hazır, ama
-  toplayıcıya ileten taşıyıcı yazılmadı. Bugün denetim kaydı panelden
-  JSON/CSV indirilir.
+  toplayıcıya ileten taşıyıcı yazılmadı. Denetim kaydı panelden JSON/CSV indirilir.
 - **E-posta bildirimi yok.** SMTP sürücüsü yazıldı, taşıma katmanı bağlanmadı.
   Çalışan kanallar: Jira yorumu, Teams, Slack.
 - **SAML/OIDC SSO yok.** Kimlik doğrulama LDAP/LDAPS veya yerel hesap.
-- **GitLab/Bitbucket adapter'ı yok.** Desteklenen: Azure DevOps Server/TFS,
-  GitHub Enterprise, Jira Data Center.
-- **Geliştirme hattı (kod yazma → PR → merge) uçtan uca canlı denenmedi.**
-  Analiz hattı doğrulanmıştır; kod hattı altyapısı yazılıdır.
+- **Kod yazma hattı bu sürümde kapalı.** `analiz` profilinde scm/ci/tarama
+  portları adıyla reddeder. Uçtan uca canlı denenmemiştir.
+- **Vault bu pakette varsayılan değil.** `analiz` profilinde sırlar `.env`
+  dosyasındadır (`chmod 600`). Vault'a geçiş `prod` profiliyle yapılır ve
+  ayrıca S3 uyumlu depolama + Azure DevOps gerektirir.

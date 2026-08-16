@@ -505,9 +505,14 @@ model ListeningRule {
   projectKey        String  @db.VarChar(32)
   /// The account the ticket must be assigned to (the Maestro Bot accountId).
   assigneeAccountId String  @db.VarChar(128)
-  /// "status" | "issuetype" — which ticket field `matchValue` is compared to.
+  /// "status" | "issuetype" | "assigned" — which ticket field `matchValue` is
+  /// compared to. `assigned` (0020) compares NOTHING: the rule triggers on the
+  /// assignment alone, which is how "bota atanan her ticket" is expressed.
   matchKind         String  @db.VarChar(16)
-  /// The status name or issue-type name that triggers this rule.
+  /// The status name or issue-type name that triggers this rule. For an
+  /// `assigned` rule it is the fixed literal `*`, carried only so the unique
+  /// trigger index below keeps ONE such rule per (project, bot) — the column
+  /// stays NOT NULL because NULLs do not collide in a Postgres unique index.
   matchValue        String  @db.VarChar(128)
   /// "analiz" | "duzeltme" | "gelistirme" — the flow Maestro runs.
   flowType          String  @db.VarChar(16)

@@ -91,6 +91,21 @@ export interface UserRecord {
   roles: readonly string[];
   active: boolean;
   /**
+   * How this account should READ in the panel — "maestro (Jira bot)" rather
+   * than `jira-bot-maestro`. Optional, and absent means "call it by its
+   * username": every account an admin creates by hand is named by the person
+   * typing it, so the username IS the readable name and a second field would
+   * only be a second thing to keep in step.
+   *
+   * It exists for the accounts nobody types — the connector-provisioned bot
+   * (`ensureBotUser`), whose username is a machine id and whose Jira identity
+   * carries a real, human-chosen name. Without this field `PrismaUserDirectory`
+   * wrote `displayName: record.username` on every upsert, so the bot's name in
+   * "Kullanıcılar & roller" was overwritten with its slug by the next write
+   * that touched the row — including its own re-provision.
+   */
+  displayName?: string;
+  /**
    * The first-run bootstrap flag (migration 0009). True only for the seeded
    * `admin` account before it changes its password; the guard reads it back on
    * every request (the directory is the truth, the session a cache) and

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useApi } from "../../auth/AuthProvider.tsx";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card, Table, type Column } from "../../ui/index.ts";
+import { englishAside } from "../common/jira-english.ts";
 import "../shared/screens.css";
 
 /**
@@ -67,12 +68,28 @@ export function JiraSetupCard(): ReactNode {
     {
       key: "matchValue",
       header: t("help.jira.col.match"),
-      cell: (r) => (
-        <span>
-          <span className="screen-note">{t(`help.jira.match.${r.matchKind}`)}: </span>
-          <b>{r.matchValue}</b>
-        </span>
-      ),
+      // This is instructions, so the English aside earns its place here most of
+      // all: the reader is about to go to Jira and set this field, and half of
+      // them are looking at a Jira UI in English. The value stays the stored
+      // Turkish one — it is what the rule matches, and it is what the operator
+      // has to make the ticket say.
+      cell: (r) => {
+        // A catch-all names no field, so there is nothing to go and set: the
+        // instruction is "assign it to the bot", which the next column says.
+        if (r.matchKind === "assigned") {
+          return <b>{t("help.jira.match.assigned")}</b>;
+        }
+        const english = englishAside(r.matchValue);
+        return (
+          <span>
+            <span className="screen-note">{t(`help.jira.match.${r.matchKind}`)}: </span>
+            <b>{r.matchValue}</b>
+            {english !== null && (
+              <span className="screen-note"> {t("jira.english.aside", { english })}</span>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "assigneeAccountId",

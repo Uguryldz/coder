@@ -631,3 +631,265 @@ describe("when the store is not wired", () => {
     expect((response.json() as { error: string }).error).toBe("capability_not_wired");
   });
 });
+
+/**
+ * The Jira bot's own MAESTRO account.
+ *
+ * The connection knows who the bot is — `/myself` is probed on every test, and
+ * `config.botAccountId` is healed from it. But nothing ever created a directory
+ * ROW for that identity, and every surface that resolves an actor goes through
+ * `UserDirectory.find`. On the pilot the row was made BY HAND, in
+ * `maestro-admins`, which is both a deployment that cannot be reproduced and an
+ * audit finding: that group is the one self-approval exemption in the system, so
+ * a bot inside it can close four-eyes on its own.
+ *
+ * These tests pin the replacement: the row is provisioned from the LIVE identity,
+ * with the LEAST privilege that works, and an operator's later adjustments to it
+ * are never silently undone.
+ */
+describe("the Jira bot's Maestro account", () => {
+  const BOT_ACCOUNT = "712020:b836c135-c9d3-499a-a665-aed43d362cfd";
+  /** The username provisioning derives — from the CONNECTION id, not the GUID. */
+  const BOT_USERNAME = "jira-bot-jira";
+
+  function myself(over: Record<string, unknown> = {}): ConnectorFetch {
+    return () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            accountId: BOT_ACCOUNT,
+            displayName: "maestro",
+            emailAddress: "bot@ugurbank.local",
+            ...over,
+          }),
+          { status: 200 },
+        ),
+      );
+  }
+
+  const JIRA = {
+    id: "jira",
+    kind: "jira_cloud",
+    displayName: "Jira Cloud",
+    baseUrl: "https://ugurbank.atlassian.net",
+    authKind: "basic",
+  } as const;
+
+  async function createJira(
+    h: Harness,
+    token: string,
+    config: Record<string, string> = { email: "bot@ugurbank.local" },
+  ): Promise<LightMyRequestResponse> {
+    return post(h, "/studio/connections", token, { ...JIRA, config, token: TOKEN });
+  }
+
+  it("provisions the bot's user row when the connection is CREATED", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+
+    // Nothing exists before — this is the gap on every deployment but the pilot.
+    expect(await h.users.find(BOT_USERNAME)).toBeNull();
+
+    const response = await createJira(h, admToken);
+    expect(response.statusCode).toBe(201);
+
+    const bot = await h.users.find(BOT_USERNAME);
+    expect(bot).not.toBeNull();
+    expect(bot?.active).toBe(true);
+  });
+
+  it("provisions it on a successful TEST too — the operator may never press create again", async () => {
+    // Created while the target was unreachable, so the create path provisioned
+    // nothing: this is the connection that predates the feature, repaired by an
+    // ordinary test. The fetch is switchable so ONE harness can live through
+    // both conditions — the point of the test is that the second call repairs
+    // what the first could not do, which two harnesses could not show.
+    let reachable = false;
+    const h = await harness({
+      connectorFetch: (...args) =>
+        reachable ? myself()(...args) : Promise.reject(new Error("ECONNREFUSED")),
+    });
+    const admToken = await admin(h);
+    await createJira(h, admToken);
+    expect(await h.users.find(BOT_USERNAME)).toBeNull();
+
+    // The network comes back and the operator tests the connection.
+    reachable = true;
+    const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+      ok: boolean;
+      botUser?: { username: string; displayName: string; created: boolean };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.botUser).toEqual({ username: BOT_USERNAME, displayName: "maestro", created: true });
+    expect(await h.users.find(BOT_USERNAME)).not.toBeNull();
+  });
+
+  it("uses the display name the OPERATOR supplied on the connection form", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, {
+      email: "bot@ugurbank.local",
+      botDisplayName: "maestro (Jira bot)",
+    });
+
+    // The operator's name wins over Jira's own "maestro" — this is what makes
+    // the row read clearly in "Kullanıcılar & roller".
+    expect((await h.users.find(BOT_USERNAME))?.displayName).toBe("maestro (Jira bot)");
+  });
+
+  it("falls back to Jira's own displayName when the operator supplied none", async () => {
+    const h = await harness({ connectorFetch: myself({ displayName: "Maestro Otomasyon" }) });
+    const admToken = await admin(h);
+    await createJira(h, admToken);
+
+    expect((await h.users.find(BOT_USERNAME))?.displayName).toBe("Maestro Otomasyon");
+  });
+
+  it("gives the bot NO groups — it must not be able to satisfy four-eyes alone", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createJira(h, admToken);
+
+    const bot = await h.users.find(BOT_USERNAME);
+    // The assertion is on the EXACT set, not merely "not admin": this is the
+    // decision the pilot got wrong, so a future change to it must be deliberate
+    // enough to come and edit this line.
+    expect(bot?.groups).toEqual([]);
+    // `maestro-admins` is what `isMasterApprover` reads (BFF and workflows
+    // alike). A bot in it approves its own work.
+    expect(bot?.groups).not.toContain("maestro-admins");
+    // The floor, and nothing above it: read-only.
+    expect(bot?.roles).toEqual(["viewer"]);
+  });
+
+  it("has no usable password — the row is an identity, not a login", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createJira(h, admToken);
+
+    const bot = await h.users.find(BOT_USERNAME);
+    // Not a bcrypt hash, so no password can ever verify against it.
+    expect(bot?.passwordHash.startsWith("$2")).toBe(false);
+    expect(bot?.mustChangePassword).toBe(false);
+  });
+
+  it("does not duplicate or clobber the row when the connection is tested TWICE", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, {
+      email: "bot@ugurbank.local",
+      botDisplayName: "maestro (Jira bot)",
+    });
+
+    // An operator then adjusts the account by hand — the exact thing a
+    // re-provision must not undo. They put it in a group and deactivate it.
+    const before = await h.users.find(BOT_USERNAME);
+    await h.users.upsert({ ...before!, groups: ["developers"], roles: ["viewer", "developer"], active: false });
+
+    const second = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+      botUser?: { created: boolean };
+    };
+    // Recognised as existing, not minted again.
+    expect(second.botUser?.created).toBe(false);
+
+    const after = await h.users.find(BOT_USERNAME);
+    // The operator's group survives — provisioning never rewrites authority.
+    expect(after?.groups).toEqual(["developers"]);
+    expect(after?.roles).toEqual(["viewer", "developer"]);
+    // And a deliberately disabled bot stays disabled: a test is not a
+    // re-enablement.
+    expect(after?.active).toBe(false);
+    // Still exactly one row for this connection.
+    expect((await h.users.list(100)).filter((u) => u.username === BOT_USERNAME)).toHaveLength(1);
+  });
+
+  it("DOES update the display name on an existing row — a rename must take effect", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createJira(h, admToken);
+    expect((await h.users.find(BOT_USERNAME))?.displayName).toBe("maestro");
+
+    // The operator edits the connection and names the bot properly.
+    await put(h, "/studio/connections/jira", admToken, {
+      ...JIRA,
+      config: { email: "bot@ugurbank.local", botDisplayName: "maestro (Jira bot)" },
+    });
+    await post(h, "/studio/connections/jira/test", admToken);
+
+    expect((await h.users.find(BOT_USERNAME))?.displayName).toBe("maestro (Jira bot)");
+    // The rename changed presentation and nothing else.
+    expect((await h.users.find(BOT_USERNAME))?.groups).toEqual([]);
+  });
+
+  it("provisions NOTHING when /myself fails — no identity, no row", async () => {
+    const h = await harness({ connectorFetch: () => Promise.reject(new Error("ECONNREFUSED")) });
+    const admToken = await admin(h);
+    await createJira(h, admToken);
+
+    const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+      ok: boolean;
+      botUser?: unknown;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.botUser).toBeUndefined();
+    // A row invented without a live identity behind it would be worse than none.
+    expect(await h.users.find(BOT_USERNAME)).toBeNull();
+  });
+
+  it("provisions nothing when the probe answers 200 but names no account", async () => {
+    const h = await harness({ connectorFetch: myself({ accountId: undefined }) });
+    const admToken = await admin(h);
+    await createJira(h, admToken);
+
+    expect(await h.users.find(BOT_USERNAME)).toBeNull();
+  });
+
+  it("provisions nothing for a non-Jira connection — a key is not an identity", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createGithub(h, admToken);
+
+    expect(await h.users.find("jira-bot-github")).toBeNull();
+  });
+
+  it("records the minted account in the audit trail", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, {
+      email: "bot@ugurbank.local",
+      botDisplayName: "maestro (Jira bot)",
+    });
+
+    const entries = await h.auditStore.read();
+    const created = entries.find(
+      (entry) => (entry.meta as Record<string, unknown> | undefined)?.["verb"] === "created",
+    );
+    // An account that can appear as an actor came into existence; the trail says
+    // so, and names it.
+    const meta = created?.meta as Record<string, unknown>;
+    expect(meta["botUser"]).toBe(BOT_USERNAME);
+    expect(meta["botUserState"]).toBe("created");
+    expect(meta["botUserDisplayName"]).toBe("maestro (Jira bot)");
+  });
+
+  it("names the bot in the users table the panel reads", async () => {
+    const h = await harness({ connectorFetch: myself() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, {
+      email: "bot@ugurbank.local",
+      botDisplayName: "maestro (Jira bot)",
+    });
+
+    const body = (await get(h, "/studio/users", admToken)).json() as {
+      items: readonly { username: string; displayName: string; groups: readonly string[] }[];
+    };
+    const bot = body.items.find((item) => item.username === BOT_USERNAME);
+    expect(bot?.displayName).toBe("maestro (Jira bot)");
+    expect(bot?.groups).toEqual([]);
+
+    // A human account still reads by its username — the field is a fallback,
+    // not a second thing every account has to fill in.
+    const human = body.items.find((item) => item.username === "ayse.kaya");
+    expect(human?.displayName).toBe("ayse.kaya");
+  });
+});

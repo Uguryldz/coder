@@ -84,12 +84,29 @@ export function UsersScreen(): ReactNode {
     {
       key: "username",
       header: t("users.col.username"),
-      cell: (row) => (
-        <div>
-          <b>{row.username}</b>
-          <div className="scr-mono scr-mini">{row.userId}</div>
-        </div>
-      ),
+      // The readable name leads and the username follows it, rather than the
+      // username leading alone. For a person the two are the same string and
+      // nothing changes visually; for the Jira bot the heading becomes
+      // "maestro (Jira bot)" instead of the slug `jira-bot-maestro`, which is
+      // the whole point of provisioning it with a name. The username is still
+      // shown — it is what an admin types into every other surface — but as the
+      // secondary line beside the actor id.
+      cell: (row) => {
+        // `?? username` even though the BFF always sends a name: this screen
+        // also has to render a directory served by an OLDER BFF, where the
+        // field does not exist. Rendering `undefined` as the heading turns a
+        // cosmetic gap into a row with no name at all, which reads as a broken
+        // account rather than an unnamed one.
+        const name = row.displayName ?? row.username;
+        return (
+          <div>
+            <b>{name}</b>
+            <div className="scr-mono scr-mini">
+              {name === row.username ? row.userId : `${row.username} · ${row.userId}`}
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: "groups",

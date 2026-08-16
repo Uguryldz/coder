@@ -510,4 +510,94 @@ describe("ListeningScreen", () => {
     expect(screen.getByText("analyst-node-v2")).toBeTruthy();
     expect(screen.getByText("varsayılan")).toBeTruthy();
   });
+
+  /**
+   * The English name beside the Turkish one.
+   *
+   * Half the bank runs the Jira UI in English and goes looking for `Task` and
+   * `Bug`; the rules only ever said `Görev` and `Hata`. The aside is the fix —
+   * and it is a LABEL, never a value. `flow-decision.ts` compares `matchValue`
+   * to `fields.issuetype.name` verbatim (OPS-66 really does carry `Görev`), so
+   * a rule holding `Task` matches nothing, silently, forever. That is the bug
+   * fixed today and the one these tests exist to keep fixed.
+   */
+  describe("the English name beside the Turkish one", () => {
+    it("shows both names in the table while the stored value stays Turkish", async () => {
+      stubFetch([SEED, { ...SEED, ruleId: "lr_2", matchValue: "Görev", flowType: "analiz" }]);
+      renderScreen(VIEWER); // read-only: no form dropdown to confuse the query
+
+      // The stored value is its own element, so what a reader copies out of the
+      // cell is exactly what the rule holds …
+      expect(await screen.findByText("Hata")).toBeTruthy();
+      expect(screen.getByText("Görev")).toBeTruthy();
+      // … and the English name sits beside it, never inside it.
+      expect(screen.getByText("(İngilizce: Bug)")).toBeTruthy();
+      expect(screen.getByText("(İngilizce: Task)")).toBeTruthy();
+      // Nothing anywhere merged the two into one string.
+      expect(screen.queryByText("Hata (Bug)")).toBeNull();
+    });
+
+    it("says nothing extra for a name outside the standard set", async () => {
+      stubFetch([{ ...SEED, matchValue: "Talep" }]);
+      renderScreen(VIEWER);
+
+      // A bank's own custom type. Inventing "Request" here would be exactly the
+      // confident wrong answer the mapping refuses to make.
+      expect(await screen.findByText("Talep")).toBeTruthy();
+      expect(screen.queryByText(/İngilizce:/)).toBeNull();
+    });
+  });
+
+  /**
+   * "Bota atanan her ticket" (migration 0020) on the expert screen.
+   *
+   * The wizard's tests cover the guided path; this one covers the screen an
+   * admin uses to write the same rule by hand, and the two things that must be
+   * true there: the value field disappears, and the rule still saves.
+   */
+  describe("every ticket assigned to the bot", () => {
+    it("POSTs matchKind assigned with the placeholder value, and no value field is asked for", async () => {
+      const fn = stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+
+      await screen.findByRole("option", { name: "OPS" });
+      await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+      await userEvent.type(
+        screen.getByLabelText("Bot kullanıcısı"),
+        "712020:bot",
+      );
+      // Present for a conditioned kind …
+      expect(screen.getByLabelText("Değer")).toBeTruthy();
+      await userEvent.selectOptions(screen.getByLabelText("Neye göre eşleşsin"), "assigned");
+      // … and gone for the catch-all, which has no second question to ask.
+      expect(screen.queryByLabelText("Değer")).toBeNull();
+
+      await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+      await waitFor(() => {
+        const post = fn.mock.calls.find(
+          ([u, init]) =>
+            String(u).includes("/studio/listening-rules") &&
+            (init as RequestInit | undefined)?.method === "POST",
+        );
+        expect(post, "no rule was POSTed").toBeTruthy();
+        const body = JSON.parse(String((post![1] as RequestInit).body)) as Record<string, unknown>;
+        expect(body.matchKind).toBe("assigned");
+        // The literal the BFF pins anyway — sent so the client is not asking
+        // the server to fix up its payload. It is never compared to a ticket.
+        expect(body.matchValue).toBe("*");
+      });
+    });
+
+    it("renders such a rule by what it does, never by its placeholder value", async () => {
+      stubFetch([{ ...SEED, matchKind: "assigned", matchValue: "*" }]);
+      renderScreen(VIEWER);
+
+      expect(await screen.findByText("Bota atanan her ticket")).toBeTruthy();
+      // Printing `*` would invite an operator to go looking for a Jira status
+      // named "*" — it is storage, not a trigger anybody set.
+      expect(screen.queryByText("*")).toBeNull();
+    });
+  });
 });

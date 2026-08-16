@@ -215,7 +215,11 @@ export async function ensureSandboxRootDefault(
   return { ...(persisted ?? {}), sandboxRoot: fallbackRoot };
 }
 
-const MATCH_KINDS = new Set(["status", "issuetype"]);
+// `assigned` (migration 0020) belongs here or the seed silently DROPS every
+// "bota atanan her ticket" rule on a pilot restart — the rule would still be in
+// the database and on the Studio screen while the engine behaved as if it did
+// not exist, which is the worst shape a configuration bug can take.
+const MATCH_KINDS = new Set(["status", "issuetype", "assigned"]);
 const FLOW_TYPES = new Set(["analiz", "duzeltme", "gelistirme"]);
 
 /** Build ALL of the pilot's DB-backed wiring from one client (one URL, one pool). */

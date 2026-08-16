@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
@@ -10,7 +10,6 @@ import { QueryState } from "./shared/QueryState.tsx";
 import { ageLabel } from "./shared/format.ts";
 import { useRuns, type RunRow } from "./shared/runs.ts";
 import { RunStatusCell, TicketsList } from "./Tickets.tsx";
-import { StartGuide } from "./dash/StartGuide.tsx";
 import {
   GUIDE_DISMISSED_KEY,
   readFlag,
@@ -128,23 +127,18 @@ export function DashScreen(): ReactNode {
   }, [stats]);
 
   /**
-   * Whether to show the "where do I start" checklist.
+   * Whether the platform's setup is still open — the ONE setup fact the Panel
+   * keeps now that the checklist itself has moved into the wizard.
    *
-   * This used to be "there are no runs yet", which was wrong in the one case
-   * that matters: a deployment with tickets already flowing but the setup only
-   * half done (no webhook, most connections unwired) hid the very card that
-   * would have explained the gap. The trigger is now the SETUP's own state —
-   * any open step shows the guide, however much work has been through it.
-   *
-   * "Hide" is honoured as a display preference, but it is not a completion
-   * claim: `setupIncomplete` below stays true and the Panel keeps a one-line
-   * reminder with a way back, so the gap can be silenced but not lost.
+   * The measurement is unchanged and deliberately shared: `useSetupState` is
+   * the same hook the wizard's guide reads, so the Panel's note and the guide's
+   * ticks can never disagree about what is finished. The webhook flag is read
+   * once here rather than owned — the Panel no longer has the checkbox that
+   * flips it, so there is nothing to keep in state.
    */
-  const [webhookAck, setWebhookAck] = useState(() => webhookAcked());
   const [dismissed, setDismissed] = useState(() => readFlag(GUIDE_DISMISSED_KEY));
-  const setup = useSetupState(webhookAck);
+  const setup = useSetupState(webhookAcked());
   const setupIncomplete = !setup.loading && !setup.complete;
-  const showGuide = setupIncomplete && !dismissed;
 
   return (
     <div className="screen-stack">
@@ -215,15 +209,31 @@ export function DashScreen(): ReactNode {
         </Card>
       )}
 
-      {showGuide && (
-        <StartGuide
-          setup={setup}
-          onWebhookAck={setWebhookAck}
-          onDismiss={() => {
-            writeFlag(GUIDE_DISMISSED_KEY, true);
-            setDismissed(true);
-          }}
-        />
+      {/* Setup is not this screen's job any more — the Panel is a REPORT.
+          The five-step checklist now lives where the work happens, in the
+          wizard, and what stays here is the one line that says the platform is
+          not finished plus the way to get there. A dashboard that opens with a
+          tutorial is a dashboard that buries its own numbers.
+          The dismissal is still honoured, and still cannot become a completion
+          claim: hiding the LINE is a display preference; `setupIncomplete` is
+          measured (`useSetupState`) and does not care what was dismissed. */}
+      {setupIncomplete && !dismissed && (
+        <div className="dash-setup-note" role="note">
+          <span>{t("dash.start.incomplete_note")}</span>
+          <Link className="ui-btn ui-btn--sm" to="/setup">
+            {t("dash.start.open_wizard")}
+          </Link>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              writeFlag(GUIDE_DISMISSED_KEY, true);
+              setDismissed(true);
+            }}
+          >
+            {t("dash.start.dismiss")}
+          </Button>
+        </div>
       )}
 
       {/* Hidden but not finished: one honest line, and the way back. Without

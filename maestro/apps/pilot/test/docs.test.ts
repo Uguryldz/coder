@@ -1,6 +1,7 @@
 import { inflateRawSync } from "node:zlib";
 import { t } from "@maestro/config";
 import type { AnalysisDoc } from "@maestro/contracts";
+import { stripLeadingNumber } from "@maestro/publish";
 import { describe, expect, it } from "vitest";
 import {
   DOC_CONTENT_TYPE,
@@ -97,6 +98,12 @@ function docxDocumentXml(bytes: Uint8Array): string {
 // `renderAnalysisMarkdown` appends an eighth "clarifications used" section, so
 // the model carries 8 numbered sections — but all SEVEN mandatory ones must be
 // present and numbered in order.
+//
+// The catalog values still carry their own "1. ", "2. " prefixes, and the
+// document model now strips them: numbering has ONE source, and it is the
+// model's `number` field asserted below. A title that kept its catalog number
+// printed "1. 1. Amaç ve iş değeri" in a document a reviewer opened, so the
+// expectation is the BARE title here on purpose.
 const MANDATORY_SECTIONS = [
   "publish.section.purpose",
   "publish.section.scope",
@@ -105,7 +112,7 @@ const MANDATORY_SECTIONS = [
   "publish.section.ui_api",
   "publish.section.test_approach",
   "publish.section.risk",
-].map((key) => t("tr", key));
+].map((key) => stripLeadingNumber(t("tr", key)));
 
 describe("analysisToDocModel — the neutral model", () => {
   it("maps all seven mandatory sections, in order, ahead of clarifications", () => {

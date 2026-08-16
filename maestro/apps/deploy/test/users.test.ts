@@ -6,6 +6,7 @@ import {
   rolesOf,
   type UserDelegate,
   type UserRow,
+  type UserWriteRow,
 } from "../src/stores/users.js";
 
 /**
@@ -201,5 +202,73 @@ describe("PrismaUserDirectory", () => {
       create: { mustChangePassword: false },
       update: { mustChangePassword: false },
     });
+  });
+});
+
+/**
+ * The `displayName` column, and why it is no longer written from the username.
+ *
+ * This store used to set `displayName: record.username` on every upsert. That
+ * was harmless while every account was created by a person typing their own
+ * name — the two strings were the same. It stopped being harmless when the BFF
+ * began PROVISIONING the Jira bot: that account's username is a machine id
+ * (`jira-bot-jira`) and its readable name comes from Jira's `/myself`, so the
+ * old write silently replaced "maestro (Jira bot)" with the slug on the next
+ * upsert of that row — including its own re-provision.
+ */
+describe("display name", () => {
+  it("stores the record's display name when it has one", async () => {
+    const { store, calls } = delegate(null);
+    const directory = new PrismaUserDirectory(store);
+
+    await directory.upsert({
+      username: "jira-bot-jira",
+      userId: "jira-bot-jira@ugurbank.local",
+      passwordHash: "!bot-no-login",
+      groups: [],
+      roles: ["viewer"],
+      active: true,
+      displayName: "maestro (Jira bot)",
+    });
+
+    const args = calls.upsert[0] as { create: UserWriteRow; update: { displayName: string } };
+    // Both halves of the upsert: the row is named correctly whether it is being
+    // created or overwritten. The update half is the one that used to clobber.
+    expect(args.create.displayName).toBe("maestro (Jira bot)");
+    expect(args.update.displayName).toBe("maestro (Jira bot)");
+  });
+
+  it("falls back to the username when the record carries no name", async () => {
+    const { store, calls } = delegate(null);
+    const directory = new PrismaUserDirectory(store);
+
+    await directory.upsert({
+      username: "ayse.kaya@ugurbank.local",
+      userId: "ayse.kaya@ugurbank.local",
+      passwordHash: "$2b$12$hash",
+      groups: ["tech-leads"],
+      roles: ["tech-lead", "viewer"],
+      active: true,
+    });
+
+    // Exactly what this store did before the field existed — a hand-created
+    // account is named by the person who typed it.
+    const args = calls.upsert[0] as { create: UserWriteRow };
+    expect(args.create.displayName).toBe("ayse.kaya@ugurbank.local");
+  });
+
+  it("reads the stored name back, so a find → upsert round-trip does not lose it", async () => {
+    // The clobber has two sides. The write side is fixed above; this is the
+    // read side — a record that came back without its name would re-upsert as
+    // the username and undo the fix from the other direction.
+    const { store, calls } = delegate(row({ email: "jira-bot-jira@ugurbank.local", displayName: "maestro (Jira bot)" }));
+    const directory = new PrismaUserDirectory(store);
+
+    const found = await directory.find("jira-bot-jira@ugurbank.local");
+    expect(found?.displayName).toBe("maestro (Jira bot)");
+
+    await directory.upsert({ ...found!, active: false });
+    const args = calls.upsert[0] as { update: { displayName: string } };
+    expect(args.update.displayName).toBe("maestro (Jira bot)");
   });
 });

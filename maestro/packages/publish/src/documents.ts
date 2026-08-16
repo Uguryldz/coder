@@ -82,15 +82,29 @@ export function renderAnalysisMarkdown(input: AnalysisDoc, ctx: DocContext): str
   md.heading(2, label(tr, locale, MSG.sectionAcceptance));
   md.bullets(doc.acceptanceCriteria);
 
+  // `prose`, not `paragraph`: these two are the free-text sections the model
+  // writes at length, and it writes them in markdown. Escaping that markdown
+  // published the asterisks and ran the bullets together (see `Markdown.prose`).
   md.heading(2, label(tr, locale, MSG.sectionUiApi));
-  md.paragraph(doc.uiApiChanges);
+  md.prose(doc.uiApiChanges);
 
   md.heading(2, label(tr, locale, MSG.sectionTestApproach));
-  md.paragraph(doc.testApproach);
+  md.prose(doc.testApproach);
 
+  /**
+   * Risk reads as a STATEMENT, not as a record dump.
+   *
+   * Five `- **Label:** value` bullets in a row — "Risk katmanı: Orta", "Risk
+   * gerekçesi: …" — is the shape of a debug print, and it is the section a
+   * committee actually stops on. So the tier and its justification become the
+   * sentence they always were, and only the three genuinely parallel facts
+   * (risk, mitigation, rollback) stay a labelled list, because a reviewer does
+   * compare those three against each other.
+   */
   md.heading(2, label(tr, locale, MSG.sectionRisk));
-  md.field(label(tr, locale, MSG.labelRiskTier), label(tr, locale, `${RISK_TIER_KEY_PREFIX}${doc.riskTier}`));
-  md.field(label(tr, locale, MSG.labelRiskReason), doc.riskReason);
+  md.paragraph(
+    `${label(tr, locale, MSG.labelRiskTier)}: ${label(tr, locale, `${RISK_TIER_KEY_PREFIX}${doc.riskTier}`)} — ${doc.riskReason}`,
+  );
   md.field(label(tr, locale, MSG.labelRisk), doc.riskAndRollback.risk);
   md.field(label(tr, locale, MSG.labelMitigation), doc.riskAndRollback.mitigation);
   md.field(label(tr, locale, MSG.labelRollback), doc.riskAndRollback.rollback);

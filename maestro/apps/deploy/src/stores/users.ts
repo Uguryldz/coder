@@ -142,19 +142,27 @@ export class PrismaUserDirectory implements UserDirectory {
   async upsert(record: UserRecord): Promise<void> {
     const email = normalize(record.username);
     const groups = [...record.groups];
+    // A record with no `displayName` is named by its username — that is what
+    // every hand-created account wants, and it is what this store did
+    // unconditionally before the field existed. The connector-provisioned bot is
+    // the case that needed the other half: its username is a machine id
+    // (`jira-bot-maestro`) and its readable name comes from Jira's `/myself`, so
+    // writing the username here would have overwritten "maestro (Jira bot)" with
+    // the slug on the very next upsert of that row.
+    const displayName = record.displayName ?? record.username;
     await this.users.upsert({
       where: { email },
       create: {
         id: record.userId,
         email,
-        displayName: record.username,
+        displayName,
         passwordHash: record.passwordHash,
         groupsJson: groups,
         active: record.active,
         mustChangePassword: record.mustChangePassword ?? false,
       },
       update: {
-        displayName: record.username,
+        displayName,
         passwordHash: record.passwordHash,
         groupsJson: groups,
         active: record.active,
@@ -185,6 +193,11 @@ function toRecord(row: UserRow): UserRecord {
     groups,
     roles: rolesOf(groups),
     active: row.active,
+    // Read back so a re-upsert of an unmodified record keeps the stored name.
+    // Without this the round-trip `find` → edit → `upsert` would drop the name
+    // to the username, which is exactly the clobber the write side guards
+    // against — a read that forgets the field re-opens the hole from the side.
+    displayName: row.displayName,
     // A missing flag is a non-bootstrap account — the safe default (M8).
     mustChangePassword: row.mustChangePassword ?? false,
   };

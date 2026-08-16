@@ -1,75 +1,64 @@
 # HANDOFF
 
 ## DURUM
-Pilot emekli ediliyor, analiz hattı Temporal'a taşınıyor (plan: `.claude/plans/binary-greeting-giraffe.md`).
-Bu oturumda **Temporal ilk kez canlıda uçtan uca çalıştı**. Kullanıcı ara verdi; iş yarıda değil,
-tutarlı noktada — her şey derleniyor, testler yeşil.
+Pilot emekli ediliyor, analiz hattı Temporal'a taşınıyor. Canlı sistem AYAKTA ve UI gerçek veri
+gösteriyor. Kullanıcı "çalışan sistem" istedi; bu oturumda port kablolaması düzeltildi, 41 dosyalık
+commit'siz iş commit'lendi, üç düzeltme turu koştu.
 
-## Bu oturumda düzeltilen 5 GERÇEK hata (hepsi canlı koşuda bulundu)
+## Bu oturumda (16 Ağustos) yapılanlar
+1. **UI yanlış BFF'e bakıyordu.** İki BFF koşuyordu: 7001 (dünkü eski kod) ve 7091 (canlı analiz
+   hattı). Studio 7001'e bağlıydı. Eski kapatıldı, Studio `MAESTRO_BFF_ORIGIN=http://127.0.0.1:7091`
+   ile yeniden başlatıldı. Tarayıcıda doğrulandı: pano 12 aktif / 3 kapıda / 1 tamamlanan / 16 toplam.
+2. **41 dosyalık canlı iş COMMIT'SİZDİ** (`FlowType`, `flowOf`, beş canlı hata düzeltmesi). Kapı
+   koşuldu, 5 ölü import düzeltildi, `11d5f03` olarak commit'lendi. Ajanlar artık üstüne dallanabiliyor.
+3. **`variantId` boş dize** (`954cd80`): OPS-22/23 boş varyantla açılmış, gateway'de patlıyordu.
+   Mağaza sınırında reddediliyor — sessiz varsayılan KOYULMADI (yanlış bağlanmış kurulumu maskelerdi).
+4. **Ticket başına akış kararı** (`8ab7f44`): `ListeningRule` tablosundan, `flowOf(env)` geri düşüşü
+   korunarak. Migration GEREKMEDİ — tablo zaten `flowType` taşıyor.
 
-1. **`WorkflowRun.step` hiç güncellenmiyordu.** `goto` yalnız workflow state'ini değiştiriyordu,
-   Studio ise Postgres'ten okur → her koşu ekranlarda "adım 0". `journal` activity'si artık
-   adımı satıra yazıyor (`packages/workflows/src/impl/gate.ts`, `stepOfTitle`).
-   `RunContext`/`RunUpdate`/`RunRow`'a `step` alanı eklendi.
+## Doğrulanmış canlı kanıt
+- **OPS-40**: kapı 4 açıldı → Jira `/approve` → kapı 5 → onay → adım 13 → "analiz teslim edildi".
+  Analiz hattı uçtan uca çalıştı (HANDOFF'un eski "sıradaki iş" maddesi ZATEN BİTMİŞ).
+- Word/PDF **çalışıyor ama PİLOTTA**: `maestro/ops9-analiz.pdf` = 9 sayfa, Türkçe düzgün, Jira'ya
+  gerçek ek olarak yükleniyor (`JiraCloudWorkPort.addAttachment`). Renderer'lar
+  `packages/publish/src/{docx,pdf}-render.ts` (**`drivers/docx.ts` YOK**).
 
-2. **Kapı rol adı ≠ dizin grup adı.** `GATE_OWNER` `product-owners` der; Jira sitesinde grup
-   `jira-users-uyildiz`. BFF grubu doğrulayıp onaylıyor, worker rolü bekleyip reddediyordu —
-   aynı onay bir tarafta kabul, diğerinde ret, kapı sonsuza dek açık.
-   Çözüm: `DirectoryReader.groupForRole` (yeni), `roleResolver(env.source)` BFF+worker'da PAYLAŞILIR,
-   `openGate` çözülmüş grubu DÖNDÜRÜR ve `canCloseGate` onu `openedAgainst` olarak alır
-   (workflow içinde dizine sorulamaz — determinizm).
+## KRİTİK AÇIK: pano yalan söylüyor
+DB'de **16 koşunun 16'sı `running`**; Temporal'da **13'ü `Failed`**, biri `Completed`.
+Sebep: (a) `RunLifecycle` yalnız `running|done|cancelled` — Postgres enum'unda `fail` VAR ama
+yazılamıyor; (b) çöken workflow kendini işaretleyemez, dışarıdan uzlaştırma gerekiyor.
+`RunContext.status` alanı VAR (`impl/deps.ts:72`) ve `delivery.ts:297` `done` yazıyor — mekanizma
+mevcut, eksik olan `fail` yolu. **Bir ajan bunu yazıyor.**
 
-3. **Jira Cloud üyeliği hiç doğrulanamıyordu.** Cloud üyesinde `name`/`key`/`emailAddress` yok,
-   yalnız `accountId`. Üstelik denetim sözleşmesi `:` kabul etmediği için BFF onu
-   `712020.b836…@corp`'a çeviriyor → iki string hiç eşleşmiyordu.
-   `packages/adapter-jira/src/cloud/work-port.ts` + `src/work-port.ts` (DC) ikisi de artık
-   accountId'yi ve nokta-normalize halini eşliyor.
+## Devam eden (bu satır yazılırken koşan ajanlar)
+- Word/PDF'i pilottan Temporal `deliverAnalysis`'e taşıma
+- Koşu durumu uzlaştırıcısı (yukarıdaki kritik açık)
 
-4. **Geçmişe dönük onay TÜM workflow'u öldürüyordu.** Poller restart sonrası yorum dizisini baştan
-   okur; kapı açılmadan önce yazılmış `/approve`, `closedAt >= openedAt` CHECK'ini ihlal eder —
-   bu retry edilemez bir hata, `recordGateDecision` 3 denemeyi yakar ve **workflow FAILED** olur.
-   OPS-36 böyle öldü. `PrismaGateStore.close` artık `closedAt`'i `openedAt`'e kenetliyor
-   (denetim izi kararın gerçek zamanını zaten tutuyor).
+## Sıradaki adım
+İkisi inince: kapı + canlı doğrulama, sonra yeni bir ticket ile uçtan uca (analiz → onay → belge).
 
-5. **Analiz akışı yoktu — `analiz` ticket'ı mühendislik hattına giriyordu.** OPS-38 iki kapıyı da
-   geçti, sonra `runEngineering`'de öldü (`mcpServers were requested but no --mcp-config`).
-   `planFor(flow)` pilottan `packages/workflows/src/gates.ts`'e taşındı; `FlowType` contracts'a
-   taşındı; `ticketWorkflow` mühendislikten ÖNCE `deliverAnalysis` + `closeTicket` ile `done` biter.
-
-## Canlı kanıt
-- **OPS-38**: ticket → analiz → kapı 4 açıldı → Jira `/approve` ile KAPANDI → kapı 5 açıldı → KAPANDI.
-  DB `step` her adımda doğru ilerledi. (Sonra mühendislik hattında öldü — 5. madde bunun düzeltmesi,
-  düzeltme sonrası YENİ ticket ile doğrulanmadı.)
-- OPS-34, OPS-36 ölü/eski koşular; onlara bakma, geçmişleri eski kodla yazıldı.
-
-## SIRADAKİ İŞ (öncelik sırasıyla)
-1. **Yeni ticket ile analiz akışını uçtan uca doğrula.** `MAESTRO_PROFILE=analiz` olduğu için
-   `flowOf(env)` → `defaultFlow: "analiz"` → koşu kapı 5'ten sonra teslim edip kapanmalı.
-   Beklenen: Jira'ya "analiz teslim edildi" yorumu + ticket talep sahibine atanır + status `done`.
-2. **Word/PDF teslimi.** `deliverAnalysis` şu an yorum + atama yapıyor; `renderDocx`/`renderPdf`
-   (`packages/publish`) ÇAĞRILMIYOR. Pilot deseni: `apps/pilot/src/docs.ts:112` `analysisToDocs`.
-3. ~~**Dinleme kuralı → flow** (plan Faz 4/19).~~ **BİTTİ** — `apps/bff/src/flow-decision.ts`.
-   Akış artık ticket başına: `runIntake` `ListeningRule` satırlarını okuyup akışı `signalWithStart`
-   girdisine koyuyor (workflow'a sorulmuyor — determinizm). Kural eşleşmezse `flowOf(env)`
-   varsayılanı devrede. Karar + gerekçe `RUN_STARTED` denetim kaydında (`flowReason`, `flowRuleId`).
-   Ayrıntı: `RAPOR-akis-karari.md`. **Canlı ticket ile doğrulanmadı.**
-4. Faz 5 (Studio ekranlarını Temporal'a geçir) ve Faz 6 (pilot sil) hiç başlamadı.
-
-## Servisler (setsid ile ayrık — terminal kapansa da yaşarlar)
-- worker: `cd apps/deploy && ./node_modules/.bin/tsx src/bin/worker.ts`, log `/tmp/worker-v5.log`
-- bff: aynı dizin `src/bin/bff.ts`, port **7091**, log `/tmp/bff-v5.log`
-- env: `set -a; source /tmp/analiz-env.sh; set +a` — PATH'e nvm ekle:
-  `export PATH="$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"`
-- Yeniden başlatma sonrası poller `seen` setini sıfırlar ve ESKİ yorumları yeniden okur (4. madde).
+## Servisler (setsid, terminal kapansa da yaşar)
+- worker: `apps/deploy` içinde `./node_modules/.bin/tsx src/bin/worker.ts` → log **`/tmp/worker-flow.log`**
+- bff: aynı dizin `src/bin/bff.ts`, port **7091** → log `/tmp/bff-v5.log`
+- studio: `apps/studio` içinde `MAESTRO_BFF_ORIGIN=http://127.0.0.1:7091 ... vite --port 7000`
+  → log `/tmp/studio-live.log`. Dış erişim `coder.uguryildiz.tech` (NPM arkasında).
+- env: `set -a; source /tmp/analiz-env.sh; set +a` + `export PATH="$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"`
+- Giriş: **`admin` / `admin123`** (parola politikası atlanarak hash yazıldı — Studio'dan
+  değiştirilirse geri dönülemez). Pilot öncesi SİLİNMELİ.
 
 ## Tuzaklar
-- `contracts`/`ports`/`llm-gateway` FROZEN — ama `FlowType` bu oturumda contracts'a EKLENDİ
-  (common.ts). Gerekliydi: workflows paketi BFF'i import edemez (M44).
-- `pkill -f "src/bin/worker.ts"` yazarsan kendi kabuğunu da vurur; `\.ts` diye kaçır.
-- Turbo'yu worker+BFF+Temporal koşarken `--concurrency` vermeden çalıştırma: kaynak baskısından
-  ALAKASIZ paketler kırmızı olur (storage/secrets/studio). `--concurrency=3` ile temiz.
-- Jira Cloud auth **Basic** (`email:token`), DC **Bearer** — iki ayrı sürücü, karıştırma.
-- Bot hesabı (`712020.b836c135-…@corp`) test kolaylığı için `User` tablosuna `maestro-admins`
-  üyesi olarak eklendi (dört-göz muafiyeti). **Bankaya giderken bu satır SİLİNMELİ.**
-- `admin/admin123` → `POST /auth/login`, token GÖVDEDE döner, `Authorization: Bearer` ile kullan
-  (cookie değil).
+- **`/tmp/worker-v5.log` ÇÖKMÜŞ ESKİ worker'a ait** ("Not running. Current state: STOPPED").
+  Canlı worker `/tmp/worker-flow.log`'a yazıyor. Yanlış loga bakan sistemin çöktüğünü sanır.
+- **Kapı yük altında flake yapıyor** — üç ajan koşarken yük 27/8 çekirdek. Düşen test TEK BAŞINA
+  koşulmalı; geçiyorsa kod sağlamdır. Bu oturumda 3 kez oldu (bff/password, studio/users,
+  studio/params), üçü de tek başına yeşil.
+- Zaman aşımını merkezden ayarlamaya ÇALIŞMA: `VITEST_TESTTIMEOUT` yok sayılıyor, `--testTimeout`
+  paket config'ini EZİYOR (workflows'un 180s'ini düşürüp korumak istediği testleri düşürdü),
+  paylaşılan helper hiç etki etmiyor. Kapı sadece yükü RAPORLUYOR.
+- Worktree'ler `1c78e71`'den dallanıyor (maestro/ yok). Ajana `git reset --hard <hedef-commit>`
+  izni ver — **`main` DEĞİL**, main geride olabilir; doğrulanabilir bir commit hash ver.
+- `pkill -f "src/bin/worker.ts"` kendi kabuğunu vurur; `\.ts` diye kaçır.
+- `contracts`/`ports` FROZEN — `FlowType` bu oturumda `contracts/common.ts`'e eklendi.
+- Jira Cloud auth **Basic** (`email:token`), DC **Bearer**.
+- Bot hesabı `User` tablosunda `maestro-admins` üyesi (dört-göz muafiyeti). **Bankaya giderken SİL.**
+- `uinfra-postgres`, `wendococr-redis` başka projelere ait — kullanma.

@@ -11,6 +11,7 @@ import { describeWiring, resolveDeployment, type Deployment, type DeploymentInpu
 import { buildAgentRunner } from "./agent-runner.js";
 import { jiraCloudConfig, jiraConfig } from "./driver-config.js";
 import { loadDeployEnv, type DeployEnv } from "./env.js";
+import { objectLockConfig } from "./object-lock.js";
 import { PROFILE_DRIVERS } from "./profile.js";
 import { buildRegistry } from "./registry.js";
 import { buildSecretPort } from "./secrets.js";
@@ -116,7 +117,7 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
    * instance would make the registry's `storage` entry a lie about where the
    * port came from.
    */
-  const sink = buildStorageSink(options);
+  const sink = buildStorageSink(env, options);
   const agentRunner = buildAgentRunner(env, secrets);
 
   const registry = buildRegistry({
@@ -220,11 +221,14 @@ function buildWorkPort(env: DeployEnv, secrets: SecretPort): WorkPort {
  * that holds nothing — a document the evidence package claims to have and
  * cannot produce.
  */
-function buildStorageSink(options: BootOptions): PublishDeps["sink"] {
+function buildStorageSink(env: DeployEnv, options: BootOptions): PublishDeps["sink"] {
   if (options.sql === undefined) return undefined;
   try {
     return createPgBlobStorage(
-      { table: "storage_blob" },
+      // `objectLock` is not decoration here: the `docx`/`pdf` targets ask for a
+      // locked put (M56 records), and a driver built without this refuses it —
+      // which is exactly how a finished analysis came to attach nothing.
+      { table: "storage_blob", objectLock: objectLockConfig(env, env.profile) },
       { sql: options.sql as PgBlobStorageDeps["sql"] },
     );
   } catch {

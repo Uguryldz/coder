@@ -1,5 +1,6 @@
 import type { DeployEnv } from "./env.js";
 import { vaultMounts } from "./env.js";
+import { objectLockConfig } from "./object-lock.js";
 import type { PortKey, Profile } from "./profile.js";
 
 /**
@@ -144,6 +145,18 @@ export function parsePrValidationBuilds(
  * with the key material itself. It is therefore resolved from the SecretPort
  * by the caller and passed in, which is why this function takes credentials
  * rather than reading them.
+ *
+ * BOTH drivers carry `objectLock` (M56/M57). Neither did until an analysis ran
+ * to completion in the `analiz` profile and attached nothing: the `docx` target
+ * asks for a locked put, an unconfigured driver refuses it rather than writing
+ * an unprotected record, and the document was lost to a fail-soft branch. The
+ * configuration is what was missing — the refusal was correct.
+ *
+ * On `s3-compat` the headers only INSTRUCT the endpoint: the bucket must itself
+ * have Object Lock enabled at CREATION time, which no client call can do after
+ * the fact. That is an operator prerequisite, not a gap this code can close —
+ * and a bucket lacking it answers the locked put with a 400 rather than storing
+ * an unprotected object, so prod fails loudly instead of the other way round.
  */
 export function storageConfig(
   env: DeployEnv,
@@ -160,11 +173,13 @@ export function storageConfig(
       bucket: env.STORAGE_BUCKET,
       accessKeyId: credentials.accessKeyId,
       secretAccessKey: credentials.secretAccessKey,
+      objectLock: objectLockConfig(env, profile),
       fetch: fetchImpl ?? globalThis.fetch,
     };
   }
   return {
     table: "storage_blob",
+    objectLock: objectLockConfig(env, profile),
     sql: required(sql, "storage sql executor", "the pg-blob driver writes through an injected SqlExecutor"),
   };
 }

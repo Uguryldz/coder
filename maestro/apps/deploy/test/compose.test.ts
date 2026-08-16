@@ -1,5 +1,6 @@
 import { createJiraCloudWorkPort } from "@maestro/adapter-jira";
 import { MaestroPublishPort } from "@maestro/publish";
+import { createPgBlobStorage, ObjectLockNotConfiguredError } from "@maestro/storage";
 import { describe, expect, it } from "vitest";
 import { bootPlatform } from "../src/boot.js";
 import { assertAllPortsPresent, CompositionError, describeWiring, workerSelection } from "../src/compose.js";
@@ -81,6 +82,86 @@ describe("composition root: dev profile", () => {
     expect((publish as MaestroPublishPort).targets()).toEqual(
       expect.arrayContaining(["jira", "docx", "pdf"]),
     );
+  });
+
+  /**
+   * M56/M57, and the reason a finished analysis attached NOTHING to a live
+   * ticket (OPS-42, OPS-49): the composed storage port had no `objectLock`
+   * configuration, the `docx` target asks for a locked put, and the driver
+   * refused it rather than storing an unprotected record. The refusal was
+   * correct; the missing configuration was the defect.
+   *
+   * Asserted against the REAL driver over a recording executor, so it proves
+   * the row is written WITH retention — not merely that a config key exists.
+   */
+  it("composes a storage port that can actually honour a locked put (M56/M57)", async () => {
+    const writes: { sql: string; params: readonly unknown[] }[] = [];
+    const recordingSql = {
+      query: (sql: string, params: readonly unknown[] = []) => {
+        if (sql.startsWith("INSERT")) writes.push({ sql, params });
+        return Promise.resolve([]);
+      },
+    };
+    const { deployment } = await bootPlatform({
+      source: { ...DEV_ENV },
+      sql: recordingSql,
+      quiet: true,
+    });
+
+    const before = Date.now();
+    await deployment.ports.storage.put("evidence/OPS-49/analiz.docx", new Uint8Array([1, 2, 3]), {
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      objectLock: true,
+    });
+
+    // The put reached the table AND carried retention: `object_lock` true and a
+    // `retain_until` ten years out. Before the fix this call threw instead.
+    expect(writes).toHaveLength(1);
+    const params = writes[0]?.params ?? [];
+    expect(params[4], "object_lock column").toBe(true);
+    const retainUntil = new Date(String(params[5])).getTime();
+    const expected = new Date(before).setUTCFullYear(new Date(before).getUTCFullYear() + 10);
+    // Same calendar day; the clock advances a few ms between the two readings.
+    expect(Math.abs(retainUntil - expected)).toBeLessThan(60_000);
+  });
+
+  /**
+   * The other half, and the one that must NOT be "fixed": a driver built with
+   * no retention configuration still REFUSES a locked put. If this ever starts
+   * passing silently, the platform has begun writing records it tells the
+   * evidence package are WORM-protected while they are deletable.
+   */
+  it("still refuses a locked put when objectLock is unconfigured (M57 fail-closed)", async () => {
+    const unconfigured = createPgBlobStorage(
+      { table: "storage_blob" },
+      { sql: OFFLINE_SQL as never },
+    );
+
+    await expect(
+      unconfigured.put("evidence/OPS-49/analiz.docx", new Uint8Array([1]), { objectLock: true }),
+    ).rejects.toThrow(ObjectLockNotConfiguredError);
+
+    // An UNLOCKED put through the same driver still works — the refusal is
+    // scoped to the request that asked for protection, not a dead driver.
+    await expect(
+      unconfigured.put("scratch/note.txt", new Uint8Array([1])),
+    ).resolves.toBeUndefined();
+  });
+
+  /**
+   * The prod profile signs with S3's own Object Lock rather than emulating it,
+   * so the config must carry the same retention the pg-blob driver applies —
+   * a deployment that locks for ten years in dev and not at all in prod is the
+   * exact "works in dev, silently broken in prod" failure this asserts against.
+   */
+  it("configures the same retention on the prod s3-compat driver (M56/M57)", () => {
+    const env = loadDeployEnv({ ...PROD_ENV });
+    const config = storageConfig(env, "prod", {
+      accessKeyId: "AKIA_TEST",
+      secretAccessKey: "secret",
+    });
+
+    expect(config["objectLock"]).toEqual({ mode: "COMPLIANCE", years: 10 });
   });
 
   /**

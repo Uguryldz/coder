@@ -114,6 +114,12 @@ export interface TestOutcome {
    * can offer "the bot" instead of asking for a hand-copied GUID. Never a secret.
    */
   accountId?: string;
+  /**
+   * The stored `config.botAccountId` did NOT match the account the token
+   * actually belongs to, and was corrected to `accountId`. Carries the DISPLACED
+   * value so the panel can name what was wrong; never an email.
+   */
+  accountIdCorrected?: { from: string };
 }
 
 /** Where each kind's identity/health probe lives, relative to `baseUrl`. */
@@ -152,7 +158,11 @@ export function probeFor(kind: ConnectionKind): Probe | null {
       return {
         path: "/rest/api/3/myself",
         header: (token, config) => ({ authorization: basicAuth(config["email"] ?? "", token) }),
-        identity: (body) => field(body, "displayName") ?? field(body, "emailAddress"),
+        // `displayName` ONLY. `/myself` also returns `emailAddress`, and the old
+        // fallback to it would have rendered the bot's email into the panel and
+        // into the stored test note — the response is PII, so only the name and
+        // the opaque accountId are ever allowed out of this probe.
+        identity: (body) => field(body, "displayName"),
         // The bot's Jira accountId — captured so a listening rule can pre-fill it
         // instead of an operator hand-copying a 40-char GUID from a profile URL.
         accountId: (body) => field(body, "accountId"),
@@ -263,6 +273,25 @@ export async function runConnectionTest(
       identity = undefined;
       accountId = undefined;
     }
+  }
+
+  // The identity check. `accountId` is who the TOKEN belongs to, straight from
+  // the live `/myself` answer; `config.botAccountId` is what an operator typed.
+  // When they disagree the stored value is wrong by definition — a token cannot
+  // act as an account it does not belong to — so the test says so out loud
+  // instead of returning a bare green that hides a misattribution.
+  const claimed = record.config["botAccountId"]?.trim();
+
+  if (accountId !== undefined && claimed !== undefined && claimed !== "" && claimed !== accountId) {
+    return {
+      ok: true,
+      messageKey: "connections.test.ok_bot_fixed",
+      // Both ids, never an email: the operator needs to SEE which value was
+      // replaced, or a silent correction looks like nothing happened.
+      messageParams: { was: claimed, now: accountId, ...(identity === undefined ? {} : { who: identity }) },
+      accountId,
+      accountIdCorrected: { from: claimed },
+    };
   }
 
   return identity === undefined

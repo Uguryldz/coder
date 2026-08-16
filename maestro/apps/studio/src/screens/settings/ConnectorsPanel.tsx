@@ -42,8 +42,15 @@ const KINDS: readonly ManagedConnectionKind[] = [
 
 const AUTH_KINDS: readonly ManagedConnectionAuthKind[] = ["basic", "bearer", "pat", "api_key"];
 
-/** The live-test result held per row so the screen can render it inline. */
-type TestState = Readonly<Record<string, { ok: boolean; text: string } | "testing">>;
+/**
+ * The live-test result held per row so the screen can render it inline.
+ *
+ * `warn` marks a test that CONNECTED but found the stored bot account did not
+ * belong to the token. It is not a failure and not a clean pass: the credential
+ * works, yet anything keyed to the old account id — listening rules, four-eyes
+ * exemptions, comment attribution — was pointing at the wrong person.
+ */
+type TestState = Readonly<Record<string, { ok: boolean; warn?: boolean; text: string } | "testing">>;
 
 export function ConnectorsPanel(): ReactNode {
   const api = useApi();
@@ -68,7 +75,11 @@ export function ConnectorsPanel(): ReactNode {
     onMutate: (id) => setTests((prev) => ({ ...prev, [id]: "testing" })),
     onSuccess: (result, id) => {
       const text = t(result.messageKey, result.messageParams ?? {});
-      setTests((prev) => ({ ...prev, [id]: { ok: result.ok, text } }));
+      const corrected = result.botAccountCorrected !== undefined;
+      setTests((prev) => ({ ...prev, [id]: { ok: result.ok, warn: corrected, text } }));
+      // A silently-fixed identity is exactly the thing an operator would miss in
+      // a table cell, so it also gets a toast they have to dismiss.
+      if (corrected) toast.show("error", text);
       void queryClient.invalidateQueries({ queryKey: ["connections"] });
     },
     onError: (error, id) => {
@@ -105,15 +116,18 @@ export function ConnectorsPanel(): ReactNode {
         if (live === "testing") return <Badge tone="gray">…</Badge>;
         // A just-run test wins the cell; otherwise the last recorded result.
         const ok = live !== undefined ? live.ok : row.lastTestOk;
-        const { tone, icon, key } = statusOf(ok);
+        const { tone, icon, key } = statusOf(ok, live !== undefined && live.warn === true);
         // Under the badge: when the test was last run, and — on failure — WHY,
         // from the secret-free note. A just-run test shows its own text; the
         // stored note (a catalog key) is translated. Never a token/DSN.
         const age = ageLabel(row.lastTestedAt);
+        // A corrected bot account reads out in full here too — the badge alone
+        // cannot carry two 36-char ids, and "which id replaced which" is the
+        // whole point of telling the operator.
         const failNote =
           live === undefined && row.lastTestOk === false && row.lastTestNote !== null
             ? t(row.lastTestNote)
-            : live !== undefined && !live.ok
+            : live !== undefined && (!live.ok || live.warn === true)
               ? live.text
               : null;
         return (
@@ -222,9 +236,16 @@ export function ConnectorsPanel(): ReactNode {
   );
 }
 
-/** The badge tone/icon for a tri-state test result. */
-function statusOf(ok: boolean | null): { tone: BadgeTone; icon: string; key: string } {
+/**
+ * The badge tone/icon for a tri-state test result.
+ *
+ * `warn` overrides a pass with amber: the connection is genuinely up, but it
+ * corrected a wrong bot account on the way, and a green tick would tell the
+ * operator the opposite of what happened.
+ */
+function statusOf(ok: boolean | null, warn = false): { tone: BadgeTone; icon: string; key: string } {
   if (ok === null) return { tone: "gray", icon: "⚪", key: "connections.status.untested" };
+  if (ok && warn) return { tone: "amber", icon: "⚠", key: "connections.status.ok_fixed" };
   return ok
     ? { tone: "green", icon: "●", key: "connections.status.ok" }
     : { tone: "red", icon: "✕", key: "connections.status.fail" };

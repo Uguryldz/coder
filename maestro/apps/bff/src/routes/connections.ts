@@ -105,7 +105,13 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     if (existing === null) throw notFound("no_such_connection");
 
     const secret = await storeToken(secrets, params.data.id, body.data.token, existing);
-    const record = toConnectionRecord(params.data.id, body.data, secret, {
+    // A learned `botAccountId` SURVIVES an edit that does not carry one. The
+    // panel's modal round-trips `config` verbatim, so a plain rename or URL fix
+    // would otherwise write back whatever the form was opened with — which is
+    // how a hand-typed wrong id outlived every correction the test made. A body
+    // that DOES carry the key still wins; this only refuses to lose the value.
+    const merged = mergeLearnedIdentity(body.data, existing);
+    const record = toConnectionRecord(params.data.id, merged, secret, {
       createdAt: existing.createdAt,
       updatedAt: deps.clock.now().toISOString(),
       // An edit does not un-test the connection; the test result (and its note)
@@ -137,14 +143,22 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const outcome = await runConnectionTest(record, token, deps.connectorFetch);
 
     const at = deps.clock.now().toISOString();
-    // `outcome.messageKey` is a catalog KEY (e.g. "connection.test.unauthorized"),
-    // never raw text — safe to persist as the row's secret-free test note.
-    await store.recordTest(record.id, { at, ok: outcome.ok, note: outcome.messageKey });
 
     // A successful Jira test learned the bot's own accountId. Persist it in the
     // connection's (non-secret) config so a listening rule can offer "the bot"
     // by name instead of asking an operator to hand-copy a 40-char GUID. Only on
     // success and only when it changed, so a failed test never wipes a good value.
+    //
+    // This is the SELF-HEAL, and it is deliberately automatic: the live answer
+    // is authoritative (the token's own owner), whereas the stored value is a
+    // hand-typed 36-char id — believing the keyboard over the API would keep a
+    // known-wrong account in place. What changed is never silent, though: the
+    // outcome carries `ok_bot_fixed` so the panel names both ids, and the audit
+    // row records the replacement rather than a plain "test_ok".
+    //
+    // It runs BEFORE `recordTest`: `put` writes the whole row from the record
+    // read at the top of the handler, which still carries the PREVIOUS test
+    // result — healing afterwards would erase the verdict just recorded.
     if (outcome.ok && outcome.accountId && record.config["botAccountId"] !== outcome.accountId) {
       await store.put({
         ...record,
@@ -152,13 +166,32 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
         updatedAt: at,
       });
     }
-    await audit(deps, request, record.id, outcome.ok ? "test_ok" : "test_fail");
+
+    // `outcome.messageKey` is a catalog KEY (e.g. "connection.test.unauthorized"),
+    // never raw text — safe to persist as the row's secret-free test note.
+    await store.recordTest(record.id, { at, ok: outcome.ok, note: outcome.messageKey });
+    const verb = outcome.ok
+      ? outcome.accountIdCorrected === undefined
+        ? "test_ok"
+        : "test_ok_bot_corrected"
+      : "test_fail";
+    await audit(deps, request, record.id, verb, {
+      // The displaced id and its replacement — opaque account ids, never an
+      // email, so the audit trail can answer "whose account was this?" later.
+      ...(outcome.accountIdCorrected === undefined
+        ? {}
+        : { botAccountIdWas: outcome.accountIdCorrected.from, botAccountIdNow: outcome.accountId }),
+    });
 
     return reply.code(200).send({
       ok: outcome.ok,
       messageKey: outcome.messageKey,
       ...(outcome.messageParams === undefined ? {} : { messageParams: outcome.messageParams }),
       testedAt: at,
+      // Account ids only — `/myself` also returns an email, which never travels.
+      ...(outcome.accountIdCorrected === undefined || outcome.accountId === undefined
+        ? {}
+        : { botAccountCorrected: { from: outcome.accountIdCorrected.from, to: outcome.accountId } }),
     });
   });
 
@@ -178,6 +211,19 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     await audit(deps, request, params.data.id, "deleted");
     return reply.code(204).send();
   });
+}
+
+/**
+ * Carry a learned `botAccountId` across an edit that omits it.
+ *
+ * The value is not operator data — it is what the live `/myself` probe read back
+ * from the token itself. An edit whose `config` simply has no such key must not
+ * be read as "clear it"; only a body that actually names the key may change it.
+ */
+function mergeLearnedIdentity(input: ConnectionInput, existing: ConnectionRecord): ConnectionInput {
+  const learned = existing.config["botAccountId"];
+  if (learned === undefined || input.config["botAccountId"] !== undefined) return input;
+  return { ...input, config: { ...input.config, botAccountId: learned } };
 }
 
 /**
@@ -235,12 +281,13 @@ async function audit(
   request: Parameters<typeof sessionOf>[0],
   connectionId: string,
   verb: string,
+  extra: Record<string, string> = {},
 ): Promise<void> {
   await deps.audit.append({
     actor: sessionActor(sessionOf(request)),
     action: "PARAM_CHANGED",
     subject: `connection:${connectionId}`,
     at: deps.clock.now(),
-    meta: { surface: "connections", verb },
+    meta: { surface: "connections", verb, ...extra },
   });
 }

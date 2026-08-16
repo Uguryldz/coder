@@ -234,6 +234,181 @@ describe("POST /studio/connections/:id/test", () => {
   });
 });
 
+/**
+ * The bot-identity check.
+ *
+ * A Jira connection carries `config.botAccountId` — the account Maestro acts as.
+ * It used to be free text, so an operator could store their OWN account id and
+ * nothing would ever contradict them: comments, transitions and four-eyes
+ * exemptions would then be attributed to a person instead of the bot. The live
+ * test knows better, because `/rest/api/3/myself` names the token's real owner.
+ *
+ * No network here — `connectorFetch` is a fixture returning a canned `/myself`.
+ */
+describe("POST /studio/connections/:id/test — the bot account it claims", () => {
+  // The real shape of a Jira Cloud `/myself` answer, email included, so the PII
+  // assertions below are testing against a body that genuinely contains one.
+  const REAL_OWNER = "712020:b836c135-c9d3-499a-a665-aed43d362cfd";
+  const OPERATORS_OWN = "712020:7ee7a2ab-23e7-47aa-a61e-38b79b7eb4d1";
+  const BOT_EMAIL = "uyildiz2054@gmail.com";
+
+  function myselfFetch(over: Record<string, unknown> = {}): ConnectorFetch {
+    return () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            accountId: REAL_OWNER,
+            displayName: "maestro",
+            emailAddress: BOT_EMAIL,
+            ...over,
+          }),
+          { status: 200 },
+        ),
+      );
+  }
+
+  const JIRA = {
+    id: "jira",
+    kind: "jira_cloud",
+    displayName: "Jira Cloud",
+    baseUrl: "https://ugurbank.atlassian.net",
+    authKind: "basic",
+  } as const;
+
+  async function createJira(
+    h: Harness,
+    token: string,
+    config: Record<string, string>,
+  ): Promise<LightMyRequestResponse> {
+    return post(h, "/studio/connections", token, { ...JIRA, config, token: TOKEN });
+  }
+
+  it("catches a botAccountId that is NOT the token's owner and corrects it", async () => {
+    const h = await harness({ connectorFetch: myselfFetch() });
+    const admToken = await admin(h);
+    // The live bug: the operator's personal account id stored as the bot's.
+    await createJira(h, admToken, { email: "operator@ugurbank.local", botAccountId: OPERATORS_OWN });
+
+    const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+      messageParams?: Record<string, string>;
+      botAccountCorrected?: { from: string; to: string };
+    };
+
+    // The connection genuinely works, so `ok` stays true — but it does NOT get
+    // to say a plain "connection succeeded" over a wrong identity.
+    expect(body.ok).toBe(true);
+    expect(body.messageKey).toBe("connections.test.ok_bot_fixed");
+    expect(body.messageParams?.["was"]).toBe(OPERATORS_OWN);
+    expect(body.messageParams?.["now"]).toBe(REAL_OWNER);
+    expect(body.botAccountCorrected).toEqual({ from: OPERATORS_OWN, to: REAL_OWNER });
+
+    // And the stored config is actually repaired, so the next rule read is right.
+    expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(REAL_OWNER);
+  });
+
+  it("accepts a matching botAccountId quietly — no false alarm", async () => {
+    const h = await harness({ connectorFetch: myselfFetch() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, { email: "bot@ugurbank.local", botAccountId: REAL_OWNER });
+
+    const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+      botAccountCorrected?: unknown;
+    };
+    expect(body.ok).toBe(true);
+    // The ordinary success key, and no correction claimed.
+    expect(body.messageKey).toBe("connections.test.ok_as");
+    expect(body.botAccountCorrected).toBeUndefined();
+    expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(REAL_OWNER);
+  });
+
+  it("never says 'verified' when the identity could not be read — fail closed", async () => {
+    // The network is down: nothing was learned, so nothing may be asserted.
+    const h = await harness({ connectorFetch: () => Promise.reject(new Error("ECONNREFUSED")) });
+    const admToken = await admin(h);
+    await createJira(h, admToken, { email: "bot@ugurbank.local", botAccountId: OPERATORS_OWN });
+
+    const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+      botAccountCorrected?: unknown;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.messageKey).toBe("connections.test.unreachable");
+    expect(body.botAccountCorrected).toBeUndefined();
+
+    // A failed reach must NOT overwrite the stored id — a wrong value is still
+    // better than a value silently replaced on the strength of no evidence.
+    expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(OPERATORS_OWN);
+  });
+
+  it("leaves the id alone when the probe answers 200 with no accountId", async () => {
+    const h = await harness({ connectorFetch: myselfFetch({ accountId: undefined }) });
+    const admToken = await admin(h);
+    await createJira(h, admToken, { email: "bot@ugurbank.local", botAccountId: OPERATORS_OWN });
+
+    const body = (await post(h, "/studio/connections/jira/test", admToken)).json() as {
+      messageKey: string;
+    };
+    // Nothing to compare against, so no claim of a correction is made.
+    expect(body.messageKey).toBe("connections.test.ok_as");
+    expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(OPERATORS_OWN);
+  });
+
+  it("records the replacement in the audit trail, with both ids and no email", async () => {
+    const h = await harness({ connectorFetch: myselfFetch() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, { email: "operator@ugurbank.local", botAccountId: OPERATORS_OWN });
+    await post(h, "/studio/connections/jira/test", admToken);
+
+    const entries = await h.auditStore.read();
+    const corrected = entries.find(
+      (entry) => (entry.meta as Record<string, unknown> | undefined)?.["verb"] === "test_ok_bot_corrected",
+    );
+    expect(corrected).toBeDefined();
+    const meta = corrected?.meta as Record<string, unknown>;
+    expect(meta["botAccountIdWas"]).toBe(OPERATORS_OWN);
+    expect(meta["botAccountIdNow"]).toBe(REAL_OWNER);
+    expect(JSON.stringify(entries)).not.toContain(BOT_EMAIL);
+  });
+
+  it("keeps the bot's EMAIL out of every output — it is PII, the accountId is not", async () => {
+    const h = await harness({ connectorFetch: myselfFetch() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, { email: "operator@ugurbank.local", botAccountId: OPERATORS_OWN });
+
+    const test = await post(h, "/studio/connections/jira/test", admToken);
+    // The `/myself` body carried an email; neither the test response...
+    expect(test.body).not.toContain(BOT_EMAIL);
+    // ...nor the connection read that follows it may echo one.
+    expect((await get(h, "/studio/connections", admToken)).body).not.toContain(BOT_EMAIL);
+    // The stored note is a catalog key, never the probe's prose or its email.
+    expect((await h.connections.get("jira"))?.lastTestNote).toBe("connections.test.ok_bot_fixed");
+  });
+
+  it("does not resurrect a wrong id when a later edit omits it", async () => {
+    // How the bad value survived: the panel round-trips `config`, so a rename
+    // after a correction would write the operator's id straight back.
+    const h = await harness({ connectorFetch: myselfFetch() });
+    const admToken = await admin(h);
+    await createJira(h, admToken, { email: "operator@ugurbank.local", botAccountId: OPERATORS_OWN });
+    await post(h, "/studio/connections/jira/test", admToken);
+
+    // A config-only edit that carries no botAccountId at all.
+    const edit = await put(h, "/studio/connections/jira", admToken, {
+      ...JIRA,
+      displayName: "Jira (production)",
+      config: { email: "operator@ugurbank.local" },
+      enabled: true,
+    });
+    expect(edit.statusCode).toBe(200);
+    expect((await h.connections.get("jira"))?.config["botAccountId"]).toBe(REAL_OWNER);
+  });
+});
+
 describe("DELETE /studio/connections/:id", () => {
   it("removes the connection and its secret", async () => {
     const h = await harness();

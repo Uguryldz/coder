@@ -1,16 +1,23 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Kpi, riskTone } from "../ui/index.ts";
+import { Badge, Button, Card, Kpi, riskTone } from "../ui/index.ts";
 import type { BadgeTone } from "../ui/index.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { ageLabel } from "./shared/format.ts";
 import { useRuns, type RunRow } from "./shared/runs.ts";
 import { RunStatusCell, TicketsList } from "./Tickets.tsx";
 import { StartGuide } from "./dash/StartGuide.tsx";
+import {
+  GUIDE_DISMISSED_KEY,
+  readFlag,
+  useSetupState,
+  webhookAcked,
+  writeFlag,
+} from "./dash/setup-state.ts";
 import "./shared/screens.css";
 
 /**
@@ -106,11 +113,24 @@ export function DashScreen(): ReactNode {
     return [...stats.broken.sort(byAgeAsc), ...stats.gate.sort(byAgeAsc)].slice(0, ATTENTION_LIMIT);
   }, [stats]);
 
-  // Nothing is running yet → this is a first-run / freshly-set-up platform. Show
-  // the "where do I start" checklist instead of an empty dashboard, so a manager
-  // who just logged in is handed the next step rather than a blank page. Once
-  // real work exists, the KPIs + queue take over and the guide steps aside.
-  const empty = !isPending && error === null && runs.length === 0;
+  /**
+   * Whether to show the "where do I start" checklist.
+   *
+   * This used to be "there are no runs yet", which was wrong in the one case
+   * that matters: a deployment with tickets already flowing but the setup only
+   * half done (no webhook, most connections unwired) hid the very card that
+   * would have explained the gap. The trigger is now the SETUP's own state —
+   * any open step shows the guide, however much work has been through it.
+   *
+   * "Hide" is honoured as a display preference, but it is not a completion
+   * claim: `setupIncomplete` below stays true and the Panel keeps a one-line
+   * reminder with a way back, so the gap can be silenced but not lost.
+   */
+  const [webhookAck, setWebhookAck] = useState(() => webhookAcked());
+  const [dismissed, setDismissed] = useState(() => readFlag(GUIDE_DISMISSED_KEY));
+  const setup = useSetupState(webhookAck);
+  const setupIncomplete = !setup.loading && !setup.complete;
+  const showGuide = setupIncomplete && !dismissed;
 
   return (
     <div className="screen-stack">
@@ -181,7 +201,34 @@ export function DashScreen(): ReactNode {
         </Card>
       )}
 
-      {empty && <StartGuide />}
+      {showGuide && (
+        <StartGuide
+          setup={setup}
+          onWebhookAck={setWebhookAck}
+          onDismiss={() => {
+            writeFlag(GUIDE_DISMISSED_KEY, true);
+            setDismissed(true);
+          }}
+        />
+      )}
+
+      {/* Hidden but not finished: one honest line, and the way back. Without
+          this, "gizle" would quietly become "tamamlandı". */}
+      {setupIncomplete && dismissed && (
+        <div className="dash-setup-note" role="note">
+          <span>{t("dash.start.hidden_note")}</span>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              writeFlag(GUIDE_DISMISSED_KEY, false);
+              setDismissed(false);
+            }}
+          >
+            {t("dash.start.show_again")}
+          </Button>
+        </div>
+      )}
 
       <QueryState
         isPending={isPending}

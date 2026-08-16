@@ -22,6 +22,24 @@ export default defineConfig({
     },
   },
   test: {
+    /**
+     * 20 s, not vitest's 5 s.
+     *
+     * These are jsdom + React Testing Library suites: each test mounts a tree,
+     * runs effects and waits on `findBy*`. Alone they finish in tens of
+     * milliseconds, but the gate runs four packages at once on an eight-core
+     * box that is often also compiling for a dozen background agents — at load
+     * 25 the same test misses 5 s and reports a defect that is not there. Three
+     * different suites failed that way in one session (`screens-users`,
+     * `screens-params`, `screens-killswitch`), every one of them green on its
+     * own.
+     *
+     * Per-package, deliberately: a cross-cutting knob was tried three times and
+     * each attempt either did nothing or overrode `@maestro/workflows`'s own
+     * 180 s — see the note in `scripts/gate.mjs`. A real hang still fails, just
+     * twenty seconds later.
+     */
+    testTimeout: 20_000,
     environment: "jsdom",
     globals: true,
     setupFiles: ["./test/setup.ts"],

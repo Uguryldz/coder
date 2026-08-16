@@ -46,6 +46,25 @@ canlı ticket'la denenmedi).
 - env: `set -a; source /tmp/analiz-env.sh; set +a` + `export PATH="$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"`
 - Giriş: **`admin` / `admin123`** — parola politikası atlanarak yazıldı. **Pilot öncesi SİLİNMELİ.**
 
+
+## Ayarlar ekranı — motor satırı (16 Ağustos, kullanıcı sorusu üzerine)
+Kullanıcı "motor ayarları neden yok?" diye sordu. İki gerçek kusur bulundu:
+1. **Temporal, veritabanı ve LLM `/settings` listesinde HİÇ YOKTU.** Eklendi; motor ve veritabanı
+   `read.health`'in **aynı** probe setini okuyor (ikinci set, sağlık ekranıyla çelişebilirdi).
+2. **Jira yanlış değişkeni okuyordu** — kod `JIRA_BASE_URL`, ortamda `JIRA_CLOUD_BASE_URL`.
+   Çalışan bir bağlantı "yapılandırılmamış" görünüyordu; boş ekrandan kötü, çünkü operatörü
+   olmayan bir sorunu kovalamaya iter. Artık ikisi de okunuyor (Cloud/DC iki ayrı sürücü).
+3. **Ekran o tabloyu göstermiyordu** — `Settings.tsx` iki ayrı liste kullanıyor:
+   `/studio/connections` (operatörün yönettiği 3 bağlantı) ve `/settings` (dağıtımın 11 gerçeği).
+   Salt-okunur tablo geçmişte "tekrarlıyor" diye kaldırılmıştı; o gün doğruydu, motor eklenince
+   geçersiz kaldı. `InfrastructurePanel` eklendi — iki tablo **bilerek ayrı**: aynı `id` iki
+   listede **farklı gerçeği** taşır (operatörün yazdığı site ≠ .env'deki site) ve ayrışma en
+   değerli bilgidir. `DATABASE_URL` parolası sunucuda maskeleniyor (`***`), ekranda tekrar değil.
+
+**Canlı doğrulama (tarayıcı):** 11 satır. Temporal `localhost:7233` ● bağlı · az önce yoklandı;
+Veritabanı `postgresql://maestro:***@...` ● bağlı; Jira/LLM/Kimlik/Confluence yapılandırıldı;
+ADO/Vault/Depolama/Egress/SIEM kurulmadı (doğru — o değişkenler gerçekten yok). Ham parola yok.
+
 ## Tuzaklar
 - **`/tmp/worker-v5.log` ÇÖKMÜŞ ESKİ worker'a ait** ("Not running. Current state: STOPPED").
   Canlı worker `/tmp/worker-flow.log`'a yazıyor. Yanlış loga bakan sistemin çöktüğünü sanır.

@@ -6,6 +6,12 @@ import type {
   SettingsReader,
 } from "../deps.js";
 import type { HealthReader } from "../read-models.js";
+import {
+  firstConfigured,
+  llmEndpoint,
+  type LlmWiring,
+  maskEndpointCredentials,
+} from "./settings-wiring.js";
 
 /**
  * Platform wiring, read from the two places that actually know it: the
@@ -46,6 +52,8 @@ export class EnvSettingsReader implements SettingsReader {
     private readonly health: HealthReader,
     /** Which notify channels this deployment actually registered (M45). */
     private readonly enabledChannels: readonly string[] = [],
+    /** LLM wiring from `DeployEnvSchema`; absent when nothing declared it. */
+    private readonly llm: LlmWiring = { baseUrl: undefined, model: undefined, apiKeyRef: undefined },
   ) {}
 
   async connections(): Promise<readonly ConnectionView[]> {
@@ -88,9 +96,59 @@ export class EnvSettingsReader implements SettingsReader {
     const env = this.env;
     return [
       {
+        // The workflow ENGINE. It was missing from this list, and its absence
+        // was the loudest thing on the screen: every run this platform starts
+        // is a Temporal workflow, so an operator asking "is the engine up and
+        // where is it pointed" had to leave the settings screen to find out.
+        //
+        // It carries a real probe — `temporalProbe` pings the deployment's own
+        // namespace — so its row says `connected` only when the engine
+        // actually answered, never merely because a variable is set.
+        id: "temporal",
+        endpoint: env.TEMPORAL_ADDRESS,
+        // Reached by network position inside the platform's own namespace; a
+        // dev/compose deployment presents no client certificate, and saying
+        // "none" is the truth rather than a gap waiting to be filled.
+        credentialRef: "none",
+        probe: "temporal",
+      },
+      {
+        // The platform's own database. Probed by `postgresProbe`, so this row
+        // distinguishes "the DSN is configured" from "the pool can actually
+        // hand out a connection".
+        id: "database",
+        // MASKED: a DSN carries `user:password@host`, and this string reaches
+        // an HTTP body, a browser and whatever log aggregator sits behind it.
+        endpoint: maskEndpointCredentials(env.DATABASE_URL),
+        credentialRef: "DATABASE_URL",
+        probe: "postgres",
+      },
+      {
+        // Jira, read from BOTH names. Cloud and Data Center are two drivers
+        // with two auth schemes (Cloud `Basic email:token`, DC `Bearer` PAT)
+        // and a deployment sets whichever one it uses; `apps/deploy`'s
+        // `jiraCloudConfig` has resolved them in this same order since the
+        // Cloud driver landed.
+        //
+        // Reading only `JIRA_BASE_URL` was a real defect, not a cosmetic one:
+        // every Cloud deployment saw a WORKING Jira reported as
+        // `unconfigured`, which sends an operator to fix an integration that
+        // was never broken.
         id: "jira",
-        endpoint: env.JIRA_BASE_URL,
+        endpoint: firstConfigured(env.JIRA_CLOUD_BASE_URL, env.JIRA_BASE_URL),
         credentialRef: "vault:maestro/jira#token",
+        probe: null,
+      },
+      {
+        // Which model this platform's analysis actually runs on. The base URL
+        // alone does not answer it — an OpenRouter endpoint serves dozens of
+        // models — so `llmEndpoint` carries both, and "which model reviewed
+        // this change request" stops being a question only the logs can answer.
+        id: "llm",
+        endpoint: llmEndpoint(this.llm),
+        // A SecretPort KEY (`kv/llm#apikey`), which is a pointer and not the
+        // key. The value never leaves the process that resolves it (M9).
+        credentialRef: this.llm.apiKeyRef ?? "none",
         probe: null,
       },
       {
@@ -139,8 +197,10 @@ export class EnvSettingsReader implements SettingsReader {
         probe: null,
       },
       {
+        // Confluence rides the same site and the same token as Jira, so it
+        // resolves the same two names for the same reason.
         id: "publish",
-        endpoint: env.JIRA_BASE_URL,
+        endpoint: firstConfigured(env.JIRA_CLOUD_BASE_URL, env.JIRA_BASE_URL),
         credentialRef: "vault:maestro/jira#token",
         probe: null,
       },

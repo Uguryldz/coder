@@ -34,6 +34,21 @@ export const EnvSchema = z.object({
   DATABASE_URL: z.url().optional(),
   TEMPORAL_ADDRESS: z.string().min(1).optional(),
   JIRA_BASE_URL: z.url().optional(),
+  /**
+   * The Jira CLOUD site, when the deployment talks to Cloud rather than to a
+   * Data Center instance. Two variables because they are two DRIVERS with two
+   * auth schemes — Cloud authenticates `Basic email:token`, DC sends a
+   * `Bearer` PAT — and a deployment picks one. `apps/deploy`'s
+   * `jiraCloudConfig` has read this name off the raw environment since the
+   * Cloud driver landed; declaring it here is what lets the rest of the
+   * platform (the settings screen above all) see the same site the work port
+   * is actually pointed at.
+   *
+   * Deliberately NOT in `REQUIRED_IN_PROD`: `JIRA_BASE_URL` already stands for
+   * "a Jira is configured", and demanding both would refuse to boot every
+   * Data-Center deployment there is.
+   */
+  JIRA_CLOUD_BASE_URL: z.url().optional(),
   ADO_BASE_URL: z.url().optional(),
   VAULT_ADDR: z.url().optional(),
   STORAGE_ENDPOINT: z.url().optional(),

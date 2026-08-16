@@ -42,4 +42,5 @@ export * from "./stores/memory.js";
 export * from "./stores/onboarding-memory.js";
 export * from "./stores/read-memory.js";
 export * from "./stores/settings-env.js";
+export * from "./stores/settings-wiring.js";
 export * from "./stores/variant-memory.js";

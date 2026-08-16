@@ -218,6 +218,36 @@ export class IncompleteRunContextError extends Error {
   }
 }
 
+/**
+ * A run opened without saying which agent — or which template — it runs on.
+ *
+ * Raised at the moment the row would be WRITTEN, which is the last place the
+ * mistake is still cheap. The alternative is the failure this deployment
+ * actually produced: `variantId: ""` is accepted here (the column defaults to
+ * `""`, and `RunCreate.variantId` is optional), and surfaces ~19 activity
+ * attempts later inside `LlmGateway.generateObject` as
+ * `ZodError: variantId: Too small: expected string to have >=1 characters` —
+ * a message that reads as a model problem and names neither the run nor the
+ * caller that opened it. OPS-22 and OPS-23 died exactly that way.
+ *
+ * Fail-closed rather than defaulting HERE is deliberate. `run-pins.ts` already
+ * owns the fallback (`DEFAULT_ANALYST_VARIANT`), and it can pick a sensible one
+ * because it knows the deployment's variants. A second, silent default in the
+ * store would paper over a miswired composition root and pin real bank tickets
+ * to an agent nobody chose — the store's job is to refuse the row, not to guess
+ * what it should have contained.
+ */
+export class UnpinnedRunError extends Error {
+  constructor(ticket: string, missing: "variantId" | "templateVersion") {
+    super(
+      `run context: refusing to open run for ticket ${ticket} with an empty ${missing} — ` +
+        `it is pinned at start (M38/M83) and an empty one fails the LLM gateway's contract ` +
+        `on the first model call`,
+    );
+    this.name = "UnpinnedRunError";
+  }
+}
+
 export class PrismaRunContextStore implements RunContextStore {
   constructor(private readonly runs: RunDelegate) {}
 
@@ -258,6 +288,11 @@ export class PrismaRunContextStore implements RunContextStore {
    * violation here means the row exists, which is the outcome the caller wanted.
    */
   async create(input: NewRun): Promise<void> {
+    // Before the idempotency check, not after: a caller that passes an empty
+    // pin has a wiring bug whether or not a row already exists, and letting the
+    // second delivery of a webhook return quietly would hide it on exactly the
+    // retry that made it reproducible.
+    assertPinned(input);
     if ((await this.liveRun(input.ticket)) !== null) return;
     try {
       await this.runs.create({
@@ -327,13 +362,38 @@ export class PrismaRunContextStore implements RunContextStore {
   }
 }
 
+/**
+ * Both start-of-run pins, checked as the gateway will check them.
+ *
+ * `trim()` before the emptiness test because the gateway's schema is
+ * `z.string().min(1)` on a value that reaches it verbatim: `" "` passes a bare
+ * length check here, then fails there — which is the whole failure mode this
+ * guard exists to stop, one space further along.
+ */
+function assertPinned(input: NewRun): void {
+  if (input.variantId.trim() === "") throw new UnpinnedRunError(input.ticket, "variantId");
+  if (input.templateVersion.trim() === "") {
+    throw new UnpinnedRunError(input.ticket, "templateVersion");
+  }
+}
+
 /** `Partial<RunContext>` -> the column subset, dropping absent keys. */
 export function toRunUpdate(changes: Partial<RunContext>): RunUpdate {
   const data: RunUpdate = {};
   if (changes.risk !== undefined && changes.risk !== null) data.risk = changes.risk;
   if (changes.locale !== undefined) data.locale = changes.locale;
-  if (changes.variantId !== undefined) data.variantId = changes.variantId;
-  if (changes.templateVersion !== undefined) data.templateVersion = changes.templateVersion;
+  // The pins are write-once-at-open in practice, but `patch` can reach the same
+  // two columns — so the same emptiness rule applies here. Dropping an empty
+  // pin rather than throwing is the right shape for a PARTIAL update: the
+  // caller is asking to change other fields, and un-pinning a live run is not
+  // a thing any caller means to do. Keeping the pinned value is the safe half
+  // of the invariant `create` enforces at the other end.
+  if (changes.variantId !== undefined && changes.variantId.trim() !== "") {
+    data.variantId = changes.variantId;
+  }
+  if (changes.templateVersion !== undefined && changes.templateVersion.trim() !== "") {
+    data.templateVersion = changes.templateVersion;
+  }
   if (changes.workspacePath !== undefined) data.workspacePath = changes.workspacePath;
   if (changes.workspacePresent !== undefined) data.workspacePresent = changes.workspacePresent;
   if (changes.protectedPaths !== undefined) data.protectedPathsJson = [...changes.protectedPaths];

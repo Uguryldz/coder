@@ -3,6 +3,7 @@ import {
   IncompleteRunContextError,
   PrismaRunContextStore,
   RunNotFoundError,
+  UnpinnedRunError,
   toRunUpdate,
   type ApplicationRow,
   type RunRow,
@@ -203,6 +204,27 @@ describe("toRunUpdate", () => {
     expect(toRunUpdate({ branch: "" })).toEqual({ branch: "" });
   });
 
+  /**
+   * The other half of the pin invariant. `create` refuses an empty pin; this
+   * is the write path that could otherwise UN-pin a run that opened correctly,
+   * putting the row back into the state OPS-22 failed from.
+   *
+   * Dropped rather than rejected, because `patch` is a partial update: the
+   * caller is asking to change other columns, and no caller means to clear a
+   * live run's variant. Keeping the pinned value is the safe resolution.
+   */
+  it("refuses to blank a pinned variant or template", () => {
+    expect(toRunUpdate({ variantId: "" })).not.toHaveProperty("variantId");
+    expect(toRunUpdate({ variantId: "   " })).not.toHaveProperty("variantId");
+    expect(toRunUpdate({ templateVersion: "" })).not.toHaveProperty("templateVersion");
+  });
+
+  it("still writes a real variant and template", () => {
+    // The guard above must not cost the legitimate re-pin its write.
+    expect(toRunUpdate({ variantId: "analyst-kredi" })).toEqual({ variantId: "analyst-kredi" });
+    expect(toRunUpdate({ templateVersion: "7" })).toEqual({ templateVersion: "7" });
+  });
+
   it("copies array fields rather than storing the caller's reference", () => {
     const paths = ["a/**"];
     const update = toRunUpdate({ protectedPaths: paths });
@@ -281,6 +303,66 @@ describe("PrismaRunContextStore.create", () => {
       create: () => Promise.reject(Object.assign(new Error("unique"), { code: "P2002" })),
     });
     await expect(store.create(newRun)).resolves.toBeUndefined();
+  });
+
+  /**
+   * The regression OPS-22 and OPS-23 died of.
+   *
+   * Both rows were written with `variantId = ""` (the column defaults to it,
+   * and `RunCreate.variantId` is optional, so nothing stopped the write). The
+   * failure surfaced 19 activity attempts later inside the LLM gateway as
+   * `ZodError: variantId: Too small: expected string to have >=1 characters` —
+   * naming neither the ticket nor the caller that opened it.
+   *
+   * These tests assert the row is never written, not merely that something
+   * throws: an exception raised after a successful `create` would leave the
+   * same poisoned row behind and still pass a rejects-only assertion.
+   */
+  it("refuses to open a run with an empty variantId", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    const store = new PrismaRunContextStore(delegate);
+
+    await expect(store.create({ ...newRun, variantId: "" })).rejects.toBeInstanceOf(
+      UnpinnedRunError,
+    );
+    expect(recorded.creates).toHaveLength(0);
+  });
+
+  it("refuses a whitespace-only variantId, as the gateway would", async () => {
+    // `z.string().min(1)` accepts " ", so a bare length check here would move
+    // the same failure one space further along instead of stopping it.
+    const { delegate, recorded } = fakeDelegate(null);
+    await expect(
+      new PrismaRunContextStore(delegate).create({ ...newRun, variantId: "   " }),
+    ).rejects.toBeInstanceOf(UnpinnedRunError);
+    expect(recorded.creates).toHaveLength(0);
+  });
+
+  it("names the ticket and the missing pin in the message", async () => {
+    // The point of failing here rather than in the gateway: the message has to
+    // say which run was opened wrong, or it is no better than the ZodError.
+    const { delegate } = fakeDelegate(null);
+    await expect(
+      new PrismaRunContextStore(delegate).create({ ...newRun, variantId: "" }),
+    ).rejects.toThrow(/OPS-1.*variantId/s);
+  });
+
+  it("refuses an empty templateVersion too", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    await expect(
+      new PrismaRunContextStore(delegate).create({ ...newRun, templateVersion: "" }),
+    ).rejects.toBeInstanceOf(UnpinnedRunError);
+    expect(recorded.creates).toHaveLength(0);
+  });
+
+  it("refuses an unpinned run even when one is already live", async () => {
+    // The guard runs BEFORE the idempotency check. A second webhook delivery
+    // carrying an empty pin is the retry that makes a wiring bug reproducible;
+    // returning quietly there would hide it at the best moment to see it.
+    const { delegate } = fakeDelegate(row());
+    await expect(
+      new PrismaRunContextStore(delegate).create({ ...newRun, variantId: "" }),
+    ).rejects.toBeInstanceOf(UnpinnedRunError);
   });
 
   it("propagates any other write failure", async () => {

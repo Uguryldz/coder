@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Card, TabPanel, Tabs } from "../ui/index.ts";
+import { JiraSetupCard } from "./help/JiraSetup.tsx";
 import "./shared/screens.css";
 
 /**
@@ -82,6 +83,11 @@ export function HelpScreen(): ReactNode {
       <Card title={t("help.title")} subtitle={t("help.subtitle")}>
         <p className="scr-prose">{t("help.summary")}</p>
       </Card>
+
+      {/* "What do I do in Jira?" comes first: a ticket that never reaches
+          Maestro makes every other page moot. Its content is read from the
+          live listening rules, not written here. */}
+      <JiraSetupCard />
 
       <Card title={t("help.features")} subtitle={t("help.features_sub")}>
         <div className="help-guide">

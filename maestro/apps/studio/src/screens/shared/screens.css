@@ -443,6 +443,25 @@
   padding: 4px 11px; border-radius: 999px;
 }
 
+/* The guide's footer: the webhook acknowledgement on the left, "hide" on the
+   right. Wraps on a narrow screen rather than squeezing the label. */
+.dash-start__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-top: 12px;
+}
+.dash-start__ack {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted);
+  cursor: pointer;
+}
+
+/* Shown when the guide is hidden but the setup is still open — the reminder
+   that "gizle" did not mean "tamamlandı". */
+.dash-setup-note {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel); font-size: 13px; color: var(--muted);
+}
+
 /* Section heading inside the Panel (e.g. "Tüm iş akışları" above the full list). */
 .dash-section { font-size: 15px; font-weight: 700; margin: 6px 2px 10px; color: var(--ink, inherit); }
 

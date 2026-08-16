@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PageQuery } from "../src/routes/paging.js";
 import { auth } from "./helpers.js";
 import {
   AT,
@@ -78,6 +79,37 @@ describe("GET /studio/runs", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: "invalid_page" });
+  });
+
+  /**
+   * A browser building the first page sends `?cursor=` for an unset value, and
+   * `.min(1)` used to answer 400 to every one of them: the live Studio could
+   * not list a single run, while the same URL without the parameter worked.
+   * Blank means absent — the guard that matters is on a NON-empty cursor.
+   */
+  it("treats a blank cursor as no cursor, the way a browser sends it", async () => {
+    const h = await studioHarness();
+    h.read.runs.put({ ...RUN, ticketKey: "UGURPAY-700" });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: "/studio/runs?limit=50&cursor=",
+      headers: auth(token),
+    });
+
+    // The point is the status code: a blank cursor used to be a 400. The body
+    // is asserted only far enough to prove a real page came back.
+    expect(response.statusCode).toBe(200);
+    const keys = (response.json() as { items: { ticketKey: string }[] }).items.map((r) => r.ticketKey);
+    expect(keys).toContain("UGURPAY-700");
+  });
+
+  it("still refuses a cursor that is present but unusable", () => {
+    // Whitespace is blank, not a value — but an over-long one is a real cursor
+    // and must still be rejected.
+    expect(PageQuery.safeParse({ cursor: "   " }).success).toBe(true);
+    expect(PageQuery.safeParse({ cursor: "x".repeat(513) }).success).toBe(false);
   });
 
   it("pages with a cursor rather than returning everything", async () => {

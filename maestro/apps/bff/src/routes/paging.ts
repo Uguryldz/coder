@@ -19,8 +19,19 @@ export const PageQuery = z.object({
   /**
    * Opaque to the caller: the shape is the store's business, and a cursor a
    * client can construct is a cursor a client can use to page past a filter.
+   *
+   * Blank means ABSENT, not invalid. A browser building the first page sends
+   * `?cursor=` for an unset value, and `.min(1)` answered 400 `invalid_page` to
+   * every such request — the live Studio could not list runs at all, while the
+   * same URL without the parameter worked. An empty cursor is exactly what "no
+   * cursor" looks like on a query string; refusing it protects nothing, because
+   * the guard that matters is the length and opacity of a NON-empty one.
    */
-  cursor: z.string().trim().min(1).max(512).optional(),
+  cursor: z
+    .string()
+    .transform((value) => (value.trim() === "" ? undefined : value.trim()))
+    .pipe(z.string().min(1).max(512).optional())
+    .optional(),
 });
 
 export type PageQuery = z.infer<typeof PageQuery>;

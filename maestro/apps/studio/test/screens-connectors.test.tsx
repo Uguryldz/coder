@@ -76,6 +76,48 @@ describe("connectors panel", () => {
     expect(await screen.findByText("Bağlantı başarılı — ugurbank-bot")).toBeInTheDocument();
   });
 
+  it("a corrected bot account reads as a WARNING, not a green tick", async () => {
+    // The connection works, so the BFF answers ok:true — but it also reports
+    // that the stored bot account did not belong to the token. A plain green
+    // "bağlı" here would tell the operator the opposite of what happened.
+    const { fetchImpl } = stubFetch([
+      LIST,
+      {
+        path: "/studio/connections/github/test",
+        method: "POST",
+        body: {
+          ok: true,
+          messageKey: "connections.test.ok_bot_fixed",
+          messageParams: {
+            was: "712020:7ee7a2ab-23e7-47aa-a61e-38b79b7eb4d1",
+            now: "712020:b836c135-c9d3-499a-a665-aed43d362cfd",
+          },
+          testedAt: "2026-08-10T10:00:00.000Z",
+          botAccountCorrected: {
+            from: "712020:7ee7a2ab-23e7-47aa-a61e-38b79b7eb4d1",
+            to: "712020:b836c135-c9d3-499a-a665-aed43d362cfd",
+          },
+        },
+      },
+    ]);
+    renderScreen(<ConnectorsPanel />, { fetchImpl, session: ADMIN });
+    await screen.findByText("GitHub");
+
+    await userEvent.click(screen.getByRole("button", { name: /Test et/ }));
+
+    // The operator is told, in full, WHICH id was replaced by WHICH — the badge
+    // renders the live outcome text, so both ids are on screen to compare.
+    const shown = await screen.findAllByText(/712020:7ee7a2ab/);
+    expect(shown.length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/712020:b836c135/).length).toBeGreaterThan(0);
+    // Never the plain "connected" badge — that would hide the correction.
+    expect(screen.queryByText("bağlı")).not.toBeInTheDocument();
+    // The badge carries the amber warning tone, not the green success tone.
+    const badge = shown[0]?.closest(".ui-badge");
+    expect(badge?.className).toContain("amber");
+    expect(badge?.className).not.toContain("green");
+  });
+
   it("a config-only edit omits the token — the stored credential is preserved", async () => {
     const { fetchImpl, calls } = stubFetch([
       LIST,

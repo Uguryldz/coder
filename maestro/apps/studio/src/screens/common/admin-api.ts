@@ -291,6 +291,13 @@ export interface ConnectionTestResponse {
   readonly messageKey: string;
   readonly messageParams?: Readonly<Record<string, string>>;
   readonly testedAt: string;
+  /**
+   * The stored bot account did not belong to the token and was corrected to the
+   * real owner. Rendered as a WARNING, not a green tick: the connection works,
+   * but rules and attributions built on the old id need a second look. Account
+   * ids only — the identity probe's email is never carried here.
+   */
+  readonly botAccountCorrected?: { readonly from: string; readonly to: string };
 }
 
 // ── /notify (REQUESTED) ───────────────────────────────────────────────────────

@@ -102,6 +102,33 @@ BFF artık `0.0.0.0:7091` dinliyor (Jira'nın ulaşabilmesi için). İmzasız PO
 (`712020:7ee7a2ab-…`) ile kuralın beklediği hesap (`712020:b836c135-…`) **FARKLI**. Kural ve
 gerçek Jira bot'u eşleşiyor; bağlantı kaydı yanlış. Hangisinin doğru olduğuna karar verilmeli.
 
+
+## ✅ ZİNCİR TAMAM — OPS-53 (16 Ağustos, canlı kanıt)
+Analiz akışı **belge ekiyle birlikte** uçtan uca çalıştı:
+```
+ticket → analiz → kapı 4 (Jira /approve) → kapı 5 (/approve) → adım 13 → done
+Jira eki: OPS-53-analiz.docx (12.895 B) + OPS-53-analiz.pdf (29.356 B)
+```
+İndirip doğruladım: `Microsoft Word 2007+` · `PDF, 2 sayfa` · Türkçe bozulmamış
+(`Analiz Dokümanı`, `Hazırlayan`, `Şablon sürümü`) · 7 bölüm (amaç, kapsam, etki analizi,
+kabul kriterleri, ekran/API, test yaklaşımı, risk & geri dönüş).
+
+**Belge zinciri üç turda açıldı, her turda hata DEĞİŞTİ** (yani her tur gerçek bir halka kırdı):
+1. OPS-49 → `ObjectLockNotConfiguredError` (kilit yapılandırılmamış) → `81b19c9`
+2. OPS-51 → `relation "storage_blob" does not exist` (tablo yok) → migration `0017`
+3. OPS-53 → **ek geldi**
+
+**Bot hesabı düzeltildi** (`ffd8f96`): `Connection.configJson`'da operatörün KİŞİSEL hesabı
+(`712020:7ee7a2ab-…` = "Uğur Yıldız") yazılıydı, bot değil. Üç kusur birbirini besliyordu:
+karşılaştırma yoktu, düzeltme sessizdi, ve panel `config`'i geri gönderdiği için sonraki her
+düzenleme yanlış değeri geri yazıyordu. Artık "Test et" gerçek sahibi (`/myself`) okuyup düzeltiyor
+ve kehribar uyarıyla söylüyor. E-posta hiçbir çıktıda yok (PII).
+
+**Kapı flake'i çözüldü** — sebep zaman aşımı DEĞİLDİ: Ayarlar ekranı artık dört panel mount
+ediyor, kill switch sonuncusu, ve Testing Library'nin `findBy*` varsayılanı 1000 ms. Yüklü
+makinede düğme o sürede render olmuyordu. `asyncUtilTimeout: 5000` (setup.ts) + studio
+`testTimeout: 20_000`. Kapı ardışık koşularda 64/64.
+
 ## Tuzaklar
 - **`/tmp/worker-v5.log` ÇÖKMÜŞ ESKİ worker'a ait** ("Not running. Current state: STOPPED").
   Canlı worker `/tmp/worker-flow.log`'a yazıyor. Yanlış loga bakan sistemin çöktüğünü sanır.

@@ -1,7 +1,7 @@
 # RAPOR — Akış tipi artık ticket başına karar veriliyor
 
 **Branch:** `worktree-agent-a35e2606762a18067` (taban: `11d5f03`)
-**Commit:** `74587c3` — `flow: akış tipini ticket başına karar verilebilir yap`
+**Commit:** `0384525` — `flow: akış tipini ticket başına karar verilebilir yap`
 (main'e **merge edilmedi**)
 
 ## Sorun

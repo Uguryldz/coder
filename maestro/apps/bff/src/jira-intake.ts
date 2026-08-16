@@ -90,6 +90,11 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     appId,
     mode: binding.mode,
     dataClass: binding.dataClass,
+    // Deployment-level for now; a per-ticket listening rule is the finer
+    // answer and belongs above this (plan Faz 4/19).
+    ...(deps.config.defaultFlow === undefined || deps.config.defaultFlow === null
+      ? {}
+      : { flow: deps.config.defaultFlow }),
   });
 
   if (outcome.started) {

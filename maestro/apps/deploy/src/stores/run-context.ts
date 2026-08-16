@@ -31,6 +31,17 @@ type CommandSpec = RunContext["verification"][number];
 export interface RunRow {
   id: string;
   ticketKey: string;
+  step: string;
+  /**
+   * Read as a plain `string`, not the narrowed union.
+   *
+   * The WRITE side (`RunUpdate`) is narrow so a typo cannot reach the column,
+   * but the read side takes whatever the row holds: Prisma's generated enum is
+   * its own type, and narrowing here makes the real delegate structurally
+   * incompatible with this interface for no safety the database is not already
+   * enforcing.
+   */
+  status: string;
   mode: string;
   risk: string | null;
   dataClass: string;
@@ -67,6 +78,14 @@ export interface ApplicationRow {
  * is the useful kind.
  */
 export interface RunUpdate {
+  /** The step the workflow has reached; Studio's ticket list reads this column. */
+  step?: string;
+  /**
+   * The run's lifecycle state. Written when the workflow ENDS: `get` filters on
+   * `status notIn TERMINAL_STATUSES`, so a finished run that never sets this
+   * stays "live" forever and the ticket can never start a second run.
+   */
+  status?: NonNullable<RunContext["status"]>;
   risk?: NonNullable<RunContext["risk"]>;
   locale?: string;
   variantId?: string;
@@ -327,9 +346,23 @@ export class PrismaRunContextStore implements RunContextStore {
   }
 }
 
+/**
+ * The column's string as the contract's union.
+ *
+ * `get` only ever returns rows the `notIn` filter let through, so in practice
+ * this is `running`. Anything else means the filter and this mapper disagree,
+ * and calling it `running` is the honest answer: the row IS live by the only
+ * definition the store uses.
+ */
+function toLifecycle(status: string): RunContext["status"] {
+  return status === "done" || status === "cancelled" ? status : "running";
+}
+
 /** `Partial<RunContext>` -> the column subset, dropping absent keys. */
 export function toRunUpdate(changes: Partial<RunContext>): RunUpdate {
   const data: RunUpdate = {};
+  if (changes.step !== undefined) data.step = changes.step;
+  if (changes.status !== undefined) data.status = changes.status;
   if (changes.risk !== undefined && changes.risk !== null) data.risk = changes.risk;
   if (changes.locale !== undefined) data.locale = changes.locale;
   if (changes.variantId !== undefined) data.variantId = changes.variantId;
@@ -356,6 +389,8 @@ function toRunContext(row: RunRow, app: ApplicationRow): RunContext {
   return {
     runId: row.id,
     ticket: row.ticketKey,
+    step: row.step,
+    status: toLifecycle(row.status),
     app: toApplication(app),
     dataClass: row.dataClass as RunContext["dataClass"],
     mode: row.mode as RunContext["mode"],

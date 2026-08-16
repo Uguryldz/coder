@@ -36,7 +36,9 @@ export async function awaitGate(
   // The queue is NOT cleared: a decision already waiting was sent by a human
   // looking at this ticket, and whether it belongs to this gate is settled by
   // `canCloseGate`'s `wrong_step` check, not by whether it arrived early.
-  await acts.openGate(ticket, at, owner);
+  // The group the gate is really open against — the directory's name for the
+  // role, which is what an approver's claim will carry.
+  const openedAgainst = await acts.openGate(ticket, at, owner);
 
   let waited = 0;
   for (;;) {
@@ -45,7 +47,7 @@ export async function awaitGate(
     // one batch must both be processed, or the run parks holding a signal it
     // never looks at.
     for (let closed = inbox.decisions.shift(); closed !== undefined; closed = inbox.decisions.shift()) {
-      let verdict = canCloseGate(closed, at, state.approvers);
+      let verdict = canCloseGate(closed, at, state.approvers, false, openedAgainst);
       // A master admin may sign both sides of the four-eyes rule so a
       // single-admin install is not deadlocked. Only re-check on an actual
       // sod_violation (a directory lookup, so keep it off the happy path), and
@@ -53,7 +55,7 @@ export async function awaitGate(
       // still stand.
       if (!verdict.ok && verdict.reason === "sod_violation") {
         if (await acts.isMasterApprover(closed.actorUserId)) {
-          verdict = canCloseGate(closed, at, state.approvers, true);
+          verdict = canCloseGate(closed, at, state.approvers, true, openedAgainst);
         }
       }
       if (!verdict.ok) {

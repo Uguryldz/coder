@@ -219,7 +219,16 @@ export class TemporalRunGateway implements RunGateway {
   async signalWithStart(input: SignalWithStartInput): Promise<StartOutcome> {
     const workflowId = workflowIdFor(input.ticket);
     const args = [
-      { ticket: input.ticket, appId: input.appId, mode: input.mode, dataClass: input.dataClass },
+      {
+        ticket: input.ticket,
+        appId: input.appId,
+        mode: input.mode,
+        dataClass: input.dataClass,
+        // Omitted rather than sent as null when nothing named a flow: the
+        // workflow reads an absent `flow` as the full pipeline, and an
+        // explicit null would mean the same thing while looking like a choice.
+        ...(input.flow === undefined || input.flow === null ? {} : { flow: input.flow }),
+      },
     ];
     const signal = input.signal;
 

@@ -99,16 +99,44 @@ describe("a gate refuses to close for the wrong person (M32/M51)", () => {
       gate: (step) => (step === "5" ? { kind: "approve_after_hours", hours: 1 } : { kind: "approve" }),
     });
 
+  /**
+   * The OPS-34 failure, end to end.
+   *
+   * A Jira site names its groups whatever it likes — `jira-users-uyildiz`, not
+   * `product-owners`. `openGate` resolves the role through the directory, so
+   * the gate is open against the site's name and an approver's claim carries
+   * that name. `canCloseGate` runs INSIDE the workflow and cannot ask the
+   * directory, so it compared the claim to the role and refused every real
+   * approval as `wrong_group` — before `recordGateDecision` (which does check
+   * the directory) ever ran. The gate then reminded forever.
+   */
+  it("accepts an approval claiming the group the gate was actually opened against", async () => {
+    const scenario = new Scenario({ risk: "dusuk", gate: () => ({ kind: "approve" }) });
+    const run = await runTicket(env, scenario, {
+      openGate: async (_ticket, step, ownerGroup) => {
+        scenario.opened.push(step);
+        // The directory's name for the role, as a real site would answer.
+        const group = `jira-${ownerGroup}`;
+        await scenario.signal(approval(step, { actorGroup: group }));
+        return group;
+      },
+    });
+
+    expect(run.status).toBe("done");
+    expect(run.scenario.journal.filter((e) => e.title === "karar reddedildi")).toEqual([]);
+  });
+
   it("a product owner cannot close the tech lead's gate — and is told why", async () => {
     const scenario = refusedThenApproved();
     const run = await runTicket(env, scenario, {
-      openGate: async (_ticket, step) => {
+      openGate: async (_ticket, step, ownerGroup) => {
         scenario.opened.push(step);
         if (step !== "5") {
           await scenario.signal(approval(step));
-          return;
+          return ownerGroup;
         }
         await scenario.signal(approval("5", { actorGroup: "product-owners" }));
+        return ownerGroup;
       },
     });
 
@@ -124,13 +152,14 @@ describe("a gate refuses to close for the wrong person (M32/M51)", () => {
   it("an unverified approval is refused even from the right group", async () => {
     const scenario = refusedThenApproved();
     const run = await runTicket(env, scenario, {
-      openGate: async (_ticket, step) => {
+      openGate: async (_ticket, step, ownerGroup) => {
         scenario.opened.push(step);
         if (step !== "5") {
           await scenario.signal(approval(step));
-          return;
+          return ownerGroup;
         }
         await scenario.signal(approval("5", { sodVerified: false }));
+        return ownerGroup;
       },
     });
 
@@ -147,18 +176,19 @@ describe("a gate refuses to close for the wrong person (M32/M51)", () => {
       gate: (step) => (step === "5" ? { kind: "approve_after_hours", hours: 1 } : { kind: "approve" }),
     });
     const run = await runTicket(env, scenario, {
-      openGate: async (_ticket, step: StepId) => {
+      openGate: async (_ticket, step: StepId, ownerGroup: string) => {
         scenario.opened.push(step);
         if (step === "4") {
           await scenario.signal(approval("4", { actorUserId: shared }));
-          return;
+          return ownerGroup;
         }
         if (step === "5") {
           // Same human, different hat — the four-eyes rule, not a group check.
           await scenario.signal(approval("5", { actorUserId: shared }));
-          return;
+          return ownerGroup;
         }
         await scenario.signal(approval(step));
+        return ownerGroup;
       },
     });
 

@@ -152,8 +152,13 @@ export class JiraDcWorkPort implements WorkPort {
    * an undecidable page raises instead of quietly denying.
    */
   async verifyMembership(userId: string, group: string): Promise<boolean> {
-    const needle = userId.trim().toLowerCase();
-    if (needle.length === 0) throw new JiraArgumentError("userId", "empty");
+    // The decision carries an AUDIT actor (`712020.abc@banka.local`), while
+    // the directory knows a Jira identifier. The local part is what the two
+    // have in common; the raw string is kept too, because a Data Center login
+    // may legitimately contain an `@`.
+    const raw = userId.trim().toLowerCase();
+    const needles = [raw, raw.includes("@") ? raw.slice(0, raw.lastIndexOf("@")) : raw];
+    if (raw.length === 0) throw new JiraArgumentError("userId", "empty");
     if (group.trim().length === 0) throw new JiraArgumentError("group", "empty");
 
     let startAt = 0;
@@ -167,7 +172,10 @@ export class JiraDcWorkPort implements WorkPort {
       const body = asRecord(res);
       const values = Array.isArray(body?.["values"]) ? body["values"] : [];
       for (const member of values) {
-        if (isActiveMember(member) && identifiersOf(member).includes(needle)) return true;
+        if (isActiveMember(member)) {
+          const ids = identifiersOf(member);
+          if (needles.some((needle) => ids.includes(needle))) return true;
+        }
       }
       if (values.length === 0) return false;
       startAt += values.length;
@@ -239,10 +247,37 @@ function requireKey(value: unknown, context: string): TicketKey {
  * called "Mert Demir" would share gate authority. Only the admin-controlled
  * username, the rename-proof user key, and the e-mail address count.
  */
+/**
+ * Every identifier a member can be recognised by.
+ *
+ * `name` and `key` are Data Center's; Cloud sends neither, and hides
+ * `emailAddress` unless the caller has user-management scope — so on a Cloud
+ * site every one of them is null and the only identifier present is
+ * `accountId`. Without it, `verifyMembership` answered false for a person who
+ * IS in the group, and a real approval was refused as "üyelik doğrulanamadı"
+ * (OPS-36).
+ *
+ * The account id is also offered in the shape the audit trail forces it into:
+ * `HUMAN_ACTOR` allows no colon, so the BFF writes `712020:abc` as
+ * `712020.abc@<domain>` (`apps/bff/src/actor.ts`) and it is THAT string which
+ * comes back on the decision. Both spellings are matched here rather than
+ * unpicked at the call site, because this is the one place that knows what a
+ * Jira identifier looks like.
+ */
 function identifiersOf(member: unknown): string[] {
   const user = asRecord(member);
   if (!user) return [];
-  const ids = [user["name"], user["key"], user["emailAddress"]];
+  const accountId = typeof user["accountId"] === "string" ? user["accountId"] : undefined;
+  const ids = [
+    user["name"],
+    user["key"],
+    user["emailAddress"],
+    accountId,
+    // The colon-free spelling the audit contract requires. The local part
+    // only — the domain is the deployment's, not Jira's, so matching on it
+    // would tie this driver to whatever `MAESTRO_ACTOR_DOMAIN` happens to say.
+    accountId?.replace(/:/gu, "."),
+  ];
   return ids
     .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
     .map((id) => id.trim().toLowerCase());

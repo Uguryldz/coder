@@ -47,7 +47,67 @@ export async function discoverRepo(
   appId: string,
 ): Promise<{ files: number; modules: string[] }> {
   const run = await deps.runs.get(ticket);
-  const session = await deps.llm.agentSession({
+
+  /**
+   * No checkout, no discovery.
+   *
+   * `workspacePath` is empty for a run whose repository could not be cloned —
+   * no token, a private repo, a network that refuses. Opening a session on an
+   * empty path would either read the worker's own working directory or fail
+   * three activity retries deep; neither is a repository the ticket is about.
+   *
+   * Skipping is the correct answer rather than a workaround: the analysis is
+   * WORSE without a repository, not wrong. It is what the pilot has always
+   * produced, and the alternative — failing the run — turns a degraded
+   * analysis into no analysis at all.
+   */
+  if (run.workspacePath.trim() === "") return { files: 0, modules: [] };
+
+  /**
+   * A session backend that cannot run is the same answer as one that refuses.
+   *
+   * `agentSession` THROWS for a runner that is absent or misconfigured — no
+   * CLI on the host, a seat that is not logged in — while a policy refusal
+   * comes back as a value `resolveOutcome` turns into `degraded`. The two are
+   * the same fact for this step: there is no session, so there is no
+   * discovery. Letting the throw escape would fail the whole run over an
+   * optional reading pass, three retries deep, with a message about an agent
+   * runner on a ticket nobody asked to be coded.
+   *
+   * Narrow on purpose: only the session call is guarded. Everything after it —
+   * the digest, the context write — must still fail loudly, because those are
+   * steps whose absence would silently change what the analyst is told.
+   */
+  const session = await agentSessionOrNull(deps, run, ticket, appId);
+  if (session === null) return { files: 0, modules: [] };
+
+  const explored = await resolveOutcome(deps, run, "discovery", session);
+  if (explored.status === "degraded") return { files: 0, modules: [] };
+
+  return finishDiscovery(deps, run, ticket, appId, explored.value);
+}
+
+/** The session, or `null` when this deployment has no way to open one. */
+async function agentSessionOrNull(
+  deps: ActivityDeps,
+  run: RunContext,
+  ticket: TicketKey,
+  appId: string,
+): Promise<Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>> | null> {
+  try {
+    return await openSession(deps, run, ticket, appId);
+  } catch {
+    return null;
+  }
+}
+
+function openSession(
+  deps: ActivityDeps,
+  run: RunContext,
+  ticket: TicketKey,
+  appId: string,
+): ReturnType<ActivityDeps["llm"]["agentSession"]> {
+  return deps.llm.agentSession({
     workspacePath: run.workspacePath,
     task: deps.translate(run.locale, "agent.discovery_task", { ticket, appId }),
     /**
@@ -67,17 +127,24 @@ export async function discoverRepo(
     dataClass: run.dataClass,
     variantId: run.variantId,
   });
-  const explored = await resolveOutcome(deps, run, "discovery", session);
-  if (explored.status === "degraded") return { files: 0, modules: [] };
+}
 
-  await deps.runs.patch(ticket, { resumeToken: explored.value.resumeToken });
+/** Digest what the session found, and record it. */
+async function finishDiscovery(
+  deps: ActivityDeps,
+  run: RunContext,
+  ticket: TicketKey,
+  appId: string,
+  explored: { resumeToken: string; finalText: string },
+): Promise<{ files: number; modules: string[] }> {
+  await deps.runs.patch(ticket, { resumeToken: explored.resumeToken });
   const digest = await deps.llm.generateObject(
     {
       role: "analyst",
       variantId: run.variantId,
       dataClass: run.dataClass,
       schemaName: "repo-discovery",
-      input: { appId, findings: explored.value.finalText },
+      input: { appId, findings: explored.finalText },
     },
     DiscoveryDigest,
   );

@@ -162,6 +162,46 @@ describe("JiraDcWorkPort", () => {
     await expect(port(byMail).verifyMembership("can.ozturk@bank.example", "tech-leads")).resolves.toBe(true);
   });
 
+  /**
+   * Found live on OPS-36. A Jira CLOUD member carries no `name`, no `key` and —
+   * without user-management scope — no `emailAddress`: the only identifier is
+   * `accountId`. Every approval on a Cloud site was therefore refused as
+   * "üyelik doğrulanamadı" by a person who was in the group all along.
+   */
+  describe("a Jira Cloud member, whose only identifier is the account id", () => {
+    // `isLast` included on purpose: a page bean without it is refused rather
+    // than read as "the end", which is the behaviour the pagination tests below
+    // pin down.
+    const cloudGroup = {
+      isLast: true,
+      values: [{ accountId: "712020:b836c135-c9d3-499a-a665-aed43d362cfd", active: true }],
+    };
+
+    it("matches on the account id", async () => {
+      const stub = stubFetch([{ body: cloudGroup }]);
+      await expect(
+        port(stub).verifyMembership("712020:b836c135-c9d3-499a-a665-aed43d362cfd", "po"),
+      ).resolves.toBe(true);
+    });
+
+    it("matches the audit actor the account id becomes", async () => {
+      // `HUMAN_ACTOR` allows no colon, so the BFF writes the id as
+      // `712020.b836c135-…@banka.local` and it is that string which comes back
+      // on the decision (`apps/bff/src/actor.ts`).
+      const stub = stubFetch([{ body: cloudGroup }]);
+      await expect(
+        port(stub).verifyMembership("712020.b836c135-c9d3-499a-a665-aed43d362cfd@banka.local", "po"),
+      ).resolves.toBe(true);
+    });
+
+    it("still denies an account id that is not in the group", async () => {
+      const stub = stubFetch([{ body: cloudGroup }]);
+      await expect(port(stub).verifyMembership("712020.deadbeef@banka.local", "po")).resolves.toBe(
+        false,
+      );
+    });
+  });
+
   it("walks all member pages before denying", async () => {
     const firstPage = {
       maxResults: 2,

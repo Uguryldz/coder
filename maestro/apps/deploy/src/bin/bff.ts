@@ -1,12 +1,13 @@
 import { AuditChain } from "@maestro/audit";
 import {
   buildServer,
+  resolveDeps,
   EnvSettingsReader,
-  StaticGateDirectory,
   UNWIRED_CAPABILITY_LINES,
   type BffDeps,
 } from "@maestro/bff";
 import { createDb } from "@maestro/db";
+import { FlowType, type TicketKey } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import { bootPlatform } from "../boot.js";
 import { listenAddress, type DeployEnv } from "../env.js";
@@ -18,6 +19,8 @@ import { PrismaListeningStore } from "../stores/listening.js";
 import { PrismaGuidanceStore } from "../stores/guidance.js";
 import { PrismaRunContextStore } from "../stores/run-context.js";
 import { activeAnalystVariantId, activeTemplateVersion } from "../stores/run-pins.js";
+import { startJiraPoller } from "../jira-poller.js";
+import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { prepareWorkspace } from "../stores/workspace-prepare.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
@@ -174,7 +177,10 @@ export async function main(): Promise<void> {
     // direction and total in effect, with nothing for an operator to read.
     // An unbound project is still dropped; it now means nobody bound it.
     bindings: new PrismaJiraProjectBindings(db.jiraProjectBinding),
-    gates: new StaticGateDirectory(),
+    // Role → directory group. `StaticGateDirectory` answers with the
+    // workflow's ROLE names, which a real Jira site does not have: a decision
+    // then fails with "group does not exist" (fail-closed, but unusable).
+    gates: new EnvGateDirectory(env),
     // Postgres-backed, where it used to be an EMPTY `InMemoryParamStore`.
     // With no definitions at all, every operational setting the installer had
     // seeded into `Param`/`ParamVersion` was invisible: the params screen
@@ -276,8 +282,51 @@ export async function main(): Promise<void> {
       decisions: new AuditDecisionReader(auditStore),
     },
     read,
-    config: { env: env.base },
+    config: {
+      env: env.base,
+      /**
+       * An analysis-only deployment says so, once, here.
+       *
+       * The `analiz` profile composes REFUSING scm/ci/scan drivers — there is
+       * no code agent and no pipeline to run. Letting a ticket into the
+       * engineering loop on such an install is a guaranteed failure AFTER the
+       * analysis has been written, published and approved by a human
+       * (OPS-38 died in `runEngineering`). `MAESTRO_FLOW` overrides it for a
+       * deployment whose profile and intent differ.
+       */
+      ...(flowOf(env) === null ? {} : { defaultFlow: flowOf(env) }),
+    },
   };
+
+  /**
+   * The Jira command poller (`jira-poller.ts`).
+   *
+   * Off unless `JIRA_POLL_MS` names an interval. A deployment whose webhook
+   * works does not need it, and two paths reading the same comments would
+   * answer every command twice. On, it is the ONLY way a Cloud site can close
+   * a gate: `verifyWebhook` is not supported there, so `/approve` written on
+   * the ticket reaches nothing without this loop.
+   */
+  const pollMs = Number(env.source["JIRA_POLL_MS"]?.trim() ?? 0);
+  if (Number.isFinite(pollMs) && pollMs > 0) {
+    startJiraPoller({
+      deps: resolveDeps(deps),
+      // The concrete driver: reading a thread is not on `WorkPort`.
+      comments: deployment.ports.work as unknown as { listComments(t: TicketKey): Promise<unknown[]> },
+      intervalMs: pollMs,
+      // Live runs, re-read each round so a gate opened a second ago is polled
+      // without waiting for a restart.
+      openTickets: async () =>
+        (
+          await db.workflowRun.findMany({
+            where: { status: { notIn: ["done", "cancelled"] } },
+            orderBy: { startedAt: "desc" },
+            take: 50,
+          })
+        ).map((row) => row.ticketKey as TicketKey),
+    });
+    console.log(`[maestro] jira komut yoklaması açık (${pollMs} ms)`);
+  }
 
   const app = await buildServer(deps);
   const { host, port } = listenAddress(env);
@@ -331,6 +380,28 @@ export async function main(): Promise<void> {
  * The `multi` driver fans out to the channels its config names; any other
  * driver IS its channel, and its own id is the answer.
  */
+/**
+ * Which flow this deployment runs by default (`planFor`).
+ *
+ * Derived from the PROFILE rather than named separately, because the profile
+ * already carries the same decision: `analiz` composes refusing scm/ci/scan
+ * drivers, so a run that reaches engineering on it cannot succeed. Deriving it
+ * means the two cannot drift apart in a way that only shows up after a human
+ * has approved an analysis.
+ *
+ * `MAESTRO_FLOW` overrides, for a deployment whose profile and intent differ
+ * (a `prod` install used only for analysis, say). An unrecognised value is
+ * ignored rather than guessed — the full pipeline is the safe direction.
+ */
+function flowOf(env: DeployEnv): FlowType | null {
+  const override = env.source["MAESTRO_FLOW"]?.trim();
+  if (override !== undefined && override !== "") {
+    const parsed = FlowType.safeParse(override);
+    return parsed.success ? parsed.data : null;
+  }
+  return env.source["MAESTRO_PROFILE"]?.trim() === "analiz" ? "analiz" : null;
+}
+
 function notifyChannels(deployment: { selection: { notify: { driver: string; config: unknown } } }): readonly string[] {
   const { driver, config } = deployment.selection.notify;
   if (driver !== "multi") return [driver];

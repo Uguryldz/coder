@@ -52,6 +52,7 @@ export function createActivities(deps: ActivityDeps): MaestroActivities {
     verifyCiOrigin: (ticket, signal) => delivery.verifyCiOrigin(deps, ticket, signal),
     mergePullRequest: (ticket, pr) => delivery.mergePullRequest(deps, ticket, pr),
     buildEvidencePackage: (ticket) => delivery.buildEvidencePackage(deps, ticket),
+    deliverAnalysis: (ticket, doc) => delivery.deliverAnalysis(deps, ticket, doc),
     closeTicket: (ticket) => delivery.closeTicket(deps, ticket),
 
     journal: (ticket, kind, title, detail) => gate.journal(deps, ticket, kind, title, detail),

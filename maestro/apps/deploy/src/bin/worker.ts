@@ -4,6 +4,7 @@ import type { LlmPort, StoragePort } from "@maestro/ports";
 import { createDockerLinuxRunner } from "@maestro/runners";
 import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/workflows";
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
+import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
 import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
@@ -57,6 +58,11 @@ export async function main(): Promise<void> {
       sql: prismaSqlExecutor(db),
       transactions: prismaTransactionRunner(db),
       execution: unrunnableTurnRunner(),
+      // Both processes must name the gate's owner group identically: the BFF
+      // verifies membership against it, the worker writes it onto the gate and
+      // checks the decision's claim against it. Read straight from the raw
+      // environment because the stores are built before `bootPlatform`.
+      resolveRole: roleResolver(process.env),
     });
 
     const { env, deployment } = await bootPlatform({

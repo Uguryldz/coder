@@ -69,7 +69,12 @@ export interface MaestroActivities {
   fanOutChildren(ticket: TicketKey, analysis: AnalysisDoc): Promise<TicketKey[]>;
 
   // ── gates ───────────────────────────────────────────────────────────────
-  openGate(ticket: TicketKey, step: StepId, ownerGroup: string): Promise<void>;
+  /**
+   * Opens the gate and answers with the DIRECTORY group it was opened against
+   * — which is not necessarily the role that was asked for; see
+   * `DirectoryReader.groupForRole`.
+   */
+  openGate(ticket: TicketKey, step: StepId, ownerGroup: string): Promise<string>;
   /**
    * Persist a decision — and report whether the DIRECTORY accepted it.
    * `gates.ts` can only check what the payload claims; group membership is a
@@ -117,6 +122,11 @@ export interface MaestroActivities {
   verifyCiOrigin(ticket: TicketKey, signal: CiResultSignal): Promise<boolean>;
   mergePullRequest(ticket: TicketKey, pr: PrRef): Promise<{ mergeSha: string }>;
   buildEvidencePackage(ticket: TicketKey): Promise<{ files: number; storageKey: string }>;
+  /**
+   * The `analiz` flow's delivery: hand the approved analysis back to whoever
+   * asked for it. Fail-soft — see the implementation for why.
+   */
+  deliverAnalysis(ticket: TicketKey, analysis: AnalysisDoc | null): Promise<void>;
   closeTicket(ticket: TicketKey): Promise<void>;
 
   // ── cross-cutting ────────────────────────────────────────────────────────

@@ -1,53 +1,72 @@
 # HANDOFF
 
-## Görev
-Maestro prod pilotuna hazır hale getirildi (Windows/Mac runner'ları hariç, kullanıcı kararı).
+## DURUM
+Pilot emekli ediliyor, analiz hattı Temporal'a taşınıyor (plan: `.claude/plans/binary-greeting-giraffe.md`).
+Bu oturumda **Temporal ilk kez canlıda uçtan uca çalıştı**. Kullanıcı ara verdi; iş yarıda değil,
+tutarlı noktada — her şey derleniyor, testler yeşil.
 
-## Tamamlandı (canlı ölçüm, tahmin değil)
-- `pnpm run gate` → exit 0, **60/60**, ~4635 test. 24 paket + 6 uygulama.
-- **14 eksik uç yazıldı.** Ölçüm: 11'i 200 + gerçek veri, 3'ü gerekçeli **503**
-  (`eval`/`cache`/`greenfield` — o veriyi YAZAN hiçbir şey yok, boş sayfa "regresyon yok" diye okunurdu).
-- **`AgentTurnRunner` bağlandı** → 6a mühendislik turu açıldı. `RUNNER_IMAGE_LINUX` set edilince
-  degraded 3→2 (canlı doğrulandı). 19 adımın önündeki kilit kalktı.
-- **Şablon tasarımcısı**: migration 0007 (`AnalysisTemplateVersion`, append-only), kalıcı
-  `PrismaTemplateStore`, installer v1 (8 Türkçe bölüm). Tarayıcıda doğrulandı: bölüm ekleme 8→9,
-  BFF restart sonrası şablon duruyor.
-- **6 kırık detay ucu düzeltildi** (22/22 → 200). Sebep: Temporal'da `verifyRun` tipli 6 hayalet
-  workflow; liste ucu korunuyordu, detay + `runIdOf` korunmuyordu. Ortak `queryStateOrNull`.
-- **503 tutarlılığı**: `runners`/`scans` düz Error (=500) atıyordu → `capability_not_wired` (503).
-- Studio `ERROR_KEYS`: **51 kod** eklendi (eski kapsam testi totolojiymiş).
-- Türkçe: `mode.*` katalogda ham enum'a eşliyormuş; 9 sızıntı kapatıldı. tr/en **1523 anahtar, parite**.
-- Compose: `RUNNER_IMAGE_LINUX` anchor'da yoktu (set edilse bile konteynere ulaşmıyordu) + boş
-  string tuzağı (`optionalSetting()`), ikisi de düzeltildi. `deploy/SURUM-NOTU.md` yazıldı.
+## Bu oturumda düzeltilen 5 GERÇEK hata (hepsi canlı koşuda bulundu)
 
-## Canlı sistem (şu an ayakta)
-- Studio 7000 / BFF 7001, dış erişim **https://coder.uguryildiz.tech** (NPM arkasında).
-- Giriş: **`admin` / `admin123`** (⚠️ parola politikası atlanarak hash yazıldı — 12 karakter +
-  büyük/küçük/rakam/sembol ister; Studio'dan değiştirilirse geri dönülemez). Eski hesap:
-  `ayse.kaya@bank` / `Prod!Test-2026`. **İkisi de pilot öncesi silinmeli.**
-- Postgres 55432 (compose), migration 0001→0007 uygulanmış, 22 koşu.
+1. **`WorkflowRun.step` hiç güncellenmiyordu.** `goto` yalnız workflow state'ini değiştiriyordu,
+   Studio ise Postgres'ten okur → her koşu ekranlarda "adım 0". `journal` activity'si artık
+   adımı satıra yazıyor (`packages/workflows/src/impl/gate.ts`, `stepOfTitle`).
+   `RunContext`/`RunUpdate`/`RunRow`'a `step` alanı eklendi.
 
-## Devam eden
-Yok.
+2. **Kapı rol adı ≠ dizin grup adı.** `GATE_OWNER` `product-owners` der; Jira sitesinde grup
+   `jira-users-uyildiz`. BFF grubu doğrulayıp onaylıyor, worker rolü bekleyip reddediyordu —
+   aynı onay bir tarafta kabul, diğerinde ret, kapı sonsuza dek açık.
+   Çözüm: `DirectoryReader.groupForRole` (yeni), `roleResolver(env.source)` BFF+worker'da PAYLAŞILIR,
+   `openGate` çözülmüş grubu DÖNDÜRÜR ve `canCloseGate` onu `openedAgainst` olarak alır
+   (workflow içinde dizine sorulamaz — determinizm).
 
-## Sıradaki adım
-Kullanıcı isterse: 4 imajı build et (`cd deploy && docker compose build`) — dördü de daha önce
-build oldu, 2.62 GB. Öncesinde `deploy/.env` doldurulmalı (kurum bilgileri kullanıcıda).
+3. **Jira Cloud üyeliği hiç doğrulanamıyordu.** Cloud üyesinde `name`/`key`/`emailAddress` yok,
+   yalnız `accountId`. Üstelik denetim sözleşmesi `:` kabul etmediği için BFF onu
+   `712020.b836…@corp`'a çeviriyor → iki string hiç eşleşmiyordu.
+   `packages/adapter-jira/src/cloud/work-port.ts` + `src/work-port.ts` (DC) ikisi de artık
+   accountId'yi ve nokta-normalize halini eşliyor.
 
-## Bilinen sınırlar (gizlenmiyor, `SURUM-NOTU.md`'de)
-- `runners`/`scans`/`eval`/`cache`/`greenfield` → 503: arkalarında veri üreten yok.
-- Panoda sayaçlar 0: DB'de 22 koşu var ama Temporal'da canlı workflow yok, `Gate` tablosu boş.
-- Gerçek Jira/ADO/LDAPS/Temporal'a **hiç bağlanılmadı** — %95 doğruluk sınırı, kalan %5 erişim günü.
-- Windows/Mac runner'ları kapsam dışı (kullanıcı kararı).
+4. **Geçmişe dönük onay TÜM workflow'u öldürüyordu.** Poller restart sonrası yorum dizisini baştan
+   okur; kapı açılmadan önce yazılmış `/approve`, `closedAt >= openedAt` CHECK'ini ihlal eder —
+   bu retry edilemez bir hata, `recordGateDecision` 3 denemeyi yakar ve **workflow FAILED** olur.
+   OPS-36 böyle öldü. `PrismaGateStore.close` artık `closedAt`'i `openedAt`'e kenetliyor
+   (denetim izi kararın gerçek zamanını zaten tutuyor).
 
-## Tuzaklar (tekrar deneme)
-- **404 ≠ uç yok.** `not_found` = uç yok; `no_template`/`unknown_user` = uç VAR, veri yok.
-- **Kapı zaman aşımını merkezden ayarlamaya çalışma.** 3 yol denendi: `VITEST_TESTTIMEOUT`
-  sessizce yok sayılıyor · `--testTimeout` paket config'ini EZİYOR (workflows'un 180s'ini 20s'e
-  düşürüp korumak istediğim testleri düşürdü) · paylaşılan `testTimeout()` helper'ı doğru değeri
-  hesaplayıp hiçbir etki etmiyor. Kapı artık sadece yükü **raporluyor**; test düşerse önce tek başına koş.
-- `pkill -f "src/bin/bff.ts"` kendi kabuğunu da düşürür → `nohup ... &`, ayrı komutta doğrula.
-- Docker imajını her değişiklikte build etme (kullanıcı uyardı). Altyapı konteynerde, uygulama `tsx`.
-- Vite `allowedHosts`: yeni alan adı → 403, NPM'de bad gateway görünür.
-- `uinfra-postgres`, `wendococr-redis`, `uinfra-redis` **başka projelere ait — kullanma.**
-- Migration numarası: paralel ajanlar aynı numarayı alabiliyor (0005 iki kez oldu). Merge'de kontrol et.
+5. **Analiz akışı yoktu — `analiz` ticket'ı mühendislik hattına giriyordu.** OPS-38 iki kapıyı da
+   geçti, sonra `runEngineering`'de öldü (`mcpServers were requested but no --mcp-config`).
+   `planFor(flow)` pilottan `packages/workflows/src/gates.ts`'e taşındı; `FlowType` contracts'a
+   taşındı; `ticketWorkflow` mühendislikten ÖNCE `deliverAnalysis` + `closeTicket` ile `done` biter.
+
+## Canlı kanıt
+- **OPS-38**: ticket → analiz → kapı 4 açıldı → Jira `/approve` ile KAPANDI → kapı 5 açıldı → KAPANDI.
+  DB `step` her adımda doğru ilerledi. (Sonra mühendislik hattında öldü — 5. madde bunun düzeltmesi,
+  düzeltme sonrası YENİ ticket ile doğrulanmadı.)
+- OPS-34, OPS-36 ölü/eski koşular; onlara bakma, geçmişleri eski kodla yazıldı.
+
+## SIRADAKİ İŞ (öncelik sırasıyla)
+1. **Yeni ticket ile analiz akışını uçtan uca doğrula.** `MAESTRO_PROFILE=analiz` olduğu için
+   `flowOf(env)` → `defaultFlow: "analiz"` → koşu kapı 5'ten sonra teslim edip kapanmalı.
+   Beklenen: Jira'ya "analiz teslim edildi" yorumu + ticket talep sahibine atanır + status `done`.
+2. **Word/PDF teslimi.** `deliverAnalysis` şu an yorum + atama yapıyor; `renderDocx`/`renderPdf`
+   (`packages/publish`) ÇAĞRILMIYOR. Pilot deseni: `apps/pilot/src/docs.ts:112` `analysisToDocs`.
+3. **Dinleme kuralı → flow** (plan Faz 4/19). Şu an flow DEPLOYMENT düzeyinde (`MAESTRO_PROFILE`
+   veya `MAESTRO_FLOW`). Ticket başına karar için pilot `listening.ts:140` `ruleFor` taşınmalı.
+4. Faz 5 (Studio ekranlarını Temporal'a geçir) ve Faz 6 (pilot sil) hiç başlamadı.
+
+## Servisler (setsid ile ayrık — terminal kapansa da yaşarlar)
+- worker: `cd apps/deploy && ./node_modules/.bin/tsx src/bin/worker.ts`, log `/tmp/worker-v5.log`
+- bff: aynı dizin `src/bin/bff.ts`, port **7091**, log `/tmp/bff-v5.log`
+- env: `set -a; source /tmp/analiz-env.sh; set +a` — PATH'e nvm ekle:
+  `export PATH="$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"`
+- Yeniden başlatma sonrası poller `seen` setini sıfırlar ve ESKİ yorumları yeniden okur (4. madde).
+
+## Tuzaklar
+- `contracts`/`ports`/`llm-gateway` FROZEN — ama `FlowType` bu oturumda contracts'a EKLENDİ
+  (common.ts). Gerekliydi: workflows paketi BFF'i import edemez (M44).
+- `pkill -f "src/bin/worker.ts"` yazarsan kendi kabuğunu da vurur; `\.ts` diye kaçır.
+- Turbo'yu worker+BFF+Temporal koşarken `--concurrency` vermeden çalıştırma: kaynak baskısından
+  ALAKASIZ paketler kırmızı olur (storage/secrets/studio). `--concurrency=3` ile temiz.
+- Jira Cloud auth **Basic** (`email:token`), DC **Bearer** — iki ayrı sürücü, karıştırma.
+- Bot hesabı (`712020.b836c135-…@corp`) test kolaylığı için `User` tablosuna `maestro-admins`
+  üyesi olarak eklendi (dört-göz muafiyeti). **Bankaya giderken bu satır SİLİNMELİ.**
+- `admin/admin123` → `POST /auth/login`, token GÖVDEDE döner, `Authorization: Bearer` ile kullan
+  (cookie değil).

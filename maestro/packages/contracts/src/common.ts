@@ -44,6 +44,25 @@ export type RiskTier = z.infer<typeof RiskTier>;
 export const WorkMode = z.enum(["full_auto", "ai_assist", "human_lead", "human_only"]);
 export type WorkMode = z.infer<typeof WorkMode>;
 
+/**
+ * What a listening rule asks Maestro to DO with a ticket it picks up.
+ *
+ * A different axis from {@link WorkMode}, and the two are easy to confuse:
+ * `WorkMode` says how much the AI may decide on its own, `FlowType` says which
+ * steps run at all. A `full_auto` `analiz` ticket is fully automatic AND stops
+ * at the analysis document — no code, no PR, no merge.
+ *
+ *  - **analiz** — analyse and stop. The document IS the deliverable.
+ *  - **duzeltme** — a small fix: skip the analysis gate, still gate the PR.
+ *  - **gelistirme** — the full SDLC.
+ *
+ * Lives in contracts rather than beside the listening store because both the
+ * BFF (which reads the rule) and `@maestro/workflows` (which acts on it) need
+ * it, and the workflow package may not import the BFF (M44).
+ */
+export const FlowType = z.enum(["analiz", "duzeltme", "gelistirme"]);
+export type FlowType = z.infer<typeof FlowType>;
+
 /** Runner platform profiles (K60). */
 export const PlatformProfile = z.enum([
   "linux-node",

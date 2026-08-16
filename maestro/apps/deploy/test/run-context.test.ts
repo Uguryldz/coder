@@ -35,6 +35,8 @@ function row(over: Partial<RunRow> = {}): RunRow {
   return {
     id: "run-pay-101-0001",
     ticketKey: "PAY-101",
+    step: "3",
+    status: "running",
     mode: "full_auto",
     risk: null,
     dataClass: "dahili",

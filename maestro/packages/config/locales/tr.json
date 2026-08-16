@@ -2181,6 +2181,7 @@
   "intake.manual_completion": "Talebi otomatik değerlendiremedim (model yanıtı kullanılabilir değildi). Lütfen eksikleri elle tamamlayın.",
   "jira.gate_open": "Maestro {gate} kapısında onay bekliyor. Karar verecek grup: {group}.",
   "jira.clarification": "Devam edebilmem için netleşmesi gereken bir konu var:\n\n{question}",
+  "jira.analysis_delivered": "{ticket} analizi tamamlandı ve onaylandı ({risk} risk). Ticket talep sahibine devredildi; kod geliştirme bu akışın kapsamında değil.",
   "jira.closed": "{ticket} tamamlandı. Üretilen belgeler ve karar geçmişi denetim izinde.",
   "jira.child_summary": "{ticket} — {app} uygulamasındaki etki",
   "pr.title": "Maestro tarafından hazırlandı",

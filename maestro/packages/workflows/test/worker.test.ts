@@ -99,7 +99,9 @@ describe("the activity set", () => {
     expect(names).toContain("verifyCiOrigin");
     expect(names).toContain("buildEvidencePackage");
     expect(names).toContain("isMasterApprover");
-    expect(names).toHaveLength(26);
+    // The `analiz` flow's delivery step; see `planFor`.
+    expect(names).toContain("deliverAnalysis");
+    expect(names).toHaveLength(27);
     expect(Object.values(activities).every((fn) => typeof fn === "function")).toBe(true);
   });
 

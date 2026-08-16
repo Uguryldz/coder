@@ -39,29 +39,39 @@ export async function openGate(
   ticket: TicketKey,
   step: StepId,
   ownerGroup: string,
-): Promise<void> {
+): Promise<string> {
   const run = await deps.runs.get(ticket);
   const at = deps.now().toISOString();
+  // The workflow passes a ROLE; the gate record must carry the group that
+  // exists in the directory, because that is what `verifyMembership` is asked
+  // about later. See `DirectoryReader.groupForRole` for what happened when the
+  // two were allowed to differ.
+  const group = await deps.directory.groupForRole(ownerGroup);
   // Idempotent: a retry re-reads the existing record, so `openedAt` — the
   // anchor the whole escalation ladder is measured from — never moves.
-  await deps.gates.open(run.runId, step, ownerGroup, at);
-  await audit(deps, run, { action: "GATE_OPEN", meta: { step, ownerGroup }, key: `open:${step}` });
+  await deps.gates.open(run.runId, step, group, at);
+  await audit(deps, run, { action: "GATE_OPEN", meta: { step, ownerGroup: group }, key: `open:${step}` });
   await record(deps, run, {
     kind: "gate",
     title: `kapı ${step} açıldı`,
-    detail: ownerGroup,
+    detail: group,
     key: `open:${step}`,
   });
   await deps.idempotency.once(`${run.runId}:gate-comment:${step}`, () =>
-    deps.work.addComment(ticket, deps.translate(run.locale, "jira.gate_open", { gate: step, group: ownerGroup })),
+    deps.work.addComment(ticket, deps.translate(run.locale, "jira.gate_open", { gate: step, group })),
   );
   await notifyEvent(deps, run, {
     event: "gate_open",
     messageKey: "notify.gate_open",
-    params: { ticket, gate: step, group: ownerGroup },
-    to: await deps.directory.membersOf(ownerGroup),
+    params: { ticket, gate: step, group },
+    to: await deps.directory.membersOf(group),
     key: `open:${step}`,
   });
+  // Returned so the WORKFLOW knows the group it opened against. `canCloseGate`
+  // runs inside the workflow and cannot call the directory itself; without this
+  // it compared the claim to the ROLE and refused every real approval as
+  // `wrong_group` — the OPS-34 failure, one layer above `recordGateDecision`.
+  return group;
 }
 
 /**
@@ -81,7 +91,11 @@ export async function recordGateDecision(
   decision: GateDecision,
 ): Promise<GateVerdict> {
   const run = await deps.runs.get(ticket);
-  const expected = GATE_OWNER[decision.step as keyof typeof GATE_OWNER];
+  const role = GATE_OWNER[decision.step as keyof typeof GATE_OWNER];
+  // Resolved through the directory for the same reason `openGate` resolves it:
+  // the claim on the signal names the group the BFF verified against, and that
+  // is a directory group, not a role.
+  const expected = role === undefined ? undefined : await deps.directory.groupForRole(role);
   const member = await deps.work.verifyMembership(decision.actorUserId, decision.actorGroup);
   if (!member || (expected !== undefined && decision.actorGroup !== expected)) {
     await record(deps, run, {
@@ -207,6 +221,28 @@ export async function journal(
       deps.work.addComment(ticket, `${title}${detail === "" ? "" : ` — ${detail}`}`),
     );
   }
+
+  /**
+   * Carry the step onto the run's ROW, not just into workflow state.
+   *
+   * `goto` advances `state.step` inside the execution, and Studio reads
+   * `WorkflowRun.step` from Postgres — so every screen showed step 0 for a run
+   * that had reached the analysis gate. The two have to agree: an operator
+   * looking at the ticket list is looking at this column.
+   *
+   * Derived from the title `goto` writes rather than taken as an argument,
+   * because `journal` is the activity every transition already goes through
+   * and adding a parameter would mean every OTHER caller had to say "no step",
+   * which is a thing to forget.
+   */
+  const step = stepOfTitle(title);
+  if (step !== null) await deps.runs.patch(ticket, { step });
+}
+
+/** `adım 6a` → `6a`. Anything else is a journal line about something else. */
+function stepOfTitle(title: string): string | null {
+  const match = /^adım\s+([0-9]+[a-zö]?)$/u.exec(title.trim());
+  return match?.[1] ?? null;
 }
 
 export async function handOverToHuman(

@@ -240,8 +240,24 @@ export class JiraCloudWorkPort implements WorkPort {
    * No live fixture was recorded for this endpoint; see RAPOR.md.
    */
   async verifyMembership(userId: string, group: string): Promise<boolean> {
-    const needle = userId.trim().toLowerCase();
-    if (needle.length === 0) throw new JiraArgumentError("userId", "empty");
+    const raw = userId.trim().toLowerCase();
+    if (raw.length === 0) throw new JiraArgumentError("userId", "empty");
+    /**
+     * The decision carries an AUDIT actor, not a Jira identifier.
+     *
+     * `HUMAN_ACTOR` (packages/audit) allows no colon, so the BFF rewrites the
+     * account id `712020:b836c135-…` as `712020.b836c135-…@<domain>` before it
+     * can be recorded (`apps/bff/src/actor.ts`). That rewritten string is what
+     * comes back on the gate decision — and matched against a raw `accountId`
+     * it never equals, so a real approval by a member of the group was refused
+     * as "üyelik doğrulanamadı" (OPS-36).
+     *
+     * Both spellings are tried, and the account id is compared with its colons
+     * normalised the same way. The domain is dropped rather than compared: it
+     * is the deployment's, not Jira's.
+     */
+    const local = raw.includes("@") ? raw.slice(0, raw.lastIndexOf("@")) : raw;
+    const needles = new Set([raw, local]);
     if (group.trim().length === 0) throw new JiraArgumentError("group", "empty");
 
     let startAt = 0;
@@ -258,10 +274,10 @@ export class JiraCloudWorkPort implements WorkPort {
         if (asRecord(member)?.["active"] === false) continue; // off-boarded — never passes a gate
         const id = cloudUserIdOf(member);
         const email = asRecord(member)?.["emailAddress"];
-        const candidates = [id, typeof email === "string" ? email : null]
+        const candidates = [id, id?.replace(/:/gu, "."), typeof email === "string" ? email : null]
           .filter((c): c is string => typeof c === "string" && c.trim().length > 0)
           .map((c) => c.trim().toLowerCase());
-        if (candidates.includes(needle)) return true;
+        if (candidates.some((candidate) => needles.has(candidate))) return true;
       }
       // Decide continuation from the page bean FIRST: an empty page that
       // still claims more members is contradictory, and short-circuiting it

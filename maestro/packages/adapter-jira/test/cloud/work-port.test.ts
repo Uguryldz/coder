@@ -238,6 +238,34 @@ describe("JiraCloudWorkPort", () => {
     ).resolves.toBe(false);
   });
 
+  /**
+   * Found live on OPS-36, against this same group.
+   *
+   * A gate decision does not carry a Jira identifier — it carries an AUDIT
+   * actor. `HUMAN_ACTOR` allows no colon, so the BFF rewrites `712020:b836…`
+   * as `712020.b836…@<domain>` before the trail will accept it
+   * (`apps/bff/src/actor.ts`), and that string is what comes back. Matched
+   * against a raw `accountId` it never equals — so an approver who was in the
+   * group all along was refused as "üyelik doğrulanamadı", twice, with the
+   * gate left open.
+   */
+  it("matches the audit actor an accountId becomes", async () => {
+    const real = fixture("cloud/group-member-by-name") as {
+      values: Array<{ accountId: string }>;
+    };
+    const accountId = real.values[0]!.accountId;
+    const asActor = `${accountId.replace(/:/gu, ".")}@banka.local`;
+
+    const hit = stubFetch([{ body: real }]);
+    await expect(port(hit).verifyMembership(asActor, "jira-users-uyildiz")).resolves.toBe(true);
+
+    // The rewrite must not become a way in for someone who is not a member.
+    const miss = stubFetch([{ body: real }]);
+    await expect(
+      port(miss).verifyMembership("712020.nobody-here@banka.local", "jira-users-uyildiz"),
+    ).resolves.toBe(false);
+  });
+
   it("skips inactive members and pages until isLast", async () => {
     const inactive = { accountId: ACCOUNT_ID, active: false };
     const stub = stubFetch([

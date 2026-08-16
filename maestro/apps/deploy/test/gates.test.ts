@@ -182,6 +182,26 @@ describe("PrismaGateStore.close", () => {
     expect((await store.get("run-1", "4"))?.closedAt).toBe("2026-08-02T10:00:00.000Z");
   });
 
+  /**
+   * Found live on OPS-36. The Jira poller re-reads a comment thread from the
+   * start after a restart, so an `/approve` written BEFORE this gate opened
+   * arrives carrying its original timestamp. The column's
+   * `closedAt >= openedAt` check then fired, and a check-constraint violation
+   * is not retryable — `recordGateDecision` burned its three attempts and the
+   * whole workflow failed, with a valid approval on the table.
+   */
+  it("never writes a close that predates the open, and does not fail over one", async () => {
+    const gates = fakeGates();
+    const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);
+
+    await store.open("run-1", "4", "product-owners", OPENED);
+    await store.close("run-1", "4", "2026-08-01T00:00:00.000Z");
+
+    // Clamped to the open, not refused: the decision is real, and the audit
+    // trail already holds its true time, signed and chained.
+    expect((await store.get("run-1", "4"))?.closedAt).toBe(OPENED);
+  });
+
   it("refuses to close a gate that was never opened", async () => {
     const gates = fakeGates();
     const store = new PrismaGateStore(gates.delegate, fakeAudit([]), ticketOf, gates.claim);

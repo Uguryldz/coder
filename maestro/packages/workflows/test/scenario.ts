@@ -2,6 +2,7 @@ import type { WorkflowHandle } from "@temporalio/client";
 import type {
   AnalysisDoc,
   CiResultSignal,
+  FlowType,
   GateDecision,
   RiskTier,
   ScanResult,
@@ -94,6 +95,8 @@ export type GatePolicy =
 
 export interface ScenarioOptions {
   risk?: RiskTier;
+  /** What the listening rule asked for; absent is the full pipeline. */
+  flow?: FlowType;
   mode?: TicketWorkflowInput["mode"];
   gate?: (step: StepId, visit: number) => GatePolicy;
   /**
@@ -125,6 +128,8 @@ export interface ScenarioOptions {
 /** Records what the workflow asked for, and drives it through its stubs. */
 export class Scenario {
   readonly opened: StepId[] = [];
+  /** Set when the `analiz` flow handed the analysis back to the requester. */
+  delivered = false;
   readonly escalations: Array<{ step: StepId; hours: number }> = [];
   readonly journal: Array<{ kind: string; title: string; detail: string }> = [];
   readonly engineering: Array<{ resumeToken: string | null; task: string }> = [];
@@ -220,7 +225,9 @@ export function makeActivities(
     publishAnalysis: async () => {},
     fanOutChildren: async () => [],
 
-    openGate: async (_ticket, step) => {
+    // Answers with the ownerGroup it was given: these scenarios run on a
+    // directory whose groups carry the role names, which is the no-mapping case.
+    openGate: async (_ticket, step, ownerGroup) => {
       scenario.opened.push(step);
       const policy = scenario.policy(step);
       if (policy.kind === "approve") await scenario.signal(approval(step));
@@ -232,6 +239,7 @@ export function makeActivities(
         // land before the workflow gets a chance to process either.
         for (const decision of policy.decisions) await scenario.signal(decision);
       }
+      return ownerGroup;
     },
     recordGateDecision: async (_ticket, decision) => {
       scenario.decisions.push(decision);
@@ -275,6 +283,9 @@ export function makeActivities(
     },
     mergePullRequest: async () => ({ mergeSha: "abcdef1" }),
     buildEvidencePackage: async () => ({ files: 4, storageKey: "evidence/2026/PAY-101/run/manifest.json" }),
+    deliverAnalysis: async () => {
+      scenario.delivered = true;
+    },
     closeTicket: async () => {},
 
     journal: async (_ticket, kind, title, detail) => {

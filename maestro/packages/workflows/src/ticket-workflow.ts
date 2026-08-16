@@ -1,6 +1,7 @@
 import { condition, continueAsNew, proxyActivities, setHandler, workflowInfo } from "@temporalio/workflow";
 import type {
   DataClass,
+  FlowType,
   RiskTier,
   StepId,
   TicketKey,
@@ -11,7 +12,7 @@ import type {
 import type { EngineeringResult, MaestroActivities, PrRef } from "./activities.js";
 import { awaitGreenBuild, runEngineeringLoop } from "./engineering-loop.js";
 import { answerModeRequests, assertNotKilled, awaitGate } from "./gate-loop.js";
-import { gatesFor } from "./gates.js";
+import { gatesFor, planFor } from "./gates.js";
 import { countRejection, emptyInbox, initialRunState, rejectionCounts } from "./run-state.js";
 import {
   ciResultSignal,
@@ -113,6 +114,12 @@ export interface TicketWorkflowInput {
   resumeToken?: string | null;
   /** The tier the analysis established, so a continuation reuses its gate set. */
   risk?: RiskTier;
+  /**
+   * What the listening rule asked for (`planFor`). Absent means the full
+   * pipeline — a ticket is never silently under-processed because no rule
+   * matched.
+   */
+  flow?: FlowType | null;
 }
 
 export async function ticketWorkflow(input: TicketWorkflowInput): Promise<WorkflowRunStatus> {
@@ -216,7 +223,9 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
 
   // ── 4-5 · analysis gates, with the rejection loop ────────────────────────
   const required = gatesFor(state.risk);
-  for (const at of required.filter((g) => g === "4" || g === "5")) {
+  const plan = planFor(input.flow);
+  const analysisGates = plan.analysisGate ? required.filter((g) => g === "4" || g === "5") : [];
+  for (const at of analysisGates) {
     await goto(at, "insan onayı bekleniyor");
     const verdict = await gate(at);
     if (verdict.decision === "reject") {
@@ -233,6 +242,26 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
       await acts.publishAnalysis(ticket, state.analysis);
       return continueRun();
     }
+  }
+
+  /**
+   * ── analiz akışı burada BİTER ────────────────────────────────────────────
+   *
+   * The analysis document is the deliverable, and it has been written,
+   * published and approved. Everything below builds software; running it for
+   * an `analiz` ticket is not a bigger service, it is the wrong job — and on a
+   * deployment configured for analysis only it is also a guaranteed failure
+   * (OPS-38 died in `runEngineering` for exactly this reason).
+   *
+   * Closed as `done`, not handed over: nothing is stuck and nobody is waiting.
+   */
+  if (!plan.engineering) {
+    await goto("13", "analiz teslim edildi");
+    await acts.deliverAnalysis(ticket, state.analysis);
+    await acts.journal(ticket, "closure", "analiz teslim edildi", "akış: analiz");
+    await acts.closeTicket(ticket);
+    state.status = "done";
+    return state.status;
   }
 
   // ── 6a-10 · engineering loop ─────────────────────────────────────────────

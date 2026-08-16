@@ -22,7 +22,21 @@ export interface DirectoryUserDelegate {
 }
 
 export class PrismaDirectoryReader implements DirectoryReader {
-  constructor(private readonly users: DirectoryUserDelegate) {}
+  /**
+   * @param resolveRole role -> directory group. Optional: the local `User`
+   * table has no notion of a workflow role, and a deployment whose groups are
+   * already named `product-owners` needs no mapping. Omitting it means "the
+   * role IS the group", which is what the tests assume.
+   */
+  constructor(
+    private readonly users: DirectoryUserDelegate,
+    private readonly resolveRole: (role: string) => string = (role) => role,
+  ) {}
+
+  /** See {@link DirectoryReader.groupForRole} for why this exists. */
+  groupForRole(role: string): Promise<string> {
+    return Promise.resolve(this.resolveRole(role));
+  }
 
   /**
    * Members of `group`, by e-mail.
@@ -89,6 +103,19 @@ export function firstAvailableDirectory(
         );
       }
       return [];
+    },
+    /**
+     * The FIRST reader answers, without the fallback loop `membersOf` uses.
+     *
+     * Role naming is deployment configuration, not data that a directory might
+     * be missing: "no answer" is not a state here, and asking a second reader
+     * would only mean a second opinion on the same static mapping. During an
+     * LDAPS migration the primary reader is the one carrying the config.
+     */
+    groupForRole: (role: string): Promise<string> => {
+      const [primary] = readers;
+      // Guarded above, but the compiler does not know that.
+      return primary === undefined ? Promise.resolve(role) : primary.groupForRole(role);
     },
   };
 }

@@ -89,6 +89,14 @@ export interface BuiltCoreStores {
 
 export interface CoreStoreOptions {
   /**
+   * Workflow role -> directory group (see `gate-directory.ts`'s
+   * `roleResolver`). Passed in because the mapping is deployment config that
+   * lives in the environment, and this module takes no env dependency.
+   * Omitted means the role name IS the group.
+   */
+  readonly resolveRole?: (role: string) => string;
+
+  /**
    * Raw SQL, for the two `INSERT ... ON CONFLICT DO NOTHING` claims.
    *
    * Both the idempotency key and the gate row need a conflict settled INSIDE
@@ -140,7 +148,7 @@ export function buildCoreStores(db: CoreStoreDb, options: CoreStoreOptions): Bui
     runs: new PrismaRunContextStore(db.workflowRun),
     gates: new PrismaGateStore(db.gate, db.auditLog, ticketOfRun, sqlGateClaim(options.sql)),
     params: new PrismaParamReader(db.paramVersion, db.routingRule, scopeOf),
-    directory: new PrismaDirectoryReader(db.user),
+    directory: new PrismaDirectoryReader(db.user, options.resolveRole),
     idempotency: new PrismaIdempotencyGuard(db.idempotencyKey, sqlClaimExecutor(options.sql)),
     /**
      * The chain, locked by the DATABASE rather than by this process.

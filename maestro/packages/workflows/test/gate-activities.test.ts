@@ -133,6 +133,48 @@ describe("escalateGate (M88)", () => {
   });
 });
 
+/**
+ * Found live on OPS-34. `GATE_OWNER` names roles (`product-owners`); the Jira
+ * site's group is called something else (`jira-users-uyildiz`). `openGate`
+ * wrote the ROLE onto the gate record while the BFF verified membership
+ * against the GROUP — so a real approval by a real approver was accepted on one
+ * side and refused as "üyelik doğrulanamadı" on the other, and the gate stayed
+ * open with no way to tell why from either log.
+ */
+describe("role and directory group are the same name by the time a gate exists", () => {
+  const asJiraSite = { groupForRole: (role: string) => `jira-${role}` };
+
+  it("opens the gate against the DIRECTORY group, not the workflow role", async () => {
+    const fakes = makeFakes(asJiraSite);
+    await openGate(fakes.deps, "PAY-101", "4", "product-owners");
+    const gate = await fakes.gateStore.get("run-pay-101-0001", "4");
+    expect(gate?.ownerGroup).toBe("jira-product-owners");
+  });
+
+  it("accepts a decision claiming the directory group", async () => {
+    const fakes = makeFakes(asJiraSite);
+    await openGate(fakes.deps, "PAY-101", "4", "product-owners");
+    const verdict = await recordGateDecision(
+      fakes.deps,
+      "PAY-101",
+      decision({ step: "4", actorGroup: "jira-product-owners" }),
+    );
+    expect(verdict.accepted).toBe(true);
+  });
+
+  it("still refuses a decision claiming a group that owns no gate", async () => {
+    // The mapping must not become a way to approve from the wrong group.
+    const fakes = makeFakes(asJiraSite);
+    await openGate(fakes.deps, "PAY-101", "4", "product-owners");
+    const verdict = await recordGateDecision(
+      fakes.deps,
+      "PAY-101",
+      decision({ step: "4", actorGroup: "jira-tech-leads" }),
+    );
+    expect(verdict.accepted).toBe(false);
+  });
+});
+
 describe("journal and handover", () => {
   it("an unknown journal kind falls back to `other` instead of failing the step", async () => {
     const fakes = makeFakes();
@@ -151,6 +193,26 @@ describe("journal and handover", () => {
     const fakes = makeFakes();
     await journal(fakes.deps, "PAY-101", "other", "adım 7", "test senaryoları");
     expect(fakes.recorded.comments).toEqual([]);
+  });
+
+  /**
+   * Found live on OPS-34: the run had passed the analysis gate and every Studio
+   * screen still read "adım 0", because `goto` advances the workflow's own state
+   * and Studio reads `WorkflowRun.step` out of Postgres. The two have to agree —
+   * an operator looking at the ticket list is looking at that column.
+   */
+  it("carries the step onto the run's row, not just into workflow state", async () => {
+    const fakes = makeFakes();
+    await journal(fakes.deps, "PAY-101", "other", "adım 6a", "geliştirme turu 1");
+    expect(fakes.patches).toContainEqual({ step: "6a" });
+  });
+
+  it("leaves the step alone for a line that is not a transition", async () => {
+    // Only `goto` writes `adım <n>`. A gate refusal or a reminder must not be
+    // mistaken for a step, or the row would walk backwards.
+    const fakes = makeFakes();
+    await journal(fakes.deps, "PAY-101", "gate", "kapı 5 hatırlatıcı", "L1");
+    expect(fakes.patches).toEqual([]);
   });
 
   it("a handover drops the mode, records it and tells a human", async () => {

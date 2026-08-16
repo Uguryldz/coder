@@ -188,12 +188,31 @@ export class PrismaGateStore implements GateStore {
     });
   }
 
-  /** Closing a gate that was never opened is a bug, and it is reported as one. */
+  /**
+   * Closing a gate that was never opened is a bug, and it is reported as one.
+   *
+   * `at` is the decision's OWN timestamp — for a Jira command, the moment the
+   * comment was written. That can legitimately predate the gate: the poller
+   * re-reads a comment thread from the start after a restart, so an `/approve`
+   * written before this gate opened arrives with its original time. The column
+   * carries a `closedAt >= openedAt` check, and letting that fire killed the
+   * run: the constraint violation is not retryable, so `recordGateDecision`
+   * exhausted its attempts and the whole workflow failed with a live approval
+   * on the table (OPS-36).
+   *
+   * The floor is the gate's own `openedAt`. It keeps the recorded time
+   * truthful where it can be — a decision made while the gate was open keeps
+   * its real timestamp — and refuses to write a nonsense interval where it
+   * cannot, rather than refusing the decision. The AUDIT trail is untouched by
+   * this: it already holds the decision's real time, signed and chained.
+   */
   async close(runId: string, step: StepId, at: string): Promise<void> {
-    await this.requireGate(runId, step);
+    const gate = await this.requireGate(runId, step);
+    const decidedAt = new Date(at);
+    const openedAt = new Date(gate.openedAt);
     await this.gates.update({
       where: { runId_step: { runId, step } },
-      data: { closedAt: new Date(at) },
+      data: { closedAt: decidedAt < openedAt ? openedAt : decidedAt },
     });
   }
 

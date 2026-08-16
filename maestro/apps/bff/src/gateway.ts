@@ -1,5 +1,6 @@
 import type {
   DataClass,
+  FlowType,
   TicketKey,
   WorkMode,
   WorkflowRunState,
@@ -46,6 +47,15 @@ export interface StartRunInput {
   appId: string;
   mode: WorkMode;
   dataClass: DataClass;
+  /**
+   * Which phases the run should execute (`planFor`). A different axis from
+   * `mode`: `mode` says how much the AI may decide alone, `flow` says which
+   * steps run at all.
+   *
+   * Absent means the full pipeline — a ticket is never silently
+   * under-processed because nothing named a flow.
+   */
+  flow?: FlowType | null;
 }
 
 export interface SignalWithStartInput extends StartRunInput {

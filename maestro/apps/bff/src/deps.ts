@@ -3,6 +3,7 @@ import type { Env } from "@maestro/config";
 import type {
   CommandEnvelope,
   DataClass,
+  FlowType,
   Locale,
   ParamChange,
   ParamDefinition,
@@ -595,6 +596,19 @@ export interface BffConfig {
   locale: Locale;
   /** Session lifetime; 8 hours by M8. */
   sessionTtlMs: number;
+  /**
+   * What a ticket does when nothing more specific says otherwise.
+   *
+   * A deployment-level answer to "what is this install FOR". An analysis-only
+   * install (the `analiz` profile — no SCM, no CI, no scanner) must not send
+   * tickets into the engineering loop: there is nothing there to run, and the
+   * run fails after the analysis has already been written and approved
+   * (OPS-38). Absent means the full pipeline.
+   *
+   * A per-ticket listening rule is the finer-grained answer and belongs above
+   * this one; it is not wired yet (plan Faz 4/19).
+   */
+  defaultFlow?: FlowType | null;
   /** Label that opts a ticket into Maestro in `opt_in` projects (M48a). */
   optInLabel: string;
   /**

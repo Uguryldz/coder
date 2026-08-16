@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  type AnalysisDoc,
   type CiResultSignal,
   EvidencePackage,
   type EvidenceFile,
@@ -205,6 +206,75 @@ export async function buildEvidencePackage(
   return { files: parts.length + 1, storageKey: manifestKey };
 }
 
+/**
+ * Hand a finished ANALYSIS back to the person who asked for it.
+ *
+ * The `analiz` flow's last step: the document is written, published and
+ * approved, and the ticket must leave Maestro's lap. The pilot learned this on
+ * a real ticket (OPS-15) — a run that keeps a ticket assigned to the bot after
+ * its work is done looks, to the requester, exactly like a run that is still
+ * thinking, and they wait for something that is already finished.
+ *
+ * FAIL-SOFT, deliberately. The analysis is already in Jira and already
+ * approved; failing the activity here would burn three retries and then kill a
+ * run whose actual deliverable is complete. An assignment that could not be
+ * made is written to the journal instead, where an operator can see it and
+ * reassign by hand.
+ */
+export async function deliverAnalysis(
+  deps: ActivityDeps,
+  ticket: TicketKey,
+  // Part of the activity signature (`activities.ts`), and deliberately unread
+  // here: the comment is rendered from the catalog and the run's own tier, not
+  // from the document. Underscored rather than removed so the shape stays.
+  _analysis: AnalysisDoc | null,
+): Promise<void> {
+  const run: RunContext = await deps.runs.get(ticket);
+  const requester = (await deps.work.getTicket(ticket)).reporter?.trim() ?? "";
+
+  await deps.idempotency.once(`${run.runId}:deliver-comment`, () =>
+    deps.work.addComment(
+      ticket,
+      deps.translate(run.locale, "jira.analysis_delivered", {
+        ticket,
+        // The tier lives on the RUN, not on the document.
+        risk: run.risk ?? "",
+      }),
+    ),
+  );
+
+  if (requester === "") {
+    // Not an error: a ticket may genuinely have no reporter Maestro can act on
+    // (an integration account, a migrated issue). Left where it is, and said so.
+    await record(deps, run, {
+      kind: "closure",
+      title: "analiz teslim edildi",
+      detail: "talep sahibi bulunamadı — ticket atanmadan bırakıldı",
+      key: "deliver:no-requester",
+    });
+    return;
+  }
+
+  try {
+    await deps.idempotency.once(`${run.runId}:deliver-assign`, () =>
+      deps.work.assign(ticket, requester),
+    );
+    await record(deps, run, {
+      kind: "closure",
+      title: "analiz teslim edildi",
+      detail: `ticket talep sahibine atandı: ${requester}`,
+      key: "deliver:assigned",
+    });
+  } catch (error) {
+    await record(deps, run, {
+      kind: "closure",
+      title: "analiz teslim edildi",
+      detail: `atama yapılamadı (analiz etkilenmedi): ${String(error)}`,
+      key: "deliver:assign-failed",
+    });
+  }
+}
+
 export async function closeTicket(deps: ActivityDeps, ticket: TicketKey): Promise<void> {
   const run: RunContext = await deps.runs.get(ticket);
   await deps.idempotency.once(`${run.runId}:close-comment`, () =>
@@ -215,5 +285,15 @@ export async function closeTicket(deps: ActivityDeps, ticket: TicketKey): Promis
     deps.work.setLabels(ticket, ["maestro-tamamlandi"]),
   );
   await audit(deps, run, { action: "RUN_CLOSED", key: "close" });
+  /**
+   * The ROW must agree that the run is over.
+   *
+   * `RunContextStore.get` reads the newest run whose status is not terminal, so
+   * a finished run that never writes this stays "live" forever: Studio lists it
+   * as running, and — worse — the ticket can never start a second run, because
+   * intake would keep joining this one. Temporal knew OPS-40 was `Completed`
+   * while its row still said `running`.
+   */
+  await deps.runs.patch(ticket, { status: "done" });
   deps.execution.endRun(run.runId);
 }

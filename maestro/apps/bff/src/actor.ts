@@ -31,8 +31,27 @@ export function toActorOrNull(username: string, domain: string): string | null {
   if (typeof username !== "string") return null;
   const trimmed = username.trim();
   if (trimmed.length === 0) return null;
-  const actor = trimmed.includes("@") ? trimmed : `${trimmed}@${domain}`;
+  const actor = trimmed.includes("@") ? trimmed : `${localPartOf(trimmed)}@${domain}`;
   return parseActor(actor) === null ? null : actor;
+}
+
+/**
+ * A login the audit contract will accept as the local part of an address.
+ *
+ * Jira Cloud identifies a person by account id — `712020:7ee7a2ab-…` — and the
+ * frozen `HUMAN_ACTOR` pattern in `packages/audit` allows no `:`. Every
+ * `/approve` written on a Cloud ticket was therefore refused as
+ * `unknown_actor`: a real decision, by a real person who IS in the approver
+ * group, discarded because their id had a colon in it.
+ *
+ * The colon becomes a dot rather than being stripped. Stripping would map two
+ * different ids onto one actor if they differed only there, and an audit trail
+ * that cannot tell two approvers apart is worse than one that refuses both.
+ * Everything else the pattern rejects is dropped for the same reason it is
+ * rejected — it is not part of an address.
+ */
+function localPartOf(login: string): string {
+  return login.replace(/:/g, ".").replace(/[^A-Za-z0-9._+-]/g, "");
 }
 
 /**

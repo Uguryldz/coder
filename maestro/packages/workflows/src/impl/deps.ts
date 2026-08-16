@@ -52,6 +52,24 @@ export interface RunContext {
   readonly variantId: string;
   /** Analysis template pinned at run start (M83). */
   readonly templateVersion: string;
+  /**
+   * The step the run is on, as Studio's ticket list reads it.
+   *
+   * Carried on the context because the WORKFLOW advances it (`goto`) while the
+   * screens read it from Postgres: without a write path the two disagree, and
+   * every run showed step 0 no matter how far it had got.
+   */
+  readonly step: string;
+  /**
+   * The run's lifecycle state as the ROW carries it. Studio's lists filter on
+   * it, so a run Temporal has completed must say so here too — otherwise every
+   * finished ticket keeps showing as live, and intake keeps joining a run that
+   * is over instead of starting a new one.
+   *
+   * A union rather than `string`: the column is a Prisma enum, and the store's
+   * own `notIn` filter is written against these three names.
+   */
+  readonly status: RunLifecycle;
   readonly workspacePath: string;
   /** False after an M65 archive — the clone is gone, the context is not. */
   readonly workspacePresent: boolean;
@@ -66,6 +84,9 @@ export interface RunContext {
   /** Resume token of the live agent session (M30); null before the first turn. */
   readonly resumeToken: string | null;
 }
+
+/** The three states `WorkflowRun.status` can hold. */
+export type RunLifecycle = "running" | "done" | "cancelled";
 
 export interface RunContextStore {
   get(ticket: TicketKey): Promise<RunContext>;
@@ -108,6 +129,22 @@ export interface ParamReader {
 /** Who a notification goes to. Group → corporate addresses (M71). */
 export interface DirectoryReader {
   membersOf(group: string): Promise<string[]>;
+  /**
+   * The directory group that answers to a workflow ROLE (`product-owners`,
+   * `tech-leads`, `qa`).
+   *
+   * The two vocabularies are not the same, and pretending they are cost a live
+   * gate: `GATE_OWNER` named `product-owners`, `openGate` wrote that onto the
+   * gate record, and the BFF asked Jira about `jira-users-uyildiz` — the group
+   * that actually exists. Both sides then verified a real approver against a
+   * DIFFERENT group, the BFF said yes, the worker said "üyelik doğrulanamadı",
+   * and a correct approval was refused with no way to tell why from either log.
+   *
+   * Resolving here means the group written onto the gate is the group the
+   * decision is checked against, because it is one lookup instead of two
+   * guesses. A deployment whose directory uses the role names needs no mapping.
+   */
+  groupForRole(role: string): Promise<string>;
 }
 
 /** One doing-role turn (`@maestro/execution`'s `AgentExecution`). */

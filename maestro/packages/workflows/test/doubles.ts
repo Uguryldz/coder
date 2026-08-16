@@ -41,6 +41,8 @@ export function runContext(over: Partial<RunContext> = {}): RunContext {
   return {
     runId: "run-pay-101-0001",
     ticket: "PAY-101",
+    step: "0",
+    status: "running",
     app: APP,
     dataClass: "dahili",
     mode: "full_auto",

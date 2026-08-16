@@ -38,6 +38,8 @@ export * from "./doubles.js";
 /** Everything a test wants to look at afterwards, in one place. */
 export interface Recorded {
   comments: Array<{ ticket: string; body: unknown }>;
+  /** Who the ticket was handed to — the `analiz` flow's delivery. */
+  assignments: Array<{ ticket: string; to: string | null }>;
   labels: string[][];
   notifications: Notification[];
   published: Array<{ doc: string; markdown: string }>;
@@ -67,6 +69,10 @@ export interface FakeOptions {
   match?: MatchResult | null;
   ticket?: TicketSnapshot;
   members?: (group: string) => string[];
+  /** Makes `assign` reject, for the fail-soft delivery path. */
+  assignFails?: boolean;
+  /** Role -> directory group, when a test needs the two to differ. */
+  groupForRole?: (role: string) => string;
   prState?: { state: "draft" | "active" | "completed" | "abandoned"; mergeSha: string | null };
   verifyMembership?: boolean;
 }
@@ -78,6 +84,7 @@ const NOT_WIRED = (name: string) => (): never => {
 function emptyRecord(): Recorded {
   return {
     comments: [],
+    assignments: [],
     labels: [],
     notifications: [],
     published: [],
@@ -116,6 +123,10 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     },
     directory: {
       membersOf: (group) => Promise.resolve(options.members?.(group) ?? [`${group}@bank`]),
+      // Default: the role IS the group, which is the configuration-free case.
+      // `options.groupForRole` lets a test give the two different names, the
+      // way a real Jira site does.
+      groupForRole: (role) => Promise.resolve(options.groupForRole?.(role) ?? role),
     },
     work: {
       verifyWebhook: NOT_WIRED("verifyWebhook"),
@@ -129,7 +140,11 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
         recorded.labels.push(labels);
         return Promise.resolve();
       },
-      assign: () => Promise.resolve(),
+      assign: (ticket, to) => {
+        if (options.assignFails === true) return Promise.reject(new Error("jira: assign 403"));
+        recorded.assignments.push({ ticket, to });
+        return Promise.resolve();
+      },
       createLinkedIssue: (_parent, fields) => {
         recorded.children.push({ summary: fields.summary, description: fields.description });
         return Promise.resolve({ key: `PAY-${200 + recorded.children.length}` });

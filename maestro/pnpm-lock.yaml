@@ -179,6 +179,9 @@ importers:
       '@maestro/bff':
         specifier: workspace:*
         version: link:../bff
+      '@maestro/claude-driver':
+        specifier: workspace:*
+        version: link:../../packages/claude-driver
       '@maestro/config':
         specifier: workspace:*
         version: link:../../packages/config

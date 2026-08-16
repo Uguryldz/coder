@@ -4,6 +4,7 @@ import {
   activatePullRequest,
   buildEvidencePackage,
   closeTicket,
+  deliverAnalysis,
   mergePullRequest,
   openPullRequest,
   verifyCiOrigin,
@@ -203,5 +204,42 @@ describe("closeTicket", () => {
     expect(fakes.recorded.comments).toHaveLength(1);
     expect(fakes.recorded.labels).toEqual([["maestro-tamamlandi"]]);
     expect((await fakes.chain.verify()).checked).toBe(1);
+  });
+
+  /**
+   * Found live on OPS-40: Temporal reported the execution `Completed` while its
+   * row still said `running`. `RunContextStore.get` reads the newest run whose
+   * status is NOT terminal, so a finished run that never writes this stays live
+   * forever — Studio lists it as running, and intake keeps joining it instead of
+   * starting the ticket's next run.
+   */
+  it("marks the row done, so the run is over on both sides", async () => {
+    const fakes = makeFakes();
+    await closeTicket(fakes.deps, "PAY-101");
+    expect(fakes.patches).toContainEqual({ status: "done" });
+  });
+});
+
+describe("deliverAnalysis", () => {
+  it("tells the ticket and hands it to the requester", async () => {
+    const fakes = makeFakes();
+    await deliverAnalysis(fakes.deps, "PAY-101", null);
+
+    expect(fakes.recorded.comments).toHaveLength(1);
+    expect(fakes.recorded.assignments).toEqual([{ ticket: "PAY-101", to: "reporter@bank" }]);
+  });
+
+  /**
+   * Fail-soft on purpose. The analysis is already written, published and
+   * approved by a human; failing here would burn three retries and then kill a
+   * run whose deliverable is complete.
+   */
+  it("records a failed assignment instead of failing the run", async () => {
+    const fakes = makeFakes({ assignFails: true });
+    await deliverAnalysis(fakes.deps, "PAY-101", null);
+
+    const last = fakes.journalStore.entries.at(-1);
+    expect(last?.title).toBe("analiz teslim edildi");
+    expect(last?.detail).toContain("atama yapılamadı");
   });
 });

@@ -140,6 +140,9 @@ export async function runTicket(
         appId: "pay",
         mode: scenario.options.mode ?? "full_auto",
         dataClass: "dahili",
+        // Absent means the full pipeline, which is what every existing
+        // scenario expects; `flow` only narrows it.
+        ...(scenario.options.flow === undefined ? {} : { flow: scenario.options.flow }),
       },
     ],
   });

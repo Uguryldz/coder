@@ -29,6 +29,8 @@ export interface WorkerCoreOptions {
    * the process that owns the runner pool supplies it.
    */
   readonly execution: CoreDeps["execution"];
+  /** Workflow role -> directory group; see `CoreStoreOptions.resolveRole`. */
+  readonly resolveRole?: CoreStoreOptions["resolveRole"];
   readonly now?: () => Date;
 }
 
@@ -43,6 +45,7 @@ export function buildWorkerCore(db: Db, options: WorkerCoreOptions): WorkerCore 
   const stores = buildCoreStores(db, {
     sql: options.sql,
     transactions: options.transactions,
+    ...(options.resolveRole === undefined ? {} : { resolveRole: options.resolveRole }),
   });
 
   const core: CoreDeps = {

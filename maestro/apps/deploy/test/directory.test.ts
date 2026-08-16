@@ -1,3 +1,4 @@
+import type { DirectoryReader } from "@maestro/workflows";
 import { describe, expect, it } from "vitest";
 import {
   firstAvailableDirectory,
@@ -64,8 +65,15 @@ describe("PrismaDirectoryReader", () => {
 });
 
 describe("firstAvailableDirectory", () => {
-  const ldapsLike = (members: string[]): { membersOf: () => Promise<string[]> } => ({
+  const ldapsLike = (members: string[]): DirectoryReader => ({
     membersOf: () => Promise.resolve(members),
+    groupForRole: (role) => Promise.resolve(role),
+  });
+
+  /** A reader whose every lookup fails, for the outage cases below. */
+  const broken = (message: string): DirectoryReader => ({
+    membersOf: () => Promise.reject(new Error(message)),
+    groupForRole: (role) => Promise.resolve(role),
   });
 
   it("prefers the first reader that answers", async () => {
@@ -84,14 +92,12 @@ describe("firstAvailableDirectory", () => {
    * empty group, and the gate would go unescalated.
    */
   it("keeps asking after a reader fails, so an outage does not empty a group", async () => {
-    const broken = { membersOf: (): Promise<string[]> => Promise.reject(new Error("ldaps down")) };
-    const chained = firstAvailableDirectory([broken, ldapsLike(["local@bank"])]);
+    const chained = firstAvailableDirectory([broken("ldaps down"), ldapsLike(["local@bank"])]);
     expect(await chained.membersOf("tech-leads")).toEqual(["local@bank"]);
   });
 
   it("throws only when every reader failed", async () => {
-    const broken = { membersOf: (): Promise<string[]> => Promise.reject(new Error("down")) };
-    const chained = firstAvailableDirectory([broken, broken]);
+    const chained = firstAvailableDirectory([broken("down"), broken("down")]);
     await expect(chained.membersOf("tech-leads")).rejects.toBeInstanceOf(AggregateError);
   });
 

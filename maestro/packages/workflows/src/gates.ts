@@ -1,5 +1,6 @@
 import {
   APPROVAL_GATE_STEPS,
+  type FlowType,
   GATES_BY_RISK,
   type GateDecision,
   type RiskTier,
@@ -45,6 +46,47 @@ export function gatesFor(risk: RiskTier): readonly StepId[] {
   return GATES_BY_RISK[risk];
 }
 
+/**
+ * What a flow type CHANGES about the run — the counterpart of `gatesFor`.
+ *
+ * `gatesFor(risk)` turns a risk tier into a gate set; `planFor(flow)` turns a
+ * listening rule's flow type into which phases run at all. Until this existed
+ * the flow type was a label: every ticket ran the full pipeline whatever the
+ * rule said, so an `analiz` ticket — analysis IS the deliverable — carried on
+ * into the engineering loop and died there on a platform deliberately deployed
+ * without a code agent (OPS-38, `runEngineering`: `mcpServers were requested
+ * but no --mcp-config path was given`).
+ *
+ * Ported from the pilot (`apps/pilot/src/flow-plan.ts`), where it was proven
+ * on real tickets.
+ */
+export interface FlowPlan {
+  /** Run the analysis-approval gates (steps 4/5). `duzeltme` skips them. */
+  readonly analysisGate: boolean;
+  /** Run engineering + PR + PR gate + merge. `analiz` stops before this. */
+  readonly engineering: boolean;
+}
+
+/**
+ * The plan for a flow type.
+ *
+ * An absent or unrecognised flow gets the FULL pipeline. That is the safe
+ * default in the one direction that matters: a ticket is never silently
+ * under-processed because a rule was missing, and a run that does too much
+ * stops at a human gate, while a run that does too little just ends.
+ */
+export function planFor(flow: FlowType | null | undefined): FlowPlan {
+  switch (flow) {
+    case "analiz":
+      return { analysisGate: true, engineering: false };
+    case "duzeltme":
+      // Small fix — no analysis gate, but nothing merges unreviewed.
+      return { analysisGate: false, engineering: true };
+    default:
+      return { analysisGate: true, engineering: true };
+  }
+}
+
 export type GateRejection =
   | { ok: true }
   | { ok: false; reason: "wrong_step" | "wrong_group" | "sod_violation" | "not_verified" };
@@ -72,11 +114,25 @@ export function canCloseGate(
    * an ordinary caller keeps the strict four-eyes rule.
    */
   selfApproveAllowed = false,
+  /**
+   * The group the gate was actually OPENED against, when it differs from the
+   * role name (`openGate` resolves the role through the directory and answers
+   * with it).
+   *
+   * Comparing the claim to `GATE_OWNER`'s role refused every real approval on
+   * a site whose groups are named anything else: OPS-34's approver was in
+   * `jira-users-uyildiz`, the gate wanted `product-owners`, and the decision
+   * came back `wrong_group` from inside the workflow — before the activity that
+   * checks the directory ever ran. Defaults to the role, so a deployment whose
+   * groups already carry these names is unaffected.
+   */
+  openedAgainst?: string,
 ): GateRejection {
   if (decision.step !== atStep) return { ok: false, reason: "wrong_step" };
   if (decision.decision === "reject") return { ok: true };
 
-  const owner = GATE_OWNER[atStep as (typeof APPROVAL_GATE_STEPS)[number]];
+  const role = GATE_OWNER[atStep as (typeof APPROVAL_GATE_STEPS)[number]];
+  const owner = openedAgainst ?? role;
   if (owner !== undefined && decision.actorGroup !== owner) {
     return { ok: false, reason: "wrong_group" };
   }

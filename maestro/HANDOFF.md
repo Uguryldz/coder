@@ -48,8 +48,11 @@ tutarlı noktada — her şey derleniyor, testler yeşil.
    Beklenen: Jira'ya "analiz teslim edildi" yorumu + ticket talep sahibine atanır + status `done`.
 2. **Word/PDF teslimi.** `deliverAnalysis` şu an yorum + atama yapıyor; `renderDocx`/`renderPdf`
    (`packages/publish`) ÇAĞRILMIYOR. Pilot deseni: `apps/pilot/src/docs.ts:112` `analysisToDocs`.
-3. **Dinleme kuralı → flow** (plan Faz 4/19). Şu an flow DEPLOYMENT düzeyinde (`MAESTRO_PROFILE`
-   veya `MAESTRO_FLOW`). Ticket başına karar için pilot `listening.ts:140` `ruleFor` taşınmalı.
+3. ~~**Dinleme kuralı → flow** (plan Faz 4/19).~~ **BİTTİ** — `apps/bff/src/flow-decision.ts`.
+   Akış artık ticket başına: `runIntake` `ListeningRule` satırlarını okuyup akışı `signalWithStart`
+   girdisine koyuyor (workflow'a sorulmuyor — determinizm). Kural eşleşmezse `flowOf(env)`
+   varsayılanı devrede. Karar + gerekçe `RUN_STARTED` denetim kaydında (`flowReason`, `flowRuleId`).
+   Ayrıntı: `RAPOR-akis-karari.md`. **Canlı ticket ile doğrulanmadı.**
 4. Faz 5 (Studio ekranlarını Temporal'a geçir) ve Faz 6 (pilot sil) hiç başlamadı.
 
 ## Servisler (setsid ile ayrık — terminal kapansa da yaşarlar)

@@ -30,11 +30,27 @@ export function issueEvent(options: {
   ticket: string;
   labels?: readonly string[];
   event?: string;
+  /** Issue type name, as a listening rule's `matchKind: "issuetype"` reads it. */
+  issueType?: string;
+  /** Status name, as a listening rule's `matchKind: "status"` reads it. */
+  status?: string;
+  /** Assignee accountId, as `ListeningRule.assigneeAccountId` stores it. */
+  assignee?: string;
 }): Record<string, unknown> {
   return {
     webhookEvent: options.event ?? "jira:issue_created",
     timestamp: Date.parse("2026-08-09T06:00:00.000Z"),
-    issue: { key: options.ticket, fields: { labels: [...(options.labels ?? [])] } },
+    issue: {
+      key: options.ticket,
+      fields: {
+        labels: [...(options.labels ?? [])],
+        // Shaped exactly as Jira sends them: objects with a `name`, and an
+        // assignee identified by `accountId` on Cloud.
+        ...(options.issueType === undefined ? {} : { issuetype: { name: options.issueType } }),
+        ...(options.status === undefined ? {} : { status: { name: options.status } }),
+        ...(options.assignee === undefined ? {} : { assignee: { accountId: options.assignee } }),
+      },
+    },
   };
 }
 

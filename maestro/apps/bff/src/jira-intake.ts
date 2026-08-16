@@ -3,6 +3,7 @@ import type { ResolvedDeps } from "./deps.js";
 import { badRequest } from "./errors.js";
 import { BFF_MESSAGE_KEYS } from "./messages.js";
 import { workflowIdFor } from "./gateway.js";
+import { flowDecisionFor, type FlowDecision } from "./flow-decision.js";
 
 /**
  * Intake: the decision to put a ticket on the workflow engine, and every
@@ -22,6 +23,18 @@ export interface IntakeRequest {
   appId?: string;
   /** Audit actor: the requesting human, or `maestro-worker` for a webhook. */
   actor: string;
+  /**
+   * The ticket's current status name, when the caller knows it. Together with
+   * `issueType` and `assignee` it decides which FLOW this ticket runs
+   * (`flow-decision.ts`). Absent means "not known here", which matches no rule
+   * and falls back to the deployment default — so a caller that cannot supply
+   * these (an operator pressing Start in Studio) behaves exactly as before.
+   */
+  status?: string;
+  /** The ticket's issue-type name, when the caller knows it. */
+  issueType?: string;
+  /** The account the ticket is assigned to, when the caller knows it. */
+  assignee?: string;
 }
 
 export type IntakeRefusal = "unbound" | "not_opted_in" | "kill_switch" | "no_application";
@@ -85,16 +98,22 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     return { accepted: false, reason: "no_application" };
   }
 
+  // WHICH FLOW — decided here, before the run exists, and passed IN.
+  //
+  // It cannot be decided inside the workflow: `packages/workflows` may not read
+  // a database (M44), and a workflow that re-read the rules on replay would
+  // take a different path the moment an admin edited a rule. So the rules are
+  // read once, on the way in, and the answer travels in the start input — the
+  // same shape `openGate` uses to hand a resolved directory group to
+  // `canCloseGate` (HANDOFF item 2).
+  const flowDecision = await decideFlow(deps, request, projectKey);
+
   const outcome = await deps.runs.signalWithStart({
     ticket: request.ticket,
     appId,
     mode: binding.mode,
     dataClass: binding.dataClass,
-    // Deployment-level for now; a per-ticket listening rule is the finer
-    // answer and belongs above this (plan Faz 4/19).
-    ...(deps.config.defaultFlow === undefined || deps.config.defaultFlow === null
-      ? {}
-      : { flow: deps.config.defaultFlow }),
+    ...(flowDecision.flow === null ? {} : { flow: flowDecision.flow }),
   });
 
   if (outcome.started) {
@@ -110,9 +129,66 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
         mode: binding.mode,
         dataClass: binding.dataClass,
         assigned: request.appId !== undefined,
+        // WHY this ticket runs the flow it does. An operator asking months
+        // later "why did OPS-41 write code?" reads it off the audit chain; a
+        // log line would be long gone, and the run row records only the flow,
+        // not the reason for it.
+        flow: flowDecision.flow ?? "varsayilan",
+        flowReason: flowDecision.reason,
+        ...(flowDecision.ruleId === undefined ? {} : { flowRuleId: flowDecision.ruleId }),
+        ...(flowDecision.conflictingRuleIds === undefined
+          ? {}
+          : { flowConflictingRuleIds: flowDecision.conflictingRuleIds.join(",") }),
       },
     });
   }
 
   return { accepted: true, workflowId: outcome.workflowId ?? workflowIdFor(request.ticket), started: outcome.started };
+}
+
+/**
+ * Which flow this ticket runs, and why.
+ *
+ * The rule set is read from the listening store — the rows an admin edits in
+ * Studio — and matched against the ticket the caller described. Two things make
+ * this SAFE to fall back rather than refuse:
+ *
+ *  - A deployment with no `ListeningStore` wired (the store is optional, like
+ *    every other capability the composition root may omit) has no rules to
+ *    read, so every ticket takes the deployment default. That is exactly the
+ *    behaviour before this existed.
+ *  - A store that FAILS to answer is treated the same way. A database blip must
+ *    not stop a ticket that would otherwise run: the deployment default is a
+ *    deliberate operator choice, not a guess, so falling back to it is safer
+ *    than refusing the intake or inventing a flow.
+ */
+async function decideFlow(
+  deps: ResolvedDeps,
+  request: IntakeRequest,
+  projectKey: string,
+): Promise<FlowDecision> {
+  const fallback = (): FlowDecision =>
+    deps.config.defaultFlow === undefined || deps.config.defaultFlow === null
+      ? { flow: null, reason: "none" }
+      : { flow: deps.config.defaultFlow, reason: "default" };
+
+  if (deps.listening === undefined) return fallback();
+
+  let rules;
+  try {
+    rules = await deps.listening.list();
+  } catch {
+    return fallback();
+  }
+
+  return flowDecisionFor(
+    rules,
+    {
+      projectKey,
+      status: request.status ?? null,
+      issueType: request.issueType ?? null,
+      assignee: request.assignee ?? null,
+    },
+    deps.config.defaultFlow,
+  );
 }

@@ -24,10 +24,21 @@ export function jiraWorkEventReader(): WorkEventReader {
       // (M48a), so they are read from the issue the driver already validated
       // rather than from the raw envelope.
       const labels = labelsOf(event.issue);
+      // Status, issue type and assignee decide which FLOW the ticket runs
+      // (`apps/bff/src/flow-decision.ts`). They are read from the delivery for
+      // the same reason labels are: the frozen `TicketSnapshot` carries no
+      // status at all, so a second Jira round-trip would be the only other way
+      // to learn it — and it would be a different read of a moving ticket.
+      const status = nameOf(event.issue, "status");
+      const issueType = nameOf(event.issue, "issuetype");
+      const assignee = assigneeOf(event.issue);
       return {
         kind: event.kind,
         ticketKey: event.ticketKey,
         ...(labels === null ? {} : { labels }),
+        ...(status === null ? {} : { status }),
+        ...(issueType === null ? {} : { issueType }),
+        ...(assignee === null ? {} : { assignee }),
       };
     },
   };
@@ -46,6 +57,43 @@ function labelsOf(issue: unknown): string[] | null {
   const labels = fields?.["labels"];
   if (!Array.isArray(labels)) return null;
   return labels.filter((label): label is string => typeof label === "string");
+}
+
+/**
+ * `issue.fields.<field>.name`, or `null` when the payload carries none.
+ *
+ * Both `status` and `issuetype` are objects with a `name` in every Jira flavour
+ * (DC and Cloud alike), which is the value a listening rule's `matchValue`
+ * holds — an admin picks it off the Studio screen as the words they see in
+ * Jira. Whitespace-only is treated as absent: a rule must not match on it.
+ */
+function nameOf(issue: unknown, field: string): string | null {
+  const fields = asRecord(asRecord(issue)?.["fields"]);
+  const name = asRecord(fields?.[field])?.["name"];
+  return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
+}
+
+/**
+ * The assignee, in the form the listening rules store it.
+ *
+ * `accountId` FIRST because that is what `ListeningRule.assigneeAccountId`
+ * holds and, on Jira Cloud, the only identifier an assignee object carries at
+ * all — `name`/`key`/`emailAddress` are absent there (the same asymmetry that
+ * broke membership checks, HANDOFF item 3). The DC fields follow as a fallback
+ * so a Data Center deployment, whose users have no `accountId`, still matches.
+ *
+ * `null` (unassigned, or a payload that omitted the field) matches only rules
+ * that name no assignee.
+ */
+function assigneeOf(issue: unknown): string | null {
+  const fields = asRecord(asRecord(issue)?.["fields"]);
+  const assignee = asRecord(fields?.["assignee"]);
+  if (assignee === null) return null;
+  for (const key of ["accountId", "name", "key", "emailAddress"]) {
+    const value = assignee[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

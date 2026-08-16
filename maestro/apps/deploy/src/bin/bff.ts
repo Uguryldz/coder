@@ -293,6 +293,11 @@ export async function main(): Promise<void> {
        * analysis has been written, published and approved by a human
        * (OPS-38 died in `runEngineering`). `MAESTRO_FLOW` overrides it for a
        * deployment whose profile and intent differ.
+       *
+       * This is now the FALLBACK, not the whole answer: a listening rule that
+       * claims the ticket picks its flow first (`apps/bff/src/flow-decision.ts`),
+       * so ONE deployment can run analysis and engineering tickets side by
+       * side. An install with no rules behaves exactly as it did before.
        */
       ...(flowOf(env) === null ? {} : { defaultFlow: flowOf(env) }),
     },
@@ -381,7 +386,8 @@ export async function main(): Promise<void> {
  * driver IS its channel, and its own id is the answer.
  */
 /**
- * Which flow this deployment runs by default (`planFor`).
+ * Which flow this deployment runs by DEFAULT (`planFor`) — when no listening
+ * rule claims the ticket. The per-ticket answer is `flow-decision.ts`.
  *
  * Derived from the PROFILE rather than named separately, because the profile
  * already carries the same decision: `analiz` composes refusing scm/ci/scan

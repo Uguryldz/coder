@@ -107,18 +107,51 @@ export class FakeWorkEventReader implements WorkEventReader {
   read(payload: unknown): WorkEvent {
     const event = parseWebhookEvent(payload);
     if (event.kind === "issue") {
-      return { kind: "issue", ticketKey: event.ticketKey, labels: labelsOf(event.issue) };
+      // Status/issuetype/assignee are read the same way the real reader
+      // (`apps/deploy/src/work-events.ts`) reads them, so a flow-selection test
+      // driving a real signed delivery exercises the real payload shape.
+      const status = nameOf(event.issue, "status");
+      const issueType = nameOf(event.issue, "issuetype");
+      const assignee = assigneeOf(event.issue);
+      return {
+        kind: "issue",
+        ticketKey: event.ticketKey,
+        labels: labelsOf(event.issue),
+        ...(status === null ? {} : { status }),
+        ...(issueType === null ? {} : { issueType }),
+        ...(assignee === null ? {} : { assignee }),
+      };
     }
     if (event.kind === "comment") return { kind: "comment", ticketKey: event.ticketKey };
     return { kind: "other" };
   }
 }
 
+function fieldsOf(issue: unknown): Record<string, unknown> | null {
+  const fields = (issue as { fields?: unknown } | null)?.fields;
+  return typeof fields === "object" && fields !== null ? (fields as Record<string, unknown>) : null;
+}
+
 function labelsOf(issue: unknown): string[] {
-  const fields = (issue as { fields?: { labels?: unknown } } | null)?.fields;
-  return Array.isArray(fields?.labels)
-    ? fields.labels.filter((label): label is string => typeof label === "string")
-    : [];
+  const labels = fieldsOf(issue)?.["labels"];
+  return Array.isArray(labels) ? labels.filter((label): label is string => typeof label === "string") : [];
+}
+
+function nameOf(issue: unknown, field: string): string | null {
+  const value = fieldsOf(issue)?.[field];
+  const name = typeof value === "object" && value !== null ? (value as Record<string, unknown>)["name"] : undefined;
+  return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
+}
+
+function assigneeOf(issue: unknown): string | null {
+  const value = fieldsOf(issue)?.["assignee"];
+  if (typeof value !== "object" || value === null) return null;
+  const assignee = value as Record<string, unknown>;
+  for (const key of ["accountId", "name", "key", "emailAddress"]) {
+    const found = assignee[key];
+    if (typeof found === "string" && found.trim().length > 0) return found.trim();
+  }
+  return null;
 }
 
 /** Basic-auth Service Hook authentication, the shape the ADO driver expects. */

@@ -80,6 +80,12 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
     const outcome = await runIntake(deps, {
       ticket: event.ticketKey,
       ...(event.labels !== undefined ? { labels: event.labels } : {}),
+      // Passed through so a per-ticket listening rule can pick the FLOW. The
+      // delivery is the only place the status is available — the frozen
+      // `TicketSnapshot` has no such field.
+      ...(event.status !== undefined ? { status: event.status } : {}),
+      ...(event.issueType !== undefined ? { issueType: event.issueType } : {}),
+      ...(event.assignee !== undefined ? { assignee: event.assignee } : {}),
       actor: SYSTEM_ACTOR,
     });
     return reply.code(202).send(outcome);

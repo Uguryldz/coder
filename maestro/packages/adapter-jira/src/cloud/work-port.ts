@@ -7,8 +7,10 @@ import {
   JiraLinkFailedError,
   JiraMembershipUnresolvedError,
   JiraResponseError,
+  JiraWebhookVerificationError,
 } from "../errors.js";
 import { ISSUE_FIELDS } from "../mapping.js";
+import { JIRA_SIGNATURE_HEADER, verifyWebhookSignature } from "../webhook.js";
 import { normalizeAttachments, type JiraAttachment } from "./attachments.js";
 import { JiraCloudClient } from "./client.js";
 import { commandFromCloudPayload, parseCommandFromComment, type CloudCommentCommand } from "./comment-command.js";
@@ -29,6 +31,11 @@ export interface JiraCloudWorkPortOptions {
   config: JiraCloudConfig;
   /** Resolves the API token (usually `() => secrets.get(config.apiTokenRef)`). */
   token: TokenProvider;
+  /**
+   * Resolves the webhook signing secret. Absent when the deployment registered
+   * no webhook — `verifyWebhook` then REFUSES rather than passes.
+   */
+  webhookSecret?: () => string | Promise<string>;
   fetchImpl?: FetchLike;
 }
 
@@ -39,16 +46,22 @@ const MAX_GROUP_PAGES = 40;
  * WorkPort driver for Jira Cloud. Same M102 permission stance as the DC
  * driver — Browse, Add Comment, Edit Issue (labels), Assign, Create/Link
  * Issue — with the Cloud-specific differences: REST v3, Basic auth
- * (email + API token), ADF bodies posted verbatim, `accountId` identities,
- * and NO webhooks: the pilot polls comments (see comment-command.ts).
+ * (email + API token), ADF bodies posted verbatim and `accountId` identities.
+ *
+ * Deliveries arrive either way: a registered webhook (verified here, see
+ * `verifyWebhook`) or the pilot's comment poll (comment-command.ts). Polling
+ * remains the fallback for a site that cannot reach the platform from the
+ * internet; it is not a reason to leave the signed path unimplemented.
  */
 export class JiraCloudWorkPort implements WorkPort {
   readonly driver = "jira-cloud";
   private readonly client: JiraCloudClient;
   private readonly config: JiraCloudConfig;
+  private readonly webhookSecret: (() => string | Promise<string>) | null;
 
   constructor(options: JiraCloudWorkPortOptions) {
     this.config = options.config;
+    this.webhookSecret = options.webhookSecret ?? null;
     this.client = new JiraCloudClient({
       baseUrl: options.config.baseUrl,
       email: options.config.email,
@@ -540,12 +553,31 @@ export class JiraCloudWorkPort implements WorkPort {
   }
 
   /**
-   * Not supported: the pilot POLLS comments — no Cloud webhook is registered,
-   * no signature scheme was recorded, and fail-closed means a delivery this
-   * driver cannot verify must never be treated as verified.
+   * Verify a delivery before anything else touches it, so a ticket created in
+   * Jira can start a run WITHOUT anyone pressing Start.
+   *
+   * Jira Cloud signs a registered webhook with HMAC-SHA256 over the raw UTF-8
+   * request body and sends the digest as `X-Hub-Signature: sha256=<hex>`, using
+   * the `secret` supplied at registration time — the same scheme Data Center
+   * uses, so the two drivers share one verifier (`../webhook.ts`) rather than
+   * keeping two copies of a constant-time comparison.
+   * (developer.atlassian.com/cloud/jira/platform/webhooks — "Validating webhook
+   * deliveries"; the docs state sha256 is what Jira signs with today.)
+   *
+   * Fail-closed on every path, including the one that used to be a capability
+   * refusal: a deployment that registered no webhook has NO secret to check
+   * against, and the only safe reading of an unverifiable delivery is to refuse
+   * it. `missing_secret` says the platform is misconfigured — it never means
+   * "let it through".
    */
-  async verifyWebhook(_rawBody: string | Uint8Array, _headers: Record<string, string>): Promise<void> {
-    throw new CapabilityNotSupportedError("WorkPort", "verifyWebhook");
+  async verifyWebhook(rawBody: string | Uint8Array, headers: Record<string, string>): Promise<void> {
+    if (this.webhookSecret === null) {
+      throw new JiraWebhookVerificationError("missing_secret");
+    }
+    const header = Object.entries(headers).find(
+      ([name]) => name.toLowerCase() === JIRA_SIGNATURE_HEADER,
+    )?.[1];
+    verifyWebhookSignature(rawBody, header, await this.webhookSecret());
   }
 
   /** Not supported for now (M102 parity): progress is shown via labels/comments. */

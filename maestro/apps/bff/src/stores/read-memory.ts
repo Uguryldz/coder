@@ -11,6 +11,7 @@ import type { AuditStore } from "@maestro/audit";
 import { verifyChain } from "@maestro/audit";
 import type {
   AppRegistry,
+  ArchiveScope,
   AuditFilter,
   AuditReader,
   CostFilter,
@@ -71,9 +72,37 @@ export class InMemoryRunCatalog implements RunCatalog {
     const rows = [...this.rows.values()]
       .filter((row) => inScope(row.ticketKey, filter.projectKeys))
       .filter((row) => filter.appId === null || row.appId === filter.appId)
+      // The same three-way scope `archiveWhere` builds in SQL (0019). It is
+      // applied BEFORE `paginate` for the reason the whole store exists: a page
+      // of `limit` rows must be a page of rows the caller asked for, and a
+      // filter applied after slicing would shorten pages at random.
+      .filter((row) => matchesArchiveScope(row, filter.archived))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-    return Promise.resolve(paginate(rows, filter, `runs:${filter.appId ?? ""}`));
+    // Fingerprinted with the archive scope, exactly as `PrismaRunCatalog` does,
+    // so a cursor issued against the board is rejected by the archived view
+    // rather than silently resuming at the wrong offset.
+    return Promise.resolve(
+      paginate(rows, filter, `runs:${filter.appId ?? ""}:${filter.archived}`),
+    );
   }
+
+  /**
+   * The one write (0019). Mirrors the Prisma store: `false` means no such
+   * ticket (a 404 for the route), while archiving an already-archived run
+   * succeeds as an idempotent no-op rather than reporting a false absence.
+   */
+  setArchived(ticketKey: string, at: Date | null): Promise<boolean> {
+    const row = this.rows.get(ticketKey);
+    if (row === undefined) return Promise.resolve(false);
+    this.rows.set(ticketKey, { ...row, archivedAt: at === null ? null : at.toISOString() });
+    return Promise.resolve(true);
+  }
+}
+
+/** @see RunCatalogFilter.archived — the in-memory half of `archiveWhere`. */
+function matchesArchiveScope(row: RunRecord, scope: ArchiveScope): boolean {
+  if (scope === "all") return true;
+  return scope === "active" ? row.archivedAt === null : row.archivedAt !== null;
 }
 
 export class InMemoryJournalReader implements JournalReader {

@@ -55,7 +55,13 @@ function stubLlm(): never {
  * need something to hold.
  */
 function emptyReadDb(): ReadModelDb {
-  const page = { findMany: () => Promise.resolve([]), count: () => Promise.resolve(0) };
+  const page = {
+    findMany: () => Promise.resolve([]),
+    count: () => Promise.resolve(0),
+    // Never reached (these models refuse first), but `RunCatalogDelegate` now
+    // declares the 0019 write and every delegate has to hold its whole shape.
+    updateMany: () => Promise.resolve({ count: 0 }),
+  };
   return {
     workflowRun: page,
     llmCall: { ...page, groupBy: () => Promise.resolve([]) },

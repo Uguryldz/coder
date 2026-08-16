@@ -138,7 +138,14 @@ export const UNBACKED_READ_MODELS: readonly string[] = ["runners", "scans"].map(
  */
 export function unbridgedReadModels(): ReadModels {
   return {
-    runs: { get: refuse("runs", "get"), list: refuse("runs", "list") },
+    runs: {
+      get: refuse("runs", "get"),
+      list: refuse("runs", "list"),
+      // Refuses like the reads, and it matters more here: this is a WRITE. An
+      // unbridged store that resolved `true` would tell an operator their run
+      // was archived, hide nothing, and leave them pressing the button again.
+      setArchived: refuse("runs", "setArchived"),
+    },
     journal: { list: refuse("journal", "list"), summary: refuse("journal", "summary") },
     gates: { listOpen: refuse("gates", "listOpen") },
     apps: {

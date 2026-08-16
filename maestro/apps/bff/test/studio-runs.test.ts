@@ -873,3 +873,254 @@ describe("GET /studio/runs/:ticket/evidence", () => {
     expect(response.statusCode).toBe(404);
   });
 });
+
+/**
+ * Archiving (0019).
+ *
+ * The problem this endpoint was added for: twelve `fail` runs from an evening
+ * of experiments sat on the dashboard for a day, all stopped at the same step,
+ * and a new operator opening the panel read them as "the product is broken".
+ * The runs are real history — this is a bank, and the audit trail stands — so
+ * the fix could never be a DELETE. It is a nullable column that decides which
+ * listing a row appears in by default.
+ *
+ * So the tests below check two things in the same breath every time: the run
+ * left the board, AND the run is still there.
+ */
+describe("PUT /studio/runs/:ticket/archive", () => {
+  /** Archived rows must still be reachable, so this is asserted, not assumed. */
+  async function keysOf(h: Harness, token: string, query: string): Promise<string[]> {
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/studio/runs${query}`,
+      headers: auth(token),
+    });
+    expect(response.statusCode).toBe(200);
+    return (response.json() as { items: { ticketKey: string }[] }).items.map((r) => r.ticketKey);
+  }
+
+  async function archive(h: Harness, token: string, ticket: string, archived: boolean) {
+    return h.app.inject({
+      method: "PUT",
+      url: `/studio/runs/${ticket}/archive`,
+      headers: auth(token),
+      payload: { archived },
+    });
+  }
+
+  it("takes a run off the default board without deleting it, and puts it back", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const archived = await archive(h, token, TICKET, true);
+    expect(archived.statusCode).toBe(200);
+    expect((archived.json() as { archivedAt: string | null }).archivedAt).not.toBeNull();
+
+    // Gone from the board …
+    expect(await keysOf(h, token, "")).not.toContain(TICKET);
+    // … and still, unmistakably, in the database.
+    expect(await keysOf(h, token, "?archived=archived")).toContain(TICKET);
+    expect(await keysOf(h, token, "?archived=all")).toContain(TICKET);
+
+    // The detail route never hides it: an archived run is still a run, and a
+    // link to it from the audit trail or a Jira comment has to keep working.
+    const detail = await h.app.inject({
+      method: "GET",
+      url: `/studio/runs/${TICKET}`,
+      headers: auth(token),
+    });
+    expect(detail.statusCode).toBe(200);
+
+    const restored = await archive(h, token, TICKET, false);
+    expect(restored.statusCode).toBe(200);
+    expect((restored.json() as { archivedAt: string | null }).archivedAt).toBeNull();
+    expect(await keysOf(h, token, "")).toContain(TICKET);
+  });
+
+  /**
+   * The counts-agree-with-the-list property, at the wire level.
+   *
+   * Studio's four dashboard tiles are counted from the SAME response body that
+   * fills the list beneath them (`useRuns` -> `/studio/runs`), so this is what
+   * makes "a tile saying 12 above a list showing 0" impossible: there is only
+   * one number, and archiving removes the row from it. If the route ever
+   * counted over a different scope than it listed, this test is what breaks.
+   */
+  it("serves one set of rows, so tiles counted from it cannot disagree with it", async () => {
+    const h = await studioHarness();
+    h.read.runs.put({ ...OTHER_RUN, ticketKey: "UGURPAY-902" });
+    const token = await adminToken(h);
+
+    const before = await keysOf(h, token, "");
+    expect(before).toHaveLength(2);
+
+    await archive(h, token, TICKET, true);
+
+    const after = await keysOf(h, token, "");
+    expect(after).toEqual(["UGURPAY-902"]);
+    // The archived one is accounted for, not lost: the two views sum to the whole.
+    const all = await keysOf(h, token, "?archived=all");
+    expect(all).toHaveLength(2);
+  });
+
+  it("defaults to the active board when the caller says nothing", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+    await archive(h, token, TICKET, true);
+
+    // No `archived=` at all — the case a plain dashboard load makes.
+    expect(await keysOf(h, token, "")).toEqual([]);
+  });
+
+  /**
+   * A browser serialises an unset filter as `?archived=`. Rejecting that used
+   * to fail the WHOLE request and blank a dashboard whose data was right there
+   * — the bug `blankAsAbsent` exists for. It must not come back through the
+   * new parameter.
+   */
+  it("reads an empty archived= as 'unset' rather than failing the request", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    expect(await keysOf(h, token, "?archived=")).toContain(TICKET);
+  });
+
+  it("refuses an archive scope it cannot interpret instead of guessing one", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: "/studio/runs?archived=maybe",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("refuses a caller without the role — deciding what the team's board shows is a write", async () => {
+    const h = await studioHarness();
+    // A project MEMBER: allowed to read this ticket, not to retire it from
+    // everyone else's dashboard.
+    const token = await memberToken(h);
+
+    const response = await archive(h, token, TICKET, true);
+
+    expect(response.statusCode).toBe(403);
+    // And the refusal is real: the run is still on the board.
+    expect(await keysOf(h, token, "")).toContain(TICKET);
+  });
+
+  it("refuses an unauthenticated caller", async () => {
+    const h = await studioHarness();
+    const response = await h.app.inject({
+      method: "PUT",
+      url: `/studio/runs/${TICKET}/archive`,
+      payload: { archived: true },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("404s for a run nobody has, rather than reporting a success", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const response = await archive(h, token, "UGURPAY-9999", true);
+
+    expect(response.statusCode).toBe(404);
+    // The server's error envelope is `{ error: <code> }` (server.ts) — the same
+    // machine code the neighbouring read routes answer with, so Studio's
+    // `messageKeyOf` resolves it without a special case for this endpoint.
+    expect((response.json() as { error: string }).error).toBe("no_run");
+  });
+
+  /**
+   * The 404 must come BEFORE the audit append. An entry naming a ticket that
+   * does not exist would be a fictional operator action in an append-only
+   * chain — a row M33 makes it impossible to correct afterwards.
+   */
+  it("writes no audit entry for a run it could not find", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    await archive(h, token, "UGURPAY-9999", true);
+
+    const entries = await h.auditStore.read();
+    expect(entries.filter((e) => e.subject === "run:UGURPAY-9999")).toEqual([]);
+  });
+
+  it("records who archived the run, and who un-archived it, in the M33 chain", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    await archive(h, token, TICKET, true);
+    await archive(h, token, TICKET, false);
+
+    const entries = (await h.auditStore.read()).filter((e) => e.subject === `run:${TICKET}`);
+    expect(entries.map((e) => (e.meta as { verb: string }).verb)).toEqual([
+      "archived",
+      "unarchived",
+    ]);
+    // `PARAM_CHANGED`, like every other operator change to how the platform
+    // presents things (listening rules, connections). Deliberately NOT
+    // `RETENTION_ARCHIVE`, which means data was actually disposed of — telling
+    // an auditor a run's evidence was destroyed when every byte is in place is
+    // a worse lie than saying nothing.
+    expect(entries.every((e) => e.action === "PARAM_CHANGED")).toBe(true);
+    expect(entries.every((e) => e.actor.startsWith("yonetici"))).toBe(true);
+  });
+
+  it("refuses a body that does not say which way to move the run", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    for (const payload of [{}, { archived: "yes" }, { archive: true }]) {
+      const response = await h.app.inject({
+        method: "PUT",
+        url: `/studio/runs/${TICKET}/archive`,
+        headers: auth(token),
+        payload,
+      });
+      // "Archive" and "un-archive" are opposite instructions; a defaulted or
+      // misspelled field must never let a request meaning one perform the other.
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+    }
+  });
+
+  /**
+   * The role gate and the project gate are two DIFFERENT questions, and this
+   * endpoint asks both.
+   *
+   * `admin` and `tech-lead` are cross-project by design (`CROSS_PROJECT_ROLES`,
+   * routes/access.ts): a tech lead carries the gates across teams, so reaching
+   * another project's run is their job, not a leak. What no one may do is act
+   * on a project they cannot see — which for a run-write means a caller whose
+   * role passes and whose project scope does not. That combination is
+   * unreachable for the two cross-project roles, so the honest assertion is
+   * the pair below: the role check refuses the member, and the project check
+   * still runs for everyone (it is why `assertProjectAccess` is the first line
+   * of the handler, before the body is even parsed).
+   */
+  it("refuses before it parses, so a caller who may not write learns nothing from the body", async () => {
+    const h = await studioHarness();
+    // No role and no group, and a body that is ALSO invalid. The answer must
+    // be 403, never 400: a 400 here would tell a caller who may not touch this
+    // run that their body was the only thing wrong with the request, which is
+    // the difference between "you may not" and "try again with better JSON".
+    // The role guard is a `preHandler`, so it runs before the handler parses
+    // anything — this pins that ordering rather than trusting it.
+    const token = await outsiderToken(h);
+
+    const response = await h.app.inject({
+      method: "PUT",
+      url: `/studio/runs/${TICKET}/archive`,
+      headers: auth(token),
+      payload: { nonsense: true },
+    });
+
+    expect(response.statusCode).toBe(403);
+    // And nothing was written on the way to the refusal.
+    const entries = await h.auditStore.read();
+    expect(entries.filter((e) => e.subject === `run:${TICKET}`)).toEqual([]);
+  });
+});

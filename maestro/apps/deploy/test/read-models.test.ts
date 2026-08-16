@@ -134,7 +134,7 @@ describe("unbridgedReadModels: every method refuses", () => {
   it("rejects rather than throwing synchronously, so an unawaited call still fails", () => {
     const read = unbridgedReadModels();
     // If this threw synchronously the expression itself would blow up here.
-    const promise = read.runs.list({ limit: 50, cursor: null, appId: null, projectKeys: null });
+    const promise = read.runs.list({ limit: 50, cursor: null, appId: null, projectKeys: null, archived: "active" });
     expect(promise).toBeInstanceOf(Promise);
     return expect(promise).rejects.toThrow(/runs\.list/);
   });

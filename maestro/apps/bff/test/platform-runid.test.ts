@@ -58,6 +58,7 @@ describe("runId resolution past the page horizon", () => {
       cursor: null,
       appId: null,
       projectKeys: null,
+      archived: "active",
     });
     expect(page.items).toHaveLength(PLATFORM_MAX_LIMIT);
     expect(page.items.map((row) => row.ticketKey)).not.toContain(`UGURPAY-${2000 + SEEDED - 1}`);

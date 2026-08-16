@@ -156,10 +156,46 @@ export function parseSeedIssueTypes(raw: unknown): SeedIssueType[] | null {
 }
 
 /**
- * Read a project's issue types with a stored connection — the same endpoint,
- * auth scheme and secret discipline as `listJiraMatchValues` (`jiraMatchSource`
- * is shared). Every failure collapses to ONE reason: the seed either has the
- * real type list or it seeds nothing. It never invents type names.
+ * Parse a createmeta issuetypes body into the same `{name, subtask}` pairs.
+ *
+ * `parseCreateMetaIssueTypes` in the match-values service returns names only;
+ * the seed needs `subtask` too, so it repeats the two-shape handling here
+ * (`{issueTypes:[…]}` on current Cloud, `{values:[…]}` on the paginated shape).
+ */
+export function parseSeedCreateMetaIssueTypes(raw: unknown): SeedIssueType[] | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const body = raw as Record<string, unknown>;
+  const list = Array.isArray(body["issueTypes"])
+    ? body["issueTypes"]
+    : Array.isArray(body["values"])
+      ? body["values"]
+      : null;
+  if (list === null) return null;
+
+  const out: SeedIssueType[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const name = (entry as Record<string, unknown>)["name"];
+    if (typeof name !== "string" || name.trim().length === 0) continue;
+    out.push({ name: name.trim(), subtask: (entry as Record<string, unknown>)["subtask"] === true });
+  }
+  // Zero creatable types is not a real project — treat it as "no answer" so the
+  // caller degrades to the statuses payload instead of seeding nothing.
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * Read a project's issue types with a stored connection — the same auth scheme
+ * and secret discipline as `listJiraMatchValues` (`jiraMatchSource` is shared),
+ * and the SAME endpoint preference for the same reason: on Cloud the names on
+ * `/project/{key}/statuses` are a different localisation from the names on the
+ * issues themselves ("Task" vs "Görev"), so a rule seeded from that payload
+ * would never match a ticket. `createmeta/{key}/issuetypes` agrees with the
+ * issue resource; the statuses payload is only the net under it. See the module
+ * comment on `jira-match-values-service.ts` for the measurements.
+ *
+ * Every failure still collapses to ONE reason: the seed either has a real type
+ * list or it seeds nothing. It never invents type names.
  */
 export async function fetchSeedIssueTypes(
   connection: ConnectionRecord,
@@ -174,27 +210,38 @@ export async function fetchSeedIssueTypes(
 
   const email =
     typeof connection.config["email"] === "string" ? connection.config["email"] : "";
-  const url = `${connection.baseUrl.replace(/\/+$/, "")}${source.path(projectKey.trim())}`;
-  let response: Response;
-  try {
-    response = await fetchImpl(url, {
-      method: "GET",
-      headers: { accept: "application/json", ...source.header(token, email) },
-    });
-  } catch {
-    return { ok: false, reason: "issue_types_unavailable" };
-  }
-  if (response.status < 200 || response.status >= 300) {
-    return { ok: false, reason: "issue_types_unavailable" };
+  const base = connection.baseUrl.replace(/\/+$/, "");
+  const key = projectKey.trim();
+  const headers = { accept: "application/json", ...source.header(token, email) };
+
+  const read = async (path: string): Promise<unknown | null> => {
+    let response: Response;
+    try {
+      response = await fetchImpl(`${base}${path}`, { method: "GET", headers });
+    } catch {
+      return null;
+    }
+    if (response.status < 200 || response.status >= 300) return null;
+    try {
+      return await response.json();
+    } catch {
+      return null;
+    }
+  };
+
+  if (source.issueTypePath !== undefined) {
+    const body = await read(source.issueTypePath(key));
+    const parsed = body === null ? null : parseSeedCreateMetaIssueTypes(body);
+    if (parsed !== null) return { ok: true, issueTypes: parsed };
+    // createmeta unavailable/403/unrecognised — fall back rather than seeding
+    // nothing. Wrong-localisation names an admin can see and edit beat a
+    // project that silently listens to no ticket at all.
   }
 
-  try {
-    const issueTypes = parseSeedIssueTypes(await response.json());
-    if (issueTypes === null) return { ok: false, reason: "issue_types_unavailable" };
-    return { ok: true, issueTypes };
-  } catch {
-    return { ok: false, reason: "issue_types_unavailable" };
-  }
+  const body = await read(source.path(key));
+  const issueTypes = body === null ? null : parseSeedIssueTypes(body);
+  if (issueTypes === null) return { ok: false, reason: "issue_types_unavailable" };
+  return { ok: true, issueTypes };
 }
 
 // ── the whole seed for one project, from the wired deps ───────────────────────

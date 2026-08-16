@@ -351,8 +351,154 @@ describe("tickets", () => {
     // Bound to the shared constant, not a literal: the screen asked for 500
     // against a server ceiling of 200 and every request 400'd. A literal here
     // would have passed while the live screen showed nothing.
-    expect(calls[0]!.url).toBe(`/api/studio/runs?limit=${MAX_RUN_PAGE}`);
+    //
+    // `archived=active` is the 0019 scope, and the list sends it EXPLICITLY
+    // rather than leaning on the server's default: the archive toggle flips
+    // this same parameter, so a screen that omitted it when off would be
+    // asking a different question in each direction.
+    expect(calls[0]!.url).toBe(`/api/studio/runs?limit=${MAX_RUN_PAGE}&archived=active`);
     expect(calls.every((call) => !/^\/api\/runs\b/.test(call.url))).toBe(true);
+  });
+});
+
+/**
+ * Archiving, from the operator's side (0019).
+ *
+ * The bug that produced this feature was a DISPLAY bug with a data-integrity
+ * trap inside it: twelve day-old `fail` runs made the panel look broken, and
+ * the obvious fix — delete them — would have destroyed a bank's audit trail.
+ * So every test here checks the same pair: the run left the board, and the run
+ * is still retrievable.
+ */
+describe("tickets: archiving a run", () => {
+  /** The archived view's body: one retired run, carrying its archive stamp. */
+  const ARCHIVED_PAGE = {
+    items: [
+      {
+        ...record("UGURPAY-900", { archivedAt: "2026-08-16T12:00:00.000Z" }),
+        state: state("UGURPAY-900", "fail", "3o"),
+      },
+    ],
+    nextCursor: null,
+  };
+
+  it("asks the server for the archived set instead of hiding rows locally", async () => {
+    // Hiding locally would be wrong twice over: the page is capped at
+    // MAX_RUN_PAGE, so a client-side filter shrinks an already-truncated page,
+    // and the "ilk N kayıt" note would then be counting rows it did not show.
+    const { fetchImpl, calls } = stubFetch({
+      "/api/studio/runs": () => json(RUN_PAGE),
+    });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "Arşivlenenleri göster" }));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes("archived=archived"))).toBe(true),
+    );
+  });
+
+  it("sends the archive as a PUT and says so, without navigating away", async () => {
+    const { fetchImpl, calls } = stubFetch({
+      "/api/studio/runs/UGURPAY-501/archive": () =>
+        json({ ticketKey: "UGURPAY-501", archivedAt: "2026-08-16T12:00:00.000Z" }),
+      "/api/studio/runs": () => json(RUN_PAGE),
+    });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
+    const row = screen.getByText("UGURPAY-501").closest("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Arşivle" }));
+
+    await waitFor(() => {
+      const write = calls.find((call) => call.method === "PUT");
+      expect(write?.url).toBe("/api/studio/runs/UGURPAY-501/archive");
+      // The body says WHICH WAY. "Archive" and "un-archive" are opposite
+      // instructions and the endpoint refuses a body that does not choose.
+      expect(write?.body).toEqual({ archived: true });
+    });
+  });
+
+  it("labels an archived row with the way BACK, not with its current state", async () => {
+    // The button must always say what pressing it will do. An archived row
+    // offering "Arşivle" would be a one-way door with a misleading handle.
+    const { fetchImpl } = stubFetch({
+      "/api/studio/runs": () => json(ARCHIVED_PAGE),
+    });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-900")).toBeInTheDocument());
+    const row = screen.getByText("UGURPAY-900").closest("tr")!;
+    expect(within(row).getByRole("button", { name: "Geri al" })).toBeInTheDocument();
+  });
+
+  it("sends archived:false to restore, so the door opens both ways", async () => {
+    const { fetchImpl, calls } = stubFetch({
+      "/api/studio/runs/UGURPAY-900/archive": () =>
+        json({ ticketKey: "UGURPAY-900", archivedAt: null }),
+      "/api/studio/runs": () => json(ARCHIVED_PAGE),
+    });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-900")).toBeInTheDocument());
+    const row = screen.getByText("UGURPAY-900").closest("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Geri al" }));
+
+    await waitFor(() => {
+      const write = calls.find((call) => call.method === "PUT");
+      expect(write?.body).toEqual({ archived: false });
+    });
+  });
+
+  it("surfaces a refusal instead of looking like a button that did nothing", async () => {
+    // A viewer pressing Arşivle gets a 403. Silence here would read as a
+    // broken button, and the operator would press it again.
+    const { fetchImpl } = stubFetch({
+      "/api/studio/runs/UGURPAY-501/archive": () => json({ error: "role_required" }, 403),
+      "/api/studio/runs": () => json(RUN_PAGE),
+    });
+    renderScreen(<TicketsScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
+    const row = screen.getByText("UGURPAY-501").closest("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Arşivle" }));
+
+    // The toast lives in the `aria-live` region (ui/Toast.tsx), so it is
+    // announced rather than merely drawn. Translated prose, never the raw code:
+    // "role_required" on screen is a leak of the API's vocabulary into the
+    // operator's.
+    await waitFor(() => {
+      const toasts = screen.getByRole("region").textContent ?? "";
+      expect(toasts).not.toContain("role_required");
+      expect(toasts.length).toBeGreaterThan(10);
+    });
+  });
+
+  /**
+   * The tile-vs-list agreement, from the operator's side.
+   *
+   * The dashboard's KPI tiles and its ticket list are counted from ONE
+   * response. A tile reading "12 hatalı" over a list showing none is worse
+   * than the twelve stale rows that started this, because the operator cannot
+   * reconcile it against anything — so the dashboard must ask for the same
+   * scope the list beneath it shows.
+   */
+  it("counts the dashboard KPIs over the same default scope the list shows", async () => {
+    const { fetchImpl, calls } = stubFetch({
+      "/api/studio/pilot/state": () => json({ running: false, ticketKey: null }),
+      "/api/studio/pilot/runs": () => json({ runs: [] }),
+      "/api/studio/runs": () => json(RUN_PAGE),
+    });
+    renderScreen(<DashScreen />, { fetchImpl });
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/studio/runs"))).toBe(true));
+    // Never `archived=all` or `archived=archived`: an archived run must not be
+    // counted into a tile whose list would not show it.
+    const runCalls = calls.filter((c) => /\/api\/studio\/runs(\?|$)/.test(c.url));
+    expect(runCalls.length).toBeGreaterThan(0);
+    expect(runCalls.every((c) => !c.url.includes("archived=archived"))).toBe(true);
+    expect(runCalls.every((c) => !c.url.includes("archived=all"))).toBe(true);
   });
 });
 
@@ -389,6 +535,28 @@ describe("run list shape", () => {
     expect(row.runId).toBeNull();
     // The catalog's own risk tier still stands in for the missing state.
     expect(row.risk).toBe("orta");
+  });
+
+  /**
+   * `undefined` and `null` both mean "on the board" (0019).
+   *
+   * This is not defensive padding — it is the exact bug the fixtures caught.
+   * A row whose body omits `archivedAt` (an older BFF, a proxy that strips
+   * nulls) leaves the field `undefined`, and `undefined !== null` is TRUE, so
+   * a naive check renders EVERY live run as archived: the list offers "Geri
+   * al" on active work and the board looks emptied. No error, no crash — just
+   * a screen confidently showing the wrong thing, which is this project's
+   * worst failure class.
+   */
+  it("reads a missing archivedAt as 'on the board', never as archived", () => {
+    const withoutField = toRunRow(RUN_ITEMS[0] as never);
+    expect(withoutField.archivedAt).toBeNull();
+
+    const archived = toRunRow({
+      ...record("UGURPAY-900", { archivedAt: "2026-08-16T12:00:00.000Z" }),
+      state: null,
+    } as never);
+    expect(archived.archivedAt).toBe("2026-08-16T12:00:00.000Z");
   });
 
   it("yields an empty list rather than throwing on a body with no items", () => {

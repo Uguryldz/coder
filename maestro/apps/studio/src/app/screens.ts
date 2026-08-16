@@ -90,6 +90,11 @@ export const SCREENS: readonly ScreenDef[] = [
   { id: "evidence", path: "evidence", titleKey: "screen.evidence.title", navKey: "nav.evidence", group: "compliance", icon: "📦", soon: true },
 
   // ── ④ KURULUM — setup / infrastructure, rarely touched but reachable ─────
+  // The guided wizard comes FIRST, above the expert screen it walks the user
+  // through. A first-time operator who opens "Kurulum" should meet the page
+  // that asks what they want to do, not the three-tab console that assumes they
+  // already know. `soon` is deliberately absent: this ships working.
+  { id: "setup", path: "setup", titleKey: "screen.setup.title", navKey: "nav.setup", group: "system", icon: "🧭" },
   { id: "projects", path: "projects", titleKey: "screen.projects.title", navKey: "nav.projects", group: "system", icon: "⇄" },
   { id: "notify", path: "notify", titleKey: "screen.notify.title", navKey: "nav.notify", group: "system", icon: "🔔" },
   { id: "users", path: "users", titleKey: "screen.users.title", navKey: "nav.users", group: "system", icon: "👥", roles: ["admin"] },

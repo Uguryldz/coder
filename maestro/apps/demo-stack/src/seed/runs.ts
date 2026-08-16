@@ -66,6 +66,11 @@ export function runRecordOf(run: DemoRun, now: Date): RunRecord {
     tokensOut: run.tokensOut,
     startedAt: stampBefore(now, run.startedHoursAgo),
     updatedAt: stampBefore(now, run.updatedHoursAgo),
+    // Every demo run is on the board (0019). A seeded archive would make the
+    // demo open on a dashboard quietly missing rows the seed says it has —
+    // the demo's job is to show the product working, and an archived row is
+    // an operator's decision, not a starting condition.
+    archivedAt: null,
   };
 }
 

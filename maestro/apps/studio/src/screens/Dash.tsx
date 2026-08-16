@@ -63,6 +63,20 @@ export function DashScreen(): ReactNode {
   const t = useT();
   const api = useApi();
   const navigate = useNavigate();
+  /**
+   * The four KPI tiles are counted from THIS response, and `TicketsList` below
+   * fetches the same endpoint with the same default scope — so both see the
+   * same set and the tiles cannot claim a number the list does not show.
+   *
+   * That agreement is the whole reason the archive filter lives on the server
+   * (0019). Hiding archived runs by filtering in `TicketsList` alone would have
+   * left these tiles counting twelve failures over a list showing none, which
+   * is a worse dashboard than the one that started this: a wrong number an
+   * operator cannot reconcile against anything.
+   *
+   * No `archived` argument, deliberately: the BFF's default IS "active", and
+   * spelling it out here would create a second place to keep that decision.
+   */
   const { data, isPending, error, refetch } = useRuns(200);
 
   // Is the flow engine (pilot) alive? If its state cannot be read, no job can

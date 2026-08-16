@@ -64,6 +64,10 @@ export const RUN: RunRecord = {
   tokensOut: 6_100,
   startedAt: AT,
   updatedAt: AT,
+  // On the board (0019). The default every Studio read test inherits, so a
+  // test that wants an archived row has to say so — and the archive filter
+  // cannot pass by accident on a fixture that was already hidden.
+  archivedAt: null,
 };
 
 /**

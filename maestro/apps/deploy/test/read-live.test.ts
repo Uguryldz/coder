@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeCursor, encodeCursor } from "@maestro/bff";
 import {
+  archiveWhere,
   parentOf,
   PrismaRunCatalog,
   scopeWhere,
@@ -48,6 +49,13 @@ function fakeRuns(rows: RunCatalogRow[]): RunCatalogDelegate & { queries: RunCat
           where.OR === undefined ||
           where.OR.some((clause) => row.ticketKey.startsWith(clause.ticketKey.startsWith)),
       )
+      // The archive clause (0019), honoured rather than ignored: a fake that
+      // dropped it would let every archive test pass against a store that never
+      // filtered, which is the one bug these tests exist to catch.
+      .filter((row) => {
+        if (where.archivedAt === undefined) return true;
+        return where.archivedAt === null ? row.archivedAt === null : row.archivedAt !== null;
+      })
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
   };
   return {
@@ -58,6 +66,14 @@ function fakeRuns(rows: RunCatalogRow[]): RunCatalogDelegate & { queries: RunCat
       return Promise.resolve(found.slice(from, from + (args.take ?? found.length)));
     },
     count: (args) => Promise.resolve(matching(args.where).length),
+    // Mutates the SAME row objects the reads above see, so an archive followed
+    // by a list is a genuine round trip rather than two independent fakes
+    // agreeing by construction.
+    updateMany: (args) => {
+      const found = matching(args.where);
+      for (const row of found) row.archivedAt = args.data.archivedAt;
+      return Promise.resolve({ count: found.length });
+    },
   };
 }
 
@@ -76,6 +92,8 @@ function run(ticketKey: string, updatedAt: string, extra: Partial<RunCatalogRow>
     matchJson: { via: "rule", ruleId: "rule-1", appId: "ugurpay" },
     startedAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date(updatedAt),
+    // On the board unless a test says otherwise (0019).
+    archivedAt: null,
     ...extra,
   };
 }
@@ -94,6 +112,7 @@ describe("run catalog: project scope is a WHERE, not a post-filter", () => {
       cursor: null,
       appId: null,
       projectKeys: ["UGURPAY"],
+      archived: "all",
     });
 
     expect(page.items.map((item) => item.ticketKey)).toEqual(["UGURPAY-1"]);
@@ -115,6 +134,7 @@ describe("run catalog: project scope is a WHERE, not a post-filter", () => {
       cursor: null,
       appId: null,
       projectKeys: ["UGURPAY"],
+      archived: "all",
     });
 
     expect(page.items).toHaveLength(5);
@@ -129,7 +149,7 @@ describe("run catalog: project scope is a WHERE, not a post-filter", () => {
       noCosts,
     );
 
-    const page = await catalog.list({ limit: 50, cursor: null, appId: null, projectKeys: [] });
+    const page = await catalog.list({ limit: 50, cursor: null, appId: null, projectKeys: [], archived: "all" });
 
     expect(page.items).toEqual([]);
   });
@@ -143,7 +163,7 @@ describe("run catalog: project scope is a WHERE, not a post-filter", () => {
       noCosts,
     );
 
-    const page = await catalog.list({ limit: 50, cursor: null, appId: null, projectKeys: null });
+    const page = await catalog.list({ limit: 50, cursor: null, appId: null, projectKeys: null, archived: "all" });
 
     expect(page.items.map((item) => item.ticketKey)).toEqual(["UGURPAY-1", "UGURWEB-2"]);
   });
@@ -171,6 +191,7 @@ describe("run catalog: paging", () => {
         cursor,
         appId: null,
         projectKeys: null,
+        archived: "all",
       });
       seen.push(...page.items.map((item) => item.ticketKey));
       cursor = page.nextCursor;
@@ -192,6 +213,7 @@ describe("run catalog: paging", () => {
       cursor: foreign,
       appId: null,
       projectKeys: null,
+      archived: "all",
     });
 
     // Page one again — a silent skip in a work queue is a ticket nobody sees.
@@ -209,6 +231,7 @@ describe("run catalog: paging", () => {
       cursor: "not-a-cursor",
       appId: null,
       projectKeys: null,
+      archived: "all",
     });
     expect(page.items).toHaveLength(2);
   });
@@ -228,6 +251,7 @@ describe("run catalog: paging", () => {
       cursor: null,
       appId: null,
       projectKeys: ["UGURPAY"],
+      archived: "all",
     });
 
     expect(page.items).toHaveLength(1);
@@ -236,10 +260,154 @@ describe("run catalog: paging", () => {
 
   it("emits a cursor that decodes against its own fingerprint", async () => {
     const catalog = new PrismaRunCatalog(fakeRuns(rows), noCosts);
-    const page = await catalog.list({ limit: 3, cursor: null, appId: null, projectKeys: null });
+    const page = await catalog.list({ limit: 3, cursor: null, appId: null, projectKeys: null, archived: "all" });
 
     expect(page.nextCursor).not.toBeNull();
-    expect(decodeCursor(page.nextCursor, "runs:")).toBe(3);
+    // The fingerprint carries the archive scope (0019) as well as the appId:
+    // the board and the archive are two different filtered sets, and a cursor
+    // is an offset INTO one of them.
+    expect(decodeCursor(page.nextCursor, "runs::all")).toBe(3);
+  });
+
+  /**
+   * The reason the scope is in the fingerprint at all.
+   *
+   * A cursor is a plain offset. Without the scope in the fingerprint, one
+   * issued against the active board would be accepted by the archived view and
+   * silently SKIP that many archived rows — no error, just a page starting in
+   * the wrong place, which is the answer-shaped-wrongness this file exists to
+   * catch. With it, `decodeCursor` sees a fingerprint it did not write and
+   * restarts at 0: the caller re-reads the first page rather than missing one.
+   * Restarting is the safe direction, and it is only available because the
+   * fingerprint can tell the two views apart at all.
+   */
+  it("does not let a board cursor skip rows in the archived view", async () => {
+    const catalog = new PrismaRunCatalog(fakeRuns(rows), noCosts);
+    const board = await catalog.list({
+      limit: 3,
+      cursor: null,
+      appId: null,
+      projectKeys: null,
+      archived: "active",
+    });
+
+    expect(board.nextCursor).not.toBeNull();
+    // Its own view continues where it left off …
+    expect(decodeCursor(board.nextCursor, "runs::active")).toBe(3);
+    // … and the other view refuses to honour it, falling back to the start.
+    expect(decodeCursor(board.nextCursor, "runs::archived")).toBe(0);
+  });
+});
+
+/**
+ * Archiving (0019) at the STORE level.
+ *
+ * The property under test is not "the column can be written" — it is that a
+ * run leaves the default view without leaving the database, and comes back on
+ * request. Every assertion here is about a row that still exists.
+ */
+describe("run catalog: archiving hides a run from the board without deleting it", () => {
+  const rows = (): RunCatalogRow[] => [
+    run("UGURPAY-1", "2026-01-03T00:00:00.000Z"),
+    run("UGURPAY-2", "2026-01-02T00:00:00.000Z"),
+    run("UGURPAY-3", "2026-01-01T00:00:00.000Z"),
+  ];
+  const scope = { limit: 50, cursor: null, appId: null, projectKeys: null } as const;
+
+  it("archives, hides from the default view, and un-archives — a full round trip", async () => {
+    const store = fakeRuns(rows());
+    const catalog = new PrismaRunCatalog(store, noCosts);
+
+    expect(await catalog.setArchived("UGURPAY-2", new Date("2026-01-05T00:00:00.000Z"))).toBe(true);
+
+    const active = await catalog.list({ ...scope, archived: "active" });
+    expect(active.items.map((item) => item.ticketKey)).toEqual(["UGURPAY-1", "UGURPAY-3"]);
+
+    // Still there — the whole point. A DELETE would pass the assertion above
+    // and fail this one, which is why both are here.
+    const archived = await catalog.list({ ...scope, archived: "archived" });
+    expect(archived.items.map((item) => item.ticketKey)).toEqual(["UGURPAY-2"]);
+    expect(archived.items[0]?.archivedAt).toBe("2026-01-05T00:00:00.000Z");
+
+    // And back. Reversibility is the feature, not a nicety: an operator who
+    // cannot undo will not archive at all.
+    expect(await catalog.setArchived("UGURPAY-2", null)).toBe(true);
+    const restored = await catalog.list({ ...scope, archived: "active" });
+    expect(restored.items.map((item) => item.ticketKey)).toEqual([
+      "UGURPAY-1",
+      "UGURPAY-2",
+      "UGURPAY-3",
+    ]);
+    expect(restored.items.every((item) => item.archivedAt === null)).toBe(true);
+  });
+
+  it("shows both sides under 'all', which is what an auditor asks for", async () => {
+    const catalog = new PrismaRunCatalog(fakeRuns(rows()), noCosts);
+    await catalog.setArchived("UGURPAY-2", new Date("2026-01-05T00:00:00.000Z"));
+
+    const all = await catalog.list({ ...scope, archived: "all" });
+    expect(all.items.map((item) => item.ticketKey)).toEqual([
+      "UGURPAY-1",
+      "UGURPAY-2",
+      "UGURPAY-3",
+    ]);
+  });
+
+  /**
+   * The count and the list read the SAME `WHERE`. This is the tile-vs-list bug
+   * in its store-level form: a `count` that ignored the archive clause would
+   * make `nextCursor` promise a page of rows the filter had already removed,
+   * and a dashboard tile reading "12" over a list showing none.
+   */
+  it("counts what it lists, so the cursor never promises a hidden row", async () => {
+    const catalog = new PrismaRunCatalog(fakeRuns(rows()), noCosts);
+    await catalog.setArchived("UGURPAY-2", new Date("2026-01-05T00:00:00.000Z"));
+
+    // Two active rows and a limit of two: the page is exactly the set, so
+    // there is no next page. A count over all three would emit a cursor.
+    const page = await catalog.list({ ...scope, limit: 2, archived: "active" });
+    expect(page.items).toHaveLength(2);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("reports a missing ticket rather than claiming it archived one", async () => {
+    const catalog = new PrismaRunCatalog(fakeRuns(rows()), noCosts);
+    expect(await catalog.setArchived("NOSUCH-9", new Date())).toBe(false);
+  });
+
+  it("is idempotent — archiving an archived run is not a failure", async () => {
+    // A double-click must not read as "no such run", which is what a store
+    // counting only CHANGED rows would report.
+    const catalog = new PrismaRunCatalog(fakeRuns(rows()), noCosts);
+    const at = new Date("2026-01-05T00:00:00.000Z");
+    expect(await catalog.setArchived("UGURPAY-1", at)).toBe(true);
+    expect(await catalog.setArchived("UGURPAY-1", at)).toBe(true);
+  });
+
+  it("touches only the archive column, never the run's own facts", async () => {
+    const store = fakeRuns(rows());
+    const catalog = new PrismaRunCatalog(store, noCosts);
+    const before = (await catalog.list({ ...scope, archived: "all" })).items;
+
+    await catalog.setArchived("UGURPAY-2", new Date("2026-01-05T00:00:00.000Z"));
+    const after = (await catalog.list({ ...scope, archived: "all" })).items;
+
+    // Status, step, risk, clocks: a run's history is not edited by tidying the
+    // board it appears on.
+    for (const [i, row] of after.entries()) {
+      const { archivedAt: _ignored, ...rest } = row;
+      const { archivedAt: _also, ...wasRest } = before[i] ?? row;
+      expect(rest).toEqual(wasRest);
+    }
+  });
+
+  it("asks the database for the archive clause rather than filtering afterwards", () => {
+    // The clause has to reach the WHERE, or paging shortens silently — the
+    // same property the project-scope tests above assert, for the same reason.
+    expect(archiveWhere("active")).toEqual({ archivedAt: null });
+    expect(archiveWhere("archived")).toEqual({ archivedAt: { not: null } });
+    // "all" is an ABSENT key, not an enumerated one: no restriction.
+    expect(archiveWhere("all")).toEqual({});
   });
 });
 
@@ -256,7 +424,7 @@ describe("run catalog: totals and the fan-out family", () => {
     };
     const catalog = new PrismaRunCatalog(fakeRuns([run("UGURPAY-1", "2026-01-01T00:00:00.000Z")]), calls);
 
-    const [record] = (await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null }))
+    const [record] = (await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null, archived: "all" }))
       .items;
 
     expect(record?.costUsd).toBe(0.42);
@@ -273,7 +441,7 @@ describe("run catalog: totals and the fan-out family", () => {
     };
     const catalog = new PrismaRunCatalog(fakeRuns([run("UGURPAY-1", "2026-01-01T00:00:00.000Z")]), calls);
 
-    const [record] = (await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null }))
+    const [record] = (await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null, archived: "all" }))
       .items;
 
     expect(record?.costUsd).toBe(0);
@@ -304,7 +472,7 @@ describe("run catalog: totals and the fan-out family", () => {
       noCosts,
     );
 
-    const page = await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null });
+    const page = await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null, archived: "all" });
     const parent = page.items.find((item) => item.ticketKey === "UGURPAY-500");
     const child = page.items.find((item) => item.ticketKey === "UGURPAY-501");
 
@@ -327,7 +495,7 @@ describe("run catalog: totals and the fan-out family", () => {
       noCosts,
     );
 
-    const page = await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null });
+    const page = await catalog.list({ limit: 5, cursor: null, appId: null, projectKeys: null, archived: "all" });
 
     // Read off the ROW, not defaulted: two rows with different statuses must
     // come back different, which a hardcoded value could not manage.

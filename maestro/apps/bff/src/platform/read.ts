@@ -88,6 +88,14 @@ export function readHalf(deps: ResolvedDeps): ReadHalf {
         cursor: null,
         appId: filter.appId ?? null,
         projectKeys: visibleProjects(session),
+        // The same default the HTTP list applies (0019): a run an operator has
+        // retired from the board is retired from this surface too. The
+        // alternative would let a delegated caller report yesterday's
+        // dealt-with failures back at the human who archived them, which is
+        // the confusion the column was added to end. Note the exact-ticket
+        // branch above deliberately does NOT filter: asking for one ticket by
+        // name is asking about that run, archived or not.
+        archived: "active",
       });
 
       const states: WorkflowRunState[] = [];

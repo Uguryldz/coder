@@ -89,20 +89,66 @@ export interface RunRecord {
   readonly tokensOut: number;
   readonly startedAt: string;
   readonly updatedAt: string;
+  /**
+   * When an operator retired this run from the dashboard's default view
+   * (`WorkflowRun.archivedAt`, 0019); `null` for a run still on the board.
+   *
+   * It travels on the record rather than being consumed silently by the query
+   * because Studio has to be able to SAY so: a row that appears only under
+   * "arşivlenmiş" must be labelled as archived, and the un-archive button has
+   * to know which state it is toggling out of. A filter that dropped the flag
+   * after using it would leave the screen unable to tell an archived row from
+   * an active one in the very view whose purpose is showing both.
+   */
+  readonly archivedAt: string | null;
 }
 
 export interface RunCatalogFilter extends PageRequest {
   readonly appId: string | null;
   readonly projectKeys: readonly string[] | null;
+  /**
+   * Which side of the archive line to list (0019).
+   *
+   * Three values, not a boolean, because "archived" has three useful answers
+   * and only two of them are expressible as one:
+   *   `"active"`   — `archivedAt IS NULL`. The DEFAULT, and the whole point:
+   *                  yesterday's dealt-with failures stop greeting a new
+   *                  operator as if the product were broken.
+   *   `"archived"` — `archivedAt IS NOT NULL`. The explicit way back in, so
+   *                  archiving hides a run without hiding it from anyone.
+   *   `"all"`      — no clause. What an auditor asks for.
+   *
+   * It is a STORE-LEVEL filter rather than something the route drops after the
+   * fact, for the same reason `projectKeys` is (see PrismaRunCatalog): a page
+   * of `limit` rows must be a page of rows the caller asked to see, or paging
+   * silently shortens and the caller cannot tell a short page from a last one.
+   */
+  readonly archived: ArchiveScope;
 }
 
+/** @see RunCatalogFilter.archived */
+export type ArchiveScope = "active" | "archived" | "all";
+
 /**
- * Per-run platform metadata. Reads only: a run's facts change because the
- * workflow advanced, never because Studio asked for them.
+ * Per-run platform metadata.
+ *
+ * Almost reads-only: a run's FACTS change because the workflow advanced, never
+ * because Studio asked for them. `setArchived` is the one exception and it
+ * deliberately writes no fact — it records that an operator retired the row
+ * from a view, which is a statement about the dashboard, not about the run.
  */
 export interface RunCatalog {
   get(ticketKey: string): Promise<RunRecord | null>;
   list(filter: RunCatalogFilter): Promise<Page<RunRecord>>;
+  /**
+   * Archive (`at`) or un-archive (`null`) a run, by ticket key.
+   *
+   * Returns `false` when no such run exists, so the route can answer 404
+   * rather than reporting success for a ticket nobody has. The clock is passed
+   * IN rather than read here: the BFF owns one clock (`deps.clock`) so a test
+   * can pin the recorded moment and the audit entry beside it agrees.
+   */
+  setArchived(ticketKey: string, at: Date | null): Promise<boolean>;
 }
 
 // ── journal (M30) ─────────────────────────────────────────────────────────────

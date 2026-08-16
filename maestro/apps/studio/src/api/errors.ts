@@ -55,6 +55,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   invalid_login_body: "error.invalid_login_body",
   invalid_query: "error.invalid_query",
   invalid_ticket_key: "error.invalid_ticket_key",
+  invalid_archive_request: "error.invalid_archive_request",
   invalid_signal_body: "error.invalid_signal_body",
   reject_needs_reason: "error.reject_needs_reason",
   invalid_param_key: "error.invalid_param_key",

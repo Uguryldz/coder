@@ -6,6 +6,7 @@ import {
 } from "@maestro/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ResolvedDeps } from "../deps.js";
 import type { RunRecord } from "../read-models.js";
@@ -86,6 +87,75 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
   );
 
   /**
+   * Archive or un-archive a run (0019).
+   *
+   * WHAT THIS IS NOT: a delete. There is no route that deletes a run and there
+   * must not be — the row is pointed at by its journal, its step events and its
+   * evidence package, and the M33 chain records what it did. This endpoint
+   * writes ONE nullable column that decides which listing the row appears in by
+   * default. The audit trail is untouched; the dashboard is what changes.
+   *
+   * WHY IT EXISTS: twelve `fail` rows from an evening of experiments sat on the
+   * board for a day, all stopped at the same step, nineteen to twenty-two hours
+   * old, and a new operator opening the panel read them as "the product is
+   * broken". The runs are real history that must survive, and the board is a
+   * working surface that must not be permanently occupied by work already dealt
+   * with. Those two requirements only fit together if "retired from the view"
+   * is a thing an operator can say.
+   *
+   * REVERSIBLE, and that is load-bearing rather than a nicety. `archived:
+   * false` is a first-class body value, not a hidden admin path, because an
+   * operator who cannot undo will not archive at all — and a board nobody dares
+   * tidy is the state this endpoint exists to end. It is also why the store
+   * writes `NULL` rather than appending to an archive table.
+   *
+   * `RUN_START_ROLES` (admin, tech-lead), mirrored deliberately: deciding what
+   * the whole team's dashboard shows is the same weight of decision as putting
+   * a ticket on the engine, and both are the kind an operator has to be able to
+   * point at a name for afterwards. A viewer may read the archive — the list
+   * route takes any session — but may not move a run into or out of it.
+   */
+  app.put(
+    "/studio/runs/:ticket/archive",
+    { preHandler: [preHandler, requireAnyRole(...RUN_START_ROLES)] },
+    async (request, reply) => {
+      const ticket = ticketParam(request.params);
+      assertProjectAccess(sessionOf(request), ticket);
+
+      const body = ArchiveBody.safeParse(request.body);
+      if (!body.success) throw badRequest("invalid_archive_request");
+
+      // The clock comes from `deps`, not `new Date()`: the timestamp written to
+      // the column and the `at` on the audit entry below have to be the same
+      // moment, or the record and the chain disagree about when an operator did
+      // this — and the chain is the half a reviewer trusts.
+      const at = body.data.archived ? deps.clock.now() : null;
+      // 404 BEFORE the audit entry, deliberately: an entry for a ticket that
+      // does not exist would put a fictional operator action into an
+      // append-only chain, where it can never be corrected.
+      if (!(await deps.read.runs.setArchived(ticket, at))) throw notFound("no_run", { ticket });
+
+      // `PARAM_CHANGED`, matching how `listening.ts` and `connections.ts` audit
+      // their writes: this is an operator changing how the platform PRESENTS a
+      // record, which is the same governance category as changing a rule. It is
+      // deliberately NOT `RETENTION_ARCHIVE` — that action means data was moved
+      // or destroyed under a retention policy (`packages/runners` records it
+      // when a workspace volume is actually removed), and borrowing it here
+      // would tell an auditor that a run's evidence had been disposed of when
+      // every byte of it is still in place.
+      await deps.audit.append({
+        actor: sessionActor(sessionOf(request)),
+        action: "PARAM_CHANGED",
+        subject: `run:${ticket}`,
+        at: deps.clock.now(),
+        meta: { surface: "runs", verb: body.data.archived ? "archived" : "unarchived" },
+      });
+
+      return reply.code(200).send({ ticketKey: ticket, archivedAt: at?.toISOString() ?? null });
+    },
+  );
+
+  /**
    * The ticket list (Studio's `tickets` screen). Joins the workflow's own state
    * — step, status, risk — onto the platform record, because a list that showed
    * one without the other would make a caller open every row to find the gate.
@@ -100,6 +170,16 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ...page,
       appId: filters.data.appId ?? null,
       projectKeys: visibleProjects(session),
+      // DEFAULT ACTIVE (0019). This is the whole read half of archiving: a
+      // caller that says nothing gets the board without the runs an operator
+      // has already dealt with. Twelve day-old `fail` rows greeting a new
+      // operator as "the product is broken" is the reason the column exists,
+      // and defaulting the other way would leave them there.
+      //
+      // The default lives HERE rather than in the store so the store has no
+      // opinion to disagree with, and so this line is the one place to read to
+      // know what an unqualified `GET /studio/runs` means.
+      archived: filters.data.archived ?? "active",
     });
 
     const rows = [];
@@ -240,7 +320,28 @@ const ListQuery = z.object({
   status: blankAsAbsent(
     z.enum(["running", "gate", "queued", "fail", "handover", "done", "cancelled"]),
   ).optional(),
+  /**
+   * Which side of the archive line to list (0019). Absent means `"active"` —
+   * see the route, which owns that default.
+   *
+   * `blankAsAbsent` for the same reason the two filters above use it: Studio
+   * serialises an unset toggle as `?archived=`, and rejecting that would fail
+   * the WHOLE request, blanking a dashboard whose data was right there. That
+   * exact bug has already been paid for once on this endpoint.
+   */
+  archived: blankAsAbsent(z.enum(["active", "archived", "all"])).optional(),
 });
+
+/**
+ * The archive endpoint's body (0019).
+ *
+ * `.strict()` and a REQUIRED boolean: "archive this" and "un-archive this" are
+ * opposite instructions, and a defaulted or misspelled field would let a
+ * request that meant one silently perform the other. An operator pressing
+ * "Geri al" must not be able to archive the run again because a key name
+ * drifted.
+ */
+const ArchiveBody = z.object({ archived: z.boolean() }).strict();
 
 const JournalQuery = z.object({ actor: JournalActor.optional() });
 

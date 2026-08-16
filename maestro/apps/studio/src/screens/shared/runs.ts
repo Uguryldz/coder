@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import type { UseQueryResult } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 import type {
   ApplicationRecord,
   DataClass,
@@ -87,6 +87,16 @@ export interface RunRow {
   readonly status: RunStatus | null;
   /** `null` for the same reason. */
   readonly step: StepId | null;
+  /**
+   * When an operator retired this run from the dashboard's default view
+   * (0019); `null` while it is still on the board.
+   *
+   * Carried onto the row rather than consumed by the query, because the
+   * archived VIEW has to render the thing it filtered by: a row shown there
+   * without the flag is indistinguishable from an active one, and the "Geri
+   * al" button would have no current state to toggle out of.
+   */
+  readonly archivedAt: string | null;
 }
 
 /** The platform record as `read-models.ts:RunRecord` sends it. */
@@ -107,6 +117,8 @@ interface RunRecordWire {
   readonly tokensOut: number;
   readonly startedAt: string;
   readonly updatedAt: string;
+  /** When an operator retired this run from the board (0019); `null` = active. */
+  readonly archivedAt: string | null;
 }
 
 /** The nested wire row: the catalog record plus the joined workflow state. */
@@ -146,6 +158,13 @@ export function toRunRow(item: RunListItemWire): RunRow {
     risk: state?.risk ?? record.risk,
     startedAt: state?.startedAt ?? record.startedAt,
     updatedAt: state?.updatedAt ?? record.updatedAt,
+    // NORMALISED, not passed straight through (0019). A body that omits the
+    // field — an older BFF, a fixture, a proxy that strips nulls — yields
+    // `undefined`, and `undefined !== null` is TRUE, so every row would render
+    // as archived: the list would offer "Geri al" on live runs and the board
+    // would look emptied. Absent and null both mean "on the board", and this
+    // is the one place that has to say so.
+    archivedAt: record.archivedAt ?? null,
   };
 }
 
@@ -167,10 +186,22 @@ export function projectKeyOf(ticketKey: string): string {
   return dash === -1 ? ticketKey : ticketKey.slice(0, dash);
 }
 
+/**
+ * Which side of the archive line to ask for (0019). Mirrors the BFF's
+ * `archived` query parameter exactly — see `ListQuery` in
+ * apps/bff/src/routes/studio-runs.ts.
+ *
+ * Omitting it means `"active"`, and that default lives on the SERVER: a screen
+ * that forgets to pass a scope shows the board, never the retired runs.
+ */
+export type ArchiveScope = "active" | "archived" | "all";
+
 export interface UseRunsOptions {
   readonly limit?: number;
   /** Poll interval in ms; omit for a one-shot fetch. */
   readonly refetchInterval?: number;
+  /** @see ArchiveScope — omit for the active board. */
+  readonly archived?: ArchiveScope;
 }
 
 /**
@@ -197,11 +228,21 @@ export function useRuns(
   options: UseRunsOptions = {},
 ): UseQueryResult<RunListResult> {
   const api = useApi();
+  const archived = options.archived;
   return useQuery({
-    queryKey: ["studio-runs", limit ?? null],
+    // The archive scope is part of the KEY, not just the request. React Query
+    // caches by key, so a board and an archive sharing one would serve each
+    // other's rows — the toggle would appear to work and then hand back the
+    // previous view's data on the next render.
+    queryKey: ["studio-runs", limit ?? null, archived ?? null],
     queryFn: ({ signal }) =>
       api.get<RunPageWire>("/studio/runs", {
-        ...(limit === undefined ? {} : { query: { limit } }),
+        query: {
+          ...(limit === undefined ? {} : { limit }),
+          // Omitted entirely when unset, rather than sent empty: the server
+          // owns the "active" default and this is how a screen says nothing.
+          ...(archived === undefined ? {} : { archived }),
+        },
         signal,
       }),
     select: toRunList,
@@ -292,4 +333,41 @@ export function useEvidence(
     enabled: enabled && ticket !== undefined && ticket !== "",
     retry: false,
   });
+}
+
+/**
+ * Archive or un-archive a run (0019).
+ *
+ * `PUT /studio/runs/:ticket/archive` — apps/bff/src/routes/studio-runs.ts.
+ * Admin/tech-lead only; a caller without the role gets a 403 the screen
+ * surfaces as a toast rather than a silent no-op.
+ *
+ * NOT A DELETE, and the naming says so on purpose. The run keeps its row, its
+ * journal, its evidence package and its place in the M33 audit chain; what
+ * changes is which listing it appears in by default. Any future "sil" button
+ * would be a different endpoint that does not exist and should not.
+ *
+ * `onSettled` invalidates EVERY `studio-runs` query rather than the one that
+ * happened to be mounted: the dashboard's KPI tiles and its list read the same
+ * key with different scopes, and refreshing only the visible one would leave a
+ * tile counting a run the list below it had already dropped.
+ */
+export function useArchiveRun(): UseMutationResult<
+  ArchiveResult,
+  Error,
+  { readonly ticketKey: string; readonly archived: boolean }
+> {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ticketKey, archived }) =>
+      api.put<ArchiveResult>(`/studio/runs/${encodeURIComponent(ticketKey)}/archive`, { archived }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["studio-runs"] }),
+  });
+}
+
+/** What the archive endpoint answers: the run's new archive state. */
+export interface ArchiveResult {
+  readonly ticketKey: string;
+  readonly archivedAt: string | null;
 }

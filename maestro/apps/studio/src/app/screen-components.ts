@@ -27,6 +27,7 @@ import { RunnersScreen } from "../screens/Runners.tsx";
 import { SandboxScreen } from "../screens/Sandbox.tsx";
 import { SecurityScreen } from "../screens/Security.tsx";
 import { SettingsScreen } from "../screens/Settings.tsx";
+import { SetupScreen } from "../screens/Setup.tsx";
 import { TemplateScreen } from "../screens/Template.tsx";
 import { UsersScreen } from "../screens/Users.tsx";
 import { VariantScreen } from "../screens/Variant.tsx";
@@ -69,6 +70,7 @@ export const SCREEN_COMPONENTS: Readonly<Record<string, ComponentType>> = {
   evidence: EvidenceScreen,
   security: SecurityScreen,
   notify: NotifyScreen,
+  setup: SetupScreen,
   projects: ProjectsScreen,
   params: ParamsScreen,
   mcp: McpScreen,

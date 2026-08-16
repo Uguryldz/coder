@@ -65,6 +65,7 @@ live("read models against a live database", () => {
         cursor: null,
         appId: null,
         projectKeys: ["LIVEPAY", "LIVEWEB"],
+        archived: "all",
       });
 
       expect(page.items.map((item) => item.ticketKey)).toEqual([
@@ -85,6 +86,7 @@ live("read models against a live database", () => {
         cursor: null,
         appId: null,
         projectKeys: ["LIVEPAY"],
+        archived: "all",
       });
 
       expect(page.items.map((item) => item.ticketKey)).toEqual(["LIVEPAY-3", "LIVEPAY-2"]);
@@ -101,6 +103,7 @@ live("read models against a live database", () => {
           cursor,
           appId: null,
           projectKeys: ["LIVEPAY", "LIVEWEB"],
+        archived: "all",
         });
         seen.push(...page.items.map((item) => item.ticketKey));
         cursor = page.nextCursor;
@@ -118,6 +121,7 @@ live("read models against a live database", () => {
         cursor: null,
         appId: "live-web",
         projectKeys: null,
+        archived: "all",
       });
 
       expect(page.items.map((item) => item.ticketKey)).toEqual(["LIVEWEB-1"]);

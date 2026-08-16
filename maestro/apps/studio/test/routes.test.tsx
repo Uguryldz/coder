@@ -28,10 +28,13 @@ const MOCK_VIEW_IDS = [
  * Jira workflow as SVG. `projects` is the ONE page that gathers the three
  * project-binding steps — add application, Jira mapping & approval, listening
  * rules — which used to be the separate `onboard`, `routing` and `listening`
- * screens (now its tabs; their old paths redirect into it). Listed explicitly so
+ * screens (now its tabs; their old paths redirect into it). `setup` is the
+ * guided wizard that walks a non-technical operator through the SAME
+ * configuration in outcome language; `projects` stays as the expert path, which
+ * is why both are here rather than one replacing the other. Listed explicitly so
  * the coverage check stays honest: a dropped or accidental screen still fails.
  */
-const POST_MOCK_VIEW_IDS = ["pilot", "projects"] as const;
+const POST_MOCK_VIEW_IDS = ["pilot", "projects", "setup"] as const;
 const EXPECTED_VIEW_IDS = [...MOCK_VIEW_IDS, ...POST_MOCK_VIEW_IDS];
 
 describe("route table", () => {

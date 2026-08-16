@@ -10,6 +10,7 @@ import type {
 import {
   encodeCursor,
   decodeCursor,
+  type ArchiveScope,
   type Page,
   type RunCatalog,
   type RunCatalogFilter,
@@ -57,6 +58,16 @@ export interface RunCatalogRow {
   matchJson: unknown;
   startedAt: Date;
   updatedAt: Date;
+  /**
+   * `WorkflowRun.archivedAt` (0019) — when an operator retired this run from
+   * the dashboard's default view, or `null` while it is still on the board.
+   *
+   * Selected rather than merely filtered on, because the "arşivlenmiş" view
+   * has to render the flag it selected by: a row shown there without it would
+   * be indistinguishable from an active one, and the un-archive control would
+   * have nothing to read its current state from.
+   */
+  archivedAt: Date | null;
 }
 
 /** The `WHERE` this store builds; `ticketKey.startsWith` is the project scope. */
@@ -64,6 +75,14 @@ export interface RunCatalogWhere {
   appId?: string;
   OR?: { ticketKey: { startsWith: string } }[];
   ticketKey?: string;
+  /**
+   * The archive scope as Prisma spells it (0019): `{ archivedAt: null }` for
+   * the active board, `{ archivedAt: { not: null } }` for the archived view,
+   * and the key ABSENT for "all" — an absent clause is the only honest way to
+   * say "no restriction", since every value of `archivedAt` would otherwise
+   * have to be enumerated.
+   */
+  archivedAt?: null | { not: null };
 }
 
 export interface RunCatalogDelegate {
@@ -74,6 +93,20 @@ export interface RunCatalogDelegate {
     take?: number;
   }): Promise<RunCatalogRow[]>;
   count(args: { where: RunCatalogWhere }): Promise<number>;
+  /**
+   * The one write on this delegate. `updateMany`, not `update`, on purpose:
+   * `ticketKey` is deliberately NOT unique (a ticket may legitimately be
+   * re-run — see the schema's note on `@@index([ticketKey])`), so `update`
+   * would need a primary key this surface does not have, and picking one row
+   * of several by hand would archive an arbitrary member of the ticket's
+   * history. `updateMany` on the key retires the ticket's runs together, which
+   * is what an operator clicking "Arşivle" on a ticket row means, and its
+   * `count` is what tells a missing ticket apart from an archived one.
+   */
+  updateMany(args: {
+    where: RunCatalogWhere;
+    data: { archivedAt: Date | null };
+  }): Promise<{ count: number }>;
 }
 
 /**
@@ -120,6 +153,20 @@ interface RunTotals {
 export function scopeWhere(projectKeys: readonly string[] | null): RunCatalogWhere {
   if (projectKeys === null) return {};
   return { OR: projectKeys.map((key) => ({ ticketKey: { startsWith: `${key}-` } })) };
+}
+
+/**
+ * The archive scope as a `WHERE` fragment (0019).
+ *
+ * `"all"` produces NO clause, which is the difference between "every run" and
+ * "every run I thought to enumerate" — the same distinction `scopeWhere` draws
+ * between a null scope and an empty one. The default is decided by the caller,
+ * not here: this function has no opinion, so a route that forgets to pass a
+ * scope fails to compile rather than quietly listing archived rows again.
+ */
+export function archiveWhere(scope: ArchiveScope): RunCatalogWhere {
+  if (scope === "all") return {};
+  return { archivedAt: scope === "active" ? null : { not: null } };
 }
 
 /**
@@ -176,10 +223,18 @@ export class PrismaRunCatalog implements RunCatalog {
     const where: RunCatalogWhere = {
       ...scopeWhere(filter.projectKeys),
       ...(filter.appId === null ? {} : { appId: filter.appId }),
+      ...archiveWhere(filter.archived),
     };
     // The same fingerprint the in-memory catalog uses, so a cursor means the
     // same thing whichever implementation issued it.
-    const fingerprint = `runs:${filter.appId ?? ""}`;
+    //
+    // The archive scope is PART of the fingerprint: a cursor is an offset into
+    // one filtered set, and the active board and the archived view are two
+    // different sets. Without it, paging the board and then switching to the
+    // archive would resume at the board's offset and skip that many archived
+    // rows — silently, which is the failure mode this codebase treats as worse
+    // than a crash.
+    const fingerprint = `runs:${filter.appId ?? ""}:${filter.archived}`;
     const offset = decodeCursor(filter.cursor, fingerprint);
 
     const rows = await this.runs.findMany({
@@ -195,6 +250,31 @@ export class PrismaRunCatalog implements RunCatalog {
       items: await this.decorate(rows),
       nextCursor: next < total ? encodeCursor(next, fingerprint) : null,
     };
+  }
+
+  /**
+   * Archive or un-archive a ticket's runs (0019).
+   *
+   * The ONLY write on this store, and it deliberately touches one column. It
+   * is not a delete and must not become one: the row, its journal, its step
+   * events and its evidence package all stay exactly where they are, and the
+   * M33 chain records that an operator did this. What changes is which view
+   * the row appears in by default.
+   *
+   * Unscoped by project for the same reason `get` is: the route checks
+   * `assertProjectAccess` before calling, and a second opinion here would be a
+   * second answer to "may I touch this" — the one that disagreed in the
+   * caller's favour being the one nobody notices.
+   *
+   * `count === 0` means no such ticket, which the route turns into a 404. It
+   * cannot mean "already in that state": `updateMany` counts rows MATCHED by
+   * the where-clause, and the clause names only the ticket, so archiving an
+   * already-archived run reports 1 and is an idempotent no-op — the right
+   * answer for a double-click, and never a false 404 for a run that exists.
+   */
+  async setArchived(ticketKey: string, at: Date | null): Promise<boolean> {
+    const { count } = await this.runs.updateMany({ where: { ticketKey }, data: { archivedAt: at } });
+    return count > 0;
   }
 
   /**
@@ -293,5 +373,9 @@ export function toRunRecord(
     tokensOut: totals?.tokensOut ?? 0,
     startedAt: row.startedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    // Straight through, `null` and all: `null` is "on the board", and there is
+    // no default that could stand in for it — a made-up timestamp here would
+    // retire an active run from every listing at once.
+    archivedAt: row.archivedAt?.toISOString() ?? null,
   };
 }

@@ -203,6 +203,79 @@ describe("listening-rule Jira status map (hand-written, 0018)", () => {
   });
 });
 
+describe("run archiving (hand-written, 0019)", () => {
+  const sql = allMigrationSql();
+  const migration = readMigrationNamed("0019_workflow_run_archived_at");
+  /**
+   * The EXECUTABLE half, `--` comment lines removed — the same split 0018 makes
+   * and for the same reason: this migration's prose names its own down
+   * direction ("DROP COLUMN …") and explains that archiving is not a DELETE,
+   * and a guard reading the comments would either fail on those words or push
+   * the author into deleting the most useful sentences in the file to keep the
+   * suite green. What must be free of destructive statements is the SQL.
+   */
+  const statements = migration
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n");
+
+  it("adds the column as NULLABLE — NULL is 'still on the board'", () => {
+    // Nullable is the entire safety argument: NULL is what every pre-0019 row
+    // already means, so no row needs a backfill, no DEFAULT rewrites a table
+    // the pilot is reading, and no operator's dashboard changes on deploy.
+    expect(sql).toMatch(
+      /ALTER TABLE "WorkflowRun" ADD COLUMN IF NOT EXISTS "archivedAt" TIMESTAMPTZ\(3\);/,
+    );
+    expect(sql).not.toMatch(/"archivedAt"\s+TIMESTAMPTZ\(3\)\s+NOT NULL/i);
+    expect(sql).not.toMatch(/"archivedAt"\s+TIMESTAMPTZ\(3\)\s+DEFAULT/i);
+  });
+
+  /**
+   * The assertion this whole feature rests on: archiving must never become
+   * deleting. A bank keeps its audit trail, and a `WorkflowRun` is pointed at
+   * by its journal, its step events and its evidence package — so a migration
+   * that removed rows here would take the evidence with it.
+   */
+  it("only ADDS — it never drops, updates or deletes a row of live history", () => {
+    expect(migration).toContain("HAND-WRITTEN MIGRATION");
+    expect(statements).not.toMatch(/\bDROP\s+(TABLE|COLUMN|CONSTRAINT)\b/i);
+    expect(statements).not.toMatch(/\b(UPDATE|DELETE FROM|TRUNCATE)\b/i);
+  });
+
+  it("touches exactly one table, so a live deployment risks nothing else", () => {
+    const touched = [...statements.matchAll(/ALTER TABLE "(\w+)"/g)].map((m) => m[1]);
+    expect([...new Set(touched)]).toEqual(["WorkflowRun"]);
+  });
+
+  it("is re-appliable, because 0008-0016 were half-applied on this deployment", () => {
+    // Without `IF NOT EXISTS` a re-run is a failed migration that blocks every
+    // later one — the specific hazard this deployment's history creates.
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS");
+  });
+
+  it("declares timestamptz, not a naive timestamp", () => {
+    // Same rule 0001 is held to: an operator in Istanbul and a server in UTC
+    // must agree on when a run left the board.
+    expect(statements).toMatch(/TIMESTAMPTZ\(3\)/);
+    expect(statements).not.toMatch(/\bTIMESTAMP\(3\)/);
+  });
+
+  it("keeps the schema and the migration agreeing that the column is optional", () => {
+    // The pair that protects the live table: a `DateTime` (not `DateTime?`) in
+    // the schema would make Prisma demand a value on every write against rows
+    // the migration deliberately left NULL — and every existing row is NULL.
+    expect(schema).toMatch(/archivedAt\s+DateTime\?\s+@db\.Timestamptz\(3\)/);
+  });
+
+  it("says in the file itself that archiving is not deleting", () => {
+    // Load-bearing prose: the next person to read this migration has to learn
+    // that the row survives, or the feature grows a DELETE the day someone
+    // wants the board tidier still.
+    expect(migration).toMatch(/DELETE/);
+    expect(migration).toMatch(/audit trail/i);
+  });
+});
+
 describe("durable sessions + kill switch (hand-written, 0008)", () => {
   const sql = allMigrationSql();
 

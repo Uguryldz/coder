@@ -9,6 +9,15 @@ import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Input, Select, Table, useToast } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
 import type { RoutingView } from "./common/index.ts";
+import {
+  EMPTY_STATUS_DRAFT,
+  STATUS_POINTS,
+  buildStatusMap,
+  statusSummary,
+  type StatusDraft,
+  type StatusMap,
+  type StatusPoint,
+} from "./common/status-map.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import "./shared/screens.css";
 
@@ -43,39 +52,11 @@ type FlowType = "analiz" | "duzeltme" | "gelistirme";
 type MatchKind = "status" | "issuetype";
 
 /**
- * The Jira status map, mirroring `StatusMapSchema` in the BFF's listening-store.
- * Every point is optional on purpose: an empty field means "bu adımda ticket'ı
- * oynatma", so an operator can move the ticket at two points and leave the
- * other three to the comment-only default.
+ * The status map's shape, point list, empty draft and the `buildStatusMap` /
+ * `statusSummary` pair now live in `common/status-map.ts` — the setup wizard
+ * writes the same map, and the "no map is null, never `{}`" rule must have
+ * exactly one implementation for both surfaces to obey it.
  */
-interface StatusMap {
-  readonly onStart?: string;
-  readonly onNeedInfo?: string;
-  readonly onReview?: string;
-  readonly onRejected?: string;
-  readonly onDone?: string;
-  readonly reassignOnNeedInfo?: boolean;
-}
-
-/**
- * The five status points, in the order the flow actually walks them. Rendering
- * from this list rather than five hand-written blocks is what keeps the form,
- * the round-trip and the table cell from drifting apart when a sixth point is
- * added on the server.
- */
-const STATUS_POINTS = ["onStart", "onNeedInfo", "onReview", "onRejected", "onDone"] as const;
-type StatusPoint = (typeof STATUS_POINTS)[number];
-
-/** The form's own view of the map: every point a string, "" meaning unset. */
-type StatusDraft = Readonly<Record<StatusPoint, string>>;
-
-const EMPTY_STATUS_DRAFT: StatusDraft = {
-  onStart: "",
-  onNeedInfo: "",
-  onReview: "",
-  onRejected: "",
-  onDone: "",
-};
 
 interface ListeningRule {
   readonly ruleId: string;
@@ -216,13 +197,19 @@ export function ListeningScreen(): ReactNode {
     enabled: jiraConnId !== null && projectKey.trim() !== "",
     retry: false,
     queryFn: ({ signal }) =>
-      api.get<{ ok: boolean; values?: readonly string[] }>(
+      api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(
         `/onboarding/jira-match-values?connectionId=${encodeURIComponent(jiraConnId ?? "")}` +
           `&project=${encodeURIComponent(projectKey.trim())}&kind=${matchKind}`,
         { signal },
       ),
   });
   const valueOptions = matchValues.data?.ok ? (matchValues.data.values ?? []) : [];
+  // The server could only reach the FALLBACK source for issue types, so these
+  // names may be a different localisation than the ones on the tickets
+  // ("Task" where the ticket says "Görev") — a rule built from them would match
+  // nothing. Still a dropdown, but one that says to check it against a real
+  // ticket rather than one that quietly looks authoritative.
+  const valuesDegradedKey = matchValues.data?.ok ? matchValues.data.degradedKey : undefined;
 
   // The project's real STATUS names, for the status-map fields. Same endpoint as
   // "Değer", pinned to kind=status regardless of what the rule matches on: a
@@ -587,7 +574,11 @@ export function ListeningScreen(): ReactNode {
                   { value: "", label: t("listening.form.matchValue_choose") },
                   ...valueOptions.map((v) => ({ value: v, label: v })),
                 ]}
-                hint={t("listening.form.matchValue_hint_auto")}
+                hint={
+                  valuesDegradedKey !== undefined
+                    ? t(valuesDegradedKey)
+                    : t("listening.form.matchValue_hint_auto")
+                }
               />
             ) : (
               <Input
@@ -763,51 +754,4 @@ export function ListeningScreen(): ReactNode {
 function shortAccount(accountId: string): string {
   if (accountId.length <= 14) return accountId;
   return `${accountId.slice(0, 12)}…`;
-}
-
-/**
- * Turn the form's five text fields into the wire shape — or into `null`.
- *
- * `null` is not a stylistic choice: it is the ONE representation of
- * "comment-only mode" the BFF and the store agree on. Sending `{}` would be a
- * second, differently-shaped way to say the same thing, and a rule that had a
- * map and then had every field cleared has to end up indistinguishable from a
- * rule that never had one — otherwise an operator who emptied the form would
- * look at the table and still see a rule that claims to move tickets. (The BFF
- * normalises `{}` to null as well; we send null anyway so the request says
- * plainly what it means rather than relying on the far side to clean up.)
- *
- * Empty fields are OMITTED rather than sent as "": `StatusMapSchema` requires
- * a non-empty string, so an empty one is a 400 for the whole rule instead of
- * the intended "bu adımda ticket'ı oynatma".
- */
-function buildStatusMap(
-  enabled: boolean,
-  draft: StatusDraft,
-  reassignOnNeedInfo: boolean,
-): StatusMap | null {
-  if (!enabled) return null;
-  const map: Record<string, string | boolean> = {};
-  for (const point of STATUS_POINTS) {
-    const value = draft[point].trim();
-    if (value !== "") map[point] = value;
-  }
-  // `reassignOnNeedInfo` alone is a real configuration: hand the ticket back to
-  // its reporter without moving it on the board. It counts as a filled map.
-  if (reassignOnNeedInfo) map.reassignOnNeedInfo = true;
-  return Object.keys(map).length === 0 ? null : (map as StatusMap);
-}
-
-/**
- * The table's one-glance answer to "does this rule move tickets?".
- *
- * Deliberately compact — the flow order, arrows between the statuses that are
- * actually set, nothing for the points left blank. A rule with no map reads as
- * "yorum" so the two modes are told apart at a distance without a legend.
- */
-function statusSummary(map: StatusMap | null | undefined): readonly string[] {
-  if (!map) return [];
-  return STATUS_POINTS.map((point) => map[point]).filter(
-    (value): value is string => typeof value === "string" && value !== "",
-  );
 }

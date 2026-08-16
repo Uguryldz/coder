@@ -3,11 +3,29 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { messageKeyOf } from "../api/errors.ts";
 import { useI18n, useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Card, Input, Select, Table, riskTone, runStatusTone, workModeTone } from "../ui/index.ts";
+import {
+  Badge,
+  Button,
+  Card,
+  Input,
+  Select,
+  Table,
+  riskTone,
+  runStatusTone,
+  workModeTone,
+} from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
+import { useToast } from "../ui/Toast.tsx";
 import { useEnumLabel } from "./common/label.ts";
 import { ageLabel, dateTimeLabel } from "./shared/format.ts";
-import { MAX_RUN_PAGE, projectKeyOf, useRuns, type RunRow, type RunStatus } from "./shared/runs.ts";
+import {
+  MAX_RUN_PAGE,
+  projectKeyOf,
+  useArchiveRun,
+  useRuns,
+  type RunRow,
+  type RunStatus,
+} from "./shared/runs.ts";
 import { RUN_STATUS_PREFIX } from "./tickets/status.ts";
 import "./shared/screens.css";
 
@@ -72,12 +90,30 @@ export function TicketsList(): ReactNode {
   const { locale } = useI18n();
   const navigate = useNavigate();
   const enumLabel = useEnumLabel();
+  const toast = useToast();
   const [filter, setFilter] = useState<FilterId>("all");
   const [project, setProject] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
+  /**
+   * Whether this list is showing the board or the archive (0019).
+   *
+   * A separate piece of state from `filter` rather than a sixth status chip,
+   * because it is a different QUESTION: the chips slice one set of runs by
+   * status, while this decides which set is being sliced. Folding them
+   * together would make "Hatalı" and "Arşivlenmiş" mutually exclusive, and the
+   * first thing an operator wants after archiving twelve failures is to look
+   * at the archived failures.
+   */
+  const [showArchived, setShowArchived] = useState(false);
 
   const RUN_PAGE = MAX_RUN_PAGE;
-  const { data, isPending, error, refetch } = useRuns(RUN_PAGE);
+  // The scope goes to the SERVER, not to a `.filter()` here: the page is
+  // capped at `MAX_RUN_PAGE`, so a client-side hide would silently shrink an
+  // already-truncated page and the "ilk N kayıt" note below would be a lie.
+  const { data, isPending, error, refetch } = useRuns(RUN_PAGE, {
+    archived: showArchived ? "archived" : "active",
+  });
+  const archive = useArchiveRun();
   const runs = useMemo(() => data?.runs ?? [], [data]);
   // The list is capped at one page; if the cap is hit there may be more the
   // server did not send. Say so plainly instead of implying this is everything.
@@ -169,6 +205,53 @@ export function TicketsList(): ReactNode {
         return age === null ? "—" : t(age.key, age.params);
       },
     },
+    /**
+     * The archive action (0019).
+     *
+     * `stopPropagation` because the row itself navigates to the detail screen:
+     * without it, archiving a run would also open it, which is the opposite of
+     * what "get this off my board" means.
+     *
+     * The label is the OPPOSITE of the row's current state — "Arşivle" on the
+     * board, "Geri al" in the archive — so the button always says what will
+     * happen rather than what is true now.
+     */
+    {
+      key: "archive",
+      header: t("col.actions"),
+      align: "right",
+      cell: (run) => {
+        const archived = run.archivedAt !== null;
+        return (
+          <Button
+            variant="default"
+            size="sm"
+            disabled={archive.isPending}
+            onClick={(event) => {
+              event.stopPropagation();
+              archive.mutate(
+                { ticketKey: run.ticketKey, archived: !archived },
+                {
+                  onSuccess: () =>
+                    toast.show(
+                      "success",
+                      t(archived ? "tickets.archive.restored" : "tickets.archive.done", {
+                        ticket: run.ticketKey,
+                      }),
+                    ),
+                  // The error is surfaced, never swallowed: a 403 (the caller
+                  // lacks admin/tech-lead) must not look like a button that
+                  // simply did nothing.
+                  onError: (mutationError) => toast.show("error", t(messageKeyOf(mutationError))),
+                },
+              );
+            }}
+          >
+            {t(archived ? "tickets.archive.undo" : "tickets.archive.action")}
+          </Button>
+        );
+      },
+    },
   ];
 
   return (
@@ -186,6 +269,19 @@ export function TicketsList(): ReactNode {
               {t(entry.labelKey, { n: String(counts[entry.id]) })}
             </button>
           ))}
+          {/* The archive toggle (0019), set apart from the status chips
+              because it selects WHICH SET the chips then slice, rather than
+              being another slice of the same one. `aria-pressed` is how the
+              status chips already say "on", so the toggle reads the same way
+              to a screen reader. */}
+          <button
+            type="button"
+            className="screen-chip"
+            aria-pressed={showArchived}
+            onClick={() => setShowArchived((on) => !on)}
+          >
+            {t(showArchived ? "tickets.filter.show_active" : "tickets.filter.show_archived")}
+          </button>
           <span style={{ flex: 1 }} />
           <Input
             label={t("tickets.filter.search")}
@@ -221,7 +317,10 @@ export function TicketsList(): ReactNode {
             rows={rows}
             rowKey={(run) => run.ticketKey}
             loading={isPending}
-            emptyLabel={t("tickets.empty")}
+            // "No archived runs" is a different sentence from "no runs at all",
+            // and showing the latter in the archive view would read as though
+            // the archive had lost something.
+            emptyLabel={t(showArchived ? "tickets.empty_archived" : "tickets.empty")}
             caption={t("tickets.caption")}
             onRowClick={(run) => void navigate(`/detail/${run.ticketKey}`)}
           />

@@ -232,6 +232,25 @@ model WorkflowRun {
   /// Resume token of the live agent session (M30); NULL before the first turn.
   resumeToken      String?
 
+  /// ---------------------------------------------------------------------
+  /// When an operator retired this run from the dashboard's default view
+  /// (0019). NULL = active, which is what every row was before the column
+  /// existed — archiving is opt-in per run and changes nothing else.
+  ///
+  /// It is NOT a delete and must never grow into one. A `WorkflowRun` is
+  /// pointed at by its journal, its step events and its evidence package, and
+  /// the M33 chain records what it did; the row stays exactly where it is and
+  /// only the LISTING learns to leave it out. `Json?`-style nullability is the
+  /// whole mechanism: `archivedAt = NULL` is un-archiving, so the operator who
+  /// archives the wrong run undoes it from Studio rather than from a DBA's
+  /// prompt.
+  ///
+  /// A timestamp rather than a boolean: "when did this leave the board" is an
+  /// ordinary listing question, and a boolean would push it into the audit
+  /// chain, which is the wrong place to ask a question about a row's display.
+  /// ---------------------------------------------------------------------
+  archivedAt       DateTime? @db.Timestamptz(3)
+
   stepEvents  StepEvent[]
   gates       Gate[]
   strikes     StrikeCounter[]

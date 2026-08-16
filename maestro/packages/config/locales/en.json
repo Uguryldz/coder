@@ -2182,6 +2182,7 @@
   "jira.gate_open": "Maestro is waiting for approval at gate {gate}. Deciding group: {group}.",
   "jira.clarification": "One thing needs clarifying before I can continue:\n\n{question}",
   "jira.analysis_delivered": "The analysis for {ticket} is complete and approved ({risk} risk). The ticket has been handed back to the requester; writing code is outside this flow.",
+  "jira.analysis_docs_failed": "The analysis for {ticket} was delivered, but the Word/PDF document could not be attached to the ticket. The full analysis is in the comment on this ticket; contact the Maestro team for a document copy.",
   "jira.closed": "{ticket} is complete. The documents produced and the decision history are in the audit trail.",
   "jira.child_summary": "{ticket} — impact on {app}",
   "pr.title": "Prepared by Maestro",

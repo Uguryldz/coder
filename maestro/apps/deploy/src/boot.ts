@@ -6,6 +6,7 @@ import { defaultPiiPolicy, maskOutbound, type LoadedPiiPolicy } from "@maestro/p
 import type { SecretPort, WorkPort } from "@maestro/ports";
 import type { PublishDeps } from "@maestro/publish";
 import type { ContainerRunner } from "@maestro/scanners";
+import { createPgBlobStorage, type PgBlobStorageDeps } from "@maestro/storage";
 import { describeWiring, resolveDeployment, type Deployment, type DeploymentInputs } from "./compose.js";
 import { buildAgentRunner } from "./agent-runner.js";
 import { jiraCloudConfig, jiraConfig } from "./driver-config.js";
@@ -103,6 +104,19 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
    * failure mode this file exists to prevent.
    */
   const work = buildWorkPort(env, secrets);
+  /**
+   * The same story as `work`, for the same reason: `publish`'s `docx`/`pdf`
+   * targets (M103r) write the generated file to an object store, and
+   * `registerPublishDrivers` demands the sink at REGISTRATION time — a target
+   * that cannot store a file is refused while composing, never mid-ticket.
+   *
+   * So the storage port is built ahead of the registry too. `resolveDeployment`
+   * still builds its own from the registry, exactly as it does for `work`: two
+   * clients over one bucket is not a correctness problem, and reusing this
+   * instance would make the registry's `storage` entry a lie about where the
+   * port came from.
+   */
+  const sink = buildStorageSink(options);
   const agentRunner = buildAgentRunner(env, secrets);
 
   const registry = buildRegistry({
@@ -138,7 +152,14 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
       work,
       fetchImpl: (options.fetchImpl as FetchLike | undefined) ?? (fetch as unknown as FetchLike),
     },
-    publish: { ...buildPublishDeps(secrets, policy, options.publishRunDeps), work },
+    publish: {
+      ...buildPublishDeps(secrets, policy, options.publishRunDeps),
+      work,
+      // Absent on a deployment whose storage driver could not be built here;
+      // `registerPublishDrivers` then refuses `docx`/`pdf` at composition time,
+      // which is the intended loud failure rather than a silent skip.
+      ...(sink === undefined ? {} : { sink }),
+    },
     scan: { runner: options.containerRunner ?? unbridgedScanRunner() },
   });
 
@@ -181,6 +202,34 @@ function buildWorkPort(env: DeployEnv, secrets: SecretPort): WorkPort {
   const driver = env.source["WORK_DRIVER"]?.trim() ?? PROFILE_DRIVERS[env.profile].work;
   if (driver === "jira-cloud") return createJiraCloudWorkPort(jiraCloudConfig(env, secrets));
   return createJiraDcWorkPort(jiraConfig(env, secrets));
+}
+
+/**
+ * The object store the `docx`/`pdf` targets write their generated file to
+ * (M103r), built ahead of the registry — see the call site for why.
+ *
+ * BEST-EFFORT, and that is the whole design. The `pg-blob` driver every
+ * non-prod profile uses needs only the SQL executor the service already owns,
+ * so a worker gets a real sink and the binary targets compose. A process that
+ * did not supply one (`compose.test.ts`, a service with no pool) gets
+ * `undefined`, and `registerPublishDrivers` then refuses `docx`/`pdf` at
+ * COMPOSITION time with a message naming the missing sink.
+ *
+ * Refusing later beats guessing now: the alternative is a sink stub that
+ * accepts bytes and drops them, which would produce a receipt naming a key
+ * that holds nothing — a document the evidence package claims to have and
+ * cannot produce.
+ */
+function buildStorageSink(options: BootOptions): PublishDeps["sink"] {
+  if (options.sql === undefined) return undefined;
+  try {
+    return createPgBlobStorage(
+      { table: "storage_blob" },
+      { sql: options.sql as PgBlobStorageDeps["sql"] },
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 /**

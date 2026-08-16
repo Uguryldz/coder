@@ -1,9 +1,7 @@
-import { createHash } from "node:crypto";
 import {
   type AnalysisDoc,
   type CiResultSignal,
   EvidencePackage,
-  type EvidenceFile,
   PublishTarget,
   type TicketKey,
 } from "@maestro/contracts";
@@ -12,7 +10,9 @@ import { evidenceKey } from "@maestro/storage";
 import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { PrRef } from "../activities.js";
+import { deliverAnalysisDocs } from "./analysis-docs.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
+import { evidenceFile } from "./evidence-file.js";
 import { audit, record } from "./record.js";
 
 /** Steps 10b to 13: the pull request, the CI gate, the evidence and the close. */
@@ -111,19 +111,6 @@ export async function mergePullRequest(
   return { mergeSha: status.mergeSha };
 }
 
-function evidenceFile(name: string, body: string, contentType: string): { file: EvidenceFile; bytes: Uint8Array } {
-  const bytes = new TextEncoder().encode(body);
-  return {
-    file: {
-      name,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-      bytes: bytes.byteLength,
-      contentType,
-    },
-    bytes,
-  };
-}
-
 /**
  * Step 13 (M34). The package is only worth keeping if the trail behind it
  * holds, so the audit chain is verified FIRST and a broken chain refuses the
@@ -209,25 +196,22 @@ export async function buildEvidencePackage(
 /**
  * Hand a finished ANALYSIS back to the person who asked for it.
  *
- * The `analiz` flow's last step: the document is written, published and
- * approved, and the ticket must leave Maestro's lap. The pilot learned this on
- * a real ticket (OPS-15) — a run that keeps a ticket assigned to the bot after
- * its work is done looks, to the requester, exactly like a run that is still
- * thinking, and they wait for something that is already finished.
+ * The `analiz` flow's last step: the document is written, published, approved
+ * and rendered to a real Word/PDF on the ticket, so the ticket must leave
+ * Maestro's lap. The pilot learned this on a real ticket (OPS-15) — a run that
+ * keeps a ticket assigned to the bot after its work is done looks, to the
+ * requester, exactly like a run still thinking, and they wait for something
+ * that is already finished.
  *
  * FAIL-SOFT, deliberately. The analysis is already in Jira and already
- * approved; failing the activity here would burn three retries and then kill a
- * run whose actual deliverable is complete. An assignment that could not be
- * made is written to the journal instead, where an operator can see it and
- * reassign by hand.
+ * approved; failing here would burn three retries and kill a run whose actual
+ * deliverable is complete. An assignment that could not be made is written to
+ * the journal instead, for an operator to see and reassign by hand.
  */
 export async function deliverAnalysis(
   deps: ActivityDeps,
   ticket: TicketKey,
-  // Part of the activity signature (`activities.ts`), and deliberately unread
-  // here: the comment is rendered from the catalog and the run's own tier, not
-  // from the document. Underscored rather than removed so the shape stays.
-  _analysis: AnalysisDoc | null,
+  analysis: AnalysisDoc | null,
 ): Promise<void> {
   const run: RunContext = await deps.runs.get(ticket);
   const requester = (await deps.work.getTicket(ticket)).reporter?.trim() ?? "";
@@ -242,6 +226,11 @@ export async function deliverAnalysis(
       }),
     ),
   );
+
+  // The Word/PDF the analyst actually files (M103r). Fail-soft: it never
+  // throws, so a render or upload problem is reported to the journal AND the
+  // ticket rather than costing the assignment below.
+  await deliverAnalysisDocs(deps, run, ticket, analysis);
 
   if (requester === "") {
     // Not an error: a ticket may genuinely have no reporter Maestro can act on

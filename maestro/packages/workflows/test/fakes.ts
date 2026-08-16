@@ -42,8 +42,10 @@ export interface Recorded {
   assignments: Array<{ ticket: string; to: string | null }>;
   labels: string[][];
   notifications: Notification[];
-  published: Array<{ doc: string; markdown: string }>;
+  published: Array<{ doc: string; markdown: string; targets: readonly string[] }>;
   stored: Array<{ key: string; bytes: number }>;
+  /** Files that reached the ticket through the `DocAttacher` seam (M103r). */
+  attached: Array<{ ticket: string; fileName: string; bytes: number; contentType: string }>;
   children: Array<{ summary: string; description: string }>;
   turns: AgentTurnRequest[];
   scans: string[];
@@ -71,6 +73,15 @@ export interface FakeOptions {
   members?: (group: string) => string[];
   /** Makes `assign` reject, for the fail-soft delivery path. */
   assignFails?: boolean;
+  /**
+   * Omit the `DocAttacher` seam entirely — a Data Center deployment, where the
+   * documents are generated and stored but cannot go onto the ticket.
+   */
+  noDocAttacher?: boolean;
+  /** Makes every attachment upload reject, for the fail-soft document path. */
+  attachFails?: boolean;
+  /** Bytes the binary publish targets produce; defaults to a plausible file. */
+  docBytes?: (target: "docx" | "pdf") => Uint8Array;
   /** Role -> directory group, when a test needs the two to differ. */
   groupForRole?: (role: string) => string;
   prState?: { state: "draft" | "active" | "completed" | "abandoned"; mergeSha: string | null };
@@ -93,7 +104,26 @@ function emptyRecord(): Recorded {
     turns: [],
     scans: [],
     llm: [],
+    attached: [],
   };
+}
+
+/**
+ * Bytes that pass `assertRealDocument`: the format's magic number followed by
+ * enough filler to clear the size floor.
+ *
+ * Deliberately built from the SAME facts the assertion checks, so a test that
+ * wants a plausible document gets one, and a test that wants a broken one
+ * (`fakeDocBytes("pdf", 10)`) gets something the assertion must reject.
+ */
+export function fakeDocBytes(target: "docx" | "pdf", size = 4096): Uint8Array {
+  const magic = target === "pdf" ? "%PDF-1.7\n" : "PK";
+  const out = new Uint8Array(size);
+  const head = new TextEncoder().encode(magic);
+  out.set(head.slice(0, size), 0);
+  // Filler that is not zero, so a truncated write is distinguishable from this.
+  for (let i = head.length; i < size; i += 1) out[i] = 65 + (i % 26);
+  return out;
 }
 
 export function makeFakes(options: FakeOptions = {}): Fakes {
@@ -101,6 +131,8 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
   const journalStore = new MemoryJournalStore();
   const gateStore = new MemoryGateStore();
   const chain = new AuditChain({ store: new InMemoryAuditStore() });
+  /** The object store's contents, so a generated document can be read back. */
+  const blobs = new Map<string, Uint8Array>();
   let context = runContext(options.context);
   const patches: Array<Partial<RunContext>> = [];
   const repo: RepoRef = { project: APP.adoProject, repo: APP.adoRepo };
@@ -191,10 +223,15 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     },
     storage: {
       put: (key, data) => {
+        blobs.set(key, data);
         recorded.stored.push({ key, bytes: data.byteLength });
         return Promise.resolve();
       },
-      get: NOT_WIRED("storage.get"),
+      get: (key) => {
+        const found = blobs.get(key);
+        if (found === undefined) return Promise.reject(new Error(`fake storage: no object at ${key}`));
+        return Promise.resolve(found);
+      },
       list: () => Promise.resolve(recorded.stored.map((s) => s.key)),
       delete: () => Promise.resolve(),
       presign: NOT_WIRED("presign"),
@@ -208,8 +245,21 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     },
     publish: {
       publish: (req, markdown) => {
-        recorded.published.push({ doc: req.doc, markdown });
-        const receipts: PublishReceipt[] = req.targets.map((target) => ({ target, ref: "ref-1" }));
+        recorded.published.push({ doc: req.doc, markdown, targets: [...req.targets] });
+        const receipts: PublishReceipt[] = req.targets.map((target) => {
+          if (target !== "docx" && target !== "pdf") return { target, ref: "ref-1" };
+          /**
+           * The binary targets behave like the real `BinaryDocPublisher`: they
+           * put a FILE in the store and hand back the key. A fake that returned
+           * a bare ref would let the delivery pass without ever proving the
+           * bytes it attaches are the bytes that were retained.
+           */
+          const key = `evidence/${req.runId}/${target}`;
+          const bytes = options.docBytes?.(target) ?? fakeDocBytes(target);
+          blobs.set(key, bytes);
+          recorded.stored.push({ key, bytes: bytes.byteLength });
+          return { target, ref: key };
+        });
         return Promise.resolve(receipts);
       },
     },
@@ -228,6 +278,19 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     },
     audit: chain,
     idempotency: new InMemoryIdempotency(),
+    // The Cloud driver's capability, as the composition root passes it in.
+    // Left out entirely for `noDocAttacher`, which is the DC deployment.
+    ...(options.noDocAttacher === true
+      ? {}
+      : {
+          docAttacher: {
+            addAttachment: (ticket, fileName, bytes, contentType) => {
+              if (options.attachFails === true) return Promise.reject(new Error("jira: attachment 413"));
+              recorded.attached.push({ ticket, fileName, bytes: bytes.byteLength, contentType });
+              return Promise.resolve({ ids: [`att-${String(recorded.attached.length)}`] });
+            },
+          },
+        }),
     // Catalog lookups are echoed so a missing key is visible in an assertion
     // instead of silently rendering as an empty string.
     translate: (locale, key, params) => `${key}(${Object.values(params ?? {}).join(",")})`,

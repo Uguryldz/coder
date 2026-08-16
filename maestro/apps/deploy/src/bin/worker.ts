@@ -6,6 +6,7 @@ import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
+import { docAttacherFor } from "../stores/doc-attacher.js";
 import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { llmCallRecorder } from "../stores/llm-call-log.js";
@@ -75,7 +76,18 @@ export async function main(): Promise<void> {
     });
 
     const execution = buildTurnRunner(env, db, deployment.ports);
-    const workerCore: CoreDeps = { ...core, execution: execution.runner };
+    /**
+     * M103r: the analysis Word/PDF go onto the ticket, if this deployment's
+     * work driver can carry a file. `undefined` on Data Center — the documents
+     * are then generated and stored, and the journal says they did not land on
+     * the ticket. See `stores/doc-attacher.ts` for why the check is structural.
+     */
+    const docAttacher = docAttacherFor(deployment.ports.work);
+    const workerCore: CoreDeps = {
+      ...core,
+      execution: execution.runner,
+      ...(docAttacher === undefined ? {} : { docAttacher }),
+    };
 
     if (MISSING_CORE_DEPS.length > 0) {
       throw new Error(

@@ -1,50 +1,50 @@
 # HANDOFF
 
 ## DURUM
-Pilot emekli ediliyor, analiz hattı Temporal'a taşınıyor. Canlı sistem AYAKTA ve UI gerçek veri
-gösteriyor. Kullanıcı "çalışan sistem" istedi; bu oturumda port kablolaması düzeltildi, 41 dosyalık
-commit'siz iş commit'lendi, üç düzeltme turu koştu.
+Canlı sistem AYAKTA ve UI **doğru** veri gösteriyor. Kullanıcı "çalışan sistem" istedi; bu oturumda
+altı gerçek hata bulundu ve düzeltildi, hepsi canlıda doğrulandı. Kapı 64/64 yeşil.
 
-## Bu oturumda (16 Ağustos) yapılanlar
-1. **UI yanlış BFF'e bakıyordu.** İki BFF koşuyordu: 7001 (dünkü eski kod) ve 7091 (canlı analiz
-   hattı). Studio 7001'e bağlıydı. Eski kapatıldı, Studio `MAESTRO_BFF_ORIGIN=http://127.0.0.1:7091`
-   ile yeniden başlatıldı. Tarayıcıda doğrulandı: pano 12 aktif / 3 kapıda / 1 tamamlanan / 16 toplam.
-2. **41 dosyalık canlı iş COMMIT'SİZDİ** (`FlowType`, `flowOf`, beş canlı hata düzeltmesi). Kapı
-   koşuldu, 5 ölü import düzeltildi, `11d5f03` olarak commit'lendi. Ajanlar artık üstüne dallanabiliyor.
-3. **`variantId` boş dize** (`954cd80`): OPS-22/23 boş varyantla açılmış, gateway'de patlıyordu.
-   Mağaza sınırında reddediliyor — sessiz varsayılan KOYULMADI (yanlış bağlanmış kurulumu maskelerdi).
-4. **Ticket başına akış kararı** (`8ab7f44`): `ListeningRule` tablosundan, `flowOf(env)` geri düşüşü
-   korunarak. Migration GEREKMEDİ — tablo zaten `flowType` taşıyor.
+## Bu oturumda düzeltilen altı hata (hepsi canlıda görüldü, testte değil)
+1. **UI yanlış BFF'e bakıyordu** — iki BFF koşuyordu (7001 eski, 7091 canlı). Studio 7001'deydi.
+   Eski kapatıldı, Studio `MAESTRO_BFF_ORIGIN=http://127.0.0.1:7091` ile bağlandı.
+2. **41 dosyalık canlı iş COMMIT'SİZDİ** → `11d5f03`. Makine kapansa kaybolurdu; ajanlar da
+   üstüne dallanamıyordu.
+3. **`variantId` boş dize** (`954cd80`) — mağaza sınırında reddediliyor, sessiz varsayılan YOK.
+4. **Ticket başına akış kararı** (`8ab7f44`) — `ListeningRule` tablosundan; migration gerekmedi.
+5. **Pano yalan söylüyordu, iki katman:**
+   - DB: 16 satırın 16'sı `running`, Temporal'da 11'i ölü → uzlaştırıcı (`18e794b`), açılışta
+     12 satır hizaladı. Yan bulgu: `TERMINAL_STATUSES` genişletilmeseydi ticket'lar **kalıcı
+     olarak yeniden koşturulamaz** olurdu.
+   - UI: durumu Temporal'dan okuyordu, motor ölü koşuya hâlâ "running" diyordu (`72cacc7`) →
+     kayıt terminal ise DB kazanır.
+6. **Üç ayrı 400 hatası** — tarayıcı boş `cursor=`/`status=` gönderiyordu (`ba4122f`,
+   `blankAsAbsent` yardımcısı), ve tickets ekranı `limit=500` istiyordu, tavan 200 (`1f91582`).
+   Üçü de `curl` ile üretilemiyordu; **ancak tarayıcı ağ günlüğünde** görünüyordu.
 
-## Doğrulanmış canlı kanıt
-- **OPS-40**: kapı 4 açıldı → Jira `/approve` → kapı 5 → onay → adım 13 → "analiz teslim edildi".
-  Analiz hattı uçtan uca çalıştı (HANDOFF'un eski "sıradaki iş" maddesi ZATEN BİTMİŞ).
-- Word/PDF **çalışıyor ama PİLOTTA**: `maestro/ops9-analiz.pdf` = 9 sayfa, Türkçe düzgün, Jira'ya
-  gerçek ek olarak yükleniyor (`JiraCloudWorkPort.addAttachment`). Renderer'lar
-  `packages/publish/src/{docx,pdf}-render.ts` (**`drivers/docx.ts` YOK**).
+## Word/PDF (`592f763`)
+Pilottan Temporal hattına taşındı — **kopyalanmadı**: pilotun kodu renderer'ları doğrudan çağırıp
+**PII kapısını atlıyordu**. Artık publish portundan geçiyor. Yolda üç hata: publish sürücüsü tek
+hedefliydi, StoragePort bağlı değildi, ve şablon pini maskeleyici tarafından `[EMAIL_1]` yapılıyordu.
 
-## KRİTİK AÇIK: pano yalan söylüyor
-DB'de **16 koşunun 16'sı `running`**; Temporal'da **13'ü `Failed`**, biri `Completed`.
-Sebep: (a) `RunLifecycle` yalnız `running|done|cancelled` — Postgres enum'unda `fail` VAR ama
-yazılamıyor; (b) çöken workflow kendini işaretleyemez, dışarıdan uzlaştırma gerekiyor.
-`RunContext.status` alanı VAR (`impl/deps.ts:72`) ve `delivery.ts:297` `done` yazıyor — mekanizma
-mevcut, eksik olan `fail` yolu. **Bir ajan bunu yazıyor.**
+## Canlı doğrulama (tarayıcı, 16 Ağustos)
+Pano: Aktif 2 · Kapıda 2 · Tamamlanan 1 · Toplam 16 · "11 tanesi hatalı".
+Arşiv sekmeleri: Tümü (16) · Çalışıyor (2) · Kapıda (2) · Tamamlandı (1) · Hatalı (11).
+DB ile birebir. OPS-40 analiz hattını uçtan uca bitirmiş (kapı 4 → onay → kapı 5 → adım 13).
 
-## Devam eden (bu satır yazılırken koşan ajanlar)
-- Word/PDF'i pilottan Temporal `deliverAnalysis`'e taşıma
-- Koşu durumu uzlaştırıcısı (yukarıdaki kritik açık)
+## Devam eden
+Yok.
 
 ## Sıradaki adım
-İkisi inince: kapı + canlı doğrulama, sonra yeni bir ticket ile uçtan uca (analiz → onay → belge).
+Yeni bir ticket ile uçtan uca doğrulama: analiz → iki kapı → **Word/PDF eki** (yeni yol henüz
+canlı ticket'la denenmedi).
 
-## Servisler (setsid, terminal kapansa da yaşar)
-- worker: `apps/deploy` içinde `./node_modules/.bin/tsx src/bin/worker.ts` → log **`/tmp/worker-flow.log`**
-- bff: aynı dizin `src/bin/bff.ts`, port **7091** → log `/tmp/bff-v5.log`
-- studio: `apps/studio` içinde `MAESTRO_BFF_ORIGIN=http://127.0.0.1:7091 ... vite --port 7000`
-  → log `/tmp/studio-live.log`. Dış erişim `coder.uguryildiz.tech` (NPM arkasında).
+## Servisler (setsid; terminal kapansa da yaşar)
+- worker: `apps/deploy` → `./node_modules/.bin/tsx src/bin/worker.ts`, log `/tmp/worker-v8.log`
+- bff: aynı dizin `src/bin/bff.ts`, port **7091**, log `/tmp/bff-v12.log`
+- studio: `apps/studio` → `MAESTRO_BFF_ORIGIN=http://127.0.0.1:7091 MAESTRO_STUDIO_HOST=0.0.0.0
+  MAESTRO_STUDIO_ALLOWED_HOSTS="coder.uguryildiz.tech,..." ./node_modules/.bin/vite --port 7000`
 - env: `set -a; source /tmp/analiz-env.sh; set +a` + `export PATH="$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"`
-- Giriş: **`admin` / `admin123`** (parola politikası atlanarak hash yazıldı — Studio'dan
-  değiştirilirse geri dönülemez). Pilot öncesi SİLİNMELİ.
+- Giriş: **`admin` / `admin123`** — parola politikası atlanarak yazıldı. **Pilot öncesi SİLİNMELİ.**
 
 ## Tuzaklar
 - **`/tmp/worker-v5.log` ÇÖKMÜŞ ESKİ worker'a ait** ("Not running. Current state: STOPPED").

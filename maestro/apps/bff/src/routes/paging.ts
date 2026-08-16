@@ -14,6 +14,25 @@ import { CROSS_PROJECT_ROLES, projectGroupFor } from "./access.js";
 export const MAX_PAGE_SIZE = 200;
 export const DEFAULT_PAGE_SIZE = 50;
 
+/**
+ * A query-string filter that treats `""` as absent.
+ *
+ * A browser serialises an unset filter as `?status=`, and a bare `.optional()`
+ * rejects the empty string rather than ignoring it — the whole request then
+ * fails with 400 and the screen shows nothing. The dashboard hit this twice:
+ * once on `cursor`, once on `status`, each time as a 400 that `curl` never
+ * reproduced because a hand-written URL simply omits the parameter.
+ *
+ * Wraps any schema: `blankAsAbsent(z.enum([...]))`, `blankAsAbsent(z.string()
+ * .min(1).max(64))`. A present value is still held to its own rules.
+ */
+export function blankAsAbsent<T>(schema: z.ZodType<T, string>): z.ZodType<T | undefined, string> {
+  return z
+    .string()
+    .transform((value) => (value.trim() === "" ? undefined : value.trim()))
+    .pipe(schema.optional()) as unknown as z.ZodType<T | undefined, string>;
+}
+
 export const PageQuery = z.object({
   limit: z.coerce.number().int().positive().max(MAX_PAGE_SIZE).optional(),
   /**
@@ -27,11 +46,7 @@ export const PageQuery = z.object({
    * cursor" looks like on a query string; refusing it protects nothing, because
    * the guard that matters is the length and opacity of a NON-empty one.
    */
-  cursor: z
-    .string()
-    .transform((value) => (value.trim() === "" ? undefined : value.trim()))
-    .pipe(z.string().min(1).max(512).optional())
-    .optional(),
+  cursor: blankAsAbsent(z.string().min(1).max(512)).optional(),
 });
 
 export type PageQuery = z.infer<typeof PageQuery>;

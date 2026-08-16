@@ -333,6 +333,40 @@ describe("GET /studio/runs", () => {
     expect(keys).toContain("UGURPAY-700");
   });
 
+  /**
+   * The same bug as the blank cursor, one field over: the dashboard's archive
+   * list sends `?status=` for "all buckets" and every count rendered 0 while
+   * the rows were right there. Both go through `blankAsAbsent` now.
+   */
+  it("treats a blank status filter as no filter", async () => {
+    const h = await studioHarness();
+    h.read.runs.put({ ...RUN, ticketKey: "UGURPAY-701" });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: "/studio/runs?limit=200&status=&appId=",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const keys = (response.json() as { items: { ticketKey: string }[] }).items.map((r) => r.ticketKey);
+    expect(keys).toContain("UGURPAY-701");
+  });
+
+  it("still refuses a status that is present but not a status", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: "/studio/runs?status=elma",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
   it("still refuses a cursor that is present but unusable", () => {
     // Whitespace is blank, not a value — but an over-long one is a real cursor
     // and must still be rejected.

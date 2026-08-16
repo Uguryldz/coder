@@ -13,6 +13,7 @@ import { badRequest, notFound } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
 import { runIntake } from "../jira-intake.js";
 import { assertProjectAccess } from "./access.js";
+import { blankAsAbsent } from "./paging.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
 
 /**
@@ -217,10 +218,14 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
 }
 
 const ListQuery = z.object({
-  appId: z.string().trim().min(1).max(64).optional(),
-  status: z
-    .enum(["running", "gate", "queued", "fail", "handover", "done", "cancelled"])
-    .optional(),
+  // `blankAsAbsent`, not a bare `.optional()`: a browser serialises an unset
+  // filter as `?appId=&status=`, and rejecting that failed the WHOLE request —
+  // the dashboard's archive list showed "0" for every bucket while the data
+  // was right there. See `blankAsAbsent` in ./paging.ts.
+  appId: blankAsAbsent(z.string().min(1).max(64)).optional(),
+  status: blankAsAbsent(
+    z.enum(["running", "gate", "queued", "fail", "handover", "done", "cancelled"]),
+  ).optional(),
 });
 
 const JournalQuery = z.object({ actor: JournalActor.optional() });

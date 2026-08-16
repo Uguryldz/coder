@@ -91,12 +91,19 @@ describe("PrismaRunContextStore.get", () => {
     expect(context.risk).toBeNull();
   });
 
-  it("asks only for runs that are not done or cancelled, newest first", async () => {
+  /**
+   * `fail` is in the set for the same reason `done` is: the reconciler
+   * (`reconcile.ts`) writes it when the engine reports a crashed run, and a
+   * failed run that still read as live would keep handing activities a dead
+   * run's context and would block the ticket's next `/ai-start` on the partial
+   * unique index (P2002). The migration's WHERE clause is the same list.
+   */
+  it("asks only for runs that are not finished, newest first", async () => {
     const { delegate, recorded } = fakeDelegate(row());
     await new PrismaRunContextStore(delegate).get("PAY-101");
 
     expect(recorded.queries[0]).toMatchObject({
-      where: { ticketKey: "PAY-101", status: { notIn: ["done", "cancelled"] } },
+      where: { ticketKey: "PAY-101", status: { notIn: ["done", "cancelled", "fail"] } },
       orderBy: { startedAt: "desc" },
     });
   });

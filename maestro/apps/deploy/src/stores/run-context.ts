@@ -100,15 +100,23 @@ export interface RunDelegate {
 /**
  * Statuses that mean "this run is over". `get` reads the newest run that is
  * NOT one of them, which is the same definition of "live" the partial unique
- * index in migration 0002 uses — one place to change it, and the store and the
- * database agree on which run a ticket means.
+ * index uses (migration 0002, widened by 0011) — one place to change it, and
+ * the store and the database agree on which run a ticket means.
+ *
+ * `fail` joined the set in 0011, and it had to join both halves at once. Until
+ * then nothing ever wrote the status, so the omission was invisible; the
+ * reconciler (`reconcile.ts`) writes it, and a `fail` row that still counted as
+ * live would have been the worse bug of the two — the ticket's live slot stays
+ * occupied, so `get` keeps handing activities a dead run's context and the next
+ * `/ai-start` on that ticket dies on the unique index with P2002. A failed run
+ * is over. Re-running it is the whole point of noticing it failed.
  *
  * The literal type is load-bearing: `WorkflowRun.status` is a Prisma enum, and
  * a `string[]` filter is rejected by the generated client. That rejection is
  * welcome — it is what stops a typo'd status from becoming a filter that
  * silently matches nothing and makes every run look live.
  */
-export const TERMINAL_STATUSES = ["done", "cancelled"] as const;
+export const TERMINAL_STATUSES = ["done", "cancelled", "fail"] as const;
 export type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
 
 export class RunNotFoundError extends Error {

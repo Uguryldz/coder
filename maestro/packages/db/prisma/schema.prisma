@@ -244,7 +244,11 @@ model WorkflowRun {
   /// One ticket may legitimately be re-run (kill switch, handover, a second
   /// `/ai-start`), so the key is indexed, not unique. "At most one LIVE run per
   /// ticket" is a partial unique index Prisma cannot express — it lives in
-  /// prisma/migrations/0002_append_only_and_guards/migration.sql.
+  /// prisma/migrations/0002_append_only_and_guards/migration.sql, widened by
+  /// 0011_failed_run_is_terminal to treat `fail` as finished too. "Live" there
+  /// and `TERMINAL_STATUSES` in apps/deploy/src/stores/run-context.ts are the
+  /// same set in two languages; changing one without the other either blocks
+  /// re-runs (P2002) or hands activities a dead run's context.
   @@index([ticketKey])
 }
 

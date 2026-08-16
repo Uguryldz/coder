@@ -7,9 +7,11 @@ import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.j
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
 import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
+import { reconcileRunStatuses } from "../stores/reconcile.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { llmCallRecorder } from "../stores/llm-call-log.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
+import { connectTemporal } from "../temporal-gateway.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
 
 /**
@@ -110,6 +112,13 @@ export async function main(): Promise<void> {
       );
     }
 
+    await reconcileOnBoot({
+      address,
+      namespace: env.TEMPORAL_NAMESPACE,
+      runs: db.workflowRun,
+      audit: workerCore.audit,
+    });
+
     await startMaestroWorker({
       address,
       taskQueue,
@@ -119,6 +128,61 @@ export async function main(): Promise<void> {
     });
   } finally {
     await db.$disconnect();
+  }
+}
+
+/**
+ * Bring `WorkflowRun.status` back in step with the engine, once, at boot.
+ *
+ * A run that exhausts its retries dies inside an activity, so no workflow code
+ * runs afterwards and the row it started stays `running` forever. Measured on
+ * the pilot: 16 of 16 rows said `running` while Temporal held 11 `Failed` and
+ * one `Completed`. The dashboard read the rows and reported dead work as live.
+ *
+ * Boot is the right moment because it is the one instant this process knows
+ * the engine's verdict is settled for everything that ran BEFORE it: whatever
+ * the previous worker was doing when it died is now closed, and this pass is
+ * what writes it down. Runs that fail while this worker is up are a separate
+ * problem — see the note in `reconcile.ts` — and this deliberately does not
+ * pretend to solve them.
+ *
+ * NEVER fatal. A worker that cannot reconcile is a worker with a stale
+ * dashboard; a worker that refuses to start is a bank with no delivery at all.
+ * The failure is loud and the polling continues.
+ */
+async function reconcileOnBoot(options: {
+  address: string;
+  namespace: string;
+  runs: Parameters<typeof reconcileRunStatuses>[0]["runs"];
+  audit: Parameters<typeof reconcileRunStatuses>[0]["audit"];
+}): Promise<void> {
+  let temporal: Awaited<ReturnType<typeof connectTemporal>> | null = null;
+  try {
+    temporal = await connectTemporal({
+      address: options.address,
+      namespace: options.namespace,
+    });
+    const report = await reconcileRunStatuses({
+      runs: options.runs,
+      source: temporal.gateway,
+      audit: options.audit,
+    });
+    if (report.reconciled > 0 || report.unknown > 0) {
+      console.info(
+        `[maestro] worker: reconciled ${report.reconciled} run row(s) against the engine — ` +
+          `${report.stillRunning} still running, ${report.unknown} left untouched because the ` +
+          "engine has no execution for them (left `running` on purpose: an unknown run is not a " +
+          "finished one, and marking it done would hide any gate still waiting on it)",
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "[maestro] worker: run-status reconciliation FAILED — the worker polls anyway, but until " +
+        "the next boot the dashboard may show finished runs as running. Cause: " +
+        (error instanceof Error ? error.message : String(error)),
+    );
+  } finally {
+    if (temporal !== null) await temporal.close();
   }
 }
 

@@ -12,9 +12,10 @@ import { buildAgentRunner } from "./agent-runner.js";
 import { jiraCloudConfig, jiraConfig } from "./driver-config.js";
 import { loadDeployEnv, type DeployEnv } from "./env.js";
 import { objectLockConfig } from "./object-lock.js";
-import { PROFILE_DRIVERS } from "./profile.js";
+import { assertOneJiraInstance, JIRA_CLOUD_DRIVER, workDriverFor } from "./profile.js";
 import { buildRegistry } from "./registry.js";
 import { buildSecretPort } from "./secrets.js";
+import { notConfiguredWorkPort } from "./stores/unavailable-ports.js";
 
 /**
  * Boot sequence shared by every service.
@@ -193,15 +194,26 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
  * whose Jira is Cloud could then only be driven by the pilot — which is how a
  * shortcut engine ends up being the only one anybody can run.
  *
- * The choice is `WORK_DRIVER`, defaulting to Data Center: on-premise is what a
- * bank deploys, and a default that reaches the internet is the wrong way round.
+ * The choice is DERIVED from which Jira URL the installation named
+ * (`workDriverFor`), not from the profile and not from a `WORK_DRIVER` switch.
+ *
+ * It has to be derived in ONE place because it is decided in two: here, for the
+ * instance `notify/jira` and `publish/jira` post through, and again in
+ * `buildPortSelection` for the instance the activities call. While the profile
+ * owned the answer and `WORK_DRIVER` overrode it, those two could disagree —
+ * `boot.ts` read the override and `compose.ts` did not — so one environment
+ * could produce two differently-authenticated Jira clients. Both now call the
+ * same function over the same variables.
  */
 function buildWorkPort(env: DeployEnv, secrets: SecretPort): WorkPort {
-  // The profile is the answer to "which driver serves which port"; `WORK_DRIVER`
-  // overrides it for a deployment whose Jira is not what its profile assumes —
-  // a bank on Data Center running the analysis profile, most of all.
-  const driver = env.source["WORK_DRIVER"]?.trim() ?? PROFILE_DRIVERS[env.profile].work;
-  if (driver === "jira-cloud") return createJiraCloudWorkPort(jiraCloudConfig(env, secrets));
+  assertOneJiraInstance(env.source);
+  const choice = workDriverFor(env.source);
+  // A fresh install has named no Jira at all. It must still boot — the wizard
+  // is how one gets configured — so the port composes and refuses on first use.
+  if (choice.problem === "neither") return notConfiguredWorkPort();
+  if (choice.driver === JIRA_CLOUD_DRIVER) {
+    return createJiraCloudWorkPort(jiraCloudConfig(env, secrets));
+  }
   return createJiraDcWorkPort(jiraConfig(env, secrets));
 }
 

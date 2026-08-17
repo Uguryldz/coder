@@ -8,16 +8,50 @@ import { z } from "zod";
  * `assertProfileComplete` refuses a profile with a hole in it before a single
  * connection is opened (M6 fail-closed).
  *
- * `prod` is the bank deployment: Vault for secrets, S3-compatible object
- * storage, Teams+SMTP notifications. `dev` is the offline profile the compose
- * stack boots with: secrets from environment variables, blobs in Postgres,
- * notifications into the Jira ticket. Neither profile is a subset of the
- * other — `dev` is not "prod with things missing", it is a different set of
- * drivers, which is why the choice is explicit rather than a chain of
- * `NODE_ENV` checks scattered through the wiring.
+ * WHAT A PROFILE IS ALLOWED TO DECIDE, since Dalga E: infrastructure only.
+ *
+ * A profile used to answer two different questions at once, and the second one
+ * was never its business. "Where do secrets live" (Vault or the env file) and
+ * "where do blobs live" (S3 or Postgres) are facts of the machine the stack was
+ * installed on — nobody picks Vault from a web form, and the answer cannot
+ * change without a redeploy. But "does this install write code" was ALSO a
+ * profile answer, and that one is a per-ticket decision an operator makes in
+ * the wizard: the same bank has "analyse this" tickets and "fix this bug"
+ * tickets in one Jira project.
+ *
+ * The `analiz` profile expressed the second question by wiring `scm`, `ci` and
+ * `scan` to drivers that REFUSE. The result was a product that offered "Hata
+ * düzeltme" in the wizard, accepted the rule, started the run, wrote the
+ * analysis, took a human's approval — and only then died at the engineering
+ * step, because the server had been configured to be unable. The UI promised
+ * what the deployment forbade, and no screen could see the contradiction.
+ *
+ * So the capability question left the profile entirely. `scm` is the real
+ * GitHub driver, always; whether a given install can actually reach a
+ * repository is now a question about a CONNECTION, which the wizard reads and
+ * reports BEFORE the operator commits (`/onboarding/scm-connections`). `ci` and
+ * `scan` stay honestly unconfigured until someone configures them — see
+ * `stores/unavailable-ports.ts` for why "not configured yet" is a different
+ * sentence from "this release does not do that".
+ *
+ * `work` LEFT FOR THE SAME REASON, and it left because deleting `analiz`
+ * without moving it took a live site down. That profile was the only one naming
+ * `jira-cloud`, so "which Jira instance is this" had been smuggled in as a side
+ * effect of "what may this install do". With the profile gone the deployment
+ * fell through to the Data Center driver and died at boot with
+ * `JIRA_BASE_URL: the work port has no default instance` — a message that never
+ * mentions Cloud, which is the axis that was actually wrong. Cloud vs Data
+ * Center is a property of the Jira this install talks to, exactly the same
+ * class of fact as which GitHub org, so it is DERIVED from which Jira URL was
+ * configured (`workDriverFor`) instead of being named per profile.
+ *
+ * What is left is `prod` vs `dev`: Vault + S3 against env-file + Postgres.
+ * Neither is a subset of the other — `dev` is not "prod with things missing",
+ * it is a different set of infrastructure drivers, which is why the choice
+ * stays explicit rather than a chain of `NODE_ENV` checks through the wiring.
  */
 
-export const PROFILES = ["prod", "dev", "analiz"] as const;
+export const PROFILES = ["prod", "dev"] as const;
 export type Profile = (typeof PROFILES)[number];
 
 export const ProfileName = z.enum(PROFILES);
@@ -57,29 +91,104 @@ export type DriverMap = Readonly<Record<PortKey, string>>;
  * own constant, so a rename fails the suite rather than the deployment.
  */
 /**
- * Driver ids for the two ports the analysis-only release does not serve.
+ * The driver id for a port that is WIRED but not yet CONFIGURED.
  *
- * They are registered (`registry.ts`) as ports whose every method rejects with
- * a named error, so the failure reads as "this release does not do that"
- * rather than as a connection timeout to an Azure DevOps that was never
- * configured.
+ * `ci` and `scan` both need something an operator has to supply before they can
+ * do anything — a build-definition allow-list (M12), a digest-pinned scanner
+ * image (M27) — and neither has a default that would be safe to invent. Until
+ * that arrives the port answers with a named, catchable "not configured yet"
+ * (`stores/unavailable-ports.ts`), which is a different claim from "this
+ * product cannot do that" and is fixed from a different place.
+ *
+ * The distinction matters because the old sentence sent operators the wrong
+ * way. `scm` was wired to this same refusal and told them to change
+ * `MAESTRO_PROFILE` — a deployment-time answer to what is now a connection
+ * question. `scm` no longer uses it at all: the real GitHub driver is always
+ * composed, and an install with no repository connection learns that in the
+ * wizard, before it commits to a flow.
  */
-export const SCM_UNAVAILABLE_DRIVER = "unavailable";
-export const CI_UNAVAILABLE_DRIVER = "unavailable";
+export const NOT_CONFIGURED_DRIVER = "not-configured";
+
+/** The two Jira drivers, as `@maestro/adapter-jira` registers them. */
+export const JIRA_CLOUD_DRIVER = "jira-cloud";
+export const JIRA_DC_DRIVER = "jira-dc";
+
+/** What `workDriverFor` decided, and why — the reason travels for the error. */
+export interface WorkDriverChoice {
+  readonly driver: string;
+  /** `null` when a real Jira was named; otherwise why no instance was chosen. */
+  readonly problem: "both" | "neither" | null;
+}
+
 /**
- * Scanning is part of the engineering turn — it reads a diff — so the
- * analysis-only release does not serve it either. Its real driver demands a
- * digest-pinned image (M27), correctly, and demanding one for a port nothing
- * in this release calls is the same wall as `ADO_BASE_URL`.
+ * Which Jira driver this installation talks to, derived from what it named.
+ *
+ * The two URLs are ALREADY the way this codebase distinguishes the instances —
+ * `packages/config/src/env.ts` declares both as separately-blankable, and the
+ * two drivers take different auth (`Bearer <PAT>` for Data Center, Basic
+ * `email:token` for Cloud) against different API roots. So the fact is already
+ * collected; it was simply never read as the answer. Reading it here means the
+ * one thing an operator actually types decides the driver, and there is no
+ * second switch that can disagree with it.
+ *
+ * `WORK_DRIVER` used to be that second switch, and it was worse than
+ * redundant: the bank compose passed `${WORK_DRIVER:-jira-dc}`, so it MASKED
+ * the profile on every bundle install, and `boot.ts` honoured it while
+ * `compose.ts` did not — two code paths that could compose different Jira
+ * clients from one environment. It is gone.
+ *
+ * The two degenerate answers are kept apart on purpose, because they need
+ * different sentences:
+ *
+ *   both    → a conflict only the operator can settle. Guessing one would send
+ *             a bank's tickets to whichever Jira the tie-break happened to
+ *             favour, so this is refused BY NAME at boot.
+ *   neither → a fresh install. It must still BOOT: the wizard is how a Jira
+ *             gets configured, and a stack that refuses to start until it is
+ *             configured can never be configured through its own panel. The
+ *             port composes as the Cloud driver and fails on first USE with a
+ *             named message, exactly like `ci`/`scan`.
  */
-export const SCAN_UNAVAILABLE_DRIVER = "unavailable";
+export function workDriverFor(source: Record<string, string | undefined>): WorkDriverChoice {
+  const named = (name: string): boolean => (source[name] ?? "").trim() !== "";
+  const cloud = named("JIRA_CLOUD_BASE_URL");
+  const dc = named("JIRA_BASE_URL");
+  if (cloud && dc) return { driver: JIRA_CLOUD_DRIVER, problem: "both" };
+  if (cloud) return { driver: JIRA_CLOUD_DRIVER, problem: null };
+  if (dc) return { driver: JIRA_DC_DRIVER, problem: null };
+  return { driver: JIRA_CLOUD_DRIVER, problem: "neither" };
+}
+
+/**
+ * The conflict, refused by name.
+ *
+ * Called where the port is actually built. The message names BOTH variables
+ * and says what to do, because the operator who set both did so believing one
+ * of them was inert — which is precisely the belief that makes a silent
+ * tie-break dangerous.
+ */
+export function assertOneJiraInstance(source: Record<string, string | undefined>): void {
+  if (workDriverFor(source).problem !== "both") return;
+  throw new ProfileError(
+    "JIRA_BASE_URL ve JIRA_CLOUD_BASE_URL birlikte tanımlı — bu ikisi İKİ AYRI Jira " +
+      "sürücüsünü besler (Data Center `Bearer <PAT>`, Cloud `Basic e-posta:jeton`) ve " +
+      "hangisinin kullanılacağı tahmin EDİLMEZ. Bu kurulumun konuştuğu Jira hangisiyse " +
+      "yalnızca onun adresini bırakın, diğerini silin.",
+  );
+}
 
 const PROD_DRIVERS: DriverMap = {
-  work: "jira-dc",
-  scm: "ado",
-  ci: "ado",
+  // A placeholder, not a decision: the real answer is `workDriverFor`, which
+  // reads the Jira URLs. It stays in the map because `assertProfileComplete`
+  // demands every port name a driver, and `buildPortSelection` overwrites it.
+  work: JIRA_DC_DRIVER,
+  // The real driver, in both profiles and unconditionally. Whether this install
+  // can reach a repository is decided by a Connection an admin adds in the UI,
+  // never by which profile the machine was installed with.
+  scm: "github",
+  ci: NOT_CONFIGURED_DRIVER,
   llm: "gateway",
-  scan: "trivy",
+  scan: NOT_CONFIGURED_DRIVER,
   storage: "s3-compat",
   secret: "vault",
   notify: "multi",
@@ -87,11 +196,12 @@ const PROD_DRIVERS: DriverMap = {
 };
 
 const DEV_DRIVERS: DriverMap = {
-  work: "jira-dc",
-  scm: "ado",
-  ci: "ado",
+  // Same placeholder as above; `workDriverFor` is the answer.
+  work: JIRA_DC_DRIVER,
+  scm: "github",
+  ci: NOT_CONFIGURED_DRIVER,
   llm: "gateway",
-  scan: "trivy",
+  scan: NOT_CONFIGURED_DRIVER,
   storage: "pg-blob",
   // No Vault in the dev stack: the env-file driver reads `MAESTRO_SECRET_*`.
   // The driver itself refuses to serve when NODE_ENV is production (M80), so
@@ -101,41 +211,9 @@ const DEV_DRIVERS: DriverMap = {
   publish: "multi",
 };
 
-/**
- * The analysis-only deployment: ticket in, analysis document out.
- *
- * This is what the product ships today — intake, analysis, the human gate and
- * delivery. The engineering half (write code, open a PR, merge) exists in the
- * workflow but is not part of this release, so the two ports that serve it get
- * a driver that REFUSES rather than one that is configured.
- *
- * Refusing beats omitting. A profile with a hole in it is rejected by
- * `assertProfileComplete` before a connection opens (M6), and a profile that
- * named a real ADO driver would demand `ADO_BASE_URL` from an operator who has
- * no Azure DevOps — which is exactly the wall this profile removes. What is
- * left is a deployment that runs the analysis line end to end and answers any
- * attempt to reach the engineering line with a named error instead of a
- * connection attempt to nowhere.
- *
- * `work` is Cloud here because that is the site this profile was written
- * against. A bank on Data Center overrides it with `WORK_DRIVER=jira-dc`.
- */
-const ANALYSIS_DRIVERS: DriverMap = {
-  work: "jira-cloud",
-  scm: SCM_UNAVAILABLE_DRIVER,
-  ci: CI_UNAVAILABLE_DRIVER,
-  llm: "gateway",
-  scan: SCAN_UNAVAILABLE_DRIVER,
-  storage: "pg-blob",
-  secret: "env-file",
-  notify: "jira",
-  publish: "multi",
-};
-
 export const PROFILE_DRIVERS: Readonly<Record<Profile, DriverMap>> = {
   prod: PROD_DRIVERS,
   dev: DEV_DRIVERS,
-  analiz: ANALYSIS_DRIVERS,
 };
 
 export function driversFor(profile: Profile): DriverMap {

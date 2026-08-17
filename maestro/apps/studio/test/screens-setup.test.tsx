@@ -498,6 +498,73 @@ describe("setup wizard", () => {
       expect(await screen.findByText(/Hiç kod deposu bağlantısı tanımlı değil/)).toBeTruthy();
     });
 
+    /**
+     * The wizard must not offer a flow this install cannot serve.
+     *
+     * This is the failure the whole change is about, seen from the operator's
+     * side: pick "Yeni özellik geliştirme", save the rule, and the run walks
+     * intake → analysis → publication → a human's approval before dying at the
+     * step that needed a repository. Every one of those steps was real work,
+     * and the missing piece was knowable before the first click.
+     */
+    it("stops a code-writing flow while no repository connection exists, and says why", async () => {
+      const { fetchImpl } = stubFetch(
+        baseRoutes([{ path: "/onboarding/scm-connections", body: { connections: [] } }]),
+      );
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await userEvent.click(await screen.findByRole("radio", { name: /Yeni özellik geliştirme/ }));
+
+      // The NOUN and the fix, not "bir şeyler eksik". It appears on BOTH
+      // code-writing choices and again beside the dead "İleri" — an operator
+      // reading either place learns the same thing, so this asserts the count
+      // rather than pretending there is one.
+      const said = await screen.findAllByText(
+        /bir kod deposu bağlantısı gerekir ve bu kurulumda henüz tanımlı değil/,
+      );
+      expect(said.length).toBe(3);
+      // And "İleri" does not walk them four steps toward a run that cannot finish.
+      expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("still lets analysis through on that same install", async () => {
+      // The prerequisite is per-FLOW, not a wall across the wizard: an install
+      // with no repository can still be set up to produce analysis documents,
+      // which is the one thing it genuinely can do.
+      const { fetchImpl } = stubFetch(
+        baseRoutes([{ path: "/onboarding/scm-connections", body: { connections: [] } }]),
+      );
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await screen.findByText("Ne yapmak istiyorsunuz?");
+      expect((screen.getByRole("radio", { name: /Yalnızca analiz/ }) as HTMLInputElement).checked).toBe(
+        true,
+      );
+      expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it("offers every flow once a repository connection exists", async () => {
+      // The default fixtures HAVE an SCM connection, so nothing is blocked —
+      // the guard must not fire on a properly configured install.
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await userEvent.click(await screen.findByRole("radio", { name: /Yeni özellik geliştirme/ }));
+      expect(screen.queryByText(/bir kod deposu bağlantısı gerekir/)).toBeNull();
+      expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it("does not call a flow unavailable while the connection list is still in flight", async () => {
+      // Same rule the prerequisite banner already follows: an unanswered
+      // request is not evidence of an empty list, and telling an operator to
+      // go and add a connection they already have is its own bug.
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await screen.findByText("Ne yapmak istiyorsunuz?");
+      expect(screen.queryByText(/bir kod deposu bağlantısı gerekir/)).toBeNull();
+    });
+
     it("does not accuse an empty list while the request is still in flight", async () => {
       // A never-resolving connections call: the warning must not appear on the
       // strength of "the array is empty so far".

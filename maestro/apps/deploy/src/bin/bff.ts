@@ -294,19 +294,20 @@ export async function main(): Promise<void> {
     config: {
       env: env.base,
       /**
-       * An analysis-only deployment says so, once, here.
+       * What a ticket does when NO listening rule claims it.
        *
-       * The `analiz` profile composes REFUSING scm/ci/scan drivers — there is
-       * no code agent and no pipeline to run. Letting a ticket into the
-       * engineering loop on such an install is a guaranteed failure AFTER the
-       * analysis has been written, published and approved by a human
-       * (OPS-38 died in `runEngineering`). `MAESTRO_FLOW` overrides it for a
-       * deployment whose profile and intent differ.
+       * A per-ticket rule is the real answer and it wins outright
+       * (`apps/bff/src/flow-decision.ts`); this only decides the leftovers. It
+       * used to be derived from the profile — `analiz` meant every unclaimed
+       * ticket was analysis-only — which is precisely the deployment-time
+       * switch that made the wizard's offer a lie. The profile no longer knows
+       * what a run is for, so nothing here derives it.
        *
-       * This is now the FALLBACK, not the whole answer: a listening rule that
-       * claims the ticket picks its flow first (`apps/bff/src/flow-decision.ts`),
-       * so ONE deployment can run analysis and engineering tickets side by
-       * side. An install with no rules behaves exactly as it did before.
+       * `MAESTRO_FLOW` still names a fallback for a site that wants one, and
+       * absent it the answer is the full pipeline. Unset is the honest default
+       * now that the engineering ports compose everywhere: a run that reaches
+       * them and has no repository connection fails with a sentence naming the
+       * connection, and the wizard says so before anybody commits.
        */
       ...(flowOf(env) === null ? {} : { defaultFlow: flowOf(env) }),
     },
@@ -398,15 +399,21 @@ export async function main(): Promise<void> {
  * Which flow this deployment runs by DEFAULT (`planFor`) — when no listening
  * rule claims the ticket. The per-ticket answer is `flow-decision.ts`.
  *
- * Derived from the PROFILE rather than named separately, because the profile
- * already carries the same decision: `analiz` composes refusing scm/ci/scan
- * drivers, so a run that reaches engineering on it cannot succeed. Deriving it
- * means the two cannot drift apart in a way that only shows up after a human
- * has approved an analysis.
+ * Read ONLY from `MAESTRO_FLOW`, and unset unless a site names one.
  *
- * `MAESTRO_FLOW` overrides, for a deployment whose profile and intent differ
- * (a `prod` install used only for analysis, say). An unrecognised value is
- * ignored rather than guessed — the full pipeline is the safe direction.
+ * It used to be derived from the profile: `analiz` meant every unclaimed ticket
+ * became analysis-only, because that profile composed refusing scm/ci/scan
+ * drivers and a run reaching engineering could not succeed. The derivation was
+ * sound while the profile decided what the product could do — and it is exactly
+ * what had to go when that stopped being true. The engineering ports compose on
+ * every deployment now, so a profile no longer carries an opinion about what a
+ * ticket is for, and inventing one here would put the old deployment-time
+ * switch back under a different name.
+ *
+ * An unrecognised value is ignored rather than guessed — the full pipeline is
+ * the safe direction, and it is the direction an operator can see: a run with
+ * no repository connection fails naming the connection, which is fixable from
+ * the panel, unlike a flow silently downgraded by a variable.
  */
 function flowOf(env: DeployEnv): FlowType | null {
   const override = env.source["MAESTRO_FLOW"]?.trim();
@@ -414,7 +421,7 @@ function flowOf(env: DeployEnv): FlowType | null {
     const parsed = FlowType.safeParse(override);
     return parsed.success ? parsed.data : null;
   }
-  return env.source["MAESTRO_PROFILE"]?.trim() === "analiz" ? "analiz" : null;
+  return null;
 }
 
 function notifyChannels(deployment: { selection: { notify: { driver: string; config: unknown } } }): readonly string[] {

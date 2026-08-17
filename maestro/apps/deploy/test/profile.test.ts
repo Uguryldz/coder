@@ -1,4 +1,4 @@
-import { ADO_DRIVER_ID } from "@maestro/adapter-ado";
+import { GITHUB_DRIVER_ID } from "@maestro/adapter-github";
 import { JIRA_DC_DRIVER, WORK_PORT } from "@maestro/adapter-jira";
 import { LLM_GATEWAY_DRIVER, LLM_PORT } from "@maestro/llm-gateway";
 import { NOTIFY_PORT } from "@maestro/notify";
@@ -12,8 +12,10 @@ import {
   ALL_PORT_KEYS,
   assertProfileComplete,
   driversFor,
+  NOT_CONFIGURED_DRIVER,
   parseProfile,
   PROFILE_DRIVERS,
+  PROFILES,
   ProfileError,
   WORKER_PORT_KEYS,
   type DriverMap,
@@ -63,10 +65,19 @@ describe("driver id literals match the packages that export them", () => {
     expect(driversFor("dev").work).toBe(JIRA_DC_DRIVER);
   });
 
-  it("scm and ci → ado", () => {
-    for (const profile of ["prod", "dev"] as const) {
-      expect(driversFor(profile).scm).toBe(ADO_DRIVER_ID);
-      expect(driversFor(profile).ci).toBe(ADO_DRIVER_ID);
+  /**
+   * The pin that matters most since Dalga E: `scm` is a REAL driver in every
+   * profile, and it is the one `@maestro/adapter-github` actually registers.
+   *
+   * The literal here is what stops the old failure from coming back in a new
+   * shape. A profile pointing `scm` at a driver nobody registers would compose
+   * to nothing, and the symptom would be identical to the one this change
+   * removed: a wizard offering "Hata düzeltme" and a run dying at the
+   * engineering step.
+   */
+  it("scm → github, in every profile", () => {
+    for (const profile of PROFILES) {
+      expect(driversFor(profile).scm).toBe(GITHUB_DRIVER_ID);
     }
   });
 
@@ -108,6 +119,45 @@ describe("profiles are complete", () => {
     const prod = driversFor("prod");
     expect(prod.secret).not.toBe(ENV_FILE_DRIVER);
     expect(prod.storage).not.toBe(PG_BLOB_DRIVER);
+  });
+});
+
+/**
+ * The regression this whole change exists to prevent.
+ *
+ * A deployment used to be able to answer "no, this install does not write
+ * code", and it answered by wiring `scm` to a driver that refused. Everything
+ * upstream — the wizard's "Hata düzeltme" option, the listening rule, the
+ * approved analysis — was already committed by the time anything discovered it.
+ *
+ * These pin the boundary rather than the wiring: a profile may still choose
+ * where secrets and blobs live, because those are facts of the machine. It may
+ * not choose whether the product has an engineering half.
+ */
+describe("a profile decides infrastructure, never capability", () => {
+  it("gives every profile a real scm driver, so none can disable the code path", () => {
+    for (const profile of PROFILES) {
+      const scm = driversFor(profile).scm;
+      expect(scm, `${profile}.scm`).toBe(GITHUB_DRIVER_ID);
+      // The specific shape of the old bug: a refusing driver in the scm slot.
+      expect(scm, `${profile}.scm`).not.toBe(NOT_CONFIGURED_DRIVER);
+    }
+  });
+
+  it("still lets a profile choose where secrets and blobs live", () => {
+    // The line between the two kinds of decision. Nobody picks Vault from a web
+    // form, so this half stays a deploy-time answer — and the profiles must
+    // therefore still DIFFER on it, or the distinction has been lost.
+    expect(driversFor("prod").secret).not.toBe(driversFor("dev").secret);
+    expect(driversFor("prod").storage).not.toBe(driversFor("dev").storage);
+  });
+
+  it("offers no profile whose name promises a capability", () => {
+    // `analiz` was a profile named after what a run DOES. That is the category
+    // error: a run's purpose is per-ticket (`ListeningRule.flowType`), and a
+    // profile that encodes it can only ever contradict the rule an operator
+    // wrote. Profiles name environments now, and nothing else.
+    expect([...PROFILES]).toEqual(["prod", "dev"]);
   });
 });
 

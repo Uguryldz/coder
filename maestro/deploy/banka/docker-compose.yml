@@ -58,20 +58,29 @@ x-node-env: &node-env
   # NODE_ENV .env'den GELİR, burada sabitlenmez.
   #
   # Eski sürümde burada `production` yazılıydı ve paket hiç açılamıyordu:
-  # `analiz` profili sırları env-file sürücüsüyle okur, o sürücü ise
-  # NODE_ENV=production altında yapıcısında (constructor) reddeder (M6/M80).
-  # İkisi birlikte seçilmek zorunda olduğu için karar .env'de, tek yerde durur.
+  # sırlar env-file sürücüsüyle okunur, o sürücü ise NODE_ENV=production
+  # altında yapıcısında (constructor) reddeder (M6/M80).
+  #
+  # MAESTRO_PROFILE ARTIK YOKTUR ve bu bilinçli bir sadeleştirmedir.
+  # Altyapı profili bu değerden TÜRETİLİR (apps/deploy/src/env.ts): production
+  # ise Vault + S3, değilse env-file + Postgres. Ayrı bir değişken olduğu
+  # sürece ikisi çelişebiliyordu ve çelişki açılışta ölümle sonuçlanıyordu.
+  #
+  # Daha önemlisi: profil, ürünün NE YAPABİLECEĞİNE de karar veriyordu.
+  # `analiz` profili scm/ci/tarama portlarını REDDEDEN sürücülere bağlardı;
+  # panel "Hata düzeltme" akışını yine de sunar, kural yazılır, koşu başlar ve
+  # analiz yazılıp insan onayı alındıktan SONRA mühendislik adımında ölürdü.
+  # Artık kod hattı her kurulumda kuruludur; "bu kurulum kod yazabilir mi"
+  # sorusunun cevabı panelden eklenen BAĞLANTIDIR ve sihirbaz bunu daha ilk
+  # adımda söyler.
   NODE_ENV: ${NODE_ENV:-development}
-  # Hangi sürücünün hangi porta bakacağını belirleyen TEK değer.
-  # `analiz` sahaya çıkan sürüm; `prod` Vault+S3+ADO ister.
-  MAESTRO_PROFILE: ${MAESTRO_PROFILE:?MAESTRO_PROFILE gerekli (.env) — analiz veya prod}
   DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER gerekli}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD gerekli}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB gerekli}
   TEMPORAL_ADDRESS: temporal:7233
   TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
   REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD gerekli}@redis:6379/0
 
-  # Panelden girilen bağlantı jetonlarını şifreleyen anahtar. Prod profilinde
-  # yokluğu açılışı durdurur; analiz profilinde yoksa kod türetilmiş bir DEV
+  # Panelden girilen bağlantı jetonlarını şifreleyen anahtar. production'da
+  # yokluğu açılışı durdurur; development'ta yoksa kod türetilmiş bir DEV
   # anahtarı üretip uyarır — yani jetonlar gerçekte korunmaz. Bankada her iki
   # durumda da dolu olmalıdır, bu yüzden `:?` ile zorunlu tutuluyor.
   CONNECTOR_MASTER_KEY: ${CONNECTOR_MASTER_KEY:?CONNECTOR_MASTER_KEY gerekli — openssl rand -base64 32}
@@ -82,11 +91,22 @@ x-node-env: &node-env
   NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
 
   # ── İş takibi (Jira) ───────────────────────────────────────────────────────
-  WORK_DRIVER: ${WORK_DRIVER:-jira-dc}
-  JIRA_BASE_URL: ${JIRA_BASE_URL:?JIRA_BASE_URL gerekli}
-  # Cloud sürücüsünün adresi. JIRA_BASE_URL ile AYNI ŞEY DEĞİLDİR: ikisi iki
-  # ayrı sürücüyü besler (DC `Bearer PAT`, Cloud `Basic e-posta:jeton`).
-  # Boşsa Cloud sürücüsü JIRA_BASE_URL'e düşer.
+  # HANGİ SÜRÜCÜ ÇALIŞACAĞINI BU İKİ ADRES BELİRLER — ayrı bir seçici yoktur.
+  # Yalnızca birini doldurun:
+  #   JIRA_BASE_URL       → Data Center sürücüsü (`Bearer <PAT>`)
+  #   JIRA_CLOUD_BASE_URL → Cloud sürücüsü (`Basic <e-posta>:<jeton>`)
+  # İkisi birden doluysa açılış ADIYLA reddedilir; hangisinin kazandığı tahmin
+  # edilmez. İkisi de boşsa yığın yine AÇILIR (panel erişilebilir kalsın diye)
+  # ve Jira'ya ilk erişimde "henüz tanımlanmadı" diye adıyla cevap verir.
+  #
+  # ⚠ `WORK_DRIVER` KALDIRILDI. Burada `${WORK_DRIVER:-jira-dc}` yazıyordu, yani
+  #   HER kurulumda doluydu ve profili maskeliyordu: Cloud kullanan bir saha,
+  #   adresini doğru yazsa bile Data Center sürücüsüne düşüyordu. Kaldığı yerde
+  #   iki ayrı kod yolu (boot ve compose) bu değişkeni farklı okuyabiliyordu.
+  # ⚠ JIRA_BASE_URL artık `:?` ile ZORUNLU DEĞİLDİR — zorunlu olsaydı Cloud
+  #   kullanan bir kurulum, kullanmadığı bir Data Center adresi yazmadan
+  #   açılamazdı. Zaten tam olarak bu yüzden canlı sistem düşmüştü.
+  JIRA_BASE_URL: ${JIRA_BASE_URL:-}
   JIRA_CLOUD_BASE_URL: ${JIRA_CLOUD_BASE_URL:-}
   JIRA_TOKEN_REF: ${JIRA_TOKEN_REF:-kv/jira#token}
   JIRA_WEBHOOK_SECRET_REF: ${JIRA_WEBHOOK_SECRET_REF:-kv/jira#webhook}
@@ -105,11 +125,22 @@ x-node-env: &node-env
   MAESTRO_BOT_EMAIL: ${MAESTRO_BOT_EMAIL:-}
   JIRA_CLOUD_EMAIL: ${JIRA_CLOUD_EMAIL:-}
 
-  # ── Kaynak kodu (Azure DevOps Server / TFS) ────────────────────────────────
-  # `analiz` profilinde scm/ci portları REDDEDEN sürücülerdir ve bunlar
-  # okunmaz — bu yüzden `:?` ile zorunlu tutulmazlar. Zorunlu tutulsalardı,
-  # Azure DevOps'u olmayan bir analiz kurulumu açılamazdı.
-  SCM_DRIVER: ${SCM_DRIVER:-ado}
+  # ── Kaynak kodu ────────────────────────────────────────────────────────────
+  # scm portu GitHub sürücüsüdür ve HER kurulumda kuruludur. Hiçbir zorunlu
+  # değişkeni yoktur: github.com varsayılandır, jeton ise ilk çağrıda okunur.
+  # Böylece deposu henüz tanımlanmamış bir kurulum da açılır ve analiz hattını
+  # uçtan uca çalıştırır — eksik depo, açılışta ölüm değil, panelde görünen ve
+  # panelden düzeltilebilen bir eksiktir.
+  #
+  # GITHUB_TOKEN_REF bir sır ADRESİDİR, sır değeri değil (§11/§12).
+  GITHUB_TOKEN_REF: ${GITHUB_TOKEN_REF:-kv/github#token}
+  # Yalnızca GitHub Enterprise Server için; ikisi BİRLİKTE verilir. Boş
+  # bırakılırsa github.com kullanılır.
+  GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-}
+  GITHUB_GRAPHQL_URL: ${GITHUB_GRAPHQL_URL:-}
+
+  # Azure DevOps kullanan bir saha için; scm portu GitHub olduğundan bunlar
+  # bugün okunmaz, ama CI tarafı yapılandırıldığında aynı adlardan okunur.
   ADO_BASE_URL: ${ADO_BASE_URL:-}
   ADO_ORG: ${ADO_ORG:-}
   ADO_PROJECT: ${ADO_PROJECT:-}
@@ -144,7 +175,7 @@ x-node-env: &node-env
   LDAP_GROUP_FILTER: ${LDAP_GROUP_FILTER:-}
   LDAP_ROLE_MAPPINGS: ${LDAP_ROLE_MAPPINGS:-}
 
-  # ── Vault (yalnızca MAESTRO_PROFILE=prod) ─────────────────────────────────
+  # ── Vault (yalnızca NODE_ENV=production) ──────────────────────────────────
   # Sır sürücüsü ORTAM DEĞİŞKENİYLE SEÇİLMEZ; profilden gelir
   # (apps/deploy/src/profile.ts). Eski paketteki `SECRET_DRIVER` değişkenini
   # hiçbir kod okumuyordu — kaldırıldı, çünkü okunmayan bir değişken operatöre
@@ -154,8 +185,8 @@ x-node-env: &node-env
   VAULT_SECRET_ID: ${VAULT_SECRET_ID:-}
   VAULT_MOUNTS: ${VAULT_MOUNTS:-kv,git}
 
-  # ── Depolama (yalnızca MAESTRO_PROFILE=prod) ──────────────────────────────
-  # `analiz` profilinde belgeler Postgres'te tutulur (`pg-blob`).
+  # ── Depolama (yalnızca NODE_ENV=production) ───────────────────────────────
+  # NODE_ENV=development iken belgeler Postgres'te tutulur (`pg-blob`).
   STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
   STORAGE_BUCKET: ${STORAGE_BUCKET:-maestro-evidence}
   STORAGE_REGION: ${STORAGE_REGION:-us-east-1}

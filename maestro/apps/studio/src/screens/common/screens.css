@@ -307,6 +307,19 @@
   color: var(--muted);
 }
 
+/* A flow this install cannot run yet (no repository connection).
+   Marked, not hidden and not greyed into illegibility: the operator still has
+   to be able to read WHAT they are missing out on and why, which is the whole
+   job of the warning line inside it. */
+.setup-choice--blocked {
+  border-style: dashed;
+}
+
+.setup-choice__blocked {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
 /* The summary's section headings and its plain-sentence lists. */
 .setup-review__h {
   font-size: 13.5px;

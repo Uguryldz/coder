@@ -103,10 +103,9 @@ ok "Doldurulmamış alan yok."
 info "Zorunlu değişkenler…"
 ZORUNLU=(
   MAESTRO_NODE_IMAGE MAESTRO_STUDIO_IMAGE POSTGRES_IMAGE REDIS_IMAGE TEMPORAL_IMAGE
-  MAESTRO_PROFILE NODE_ENV
+  NODE_ENV
   CONNECTOR_MASTER_KEY
   POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB REDIS_PASSWORD
-  WORK_DRIVER JIRA_BASE_URL
   MAESTRO_BOT_ACCOUNT_ID MAESTRO_BOT_EMAIL
   LLM_BASE_URL LLM_MODEL LLM_ON_PREM
   MAESTRO_SECRET_KV_JIRA__TOKEN MAESTRO_SECRET_KV_LLM__API__2D_KEY
@@ -124,39 +123,51 @@ if [[ ${#EKSIK_VAR[@]} -gt 0 ]]; then
 fi
 ok "Zorunlu değişkenlerin hepsi dolu."
 
-# ── 4) Profil / NODE_ENV eşleşmesi ───────────────────────────────────────────
-# En pahalı sessiz arızalardan biri: `analiz` profili sırları env-file
-# sürücüsüyle okur, o sürücü ise NODE_ENV=production altında yapıcısında
-# reddeder (M6/M80). İkisi uyumsuzsa sistem hiç açılmaz — ama log'a bakmayan
-# biri için "kurulum bitti" görünür.
-info "Profil tutarlılığı…"
-case "${MAESTRO_PROFILE}" in
-  analiz)
-    if [[ "${NODE_ENV}" == "production" ]]; then
-      err "MAESTRO_PROFILE=analiz ile NODE_ENV=production birlikte ÇALIŞMAZ."
-      err "  'analiz' profili sırları env-file sürücüsüyle okur; o sürücü"
-      err "  NODE_ENV=production altında açılmayı reddeder (M6/M80)."
-      die "NODE_ENV=development yapın ya da Vault kurup MAESTRO_PROFILE=prod'a geçin."
-    fi
-    ok "Profil: analiz (sahaya çıkan sürüm)."
-    ;;
-  prod)
-    [[ "${NODE_ENV}" == "production" ]] \
-      || die "MAESTRO_PROFILE=prod ise NODE_ENV=production olmalıdır."
-    # prod profili Vault + S3 + ADO ister; biri eksikse süreç açılışta ölür.
-    for v in VAULT_ADDR VAULT_ROLE_ID VAULT_SECRET_ID STORAGE_ENDPOINT \
-             ADO_BASE_URL ADO_ORG ADO_PROJECT ADO_PR_VALIDATION_BUILDS; do
-      [[ -n "${!v:-}" ]] || die "MAESTRO_PROFILE=prod ama ${v} boş. 'prod' profili Vault + S3 + Azure DevOps ister."
-    done
-    ok "Profil: prod (Vault + S3 + ADO doğrulandı)."
-    ;;
-  dev)
-    die "MAESTRO_PROFILE=dev sahte sürücüler kullanır — banka kurulumunda kullanılmaz."
-    ;;
-  *)
-    die "MAESTRO_PROFILE='${MAESTRO_PROFILE}' geçersiz. Beklenen: analiz, prod."
-    ;;
-esac
+# ── 3b) Hangi Jira: Cloud mu, Data Center mı ─────────────────────────────────
+# Sürücüyü SEÇEN ayrı bir değişken yoktur; hangi adres doluysa o sürücü çalışır
+# (apps/deploy/src/profile.ts, `workDriverFor`). Bu yüzden burada kontrol edilen
+# şey "biri dolu mu" değil, "YALNIZCA biri mi dolu".
+#
+# İkisi birden dolu olduğunda süreç zaten açılışta adıyla reddediyor; burada
+# tekrar bakılmasının sebebi, o reddin konteyner log'unda kalması ve kurulumu
+# yapan kişinin ekranında hiç görünmemesidir.
+info "Jira adresi…"
+if [[ -n "${JIRA_BASE_URL:-}" && -n "${JIRA_CLOUD_BASE_URL:-}" ]]; then
+  err "JIRA_BASE_URL ve JIRA_CLOUD_BASE_URL birlikte dolu."
+  err "  Bu ikisi İKİ AYRI sürücüyü besler; hangisinin kullanılacağı TAHMİN EDİLMEZ."
+  die "Bu kurulumun konuştuğu Jira hangisiyse yalnızca onun adresini bırakın."
+elif [[ -n "${JIRA_CLOUD_BASE_URL:-}" ]]; then
+  ok "Jira: Cloud (${JIRA_CLOUD_BASE_URL})."
+elif [[ -n "${JIRA_BASE_URL:-}" ]]; then
+  ok "Jira: Data Center (${JIRA_BASE_URL})."
+else
+  # Ölümcül DEĞİL: panel açılır ve kurulum panelden tamamlanabilir. Ama sessiz
+  # de geçilmez — bu hâlde hiçbir ticket işlenmez.
+  warn "Ne JIRA_BASE_URL ne de JIRA_CLOUD_BASE_URL dolu."
+  warn "  Yığın açılır ve panel çalışır, ama HİÇBİR ticket işlenmez."
+  warn "  Kullandığınız Jira'nın adresini .env §5'e yazıp yeniden başlatın."
+fi
+
+# ── 4) Altyapı katmanı (NODE_ENV'den türetilir) ──────────────────────────────
+# MAESTRO_PROFILE kaldırıldı: sırların ve belgelerin NEREDE durduğu artık tek
+# başına NODE_ENV'den türetilir (apps/deploy/src/env.ts). İki ayrı değişken
+# olduğu sürece birbiriyle çelişebiliyordu ve çelişkinin bedeli açılışta ölen
+# bir yığındı — üstelik log'a bakmayan biri için "kurulum bitti" görünüyordu.
+#
+# Profil ARTIK ürünün ne yapabileceğine karışmaz. Kod hattı (scm) her kurulumda
+# kuruludur; hangi akışın çalışacağı ticket başına panelden seçilir.
+info "Altyapı katmanı…"
+if [[ "${NODE_ENV}" == "production" ]]; then
+  # Vault + S3: üretim katmanı. Biri eksikse süreç açılışta ölür, o yüzden
+  # burada — yığın başlamadan — söylüyoruz.
+  for v in VAULT_ADDR VAULT_ROLE_ID VAULT_SECRET_ID STORAGE_ENDPOINT; do
+    [[ -n "${!v:-}" ]] || die "NODE_ENV=production ise ${v} zorunludur (Vault + S3 katmanı)."
+  done
+  ok "Altyapı: production (Vault + S3 doğrulandı)."
+else
+  # Sırlar .env'de, belgeler Postgres'te. Pilotun ve bugünkü sahanın hâli.
+  ok "Altyapı: development (sırlar .env'de, belgeler Postgres'te)."
+fi
 
 # ── 5) Motorun Jira kimliği ──────────────────────────────────────────────────
 # Bu boşsa keşif `assignee = currentUser()` ile çalışır: jetonun sahibi kimse

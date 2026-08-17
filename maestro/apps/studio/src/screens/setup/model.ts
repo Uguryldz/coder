@@ -21,6 +21,49 @@ export const FLOW_TYPES = ["analiz", "duzeltme", "gelistirme"] as const;
 export type FlowType = (typeof FLOW_TYPES)[number];
 
 /**
+ * Which flows touch a repository — and therefore need a repository connection
+ * before the wizard may offer them.
+ *
+ * `analiz` produces a document and stops, so it works on an install that has
+ * never heard of GitHub. The other two write code and open a pull request; a
+ * run that reaches those steps with no SCM connection cannot finish.
+ *
+ * This exists because the failure it prevents was expensive and silent. The
+ * radio group offered all three unconditionally, an operator picked "Yeni özellik
+ * geliştirme", the rule saved, the ticket ran — intake, analysis, publication,
+ * a human's approval — and only then did the engineering step fail. Every one
+ * of those steps cost real time, and the thing that made them futile was
+ * knowable before the first click.
+ *
+ * The check is a PREREQUISITE, not a capability flag: it asks whether this
+ * install has been given a repository, which an operator can fix in the panel
+ * and see reflected here immediately. It is deliberately NOT a question about
+ * the server's profile — that was the old answer, and it was unfixable from
+ * the UI by design.
+ */
+export function flowNeedsRepository(flow: FlowType): boolean {
+  return flow !== "analiz";
+}
+
+/**
+ * Why a flow cannot be offered right now, as a catalog key — or `null` when it
+ * can.
+ *
+ * `scmConnectionCount` is `null` while the list is still loading. Unknown is
+ * NOT the same as zero: accusing an install of having no repository because a
+ * request has not come back yet would send an operator to Ayarlar for nothing,
+ * which is the same lie the prerequisite banner already takes care to avoid.
+ */
+export function flowUnavailableReason(
+  flow: FlowType,
+  scmConnectionCount: number | null,
+): string | null {
+  if (!flowNeedsRepository(flow)) return null;
+  if (scmConnectionCount === null) return null;
+  return scmConnectionCount === 0 ? "setup.flow.needs_scm" : null;
+}
+
+/**
  * Which ticket field the rule matches on. Mirrors the BFF's `MATCH_KINDS` and
  * the DB CHECK (migration 0020).
  *
@@ -160,11 +203,19 @@ export function flowDefaults(flow: FlowType): FlowDefaults {
  * suffered through; every blocked step here can say which field is empty or
  * which prerequisite is missing, and the caller renders it next to the button.
  */
-export function stepBlockedReason(step: SetupStep, draft: SetupDraft): string | null {
+export function stepBlockedReason(
+  step: SetupStep,
+  draft: SetupDraft,
+  scmConnectionCount: number | null = null,
+): string | null {
   switch (step) {
     case "flow":
-      // A radio group with a default selected can never be empty.
-      return null;
+      // A radio group with a default selected can never be EMPTY — but it can
+      // hold a choice this install cannot serve. `analiz` is always available,
+      // so an operator is never stranded here with nothing to pick; what they
+      // are stopped from doing is walking four more steps toward a run that
+      // was going to fail after a human had already approved its analysis.
+      return flowUnavailableReason(draft.flowType, scmConnectionCount);
     case "project":
       if (draft.jiraConnectionId === "") return "setup.blocked.no_jira_connection_picked";
       if (draft.jiraProject === "") return "setup.blocked.no_project";

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@maestro/adapter-ado": "workspace:*",
+    "@maestro/adapter-github": "workspace:*",
     "@maestro/adapter-jira": "workspace:*",
     "@maestro/adapter-ldap": "workspace:*",
     "@maestro/audit": "workspace:*",

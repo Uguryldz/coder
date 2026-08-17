@@ -1,7 +1,7 @@
 import type { DeployEnv } from "./env.js";
 import { vaultMounts } from "./env.js";
 import { objectLockConfig } from "./object-lock.js";
-import type { PortKey, Profile } from "./profile.js";
+import { NOT_CONFIGURED_DRIVER, type PortKey, type Profile } from "./profile.js";
 
 /**
  * Per-port driver configuration, built from the environment.
@@ -77,6 +77,56 @@ export function jiraCloudConfig(env: DeployEnv, secrets: unknown): Record<string
     apiTokenRef: env.JIRA_TOKEN_REF ?? "kv/jira#token",
     webhookSecretRef: env.JIRA_WEBHOOK_SECRET_REF,
     deps: { secrets },
+  };
+}
+
+/**
+ * The GitHub `scm` config — the driver every deployment composes.
+ *
+ * It asks the operator for NOTHING. `mode: cloud` defaults both endpoints to
+ * github.com (`packages/adapter-github/src/config.ts`), so the whole config is
+ * a secret reference with a default, and the port therefore builds on a stack
+ * where nobody has configured a repository yet. That is deliberate and it is
+ * the difference this file is here to make: a port that composes can be ASKED
+ * whether it works, and a wizard can report the answer before an operator
+ * commits to a flow. A port that refused at composition time could only be
+ * discovered by a run that had already written and published an analysis.
+ *
+ * Having no credential is not the same as having a broken one. The driver
+ * resolves `tokenRef` lazily, at the first call, so an install with no GitHub
+ * token still boots and still runs the analysis line end to end — the
+ * engineering steps are the only ones that ever ask for it.
+ *
+ * `GITHUB_API_BASE_URL`/`GITHUB_GRAPHQL_URL` are for GitHub Enterprise Server,
+ * where there is no default to guess: the pair travels together, and naming one
+ * without the other is refused by the driver's own schema rather than by a
+ * silent fallback to github.com — a bank's on-premise GitHub is exactly the
+ * deployment that must not quietly reach the internet instead.
+ */
+export function githubConfig(env: DeployEnv): Record<string, unknown> {
+  const read = (name: string): string | undefined => {
+    const value = env.source[name];
+    return value === undefined || value.trim() === "" ? undefined : value.trim();
+  };
+  const apiBaseUrl = read("GITHUB_API_BASE_URL");
+  const graphqlUrl = read("GITHUB_GRAPHQL_URL");
+  const tokenRef = read("GITHUB_TOKEN_REF") ?? "kv/github#token";
+  if (apiBaseUrl === undefined && graphqlUrl === undefined) {
+    return { mode: "cloud", tokenRef };
+  }
+  return {
+    mode: "enterprise",
+    apiBaseUrl: required(
+      apiBaseUrl,
+      "GITHUB_API_BASE_URL",
+      "GITHUB_GRAPHQL_URL names an enterprise GitHub, so its REST root must be named too",
+    ),
+    graphqlUrl: required(
+      graphqlUrl,
+      "GITHUB_GRAPHQL_URL",
+      "GITHUB_API_BASE_URL names an enterprise GitHub, so its GraphQL root must be named too",
+    ),
+    tokenRef,
   };
 }
 
@@ -329,10 +379,10 @@ export function llmConfig(env: DeployEnv): Record<string, unknown> {
  * same way once they are selectable.
  */
 export function scanConfig(env: DeployEnv, driver: string): Record<string, unknown> {
-  // The refusing driver of the analysis-only release reads no config: it has no
-  // container to pin, because it never runs one. Demanding a digest from a
-  // deployment that does not scan is the same wall `ADO_BASE_URL` was.
-  if (driver === "unavailable") return {};
+  // The not-configured driver reads no config: it has no container to pin,
+  // because it never runs one. Demanding a digest from a deployment that has
+  // not set a scanner up is the same wall `ADO_BASE_URL` was.
+  if (driver === NOT_CONFIGURED_DRIVER) return {};
   const byTool: Record<string, string | undefined> = {
     trivy: env.SCAN_IMAGE_TRIVY,
     semgrep: env.SCAN_IMAGE_SEMGREP,

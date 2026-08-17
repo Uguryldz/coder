@@ -243,6 +243,13 @@ export function SetupScreen(): ReactNode {
       id: c.id,
       label: `${c.displayName} · ${t(`onboard.scm.kind.${c.kind}`)}`,
     })),
+    // `isSuccess`, for the same reason `missingScm` below uses it: only an
+    // ANSWERED request may be turned into "this install has no repository".
+    // In flight or failed, the count stays unknown and step 1 offers every
+    // flow rather than accusing the deployment of a gap it may not have.
+    scmConnectionCount: scmConnections.isSuccess
+      ? (scmConnections.data?.connections ?? []).length
+      : null,
     scmRepos: reposBody?.ok === true ? reposBody.repos.map((r) => r.fullName) : [],
     scmReposLoading: draft.connectionId !== "" && scmRepos.isFetching,
     scmReposError:
@@ -361,7 +368,9 @@ export function SetupScreen(): ReactNode {
 
   // ── navigation ────────────────────────────────────────────────────────────
 
-  const blocked = stepBlockedReason(step, draft);
+  // The repository count is what step 1 needs: a flow that writes code cannot
+  // be walked toward on an install that has no repository connection.
+  const blocked = stepBlockedReason(step, draft, data.scmConnectionCount);
   const isLast = stepIndex === SETUP_STEPS.length - 1;
 
   const goBack = (): void => {

@@ -18,10 +18,14 @@ Kısaca: **Jira'ya düşen bir talebi alır, analiz dokümanı üretir, onaya su
 3. Kurum içi yapay zekâ uç noktasını kullanarak analiz dokümanı yazar.
 4. Dokümanı Jira'ya iliştirir ve bir **insan onayına** sunar.
 
-Bugün sahaya çıkan sürüm (`analiz` profili) bu hattı uçtan uca çalıştırır.
-Kod yazma / PR açma / birleştirme hattı yazılıdır ama bu sürümün parçası
-değildir; o portlar "bu sürüm bunu yapmaz" diye **adıyla reddeder** — yanlış
-yapılandırılmış bir sunucuya bağlanmayı denemez.
+Bu hat her kurulumda uçtan uca çalışır. Kod yazma / PR açma / birleştirme
+hattı da **kuruludur**: hangi talebin hangi akışla (yalnızca analiz, hata
+düzeltme, yeni özellik) koşacağı panelden, ticket başına seçilir — sunucu
+yapılandırmasıyla değil.
+
+Kod yazan akışlar bir **kod deposu bağlantısı** ister. Bağlantı tanımlı
+değilse kurulum sihirbazı o akışları **gerekçesiyle birlikte, daha ilk adımda**
+kapatır; onaylanmış bir analizden sonra ölen koşu diye bir şey yoktur.
 
 ---
 
@@ -54,7 +58,8 @@ sunucuda pull.
 - **Jira** (Data Center ya da Cloud) — talepleri okur, yorum yazar
 - **Kurum içi LLM uç noktası** — analizi bu üretir
 - **LDAP/AD** — yalnızca LDAP ile giriş kullanacaksanız
-- **Azure DevOps Server/TFS** — yalnızca `prod` profiline geçerseniz
+- **Kod deposu (GitHub / GitHub Enterprise)** — yalnızca kod yazan akışlar için;
+  bağlantı panelden tanımlanır
 
 > Maestro dışarıya **çıkmaz**. `install.sh` de internete bağlanmaz: imaj
 > indirmez, sürüm sorgulamaz, telemetri göndermez.
@@ -194,7 +199,7 @@ konteyner başlatmadan durur:
 
 - `.env` yok, ya da içinde `DEGISTIR` kalmış
 - Zorunlu değişkenlerden biri boş (**`MAESTRO_BOT_ACCOUNT_ID` dâhil**)
-- `MAESTRO_PROFILE` ile `NODE_ENV` uyumsuz
+- `NODE_ENV=production` ama Vault/S3 değişkenleri boş
 - `CONNECTOR_MASTER_KEY` 32 bayt değil
 - `.env`'de eski biçimli sır adı (`MAESTRO_SECRET_JIRA_TOKEN`) ya da eski
   referans biçimi (`env:JIRA_TOKEN`) var
@@ -315,7 +320,10 @@ loglar temizdir, panel çalışır — ama iş görülmez.
 | Panele hiç erişilemiyor | `STUDIO_PORT` yayınlanmamış ya da güvenlik duvarı kapalı | `docker compose ps` ile port eşlemesini kontrol edin |
 | `SecretNotFoundError` — ama `.env`'de değer dolu | Sır değişkeninin **adı** yanlış (`MAESTRO_SECRET_JIRA_TOKEN` gibi) | Adları `.env.example`'dan **birebir** kopyalayın |
 | Açılışta `SecretKeyError` | Referans biçimi `env:JIRA_TOKEN` gibi; `<mount>/<yol>#alan` olmalı | `JIRA_TOKEN_REF="kv/jira#token"` |
-| BFF açılmıyor, env-file hatası | `MAESTRO_PROFILE=analiz` ile `NODE_ENV=production` birlikte | `NODE_ENV="development"` (bkz. `.env.example` §2) |
+| Açılışta `JIRA_BASE_URL: the work port has no default instance` | Jira **Cloud** kullanıyorsunuz ama Cloud adresi boş; sürücü Data Center'a düşüyor | `.env` §5'te `JIRA_CLOUD_BASE_URL`'i doldurun, `JIRA_BASE_URL`'i yorumlayın |
+| Açılışta `JIRA_BASE_URL ve JIRA_CLOUD_BASE_URL birlikte tanımlı` | İki adres birden dolu; hangisinin kullanılacağı tahmin edilmez | Konuştuğunuz Jira hangisiyse **yalnızca** onun adresini bırakın |
+| Panel açılıyor ama hiçbir ticket işlenmiyor | Ne `JIRA_BASE_URL` ne `JIRA_CLOUD_BASE_URL` dolu — Jira portu "henüz tanımlanmadı" diyor | `.env` §5'e Jira adresinizi yazıp yeniden başlatın |
+| BFF açılmıyor, env-file hatası | `NODE_ENV=production` ama sırlar hâlâ `.env`'de (Vault yok) | `NODE_ENV="development"` (bkz. `.env.example` §2) |
 | Yeni bir alan kaydediliyor ama **veritabanına yazılmıyor** | İmajdaki Prisma istemcisi bayat, yeni sütunu yok sayıyor | Güncel koddan yeniden build (§2.3-c) |
 | Model çağrıları **404** | `LLM_BASE_URL` sonunda `/v1` var, sürücü de ekliyor | Sondaki `/v1`'i silin |
 | `unable to verify the first certificate` | Banka kök CA'sı Node'un listesinde yok | `NODE_EXTRA_CA_CERTS` + CA'yı `certs/` içine koyun |
@@ -368,8 +376,10 @@ Dürüst liste — sunum değil, kurulum gerçeği:
 - **E-posta bildirimi yok.** SMTP sürücüsü yazıldı, taşıma katmanı bağlanmadı.
   Çalışan kanallar: Jira yorumu, Teams, Slack.
 - **SAML/OIDC SSO yok.** Kimlik doğrulama LDAP/LDAPS veya yerel hesap.
-- **Kod yazma hattı bu sürümde kapalı.** `analiz` profilinde scm/ci/tarama
-  portları adıyla reddeder. Uçtan uca canlı denenmemiştir.
-- **Vault bu pakette varsayılan değil.** `analiz` profilinde sırlar `.env`
-  dosyasındadır (`chmod 600`). Vault'a geçiş `prod` profiliyle yapılır ve
-  ayrıca S3 uyumlu depolama + Azure DevOps gerektirir.
+- **Kod yazma hattı kuruludur ama uçtan uca canlı denenmemiştir.** scm portu
+  (GitHub) her kurulumda kuruludur; build doğrulaması ve kod taraması ise
+  yapılandırılana kadar "henüz yapılandırılmadı" diye **adıyla** cevap verir —
+  sessizce "bulgu yok" DÖNDÜRMEZ.
+- **Vault bu pakette varsayılan değil.** `NODE_ENV=development` iken sırlar
+  `.env` dosyasındadır (`chmod 600`). Vault'a geçiş `NODE_ENV=production` ile
+  yapılır ve ayrıca S3 uyumlu depolama gerektirir.

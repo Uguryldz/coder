@@ -2,6 +2,7 @@ import type { CiPort, PortRegistry, SecretPort } from "@maestro/ports";
 import { resolvePorts, type PortBundle, type PortSelection } from "@maestro/workflows";
 import {
   adoConfig,
+  githubConfig,
   jiraCloudConfig,
   jiraConfig,
   llmConfig,
@@ -12,7 +13,17 @@ import {
   storageConfig,
 } from "./driver-config.js";
 import type { DeployEnv } from "./env.js";
-import { ALL_PORT_KEYS, assertProfileComplete, driversFor, type DriverMap, type PortKey } from "./profile.js";
+import {
+  ALL_PORT_KEYS,
+  assertOneJiraInstance,
+  assertProfileComplete,
+  driversFor,
+  JIRA_CLOUD_DRIVER,
+  NOT_CONFIGURED_DRIVER,
+  workDriverFor,
+  type DriverMap,
+  type PortKey,
+} from "./profile.js";
 
 /**
  * The composition root's resolution half.
@@ -66,11 +77,30 @@ export function buildPortSelection(inputs: DeploymentInputs): DeploymentSelectio
   // driver is selected fails on a variable the operator was right not to set.
   const usesAdo = drivers.scm === "ado" || drivers.ci === "ado";
   const ado = usesAdo ? adoConfig(env) : {};
+  // Cloud or Data Center is a property of the Jira this install talks to, read
+  // off the URL the operator named rather than off the profile — see
+  // `workDriverFor`. Refused by name when both are set, because a tie-break
+  // would silently point a bank's tickets at the wrong Jira.
+  assertOneJiraInstance(env.source);
+  const workChoice = workDriverFor(env.source);
+  // A fresh install names no Jira. The port still composes — the wizard is how
+  // one is configured, so boot cannot demand it — and refuses on first use.
+  const workDriver = workChoice.problem === "neither" ? NOT_CONFIGURED_DRIVER : workChoice.driver;
   const work =
-    drivers.work === "jira-cloud" ? jiraCloudConfig(env, secrets) : jiraConfig(env, secrets);
+    workChoice.problem === "neither"
+      ? {}
+      : workDriver === JIRA_CLOUD_DRIVER
+        ? jiraCloudConfig(env, secrets)
+        : jiraConfig(env, secrets);
+  // The scm port is GitHub by default and ADO only where a deployment says so.
+  // `githubConfig` demands nothing of the operator (see it for why), which is
+  // what lets the engineering ports COMPOSE on an install that has not been
+  // pointed at a repository yet — the wizard, not the boot sequence, is where
+  // that gap is supposed to be reported.
+  const scmConfig = drivers.scm === "github" ? githubConfig(env) : ado;
   return {
-    work: { driver: drivers.work, config: work },
-    scm: { driver: drivers.scm, config: ado },
+    work: { driver: workDriver, config: work },
+    scm: { driver: drivers.scm, config: scmConfig },
     ci: { driver: drivers.ci, config: ado },
     llm: { driver: drivers.llm, config: llmConfig(env) },
     scan: { driver: drivers.scan, config: scanConfig(env, drivers.scan) },

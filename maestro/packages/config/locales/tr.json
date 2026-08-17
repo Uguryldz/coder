@@ -1942,6 +1942,7 @@
   "setup.flow.meta.analiz": "Kod deposuna dokunulmaz. Sonuçta yalnızca bir analiz belgesi çıkar ve onayınıza sunulur.",
   "setup.flow.meta.duzeltme": "Kod yazılır ve pull request açılır. Analiz onay kapısı atlanır; PR yine sizin incelemenizden geçer, merge'i insan yapar.",
   "setup.flow.meta.gelistirme": "En uzun akış: analiz → onay → kod → PR. Her PR için altı kontrolün tamamı çalışır, merge'i insan yapar.",
+  "setup.flow.needs_scm": "Bu akış kod yazar ve pull request açar; bunun için bir kod deposu bağlantısı gerekir ve bu kurulumda henüz tanımlı değil. Ayarlar & bağlantılar ekranından bir GitHub ya da Azure DevOps bağlantısı ekleyip test edin. Bağlantı olmadan da “Yalnızca analiz” ile devam edebilirsiniz.",
   "setup.project.title": "Hangi Jira projesi, hangi uygulama?",
   "setup.project.sub": "2. adım · Maestro'nun çalışacağı proje ve kod deposu",
   "setup.project.intro": "Maestro'nun ticket'ları hangi Jira projesinden alacağını ve kodu hangi depoda yazacağını seçin. Listeler bağlantılarınızdan canlı okunur — elle yazmanız gereken bir şey yok.",

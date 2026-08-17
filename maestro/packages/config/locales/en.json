@@ -1942,6 +1942,7 @@
   "setup.flow.meta.analiz": "The repository is never touched. The only output is an analysis document, put in front of you for approval.",
   "setup.flow.meta.duzeltme": "Code is written and a pull request is opened. The analysis gate is skipped; the PR still goes through your review and a human does the merge.",
   "setup.flow.meta.gelistirme": "The longest flow: analysis → approval → code → PR. All six checks run on every pull request and a human does the merge.",
+  "setup.flow.needs_scm": "This flow writes code and opens a pull request, which needs a repository connection — and none is configured on this install. Add and test a GitHub or Azure DevOps connection on the Settings & connections screen. You can continue with “Analysis only” without one.",
   "setup.project.title": "Which Jira project, which application?",
   "setup.project.sub": "step 2 · the project and repository Maestro works with",
   "setup.project.intro": "Choose which Jira project Maestro takes tickets from and which repository it writes code in. The lists are read live from your connections — there is nothing to type by hand.",

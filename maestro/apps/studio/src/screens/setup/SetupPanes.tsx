@@ -6,6 +6,7 @@ import { STATUS_POINTS, type StatusPoint } from "../common/status-map.ts";
 import {
   DATA_CLASSES,
   FLOW_TYPES,
+  flowUnavailableReason,
   type DataClass,
   type FlowType,
   type MatchKind,
@@ -31,6 +32,17 @@ export interface PaneData {
   readonly jiraProjectsError: string | null;
   /** SCM connections, and the repos of the chosen one. */
   readonly scmConnections: readonly { id: string; label: string }[];
+  /**
+   * How many repository connections exist, or `null` while that is still
+   * unknown (the request is in flight, or it failed).
+   *
+   * Separate from `scmConnections.length` because an empty array and an
+   * unanswered question look identical there, and step 1 has to tell them
+   * apart: "you have no repository connection" is a claim about the install,
+   * and making it while a request is still running sends an operator to
+   * Ayarlar to fix something that was never broken.
+   */
+  readonly scmConnectionCount: number | null;
   readonly scmRepos: readonly string[];
   readonly scmReposLoading: boolean;
   readonly scmReposError: string | null;
@@ -65,36 +77,56 @@ export interface PaneProps {
  * outcome sentence beside the label so the difference is visible before the
  * click, not after.
  */
-export function FlowPane({ draft, onChange }: PaneProps): ReactNode {
+export function FlowPane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
   return (
     <Card title={t("setup.flow.title")} subtitle={t("setup.flow.sub")}>
       <p className="scr-prose">{t("setup.flow.intro")}</p>
       <div className="setup-choices" role="radiogroup" aria-label={t("setup.flow.title")}>
-        {FLOW_TYPES.map((flow) => (
-          <label
-            key={flow}
-            className={
-              "setup-choice" + (draft.flowType === flow ? " setup-choice--on" : "")
-            }
-          >
-            <input
-              type="radio"
-              name="setup-flow"
-              value={flow}
-              checked={draft.flowType === flow}
-              onChange={() => onChange({ flowType: flow as FlowType })}
-            />
-            <span className="setup-choice__body">
-              <span className="setup-choice__label">{t(`setup.flow.name.${flow}`)}</span>
-              <span className="setup-choice__desc">{t(`setup.flow.desc.${flow}`)}</span>
-              {/* What the choice COSTS, spelled out: which gates run, whether a
-                  repository is touched. An operator picking "geliştirme" should
-                  learn here that it opens pull requests, not from the summary. */}
-              <span className="setup-choice__meta">{t(`setup.flow.meta.${flow}`)}</span>
-            </span>
-          </label>
-        ))}
+        {FLOW_TYPES.map((flow) => {
+          /**
+           * Why this flow cannot be run here, if it cannot.
+           *
+           * The option is still SHOWN and still selectable. Hiding it would
+           * answer "why can't Maestro fix bugs?" with silence, and a disabled
+           * radio with no explanation is the same silence with a grey tint.
+           * What it gains instead is a sentence naming the missing piece and a
+           * link to where it is added — the same treatment a missing Jira
+           * connection already gets — and "İleri" stops until it is resolved.
+           */
+          const blocked = flowUnavailableReason(flow, data.scmConnectionCount);
+          return (
+            <label
+              key={flow}
+              className={
+                "setup-choice" +
+                (draft.flowType === flow ? " setup-choice--on" : "") +
+                (blocked === null ? "" : " setup-choice--blocked")
+              }
+            >
+              <input
+                type="radio"
+                name="setup-flow"
+                value={flow}
+                checked={draft.flowType === flow}
+                onChange={() => onChange({ flowType: flow as FlowType })}
+              />
+              <span className="setup-choice__body">
+                <span className="setup-choice__label">{t(`setup.flow.name.${flow}`)}</span>
+                <span className="setup-choice__desc">{t(`setup.flow.desc.${flow}`)}</span>
+                {/* What the choice COSTS, spelled out: which gates run, whether a
+                    repository is touched. An operator picking "geliştirme" should
+                    learn here that it opens pull requests, not from the summary. */}
+                <span className="setup-choice__meta">{t(`setup.flow.meta.${flow}`)}</span>
+                {blocked !== null && (
+                  <span className="scr-note scr-note--warn setup-choice__blocked">
+                    {t(blocked)}
+                  </span>
+                )}
+              </span>
+            </label>
+          );
+        })}
       </div>
     </Card>
   );

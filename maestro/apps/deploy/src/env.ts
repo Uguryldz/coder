@@ -80,9 +80,9 @@ export const DeployEnvSchema = z.object({
   // required by `requireVaultApprole`, not by the schema, so the dev profile
   // does not have to invent one.
   // `optionalSetting()`, not `.min(1).optional()`: the bank compose forwards
-  // these as `${VAULT_ROLE_ID:-}`, so an `analiz` deployment — which has no
-  // Vault at all — delivers them as empty strings and `min(1)` refused to boot
-  // over credentials that profile never reads. `requireVaultApprole` below is
+  // these as `${VAULT_ROLE_ID:-}`, so a deployment with no Vault at all
+  // delivers them as empty strings and `min(1)` refused to boot over
+  // credentials that profile never reads. `requireVaultApprole` below is
   // what demands them, and it demands them only from the profile that uses
   // Vault; that is the check that should fire, and it names both variables.
   VAULT_ROLE_ID: optionalSetting(),
@@ -97,10 +97,10 @@ export const DeployEnvSchema = z.object({
   VAULT_MOUNTS: z.string().min(1).default("kv,git"),
 
   // ── ADO topology ────────────────────────────────────────────────────────
-  // Blank means unset, for the same reason as the Vault pair above: in the
-  // `analiz` profile the scm and ci ports are refusing drivers and nothing here
-  // is read, yet compose still forwards `${ADO_ORG:-}` as an empty string. The
-  // deployment that legitimately has no Azure DevOps must boot.
+  // Blank means unset, for the same reason as the Vault pair above: the scm
+  // port is GitHub unless a deployment says otherwise, so nothing here is read
+  // on most installs, yet compose still forwards `${ADO_ORG:-}` as an empty
+  // string. The deployment that legitimately has no Azure DevOps must boot.
   ADO_ORG: optionalSetting(),
   ADO_PROJECT: optionalSetting(),
   ADO_WEBHOOK_USERNAME: z.string().min(1).default("maestro-ci"),

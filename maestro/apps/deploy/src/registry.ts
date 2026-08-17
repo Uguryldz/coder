@@ -1,4 +1,5 @@
 import { registerAdoDrivers } from "@maestro/adapter-ado";
+import { registerGithubDrivers } from "@maestro/adapter-github";
 import { registerJiraDrivers } from "@maestro/adapter-jira";
 import { registerLlmDrivers } from "@maestro/llm-gateway";
 import { registerNotifyDrivers } from "@maestro/notify";
@@ -8,8 +9,8 @@ import { registerScanDrivers } from "@maestro/scanners";
 import { registerRunnerDrivers } from "@maestro/runners";
 import { registerSecretDrivers } from "@maestro/secrets";
 import { registerStorageDrivers } from "@maestro/storage";
-import { CI_UNAVAILABLE_DRIVER, SCAN_UNAVAILABLE_DRIVER, SCM_UNAVAILABLE_DRIVER } from "./profile.js";
-import { unavailableCiPort, unavailableScanPort, unavailableScmPort } from "./stores/unavailable-ports.js";
+import { NOT_CONFIGURED_DRIVER } from "./profile.js";
+import { notConfiguredCiPort, notConfiguredScanPort, notConfiguredWorkPort } from "./stores/unavailable-ports.js";
 import type { PublishDeps } from "@maestro/publish";
 import type { ScanDeps } from "@maestro/scanners";
 import type { NotifyDeps } from "@maestro/notify";
@@ -76,6 +77,16 @@ export function buildRegistry(deps: RegistrationDeps): PortRegistry {
     resolveToken: (tokenRef) => deps.secrets.get(tokenRef),
     issueSecret: (scope, ttlSeconds) => deps.secrets.issueShortLived(scope, ttlSeconds),
   });
+  // GitHub speaks the `scm` port for every deployment (see `profile.ts`). Same
+  // callback shape as ADO and for the same reason: the adapter must not import
+  // `@maestro/secrets`, so binding the SecretPort is this module's job
+  // (M44/M80). `resolveToken` is called lazily — at the first API call, not at
+  // registration — which is what lets a deployment with no GitHub credential
+  // boot and run the analysis line.
+  registerGithubDrivers(registry, {
+    resolveToken: (tokenRef) => deps.secrets.get(tokenRef),
+    issueSecret: (scope, ttlSeconds) => deps.secrets.issueShortLived(scope, ttlSeconds),
+  });
   registerStorageDrivers(registry);
   registerLlmDrivers(registry, deps.llm);
   registerNotifyDrivers(registry, deps.notify);
@@ -83,13 +94,28 @@ export function buildRegistry(deps: RegistrationDeps): PortRegistry {
   registerScanDrivers(registry, deps.scan);
   registerRunnerDrivers(registry);
 
-  // The analysis-only release's scm/ci: every method rejects with a named
-  // error. Registered here, next to the real drivers, because a port with no
-  // driver at all is refused by `assertProfileComplete` before boot — see
-  // `stores/unavailable-ports.ts` for why refusing beats omitting.
-  registry.register<ScmPort>("scm", SCM_UNAVAILABLE_DRIVER, () => unavailableScmPort());
-  registry.register<CiPort>("ci", CI_UNAVAILABLE_DRIVER, () => unavailableCiPort());
-  registry.register<ScanPort>("scan", SCAN_UNAVAILABLE_DRIVER, () => unavailableScanPort());
+  // `ci` and `scan` when nothing has configured them yet: every method rejects
+  // with a named, catchable error. Registered here next to the real drivers,
+  // because a port with no driver at all is refused by `assertProfileComplete`
+  // before boot — see `stores/unavailable-ports.ts` for why a port that says
+  // "not configured" beats one that is simply absent.
+  //
+  // There is deliberately NO entry for `scm`. It used to have one, and that is
+  // what made a deployment decide whether the product could write code at all:
+  // the wizard offered "Hata düzeltme", the run reached the engineering step,
+  // and the port refused because of a profile string. The GitHub driver
+  // registered above is now the answer for every deployment, and the question
+  // "can this install actually reach a repository" belongs to the connection
+  // an admin adds in the UI.
+  //
+  // `work` joins them for a narrower reason: a fresh stack has named no Jira
+  // yet, and it must still boot — the wizard is how a Jira gets configured, so
+  // a process that refused to start without one could never be configured
+  // through its own panel. Which Jira driver a CONFIGURED install uses is
+  // derived from its URLs (`workDriverFor`), never from this entry.
+  registry.register<WorkPort>("work", NOT_CONFIGURED_DRIVER, () => notConfiguredWorkPort());
+  registry.register<CiPort>("ci", NOT_CONFIGURED_DRIVER, () => notConfiguredCiPort());
+  registry.register<ScanPort>("scan", NOT_CONFIGURED_DRIVER, () => notConfiguredScanPort());
 
   return registry;
 }

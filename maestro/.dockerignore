@@ -26,9 +26,19 @@ dist
 
 # Local state that must never reach an image: real credentials live in the
 # first, and the second is a developer's own machine.
-.env
-.env.*
-!deploy/.env.example
+#
+# `**/` and not a bare name. A `.dockerignore` pattern without a slash matches
+# only at the CONTEXT ROOT — `.env` never excluded `deploy/.env`, and that file
+# (untracked, 18 KB, no DEGISTIR left in it, so: real values) was shipping
+# inside `maestro/node`. Found by listing `/app` in a built image, not by
+# reading this file, which is why the rule now says what it is defending
+# against. Anything ignored here is invisible to the build, so a new
+# credential file anywhere in the tree is covered without another edit.
+# No `!` exception: neither Dockerfile copies an env file (the bundle's
+# `.env.example` ships beside `docker-compose.yml`, not inside the image), so
+# an allow-list entry here would only be a way back in for the next one.
+**/.env
+**/.env.*
 .claude
 .vscode
 .playwright-mcp

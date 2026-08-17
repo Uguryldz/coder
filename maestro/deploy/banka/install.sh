@@ -82,10 +82,17 @@ if [[ -n "${DOTENV_VERSION:-}" && "${DOTENV_VERSION}" != "${BUNDLE_VERSION_SCRIP
   onay "Yine de devam edilsin mi?" || exit 0
 fi
 
-# Doldurulmamış alanlar
-if grep -q "DEGISTIR" .env; then
+# Doldurulmamış alanlar.
+#
+# Yalnızca GERÇEK atamalara bakılır (`^AD=`), açıklama satırlarına değil.
+# Dosyanın tamamında düz arama yapmak, belirtecin adını ANLATAN bir yorum
+# satırının kendisini "doldurulmamış alan" saymak demektir — nitekim bu bir kez
+# oldu ve kusursuz doldurulmuş bir .env, bir açıklama cümlesi yüzünden
+# reddedildi. Bir dosyanın kendi belgelenmesi, o dosyayı geçersiz kılmamalıdır.
+EKSIK_SATIR=$(grep -nE '^[A-Za-z_][A-Za-z0-9_]*=.*DEGISTIR' .env || true)
+if [[ -n "$EKSIK_SATIR" ]]; then
   err ".env içinde DEGISTIR kalmış — doldurulmamış alan var:"
-  grep -n "DEGISTIR" .env | sed 's/^/    /'
+  printf '%s\n' "$EKSIK_SATIR" | sed 's/^/    /'
   die "Bu alanları doldurup tekrar çalıştırın."
 fi
 ok "Doldurulmamış alan yok."
@@ -340,6 +347,31 @@ else
   die "İmajı yeniden build edin (Dockerfile.node 'prisma generate' adımını içerir)."
 fi
 
+# İmajın içinde doldurulmuş bir .env kalmış mı.
+#
+# Bu bir yapılandırma kontrolü değil, GÜVENLİK kontrolüdür ve buraya bir kez
+# gerçekten yaşandığı için konuldu: sahaya çıkacak imajda `/app/deploy/.env`
+# vardı — 18 KB, içinde tek bir DEGISTIR kalmamış, yani geliştiricinin gerçek
+# veritabanı parolası ve jetonları. Sebep `.dockerignore`'daki `.env` kalıbının
+# eğik çizgi içermemesiydi: böyle bir kalıp yalnızca bağlam kökünde eşleşir ve
+# `deploy/.env` hiç dışlanmamıştı.
+#
+# Kalıp düzeltildi, ama düzeltilen şey KAYNAKTIR; elinizdeki imaj ondan önce
+# build edilmiş olabilir ve dışarıdan bakınca ikisi ayırt edilemez. Sızıntı
+# yalnızca imajın İÇİ listelenerek görülür, ki kimse bunu rutin olarak yapmaz.
+# Bu yüzden kurulum onu operatör adına yapar: imaj bir kez bankaya girdikten
+# sonra geri alınamaz.
+if docker run --rm --entrypoint sh "${MAESTRO_NODE_IMAGE}" \
+     -c "find /app -name '.env' -not -name '*.example' -print -quit 2>/dev/null | grep -q ." >/dev/null 2>&1; then
+  err "  İmajın İÇİNDE bir .env dosyası var — gerçek kimlik bilgisi taşıyor olabilir."
+  err "  Görmek için:"
+  err "    docker run --rm --entrypoint sh ${MAESTRO_NODE_IMAGE} -c \"find /app -name '.env' -not -name '*.example'\""
+  err "  Bu imaj bankaya GÖTÜRÜLMEMELİDİR. '.dockerignore' içindeki kalıbın"
+  err "  '**/.env' olduğu güncel koddan yeniden build edin ve bu etiketi silin."
+  die "İmajda kimlik bilgisi sızıntısı var."
+fi
+ok "  İmajda doldurulmuş .env yok."
+
 # ── 10) Compose doğrula ──────────────────────────────────────────────────────
 info "Compose doğrulanıyor…"
 docker compose config >/dev/null || die "compose config HATALI (.env eksik/yanlış?)."
@@ -413,10 +445,25 @@ docker compose up -d
 # ── 12) Sağlık ───────────────────────────────────────────────────────────────
 echo
 info "Servislerin hazır olması bekleniyor (~90 sn)…"
+# Konteynerler ADIYLA değil, compose'a SORULARAK bulunur.
+#
+# Burada eskiden `docker inspect maestro-bff` yazıyordu ve bu, sabit
+# `container_name:` alanlarına bağlıydı. O alanlar kaldırıldı (aynı sunucuda
+# ikinci bir kurulumu imkânsız kılıyorlardı), dolayısıyla konteynerin adı artık
+# yığın adına göre değişir: `maestro-bff-1`, `kabul-bff-1`, …
+#
+# Sabit ad bırakılsaydı arıza sessiz olurdu: `docker inspect` bilinmeyen adda
+# hata verir, `|| echo ""` onu yutar, karşılaştırma hiçbir zaman "healthy"
+# olmaz ve betik 150 saniye bekledikten sonra sapasağlam bir yığın için
+# "servisler hazır olmadı" uyarısı basardı. Operatör de çalışan bir kurulumu
+# bozuk sanarak log okumaya başlardı.
 HAZIR=0
 for i in $(seq 1 30); do
-  bff=$(docker inspect maestro-bff --format '{{.State.Health.Status}}' 2>/dev/null || echo "")
-  std=$(docker inspect maestro-studio --format '{{.State.Health.Status}}' 2>/dev/null || echo "")
+  bff_id=$(docker compose ps -q bff 2>/dev/null || true)
+  std_id=$(docker compose ps -q studio 2>/dev/null || true)
+  bff=""; std=""
+  [[ -n "$bff_id" ]] && bff=$(docker inspect "$bff_id" --format '{{.State.Health.Status}}' 2>/dev/null || echo "")
+  [[ -n "$std_id" ]] && std=$(docker inspect "$std_id" --format '{{.State.Health.Status}}' 2>/dev/null || echo "")
   if [[ "$bff" == "healthy" && "$std" == "healthy" ]]; then HAZIR=1; break; fi
   sleep 5
 done

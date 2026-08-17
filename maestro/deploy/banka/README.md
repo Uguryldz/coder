@@ -107,6 +107,19 @@ docker run --rm --entrypoint sh maestro/node:$TAG \
 # d) Studio bundle'ı üretilmiş mi
 docker run --rm --entrypoint sh maestro/studio:$TAG \
   -c "ls /usr/share/nginx/html/index.html && echo VAR"
+
+# e) İmajın içinde GERÇEK kimlik bilgisi kalmış mı  ← GÜVENLİK KONTROLÜ
+docker run --rm --entrypoint sh maestro/node:$TAG \
+  -c "find /app -name '.env' -not -name '*.example'"
+#    Beklenen: HİÇBİR ÇIKTI OLMAMASI.
+#    Bir yol yazdırıyorsa imajı BANKAYA GÖTÜRMEYİN ve etiketi silin: içinde
+#    geliştiricinin gerçek parolaları ve jetonları vardır. Bir kez tam olarak
+#    bu oldu — `/app/deploy/.env`, 18 KB, doldurulmuş hâliyle. Sebebi
+#    `.dockerignore`'daki `.env` kalıbının eğik çizgi içermemesiydi: böyle bir
+#    kalıp yalnızca BAĞLAM KÖKÜNDE eşleşir, `deploy/.env` hiç dışlanmamıştı.
+#    Kalıp `**/.env` olarak düzeltildi; bu kontrol, düzeltmenin GEÇERLİ OLDUĞU
+#    bir koddan build ettiğinizi doğrular. İmajın içi, build eden makinenin
+#    diskiyle aynı şey değildir — tek görme yolu budur.
 ```
 
 ### 2.4 Yan imajları topla ve paketle
@@ -147,6 +160,13 @@ chmod 600 .env
 
 `.env`'i açın ve **`DEGISTIR`** yazan her satırı doldurun. `install.sh` dosyada
 `DEGISTIR` kalırsa çalışmayı reddeder.
+
+> **Aynı sunucuya ikinci bir kurulum mu yapıyorsunuz?** (kabul ortamı, sürüm
+> provası) `.env`'de **`COMPOSE_PROJECT_NAME`** ile **`STUDIO_PORT`**'u
+> mutlaka farklı verin. İkisi de varsayılan bırakılırsa compose ikinci kurulumu
+> yeni bir yığın olarak değil **mevcudun güncellemesi** olarak görür: çalışan
+> kurulumun veritabanı volume'üne bağlanır. "Denemek için yan tarafa kurdum"
+> sanılan işlem, üretimin üstüne yapılmış olur ve hiçbir uyarı çıkmaz.
 
 Doldururken dikkat edilecek dört alan:
 

@@ -21,7 +21,18 @@
 # Kurulum:  cp .env.example .env && <doldur> && ./install.sh
 # =============================================================================
 
-name: maestro
+# Yığının adı. Konteyner, ağ ve VOLUME adlarının tamamı bunun önekiyle üretilir
+# (`maestro_postgres-data` gibi), dolayısıyla bu satır "hangi veritabanı" demenin
+# bir başka biçimidir.
+#
+# .env'den gelir ÇÜNKÜ aynı sunucuda ikinci bir kurulum (kabul/test ortamı,
+# sürüm provası) yapmak sabit bir adla mümkün değildir: iki kurulum da `maestro`
+# adını alır, compose ikincisini yeni bir yığın olarak değil MEVCUDUN GÜNCELLEMESİ
+# olarak görür ve çalışan kurulumun volume'üne bağlanır. Sonuç, "yeni bir kurulum
+# denedim" ile "üretim veritabanının üstüne kuruldum" arasındaki farkın
+# kaybolmasıdır. Varsayılanı `maestro`'dur, yani tek kurulumlu bir sunucuda
+# hiçbir şey değişmez.
+name: ${COMPOSE_PROJECT_NAME:-maestro}
 
 # ── Ortak sertleştirme ───────────────────────────────────────────────────────
 # Geliştirme compose'undaki ayarların aynısı. Değiştirmeyin: imajlar uid 10001
@@ -176,7 +187,6 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   postgres:
     image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE gerekli (.env)}
-    container_name: maestro-postgres
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -197,7 +207,6 @@ services:
 
   redis:
     image: ${REDIS_IMAGE:?REDIS_IMAGE gerekli (.env)}
-    container_name: maestro-redis
     restart: unless-stopped
     logging: *default-logging
     # Parolasız Redis, ağa açık bir kuyruktur. Parola ZORUNLU.
@@ -213,7 +222,6 @@ services:
 
   temporal:
     image: ${TEMPORAL_IMAGE:?TEMPORAL_IMAGE gerekli (.env)}
-    container_name: maestro-temporal
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -239,7 +247,6 @@ services:
   migrate:
     <<: *node-hardening
     image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env)}
-    container_name: maestro-migrate
     restart: "no"
     environment:
       <<: [*node-env, *node-secrets]
@@ -257,7 +264,6 @@ services:
   bff:
     <<: *node-hardening
     image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env)}
-    container_name: maestro-bff
     environment:
       <<: [*node-env, *node-secrets]
       MAESTRO_ENTRYPOINT: apps/deploy/src/bin/bff.ts
@@ -302,7 +308,6 @@ services:
   worker:
     <<: *node-hardening
     image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env)}
-    container_name: maestro-worker
     environment:
       <<: [*node-env, *node-secrets]
       MAESTRO_ENTRYPOINT: apps/deploy/src/bin/worker.ts
@@ -317,7 +322,6 @@ services:
 
   studio:
     image: ${MAESTRO_STUDIO_IMAGE:?MAESTRO_STUDIO_IMAGE gerekli (.env)}
-    container_name: maestro-studio
     restart: unless-stopped
     logging: *default-logging
     security_opt:

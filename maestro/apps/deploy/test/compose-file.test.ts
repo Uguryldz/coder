@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { composePath, dockerfilePath, envExamplePath } from "./paths.js";
+import { composePath, dockerfilePath, dockerignorePath, envExamplePath } from "./paths.js";
 
 /**
  * The compose stack, checked as data rather than by eye.
@@ -328,5 +328,45 @@ describe("Dockerfiles", () => {
     expect(studio).toMatch(/nginx-unprivileged/);
     expect(studio).toMatch(/USER\s+101:101/);
     expect(studio).toContain("EXPOSE 8080");
+  });
+});
+
+/**
+ * What the build is allowed to SEE.
+ *
+ * `maestro/node:canli-a564f6d` shipped `/app/deploy/.env` — 18 KB, untracked,
+ * no placeholder left in it, i.e. a developer's real credentials, inside an
+ * image built to be carried into a bank on a USB stick. The rule meant to stop
+ * that read `.env`, and a `.dockerignore` pattern with no slash matches only at
+ * the CONTEXT ROOT, so it never looked at `deploy/`.
+ *
+ * Nothing in the image tells you this: the file is only visible by listing a
+ * BUILT image, which is how it was found and not something CI does. So the
+ * pattern itself is what gets asserted — cheap, and it fails at the moment
+ * somebody narrows it back.
+ */
+describe(".dockerignore", () => {
+  const ignore = readFileSync(dockerignorePath(), "utf8");
+  const patterns = ignore
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
+
+  it("excludes env files at EVERY depth, not just the context root", () => {
+    expect(patterns).toContain("**/.env");
+    expect(patterns).toContain("**/.env.*");
+  });
+
+  it("keeps no allow-list entry that would let one back in", () => {
+    // A `!` line re-includes a path the patterns above just excluded. Neither
+    // Dockerfile copies an env file, so any exception here is a hole with no
+    // caller — and `!deploy/.env.example` was one character away from
+    // `!deploy/.env`.
+    const reincluded = patterns.filter((p) => p.startsWith("!") && p.includes(".env"));
+    expect(reincluded).toEqual([]);
+  });
+
+  it("excludes the git directory, which carries every secret ever committed", () => {
+    expect(patterns).toContain(".git");
   });
 });

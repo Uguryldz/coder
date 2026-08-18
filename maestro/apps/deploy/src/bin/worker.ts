@@ -12,6 +12,7 @@ import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.
 import { reconcileRunStatuses } from "../stores/reconcile.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { llmCallRecorder } from "../stores/llm-call-log.js";
+import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
 import { connectTemporal } from "../temporal-gateway.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
@@ -76,6 +77,13 @@ export async function main(): Promise<void> {
       // recorded. Without this the cost and PII screens answer 200 with an
       // empty table on a deployment that has been spending all day.
       onLlmCall: llmCallRecorder(db.llmCall),
+      // The credential a RUN authenticates with now comes from the panel's
+      // managed connection when there is one, falling back to the environment.
+      // The worker is the process that matters most here: it is where the Jira
+      // and GitHub calls of an actual run are made, so a token entered in
+      // "Ayarlar & bağlantılar" was previously stored, tested and then ignored
+      // by every one of them.
+      connectionSecrets: connectionSecretsFrom(db),
     });
 
     const execution = buildTurnRunner(env, db, deployment.ports);

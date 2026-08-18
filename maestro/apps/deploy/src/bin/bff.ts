@@ -10,6 +10,7 @@ import { createDb } from "@maestro/db";
 import { FlowType, type TicketKey } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import { bootPlatform } from "../boot.js";
+import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { listenAddress, type DeployEnv } from "../env.js";
 import { selectIdentityProvider } from "../identity.js";
 import { PrismaKillSwitchStore } from "../stores/killswitch.js";
@@ -81,7 +82,13 @@ export async function main(): Promise<void> {
   const url = required(process.env["DATABASE_URL"], "DATABASE_URL");
   const db = createDb(url);
 
-  const { env, deployment, secrets } = await bootPlatform({ sql: prismaSqlExecutor(db) });
+  const { env, deployment, secrets } = await bootPlatform({
+    sql: prismaSqlExecutor(db),
+    // Same credential resolution as the worker, through the same factory: the
+    // connection an admin tests green on this process must be the one the
+    // worker's run authenticates with, and two wirings could drift.
+    connectionSecrets: connectionSecretsFrom(db),
+  });
 
   // Before Temporal, before the socket: a deployment whose emergency brake
   // cannot survive a restart must not reach the point of accepting traffic.

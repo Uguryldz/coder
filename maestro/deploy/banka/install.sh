@@ -106,9 +106,9 @@ ZORUNLU=(
   NODE_ENV
   CONNECTOR_MASTER_KEY
   POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB REDIS_PASSWORD
-  MAESTRO_BOT_ACCOUNT_ID MAESTRO_BOT_EMAIL
+  MAESTRO_BOT_EMAIL
   LLM_BASE_URL LLM_MODEL LLM_ON_PREM
-  MAESTRO_SECRET_KV_JIRA__TOKEN MAESTRO_SECRET_KV_LLM__API__2D_KEY
+  MAESTRO_SECRET_KV_LLM__API__2D_KEY
   JIRA_TOKEN_REF LLM_API_KEY_REF
   STUDIO_PORT
 )
@@ -173,18 +173,25 @@ fi
 # Bu boşsa keşif `assignee = currentUser()` ile çalışır: jetonun sahibi kimse
 # onun talepleri işlenir. Panelden kurulan dinleme kuralları ise başka bir
 # kimliğe bakar ve HİÇ EŞLEŞMEZ — hiçbir yerde hata görünmeden.
+# Artık ZORUNLU değil: panel, bağlantı testinde /myself çağrısıyla jetonun
+# gerçek sahibini öğrenir ve bağlantıya kendisi yazar. Elle doldurulduğunda
+# yalnızca bir karşılaştırma dayanağı olur — o yüzden burada boşluk değil,
+# YANLIŞ BİÇİM aranır: e-posta yazılmışsa kurulum durur, çünkü o değer hiçbir
+# zaman eşleşmeyecek bir kimliktir.
 info "Motor kimliği…"
-[[ -n "${MAESTRO_BOT_ACCOUNT_ID:-}" ]] \
-  || die "MAESTRO_BOT_ACCOUNT_ID boş. Bu hâlde dinleme kuralları sessizce hiçbir talebi yakalamaz."
-if [[ "${MAESTRO_BOT_ACCOUNT_ID}" =~ [@] ]]; then
+if [[ -z "${MAESTRO_BOT_ACCOUNT_ID:-}" ]]; then
+  ok "MAESTRO_BOT_ACCOUNT_ID boş — kimlik panelden, bağlantı testinde öğrenilecek."
+elif [[ "${MAESTRO_BOT_ACCOUNT_ID}" =~ [@] ]]; then
   err "MAESTRO_BOT_ACCOUNT_ID bir e-posta gibi görünüyor: ${MAESTRO_BOT_ACCOUNT_ID}"
   err "  Beklenen: Jira Cloud accountId (profil adresindeki son parça),"
   err "  Data Center'da ise kullanıcı adı. E-posta MAESTRO_BOT_EMAIL'e yazılır."
+  err "  Emin değilseniz BOŞ BIRAKIN; panel testi doğrusunu kendisi bulur."
   die "MAESTRO_BOT_ACCOUNT_ID düzeltilmeli."
+else
+  ok "MAESTRO_BOT_ACCOUNT_ID dolu."
+  warn "Kurulumdan sonra DOĞRULAYIN: panelde Ayarlar > Bağlantılar > test, bu kimlikle"
+  warn "  bağlantının kimliği AYNI olmalı. Farklıysa panel uyarır ve kurallar boş döner."
 fi
-ok "MAESTRO_BOT_ACCOUNT_ID dolu."
-warn "Kurulumdan sonra DOĞRULAYIN: panelde Ayarlar > Bağlantılar > test, bu kimlikle"
-warn "  bağlantının kimliği AYNI olmalı. Farklıysa panel uyarır ve kurallar boş döner."
 
 # ── 6) Sır adları elle yazılmış mı ───────────────────────────────────────────
 # Sürücü değişken adını referanstan TÜRETİR (kv/jira#token →

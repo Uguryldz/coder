@@ -166,6 +166,26 @@ chmod 600 .env
 `.env`'i açın ve **`DEGISTIR`** yazan her satırı doldurun. `install.sh` dosyada
 `DEGISTIR` kalırsa çalışmayı reddeder.
 
+**Doldurulacak alan sayısı dörttür** ve dördü de altyapıya aittir — Jira jetonu,
+GitHub jetonu ve model anahtarı bu dosyada **artık yoktur.** Onlar kurulumdan
+sonra panelden girilir (§4). Bu dosya "sisteme nasıl ulaşılır" sorusunu
+cevaplar; "hangi hesapla bağlanılır" sorusunu panel cevaplar.
+
+| Alan | Ne için |
+|---|---|
+| `CONNECTOR_MASTER_KEY` | Panelden girilecek bütün jetonları şifreler. `openssl rand -base64 32` |
+| `POSTGRES_PASSWORD` | Veritabanı parolası. `openssl rand -hex 24` |
+| `REDIS_PASSWORD` | Kuyruk parolası. `openssl rand -hex 16` |
+| `MAESTRO_SECRET_KV_JIRA__WEBHOOK` | Jira webhook imza sırrı. `openssl rand -hex 32` |
+
+Son satır neden panelde değil de burada: bu sır, **dışarıdan gelen ve henüz
+doğrulanmamış** bir isteği doğrulamak için okunur. Diğer jetonlar sistemin kendi
+başlattığı dış çağrılarda kullanılır; bu ise yabancının başlattığı bir istekte.
+Veritabanından okunsaydı, imza kontrolünün önüne bir sorgu koyulmuş olurdu.
+
+Bir de bir görüntü ayarı vardır (`MAESTRO_NODE_IMAGE` / `MAESTRO_STUDIO_IMAGE`):
+yüklediğiniz imajların adlarını yazın.
+
 > **Aynı sunucuya ikinci bir kurulum mu yapıyorsunuz?** (kabul ortamı, sürüm
 > provası) `.env`'de **`COMPOSE_PROJECT_NAME`** ile **`STUDIO_PORT`**'u
 > mutlaka farklı verin. İkisi de varsayılan bırakılırsa compose ikinci kurulumu
@@ -173,14 +193,17 @@ chmod 600 .env
 > kurulumun veritabanı volume'üne bağlanır. "Denemek için yan tarafa kurdum"
 > sanılan işlem, üretimin üstüne yapılmış olur ve hiçbir uyarı çıkmaz.
 
-Doldururken dikkat edilecek dört alan:
+Ayrıca doğru yazılması gereken iki adres:
 
 | Alan | Neden önemli |
 |---|---|
-| `MAESTRO_BOT_ACCOUNT_ID` | Motor bu kimliğe atanan talepleri arar. Yanlışsa **hiçbir kural eşleşmez ve hata da çıkmaz.** |
-| `CONNECTOR_MASTER_KEY` | Bağlantı jetonlarını şifreler. Kaybolursa jetonlar bir daha çözülemez. `openssl rand -base64 32` |
 | `LLM_BASE_URL` | Sonuna `/v1` **yazmayın** — sürücü kendisi ekler. |
 | `LLM_ON_PREM` | `false` kalırsa `gizli` işlerin analizi eksik biter. |
+
+`MAESTRO_BOT_ACCOUNT_ID` **boş bırakılabilir.** Panelde bağlantıyı test
+ettiğinizde sistem jetonun gerçek sahibini kendisi öğrenir ve yazar; yanlış
+yazılmış bir değeri de düzeltir. Doldurursanız yalnızca bir karşılaştırma
+dayanağı olur.
 
 `MAESTRO_SECRET_*` değişkenlerinin **adlarını değiştirmeyin**. Bu adlar sır
 adresinden türetilir (`kv/jira#token` → `MAESTRO_SECRET_KV_JIRA__TOKEN`, `#`
@@ -198,7 +221,7 @@ değeri dolu görürsünüz ve aradaki farkı anlamanın yolu olmaz.
 konteyner başlatmadan durur:
 
 - `.env` yok, ya da içinde `DEGISTIR` kalmış
-- Zorunlu değişkenlerden biri boş (**`MAESTRO_BOT_ACCOUNT_ID` dâhil**)
+- Zorunlu değişkenlerden biri boş
 - `NODE_ENV=production` ama Vault/S3 değişkenleri boş
 - `CONNECTOR_MASTER_KEY` 32 bayt değil
 - `.env`'de eski biçimli sır adı (`MAESTRO_SECRET_JIRA_TOKEN`) ya da eski
@@ -283,26 +306,35 @@ kaydının `secret` alanı **aynı** olmalıdır. `POST /webhooks/jira` ucu
 fail-closed'dır: sır tanımlı değilse gövde ayrıştırılmadan reddedilir. "Sırrı
 sonra tanımlarım" diye bir mod yoktur.
 
-### 5.4 `MAESTRO_BOT_ACCOUNT_ID` ile bağlantı kimliğinin AYNI olduğunu doğrulayın
+### 5.4 Motor kimliğini doğrulayın
 
-**Bu, bugüne kadarki en sessiz arızadır.** Sistem iki Jira kimliği taşıyabilir:
+Sistem iki Jira kimliği taşıyabilir:
 
 - **Bağlantının kimliği** — panelden girdiğiniz jetonun sahibi
-- **Motorun kimliği** — `.env`'deki `MAESTRO_BOT_ACCOUNT_ID`
+- **Motorun kimliği** — `.env`'deki `MAESTRO_BOT_ACCOUNT_ID` (artık isteğe bağlı)
 
-Keşif sorgusu `assignee = "<MAESTRO_BOT_ACCOUNT_ID>"` ile çalışır; panel ise
-dinleme kuralını **bağlantının** kimliğiyle doldurur. İkisi farklıysa her kural
-asla eşleşmeyecek bir atanana bakar. Sonuç: **hiçbir talep işlenmez ve hiçbir
-yerde hata görünmez.**
+Keşif sorgusu motorun kimliğiyle çalışır; panel ise dinleme kuralını
+**bağlantının** kimliğiyle doldurur. İkisi farklıysa her kural asla
+eşleşmeyecek bir atanana bakar — hiçbir talep işlenmez, hiçbir yerde hata
+görünmez.
 
-Doğrulama: panelde **Ayarlar → Bağlantılar → (Jira bağlantısı) → Test**.
-Ekran iki kimliği karşılaştırır ve farklıysa **uyarır**. Uyarı görüyorsanız ya
-`.env`'deki `MAESTRO_BOT_ACCOUNT_ID`'yi bağlantının sahibiyle eşitleyin, ya da
-bağlantıya bot hesabının jetonunu girin. `.env`'i değiştirdiyseniz:
+**Bu arıza artık büyük ölçüde kendiliğinden kapanıyor:** `MAESTRO_BOT_ACCOUNT_ID`
+boş bırakıldığında karşılaştırılacak iki değer olmaz; bağlantı testi jetonun
+gerçek sahibini `/rest/api/3/myself` ile öğrenip bağlantıya yazar ve kurallar o
+kimlikle kurulur. Önerilen kurulum budur.
+
+Yine de doldurmayı seçtiyseniz doğrulayın: panelde **Ayarlar → Bağlantılar →
+(Jira bağlantısı) → Test**. Ekran iki kimliği karşılaştırır ve farklıysa
+**uyarır**. Uyarı görüyorsanız ya `.env`'deki değeri bağlantının sahibiyle
+eşitleyin, ya da satırı boşaltıp panele bırakın. `.env`'i değiştirdiyseniz:
 
 ```bash
 docker compose up -d --force-recreate bff worker
 ```
+
+> **Jetonu değiştirmek için yeniden başlatmak GEREKMEZ.** Panelden girilen
+> jetonlar her çağrıda yeniden okunur; "Test et" yeşil olduğu anda koşular da o
+> jetonu kullanır. Yukarıdaki komut yalnızca `.env` değiştiğinde gerekir.
 
 ---
 
@@ -314,7 +346,7 @@ loglar temizdir, panel çalışır — ama iş görülmez.
 | Belirti | Gerçek sebep | Çözüm |
 |---|---|---|
 | Kural kurdum, **hiçbir talep yakalanmıyor**, log temiz | Motorun kimliği (`MAESTRO_BOT_ACCOUNT_ID`) ile bağlantının kimliği farklı | §5.4 |
-| Talepler işleniyor ama **yanlış kişinin** talepleri | `MAESTRO_BOT_ACCOUNT_ID` boş → keşif `currentUser()` ile çalışır | `.env`'e bot accountId'sini yazın |
+| Talepler işleniyor ama **yanlış kişinin** talepleri | Keşif `currentUser()` ile çalışıyor ve jeton bir insana ait | Panele **bot hesabının** jetonunu girin |
 | Analiz **"elle tamamlayın"** diye bitiyor | Talep `gizli` sınıfta, on-prem model yok sayılıyor (`LLM_ON_PREM=false`) | `LLM_ON_PREM="true"` + `docker compose up -d --force-recreate` |
 | Panel açılıyor, **her istek 502** | BFF konteyner içinde `127.0.0.1`'e bağlanmış; nginx ulaşamıyor | `.env`'de `BFF_HOST="0.0.0.0"` |
 | Panele hiç erişilemiyor | `STUDIO_PORT` yayınlanmamış ya da güvenlik duvarı kapalı | `docker compose ps` ile port eşlemesini kontrol edin |

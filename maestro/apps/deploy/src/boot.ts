@@ -71,6 +71,27 @@ export interface BootOptions {
    * empty table on a deployment that had been calling a model all day.
    */
   readonly onLlmCall?: (log: LlmCallLog) => void;
+  /**
+   * Layers the panel's managed connections in front of the deployment's own
+   * SecretPort, so a token an admin typed into "Ayarlar & bağlantılar" is what
+   * a RUN authenticates with.
+   *
+   * Until this existed the two halves never met: the panel enciphered a token
+   * into `ConnectorSecret` and tested it live, and every run then authenticated
+   * with `MAESTRO_SECRET_KV_JIRA__TOKEN` from the `.env` file instead. The
+   * panel stored, tested and displayed a credential nothing used.
+   *
+   * A CALLBACK rather than a ready-made port, for the same reason `onLlmCall`
+   * is one: only a service that owns the database pool can build it, and it
+   * needs `env.profile` to resolve the connector master key — which does not
+   * exist until `loadDeployEnv` has run inside this function. The callback is
+   * handed the deployment's SecretPort and returns the one to use in its place,
+   * which keeps the fallback relationship explicit at the call site.
+   *
+   * Absent, the platform resolves credentials exactly as it always did. A
+   * process with no pool (`compose.test.ts`) therefore changes not at all.
+   */
+  readonly connectionSecrets?: (fallback: SecretPort, env: DeployEnv) => SecretPort;
 }
 
 /** What the publisher needs that only a database-owning service can supply. */
@@ -87,7 +108,23 @@ export interface BootedPlatform {
 
 export async function bootPlatform(options: BootOptions = {}): Promise<BootedPlatform> {
   const env = loadDeployEnv(options.source ?? process.env);
-  const secrets = buildSecretPort(env);
+  /**
+   * The deployment's own SecretPort, then the panel's connections in front of
+   * it when this process can reach them (see `BootOptions.connectionSecrets`).
+   *
+   * The order is the precedence rule, and it is deliberate: a managed
+   * connection outranks the `.env` value for the same reference. An operator
+   * who has just typed a token into the panel and watched its test go green
+   * must not be overruled by a file they were told they no longer have to fill
+   * — that is the "I changed it and nothing happened" failure this whole seam
+   * exists to end. The environment still answers every reference no connection
+   * has claimed, which is what makes this safe for a stack already running.
+   */
+  const deploymentSecrets = buildSecretPort(env);
+  const secrets =
+    options.connectionSecrets === undefined
+      ? deploymentSecrets
+      : options.connectionSecrets(deploymentSecrets, env);
   const policy = defaultPiiPolicy();
 
   /**

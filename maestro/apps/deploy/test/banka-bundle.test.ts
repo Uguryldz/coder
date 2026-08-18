@@ -108,17 +108,74 @@ describe("banka bundle: a filled-in .env.example installs as-is", () => {
   it("leaves every mandatory blank marked with the placeholder the installer greps for", () => {
     // `install.sh` refuses while any DEGISTIR remains. That contract only holds
     // if the fields needing a value actually carry the marker.
+    //
+    // The list is SHORT now, and that is the point of it. What is left is
+    // infrastructure — the two datastore passwords and the key that enciphers
+    // everything else — plus the one inbound secret that cannot come from the
+    // store it would have to authenticate a request against (see below).
     for (const key of [
       "CONNECTOR_MASTER_KEY",
       "POSTGRES_PASSWORD",
       "REDIS_PASSWORD",
-      "MAESTRO_BOT_ACCOUNT_ID",
-      "MAESTRO_SECRET_KV_JIRA__TOKEN",
+      "MAESTRO_SECRET_KV_JIRA__WEBHOOK",
     ]) {
       const line = envExample.split("\n").find((candidate) => candidate.startsWith(`${key}=`));
       expect(line, `${key} is missing from .env.example`).toBeDefined();
       expect(line, `${key} ships without a DEGISTIR marker`).toContain("DEGISTIR");
     }
+  });
+
+  it("no longer demands the credentials the connector panel now owns", () => {
+    /**
+     * THE SHRINK, as a property rather than an edit.
+     *
+     * These were fills an operator had to perform in a file on the server,
+     * for credentials the panel ALREADY collects, tests live and enciphers.
+     * Worse, the two never met: the panel's Jira token was stored, tested and
+     * shown green while every run authenticated with the `.env` one.
+     *
+     * A run now reads the managed connection first
+     * (`stores/connection-secrets.ts`), so demanding these here would be
+     * demanding the same secret twice in two places that could disagree.
+     * Whatever remains of them in the bundle must therefore be OPTIONAL —
+     * either commented out or shipped empty — never a DEGISTIR the installer
+     * refuses to start without.
+     */
+    for (const key of ["MAESTRO_SECRET_KV_JIRA__TOKEN", "MAESTRO_BOT_ACCOUNT_ID"]) {
+      const line = envExample.split("\n").find((candidate) => candidate.startsWith(`${key}=`));
+      expect(line ?? "", `${key} is still a mandatory fill`).not.toContain("DEGISTIR");
+    }
+
+    // And the installer must not refuse a stack that leaves them to the panel.
+    // `ZORUNLU` is the list it dies over; a name in it is a name that has to be
+    // in the file whatever the panel holds.
+    const mandatory = install.slice(install.indexOf("ZORUNLU=("));
+    const list = mandatory.slice(0, mandatory.indexOf(")"));
+    expect(list).not.toContain("MAESTRO_SECRET_KV_JIRA__TOKEN");
+    expect(list).not.toContain("MAESTRO_BOT_ACCOUNT_ID");
+  });
+
+  it("keeps the webhook secret in the file, with its reason written down", () => {
+    /**
+     * The one credential that did NOT move, and must not.
+     *
+     * Every other reference is resolved on an OUTBOUND call the platform chose
+     * to make. This one is resolved on an INBOUND, UNAUTHENTICATED request:
+     * `POST /webhooks/jira` verifies the signature before it parses the body
+     * and before anything has established the caller is Jira. Serving it from
+     * the connection store would put a database read in front of the signature
+     * check on an unrate-limited route — every forged delivery would become a
+     * query.
+     *
+     * The reasoning is asserted, not just the value: an operator who finds one
+     * lone `MAESTRO_SECRET_*` line among credentials that all moved to the
+     * panel will reasonably assume it was overlooked, and delete it.
+     */
+    const line = envExample
+      .split("\n")
+      .find((candidate) => candidate.startsWith("MAESTRO_SECRET_KV_JIRA__WEBHOOK="));
+    expect(line).toBeDefined();
+    expect(envExample).toContain("BU NEDEN PANELE TAŞINMADI");
   });
 });
 

@@ -50,6 +50,36 @@ export function bankaInstallPath(): string {
 }
 
 /**
+ * `maestro/deploy/ugurdocker/` — the registry-pull bundle.
+ *
+ * A THIRD artefact, and the difference from `banka/` is one line of operator
+ * workflow: images are pulled from a registry the operator populates and
+ * administers themselves, rather than carried in as tar files. Everything else
+ * — the hardening, the healthchecks, the ordering — is deliberately identical,
+ * which is exactly why it needs its own guards: a copy that shares no code with
+ * its original drifts from it silently.
+ */
+export function ugurdockerDir(): string {
+  return fileURLToPath(new URL("../../../deploy/ugurdocker/", import.meta.url));
+}
+
+export function ugurdockerComposePath(): string {
+  return `${ugurdockerDir()}docker-compose.yml`;
+}
+
+export function ugurdockerEnvExamplePath(): string {
+  return `${ugurdockerDir()}.env.example`;
+}
+
+export function ugurdockerInstallPath(): string {
+  return `${ugurdockerDir()}install.sh`;
+}
+
+export function ugurdockerGitignorePath(): string {
+  return `${ugurdockerDir()}.gitignore`;
+}
+
+/**
  * `maestro/.dockerignore` — the repository root, not `deploy/`.
  *
  * It lives beside the build CONTEXT (the monorepo root is what both Dockerfiles

@@ -1,0 +1,184 @@
+- generic [ref=e2]:
+  - generic [ref=e23]:
+    - navigation "Ana gezinme" [ref=e24]:
+      - generic [ref=e25]:
+        - generic [ref=e26]: M
+        - generic [ref=e27]:
+          - text: Maestro
+          - generic [ref=e28]: SDLC otomasyonu
+      - generic [ref=e29]:
+        - generic [ref=e30]: İşler
+        - link "Panel" [ref=e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=e32]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=e34]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=e35] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=e36]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=e37]:
+        - generic [ref=e38]: Ajanlar
+        - link "Ajan tanımları" [ref=e39] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=e40]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=e41] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=e42]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=e43] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=e44]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=e45] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=e46]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=e47] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=e48]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=e49]: yakında
+      - generic [ref=e50]:
+        - generic [ref=e51]: Denetim
+        - link "Denetim izi" [ref=e52] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=e53]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=e54] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=e55]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=e56] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=e57]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=e58] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=e59]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=e60]: yakında
+        - link "Kanıt paketi yakında" [ref=e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=e62]: 📦
+          - text: Kanıt paketi
+          - generic [ref=e63]: yakında
+      - generic [ref=e64]:
+        - generic [ref=e65]: Kurulum
+        - link "Proje bağlama" [ref=e66] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=e67]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=e68] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=e69]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=e70] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=e71]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=e72] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=e73]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=e74] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=e75]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=e76] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=e77]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=e78]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=e79] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=e80]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=e81]:
+      - banner [ref=e82]:
+        - heading "Panel" [level=1] [ref=e83]
+        - generic [ref=e84]:
+          - generic [ref=e85]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=e86]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=e87]: admin
+        - button "Çıkış" [ref=e88] [cursor=pointer]
+      - main [ref=e89]:
+        - generic [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - heading "Canlı motor işleri" [level=3] [ref=e93]
+              - generic [ref=e94]: akış motorunun (pilot) gerçekten çalıştırdığı işler — satır Canlı akış ekranını açar
+            - button "OPS-40 şu an çalışıyor" [ref=e97] [cursor=pointer]:
+              - generic [ref=e98]: OPS-40
+              - generic [ref=e99]: şu an çalışıyor
+          - generic [ref=e101]:
+            - generic [ref=e102]:
+              - generic [ref=e103]: Aktif iş akışı
+              - generic [ref=e104]: "12"
+              - generic [ref=e105]: 0 tanesi hatalı
+            - generic [ref=e106]:
+              - generic [ref=e107]: Kapıda bekleyen
+              - generic [ref=e108]: "3"
+              - generic [ref=e109]: insan kararı bekliyor
+            - generic [ref=e110]:
+              - generic [ref=e111]: Tamamlanan
+              - generic [ref=e112]: "1"
+              - generic [ref=e113]: kanıt paketi üretildi
+            - generic [ref=e114]:
+              - generic [ref=e115]: Toplam
+              - generic [ref=e116]: "16"
+              - generic [ref=e117]: görebildiğin akışlar
+          - generic [ref=e118]:
+            - generic [ref=e119]:
+              - heading "Dikkat isteyenler" [level=3] [ref=e120]
+              - generic [ref=e121]: önce hatalılar, sonra en uzun süredir açık olanlar
+            - generic [ref=e122]:
+              - button "OPS-24 kapıda orta OPS-24 · Clarification — reporter'a soru · 13 saat açık" [ref=e123] [cursor=pointer]:
+                - generic [ref=e124]: ⏳
+                - generic [ref=e125]:
+                  - text: OPS-24
+                  - generic [ref=e126]: kapıda
+                  - generic [ref=e127]: orta
+                  - generic [ref=e128]: OPS-24 · Clarification — reporter'a soru · 13 saat açık
+              - button "OPS-34 kapıda orta OPS-34 · PO onayı · 10 saat açık" [ref=e129] [cursor=pointer]:
+                - generic [ref=e130]: ⏳
+                - generic [ref=e131]:
+                  - text: OPS-34
+                  - generic [ref=e132]: kapıda
+                  - generic [ref=e133]: orta
+                  - generic [ref=e134]: OPS-34 · PO onayı · 10 saat açık
+              - button "OPS-36 kapıda orta OPS-36 · Tech Lead onayı · 9 saat açık" [ref=e135] [cursor=pointer]:
+                - generic [ref=e136]: ⏳
+                - generic [ref=e137]:
+                  - text: OPS-36
+                  - generic [ref=e138]: kapıda
+                  - generic [ref=e139]: orta
+                  - generic [ref=e140]: OPS-36 · Tech Lead onayı · 9 saat açık
+          - generic [ref=e141]:
+            - heading "Arşiv / örnek kayıtlar" [level=2] [ref=e142]
+            - paragraph [ref=e143]: Veritabanındaki iş kayıtları (tohum/arşiv). Motorun gerçekten çalıştırdığı işler yukarıdaki 'Canlı motor işleri' listesinde.
+            - generic [ref=e146]:
+              - button "Tümü (0)" [pressed] [ref=e147] [cursor=pointer]
+              - button "Çalışıyor (0)" [ref=e148] [cursor=pointer]
+              - button "Kapıda (0)" [ref=e149] [cursor=pointer]
+              - button "Tamamlandı (0)" [ref=e150] [cursor=pointer]
+              - button "Hatalı (0)" [ref=e151] [cursor=pointer]
+              - generic [ref=e152]:
+                - generic [ref=e153]: Ara
+                - textbox "Ara" [ref=e154]:
+                  - /placeholder: ticket no ya da başlık
+              - generic [ref=e155]:
+                - generic [ref=e156]: Proje
+                - combobox "Proje" [ref=e157]:
+                  - option "Tüm projeler" [selected]
+            - paragraph [ref=e166]:
+              - text: Satıra tıkla → o ticket'ın adımları, defteri ve açık kapısı. Liste iş akışının durum sözlüğünü kullanır; kapıda bekleyenler doğrudan süzülebilir.
+              - button "Yenile" [ref=e167] [cursor=pointer]
+  - region

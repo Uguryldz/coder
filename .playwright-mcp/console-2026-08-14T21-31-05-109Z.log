@@ -1,0 +1,9 @@
+[    1048ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 1017539ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:7000/@vite/client:864
+[ 1022143ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1023147ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1025151ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1055155ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1056160ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1058166ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1088382ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102

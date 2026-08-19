@@ -1,0 +1,196 @@
+- generic [ref=f215e2]:
+  - generic [ref=f215e3]:
+    - navigation "Ana gezinme" [ref=f215e4]:
+      - generic [ref=f215e5]:
+        - generic [ref=f215e6]: M
+        - generic [ref=f215e7]:
+          - text: Maestro
+          - generic [ref=f215e8]: SDLC otomasyonu
+      - generic [ref=f215e9]:
+        - generic [ref=f215e10]: Başla
+        - link "Panel" [ref=f215e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f215e12]: ▦
+          - text: Panel
+        - link "Proje bağlama" [ref=f215e13] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f215e14]: ⇄
+          - text: Proje bağlama
+        - link "Analiz şablonu" [ref=f215e15] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f215e16]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f215e17] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f215e18]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Bildirim & eskalasyon" [ref=f215e19] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f215e20]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Yardım — nasıl kullanılır?" [ref=f215e21] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f215e22]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f215e23]:
+        - generic [ref=f215e24]: İzle
+        - link "Canlı akış" [ref=f215e25] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f215e26]: 🎥
+          - text: Canlı akış
+        - link "Bilgi kütüphanesi" [ref=f215e27] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f215e28]: 📚
+          - text: Bilgi kütüphanesi
+      - generic [ref=f215e29]:
+        - generic [ref=f215e30]: Denetim ve Uyum
+        - link "Denetim izi" [ref=f215e31] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f215e32]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f215e33] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f215e34]: 📦
+          - text: Kanıt paketi
+        - link "PII maskeleme" [ref=f215e35] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f215e36]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f215e37] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f215e38]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+      - generic [ref=f215e39]:
+        - generic [ref=f215e40]: Yapay Zekâ Ayarları
+        - link "Ajan tanımları" [ref=f215e41] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f215e42]: 🤖
+          - text: Ajan tanımları
+        - link "Sürüm kalite testi" [ref=f215e43] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f215e44]: 🎯
+          - text: Sürüm kalite testi
+        - link "Güvenlik taramaları" [ref=f215e45] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f215e46]: 🛡
+          - text: Güvenlik taramaları
+      - generic [ref=f215e47]:
+        - generic [ref=f215e48]: Sistem
+        - link "Kullanıcılar & roller" [ref=f215e49] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f215e50]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f215e51] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f215e52]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Parametreler (DB)" [ref=f215e53] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f215e54]: 🎛
+          - text: Parametreler (DB)
+        - link "Sistem sağlığı" [ref=f215e55] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f215e56]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler" [ref=f215e57] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f215e58]: 🖥
+          - text: Çalışan makineler
+        - link "Canlı oturumlar" [ref=f215e59] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f215e60]: ▶
+          - text: Canlı oturumlar
+    - generic [ref=f215e61]:
+      - banner [ref=f215e62]:
+        - heading "Proje bağlama" [level=1] [ref=f215e106]
+        - generic [ref=f215e64]:
+          - generic [ref=f215e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f215e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f215e67]: admin
+        - button "Çıkış" [ref=f215e68] [cursor=pointer]
+      - main [ref=f215e69]:
+        - generic [ref=f215e107]:
+          - generic [ref=f215e108]:
+            - generic [ref=f215e109]:
+              - heading "Nasıl çalışır — 3 adımda proje bağlama" [level=3] [ref=f215e110]
+              - generic [ref=f215e111]: Adımları sırayla izleyin. Şu an bulunduğunuz adım vurgulanır.
+            - list [ref=f215e113]:
+              - listitem [ref=f215e114]:
+                - button "1 Uygulama ekle Jira projesi + repo seç, admin onayına gönder" [ref=f215e115] [cursor=pointer]:
+                  - generic [ref=f215e116]: "1"
+                  - generic [ref=f215e117]:
+                    - generic [ref=f215e118]: Uygulama ekle
+                    - generic [ref=f215e119]: Jira projesi + repo seç, admin onayına gönder
+                - generic [ref=f215e120]: →
+              - listitem [ref=f215e121]:
+                - button "2 Jira eşleme & onay İkinci bir yönetici onaylar; proje bağlanır" [ref=f215e122] [cursor=pointer]:
+                  - generic [ref=f215e123]: "2"
+                  - generic [ref=f215e124]:
+                    - generic [ref=f215e125]: Jira eşleme & onay
+                    - generic [ref=f215e126]: İkinci bir yönetici onaylar; proje bağlanır
+                - generic [ref=f215e127]: →
+              - listitem [ref=f215e128]:
+                - button "3 Dinleme kuralları Hangi ticket'lar işlensin kuralını ekle" [ref=f215e129] [cursor=pointer]:
+                  - generic [ref=f215e130]: "3"
+                  - generic [ref=f215e131]:
+                    - generic [ref=f215e132]: Dinleme kuralları
+                    - generic [ref=f215e133]: Hangi ticket'lar işlensin kuralını ekle
+          - tablist "Proje bağlama adımları" [ref=f215e134]:
+            - tab "1 · Uygulama ekle" [active] [selected] [ref=f215e135] [cursor=pointer]
+            - tab "2 · Jira eşleme & onay" [ref=f215e136] [cursor=pointer]
+            - tab "3 · Dinleme kuralları" [ref=f215e137] [cursor=pointer]
+          - tabpanel "1 · Uygulama ekle" [ref=f215e164]:
+            - generic [ref=f215e165]:
+              - generic [ref=f215e166]:
+                - generic [ref=f215e167]:
+                  - heading "Yeni uygulama bağla" [level=3] [ref=f215e168]
+                  - generic [ref=f215e169]: Bir Jira projesini bir repoya bağlar — 4 adım
+                - paragraph [ref=f215e171]: "1) Jira projesi + hedef repo seçin. 2) Platform profilini (derleme ortamı) belirleyin. 3) .maestro.yaml önerilir. 4) Kapı/tetikleme kurallarını seçin. Göndermeden önce 'kuru koşum' zorunludur (son ticket'lar bu kurallarla nereye düşerdi). Sonuç canlıya geçmez: paket admin onayına gider — onaydan sonra eşleme kuralı ve .maestro.yaml PR'ı oluşur."
+              - list [ref=f215e172]:
+                - listitem [ref=f215e173]: 1 · Jira kaynağı
+                - listitem [ref=f215e174]: 2 · Repo ve politika
+                - listitem [ref=f215e175]: 3 · .maestro.yaml
+                - listitem [ref=f215e176]: 4 · Kapı ve tetikleme
+              - generic [ref=f215e177]:
+                - generic [ref=f215e178]:
+                  - heading "Jira projesi ve hedef repo" [level=3] [ref=f215e179]
+                  - generic [ref=f215e180]: Bu projenin ticket'ları hangi repoya gider?
+                - generic [ref=f215e181]:
+                  - generic [ref=f215e182]:
+                    - generic [ref=f215e183]:
+                      - generic [ref=f215e184]: Jira bağlantısı
+                      - combobox "Jira bağlantısı" [ref=f215e185]:
+                        - option "— seç —" [selected]
+                        - option "Jira (uyildiz) · Jira Cloud"
+                      - paragraph [ref=f215e186]: Ayarlar > Bağlantılar'daki Jira Cloud / Data Center bağlantılarından biri.
+                    - generic [ref=f215e187]:
+                      - generic [ref=f215e188]: Jira projesi
+                      - combobox "Jira projesi" [disabled] [ref=f215e189]:
+                        - option "Önce Jira bağlantısı seç" [selected]
+                  - generic [ref=f215e190]:
+                    - generic [ref=f215e191]:
+                      - generic [ref=f215e192]: SCM bağlantısı
+                      - combobox "SCM bağlantısı" [ref=f215e193]:
+                        - option "— seç —" [selected]
+                        - option "GitHub (maestro-pilot) · GitHub"
+                      - paragraph [ref=f215e194]: Ayarlar > Bağlantılar'daki GitHub / Azure DevOps bağlantılarından biri.
+                    - generic [ref=f215e195]:
+                      - generic [ref=f215e196]: Repo
+                      - combobox "Repo" [disabled] [ref=f215e197]:
+                        - option "Önce SCM bağlantısı seç" [selected]
+                  - generic [ref=f215e198]: Kural eşleşmeyen ticket asla sessizce bir repoya gitmez.
+              - generic [ref=f215e199]:
+                - generic [ref=f215e200]:
+                  - heading "Kuru koşum (M102)" [level=3] [ref=f215e201]
+                  - generic [ref=f215e202]: Son ticket'lar bu kurallarla nereye düşerdi?
+                  - button "Kuru koşum yap" [disabled] [ref=f215e204]
+                - paragraph [ref=f215e206]: Önce Jira projesi ve repo seç.
+              - generic [ref=f215e207]:
+                - heading "İşlemler" [level=3] [ref=f215e209]
+                - generic [ref=f215e210]:
+                  - button "İleri" [ref=f215e212] [cursor=pointer]
+                  - generic [ref=f215e213]: "Bu sihirbaz canlı yapılandırma üretmez: paket admin onayına gider. Onaydan sonra eşleme kuralı, .maestro.yaml PR'ı ve gerekiyorsa taslak pipeline oluşturulur."
+  - region

@@ -264,12 +264,26 @@ describe("deployment artefacts", () => {
     }
   });
 
-  it("points each Node service at an entrypoint file that exists", () => {
+  /**
+   * The entrypoints compose names are COMPILED paths (`dist/bin/*.js`), and
+   * `dist/` exists only after a build — inside the image, or after
+   * `node scripts/build-dist.mjs`. Asserting the compiled file is present
+   * would make this suite pass or fail on whether someone had built recently,
+   * which is a test of the working tree rather than of the compose file.
+   *
+   * So the assertion is made against the SOURCE each entrypoint is compiled
+   * from. That still catches the mistake this test exists for — a compose file
+   * naming an entrypoint that does not exist, or left behind when one is
+   * renamed — and it catches it in a tree that has never been built.
+   */
+  it("points each Node service at an entrypoint whose source exists", () => {
     for (const name of NODE_SERVICES) {
       const script = compose.services[name]?.build?.args?.["ENTRYPOINT_SCRIPT"];
       expect(script, `${name} names no entrypoint`).toBeTruthy();
-      const path = new URL(`../../../${script as string}`, import.meta.url);
-      expect(() => readFileSync(path, "utf8"), `${script} does not exist`).not.toThrow();
+      expect(script, `${script} is not a compiled entrypoint`).toMatch(/^apps\/\w+\/dist\/.+\.js$/);
+      const source = (script as string).replace("/dist/", "/src/").replace(/\.js$/, ".ts");
+      const path = new URL(`../../../${source}`, import.meta.url);
+      expect(() => readFileSync(path, "utf8"), `${source} does not exist`).not.toThrow();
     }
   });
 

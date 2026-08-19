@@ -1,0 +1,234 @@
+- generic [ref=f28e2]:
+  - generic [ref=f28e23]:
+    - navigation "Ana gezinme" [ref=f28e24]:
+      - generic [ref=f28e25]:
+        - generic [ref=f28e26]: M
+        - generic [ref=f28e27]:
+          - text: Maestro
+          - generic [ref=f28e28]: SDLC otomasyonu
+      - generic [ref=f28e29]:
+        - generic [ref=f28e30]: Operasyon
+        - link "Panel" [ref=f28e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f28e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f28e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f28e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f28e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f28e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f28e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f28e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f28e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f28e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f28e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f28e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f28e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f28e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f28e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f28e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f28e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f28e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f28e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f28e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f28e51]:
+        - generic [ref=f28e52]: Yürütme
+        - link "Runner havuzları" [ref=f28e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f28e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f28e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f28e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f28e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f28e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [active] [ref=f28e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f28e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f28e61]:
+        - generic [ref=f28e62]: Ajanlar
+        - link "Variant'lar" [ref=f28e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f28e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f28e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f28e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f28e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f28e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f28e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f28e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f28e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f28e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f28e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f28e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f28e75]:
+        - generic [ref=f28e76]: Yönetişim
+        - link "LLM Gateway" [ref=f28e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f28e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f28e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f28e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f28e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f28e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f28e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f28e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f28e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f28e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f28e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f28e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f28e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f28e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f28e91]:
+        - generic [ref=f28e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f28e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f28e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f28e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f28e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f28e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f28e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f28e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f28e100]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f28e101] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f28e102]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f28e103] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f28e104]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f28e105] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f28e106]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f28e107] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f28e108]: ✔
+          - text: Karar defteri
+    - generic [ref=f28e109]:
+      - banner [ref=f28e110]:
+        - heading ".maestro.yaml" [level=1] [ref=f28e315]
+        - generic [ref=f28e112]:
+          - generic [ref=f28e113]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f28e114]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f28e115]: ayse.kaya@bank
+        - button "Çıkış" [ref=f28e116] [cursor=pointer]
+      - main [ref=f28e117]:
+        - generic [ref=f28e316]:
+          - tablist "Uygulamalar" [ref=f28e317]:
+            - tab "odeme-api" [selected] [ref=f28e318] [cursor=pointer]
+            - tab "web" [ref=f28e319] [cursor=pointer]
+          - tabpanel "odeme-api" [ref=f28e320]:
+            - generic [ref=f28e321]:
+              - generic [ref=f28e322]:
+                - generic [ref=f28e323]:
+                  - heading "odeme-api" [level=3] [ref=f28e324]
+                  - generic [ref=f28e325]: Core/_git/odeme-api
+                  - generic [ref=f28e326]: linux-node
+                - generic [ref=f28e328]:
+                  - paragraph [ref=f28e329]: Bu dosya repoda yaşar; Studio yalnız okur. Değiştirmek için takımın kendi PR süreci kullanılır.
+                  - generic [ref=f28e330]:
+                    - strong [ref=f28e331]: .maestro.yaml görülmedi
+                    - paragraph [ref=f28e332]: "Bu depoda henüz .maestro.yaml dosyası görülmedi: ya hiçbir koşu dosyayı okumadı ya da dosya yok. Platform dosyanın bir kopyasını tutmadığı için burada hiçbir şey gösterilmiyor — dosya takımın kendisinindir ve build komutlarını uydurmak, ajanın sonra gerçekten çalıştıracağı bir tahmin üretmek olurdu (M52)."
+              - generic [ref=f28e333]:
+                - generic [ref=f28e334]:
+                  - heading "Korumalı yollar (M52)" [level=3] [ref=f28e335]
+                  - generic [ref=f28e336]: Ajanın asla yazamayacağı yollar
+                - generic [ref=f28e338]:
+                  - generic [ref=f28e339]:
+                    - generic [ref=f28e340]:
+                      - generic [ref=f28e341]: Platform varsayılanları
+                      - generic [ref=f28e342]: kaldırılamaz
+                    - list [ref=f28e343]:
+                      - listitem [ref=f28e344]: "**/*.jks"
+                      - listitem [ref=f28e345]: "**/*.key"
+                      - listitem [ref=f28e346]: "**/*.p12"
+                      - listitem [ref=f28e347]: "**/*.pem"
+                      - listitem [ref=f28e348]: "**/*.pfx"
+                      - listitem [ref=f28e349]: "**/*.sql"
+                      - listitem [ref=f28e350]: "**/.azuredevops/**"
+                      - listitem [ref=f28e351]: "**/.claude/**"
+                      - listitem [ref=f28e352]: "**/.env"
+                      - listitem [ref=f28e353]: "**/.env.*"
+                      - listitem [ref=f28e354]: "**/.git/**"
+                      - listitem [ref=f28e355]: "**/.github/**"
+                      - listitem [ref=f28e356]: "**/.gitlab-ci.yml"
+                      - listitem [ref=f28e357]: "**/.husky/**"
+                      - listitem [ref=f28e358]: "**/.maestro.y*ml"
+                      - listitem [ref=f28e359]: "**/.netrc"
+                      - listitem [ref=f28e360]: "**/.npmrc"
+                      - listitem [ref=f28e361]: "**/.pgpass"
+                      - listitem [ref=f28e362]: "**/.vscode/**"
+                      - listitem [ref=f28e363]: "**/Jenkinsfile"
+                      - listitem [ref=f28e364]: "**/azure-pipelines*.yaml"
+                      - listitem [ref=f28e365]: "**/azure-pipelines*.yml"
+                      - listitem [ref=f28e366]: "**/id_ed25519*"
+                      - listitem [ref=f28e367]: "**/id_rsa*"
+                      - listitem [ref=f28e368]: "**/migrations/**"
+                      - listitem [ref=f28e369]: "**/secrets/**"
+                    - generic [ref=f28e370]: "Platform varsayılanları korumanın tabanıdır: üzerine ekleyebilirsin, kaldıramazsın. Sunucu kaldırma isteğini reddeder."
+                  - generic [ref=f28e371]:
+                    - generic [ref=f28e372]: Bu reponun eklediği yollar
+                    - paragraph [ref=f28e374]: Bu repo henüz ek yol tanımlamadı.
+                    - generic [ref=f28e375]:
+                      - generic [ref=f28e376]:
+                        - generic [ref=f28e377]: Yeni korumalı yol
+                        - textbox "Yeni korumalı yol" [ref=f28e378]
+                        - paragraph [ref=f28e379]: Glob deseni, örn. src/payment-core/**
+                      - button "Ekle" [ref=f28e380] [cursor=pointer]
+          - generic [ref=f28e381]: Build/test komutlarının doğruluk kaynağı takımın kendisidir. Dosya yoksa akış durur ve varsayılan uydurmaz. Politikalar (kapı seti, kapsam kuralı, dil) burada değil DB parametrelerindedir (M71).
+  - region

@@ -1,0 +1,329 @@
+- generic [ref=f17e2]:
+  - generic [ref=f17e23]:
+    - navigation "Ana gezinme" [ref=f17e24]:
+      - generic [ref=f17e25]:
+        - generic [ref=f17e26]: M
+        - generic [ref=f17e27]:
+          - text: Maestro
+          - generic [ref=f17e28]: SDLC otomasyonu
+      - generic [ref=f17e29]:
+        - generic [ref=f17e30]: Operasyon
+        - link "Panel" [ref=f17e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f17e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f17e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f17e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f17e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f17e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f17e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f17e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f17e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f17e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f17e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f17e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f17e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f17e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f17e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f17e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f17e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f17e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f17e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f17e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f17e51]:
+        - generic [ref=f17e52]: Yürütme
+        - link "Runner havuzları" [ref=f17e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f17e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f17e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f17e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f17e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f17e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f17e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f17e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f17e61]:
+        - generic [ref=f17e62]: Ajanlar
+        - link "Variant'lar" [ref=f17e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f17e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f17e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f17e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f17e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f17e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f17e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f17e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f17e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f17e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f17e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f17e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f17e75]:
+        - generic [ref=f17e76]: Yönetişim
+        - link "LLM Gateway" [ref=f17e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f17e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f17e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f17e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f17e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f17e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f17e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f17e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f17e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f17e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f17e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f17e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f17e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f17e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f17e91]:
+        - generic [ref=f17e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f17e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f17e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f17e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f17e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f17e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f17e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f17e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f17e100]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f17e101] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f17e102]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f17e103] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f17e104]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f17e105] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f17e106]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f17e107] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f17e108]: ✔
+          - text: Karar defteri
+    - generic [ref=f17e109]:
+      - banner [ref=f17e110]:
+        - heading "İş akışı detayı" [level=1] [ref=f17e111]
+        - generic [ref=f17e112]:
+          - generic [ref=f17e113]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f17e114]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f17e115]: ayse.kaya@ugurbank.local
+        - button "Çıkış" [ref=f17e116] [cursor=pointer]
+      - main [ref=f17e117]:
+        - generic [ref=f17e118]:
+          - generic [ref=f17e120]:
+            - tablist "Ticket detayı sekmeleri" [ref=f17e121]:
+              - tab "Adımlar" [selected] [ref=f17e122] [cursor=pointer]
+              - tab "Ticket defteri" [ref=f17e123] [cursor=pointer]
+              - tab "Analiz" [ref=f17e124] [cursor=pointer]
+              - tab "Değişiklik" [ref=f17e125] [cursor=pointer]
+              - tab "Testler" [ref=f17e126] [cursor=pointer]
+              - tab "Tüketim" [ref=f17e127] [cursor=pointer]
+            - tabpanel "Adımlar" [ref=f17e129]:
+              - generic [ref=f17e130]:
+                - generic [ref=f17e131]:
+                  - generic [ref=f17e132]: "0"
+                  - generic [ref=f17e133]: Work mode seçimi
+                  - generic [ref=f17e134]: tamamlandı
+                - generic [ref=f17e135]:
+                  - generic [ref=f17e136]: "2"
+                  - generic [ref=f17e137]: Intake — ticket tamlık kontrolü
+                  - generic [ref=f17e138]: tamamlandı
+                - generic [ref=f17e139]:
+                  - generic [ref=f17e140]: 2b
+                  - generic [ref=f17e141]: Clarification — reporter'a soru
+                  - generic [ref=f17e142]: tamamlandı
+                - generic [ref=f17e143]:
+                  - generic [ref=f17e144]: 3o
+                  - generic [ref=f17e145]: Repo keşfi (salt-okunur)
+                  - generic [ref=f17e146]: tamamlandı
+                - generic [ref=f17e147]:
+                  - generic [ref=f17e148]: "3"
+                  - generic [ref=f17e149]: Analiz + etki matrisi
+                  - generic [ref=f17e150]: tamamlandı
+                - generic [ref=f17e151]:
+                  - generic [ref=f17e152]: "4"
+                  - generic [ref=f17e153]: PO onayı
+                  - generic [ref=f17e154]: tamamlandı
+                - generic [ref=f17e155]:
+                  - generic [ref=f17e156]: "5"
+                  - generic [ref=f17e157]: Tech Lead onayı
+                  - generic [ref=f17e158]: tamamlandı
+                - generic [ref=f17e159]:
+                  - generic [ref=f17e160]: 6a
+                  - generic [ref=f17e161]: Geliştirme (sandbox)
+                  - generic [ref=f17e162]: tamamlandı
+                - generic [ref=f17e163]:
+                  - generic [ref=f17e164]: 6b
+                  - generic [ref=f17e165]: Güvenlik taraması
+                  - generic [ref=f17e166]: tamamlandı
+                - generic [ref=f17e167]:
+                  - generic [ref=f17e168]: 6c
+                  - generic [ref=f17e169]: Dev-reviewer incelemesi
+                  - generic [ref=f17e170]: tamamlandı
+                - generic [ref=f17e171]:
+                  - generic [ref=f17e172]: "7"
+                  - generic [ref=f17e173]: Test senaryoları tasarımı
+                  - generic [ref=f17e174]: tamamlandı
+                - generic [ref=f17e175]:
+                  - generic [ref=f17e176]: "8"
+                  - generic [ref=f17e177]: Test senaryoları denetimi
+                  - generic [ref=f17e178]: tamamlandı
+                - generic [ref=f17e179]:
+                  - generic [ref=f17e180]: "9"
+                  - generic [ref=f17e181]: QA senaryo onayı
+                  - generic [ref=f17e182]: tamamlandı
+                - generic [ref=f17e183]:
+                  - generic [ref=f17e184]: "10"
+                  - generic [ref=f17e185]: Testlerin koşulması
+                  - generic [ref=f17e186]: tamamlandı
+                - generic [ref=f17e187]:
+                  - generic [ref=f17e188]: 10b
+                  - generic [ref=f17e189]: CI kapısı (build validation)
+                  - generic [ref=f17e190]: tamamlandı
+                - generic [ref=f17e191]:
+                  - generic [ref=f17e192]: "11"
+                  - generic [ref=f17e193]: QA sonuç onayı
+                  - generic [ref=f17e194]: tamamlandı
+                - generic [ref=f17e195]:
+                  - generic [ref=f17e196]: "12"
+                  - generic [ref=f17e197]: PR onayı
+                  - generic [ref=f17e198]: kapıda bekliyor
+                - generic [ref=f17e199]:
+                  - generic [ref=f17e200]: 12b
+                  - generic [ref=f17e201]: PR yorum döngüsü
+                  - generic [ref=f17e202]: bekliyor
+                - generic [ref=f17e203]:
+                  - generic [ref=f17e204]: "13"
+                  - generic [ref=f17e205]: Kanıt paketi ve kapanış
+                  - generic [ref=f17e206]: bekliyor
+          - generic [ref=f17e207]:
+            - generic [ref=f17e208]:
+              - generic [ref=f17e209]:
+                - heading "Onay bekleniyor" [level=3] [ref=f17e210]
+                - generic [ref=f17e211]: bu adım insan kararı olmadan ilerlemez
+              - generic [ref=f17e212]:
+                - generic [ref=f17e213]:
+                  - term [ref=f17e214]: Kapı
+                  - definition [ref=f17e215]:
+                    - generic [ref=f17e216]: PR onayı
+                  - term [ref=f17e217]: Kanal
+                  - definition [ref=f17e218]: Studio veya Jira yorumu — ikisi de aynı imzayı üretir
+                  - term [ref=f17e219]: Hatırlatıcı
+                  - definition [ref=f17e220]: 24s Jira → 72s Teams/e-posta → 7. gün vekile delegasyon. Otomatik ret yok.
+                - generic [ref=f17e221]:
+                  - button "Onayla" [ref=f17e222] [cursor=pointer]
+                  - button "Reddet" [ref=f17e223] [cursor=pointer]
+                - paragraph [ref=f17e224]: Aynı karar Jira'da /approve veya /reject <sebep> yorumuyla da verilebilir.
+            - generic [ref=f17e225]:
+              - heading "Künye" [level=3] [ref=f17e227]
+              - generic [ref=f17e229]:
+                - term [ref=f17e230]: Ticket
+                - definition [ref=f17e231]: UGURPAY-501
+                - term [ref=f17e232]: Konu
+                - definition [ref=f17e233]: UGURPAY-501
+                - term [ref=f17e234]: Proje
+                - definition [ref=f17e235]: UGURPAY
+                - term [ref=f17e236]: Durum
+                - definition [ref=f17e237]:
+                  - generic [ref=f17e238]: kapıda
+                - term [ref=f17e239]: Adım
+                - definition [ref=f17e240]: 12 PR onayı
+                - term [ref=f17e241]: Risk
+                - definition [ref=f17e242]:
+                  - generic [ref=f17e243]: orta
+                  - text: 4 kapı
+                - term [ref=f17e244]: Çalışma modu
+                - definition [ref=f17e245]:
+                  - generic [ref=f17e246]: full_auto
+                - term [ref=f17e247]: Veri sınıfı
+                - definition [ref=f17e248]:
+                  - generic [ref=f17e249]: dahili
+                - term [ref=f17e250]: Uygulama
+                - definition [ref=f17e251]:
+                  - text: ugurpay
+                  - generic [ref=f17e252]: Odeme/_git/ugurpay
+                - term [ref=f17e253]: Bildiren
+                - definition [ref=f17e254]
+                - term [ref=f17e255]: Atanan
+                - definition [ref=f17e256]: —
+                - term [ref=f17e257]: PR
+                - definition [ref=f17e258]: —
+                - term [ref=f17e259]: Tüketim
+                - definition [ref=f17e260]:
+                  - text: 0.00 USD
+                  - generic [ref=f17e261]: 0 giriş / 0 çıkış token
+                - term [ref=f17e262]: Koşum
+                - definition [ref=f17e263]: run-UGURPAY-501
+                - term [ref=f17e264]: Başlangıç
+                - definition [ref=f17e265]:
+                  - text: 9.08.2026 01:11
+                  - generic [ref=f17e266]: 1 gün
+                - term [ref=f17e267]: Son değişiklik
+                - definition [ref=f17e268]: 10.08.2026 01:11
+            - generic [ref=f17e269]:
+              - heading "Fan-out bağı" [level=3] [ref=f17e271]
+              - generic [ref=f17e273]:
+                - term [ref=f17e274]: Ana ticket
+                - definition [ref=f17e275]:
+                  - link "UGURPAY-500" [ref=f17e276] [cursor=pointer]:
+                    - /url: /detail/UGURPAY-500
+  - region

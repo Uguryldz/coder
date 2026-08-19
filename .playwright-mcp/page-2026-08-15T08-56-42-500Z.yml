@@ -1,0 +1,548 @@
+- generic [active] [ref=f19e1]:
+  - navigation [ref=f19e2]:
+    - generic [ref=f19e3]:
+      - generic [ref=f19e4]: Maestro
+      - link "Ne yapar" [ref=f19e5] [cursor=pointer]:
+        - /url: "#ne-yapar"
+      - link "Mantığı" [ref=f19e6] [cursor=pointer]:
+        - /url: "#mantik"
+      - link "Karar akışı" [ref=f19e7] [cursor=pointer]:
+        - /url: "#karar"
+      - link "Mimari" [ref=f19e8] [cursor=pointer]:
+        - /url: "#mimari"
+      - link "Süreç" [ref=f19e9] [cursor=pointer]:
+        - /url: "#surec"
+      - link "Onay" [ref=f19e10] [cursor=pointer]:
+        - /url: "#onay"
+      - link "Denetim" [ref=f19e11] [cursor=pointer]:
+        - /url: "#denetim"
+      - link "Kurulum" [ref=f19e12] [cursor=pointer]:
+        - /url: "#kurulum"
+      - link "Ajanlar" [ref=f19e13] [cursor=pointer]:
+        - /url: "#ajanlar"
+      - link "Kanıt" [ref=f19e14] [cursor=pointer]:
+        - /url: "#kanit"
+      - link "PAM & dizin" [ref=f19e15] [cursor=pointer]:
+        - /url: "#entegrasyon"
+      - link "SIEM" [ref=f19e16] [cursor=pointer]:
+        - /url: "#siem"
+      - link "Yönetişim" [ref=f19e17] [cursor=pointer]:
+        - /url: "#yonetisim"
+      - link "Durum" [ref=f19e18] [cursor=pointer]:
+        - /url: "#durum"
+  - banner [ref=f19e19]:
+    - generic [ref=f19e20]:
+      - generic [ref=f19e21]: M
+      - heading "Jira'ya düşen talebi analize çeviren ajan hattı" [level=1] [ref=f19e22]: Jira'ya düşen talebianalize çeviren ajan hattı
+      - paragraph [ref=f19e23]:
+        - text: Maestro, banka içi yazılım taleplerini Jira üzerinden dinler; uygunluk kontrolünden analiz dokümanına kadar olan yolu yapay zekâ ajanlarıyla yürütür —
+        - strong [ref=f19e24]: her kritik adımda insan onayı
+        - text: ve
+        - strong [ref=f19e25]: kopmayan denetim izi
+        - text: ile.
+      - generic [ref=f19e26]:
+        - generic [ref=f19e27]:
+          - generic [ref=f19e28]: 4 / 4
+          - generic [ref=f19e29]: Canlı Jira senaryosu
+        - generic [ref=f19e30]:
+          - generic [ref=f19e31]: "2.305"
+          - generic [ref=f19e32]: Otomatik test
+        - generic [ref=f19e33]:
+          - generic [ref=f19e34]: "38"
+          - generic [ref=f19e35]: Kopmamış denetim kaydı
+        - generic [ref=f19e36]:
+          - generic [ref=f19e37]: 3 sn
+          - generic [ref=f19e38]: Onay algılama
+  - generic [ref=f19e40]:
+    - generic [ref=f19e41]: Ne iş yapar
+    - heading "Analistin yaptığı ilk turu makine yapar, kararı insan verir" [level=2] [ref=f19e42]: Analistin yaptığı ilk turu makine yapar,kararı insan verir
+    - generic [ref=f19e43]:
+      - generic [ref=f19e44]:
+        - generic [ref=f19e45]:
+          - generic [ref=f19e46]: "1"
+          - heading "Dinler" [level=3] [ref=f19e47]
+        - paragraph [ref=f19e48]: Jira'ya düşen ticket'ı kurala göre kendisi alır. Kimsenin "başlat" demesine gerek yok.
+      - generic [ref=f19e49]:
+        - generic [ref=f19e50]:
+          - generic [ref=f19e51]: "2"
+          - heading "Sorgular" [level=3] [ref=f19e52]
+        - paragraph [ref=f19e53]: Talep analiz için yeterli mi? Değilse numaralı soru sorar ve ticket'ı iade eder.
+      - generic [ref=f19e54]:
+        - generic [ref=f19e55]:
+          - generic [ref=f19e56]: "3"
+          - heading "Yazar" [level=3] [ref=f19e57]
+        - paragraph [ref=f19e58]: Kurumun analiz şablonuyla, her iddiayı bir kaynağa dayandırarak dokümanı hazırlar.
+      - generic [ref=f19e59]:
+        - generic [ref=f19e60]:
+          - generic [ref=f19e61]: "4"
+          - heading "Bekler" [level=3] [ref=f19e62]
+        - paragraph [ref=f19e63]: Onay olmadan tek adım ilerlemez. Onay Jira'dan yorumla ya da atamayla verilir.
+      - generic [ref=f19e64]:
+        - generic [ref=f19e65]:
+          - generic [ref=f19e66]: "5"
+          - heading "Teslim eder" [level=3] [ref=f19e67]
+        - paragraph [ref=f19e68]: Antetli Word'ü Jira'ya ekler ve ticket'ı talep sahibine devreder.
+      - generic [ref=f19e69]:
+        - generic [ref=f19e70]:
+          - generic [ref=f19e71]: "6"
+          - heading "Kaydeder" [level=3] [ref=f19e72]
+        - paragraph [ref=f19e73]: Her adımı hash zinciriyle bağlı, değiştirilemez bir denetim defterine işler.
+  - generic [ref=f19e75]:
+    - generic [ref=f19e76]: Mantığı
+    - heading "Aynı ticket, iki farklı yol" [level=2] [ref=f19e77]
+    - paragraph [ref=f19e78]:
+      - text: Fark, işi kimin yaptığında değil — insanın işi
+      - strong [ref=f19e79]: yapması
+      - text: ile insanın işi
+      - strong [ref=f19e80]: onaylaması
+      - text: arasında.
+    - 'figure "Elle: talep kuyrukta bekler, analist müsait olunca okur, doküman kişiye göre şekillenir — ortalama 1–2 hafta. Maestro ile: ticket saniyeler içinde alınır, dakikalar içinde analiz onaya çıkar — karar hâlâ insanda." [ref=f19e81]':
+      - img "Elle yürüyen analiz süreci ile Maestro ile yürüyen sürecin adım adım karşılaştırması" [ref=f19e83]
+  - generic [ref=f19e86]:
+    - generic [ref=f19e87]: Mantığı · Karar
+    - heading "Her ticket aynı üç sorudan geçer" [level=2] [ref=f19e88]
+    - 'figure "Hiçbir dal \"sessizce devam et\" demez: kural eşleşmeyen ticket''a dokunulmaz, yetersiz talep numaralı sorularla iade edilir, red gerekçesi analize birebir girer." [ref=f19e89]':
+      - 'img "Motorun karar akışı: dinleme kuralı, intake değerlendirmesi ve insan onayı dallarıyla" [ref=f19e91]'
+  - generic [ref=f19e94]:
+    - generic [ref=f19e95]: Nasıl kurulu
+    - heading "Mevcut araçların yerine değil, üstüne" [level=2] [ref=f19e96]
+    - paragraph [ref=f19e97]: Kurumun Jira'sı Jira olarak, repo'su repo olarak kalır. Maestro aradaki işi yapar ve her adımı kaydeder.
+    - figure [ref=f19e98]:
+      - 'img "Üç katmanlı mimari: kurumun mevcut sistemleri, Maestro motoru, yönetim ve kayıt katmanı" [ref=f19e100]'
+  - generic [ref=f19e102]:
+    - generic [ref=f19e103]: Üründen · Süreç haritası
+    - heading "Dokuz adım, üç insan kapısı" [level=2] [ref=f19e104]
+    - generic [ref=f19e105]:
+      - generic [ref=f19e106]:
+        - generic [ref=f19e107]: "01"
+        - generic [ref=f19e108]: Talep okundu
+        - generic [ref=f19e109]: Jira'da yeni ticket; dinleme kuralı eşleşir
+      - generic [ref=f19e110]:
+        - generic [ref=f19e111]: "02"
+        - generic [ref=f19e112]: Uygunluk kapısı
+        - generic [ref=f19e113]: "Intake ajanı: talep analiz edilebilir mi?"
+      - generic [ref=f19e114]:
+        - generic [ref=f19e115]: "03"
+        - generic [ref=f19e116]: Analiz yazımı
+        - generic [ref=f19e117]: Şablona göre, kaynak göstererek
+      - generic [ref=f19e118]:
+        - generic [ref=f19e119]: "04"
+        - generic [ref=f19e120]: Analiz onayı
+        - generic [ref=f19e121]: "İnsan: onayla · reddet · soru sor"
+      - generic [ref=f19e122]:
+        - generic [ref=f19e123]: "05"
+        - generic [ref=f19e124]: Teslim
+        - generic [ref=f19e125]: Antetli Word + Jira'ya ek, talep sahibine devir
+    - figure [ref=f19e126]:
+      - generic [ref=f19e127]:
+        - generic [ref=f19e128]: Maestro Studio — Canlı akış › Süreç haritası
+        - 'img "Ürün içindeki süreç haritası ekranı: dokuz adımlık ajan hattı" [ref=f19e133]'
+      - generic [ref=f19e134]:
+        - text: Sarı kutular insan kapısı, mavi kutular yapay zekâ ajanı. Bir iş başladığında bulunduğu adım canlı yanar. Bugün
+        - strong [ref=f19e135]: 1–3 arası (analiz hattı) canlıda
+        - text: ; 4–9 (kod, tarama, test, PR, merge) altyapısı yazıldı, uçtan uca canlı denenmedi.
+  - generic [ref=f19e137]:
+    - generic [ref=f19e138]: Mantığı · Kontrol
+    - heading "Onay iki şekilde verilir — ikisi de Jira'dan" [level=2] [ref=f19e139]
+    - generic [ref=f19e140]:
+      - generic [ref=f19e141]:
+        - heading "1 · Yorumla" [level=3] [ref=f19e142]
+        - paragraph [ref=f19e143]:
+          - text: Ticket'a /approve yazmak yeterli. Motor yorumu ortalama
+          - strong [ref=f19e144]: 3 saniyede
+          - text: görür, onaylayanın kimliğini kaydeder ve teslime geçer.
+      - generic [ref=f19e145]:
+        - heading "2 · Atamayla" [level=3] [ref=f19e146]
+        - paragraph [ref=f19e147]:
+          - text: Hiç yorum yazmadan ticket'ı bot kullanıcısına atamak da onaydır. Motor atama geçmişinden
+          - strong [ref=f19e148]: kimin attığını
+          - text: bulur ve onu onaylayan sayar.
+      - generic [ref=f19e149]:
+        - heading "Reddetmek" [level=3] [ref=f19e150]
+        - paragraph [ref=f19e151]:
+          - text: Gerekçe yazıp reddedin. Red metni analiz ajanına
+          - strong [ref=f19e152]: birebir
+          - text: aktarılır; doküman o eleştiriyi dikkate alarak yeniden yazılır ve tekrar onaya çıkar.
+      - generic [ref=f19e153]:
+        - heading "Hiçbir şey yapmamak" [level=3] [ref=f19e154]
+        - paragraph [ref=f19e155]: Motor bekler. Onay gelmeden doküman teslim edilmez, ticket kapanmaz. Bekleyen kapılar panelde ve bildirimlerde görünür.
+  - generic [ref=f19e157]:
+    - generic [ref=f19e158]: Üründen · Denetim izi
+    - heading "\"Bu kararı kim verdi?\" — tek cevap" [level=2] [ref=f19e159]
+    - generic [ref=f19e160]:
+      - generic [ref=f19e161]:
+        - generic [ref=f19e162]: ⛓
+        - generic [ref=f19e163]:
+          - heading "Hash zinciri" [level=3] [ref=f19e164]
+          - paragraph [ref=f19e165]:
+            - text: Her kayıt bir öncekinin özetini taşır. Geçmişe dönük tek bir satır değişse zincir kopar; ekrandaki
+            - strong [ref=f19e166]: "\"Zinciri şimdi doğrula\""
+            - text: bunu anında gösterir.
+      - generic [ref=f19e167]:
+        - generic [ref=f19e168]: ◱
+        - generic [ref=f19e169]:
+          - heading "Tek yazar ilkesi" [level=3] [ref=f19e170]
+          - paragraph [ref=f19e171]: Deftere yalnızca motor yazar. Panel üzerinden kayıt eklenemez, düzenlenemez, silinemez.
+      - generic [ref=f19e172]:
+        - generic [ref=f19e173]: ↧
+        - generic [ref=f19e174]:
+          - heading "Filtre ve CSV" [level=3] [ref=f19e175]
+          - paragraph [ref=f19e176]:
+            - text: Tarih, aktör, aksiyon ve serbest metinle süzülür; denetçiye
+            - strong [ref=f19e177]: CSV olarak
+            - text: verilir. SIEM'e CEF formatında akıtılabilir.
+      - generic [ref=f19e178]:
+        - generic [ref=f19e179]: ⚠
+        - generic [ref=f19e180]:
+          - heading "Dürüst sınır" [level=3] [ref=f19e181]
+          - paragraph [ref=f19e182]:
+            - text: Zincir dış bir yere çapalanmadığı sürece, tüm defteri birlikte yeniden yazan bir saldırıyı tespit edemez. Ekran bunu
+            - strong [ref=f19e183]: gizlemek yerine yazıyor
+            - text: — günlük çapa açılabilir.
+    - 'figure "Ekrandaki 38 kayıt, canlı testlerin gerçek izi: iş akışı başladı → kapı onaya açıldı → kapı onaylandı / reddedildi → insana devredildi." [ref=f19e184]':
+      - generic [ref=f19e185]:
+        - generic [ref=f19e186]: Maestro Studio — Denetim izi
+        - 'img "Denetim izi ekranı: hash zinciri doğrulaması ve kapı onay kayıtları" [ref=f19e191]'
+  - generic [ref=f19e194]:
+    - generic [ref=f19e195]: Üründen · Kurulum
+    - heading "Bir projeyi bağlamak dört adım" [level=2] [ref=f19e196]
+    - generic [ref=f19e197]:
+      - generic [ref=f19e198]:
+        - generic [ref=f19e199]: "1"
+        - generic [ref=f19e200]:
+          - heading "Jira projesi + hedef repo" [level=3] [ref=f19e201]
+          - paragraph [ref=f19e202]: Hangi Jira projesinin ticket'ları, hangi kod deposuna gidiyor.
+      - generic [ref=f19e203]:
+        - generic [ref=f19e204]: "2"
+        - generic [ref=f19e205]:
+          - heading "Platform profili" [level=3] [ref=f19e206]
+          - paragraph [ref=f19e207]: Derleme ortamı ve politika seçilir.
+      - generic [ref=f19e208]:
+        - generic [ref=f19e209]: "3"
+        - generic [ref=f19e210]:
+          - heading "Dinleme kuralları" [level=3] [ref=f19e211]
+          - paragraph [ref=f19e212]:
+            - text: Hangi ticket tipi hangi akışa düşer.
+            - strong [ref=f19e213]: "Kurulumda kendiliğinden önerilir:"
+            - text: projedeki gerçek iş tipleri okunur — hata/arıza kayıtları düzeltme akışına, diğerleri analiz akışına.
+      - generic [ref=f19e214]:
+        - generic [ref=f19e215]: "4"
+        - generic [ref=f19e216]:
+          - heading "Kuru koşum" [level=3] [ref=f19e217]
+          - paragraph [ref=f19e218]:
+            - text: "Canlıya geçmeden önce: son ticket'lar bu kurallarla"
+            - emphasis [ref=f19e219]: nereye düşerdi?
+            - text: Sonuç görülür, sonra admin onayına gider.
+    - paragraph [ref=f19e221]:
+      - strong [ref=f19e222]: Kural eşleşmeyen ticket asla sessizce bir repoya gitmez.
+      - text: Yapılandırma yayına, ancak yönetici onayından sonra çıkar.
+    - figure [ref=f19e223]:
+      - generic [ref=f19e224]:
+        - generic [ref=f19e225]: Maestro Studio — Proje bağlama
+        - 'img "Proje bağlama sihirbazı: Jira kaynağı, repo, kural ve onay adımları" [ref=f19e230]'
+  - generic [ref=f19e232]:
+    - generic [ref=f19e233]: Mantığı · Ajanlar
+    - heading "Ajanı kod yazmadan eğitmek" [level=2] [ref=f19e234]
+    - generic [ref=f19e235]:
+      - generic [ref=f19e236]:
+        - heading "Ajan tanımları" [level=3] [ref=f19e237]
+        - paragraph [ref=f19e238]:
+          - text: Analist ve yazılım ajanının davranışı ayrı ayrı tanımlanır. Her dinleme kuralı
+          - strong [ref=f19e239]: kendi ajanını seçebilir
+          - text: — kredi projesine farklı analist, ödeme projesine farklı analist.
+      - generic [ref=f19e240]:
+        - heading "Bilgi kütüphanesi" [level=3] [ref=f19e241]
+        - paragraph [ref=f19e242]:
+          - text: Regülasyon notu, mimari kılavuz, terim sözlüğü gibi kurum belgeleri
+          - strong [ref=f19e243]: ajanın altına
+          - text: yüklenir. Ajan analiz yazarken bu belgeleri kaynak gösterir.
+      - generic [ref=f19e244]:
+        - heading "Analiz şablonu" [level=3] [ref=f19e245]
+        - paragraph [ref=f19e246]: Bölüm başlıkları ve her bölümün AI talimatı panelden düzenlenir. Motorun kurumsal iskeleti korunur, içerik kurumunuza göre şekillenir.
+      - generic [ref=f19e247]:
+        - heading "Word şablonu" [level=3] [ref=f19e248]
+        - paragraph [ref=f19e249]:
+          - text: Kendi antetli kağıdınızı yükleyin. Logo, üst bilgi, alt bilgi ve stiller
+          - strong [ref=f19e250]: bozulmadan
+          - text: korunur; yalnızca yer tutucular doldurulur.
+    - paragraph [ref=f19e252]:
+      - strong [ref=f19e253]: Kaynaksız cümle yazılamaz.
+      - text: Analiz ajanı her iddiayı ticket'a, yüklenen belgeye veya kullanıcı cevabına dayandırmak zorundadır; dayanaksız bölüm üretilirse iş teslim edilmez, ajan yeniden dener.
+  - generic [ref=f19e255]:
+    - generic [ref=f19e256]: Kanıt · Gerçek Jira üzerinde uçtan uca test
+    - heading "Dört senaryo, dördü de geçti" [level=2] [ref=f19e257]
+    - table [ref=f19e259]:
+      - rowgroup [ref=f19e260]:
+        - row [ref=f19e261]:
+          - columnheader "#" [ref=f19e262]
+          - columnheader "Senaryo" [ref=f19e263]
+          - columnheader "Beklenen davranış" [ref=f19e264]
+          - columnheader "Ticket" [ref=f19e265]
+          - columnheader "Sonuç" [ref=f19e266]
+      - rowgroup [ref=f19e267]:
+        - row [ref=f19e268]:
+          - cell "S1" [ref=f19e269]
+          - cell "Yorumla onay" [ref=f19e270]
+          - cell "Analiz biter, kapı açılır; Jira'ya /approve yazılır → motor 3 saniyede algılar ve teslim eder" [ref=f19e271]
+          - cell "OPS-17" [ref=f19e272]
+          - cell "GEÇTİ" [ref=f19e273]
+        - row [ref=f19e275]:
+          - cell "S2" [ref=f19e276]
+          - cell "Atamayla onay" [ref=f19e277]
+          - cell "Yorum yazmadan ticket bot'a atanır → onay sayılır; onaylayanın kimliği doğru kaydedilir" [ref=f19e278]
+          - cell "OPS-18" [ref=f19e279]
+          - cell "GEÇTİ" [ref=f19e280]
+        - row [ref=f19e282]:
+          - cell "S3" [ref=f19e283]
+          - cell "Red ve yeniden analiz" [ref=f19e284]
+          - cell "Gerekçeli red → analiz o gerekçeyi birebir dikkate alarak yeniden yazılır" [ref=f19e285]
+          - cell "OPS-20" [ref=f19e286]
+          - cell "GEÇTİ" [ref=f19e287]
+        - row [ref=f19e289]:
+          - cell "S4" [ref=f19e290]
+          - cell "Eksik talep · soru turu" [ref=f19e291]
+          - cell "Yetersiz talep işlenmez; 3 soru + İADE → cevaplar analizin içeriğini şekillendirir" [ref=f19e292]
+          - cell "OPS-21" [ref=f19e293]
+          - cell "GEÇTİ" [ref=f19e294]
+    - generic [ref=f19e296]:
+      - generic [ref=f19e297]:
+        - generic [ref=f19e298]: Onay algılama
+        - generic [ref=f19e299]: 3 sn
+        - paragraph [ref=f19e300]: yorum yazıldıktan sonra
+      - generic [ref=f19e301]:
+        - generic [ref=f19e302]: Denetim kaydı
+        - generic [ref=f19e303]: "38"
+        - paragraph [ref=f19e304]: zincir kopuksuz
+      - generic [ref=f19e305]:
+        - generic [ref=f19e306]: Bulunan hata
+        - generic [ref=f19e307]: "3"
+        - paragraph [ref=f19e308]: üçü de düzeltildi
+      - generic [ref=f19e309]:
+        - generic [ref=f19e310]: Otomatik test
+        - generic [ref=f19e311]: "2.305"
+        - paragraph [ref=f19e312]: tamamı yeşil
+  - generic [ref=f19e314]:
+    - generic [ref=f19e315]: Üründen · Panel
+    - heading "Motorun ne yaptığı tek ekranda" [level=2] [ref=f19e316]
+    - 'figure "Menü dört başlıkta toplanmıştır: İşler (izleme), Ajanlar (eğitim ve şablonlar), Denetim (iz, maliyet, maskeleme), Kurulum (bağlama, roller, sağlık). Henüz açılmamış yetenekler yakında etiketiyle dürüstçe işaretlenir." [ref=f19e317]':
+      - generic [ref=f19e318]:
+        - generic [ref=f19e319]: Maestro Studio — Panel · canlı motor işleri
+        - 'img "Maestro paneli: canlı motor işleri listesi ve dört başlıklı menü" [ref=f19e324]'
+      - generic [ref=f19e325]:
+        - text: "Menü dört başlıkta toplanmıştır:"
+        - strong [ref=f19e326]: İşler
+        - text: (izleme),
+        - strong [ref=f19e327]: Ajanlar
+        - text: (eğitim ve şablonlar),
+        - strong [ref=f19e328]: Denetim
+        - text: (iz, maliyet, maskeleme),
+        - strong [ref=f19e329]: Kurulum
+        - text: (bağlama, roller, sağlık). Henüz açılmamış yetenekler
+        - generic [ref=f19e330]: yakında
+        - text: etiketiyle dürüstçe işaretlenir.
+  - generic [ref=f19e332]:
+    - generic [ref=f19e333]: Kurumsal entegrasyon
+    - heading "Sır saklamaz, parola tutmaz, kendi kullanıcı dizinini kurmaz" [level=2] [ref=f19e334]: Sır saklamaz, parola tutmaz,kendi kullanıcı dizinini kurmaz
+    - paragraph [ref=f19e335]:
+      - text: "Bir AI aracının bankaya girerken düştüğü yer genelde burasıdır: kendi kullanıcı listesini ve kendi anahtar deposunu getirir. Maestro tam tersini yapar —"
+      - strong [ref=f19e336]: kurumun mevcut PAM, dizin ve log altyapısını kullanır
+      - text: .
+    - figure [ref=f19e337]:
+      - 'img "Kurumsal entegrasyon haritası: Vault, LDAP, SIEM ve denetim çıktıları ile Maestro''nun ilişkisi" [ref=f19e339]'
+    - generic [ref=f19e340]:
+      - generic [ref=f19e341]:
+        - heading "PAM · Sır yönetimi HashiCorp Vault bağlı" [level=3] [ref=f19e342]:
+          - text: PAM · Sır yönetimi
+          - generic [ref=f19e343]: HashiCorp Vault bağlı
+        - paragraph [ref=f19e344]:
+          - text: Jira, Git ve model anahtarları Maestro'nun yapılandırmasında
+          - strong [ref=f19e345]: durmaz
+          - text: ; orada yalnızca bir
+          - emphasis [ref=f19e346]: referans
+          - text: vardır. Anahtarın kendisi çalışma anında Vault'tan alınır — diske yazılmaz, kayıtlara düşmez, panelde maskeli görünür.
+        - paragraph [ref=f19e347]:
+          - text: AppRole ile kimlik doğrulama, kira süresi dolmadan token yenileme, mount bazlı izin listesi ve üretim ortamında
+          - strong [ref=f19e348]: şifresiz bağlantının kesin reddi
+          - text: uygulanır.
+      - generic [ref=f19e349]:
+        - heading "Kısa ömürlü yetki çalışıyor" [level=3] [ref=f19e350]:
+          - text: Kısa ömürlü yetki
+          - generic [ref=f19e351]: çalışıyor
+        - paragraph [ref=f19e352]:
+          - text: Repo'ya yazma gibi yetkiler için kalıcı token yerine
+          - strong [ref=f19e353]: TTL tavanlı, dar kapsamlı geçici kimlik
+          - text: üretilir. İstenen süre tavanı aşarsa sessizce kırpılmaz — işlem reddedilir.
+        - paragraph [ref=f19e354]: Böylece bir ajan çalıştığı sürece yaşayan, sonra kendiliğinden ölen bir yetkiyle çalışır.
+      - generic [ref=f19e355]:
+        - heading "Dizin ve kimlik LDAP / LDAPS bağlı" [level=3] [ref=f19e356]:
+          - text: Dizin ve kimlik
+          - generic [ref=f19e357]: LDAP / LDAPS bağlı
+        - paragraph [ref=f19e358]:
+          - text: "Girişler kurum dizininden yapılır: TLS bind, kurumun kendi CA sertifikası,"
+          - strong [ref=f19e359]: AD grubu → Maestro rolü
+          - text: eşlemesi. Maestro'nun kendi kullanıcı listesi yoktur.
+        - paragraph [ref=f19e360]:
+          - text: Dizin erişilemezse yerel hesaba
+          - strong [ref=f19e361]: sessizce düşmez
+          - text: — giriş kapanır. Boş parolayla anonim bind ve hesap varlığını sızdıran zamanlama farkı kapatılmıştır.
+      - generic [ref=f19e362]:
+        - heading "Diğer PAM ürünleri sürücü yazılır" [level=3] [ref=f19e363]:
+          - text: Diğer PAM ürünleri
+          - generic [ref=f19e364]: sürücü yazılır
+        - paragraph [ref=f19e365]:
+          - strong [ref=f19e366]: CyberArk, Conjur, Azure Key Vault
+          - text: — sır yönetimi bir sürücü arayüzü üzerinden çalışır. Bugün Vault sürücüsü canlıda; başka bir ürün istendiğinde aynı arayüze sürücü yazılır, motorun geri kalanı değişmez.
+        - paragraph [ref=f19e367]:
+          - text: "Dürüst olalım: bu sürücüler"
+          - strong [ref=f19e368]: bugün yazılmış değil
+          - text: . Mimari hazır, iş kalemi bellidir.
+    - figure [ref=f19e369]:
+      - generic [ref=f19e370]:
+        - generic [ref=f19e371]: Maestro Studio — Ayarlar & bağlantılar
+        - 'img "Bağlantılar ekranı: Jira, GitHub ve model sağlayıcı bağlantıları, tokenlar maskeli" [ref=f19e376]'
+      - generic [ref=f19e377]:
+        - text: Bağlantı ekranında token'lar
+        - strong [ref=f19e378]: hiçbir zaman açık gösterilmez
+        - text: — yalnızca son dört karakter. "Test et" düğmesi bağlantıyı sırrı ifşa etmeden doğrular.
+  - generic [ref=f19e380]:
+    - generic [ref=f19e381]: SIEM ve log yönetimi
+    - heading "Denetim defteri, SIEM'in anlayacağı dilde" [level=2] [ref=f19e382]
+    - generic [ref=f19e383]:
+      - generic [ref=f19e384]:
+        - heading "CEF üretiliyor" [level=3] [ref=f19e385]:
+          - text: CEF
+          - generic [ref=f19e386]: üretiliyor
+        - paragraph [ref=f19e387]:
+          - text: Her denetim kaydı
+          - strong [ref=f19e388]: ArcSight CEF
+          - text: "satırına çevrilir: olay sınıfı, aktör, konu, sonuç ve önem derecesi standart alanlara oturur."
+      - generic [ref=f19e389]:
+        - heading "Syslog üretiliyor" [level=3] [ref=f19e390]:
+          - text: Syslog
+          - generic [ref=f19e391]: üretiliyor
+        - paragraph [ref=f19e392]:
+          - strong [ref=f19e393]: RFC 3164
+          - text: çerçevesi — öncelik, zaman damgası, makine ve etiket. Splunk, QRadar ve ArcSight'ın doğrudan okuyabileceği biçim.
+      - generic [ref=f19e394]:
+        - heading "Log enjeksiyonu savunması" [level=3] [ref=f19e395]
+        - paragraph [ref=f19e396]: Ticket metnindeki satır sonu ve ayraç karakterleri kaçırılır; kimse ticket açıklamasına sahte bir log satırı yazdıramaz.
+    - generic [ref=f19e397]:
+      - heading "Bugünkü sınır — açıkça söylüyoruz" [level=3] [ref=f19e398]
+      - paragraph [ref=f19e399]:
+        - text: CEF/syslog
+        - strong [ref=f19e400]: biçimlendiricisi hazır ve testlidir
+        - text: ; ancak kayıtları bir toplayıcıya
+        - strong [ref=f19e401]: otomatik ileten taşıyıcı henüz bağlı değildir
+        - text: . Bugün denetim kaydı panelden JSON/CSV olarak indirilir. Hedef toplayıcı ve taşıma biçimi (dosya, syslog portu veya HTTP) kurumla netleştiğinde bağlanır — bu, günler mertebesinde bir iştir, mimari değişikliği gerektirmez.
+      - paragraph [ref=f19e402]: "Bu ayrımı sunumda saklamıyoruz: \"SIEM'e akıyor\" demek, teknik bir denetçinin beş dakikada çürüteceği bir iddia olurdu."
+  - generic [ref=f19e404]:
+    - generic [ref=f19e405]: Yönetişim
+    - heading "Yetki, ayrım ve durdurma" [level=2] [ref=f19e406]
+    - figure [ref=f19e407]:
+      - generic [ref=f19e408]:
+        - generic [ref=f19e409]: Maestro Studio — Kullanıcılar & roller
+        - 'img "Kullanıcılar ve roller ekranı: dizin grubu eşlemesi, rol kümesi ve görevler ayrılığı kuralları" [ref=f19e414]'
+      - generic [ref=f19e415]:
+        - text: Roller doğrudan verilmez —
+        - strong [ref=f19e416]: dizin grubu üyeliğinden okunur
+        - text: . Kapalı kümenin dışındaki hiçbir grup yetki taşımaz.
+    - generic [ref=f19e417]:
+      - generic [ref=f19e418]:
+        - heading "Görevler ayrılığı (SoD)" [level=3] [ref=f19e419]
+        - paragraph [ref=f19e420]:
+          - text: Kodu üreten ile onaylayan, PO onayı ile teknik onay, PR onaylayan ile birleştiren
+          - strong [ref=f19e421]: farklı kimliklerdir
+          - text: ". En önemlisi:"
+          - strong [ref=f19e422]: AI servis hesabı hiçbir kapıyı onaylayamaz
+          - text: — teknik olarak yetkisi yoktur.
+      - generic [ref=f19e423]:
+        - heading "Kişisel veri maskeleme" [level=3] [ref=f19e424]
+        - paragraph [ref=f19e425]: Ticket metnindeki TCKN, IBAN, kart, telefon ve e-posta modele gitmeden önce maskelenir. Maskeleme sunucuda yapılır; panel maskeyi çözemez.
+      - generic [ref=f19e426]:
+        - heading "Kill-switch" [level=3] [ref=f19e427]
+        - paragraph [ref=f19e428]: Tek düğmeyle tüm otomasyon durur. Devam eden iş kapıda bekler, veri kaybolmaz.
+      - generic [ref=f19e429]:
+        - heading "Dört göz kuralı" [level=3] [ref=f19e430]
+        - paragraph [ref=f19e431]: Kritik parametreleri değiştiren ile onaylayan farklı kişilerdir; değişiklik onaysız yayına çıkmaz.
+      - generic [ref=f19e432]:
+        - heading "Maliyet ve kota" [level=3] [ref=f19e433]
+        - paragraph [ref=f19e434]: Her model çağrısının jetonu ve maliyeti kaydedilir; proje bazında görünür ve sınırlanabilir.
+      - generic [ref=f19e435]:
+        - heading "Kendi kendine kalkma" [level=3] [ref=f19e436]
+        - paragraph [ref=f19e437]: Motor süreci ölürse servis yeniden başlar; yarım kalan işler için Jira'ya bilgi notu düşülür.
+    - figure [ref=f19e438]:
+      - generic [ref=f19e439]:
+        - generic [ref=f19e440]: Maestro Studio — PII maskeleme
+        - 'img "PII maskeleme ekranı: maskeleme kuralları ve günlük isabet sayıları" [ref=f19e445]'
+      - generic [ref=f19e446]:
+        - text: Ekran neyin maskelendiğini
+        - strong [ref=f19e447]: yalnızca sayı ve kural olarak
+        - text: gösterir; maskelenen değerin kendisi hiçbir yerde görüntülenmez.
+  - generic [ref=f19e449]:
+    - generic [ref=f19e450]: Durum
+    - heading "Nerede hazır, nerede değil" [level=2] [ref=f19e451]
+    - generic [ref=f19e452]:
+      - generic [ref=f19e453]:
+        - generic [ref=f19e454]: CANLI
+        - heading "Bugün çalışıyor" [level=3] [ref=f19e455]
+        - list [ref=f19e456]:
+          - listitem [ref=f19e457]: Jira dinleme ve otomatik başlatma
+          - listitem [ref=f19e458]: Uygunluk kapısı ve soru turu
+          - listitem [ref=f19e459]: Şablonlu analiz + antetli Word
+          - listitem [ref=f19e460]: Yorum ve atamayla onay, red döngüsü
+          - listitem [ref=f19e461]: Denetim izi, maliyet, PII maskeleme
+          - listitem [ref=f19e462]:
+            - strong [ref=f19e463]: Vault
+            - text: ile sır yönetimi, kısa ömürlü yetki
+          - listitem [ref=f19e464]:
+            - strong [ref=f19e465]: LDAP/LDAPS
+            - text: ile kurumsal giriş, grup→rol
+          - listitem [ref=f19e466]: Teams · Slack · Jira bildirimleri
+      - generic [ref=f19e467]:
+        - generic [ref=f19e468]: SIRADA
+        - heading "Mimari hazır, bağlanacak" [level=3] [ref=f19e469]
+        - list [ref=f19e470]:
+          - listitem [ref=f19e471]:
+            - text: SIEM taşıyıcısı —
+            - strong [ref=f19e472]: CEF/syslog üretiliyor
+            - text: ", hedef toplayıcı bekleniyor"
+          - listitem [ref=f19e473]: CyberArk / Conjur / Key Vault sürücüsü
+          - listitem [ref=f19e474]: E-posta (SMTP) bildirimi — taşıma katmanı
+          - listitem [ref=f19e475]: "Geliştirme hattı: kod, test, PR, merge"
+      - generic [ref=f19e476]:
+        - generic [ref=f19e477]: AÇIK KONU
+        - heading "Yaygınlaştırma öncesi" [level=3] [ref=f19e478]
+        - list [ref=f19e479]:
+          - listitem [ref=f19e480]: Tek proje → çok proje ölçeklendirme
+          - listitem [ref=f19e481]: SAML / OIDC tabanlı SSO (bugün yok)
+          - listitem [ref=f19e482]: Analiz kalitesi için ölçüm seti
+          - listitem [ref=f19e483]: Denetim zincirine dış çapa
+    - paragraph [ref=f19e485]:
+      - strong [ref=f19e486]: "Değerlendirme:"
+      - text: Kurum içi, tek proje üzerinde, analiz akışı için
+      - strong [ref=f19e487]: kullanıma hazır
+      - text: . Kuruma yaygın açılış, yukarıdaki açık konular kapandıktan sonra önerilir.
+  - generic [ref=f19e489]:
+    - generic [ref=f19e490]: Özet
+    - heading "Analiz artık kuyrukta beklemiyor" [level=2] [ref=f19e491]
+    - paragraph [ref=f19e492]: Jira'ya düşen talep dakikalar içinde okunuyor, kurumun şablonuyla analiz ediliyor, insana onaya sunuluyor — ve her adım imzalı bir defterde duruyor.
+    - generic [ref=f19e493]:
+      - generic [ref=f19e494]:
+        - generic [ref=f19e495]: Canlı senaryo
+        - generic [ref=f19e496]: 4/4
+        - paragraph [ref=f19e497]: gerçek Jira üzerinde
+      - generic [ref=f19e498]:
+        - generic [ref=f19e499]: Onay algılama
+        - generic [ref=f19e500]: 3 sn
+        - paragraph [ref=f19e501]: yorumdan sonra
+      - generic [ref=f19e502]:
+        - generic [ref=f19e503]: Denetim
+        - generic [ref=f19e504]: "38"
+        - paragraph [ref=f19e505]: kopmamış kayıt
+      - generic [ref=f19e506]:
+        - generic [ref=f19e507]: Test
+        - generic [ref=f19e508]: "2.305"
+        - paragraph [ref=f19e509]: tamamı yeşil
+    - paragraph [ref=f19e510]: "Sonraki adım: pilot projede iki hafta gözlemli kullanım · ardından geliştirme hattının açılması."
+  - contentinfo [ref=f19e511]:
+    - generic [ref=f19e512]: Maestro — Jira odaklı analiz otomasyonu · ekran görüntüleri canlı sistemden alınmıştır

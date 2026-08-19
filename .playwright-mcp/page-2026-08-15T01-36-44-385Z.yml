@@ -1,0 +1,48 @@
+- generic [ref=f24e2]:
+  - generic [ref=f24e4]:
+    - heading "🎯 Maestro — canlı Jira pilotu" [level=1] [ref=f24e5]
+    - generic [ref=f24e6]: Bu, Maestro'nun gerçek bir Jira sitesine karşı ilk uçtan uca koşusudur. Jira GERÇEK; Azure DevOps sahtedir.
+  - generic [ref=f24e8]:
+    - text: "Dürüstlük notu: Jira gerçektir — … (proje OPS). Maestro'nun yorumları, etiketleri ve onay yoklaması doğrudan bu siteye gider. Azure DevOps sahtedir (yerel taklit). Model, kişisel veri maskeleme ve denetim izi gerçektir. Onaylar"
+    - generic [ref=f24e9]:
+      - text: gerçek Jira'ya
+      - code [ref=f24e10]: /approve
+      - text: yorumu
+    - text: yazılarak verilir — burada bir kutu yok. Bir adım patlarsa ekranda kırmızı görünür — başarı taklit edilmez.
+  - generic [ref=f24e12]:
+    - text: ⚙ Ayarlar
+    - generic [ref=f24e13]: — env yerine buradan (çalışma sürerken kilitli)
+    - button "Göster" [ref=f24e14] [cursor=pointer]
+  - generic [ref=f24e15]:
+    - generic [ref=f24e16]:
+      - generic [ref=f24e17]: Ticket
+      - generic [ref=f24e18]: —
+    - generic [ref=f24e19]:
+      - generic [ref=f24e20]: Model çağrısı
+      - generic [ref=f24e21]: "0"
+    - generic [ref=f24e22]:
+      - generic [ref=f24e23]: Token
+      - generic [ref=f24e24]: "0"
+    - generic [ref=f24e25]:
+      - generic [ref=f24e26]: Maskelenen alan
+      - generic [ref=f24e27]: "0"
+    - generic [ref=f24e28]:
+      - generic [ref=f24e29]: Denetim kaydı
+      - generic [ref=f24e30]: "0"
+  - generic [ref=f24e33] [cursor=pointer]:
+    - text: 🛡️ Denetim raporu (regülatör)
+    - generic [ref=f24e34]: tarih / aktör / aksiyon süz, CSV indir
+  - generic [ref=f24e35]:
+    - generic [ref=f24e36]:
+      - generic [ref=f24e37]:
+        - generic [ref=f24e38]: OPS
+        - link "Jira Cloud" [ref=f24e39] [cursor=pointer]:
+          - /url: "#"
+        - generic [ref=f24e40]: CANLI SITE
+      - generic [ref=f24e41]: Yükleniyor…
+    - generic [ref=f24e43]:
+      - generic [ref=f24e44]:
+        - text: ⚙ Maestro'nun iç işleyişi
+        - generic [ref=f24e45]: —
+      - generic [ref=f24e47]: "# bekleniyor…"
+  - generic [ref=f24e49]: "Sol taraf gerçek Jira'dır: Maestro yorumları oraya yazar, onayı oradaki yorumları yoklayarak alır (Atlassian Cloud yerel makineye webhook gönderemez). Sağ taraf Maestro'nun adımlarıdır — her adım gerçek paketleri çağırır."

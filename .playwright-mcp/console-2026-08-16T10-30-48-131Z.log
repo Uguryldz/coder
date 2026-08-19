@@ -1,0 +1,36 @@
+[    1364ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:20102
+[   20669ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://127.0.0.1:7000/api/studio/runs?limit=500:0
+[   21752ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://127.0.0.1:7000/api/studio/runs?limit=500:0
+[   23808ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://127.0.0.1:7000/api/studio/runs?limit=500:0
+[  322531ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[  322550ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[  326568ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[  326594ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[  330601ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[  330623ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1110275ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1110305ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1114284ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1114313ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1118292ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1118323ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1122301ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1122334ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1126311ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1126344ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1129693ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 1130317ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1130353ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1130701ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 1132708ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 1134324ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1134363ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1138330ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1138370ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1142339ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1142392ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1146346ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1146399ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1150351ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/runs:0
+[ 1150406ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/pilot/state:0
+[ 1194881ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:7000/api/studio/pilot/runs:0

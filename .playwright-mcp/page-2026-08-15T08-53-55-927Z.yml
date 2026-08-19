@@ -1,0 +1,66 @@
+- generic [ref=f18e2]:
+  - generic [ref=f18e3]: Kurumsal güvenlik altyapısıyla entegrasyon
+  - generic [ref=f18e4]: Maestro sır saklamaz, parola tutmaz, kendi kullanıcı dizinini kurmaz. Kurumun mevcut PAM, dizin ve log altyapısını kullanır.
+  - generic [ref=f18e5]:
+    - generic [ref=f18e6]:
+      - generic [ref=f18e7]: Kurumun güvenlik altyapısı
+      - generic [ref=f18e8]:
+        - generic [ref=f18e9]:
+          - text: HashiCorp Vault
+          - generic [ref=f18e10]: BAĞLI
+        - generic [ref=f18e11]: Jira/Git/LLM anahtarları burada durur. AppRole ile kimlik doğrulama, kira süresi dolmadan token yenileme.
+      - generic [ref=f18e12]:
+        - generic [ref=f18e13]:
+          - text: CyberArk · Conjur · KeyVault
+          - generic [ref=f18e14]: SÜRÜCÜ YAZILIR
+        - generic [ref=f18e15]: Sır yönetimi sürücü mimarisi hazır — aynı arayüze yeni sürücü eklenir.
+      - generic [ref=f18e16]:
+        - generic [ref=f18e17]:
+          - text: Active Directory / LDAPS
+          - generic [ref=f18e18]: BAĞLI
+        - generic [ref=f18e19]: Girişler kurum dizininden. TLS bind, kurum CA'sı, AD grubu → Maestro rolü eşlemesi.
+      - generic [ref=f18e20]:
+        - generic [ref=f18e21]:
+          - text: SIEM toplayıcı
+          - generic [ref=f18e22]: HEDEF BEKLİYOR
+        - generic [ref=f18e23]: Splunk · QRadar · ArcSight — hangi porta/dosyaya akacağı kurumla netleşince bağlanır.
+    - generic [ref=f18e24]:
+      - generic [ref=f18e25]: Maestro
+      - generic [ref=f18e26]:
+        - generic [ref=f18e27]: Sır referansı ile çalışır
+        - generic [ref=f18e28]: Yapılandırmada parola değil, referans tutulur. Anahtarın kendisi çalışma anında Vault'tan alınır, diske yazılmaz, kayıtlara düşmez.
+      - generic [ref=f18e29]:
+        - generic [ref=f18e30]: Kısa ömürlü kimlik bilgisi
+        - generic [ref=f18e31]: Repo erişimi gibi yetkiler için TTL tavanlı, dar kapsamlı geçici kimlik üretilir; tavan aşılırsa sessizce kırpılmaz, reddedilir.
+      - generic [ref=f18e32]:
+        - generic [ref=f18e33]: Kendi kullanıcı deposu yok
+        - generic [ref=f18e34]: Rol, dizin grubu üyeliğinden okunur. Dizin erişilemezse yerel hesaba sessizce düşmez — giriş kapanır.
+      - generic [ref=f18e35]:
+        - generic [ref=f18e36]: Değiştirilemez denetim defteri
+        - generic [ref=f18e37]: Hash zinciri · tek yazar · günlük çapa. CEF ve syslog satırına çeviren biçimlendirici hazır.
+    - generic [ref=f18e38]:
+      - generic [ref=f18e39]: Denetim ve gözlem çıktısı
+      - generic [ref=f18e40]:
+        - generic [ref=f18e41]:
+          - text: JSON / CSV dışa aktarım
+          - generic [ref=f18e42]: BAĞLI
+        - generic [ref=f18e43]: Panelden rol korumalı indirme (admin · iç denetim). Denetçiye doğrudan verilebilir.
+      - generic [ref=f18e44]:
+        - generic [ref=f18e45]:
+          - text: Zincir doğrulama
+          - generic [ref=f18e46]: BAĞLI
+        - generic [ref=f18e47]: Kayıtlar yeniden hash'lenir, sıra atlaması tespit edilir; sonuç ekranda gösterilir.
+      - generic [ref=f18e48]:
+        - generic [ref=f18e49]:
+          - text: CEF / syslog satırı
+          - generic [ref=f18e50]: ÜRETİLİYOR
+        - generic [ref=f18e51]: ArcSight CEF biçimi ve RFC 3164 syslog çerçevesi; kaçış kuralları (log enjeksiyonu dahil) uygulanır.
+      - generic [ref=f18e52]:
+        - generic [ref=f18e53]:
+          - text: Teams · Slack · Jira
+          - generic [ref=f18e54]: BAĞLI
+        - generic [ref=f18e55]: Kapı bekleyen iş ve eskalasyon bildirimleri. Kart içeriğinde bağlantı sahteciliği nötrleştirilir.
+  - generic [ref=f18e56]:
+    - generic [ref=f18e57]: BAĞLI — bugün çalışıyor, demo edilebilir
+    - generic [ref=f18e58]: ÜRETİLİYOR — çıktı hazır, hedefe bağlanmayı bekliyor
+    - generic [ref=f18e59]: SÜRÜCÜ YAZILIR / HEDEF BEKLİYOR — mimari hazır, kurum tercihine göre eklenir

@@ -1,0 +1,242 @@
+- generic [ref=f160e2]:
+  - generic [ref=f160e23]:
+    - navigation "Ana gezinme" [ref=f160e24]:
+      - generic [ref=f160e25]:
+        - generic [ref=f160e26]: M
+        - generic [ref=f160e27]:
+          - text: Maestro
+          - generic [ref=f160e28]: SDLC otomasyonu
+      - generic [ref=f160e29]:
+        - generic [ref=f160e30]: İzleme
+        - link "Panel" [ref=f160e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f160e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f160e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f160e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f160e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f160e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f160e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f160e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f160e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f160e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f160e41]:
+        - generic [ref=f160e42]: Çalışma
+        - link "Runner havuzları" [ref=f160e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f160e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f160e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f160e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f160e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f160e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f160e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f160e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f160e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f160e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f160e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f160e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f160e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f160e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f160e57]:
+        - generic [ref=f160e58]: Yönetişim
+        - link "Denetim izi" [ref=f160e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f160e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f160e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f160e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f160e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f160e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f160e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f160e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f160e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f160e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f160e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f160e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f160e71]:
+        - generic [ref=f160e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f160e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f160e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f160e75] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f160e76]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f160e77] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f160e78]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f160e79] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f160e80]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f160e81] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f160e82]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f160e83] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f160e84]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f160e85] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f160e86]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f160e87] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f160e88]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f160e89]:
+      - banner [ref=f160e90]:
+        - heading "Jira bağlantısı & eşleme" [level=1] [ref=f160e110]
+        - generic [ref=f160e92]:
+          - generic [ref=f160e93]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f160e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f160e95]: admin
+        - button "Çıkış" [ref=f160e96] [cursor=pointer]
+      - main [ref=f160e97]:
+        - generic [ref=f160e111]:
+          - generic [ref=f160e112]:
+            - heading "Bağlama mekaniği — teknik olarak ne oluyor?" [level=3] [ref=f160e113]
+            - generic [ref=f160e114]: Tek global webhook · proje bazlı bakım yok
+          - generic [ref=f160e116]:
+            - generic [ref=f160e117]:
+              - text: Webhook modeli
+              - paragraph [ref=f160e118]: Jira admin kurulumda tek seferlik tek global webhook tanımlar. Proje başına webhook/JQL bakımı yoktur — BFF gelen olayı bağlı proje listesine göre içeride filtreler; bağlı olmayan projeden gelen olay sessizce düşürülür (sayaçla izlenir).
+            - generic [ref=f160e119]:
+              - text: Proje bağlarken (M102)
+              - paragraph [ref=f160e120]: Onboarding sihirbazı bir JiraProjectBinding kaydı (versiyonlu — M71) oluşturur, son 20 ticket'la zorunlu kuru koşumu gösterir ve admin onayından sonra webhook olayları bu proje için işlenmeye başlar. Proje bazlı duraklat ve bağı çöz her zaman mümkündür.
+        - generic [ref=f160e122]:
+          - generic [ref=f160e123]:
+            - heading "Onay bekleyen uygulamalar" [level=3] [ref=f160e124]
+            - generic [ref=f160e125]: Uygulama ekle'den gelen paketler — bağlamayı ikinci bir yönetici onaylar
+          - table [ref=f160e128]:
+            - rowgroup [ref=f160e129]:
+              - row [ref=f160e130]:
+                - columnheader "Proje" [ref=f160e131]
+                - columnheader "Repo" [ref=f160e132]
+                - columnheader "Platform" [ref=f160e133]
+                - columnheader "Öneren" [ref=f160e134]
+                - columnheader [ref=f160e135]
+            - rowgroup [ref=f160e136]:
+              - row [ref=f160e137]:
+                - cell "OPS" [ref=f160e138]
+                - cell "Uguryldz/maestro-pilot" [ref=f160e139]
+                - cell "linux-node" [ref=f160e140]
+                - cell "admin@maestro.local" [ref=f160e141]
+                - cell [ref=f160e142]:
+                  - generic [ref=f160e143]:
+                    - button "Onayla" [ref=f160e144] [cursor=pointer]
+                    - button "Reddet" [ref=f160e145] [cursor=pointer]
+        - generic [ref=f160e147]:
+          - generic [ref=f160e148]:
+            - heading "Bağlı Jira projeleri" [level=3] [ref=f160e149]
+            - generic [ref=f160e150]: proje ↔ uygulama N:M · tetikleme modu
+            - button "+ Proje/uygulama bağla" [ref=f160e152] [cursor=pointer]
+          - generic [ref=f160e154]:
+            - generic [ref=f160e155]: 📭
+            - paragraph [ref=f160e156]: Bağlı proje yok
+        - generic [ref=f160e158]:
+          - generic [ref=f160e159]:
+            - heading "Yönlendirme politikası" [level=3] [ref=f160e160]
+            - generic [ref=f160e161]: routing.yaml · kod değil konfigürasyon
+            - button "Politikayı düzenle" [ref=f160e163] [cursor=pointer]
+          - table [ref=f160e166]:
+            - rowgroup [ref=f160e167]:
+              - row [ref=f160e168]:
+                - columnheader "Koşul" [ref=f160e169]
+                - columnheader "Arka uç" [ref=f160e170]
+                - columnheader "Model" [ref=f160e171]
+                - columnheader "Sonuç" [ref=f160e172]
+                - columnheader "Ne anlama gelir" [ref=f160e173]
+            - rowgroup [ref=f160e174]:
+              - row [ref=f160e175]:
+                - cell "veri sınıfı = acik" [ref=f160e176]
+                - cell "api" [ref=f160e177]
+                - cell [ref=f160e179]:
+                  - code [ref=f160e180]: api
+                - cell "tamam" [ref=f160e181]
+                - cell "Çağrı normal şekilde karşılandı." [ref=f160e183]
+              - row [ref=f160e184]:
+                - cell "veri sınıfı = dahili" [ref=f160e185]
+                - cell "api" [ref=f160e186]
+                - cell [ref=f160e188]:
+                  - code [ref=f160e189]: api
+                - cell "tamam" [ref=f160e190]
+                - cell "Çağrı normal şekilde karşılandı." [ref=f160e192]
+              - row [ref=f160e193]:
+                - cell "veri sınıfı = gizli" [ref=f160e194]
+                - cell "onprem" [ref=f160e195]
+                - cell [ref=f160e197]:
+                  - code [ref=f160e198]: onprem
+                - cell "tamam" [ref=f160e199]
+                - cell "Çağrı normal şekilde karşılandı." [ref=f160e201]
+              - row [ref=f160e202]:
+                - cell "onprem arka ucu erişilemez olduğunda" [ref=f160e203]
+                - cell "onprem" [ref=f160e204]
+                - cell [ref=f160e206]:
+                  - code [ref=f160e207]: onprem
+                - cell "geriye düşürüldü" [ref=f160e208]
+                - cell "İstenen arka uç kullanılamadı; akış \"AI destekli\" moduna düştü — AI önerir, uygulamayı insan yapar." [ref=f160e210]
+        - generic [ref=f160e212]:
+          - generic [ref=f160e213]:
+            - heading "Uygulama kayıtları (Application Registry — M100)" [level=3] [ref=f160e214]
+            - generic [ref=f160e215]: eşleşmenin hedefi · her biri repo + platform + repo kartı
+          - generic [ref=f160e216]:
+            - table [ref=f160e218]:
+              - rowgroup [ref=f160e219]:
+                - row [ref=f160e220]:
+                  - columnheader "Uygulama" [ref=f160e221]
+                  - columnheader "ADO repo" [ref=f160e222]
+                  - columnheader "Platform" [ref=f160e223]
+                  - columnheader ".maestro.yaml" [ref=f160e224]
+                  - columnheader "Kaynak" [ref=f160e225]
+              - rowgroup [ref=f160e226]:
+                - row [ref=f160e227]:
+                  - cell "Uguryldz/maestro-pilot" [ref=f160e228]
+                  - cell [ref=f160e229]:
+                    - code [ref=f160e230]: Uguryldz/_git/maestro-pilot
+                  - cell "linux-node" [ref=f160e231]
+                  - cell "yok" [ref=f160e233]
+                  - cell "onboarding" [ref=f160e235]
+            - paragraph [ref=f160e236]: Repo kartı = uygulamanın modül/alan özeti (knowledge'da versiyonlu). Analist etki matrisini çıkarırken diğer uygulamaları klonlamadan bu kartlardan değerlendirir.
+        - paragraph [ref=f160e237]: Politika kod değil konfigürasyondur; kota dolduğunda ya da gizli veri sınıfında ne olacağı buradan okunur.
+  - region [ref=f160e238]:
+    - status [ref=f160e239]:
+      - generic [ref=f160e240]: Kendi önerdiğiniz paketi onaylayamazsınız; ikinci bir yönetici onaylamalı.
+      - button "✕" [ref=f160e241] [cursor=pointer]

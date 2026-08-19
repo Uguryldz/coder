@@ -1,0 +1,318 @@
+- generic [ref=f13e2]:
+  - generic [ref=f13e23]:
+    - navigation "Ana gezinme" [ref=f13e24]:
+      - generic [ref=f13e25]:
+        - generic [ref=f13e26]: M
+        - generic [ref=f13e27]:
+          - text: Maestro
+          - generic [ref=f13e28]: SDLC otomasyonu
+      - generic [ref=f13e29]:
+        - generic [ref=f13e30]: Operasyon
+        - link "Panel" [ref=f13e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f13e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f13e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f13e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f13e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f13e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f13e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f13e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f13e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f13e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f13e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f13e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f13e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f13e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f13e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f13e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f13e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f13e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f13e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f13e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f13e51]:
+        - generic [ref=f13e52]: Yürütme
+        - link "Runner havuzları" [ref=f13e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f13e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f13e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f13e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f13e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f13e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f13e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f13e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f13e61]:
+        - generic [ref=f13e62]: Ajanlar
+        - link "Variant'lar" [ref=f13e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f13e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f13e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f13e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f13e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f13e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f13e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f13e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f13e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f13e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f13e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f13e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f13e75]:
+        - generic [ref=f13e76]: Yönetişim
+        - link "LLM Gateway" [ref=f13e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f13e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f13e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f13e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f13e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f13e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f13e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f13e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f13e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f13e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f13e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f13e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f13e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f13e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f13e91]:
+        - generic [ref=f13e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f13e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f13e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f13e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f13e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f13e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f13e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f13e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f13e100]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f13e101] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f13e102]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [active] [ref=f13e103] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f13e104]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f13e105] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f13e106]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f13e107] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f13e108]: ✔
+          - text: Karar defteri
+    - generic [ref=f13e109]:
+      - banner [ref=f13e110]:
+        - heading "Ayarlar & bağlantılar" [level=1] [ref=f13e403]
+        - generic [ref=f13e112]:
+          - generic [ref=f13e113]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f13e114]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f13e115]: ayse.kaya@bank
+        - button "Çıkış" [ref=f13e116] [cursor=pointer]
+      - main [ref=f13e117]:
+        - generic [ref=f13e404]:
+          - generic [ref=f13e405]:
+            - generic [ref=f13e406]:
+              - heading "Bağlantılar" [level=3] [ref=f13e407]
+              - generic [ref=f13e408]: Secret'lar Vault'ta tutulur — burada yalnız referansı görünür
+            - table [ref=f13e411]:
+              - caption [ref=f13e412]: Bağlantılar
+              - rowgroup [ref=f13e413]:
+                - row [ref=f13e414]:
+                  - columnheader "Bağlantı" [ref=f13e415]
+                  - columnheader "Durum" [ref=f13e416]
+                  - columnheader "Kimlik referansı" [ref=f13e417]
+              - rowgroup [ref=f13e418]:
+                - row [ref=f13e419]:
+                  - cell "Jira DC https://jira.ugurbank.local" [ref=f13e420]:
+                    - generic [ref=f13e421]:
+                      - text: Jira DC
+                      - generic [ref=f13e422]: https://jira.ugurbank.local
+                  - cell [ref=f13e423]:
+                    - generic [ref=f13e424]:
+                      - generic [ref=f13e425]: ●
+                      - text: bağlı
+                  - cell "vault:maestro/jira#token" [ref=f13e426]
+                - row [ref=f13e427]:
+                  - cell "Azure DevOps https://tfs.ugurbank.local" [ref=f13e428]:
+                    - generic [ref=f13e429]:
+                      - text: Azure DevOps
+                      - generic [ref=f13e430]: https://tfs.ugurbank.local
+                  - cell [ref=f13e431]:
+                    - generic [ref=f13e432]:
+                      - generic [ref=f13e433]: ●
+                      - text: bağlı
+                  - cell "vault:maestro/ado#pat" [ref=f13e434]
+                - row [ref=f13e435]:
+                  - cell "Vault https://vault.ugurbank.local" [ref=f13e436]:
+                    - generic [ref=f13e437]:
+                      - text: Vault
+                      - generic [ref=f13e438]: https://vault.ugurbank.local
+                  - cell [ref=f13e439]:
+                    - generic [ref=f13e440]:
+                      - generic [ref=f13e441]: ●
+                      - text: bağlı
+                  - cell "kubernetes-auth" [ref=f13e442]
+                - row [ref=f13e443]:
+                  - cell "Depolama (StoragePort) https://s3.ugurbank.local" [ref=f13e444]:
+                    - generic [ref=f13e445]:
+                      - text: Depolama (StoragePort)
+                      - generic [ref=f13e446]: https://s3.ugurbank.local
+                  - cell [ref=f13e447]:
+                    - generic [ref=f13e448]:
+                      - generic [ref=f13e449]: ●
+                      - text: bağlı
+                  - cell "vault:maestro/storage#access-key" [ref=f13e450]
+                - row [ref=f13e451]:
+                  - cell "Egress proxy http://egress.ugurbank.local:3128" [ref=f13e452]:
+                    - generic [ref=f13e453]:
+                      - text: Egress proxy
+                      - generic [ref=f13e454]: http://egress.ugurbank.local:3128
+                  - cell [ref=f13e455]:
+                    - generic [ref=f13e456]:
+                      - generic [ref=f13e457]: ●
+                      - text: bağlı
+                  - cell "none" [ref=f13e458]
+                - row [ref=f13e459]:
+                  - cell "Kimlik (AD/LDAP) local" [ref=f13e460]:
+                    - generic [ref=f13e461]:
+                      - text: Kimlik (AD/LDAP)
+                      - generic [ref=f13e462]: local
+                  - cell [ref=f13e463]:
+                    - generic [ref=f13e464]:
+                      - generic [ref=f13e465]: ●
+                      - text: bağlı
+                  - cell "bcrypt" [ref=f13e466]
+                - row [ref=f13e467]:
+                  - cell "SIEM" [ref=f13e468]
+                  - cell [ref=f13e470]:
+                    - generic [ref=f13e471]:
+                      - generic [ref=f13e472]: ●
+                      - text: kurulmadı
+                  - cell "none" [ref=f13e473]
+                - row [ref=f13e474]:
+                  - cell "Confluence (PublishPort) https://jira.ugurbank.local" [ref=f13e475]:
+                    - generic [ref=f13e476]:
+                      - text: Confluence (PublishPort)
+                      - generic [ref=f13e477]: https://jira.ugurbank.local
+                  - cell [ref=f13e478]:
+                    - generic [ref=f13e479]:
+                      - generic [ref=f13e480]: ●
+                      - text: bağlı
+                  - cell "vault:maestro/jira#token" [ref=f13e481]
+          - generic [ref=f13e482]:
+            - generic [ref=f13e483]:
+              - heading "Bildirim sürücüleri (NotifyPort — M45)" [level=3] [ref=f13e484]
+              - generic [ref=f13e485]: Kanal = sürücü · kanal→olay eşlemesi parametredir
+            - table [ref=f13e488]:
+              - caption [ref=f13e489]: Bildirim sürücüleri (NotifyPort — M45)
+              - rowgroup [ref=f13e490]:
+                - row [ref=f13e491]:
+                  - columnheader "Kanal" [ref=f13e492]
+                  - columnheader "Durum" [ref=f13e493]
+                  - columnheader "Hedef" [ref=f13e494]
+              - rowgroup [ref=f13e495]:
+                - row [ref=f13e496]:
+                  - cell "Jira yorumu" [ref=f13e497]
+                  - cell "açık" [ref=f13e498]
+                  - cell "ticket comment" [ref=f13e500]
+                - row [ref=f13e501]:
+                  - cell "Teams" [ref=f13e502]
+                  - cell "kapalı" [ref=f13e503]
+                  - cell "platform channel" [ref=f13e505]
+                - row [ref=f13e506]:
+                  - cell "E-posta" [ref=f13e507]
+                  - cell "kapalı" [ref=f13e508]
+                  - cell "approver mailbox" [ref=f13e510]
+                - row [ref=f13e511]:
+                  - cell "Slack" [ref=f13e512]
+                  - cell "kapalı" [ref=f13e513]
+                  - cell "platform channel" [ref=f13e515]
+          - generic [ref=f13e516]:
+            - generic [ref=f13e517]:
+              - heading "Kill-switch (M58)" [level=3] [ref=f13e518]
+              - generic [ref=f13e519]: admin yetkisi · audit kaydı + duyuru
+            - generic [ref=f13e520]:
+              - generic [ref=f13e521]:
+                - generic [ref=f13e522]:
+                  - term [ref=f13e523]: Durum
+                  - definition [ref=f13e524]:
+                    - generic [ref=f13e525]:
+                      - generic [ref=f13e526]: ●
+                      - text: Kill-switch kapalı
+                - generic [ref=f13e527]:
+                  - term [ref=f13e528]: Son değiştiren
+                  - definition [ref=f13e529]: ayse.kaya@bank
+                - generic [ref=f13e530]:
+                  - term [ref=f13e531]: Gerekçe
+                  - definition [ref=f13e532]: smoke test bitti
+              - generic [ref=f13e533]:
+                - generic [ref=f13e534]:
+                  - generic [ref=f13e535]:
+                    - generic [ref=f13e536]: ① Yeni iş almayı durdur
+                    - generic [ref=f13e537]: Intake kapanır; çalışan akışlar doğal olarak biter.
+                  - button "İş alımını durdur" [ref=f13e538] [cursor=pointer]
+                - generic [ref=f13e539]:
+                  - generic [ref=f13e540]:
+                    - generic [ref=f13e541]: ② Her şeyi durdur
+                    - generic [ref=f13e542]: Sandbox'lar güvenli söndürülür; açık kapılar beklemeye devam eder.
+                  - button "Her şeyi durdur" [ref=f13e543] [cursor=pointer]
+  - region

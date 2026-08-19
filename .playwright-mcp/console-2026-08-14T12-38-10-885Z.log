@@ -1,0 +1,178 @@
+[     512ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 3973490ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 3983297ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4231459ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: useEffect is not defined
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786715322245:49:3)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) The above error occurred in the <ListeningScreen> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 4231464ms] [ERROR] [studio] render failed ReferenceError: useEffect is not defined
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786715322245:49:3)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) 
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786715322245:21:13)
+    at div (<anonymous>)
+    at TabPanel (http://localhost:7000/src/ui/Tabs.tsx:41:28)
+    at div (<anonymous>)
+    at ProjectsScreen (http://localhost:7000/src/screens/Projects.tsx?t=1786715072630:18:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786715072630:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786715072630:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 4243205ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: useEffect is not defined
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786715333961:49:3)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) The above error occurred in the <ListeningScreen> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 4243206ms] [ERROR] [studio] render failed ReferenceError: useEffect is not defined
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786715333961:49:3)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) 
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786715333961:21:13)
+    at div (<anonymous>)
+    at TabPanel (http://localhost:7000/src/ui/Tabs.tsx:41:28)
+    at div (<anonymous>)
+    at ProjectsScreen (http://localhost:7000/src/screens/Projects.tsx?t=1786715072630:18:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786715072630:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786715072630:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 4263243ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4268329ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4573338ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4577871ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4948466ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4953845ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4958952ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4964101ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4968846ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4978086ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4991314ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 4996655ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 5000950ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 5181318ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "listening.flow.hint.analiz" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786716090280:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786716090280:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786716090280:33:27)
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786716272088:317:17)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) The above error occurred in the <ListeningScreen> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 5181320ms] [ERROR] [studio] render failed MissingMessageError: missing message "listening.flow.hint.analiz" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786716090280:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786716090280:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786716090280:33:27)
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786716272088:317:17)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) 
+    at ListeningScreen (http://localhost:7000/src/screens/Listening.tsx?t=1786716272088:21:13)
+    at div (<anonymous>)
+    at TabPanel (http://localhost:7000/src/ui/Tabs.tsx:41:28)
+    at div (<anonymous>)
+    at ProjectsScreen (http://localhost:7000/src/screens/Projects.tsx?t=1786716090280:18:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786716090280:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786716090280:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 5190563ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 5204923ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 5292495ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 5296818ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 5523884ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[ 5538941ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102

@@ -1,0 +1,6 @@
+[     549ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[   49836ms] [ERROR] Failed to load resource: the server responded with a status of 409 (Conflict) @ http://localhost:7000/api/onboarding/approve:0
+[  742213ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:7000/src/screens/Runners.tsx?t=1786664677351:0
+[  742213ms] [ERROR] [vite] Failed to reload /src/screens/Runners.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  783260ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:7000/src/screens/Security.tsx?t=1786664718385:0
+[  783261ms] [ERROR] [vite] Failed to reload /src/screens/Security.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808

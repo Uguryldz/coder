@@ -1,0 +1,48 @@
+[     873ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=d0c942d2:20102
+[   27419ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/template:0
+[   28470ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/template:0
+[   30496ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/template:0
+[  106643ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[  117519ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  118562ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  120575ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  150588ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  151596ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  153601ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  183605ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  184609ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  186611ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  216618ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  217635ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  219642ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  249647ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  250654ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  252664ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  282674ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  283684ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  285699ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  315706ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  316711ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  318717ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  348722ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  349736ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  351741ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  381762ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  382780ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  384793ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  414796ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  415798ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  417802ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  447806ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  448816ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  450820ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  480825ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  481829ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  483834ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  513838ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  514846ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  516853ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  546857ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  547865ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[  549905ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:7000/api/killswitch:0
+[  553702ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=604da6b1:20102

@@ -3,7 +3,7 @@ import { registerGithubDrivers } from "@maestro/adapter-github";
 import { registerJiraDrivers } from "@maestro/adapter-jira";
 import { registerLlmDrivers } from "@maestro/llm-gateway";
 import { registerNotifyDrivers } from "@maestro/notify";
-import { PortRegistry, type CiPort, type ScanPort, type ScmPort, type SecretPort, type WorkPort } from "@maestro/ports";
+import { PortRegistry, type CiPort, type ScanPort, type SecretPort, type WorkPort } from "@maestro/ports";
 import { registerPublishDrivers } from "@maestro/publish";
 import { registerScanDrivers } from "@maestro/scanners";
 import { registerRunnerDrivers } from "@maestro/runners";

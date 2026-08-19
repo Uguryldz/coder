@@ -1,0 +1,125 @@
+digraph OrkestraSandbox {
+  rankdir=TB;
+  bgcolor="white";
+  compound=true;
+  splines=spline;
+  nodesep=0.5;
+  ranksep=0.7;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=12, shape=box, style=filled,
+        fillcolor="white", color="#1E293B", penwidth=2, margin="0.3,0.2"];
+  edge [fontname="Helvetica", fontsize=11, color="#1E293B", penwidth=1.6];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="22"><B>Sandbox Yaşam Döngüsü ve Paket Yönetimi</B></FONT><BR/>
+        <FONT POINT-SIZE="13" COLOR="#B91C1C"><B>Sandbox ticket boyunca AÇIK KALMAZ — her denemede sıfırdan kurulur, sonunda silinir</B></FONT><BR/>
+        <FONT POINT-SIZE="10" COLOR="#94A3B8">kaynak: sandbox.ts · dep-cache.ts · orkestra-yaml.ts</FONT><BR/> >;
+
+  // ══════════ TETİK ══════════
+  dev [label="DEVELOPER AJANI patch üretti\nworkflow adım 6a",
+       fillcolor="#DBEAFE", color="#2563EB", penwidth=2.5];
+
+  // ══════════ SANDBOX ÖMRÜ ══════════
+  subgraph cluster_omur {
+    label="  BİR SANDBOX ÇAĞRISI  —  baştan sona tek container, ömrü dakikalar  ";
+    style="filled,rounded"; fillcolor="#FAF5FF"; color="#9333EA"; penwidth=2.5;
+    fontname="Helvetica-Bold"; fontsize=14; fontcolor="#7E22CE";
+
+    node [fillcolor="#FFFFFF", color="#9333EA", fontsize=11];
+
+    k0 [label="① SLOT AL\nRedis semaforu\naynı anda kaç sandbox koşabilir",
+        fillcolor="#FEF3C7", color="#D97706"];
+
+    k1 [label="② CONTAINER YARAT\nimage dile göre: node:20 / python:3.12\n/ maven:21 / golang:1.23\n\n🔒 salt okunur kök · CapDrop ALL\ntmpfs /workspace (2 GB) · UID 1000",
+        penwidth=2.5];
+
+    k2 [label="③ REPO KLONLA\ngit clone --depth 50\nbase commit'e checkout + yeni branch"];
+
+    k3 [label="④ PATCH UYGULA\ngit apply"];
+
+    k4 [label="⑤ INSTALL\nnpm ci --no-audit --no-fund\n\n⚠ node_modules HER SEFERİNDE\nSIFIRDAN İNER",
+        fillcolor="#FEE2E2", color="#DC2626", penwidth=2.5];
+
+    k5 [label="⑥ LINT → BUILD → TEST\nsırayla koşar\nbiri patlarsa zincir durur"];
+
+    k6 [label="⑦ COMMIT + PUSH\nsadece hepsi başarılıysa"];
+
+    k7 [label="⑧ CONTAINER SİLİNİR\nstop + remove --volumes\nslot geri bırakılır\n\ntmpfs uçar — node_modules dahil\nHİÇBİR ŞEY KALMAZ",
+        fillcolor="#FEE2E2", color="#DC2626", penwidth=2.5];
+
+    k0 -> k1 -> k2 -> k3 -> k4 -> k5 -> k6 -> k7 [penwidth=2, color="#9333EA"];
+  }
+
+  // ══════════ ORTAM TANIMI ══════════
+  subgraph cluster_yaml {
+    label="  ORTAM NASIL KURULUR  —  .orkestra.yaml  ";
+    style="filled,rounded"; fillcolor="#EFF6FF"; color="#3B82F6"; penwidth=2;
+    fontname="Helvetica-Bold"; fontsize=13; fontcolor="#1E40AF";
+
+    yaml [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6">
+        <TR><TD COLSPAN="2" BGCOLOR="#DBEAFE"><B>repo kökündeki .orkestra.yaml</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><B>language</B></TD><TD ALIGN="LEFT">node · python · java · go</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>sandbox_image</B></TD><TD ALIGN="LEFT">hangi Docker image</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>commands</B></TD><TD ALIGN="LEFT">install · lint · build · test</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>cache_paths</B></TD><TD ALIGN="LEFT">node_modules · ~/.npm</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>test_dependencies</B></TD><TD ALIGN="LEFT">DB · Redis gerekiyorsa</TD></TR>
+        <TR><TD ALIGN="LEFT"><B>clone_depth</B></TD><TD ALIGN="LEFT">50 (sığ klon)</TD></TR>
+      </TABLE>>, shape=plain, fillcolor="white", color="#2563EB", penwidth=2];
+
+    yamlnot [label="repo'da bu dosya yoksa\ndile göre VARSAYILAN kullanılır",
+             fillcolor="#FFFFFF", color="#64748B", fontsize=10];
+
+    yaml -> yamlnot [style=invis];
+  }
+
+  // ══════════ EKSİK: CACHE ══════════
+  subgraph cluster_cache {
+    label="  PAKET CACHE'İ  —  KOD YAZILMIŞ AMA BAĞLANMAMIŞ  ";
+    style="filled,rounded"; fillcolor="#FEF2F2"; color="#DC2626"; penwidth=3;
+    fontname="Helvetica-Bold"; fontsize=14; fontcolor="#991B1B";
+
+    node [fillcolor="#FFFFFF", color="#DC2626", fontsize=11];
+
+    c1 [label="dep-cache.ts  yazılmış\nDocker named volume yaratır\nanahtar = dil + image + lockfile hash'i"];
+
+    c2 [label="⚠ sandbox.ts onu HİÇ ÇAĞIRMIYOR\ncreateContainer'da cache mount YOK\n\n→ ölü kod", penwidth=2.5];
+
+    c3 [label="SONUÇ\nher sandbox koşusunda\nnpm ci baştan indirir\n\nyavaş · ağa bağımlı · maliyetli", penwidth=2.5];
+
+    c1 -> c2 -> c3 [penwidth=2, color="#DC2626"];
+  }
+
+  // ══════════ BİR TICKET BOYUNCA ══════════
+  subgraph cluster_ticket {
+    label="  BİR JIRA KAYDI BOYUNCA KAÇ SANDBOX?  ";
+    style="filled,rounded"; fillcolor="#F0FDF4"; color="#16A34A"; penwidth=2;
+    fontname="Helvetica-Bold"; fontsize=13; fontcolor="#15803D";
+
+    node [fillcolor="#FFFFFF", color="#16A34A", fontsize=11];
+
+    t1 [label="workflow'da runSandbox TEK YERDE çağrılır\n(adım 6a — developer)"];
+    t2 [label="AMA döngü var:\nCI patlarsa · dev-reviewer CHANGES derse\n· PR'da değişiklik istenirse → 6a'ya geri dönülür"];
+    t3 [label="HER DÖNÜŞTE YENİ SANDBOX\nyeni container · yeni npm ci\nöncekiyle hiçbir bağı yok", penwidth=2.5];
+    t4 [label="güvenlik taramaları da AYRI container\ngitleaks · semgrep · trivy"];
+
+    t1 -> t2 -> t3 -> t4 [penwidth=2, color="#16A34A"];
+  }
+
+  // ══════════ BAĞLANTILAR ══════════
+  dev -> k0 [lhead=cluster_omur, penwidth=2.2, color="#2563EB"];
+
+  yaml -> k1 [ltail=cluster_yaml, lhead=cluster_omur,
+              label="  hangi image · hangi komutlar  ",
+              color="#2563EB", fontcolor="#1D4ED8", penwidth=2];
+
+  k4 -> c1 [lhead=cluster_cache, label="  cache olsaydı\l  buraya bağlanacaktı\l",
+            style=dashed, color="#DC2626", fontcolor="#B91C1C", penwidth=2];
+
+  k7 -> t1 [lhead=cluster_ticket, label="  bir sonraki deneme  ",
+            style=dashed, color="#16A34A", fontcolor="#15803D", penwidth=2];
+
+  // TTL notu
+  ttl [label="TTL: 60 dakika\nbu süreyi aşarsa container öldürülür",
+       fillcolor="#FEF3C7", color="#D97706", fontsize=10];
+  k1 -> ttl [style=dashed, color="#D97706", penwidth=1.4, constraint=false];
+}

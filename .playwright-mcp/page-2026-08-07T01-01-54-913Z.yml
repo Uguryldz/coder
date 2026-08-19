@@ -1,0 +1,445 @@
+- generic [ref=f3e2]:
+  - complementary [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - generic [ref=f3e5]: M
+      - generic [ref=f3e6]:
+        - text: Maestro
+        - generic [ref=f3e7]: UI prototipi · mock veri
+    - generic [ref=f3e8]:
+      - generic [ref=f3e9]: Operasyon
+      - link "▦ Panel" [ref=f3e10] [cursor=pointer]:
+        - /url: "#dash"
+        - generic [ref=f3e11]: ▦
+        - text: Panel
+      - link "🎬 Canlı demo (vibe)" [ref=f3e12] [cursor=pointer]:
+        - /url: "#live"
+        - generic [ref=f3e13]: 🎬
+        - text: Canlı demo (vibe)
+      - link "≡ İş akışları 22" [ref=f3e14] [cursor=pointer]:
+        - /url: "#tickets"
+        - generic [ref=f3e15]: ≡
+        - text: İş akışları
+        - generic [ref=f3e16]: "22"
+      - link "⑂ Ana ticket (fan-out)" [ref=f3e17] [cursor=pointer]:
+        - /url: "#fanout"
+        - generic [ref=f3e18]: ⑂
+        - text: Ana ticket (fan-out)
+      - link "❓ Clarification (2b)" [ref=f3e19] [cursor=pointer]:
+        - /url: "#clarify"
+        - generic [ref=f3e20]: ❓
+        - text: Clarification (2b)
+      - link "⇋ Work mode & devir" [ref=f3e21] [cursor=pointer]:
+        - /url: "#workmode"
+        - generic [ref=f3e22]: ⇋
+        - text: Work mode & devir
+      - link "✦ Yeni proje sihirbazı" [ref=f3e23] [cursor=pointer]:
+        - /url: "#greenfield"
+        - generic [ref=f3e24]: ✦
+        - text: Yeni proje sihirbazı
+      - link "💬 Jira'da görünüm" [ref=f3e25] [cursor=pointer]:
+        - /url: "#jira"
+        - generic [ref=f3e26]: 💬
+        - text: Jira'da görünüm
+      - link "⌨ Jira komut seti" [ref=f3e27] [cursor=pointer]:
+        - /url: "#commands"
+        - generic [ref=f3e28]: ⌨
+        - text: Jira komut seti
+      - generic [ref=f3e29]: Yürütme
+      - link "🖥 Runner havuzları" [ref=f3e30] [cursor=pointer]:
+        - /url: "#runners"
+        - generic [ref=f3e31]: 🖥
+        - text: Runner havuzları
+      - link "▶ Canlı sandbox oturumu" [ref=f3e32] [cursor=pointer]:
+        - /url: "#sandbox"
+        - generic [ref=f3e33]: ▶
+        - text: Canlı sandbox oturumu
+      - link "🗄 Cache & çalışma alanı" [ref=f3e34] [cursor=pointer]:
+        - /url: "#cache"
+        - generic [ref=f3e35]: 🗄
+        - text: Cache & çalışma alanı
+      - link "📄 .maestro.yaml" [ref=f3e36] [cursor=pointer]:
+        - /url: "#yaml"
+        - generic [ref=f3e37]: 📄
+        - text: .maestro.yaml
+      - generic [ref=f3e38]: Ajanlar
+      - link "🤖 Variant'lar 9" [ref=f3e39] [cursor=pointer]:
+        - /url: "#variants"
+        - generic [ref=f3e40]: 🤖
+        - text: Variant'lar
+        - generic [ref=f3e41]: "9"
+      - link "⚙ Variant detayı" [ref=f3e42] [cursor=pointer]:
+        - /url: "#variant"
+        - generic [ref=f3e43]: ⚙
+        - text: Variant detayı
+      - link "🎯 Eval / golden ticket" [ref=f3e44] [cursor=pointer]:
+        - /url: "#eval"
+        - generic [ref=f3e45]: 🎯
+        - text: Eval / golden ticket
+      - link "📚 Knowledge kütüphanesi" [ref=f3e46] [cursor=pointer]:
+        - /url: "#knowledge"
+        - generic [ref=f3e47]: 📚
+        - text: Knowledge kütüphanesi
+      - link "📋 Analiz şablonu" [ref=f3e48] [cursor=pointer]:
+        - /url: "#template"
+        - generic [ref=f3e49]: 📋
+        - text: Analiz şablonu
+      - generic [ref=f3e50]: Yönetişim
+      - link "⚡ LLM Gateway" [ref=f3e51] [cursor=pointer]:
+        - /url: "#llm"
+        - generic [ref=f3e52]: ⚡
+        - text: LLM Gateway
+      - link "🔏 PII maskeleme" [ref=f3e53] [cursor=pointer]:
+        - /url: "#pii"
+        - generic [ref=f3e54]: 🔏
+        - text: PII maskeleme
+      - link "₺ Maliyet & kota" [ref=f3e55] [cursor=pointer]:
+        - /url: "#cost"
+        - generic [ref=f3e56]: ₺
+        - text: Maliyet & kota
+      - link "🔒 Denetim izi" [ref=f3e57] [cursor=pointer]:
+        - /url: "#audit"
+        - generic [ref=f3e58]: 🔒
+        - text: Denetim izi
+      - link "📦 Kanıt paketi" [ref=f3e59] [cursor=pointer]:
+        - /url: "#evidence"
+        - generic [ref=f3e60]: 📦
+        - text: Kanıt paketi
+      - link "🛡 Güvenlik bulguları" [ref=f3e61] [cursor=pointer]:
+        - /url: "#security"
+        - generic [ref=f3e62]: 🛡
+        - text: Güvenlik bulguları
+      - link "🔔 Bildirim & eskalasyon" [ref=f3e63] [cursor=pointer]:
+        - /url: "#notify"
+        - generic [ref=f3e64]: 🔔
+        - text: Bildirim & eskalasyon
+      - generic [ref=f3e65]: Sistem
+      - link "⇄ Yönlendirme kuralları" [ref=f3e66] [cursor=pointer]:
+        - /url: "#routing"
+        - generic [ref=f3e67]: ⇄
+        - text: Yönlendirme kuralları
+      - link "🎛 Parametreler (DB)" [ref=f3e68] [cursor=pointer]:
+        - /url: "#params"
+        - generic [ref=f3e69]: 🎛
+        - text: Parametreler (DB)
+      - link "➕ Uygulama ekle" [ref=f3e70] [cursor=pointer]:
+        - /url: "#onboard"
+        - generic [ref=f3e71]: ➕
+        - text: Uygulama ekle
+      - link "👥 Kullanıcılar & roller" [ref=f3e72] [cursor=pointer]:
+        - /url: "#users"
+        - generic [ref=f3e73]: 👥
+        - text: Kullanıcılar & roller
+      - link "⚙ Ayarlar & bağlantılar" [ref=f3e74] [cursor=pointer]:
+        - /url: "#settings"
+        - generic [ref=f3e75]: ⚙
+        - text: Ayarlar & bağlantılar
+      - link "💚 Sistem sağlığı" [ref=f3e76] [cursor=pointer]:
+        - /url: "#health"
+        - generic [ref=f3e77]: 💚
+        - text: Sistem sağlığı
+      - link "🔑 Giriş ekranı" [ref=f3e78] [cursor=pointer]:
+        - /url: "#login"
+        - generic [ref=f3e79]: 🔑
+        - text: Giriş ekranı
+      - link "✔ ✓ Karar defteri" [ref=f3e80] [cursor=pointer]:
+        - /url: "#issues"
+        - generic [ref=f3e81]: ✔
+        - text: ✓ Karar defteri
+    - generic [ref=f3e82]:
+      - generic [ref=f3e83]: Bu bir tıklanabilir maket. Veriler sahte, kod yok.
+      - generic [ref=f3e84]:
+        - button "🌓 Tema" [ref=f3e85] [cursor=pointer]
+        - button "🌐 TR" [ref=f3e86] [cursor=pointer]
+  - main [ref=f3e87]:
+    - generic [ref=f3e88]:
+      - generic [ref=f3e89]:
+        - heading "İş akışları" [level=1] [ref=f3e192]
+        - generic [ref=f3e91]: 22 ticket · 7 kapıda · 8 çalışıyor · 5 tamamlandı
+      - textbox "🔍 Ticket ara… (ör. UGURWEB)" [ref=f3e93]:
+        - /placeholder: 🔍 Ticket ara…  (ör. UGURWEB)
+      - button "🔔 4" [ref=f3e94] [cursor=pointer]
+      - generic [ref=f3e95]: Sistem sağlıklı
+      - generic [ref=f3e97]: 👤 Uğur Yıldız · admin
+    - generic [ref=f3e98]:
+      - generic [ref=f3e194]:
+        - generic [ref=f3e195]: Tümü (22)
+        - generic [ref=f3e196]: Kapıda (7)
+        - generic [ref=f3e197]: Çalışıyor (8)
+        - generic [ref=f3e198]: Kuyrukta (1)
+        - generic [ref=f3e199]: Hatalı (1)
+        - generic [ref=f3e200]: Tamamlandı (5)
+        - combobox [ref=f3e201]:
+          - option "Tüm uygulamalar" [selected]
+          - option "ugurpay"
+          - option "ugurweb"
+          - option "ugurmobil-ios"
+          - option "ugurmobil-android"
+          - option "ugurmasaüstü"
+      - table [ref=f3e203]:
+        - rowgroup [ref=f3e204]:
+          - row [ref=f3e205]:
+            - columnheader "Ticket" [ref=f3e206]
+            - columnheader "Başlık" [ref=f3e207]
+            - columnheader "Uygulama" [ref=f3e208]
+            - columnheader "Mod" [ref=f3e209]
+            - columnheader "Risk" [ref=f3e210]
+            - columnheader "Adım" [ref=f3e211]
+            - columnheader "Durum" [ref=f3e212]
+            - columnheader "Tüketim" [ref=f3e213]
+            - columnheader "Yaş" [ref=f3e214]
+        - rowgroup [ref=f3e215]:
+          - row [ref=f3e216]:
+            - cell "UGURPAY-500 ana" [ref=f3e217]:
+              - text: UGURPAY-500
+              - generic [ref=f3e218]: ana
+            - cell "Kredi limiti artırma akışı" [ref=f3e219]
+            - cell "—" [ref=f3e220]
+            - cell "full-auto" [ref=f3e221]
+            - cell "orta · 4 kapı" [ref=f3e223]
+            - cell "koordinasyon" [ref=f3e225]
+            - cell "● çalışıyor" [ref=f3e226]
+            - cell "16.6M tok" [ref=f3e228]
+            - cell "6 gün" [ref=f3e229]
+          - row [ref=f3e230]:
+            - cell "↳ UGURPAY-501" [ref=f3e231]
+            - cell "Kredi limiti — API + web UI" [ref=f3e232]
+            - cell "ugurpay" [ref=f3e233]
+            - cell "full-auto" [ref=f3e234]
+            - cell "orta · 4 kapı" [ref=f3e236]
+            - cell "12 PR onayı" [ref=f3e238]
+            - cell "⏳ kapıda Tech Lead · 2 gün 4 saat" [ref=f3e239]:
+              - generic [ref=f3e240]: ⏳ kapıda
+              - generic [ref=f3e241]: Tech Lead · 2 gün 4 saat
+            - cell "5.6M tok" [ref=f3e242]
+            - cell "6 gün" [ref=f3e243]
+          - row [ref=f3e244]:
+            - cell "↳ UGURPAY-502" [ref=f3e245]
+            - cell "Kredi limiti — iOS ekranı" [ref=f3e246]
+            - cell "ugurmobil-ios" [ref=f3e247]
+            - cell "full-auto" [ref=f3e248]
+            - cell "orta · 4 kapı" [ref=f3e250]
+            - cell "7 Test-designer" [ref=f3e252]
+            - cell "● çalışıyor" [ref=f3e253]
+            - cell "3.7M tok" [ref=f3e255]
+            - cell "4 gün" [ref=f3e256]
+          - row [ref=f3e257]:
+            - cell "↳ UGURPAY-503" [ref=f3e258]
+            - cell "Kredi limiti — Android ekranı" [ref=f3e259]
+            - cell "undefined" [ref=f3e260]
+            - cell "ai-assist" [ref=f3e261]
+            - cell "orta · 4 kapı" [ref=f3e263]
+            - cell "6a Geliştirme" [ref=f3e265]
+            - cell "● çalışıyor" [ref=f3e266]
+            - cell "2.7M tok" [ref=f3e268]
+            - cell "4 gün" [ref=f3e269]
+          - row [ref=f3e270]:
+            - cell "↳ UGURPAY-504" [ref=f3e271]
+            - cell "Kredi limiti — masaüstü şube ekranı" [ref=f3e272]
+            - cell "ugurmasaüstü" [ref=f3e273]
+            - cell "full-auto" [ref=f3e274]
+            - cell "orta · 4 kapı" [ref=f3e276]
+            - cell "4 PO onayı" [ref=f3e278]
+            - cell "⏳ kapıda PO · 16 gün 2 saat" [ref=f3e279]:
+              - generic [ref=f3e280]: ⏳ kapıda
+              - generic [ref=f3e281]: PO · 16 gün 2 saat
+            - cell "1.3M tok" [ref=f3e282]
+            - cell "16 gün" [ref=f3e283]
+          - row [ref=f3e284]:
+            - cell "UGURPAY-123 bug" [ref=f3e285]:
+              - text: UGURPAY-123
+              - generic [ref=f3e286]: bug
+            - cell "İade akışında tutar yuvarlama hatası" [ref=f3e287]
+            - cell "ugurpay" [ref=f3e288]
+            - cell "full-auto" [ref=f3e289]
+            - cell "düşük · 2 kapı" [ref=f3e291]
+            - cell "11 QA sonuç onayı" [ref=f3e293]
+            - cell "⏳ kapıda QA · 1 saat 10 dk" [ref=f3e294]:
+              - generic [ref=f3e295]: ⏳ kapıda
+              - generic [ref=f3e296]: QA · 1 saat 10 dk
+            - cell "2.6M tok" [ref=f3e297]
+            - cell "1 gün" [ref=f3e298]
+          - row [ref=f3e299]:
+            - cell "UGURPAY-712" [ref=f3e300]
+            - cell "Kart aidatı iade talebi akışı" [ref=f3e301]
+            - cell "ugurpay" [ref=f3e302]
+            - cell "full-auto" [ref=f3e303]
+            - cell "orta · 4 kapı" [ref=f3e305]
+            - cell "2b Clarification" [ref=f3e307]
+            - cell "⏳ kapıda Reporter · 20 saat" [ref=f3e308]:
+              - generic [ref=f3e309]: ⏳ kapıda
+              - generic [ref=f3e310]: Reporter · 20 saat
+            - cell "0.0M tok" [ref=f3e311]
+            - cell "1 gün" [ref=f3e312]
+          - row [ref=f3e313]:
+            - cell "UGURPAY-689" [ref=f3e314]
+            - cell "Ekstre PDF tasarım yenileme" [ref=f3e315]
+            - cell "ugurpay" [ref=f3e316]
+            - cell "full-auto" [ref=f3e317]
+            - cell "düşük · 2 kapı" [ref=f3e319]
+            - cell "3 Analyst" [ref=f3e321]
+            - cell "⏸ kuyrukta abonelik kotası bekleniyor · 16:30'da devam" [ref=f3e322]:
+              - generic [ref=f3e323]: ⏸ kuyrukta
+              - generic [ref=f3e324]: abonelik kotası bekleniyor · 16:30'da devam
+            - cell "0.3M tok" [ref=f3e325]
+            - cell "3 saat" [ref=f3e326]
+          - row [ref=f3e327]:
+            - cell "UGURPAY-478" [ref=f3e328]
+            - cell "Fatura ödemede sık kullanılanlar listesi" [ref=f3e329]
+            - cell "ugurpay" [ref=f3e330]
+            - cell "full-auto" [ref=f3e331]
+            - cell "düşük · 2 kapı" [ref=f3e333]
+            - cell "13 Kanıt paketi" [ref=f3e335]
+            - cell "✓ tamam" [ref=f3e336]
+            - cell "2.8M tok" [ref=f3e338]
+            - cell "kapandı · 2 Ağu" [ref=f3e339]
+          - row [ref=f3e340]:
+            - cell "UGURPAY-455 bug" [ref=f3e341]:
+              - text: UGURPAY-455
+              - generic [ref=f3e342]: bug
+            - cell "IBAN doğrulama hatası (TR blok kontrolü)" [ref=f3e343]
+            - cell "ugurpay" [ref=f3e344]
+            - cell "full-auto" [ref=f3e345]
+            - cell "düşük · 2 kapı" [ref=f3e347]
+            - cell "13 Kanıt paketi" [ref=f3e349]
+            - cell "✓ tamam" [ref=f3e350]
+            - cell "1.1M tok" [ref=f3e352]
+            - cell "kapandı · 28 Tem" [ref=f3e353]
+          - row [ref=f3e354]:
+            - cell "UGURWEB-88" [ref=f3e355]
+            - cell "Kampanya banner bileşeni" [ref=f3e356]
+            - cell "ugurweb" [ref=f3e357]
+            - cell "human-lead" [ref=f3e358]
+            - cell "düşük · 2 kapı" [ref=f3e360]
+            - cell "6b Güvenlik taraması" [ref=f3e362]
+            - cell "● çalışıyor" [ref=f3e363]
+            - cell "0.7M tok" [ref=f3e365]
+            - cell "3 gün" [ref=f3e366]
+          - row [ref=f3e367]:
+            - cell "UGURWEB-91" [ref=f3e368]
+            - cell "Döviz kuru widget'ı otomatik yenileme" [ref=f3e369]
+            - cell "ugurweb" [ref=f3e370]
+            - cell "full-auto" [ref=f3e371]
+            - cell "düşük · 2 kapı" [ref=f3e373]
+            - cell "6a Geliştirme" [ref=f3e375]
+            - cell "● çalışıyor" [ref=f3e376]
+            - cell "1.0M tok" [ref=f3e378]
+            - cell "5 saat" [ref=f3e379]
+          - row [ref=f3e380]:
+            - cell "UGURWEB-72" [ref=f3e381]
+            - cell "Login sayfası captcha entegrasyonu" [ref=f3e382]
+            - cell "ugurweb" [ref=f3e383]
+            - cell "full-auto" [ref=f3e384]
+            - cell "orta · 4 kapı" [ref=f3e386]
+            - cell "9 QA onayı" [ref=f3e388]
+            - cell "⏳ kapıda QA · 4 saat" [ref=f3e389]:
+              - generic [ref=f3e390]: ⏳ kapıda
+              - generic [ref=f3e391]: QA · 4 saat
+            - cell "2.0M tok" [ref=f3e392]
+            - cell "2 gün" [ref=f3e393]
+          - row [ref=f3e394]:
+            - cell "UGURWEB-83" [ref=f3e395]
+            - 'cell "Erişilebilirlik: form etiketleri (WCAG AA)" [ref=f3e396]'
+            - cell "ugurweb" [ref=f3e397]
+            - cell "full-auto" [ref=f3e398]
+            - cell "düşük · 2 kapı" [ref=f3e400]
+            - cell "13 Kanıt paketi" [ref=f3e402]
+            - cell "✓ tamam" [ref=f3e403]
+            - cell "1.7M tok" [ref=f3e405]
+            - cell "kapandı · 30 Tem" [ref=f3e406]
+          - row [ref=f3e407]:
+            - cell "UGURWEB-95" [ref=f3e408]
+            - cell "A/B test altyapısı temizliği" [ref=f3e409]
+            - cell "ugurweb" [ref=f3e410]
+            - cell "human-only" [ref=f3e411]
+            - cell "düşük · 2 kapı" [ref=f3e413]
+            - cell "6a Geliştirme" [ref=f3e415]
+            - cell "● çalışıyor insan çalışıyor · Maestro yalnız izliyor + kanıt topluyor" [ref=f3e416]:
+              - generic [ref=f3e417]: ● çalışıyor
+              - generic [ref=f3e418]: insan çalışıyor · Maestro yalnız izliyor + kanıt topluyor
+            - cell "—" [ref=f3e419]
+            - cell "1 gün" [ref=f3e420]
+          - row [ref=f3e421]:
+            - cell "UGURMOB-201" [ref=f3e422]
+            - cell "Face ID ile hızlı giriş" [ref=f3e423]
+            - cell "ugurmobil-ios" [ref=f3e424]
+            - cell "full-auto" [ref=f3e425]
+            - cell "kritik · 6 kapı" [ref=f3e427]
+            - cell "10 Test-engineer" [ref=f3e429]
+            - 'cell "● çalışıyor kritik: kimlik doğrulama → 6 kapı" [ref=f3e430]':
+              - generic [ref=f3e431]: ● çalışıyor
+              - generic [ref=f3e432]: "kritik: kimlik doğrulama → 6 kapı"
+            - cell "3.4M tok" [ref=f3e433]
+            - cell "2 gün" [ref=f3e434]
+          - row [ref=f3e435]:
+            - cell "UGURMOB-166" [ref=f3e436]
+            - cell "Sertifika sabitleme (pinning) güncellemesi" [ref=f3e437]
+            - cell "ugurmobil-ios" [ref=f3e438]
+            - cell "full-auto" [ref=f3e439]
+            - cell "kritik · 6 kapı" [ref=f3e441]
+            - cell "13 Kanıt paketi" [ref=f3e443]
+            - cell "✓ tamam" [ref=f3e444]
+            - cell "2.2M tok" [ref=f3e446]
+            - cell "kapandı · 25 Tem" [ref=f3e447]
+          - row [ref=f3e448]:
+            - cell "UGURMOB-188" [ref=f3e449]
+            - cell "Bildirim izinleri — Android 15 uyumu" [ref=f3e450]
+            - cell "ugurmobil-android" [ref=f3e451]
+            - cell "full-auto" [ref=f3e452]
+            - cell "düşük · 2 kapı" [ref=f3e454]
+            - cell "5 Tech Lead onayı" [ref=f3e456]
+            - cell "⏳ kapıda Tech Lead · 3 saat" [ref=f3e457]:
+              - generic [ref=f3e458]: ⏳ kapıda
+              - generic [ref=f3e459]: Tech Lead · 3 saat
+            - cell "0.8M tok" [ref=f3e460]
+            - cell "7 saat" [ref=f3e461]
+          - row [ref=f3e462]:
+            - cell "UGURDESK-45" [ref=f3e463]
+            - cell "Rapor ekranı dışa aktarma" [ref=f3e464]
+            - cell "ugurmasaüstü" [ref=f3e465]
+            - cell "full-auto" [ref=f3e466]
+            - cell "düşük · 2 kapı" [ref=f3e468]
+            - cell "10b CI gate" [ref=f3e470]
+            - 'cell "✕ hata CI kırmızı: vstest 3 senaryo · ajan aynı oturumda düzeltiyor" [ref=f3e471]':
+              - generic [ref=f3e472]: ✕ hata
+              - generic [ref=f3e473]: "CI kırmızı: vstest 3 senaryo · ajan aynı oturumda düzeltiyor"
+            - cell "1.5M tok" [ref=f3e474]
+            - cell "2 gün" [ref=f3e475]
+          - row [ref=f3e476]:
+            - cell "UGURDESK-52" [ref=f3e477]
+            - cell "Toplu EFT dosyası içe aktarma" [ref=f3e478]
+            - cell "ugurmasaüstü" [ref=f3e479]
+            - cell "full-auto" [ref=f3e480]
+            - cell "kritik · 6 kapı" [ref=f3e482]
+            - cell "6a Geliştirme" [ref=f3e484]
+            - 'cell "● çalışıyor kritik: ödeme dosyası → 6 kapı" [ref=f3e485]':
+              - generic [ref=f3e486]: ● çalışıyor
+              - generic [ref=f3e487]: "kritik: ödeme dosyası → 6 kapı"
+            - cell "1.2M tok" [ref=f3e488]
+            - cell "6 saat" [ref=f3e489]
+          - row [ref=f3e490]:
+            - cell "UGURDESK-39 bug" [ref=f3e491]:
+              - text: UGURDESK-39
+              - generic [ref=f3e492]: bug
+            - cell "Yazdırma önizleme kilitleniyor" [ref=f3e493]
+            - cell "ugurmasaüstü" [ref=f3e494]
+            - cell "full-auto" [ref=f3e495]
+            - cell "düşük · 2 kapı" [ref=f3e497]
+            - cell "13 Kanıt paketi" [ref=f3e499]
+            - cell "✓ tamam" [ref=f3e500]
+            - cell "0.8M tok" [ref=f3e502]
+            - cell "kapandı · 27 Tem" [ref=f3e503]
+          - row [ref=f3e504]:
+            - cell "UGURPAY-600 yeni proje" [ref=f3e505]:
+              - text: UGURPAY-600
+              - generic [ref=f3e506]: yeni proje
+            - cell "Yeni kredi başvuru uygulaması (greenfield)" [ref=f3e507]
+            - cell "— (repo yok)" [ref=f3e508]
+            - cell "full-auto" [ref=f3e509]
+            - cell "kritik · 6 kapı" [ref=f3e511]
+            - cell "mimari" [ref=f3e513]
+            - cell "⏳ kapıda Mimar + Tech Lead · 5 saat" [ref=f3e514]:
+              - generic [ref=f3e515]: ⏳ kapıda
+              - generic [ref=f3e516]: Mimar + Tech Lead · 5 saat
+            - cell "3.0M tok" [ref=f3e517]
+            - cell "1 gün" [ref=f3e518]
+      - generic [ref=f3e519]: Satıra tıkla → o ticket'ın kendi detayı (adımlar, defter, analiz, diff, testler o işe ait). Alt ticket'lar (↳) ana ticket'ın etki matrisinden otomatik açıldı.

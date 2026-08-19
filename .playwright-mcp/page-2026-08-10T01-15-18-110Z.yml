@@ -1,0 +1,225 @@
+- generic [ref=f16e2]:
+  - generic [ref=f16e23]:
+    - navigation "Ana gezinme" [ref=f16e24]:
+      - generic [ref=f16e25]:
+        - generic [ref=f16e26]: M
+        - generic [ref=f16e27]:
+          - text: Maestro
+          - generic [ref=f16e28]: SDLC otomasyonu
+      - generic [ref=f16e29]:
+        - generic [ref=f16e30]: Operasyon
+        - link "Panel" [ref=f16e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f16e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f16e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f16e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f16e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f16e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f16e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f16e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f16e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f16e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [active] [ref=f16e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f16e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f16e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f16e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f16e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f16e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f16e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f16e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f16e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f16e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f16e51]:
+        - generic [ref=f16e52]: Yürütme
+        - link "Runner havuzları" [ref=f16e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f16e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f16e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f16e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f16e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f16e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f16e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f16e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f16e61]:
+        - generic [ref=f16e62]: Ajanlar
+        - link "Variant'lar" [ref=f16e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f16e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f16e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f16e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f16e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f16e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f16e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f16e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f16e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f16e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f16e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f16e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f16e75]:
+        - generic [ref=f16e76]: Yönetişim
+        - link "LLM Gateway" [ref=f16e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f16e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f16e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f16e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f16e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f16e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f16e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f16e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f16e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f16e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f16e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f16e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f16e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f16e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f16e91]:
+        - generic [ref=f16e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f16e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f16e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f16e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f16e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f16e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f16e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f16e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f16e100]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f16e101] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f16e102]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f16e103] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f16e104]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f16e105] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f16e106]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f16e107] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f16e108]: ✔
+          - text: Karar defteri
+    - generic [ref=f16e109]:
+      - banner [ref=f16e110]:
+        - heading "Clarification (2b)" [level=1] [ref=f16e483]
+        - generic [ref=f16e112]:
+          - generic [ref=f16e113]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f16e114]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f16e115]: ayse.kaya@ugurbank.local
+        - button "Çıkış" [ref=f16e116] [cursor=pointer]
+      - main [ref=f16e117]:
+        - generic [ref=f16e484]:
+          - generic [ref=f16e485]:
+            - generic [ref=f16e486]:
+              - generic [ref=f16e487]:
+                - heading "Yanıt gönder" [level=3] [ref=f16e488]
+                - generic [ref=f16e489]: adım 2b — intake'in sorduğu eksik bilgi
+              - generic [ref=f16e490]:
+                - generic [ref=f16e491]:
+                  - generic [ref=f16e492]: Ticket
+                  - textbox "Ticket" [ref=f16e493]
+                  - paragraph [ref=f16e494]: "Örnek biçim: UGURPAY-712"
+                - generic [ref=f16e495]:
+                  - generic [ref=f16e496]: Yanıt
+                  - textbox "Yanıt" [ref=f16e497]
+                  - paragraph [ref=f16e498]: Sorulan her maddeyi yanıtla — eksik yanıt yeni bir tur açar.
+                - button "Yanıtı gönder" [disabled] [ref=f16e500]
+                - paragraph [ref=f16e501]: Yanıt, Jira yorumuyla aynı sinyali gönderir; ajan aynı oturumda devam eder.
+            - generic [ref=f16e502]:
+              - generic [ref=f16e503]:
+                - heading "Açık iş akışları" [level=3] [ref=f16e504]
+                - generic [ref=f16e505]: hangisinin 2b'de beklediği ticket detayında görünür
+              - table [ref=f16e508]:
+                - caption [ref=f16e509]: Açık iş akışları
+                - rowgroup [ref=f16e510]:
+                  - row [ref=f16e511]:
+                    - columnheader "Ticket" [ref=f16e512]
+                    - columnheader "Bildiren" [ref=f16e513]
+                    - columnheader "Yaş" [ref=f16e514]
+                    - columnheader "İşlem" [ref=f16e515]
+                - rowgroup [ref=f16e516]:
+                  - button [ref=f16e517]:
+                    - cell "UGURPAY-712 UGURPAY-712" [ref=f16e518]:
+                      - text: UGURPAY-712
+                      - generic [ref=f16e519]: UGURPAY-712
+                    - cell [ref=f16e520]
+                    - cell "1 gün" [ref=f16e521]
+                    - cell [ref=f16e522]:
+                      - button "Seç" [ref=f16e523] [cursor=pointer]
+          - generic [ref=f16e524]:
+            - generic [ref=f16e525]:
+              - heading "Döngü kuralları" [level=3] [ref=f16e527]
+              - generic [ref=f16e529]:
+                - term [ref=f16e530]: Adım
+                - definition [ref=f16e531]:
+                  - generic [ref=f16e532]: Clarification — reporter'a soru
+                - term [ref=f16e533]: Bekleme
+                - definition [ref=f16e534]: Süresiz — otomatik ret yok (M14).
+                - term [ref=f16e535]: Hatırlatıcı
+                - definition [ref=f16e536]: 24s Jira → 72s Teams+e-posta
+                - term [ref=f16e537]: 3. turdan sonra
+                - definition [ref=f16e538]: Ticket insana atanır, AI durur.
+            - generic [ref=f16e539]:
+              - heading "Neden önemli" [level=3] [ref=f16e541]
+              - paragraph [ref=f16e543]: Eksik ticket'la üretilen analiz kapıda reddedilir ve token boşa gider. Bir clarification turu, reddedilen bir analizden çok daha ucuzdur.
+  - region

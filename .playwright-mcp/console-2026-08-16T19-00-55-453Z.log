@@ -1,0 +1,460 @@
+[    1621ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:20102
+[  169905ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "screen.setup.title" for locale "tr"
+    at t (http://127.0.0.1:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786907024317:20:34)
+    at translate (http://127.0.0.1:7000/src/i18n/catalog.ts?t=1786907024317:9:10)
+    at t (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907024317:33:27)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907024317:17:54)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  169906ms] [ERROR] [studio] render failed MissingMessageError: missing message "screen.setup.title" for locale "tr"
+    at t (http://127.0.0.1:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786907024317:20:34)
+    at translate (http://127.0.0.1:7000/src/i18n/catalog.ts?t=1786907024317:9:10)
+    at t (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907024317:33:27)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907024317:17:54)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907024317:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907024317:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  184302ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "screen.setup.title" for locale "tr"
+    at t (http://127.0.0.1:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786907038519:20:34)
+    at translate (http://127.0.0.1:7000/src/i18n/catalog.ts?t=1786907038519:9:10)
+    at t (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907038519:33:27)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907038519:17:54)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  184303ms] [ERROR] [studio] render failed MissingMessageError: missing message "screen.setup.title" for locale "tr"
+    at t (http://127.0.0.1:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786907038519:20:34)
+    at translate (http://127.0.0.1:7000/src/i18n/catalog.ts?t=1786907038519:9:10)
+    at t (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907038519:33:27)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907038519:17:54)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907038519:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907038519:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  230009ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  230011ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  230156ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  230157ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  230204ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  230205ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907083729:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  255354ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  255355ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  255437ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  255438ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  255475ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  255476ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907110330:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  325228ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useAuth must be used inside <AuthProvider>
+    at useAuth (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:105:27)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43)
+    at renderRootSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12408:13) The above error occurred in the <RequireSession> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  325229ms] [ERROR] [studio] render failed Error: useAuth must be used inside <AuthProvider>
+    at useAuth (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:105:27)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43)
+    at renderRootSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12408:13) 
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx?t=1786907180469:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  325916ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907180469:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  325916ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907180469:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907180469:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx?t=1786907180469:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx?t=1786907180469:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  465221ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907180469:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) The above error occurred in the <Shell> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7000
+[  465222ms] [ERROR] [studio] render failed Error: useI18n must be used inside <I18nProvider>
+    at useI18n (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:49:11)
+    at useT (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083745:56:10)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907180469:11:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=654ef462:12424:43) 
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786907180469:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx?t=1786907180469:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=654ef462:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx?t=1786907180469:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=654ef462:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786907083743:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9

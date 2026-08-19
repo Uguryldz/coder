@@ -1,0 +1,191 @@
+digraph OrkestraSystem {
+  rankdir=TB;
+  bgcolor="#F8FAFC";
+  compound=true;
+  newrank=true;
+  splines=spline;
+  nodesep=0.35;
+  ranksep=0.75;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=10, style="filled,rounded", shape=box, margin="0.24,0.14"];
+  edge [fontname="Helvetica", fontsize=9, color="#64748B"];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="24"><B>Jira AI Orkestra — Çalışma Ortamı ve Sistem Mimarisi</B></FONT><BR/><BR/>
+        <FONT POINT-SIZE="12" COLOR="#334155">TEK FİZİKSEL SUNUCU · Ubuntu 25.10 (kernel 6.17) · Docker 29.4.1 · tek Docker daemon · tüm servisler container</FONT><BR/>
+        <FONT POINT-SIZE="11" COLOR="#64748B">Orkestratör = Temporal (iş akışı durumu) + Docker Engine (container yaşam döngüsü) · Compose = tanım dosyası</FONT><BR/>
+        <FONT POINT-SIZE="9" COLOR="#94A3B8">doğrulandı: docker inspect · workflow.ts · sandbox.ts · jira-webhook.ts</FONT>>;
+
+  // ══════════════════════════════════════════════════════════════
+  // DIŞ DÜNYA — sunucunun dışında
+  // ══════════════════════════════════════════════════════════════
+  subgraph cluster_outside {
+    label="①  DIŞ DÜNYA  —  sunucunun DIŞINDA, ağ üzerinden erişilir";
+    style="filled,rounded"; fillcolor="#F1F5F9"; color="#94A3B8"; penwidth=2;
+    fontname="Helvetica-Bold"; fontsize=14; fontcolor="#334155";
+
+    node [shape=folder, fillcolor="#FFFFFF", color="#475569", fontsize=10];
+    x_jira  [label="Jira Data Center\nticket · yorum · durum geçişi"];
+    x_git   [label="Bitbucket / GitHub / GitLab\nbranch · PR · CI pipeline"];
+    x_claude[label="Claude API\n⚠ ŞU AN MOCK — dış çağrı YOK\n(LLM_MODE=real ise tek dış çıkış)",
+             color="#DC2626", penwidth=2, fillcolor="#FEF2F2"];
+    x_slack [label="Slack\nkritik bildirim"];
+    x_tr    [label="TestRail / Xray\ntest case kaydı"];
+
+    node [shape=box, fillcolor="#FFFFFF", color="#64748B"];
+    x_user  [label="İNSANLAR\nGeliştirici · PO · Tech Lead · QA\n(Jira yorumu ile /approve · /reject)"];
+    x_admin [label="ADMIN\ntarayıcıdan Agent Studio"];
+
+    x_user -> x_jira [style=invis];
+    x_jira -> x_git [style=invis];
+    x_git -> x_claude [style=invis];
+    x_claude -> x_slack [style=invis];
+    x_slack -> x_tr [style=invis];
+    x_tr -> x_admin [style=invis];
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // FİZİKSEL SUNUCU
+  // ══════════════════════════════════════════════════════════════
+  subgraph cluster_host {
+    label="②  FİZİKSEL SUNUCU  —  Ubuntu 25.10 · kernel 6.17 · TEK MAKİNE (sanal makine yok, hepsi container)";
+    style="filled,rounded"; fillcolor="#FFFBEB"; color="#F59E0B"; penwidth=3;
+    fontname="Helvetica-Bold"; fontsize=15; fontcolor="#92400E";
+
+    // ---------- Docker Engine ----------
+    dockerd [label="🐳  DOCKER ENGINE  (dockerd 29.4.1)\nTEK daemon — tüm container'ları O yönetir\nkaynak izolasyonu: namespace + cgroup",
+             shape=box3d, fillcolor="#DBEAFE", color="#1D4ED8", penwidth=2.5, fontsize=12];
+
+    compose [label="docker-compose.yml  +  dev_run.sh\nTANIM dosyası — çalışma zamanı motoru DEĞİL\n9 servis tanımı · uinfra network'üne bağlanır",
+             shape=note, fillcolor="#FEF9C3", color="#CA8A04", fontsize=9];
+
+    // ═══════ ORKESTRA UYGULAMA CONTAINER'LARI ═══════
+    subgraph cluster_apps {
+      label="③  ORKESTRA UYGULAMA CONTAINER'LARI   (image: node:22-bookworm-slim · USER node/UID 1000 — root DEĞİL)";
+      style="filled,rounded"; fillcolor="#EFF6FF"; color="#3B82F6"; penwidth=2;
+      fontname="Helvetica-Bold"; fontsize=13; fontcolor="#1E40AF";
+      node [fillcolor="#FFFFFF", color="#2563EB", penwidth=1.8, fontsize=10];
+
+      c_api [label="orkestra-api\nimage: compose-api\nFastify · host :7001 → :3000\n\nwebhook ALICI + REST + /health"];
+      c_studio [label="orkestra-studio\nimage: compose-studio\nNext.js+Refine · host :7000 → :3000\n\nAgent Studio (admin UI)"];
+      c_worker [label="orkestra-worker\nimage: compose-worker\nport YOK — dışarı açılmaz\n\nTemporal worker · AI ajanları burada koşar\n⚠ docker.sock (ro) MOUNT EDİLİ"];
+    }
+
+    // ═══════ ALTYAPI CONTAINER'LARI ═══════
+    subgraph cluster_infra {
+      label="④  ORKESTRA ALTYAPI CONTAINER'LARI  (deploy/compose)";
+      style="filled,rounded"; fillcolor="#ECFDF5"; color="#10B981"; penwidth=2;
+      fontname="Helvetica-Bold"; fontsize=13; fontcolor="#065F46";
+      node [shape=cylinder, fillcolor="#FFFFFF", color="#059669", fontsize=10];
+
+      c_temporal [label="orkestra-temporal  :7233\ntemporalio/auto-setup 1.25\n\n★ İŞ AKIŞI ORKESTRATÖRÜ\nadım durumu · retry · timer\nsinyal kuyruğu — kalıcı", penwidth=2.2];
+      c_tui  [label="orkestra-temporal-ui  :8233\nworkflow izleme"];
+      c_minio[label="orkestra-minio  :9010/:9011\nS3 uyumlu artefakt deposu\nbucket: orkestra · knowledge · artifacts"];
+
+      node [shape=box, style="filled,dashed,rounded", fillcolor="#F0FDF4", color="#16A34A", fontsize=9];
+      c_dbinit [label="db-init  (init · exit 0)\n3 DB oluştur (idempotent)"];
+      c_mig    [label="prisma-migrate  (init · exit 0)\nmigrate deploy + seed"];
+    }
+
+    // ═══════ SANDBOX — dinamik ═══════
+    subgraph cluster_sandbox {
+      label="⑤  EPHEMERAL SANDBOX CONTAINER'LARI  —  worker tarafından ÇALIŞMA ANINDA yaratılır/silinir";
+      style="filled,rounded"; fillcolor="#FDF4FF"; color="#A855F7"; penwidth=2.5;
+      fontname="Helvetica-Bold"; fontsize=13; fontcolor="#7E22CE";
+      node [fillcolor="#FFFFFF", color="#9333EA", fontsize=9];
+
+      sb_code [label="sandbox: KOD ÇALIŞTIRMA\nimage dile göre seçilir:\nnode:20 · python:3.12 · maven:21 · golang:1.23\n\n🔒 ReadonlyRootfs · CapDrop ALL\nno-new-privileges · UID 1000\ntmpfs /workspace (2GB) · ağ: bridge\nTTL 60 dk", penwidth=1.8];
+
+      sb_scan [label="sandbox: GÜVENLİK TARAMASI\nzricethezav/gitleaks\nreturntocorp/semgrep\naquasec/trivy\n\nher tarama ayrı container", penwidth=1.8];
+
+      sb_pool [label="⚖ CapacityPool\nRedis tabanlı DAĞITIK semafor\neşzamanlı sandbox sınırı\n(SANDBOX_MAX_CONCURRENT)\n→ çok-worker kurulumunu destekler",
+               shape=note, fillcolor="#FAF5FF", color="#7E22CE", fontsize=9];
+    }
+
+    // ═══════ PAYLAŞIMLI ALTYAPI ═══════
+    subgraph cluster_uinfra {
+      label="⑥  PAYLAŞIMLI ALTYAPI  —  'uinfra' network · Orkestra'ya ait DEĞİL, başka projeler de kullanır";
+      style="filled,rounded"; fillcolor="#FEF2F2"; color="#EF4444"; penwidth=2;
+      fontname="Helvetica-Bold"; fontsize=13; fontcolor="#991B1B";
+      node [shape=cylinder, fillcolor="#FFFFFF", color="#DC2626", fontsize=10];
+
+      c_pg [label="uinfra-postgres  :5432\nDB: orkestra · temporal\n· temporal_visibility", penwidth=2];
+      c_redis [label="uinfra-redis  :6379/db1\ncache + sandbox semaforu", penwidth=2];
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // KENARLAR
+  // ══════════════════════════════════════════════════════════════
+
+  // ---- Docker yönetim ilişkisi (mavi kalın) ----
+  edge [color="#1D4ED8", penwidth=2.2, style=bold];
+  compose -> dockerd [label="  servisleri tanımlar", style=dashed, penwidth=1.5];
+  dockerd -> c_api    [label="  yaratır ·\n  çalıştırır", lhead=cluster_apps];
+  dockerd -> c_temporal [lhead=cluster_infra];
+  dockerd -> c_pg     [lhead=cluster_uinfra];
+
+  // ---- WEBHOOK girişleri (turuncu kalın) — SORU 1'in cevabı ----
+  edge [color="#EA580C", penwidth=2.5, style=solid, fontcolor="#C2410C"];
+  x_user -> x_jira [label="  ticket açar\n  /approve yorumu yazar", penwidth=1.8];
+  x_jira -> c_api  [label="  ① WEBHOOK  (HTTP POST)\n  HMAC imza doğrulanır\n  polling YOK", weight=8];
+  x_git  -> c_api  [label="  ① WEBHOOK\n  PR onayı · CI sonucu", weight=8];
+
+  // ---- Sinyal akışı (yeşil kalın) ----
+  edge [color="#059669", penwidth=2.5, fontcolor="#047857"];
+  c_api -> c_temporal [label="  ② workflow.start()\n  handle.signal()\n  (gRPC)", weight=12];
+  c_temporal -> c_worker [label="  ③ görev kuyruğu\n  'orkestra-default'\n  worker ÇEKER (pull)", weight=12];
+
+  // ---- Worker → sandbox (mor kalın) — SORU 2'nin cevabı ----
+  edge [color="#9333EA", penwidth=2.5, fontcolor="#7E22CE"];
+  c_worker -> dockerd [label="  ④ docker.sock (ro) üzerinden\n  KARDEŞ container yaratır\n  (docker-in-docker DEĞİL)"];
+  dockerd -> sb_code [label="  ⑤ ephemeral\n  container", lhead=cluster_sandbox, color="#9333EA"];
+
+  // ---- Dış çağrılar (kesikli) ----
+  edge [color="#DC2626", penwidth=1.6, style=dashed, fontcolor="#B91C1C"];
+  c_worker -> x_claude [label="  LLM_MODE=real ise\n  (şu an mock → çağrı yok)"];
+
+  edge [color="#94A3B8", penwidth=1.4, style=dashed, fontcolor="#64748B"];
+  c_worker -> x_jira  [label="  yorum · durum geçişi"];
+  c_worker -> x_git   [label="  branch · commit · PR"];
+  c_worker -> x_slack;
+  c_worker -> x_tr;
+
+  // ---- Admin ----
+  edge [color="#2563EB", penwidth=1.8, style=solid, fontcolor="#1D4ED8"];
+  x_admin -> c_studio [label="  tarayıcı :7000\n  NextAuth girişi"];
+  c_studio -> c_api   [label="  REST\n  (Refine data provider)"];
+
+  // ---- Kalıcılık (kırmızı) ----
+  edge [color="#DC2626", penwidth=1.7, style=solid, fontcolor="#991B1B"];
+  c_temporal -> c_pg [label="  workflow durumu\n  (kalıcı — restart'a dayanır)"];
+  c_api    -> c_pg [label="  Prisma"];
+  c_worker -> c_pg;
+  c_studio -> c_pg;
+  sb_pool  -> c_redis [label="  semafor", color="#9333EA", style=dashed];
+
+  // ---- Artefakt ----
+  edge [color="#059669", penwidth=1.5, style=solid];
+  c_worker -> c_minio [label="  patch · log · rapor"];
+
+  // ---- init zinciri ----
+  edge [color="#16A34A", penwidth=1.3, style=dashed, fontcolor="#15803D"];
+  c_dbinit -> c_mig [label="  sonra"];
+  c_mig -> c_pg [label="  şema + seed"];
+  c_temporal -> c_tui [style=dashed];
+
+  // ---- Hizalama: katmanları üstten alta sabitle ----
+  { rank=same; c_api; c_studio; c_worker; }
+  { rank=same; c_pg; c_redis; }
+  { rank=same; sb_code; sb_scan; }
+  { rank=same; c_temporal; c_minio; }
+
+  // Dış dünya en üstte, sunucu altında kalsın
+  edge [style=invis, weight=100];
+  x_admin -> compose;
+  x_tr -> dockerd;
+
+  // Sandbox kümesi altyapı seviyesinde kalsın
+  edge [style=invis, weight=30];
+  c_worker -> sb_pool;
+}

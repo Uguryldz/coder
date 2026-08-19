@@ -1,0 +1,464 @@
+- generic [ref=f16e2]:
+  - generic [ref=f16e298]:
+    - navigation "Ana gezinme" [ref=f16e299]:
+      - generic [ref=f16e300]:
+        - generic [ref=f16e301]: M
+        - generic [ref=f16e302]:
+          - text: Maestro
+          - generic [ref=f16e303]: SDLC otomasyonu
+      - generic [ref=f16e304]:
+        - generic [ref=f16e305]: İşler
+        - link "Panel" [ref=f16e306] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f16e307]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f16e308] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f16e309]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f16e310] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f16e311]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f16e312]:
+        - generic [ref=f16e313]: Ajanlar
+        - link "Ajan tanımları" [ref=f16e314] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f16e315]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f16e316] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f16e317]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f16e318] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f16e319]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f16e320] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f16e321]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f16e322] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f16e323]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f16e324]: yakında
+      - generic [ref=f16e325]:
+        - generic [ref=f16e326]: Denetim
+        - link "Denetim izi" [active] [ref=f16e327] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f16e328]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f16e329] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f16e330]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f16e331] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f16e332]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f16e333] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f16e334]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f16e335]: yakında
+        - link "Kanıt paketi yakında" [ref=f16e336] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f16e337]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f16e338]: yakında
+      - generic [ref=f16e339]:
+        - generic [ref=f16e340]: Kurulum
+        - link "Proje bağlama" [ref=f16e341] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f16e342]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f16e343] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f16e344]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f16e345] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f16e346]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f16e347] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f16e348]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f16e349] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f16e350]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f16e351] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f16e352]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f16e353]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f16e354] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f16e355]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f16e356]:
+      - banner [ref=f16e357]:
+        - heading "Denetim izi" [level=1] [ref=f16e358]
+        - generic [ref=f16e359]:
+          - generic [ref=f16e360]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f16e361]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f16e362]: admin
+        - button "Çıkış" [ref=f16e363] [cursor=pointer]
+      - main [ref=f16e364]:
+        - generic [ref=f16e365]:
+          - generic [ref=f16e366]:
+            - heading "Zincir durumu" [level=3] [ref=f16e367]
+            - generic [ref=f16e368]: hash zincirli · tek yazarlı · CEF/syslog dışa aktarıma hazır
+            - button "Zinciri şimdi doğrula" [ref=f16e370] [cursor=pointer]
+          - generic [ref=f16e371]:
+            - paragraph [ref=f16e372]:
+              - generic [ref=f16e373]: Zincir tutarlı (yeniden hesaplandı)
+            - list [ref=f16e374]:
+              - listitem [ref=f16e375]: Kayıtlar yeniden hash'lendi.
+              - listitem [ref=f16e376]: Dış çapa yok — geçmişe dönük değişiklik bu doğrulamayla tespit edilemez.
+            - paragraph [ref=f16e377]: 38 kayıt yeniden hash'lendi
+        - generic [ref=f16e379]:
+          - heading "Denetim kayıtları" [level=3] [ref=f16e381]
+          - generic [ref=f16e382]:
+            - generic [ref=f16e383]:
+              - generic [ref=f16e384]:
+                - generic [ref=f16e385]: Başlangıç
+                - textbox "Başlangıç" [ref=f16e386]
+              - generic [ref=f16e387]:
+                - generic [ref=f16e388]: Bitiş
+                - textbox "Bitiş" [ref=f16e389]
+              - generic [ref=f16e390]:
+                - generic [ref=f16e391]: Aktör
+                - textbox "Aktör" [ref=f16e392]:
+                  - /placeholder: ör. ayse@corp
+              - generic [ref=f16e393]:
+                - generic [ref=f16e394]: Aksiyon
+                - textbox "Aksiyon" [ref=f16e395]:
+                  - /placeholder: ör. GATE_APPROVE
+              - generic [ref=f16e396]:
+                - generic [ref=f16e397]: Ara
+                - textbox "Ara" [ref=f16e398]:
+                  - /placeholder: konu/aktör/aksiyon
+              - button "Getir" [ref=f16e399] [cursor=pointer]
+              - button "CSV indir" [ref=f16e400] [cursor=pointer]
+            - table [ref=f16e402]:
+              - rowgroup [ref=f16e403]:
+                - row [ref=f16e404]:
+                  - columnheader "#" [ref=f16e405]
+                  - columnheader "Saat" [ref=f16e406]
+                  - columnheader "Aktör" [ref=f16e407]
+                  - columnheader "Eylem" [ref=f16e408]
+                  - columnheader "Konu" [ref=f16e409]
+                  - columnheader "Hash" [ref=f16e410]
+              - rowgroup [ref=f16e411]:
+                - row [ref=f16e412]:
+                  - cell "38" [ref=f16e413]
+                  - cell "2026-08-15T01:57:52.484Z" [ref=f16e414]
+                  - cell "maestro-worker" [ref=f16e415]
+                  - cell "İnsana devredildi" [ref=f16e416]
+                  - cell "OPS-21" [ref=f16e418]
+                  - cell [ref=f16e419]:
+                    - code [ref=f16e420]: af2908ef…8c14
+                - row [ref=f16e421]:
+                  - cell "37" [ref=f16e422]
+                  - cell "2026-08-15T01:57:52.067Z" [ref=f16e423]
+                  - cell "0uguryldz94@gmail.com" [ref=f16e424]
+                  - cell "Kapı onaylandı" [ref=f16e425]
+                  - cell "OPS-21" [ref=f16e427]
+                  - cell [ref=f16e428]:
+                    - code [ref=f16e429]: 4ce98b3c…b3a2
+                - row [ref=f16e430]:
+                  - cell "36" [ref=f16e431]
+                  - cell "2026-08-15T01:57:11.886Z" [ref=f16e432]
+                  - cell "maestro-worker" [ref=f16e433]
+                  - cell "Kapı onaya açıldı" [ref=f16e434]
+                  - cell "OPS-21" [ref=f16e436]
+                  - cell [ref=f16e437]:
+                    - code [ref=f16e438]: 668c0261…d1c5
+                - row [ref=f16e439]:
+                  - cell "35" [ref=f16e440]
+                  - cell "2026-08-15T01:57:11.877Z" [ref=f16e441]
+                  - cell "maestro-worker" [ref=f16e442]
+                  - cell "İnsana devredildi" [ref=f16e443]
+                  - cell "OPS-21" [ref=f16e445]
+                  - cell [ref=f16e446]:
+                    - code [ref=f16e447]: d1a9b6b3…3f49
+                - row [ref=f16e448]:
+                  - cell "34" [ref=f16e449]
+                  - cell "2026-08-15T01:56:00.126Z" [ref=f16e450]
+                  - cell "maestro-worker" [ref=f16e451]
+                  - cell "İş akışı başladı" [ref=f16e452]
+                  - cell "OPS-21" [ref=f16e454]
+                  - cell [ref=f16e455]:
+                    - code [ref=f16e456]: 157191cb…1f23
+                - row [ref=f16e457]:
+                  - cell "33" [ref=f16e458]
+                  - cell "2026-08-15T01:51:39.858Z" [ref=f16e459]
+                  - cell "maestro-worker" [ref=f16e460]
+                  - cell "İnsana devredildi" [ref=f16e461]
+                  - cell "OPS-21" [ref=f16e463]
+                  - cell [ref=f16e464]:
+                    - code [ref=f16e465]: 8e6d2d93…deaf
+                - row [ref=f16e466]:
+                  - cell "32" [ref=f16e467]
+                  - cell "2026-08-15T01:51:38.762Z" [ref=f16e468]
+                  - cell "maestro-worker" [ref=f16e469]
+                  - cell "Soru soruldu" [ref=f16e470]
+                  - cell "OPS-21" [ref=f16e472]
+                  - cell [ref=f16e473]:
+                    - code [ref=f16e474]: f6399eae…3a37
+                - row [ref=f16e475]:
+                  - cell "31" [ref=f16e476]
+                  - cell "2026-08-15T01:51:30.670Z" [ref=f16e477]
+                  - cell "maestro-worker" [ref=f16e478]
+                  - cell "İş akışı başladı" [ref=f16e479]
+                  - cell "OPS-21" [ref=f16e481]
+                  - cell [ref=f16e482]:
+                    - code [ref=f16e483]: ba6bbfc8…546f
+                - row [ref=f16e484]:
+                  - cell "30" [ref=f16e485]
+                  - cell "2026-08-15T01:51:05.855Z" [ref=f16e486]
+                  - cell "maestro-worker" [ref=f16e487]
+                  - cell "İnsana devredildi" [ref=f16e488]
+                  - cell "OPS-20" [ref=f16e490]
+                  - cell [ref=f16e491]:
+                    - code [ref=f16e492]: 9cd4b0ed…53d4
+                - row [ref=f16e493]:
+                  - cell "29" [ref=f16e494]
+                  - cell "2026-08-15T01:51:05.432Z" [ref=f16e495]
+                  - cell "0uguryldz94@gmail.com" [ref=f16e496]
+                  - cell "Kapı onaylandı" [ref=f16e497]
+                  - cell "OPS-20" [ref=f16e499]
+                  - cell [ref=f16e500]:
+                    - code [ref=f16e501]: fc4a9e73…59a3
+                - row [ref=f16e502]:
+                  - cell "28" [ref=f16e503]
+                  - cell "2026-08-15T01:50:31.500Z" [ref=f16e504]
+                  - cell "maestro-worker" [ref=f16e505]
+                  - cell "Kapı onaya açıldı" [ref=f16e506]
+                  - cell "OPS-20" [ref=f16e508]
+                  - cell [ref=f16e509]:
+                    - code [ref=f16e510]: a8ddaf29…82a4
+                - row [ref=f16e511]:
+                  - cell "27" [ref=f16e512]
+                  - cell "2026-08-15T01:50:31.490Z" [ref=f16e513]
+                  - cell "maestro-worker" [ref=f16e514]
+                  - cell "İnsana devredildi" [ref=f16e515]
+                  - cell "OPS-20" [ref=f16e517]
+                  - cell [ref=f16e518]:
+                    - code [ref=f16e519]: 9d6a472a…39d8
+                - row [ref=f16e520]:
+                  - cell "26" [ref=f16e521]
+                  - cell "2026-08-15T01:49:12.832Z" [ref=f16e522]
+                  - cell "maestro-worker" [ref=f16e523]
+                  - cell "İş akışı başladı" [ref=f16e524]
+                  - cell "OPS-20" [ref=f16e526]
+                  - cell [ref=f16e527]:
+                    - code [ref=f16e528]: 6f6b7529…bcfe
+                - row [ref=f16e529]:
+                  - cell "25" [ref=f16e530]
+                  - cell "2026-08-15T01:47:43.855Z" [ref=f16e531]
+                  - cell "maestro-worker" [ref=f16e532]
+                  - cell "İnsana devredildi" [ref=f16e533]
+                  - cell "OPS-20" [ref=f16e535]
+                  - cell [ref=f16e536]:
+                    - code [ref=f16e537]: 15c9ea1f…243a
+                - row [ref=f16e538]:
+                  - cell "24" [ref=f16e539]
+                  - cell "2026-08-15T01:47:42.940Z" [ref=f16e540]
+                  - cell "0uguryldz94@gmail.com" [ref=f16e541]
+                  - cell "Kapı reddedildi" [ref=f16e542]
+                  - cell "OPS-20" [ref=f16e544]
+                  - cell [ref=f16e545]:
+                    - code [ref=f16e546]: a6862db5…b457
+                - row [ref=f16e547]:
+                  - cell "23" [ref=f16e548]
+                  - cell "2026-08-15T01:47:09.279Z" [ref=f16e549]
+                  - cell "maestro-worker" [ref=f16e550]
+                  - cell "Kapı onaya açıldı" [ref=f16e551]
+                  - cell "OPS-20" [ref=f16e553]
+                  - cell [ref=f16e554]:
+                    - code [ref=f16e555]: aa6fbe6d…9a19
+                - row [ref=f16e556]:
+                  - cell "22" [ref=f16e557]
+                  - cell "2026-08-15T01:47:09.263Z" [ref=f16e558]
+                  - cell "maestro-worker" [ref=f16e559]
+                  - cell "İnsana devredildi" [ref=f16e560]
+                  - cell "OPS-20" [ref=f16e562]
+                  - cell [ref=f16e563]:
+                    - code [ref=f16e564]: dc161cc2…82a0
+                - row [ref=f16e565]:
+                  - cell "21" [ref=f16e566]
+                  - cell "2026-08-15T01:45:54.997Z" [ref=f16e567]
+                  - cell "maestro-worker" [ref=f16e568]
+                  - cell "İş akışı başladı" [ref=f16e569]
+                  - cell "OPS-20" [ref=f16e571]
+                  - cell [ref=f16e572]:
+                    - code [ref=f16e573]: dd620ced…c2d2
+                - row [ref=f16e574]:
+                  - cell "20" [ref=f16e575]
+                  - cell "2026-08-15T01:45:21.548Z" [ref=f16e576]
+                  - cell "maestro-worker" [ref=f16e577]
+                  - cell "İnsana devredildi" [ref=f16e578]
+                  - cell "OPS-19" [ref=f16e580]
+                  - cell [ref=f16e581]:
+                    - code [ref=f16e582]: b49c09ed…3532
+                - row [ref=f16e583]:
+                  - cell "19" [ref=f16e584]
+                  - cell "2026-08-15T01:45:21.213Z" [ref=f16e585]
+                  - cell "0uguryldz94@gmail.com" [ref=f16e586]
+                  - cell "Kapı onaylandı" [ref=f16e587]
+                  - cell "OPS-19" [ref=f16e589]
+                  - cell [ref=f16e590]:
+                    - code [ref=f16e591]: c4b7f91b…385b
+                - row [ref=f16e592]:
+                  - cell "18" [ref=f16e593]
+                  - cell "2026-08-15T01:44:46.837Z" [ref=f16e594]
+                  - cell "maestro-worker" [ref=f16e595]
+                  - cell "Kapı onaya açıldı" [ref=f16e596]
+                  - cell "OPS-19" [ref=f16e598]
+                  - cell [ref=f16e599]:
+                    - code [ref=f16e600]: 2520c335…0e0c
+                - row [ref=f16e601]:
+                  - cell "17" [ref=f16e602]
+                  - cell "2026-08-15T01:44:46.831Z" [ref=f16e603]
+                  - cell "maestro-worker" [ref=f16e604]
+                  - cell "İnsana devredildi" [ref=f16e605]
+                  - cell "OPS-19" [ref=f16e607]
+                  - cell [ref=f16e608]:
+                    - code [ref=f16e609]: 96c0f138…8d5c
+                - row [ref=f16e610]:
+                  - cell "16" [ref=f16e611]
+                  - cell "2026-08-15T01:43:37.435Z" [ref=f16e612]
+                  - cell "maestro-worker" [ref=f16e613]
+                  - cell "İş akışı başladı" [ref=f16e614]
+                  - cell "OPS-19" [ref=f16e616]
+                  - cell [ref=f16e617]:
+                    - code [ref=f16e618]: 259010f2…3e44
+                - row [ref=f16e619]:
+                  - cell "15" [ref=f16e620]
+                  - cell "2026-08-15T01:43:10.078Z" [ref=f16e621]
+                  - cell "maestro-worker" [ref=f16e622]
+                  - cell "İnsana devredildi" [ref=f16e623]
+                  - cell "OPS-18" [ref=f16e625]
+                  - cell [ref=f16e626]:
+                    - code [ref=f16e627]: 95ac23cf…fc83
+                - row [ref=f16e628]:
+                  - cell "14" [ref=f16e629]
+                  - cell "2026-08-15T01:43:09.691Z" [ref=f16e630]
+                  - cell "0uguryldz94@gmail.com" [ref=f16e631]
+                  - cell "Kapı onaylandı" [ref=f16e632]
+                  - cell "OPS-18" [ref=f16e634]
+                  - cell [ref=f16e635]:
+                    - code [ref=f16e636]: 951e938a…7107
+                - row [ref=f16e637]:
+                  - cell "13" [ref=f16e638]
+                  - cell "2026-08-15T01:39:36.215Z" [ref=f16e639]
+                  - cell "maestro-worker" [ref=f16e640]
+                  - cell "Kapı onaya açıldı" [ref=f16e641]
+                  - cell "OPS-18" [ref=f16e643]
+                  - cell [ref=f16e644]:
+                    - code [ref=f16e645]: a8b57a07…a49d
+                - row [ref=f16e646]:
+                  - cell "12" [ref=f16e647]
+                  - cell "2026-08-15T01:39:36.209Z" [ref=f16e648]
+                  - cell "maestro-worker" [ref=f16e649]
+                  - cell "İnsana devredildi" [ref=f16e650]
+                  - cell "OPS-18" [ref=f16e652]
+                  - cell [ref=f16e653]:
+                    - code [ref=f16e654]: d7f771ad…191f
+                - row [ref=f16e655]:
+                  - cell "11" [ref=f16e656]
+                  - cell "2026-08-15T01:38:32.724Z" [ref=f16e657]
+                  - cell "maestro-worker" [ref=f16e658]
+                  - cell "İş akışı başladı" [ref=f16e659]
+                  - cell "OPS-18" [ref=f16e661]
+                  - cell [ref=f16e662]:
+                    - code [ref=f16e663]: 220bf71a…979c
+                - row [ref=f16e664]:
+                  - cell "10" [ref=f16e665]
+                  - cell "2026-08-15T01:29:21.798Z" [ref=f16e666]
+                  - cell "maestro-worker" [ref=f16e667]
+                  - cell "İş akışı başladı" [ref=f16e668]
+                  - cell "OPS-17" [ref=f16e670]
+                  - cell [ref=f16e671]:
+                    - code [ref=f16e672]: b2bd9e96…b39d
+                - row [ref=f16e673]:
+                  - cell "9" [ref=f16e674]
+                  - cell "2026-08-15T00:42:54.636Z" [ref=f16e675]
+                  - cell "maestro-worker" [ref=f16e676]
+                  - cell "Kapı onaya açıldı" [ref=f16e677]
+                  - cell "OPS-15" [ref=f16e679]
+                  - cell [ref=f16e680]:
+                    - code [ref=f16e681]: 53bb8573…3ddf
+                - row [ref=f16e682]:
+                  - cell "8" [ref=f16e683]
+                  - cell "2026-08-15T00:42:54.629Z" [ref=f16e684]
+                  - cell "maestro-worker" [ref=f16e685]
+                  - cell "İnsana devredildi" [ref=f16e686]
+                  - cell "OPS-15" [ref=f16e688]
+                  - cell [ref=f16e689]:
+                    - code [ref=f16e690]: 3a97b18f…5126
+                - row [ref=f16e691]:
+                  - cell "7" [ref=f16e692]
+                  - cell "2026-08-15T00:41:51.933Z" [ref=f16e693]
+                  - cell "maestro-worker" [ref=f16e694]
+                  - cell "İş akışı başladı" [ref=f16e695]
+                  - cell "OPS-15" [ref=f16e697]
+                  - cell [ref=f16e698]:
+                    - code [ref=f16e699]: 69a50ad6…66e4
+                - row [ref=f16e700]:
+                  - cell "6" [ref=f16e701]
+                  - cell "2026-08-15T00:32:52.328Z" [ref=f16e702]
+                  - cell "maestro-worker" [ref=f16e703]
+                  - cell "İnsana devredildi" [ref=f16e704]
+                  - cell "OPS-15" [ref=f16e706]
+                  - cell [ref=f16e707]:
+                    - code [ref=f16e708]: a5877afd…3b06
+                - row [ref=f16e709]:
+                  - cell "5" [ref=f16e710]
+                  - cell "2026-08-15T00:32:51.968Z" [ref=f16e711]
+                  - cell "0uguryldz94@gmail.com" [ref=f16e712]
+                  - cell "Kapı onaylandı" [ref=f16e713]
+                  - cell "OPS-15" [ref=f16e715]
+                  - cell [ref=f16e716]:
+                    - code [ref=f16e717]: 75bb17f5…ac99
+                - row [ref=f16e718]:
+                  - cell "4" [ref=f16e719]
+                  - cell "2026-08-15T00:32:51.692Z" [ref=f16e720]
+                  - cell "maestro-worker" [ref=f16e721]
+                  - cell "Kapı onaya açıldı" [ref=f16e722]
+                  - cell "OPS-15" [ref=f16e724]
+                  - cell [ref=f16e725]:
+                    - code [ref=f16e726]: 0a015dd8…d7d9
+                - row [ref=f16e727]:
+                  - cell "3" [ref=f16e728]
+                  - cell "2026-08-15T00:32:51.686Z" [ref=f16e729]
+                  - cell "maestro-worker" [ref=f16e730]
+                  - cell "İnsana devredildi" [ref=f16e731]
+                  - cell "OPS-15" [ref=f16e733]
+                  - cell [ref=f16e734]:
+                    - code [ref=f16e735]: b0a32a7e…50b3
+                - row [ref=f16e736]:
+                  - cell "2" [ref=f16e737]
+                  - cell "2026-08-15T00:31:54.746Z" [ref=f16e738]
+                  - cell "maestro-worker" [ref=f16e739]
+                  - cell "İş akışı başladı" [ref=f16e740]
+                  - cell "OPS-15" [ref=f16e742]
+                  - cell [ref=f16e743]:
+                    - code [ref=f16e744]: bc6531b4…80f7
+                - row [ref=f16e745]:
+                  - cell "1" [ref=f16e746]
+                  - cell "2026-08-14T23:27:13.614Z" [ref=f16e747]
+                  - cell "admin@maestro.local" [ref=f16e748]
+                  - cell "Parametre değişti" [ref=f16e749]
+                  - cell "param:binding.dry_run_sample_size" [ref=f16e751]
+                  - cell [ref=f16e752]:
+                    - code [ref=f16e753]: a80ec2eb…45f1
+        - paragraph [ref=f16e754]: Zincire yalnız worker yazar (tek yazar). Her gün zincir başı imzalanıp ayrı bir yere çapalanır; doğrulama sonucu burada dayanağıyla birlikte gösterilir — kaydın kendi iddiası tek başına yeşil sayılmaz.
+  - region

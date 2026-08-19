@@ -373,7 +373,7 @@ describe("ugurdocker bundle: the filled-in .env cannot escape", () => {
 
   it("keeps .env out of every image, wherever in the tree it sits", () => {
     /**
-     * `**​/.env`, not `.env`.
+     * `**\/.env`, not `.env`.
      *
      * A pattern without a slash matches only at the CONTEXT ROOT, so plain
      * `.env` never excluded `deploy/.env` — and an image once shipped carrying

@@ -1,0 +1,444 @@
+- generic [ref=f18e2]:
+  - generic [ref=f18e3]:
+    - navigation "Ana gezinme" [ref=f18e4]:
+      - generic [ref=f18e5]:
+        - generic [ref=f18e6]: M
+        - generic [ref=f18e7]:
+          - text: Maestro
+          - generic [ref=f18e8]: SDLC otomasyonu
+      - generic [ref=f18e9]:
+        - generic [ref=f18e10]: Operasyon
+        - link "Panel" [ref=f18e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f18e12]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f18e13] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f18e14]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f18e15] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f18e16]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f18e17] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f18e18]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f18e19] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f18e20]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f18e21] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f18e22]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f18e23] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f18e24]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f18e25] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f18e26]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f18e27] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f18e28]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f18e29] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f18e30]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f18e31]:
+        - generic [ref=f18e32]: Yürütme
+        - link "Runner havuzları" [ref=f18e33] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f18e34]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f18e35] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f18e36]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f18e37] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f18e38]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f18e39] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f18e40]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f18e41]:
+        - generic [ref=f18e42]: Ajanlar
+        - link "Variant'lar" [ref=f18e43] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f18e44]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f18e45] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f18e46]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f18e47] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f18e48]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f18e49] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f18e50]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f18e51] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f18e52]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f18e53] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f18e54]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f18e55]:
+        - generic [ref=f18e56]: Yönetişim
+        - link "LLM Gateway" [ref=f18e57] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f18e58]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f18e59] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f18e60]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f18e61] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f18e62]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f18e63] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f18e64]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f18e65] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f18e66]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f18e67] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f18e68]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f18e69] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f18e70]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f18e71]:
+        - generic [ref=f18e72]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f18e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f18e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f18e75] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f18e76]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f18e77] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f18e78]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f18e79] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f18e80]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f18e81] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f18e82]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f18e83] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f18e84]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f18e85] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f18e86]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f18e87] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f18e88]: ✔
+          - text: Karar defteri
+    - generic [ref=f18e89]:
+      - banner [ref=f18e90]:
+        - heading "İş akışları" [level=1] [ref=f18e91]
+        - generic [ref=f18e92]:
+          - generic [ref=f18e93]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f18e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f18e95]: ayse.kaya@bank
+        - button "Çıkış" [ref=f18e96] [cursor=pointer]
+      - main [ref=f18e97]:
+        - generic [ref=f18e98]:
+          - generic [ref=f18e101]:
+            - button "Tümü (22)" [pressed] [ref=f18e102] [cursor=pointer]
+            - button "Çalışıyor (0)" [ref=f18e103] [cursor=pointer]
+            - button "Kapıda (0)" [ref=f18e104] [cursor=pointer]
+            - button "Tamamlandı (0)" [ref=f18e105] [cursor=pointer]
+            - button "Hatalı (0)" [ref=f18e106] [cursor=pointer]
+            - generic [ref=f18e107]:
+              - generic [ref=f18e108]: Proje
+              - combobox "Proje" [ref=f18e109]:
+                - option "Tüm projeler" [selected]
+                - option "UGURDESK"
+                - option "UGURMOB"
+                - option "UGURPAY"
+                - option "UGURWEB"
+          - table [ref=f18e113]:
+            - caption [ref=f18e114]: Görebildiğin iş akışları
+            - rowgroup [ref=f18e115]:
+              - row [ref=f18e116]:
+                - columnheader "Ticket" [ref=f18e117]
+                - columnheader "Uygulama" [ref=f18e118]
+                - columnheader "Durum" [ref=f18e119]
+                - columnheader "Adım" [ref=f18e120]
+                - columnheader "Risk" [ref=f18e121]
+                - columnheader "Mod" [ref=f18e122]
+                - columnheader "Başlangıç" [ref=f18e123]
+                - columnheader "Yaş" [ref=f18e124]
+            - rowgroup [ref=f18e125]:
+              - button [ref=f18e126]:
+                - cell "UGURPAY-123 UGURPAY-123" [ref=f18e127]:
+                  - text: UGURPAY-123
+                  - generic [ref=f18e128]: UGURPAY-123
+                - cell "ugurpay" [ref=f18e129]
+                - cell "başlamadı" [ref=f18e130]
+                - cell "—" [ref=f18e131]
+                - cell "düşük" [ref=f18e132]
+                - cell "full_auto" [ref=f18e134]
+                - cell "7.08.2026 11:20" [ref=f18e136]
+                - cell "2 gün" [ref=f18e137]
+              - button [ref=f18e138]:
+                - cell "UGURDESK-52 UGURDESK-52" [ref=f18e139]:
+                  - text: UGURDESK-52
+                  - generic [ref=f18e140]: UGURDESK-52
+                - cell "ugurmasaustu" [ref=f18e141]
+                - cell "başlamadı" [ref=f18e142]
+                - cell "—" [ref=f18e143]
+                - cell "kritik" [ref=f18e144]
+                - cell "human_lead" [ref=f18e146]
+                - cell "8.08.2026 05:20" [ref=f18e148]
+                - cell "2 gün" [ref=f18e149]
+              - button [ref=f18e150]:
+                - cell "UGURPAY-502 UGURPAY-502" [ref=f18e151]:
+                  - text: UGURPAY-502
+                  - generic [ref=f18e152]: UGURPAY-502
+                - cell "ugurmobil-ios" [ref=f18e153]
+                - cell "başlamadı" [ref=f18e154]
+                - cell "—" [ref=f18e155]
+                - cell "orta" [ref=f18e156]
+                - cell "full_auto" [ref=f18e158]
+                - cell "4.08.2026 11:20" [ref=f18e160]
+                - cell "5 gün" [ref=f18e161]
+              - button [ref=f18e162]:
+                - cell "UGURPAY-689 UGURPAY-689" [ref=f18e163]:
+                  - text: UGURPAY-689
+                  - generic [ref=f18e164]: UGURPAY-689
+                - cell "ugurpay" [ref=f18e165]
+                - cell "başlamadı" [ref=f18e166]
+                - cell "—" [ref=f18e167]
+                - cell "düşük" [ref=f18e168]
+                - cell "full_auto" [ref=f18e170]
+                - cell "8.08.2026 08:20" [ref=f18e172]
+                - cell "2 gün" [ref=f18e173]
+              - button [ref=f18e174]:
+                - cell "UGURMOB-201 UGURMOB-201" [ref=f18e175]:
+                  - text: UGURMOB-201
+                  - generic [ref=f18e176]: UGURMOB-201
+                - cell "ugurmobil-ios" [ref=f18e177]
+                - cell "başlamadı" [ref=f18e178]
+                - cell "—" [ref=f18e179]
+                - cell "kritik" [ref=f18e180]
+                - cell "full_auto" [ref=f18e182]
+                - cell "6.08.2026 11:20" [ref=f18e184]
+                - cell "3 gün" [ref=f18e185]
+              - button [ref=f18e186]:
+                - cell "UGURWEB-91 UGURWEB-91" [ref=f18e187]:
+                  - text: UGURWEB-91
+                  - generic [ref=f18e188]: UGURWEB-91
+                - cell "ugurweb" [ref=f18e189]
+                - cell "başlamadı" [ref=f18e190]
+                - cell "—" [ref=f18e191]
+                - cell "düşük" [ref=f18e192]
+                - cell "full_auto" [ref=f18e194]
+                - cell "8.08.2026 06:20" [ref=f18e196]
+                - cell "2 gün" [ref=f18e197]
+              - button [ref=f18e198]:
+                - cell "UGURPAY-503 UGURPAY-503" [ref=f18e199]:
+                  - text: UGURPAY-503
+                  - generic [ref=f18e200]: UGURPAY-503
+                - cell "ugurmobil-android" [ref=f18e201]
+                - cell "başlamadı" [ref=f18e202]
+                - cell "—" [ref=f18e203]
+                - cell "orta" [ref=f18e204]
+                - cell "ai_assist" [ref=f18e206]
+                - cell "4.08.2026 11:20" [ref=f18e208]
+                - cell "5 gün" [ref=f18e209]
+              - button [ref=f18e210]:
+                - cell "UGURPAY-500 UGURPAY-500" [ref=f18e211]:
+                  - text: UGURPAY-500
+                  - generic [ref=f18e212]: UGURPAY-500
+                - cell "ugurpay" [ref=f18e213]
+                - cell "başlamadı" [ref=f18e214]
+                - cell "—" [ref=f18e215]
+                - cell "orta" [ref=f18e216]
+                - cell "full_auto" [ref=f18e218]
+                - cell "23.07.2026 05:20" [ref=f18e220]
+                - cell "18 gün" [ref=f18e221]
+              - button [ref=f18e222]:
+                - cell "UGURWEB-88 UGURWEB-88" [ref=f18e223]:
+                  - text: UGURWEB-88
+                  - generic [ref=f18e224]: UGURWEB-88
+                - cell "ugurweb" [ref=f18e225]
+                - cell "başlamadı" [ref=f18e226]
+                - cell "—" [ref=f18e227]
+                - cell "düşük" [ref=f18e228]
+                - cell "human_lead" [ref=f18e230]
+                - cell "5.08.2026 11:20" [ref=f18e232]
+                - cell "4 gün" [ref=f18e233]
+              - button [ref=f18e234]:
+                - cell "UGURDESK-45 UGURDESK-45" [ref=f18e235]:
+                  - text: UGURDESK-45
+                  - generic [ref=f18e236]: UGURDESK-45
+                - cell "ugurmasaustu" [ref=f18e237]
+                - cell "başlamadı" [ref=f18e238]
+                - cell "—" [ref=f18e239]
+                - cell "düşük" [ref=f18e240]
+                - cell "full_auto" [ref=f18e242]
+                - cell "6.08.2026 11:20" [ref=f18e244]
+                - cell "3 gün" [ref=f18e245]
+              - button [ref=f18e246]:
+                - cell "UGURWEB-95 UGURWEB-95" [ref=f18e247]:
+                  - text: UGURWEB-95
+                  - generic [ref=f18e248]: UGURWEB-95
+                - cell "ugurweb" [ref=f18e249]
+                - cell "başlamadı" [ref=f18e250]
+                - cell "—" [ref=f18e251]
+                - cell "düşük" [ref=f18e252]
+                - cell "human_only" [ref=f18e254]
+                - cell "7.08.2026 11:20" [ref=f18e256]
+                - cell "2 gün" [ref=f18e257]
+              - button [ref=f18e258]:
+                - cell "UGURMOB-188 UGURMOB-188" [ref=f18e259]:
+                  - text: UGURMOB-188
+                  - generic [ref=f18e260]: UGURMOB-188
+                - cell "ugurmobil-android" [ref=f18e261]
+                - cell "başlamadı" [ref=f18e262]
+                - cell "—" [ref=f18e263]
+                - cell "düşük" [ref=f18e264]
+                - cell "full_auto" [ref=f18e266]
+                - cell "8.08.2026 04:20" [ref=f18e268]
+                - cell "2 gün" [ref=f18e269]
+              - button [ref=f18e270]:
+                - cell "UGURWEB-72 UGURWEB-72" [ref=f18e271]:
+                  - text: UGURWEB-72
+                  - generic [ref=f18e272]: UGURWEB-72
+                - cell "ugurweb" [ref=f18e273]
+                - cell "başlamadı" [ref=f18e274]
+                - cell "—" [ref=f18e275]
+                - cell "orta" [ref=f18e276]
+                - cell "full_auto" [ref=f18e278]
+                - cell "6.08.2026 11:20" [ref=f18e280]
+                - cell "3 gün" [ref=f18e281]
+              - button [ref=f18e282]:
+                - cell "UGURPAY-600 UGURPAY-600" [ref=f18e283]:
+                  - text: UGURPAY-600
+                  - generic [ref=f18e284]: UGURPAY-600
+                - cell "—" [ref=f18e285]
+                - cell "başlamadı" [ref=f18e286]
+                - cell "—" [ref=f18e287]
+                - cell "kritik" [ref=f18e288]
+                - cell "full_auto" [ref=f18e290]
+                - cell "7.08.2026 11:20" [ref=f18e292]
+                - cell "2 gün" [ref=f18e293]
+              - button [ref=f18e294]:
+                - cell "UGURPAY-712 UGURPAY-712" [ref=f18e295]:
+                  - text: UGURPAY-712
+                  - generic [ref=f18e296]: UGURPAY-712
+                - cell "ugurpay" [ref=f18e297]
+                - cell "başlamadı" [ref=f18e298]
+                - cell "—" [ref=f18e299]
+                - cell "orta" [ref=f18e300]
+                - cell "full_auto" [ref=f18e302]
+                - cell "7.08.2026 11:20" [ref=f18e304]
+                - cell "2 gün" [ref=f18e305]
+              - button [ref=f18e306]:
+                - cell "UGURPAY-501 UGURPAY-501" [ref=f18e307]:
+                  - text: UGURPAY-501
+                  - generic [ref=f18e308]: UGURPAY-501
+                - cell "ugurpay" [ref=f18e309]
+                - cell "başlamadı" [ref=f18e310]
+                - cell "—" [ref=f18e311]
+                - cell "orta" [ref=f18e312]
+                - cell "full_auto" [ref=f18e314]
+                - cell "31.07.2026 05:20" [ref=f18e316]
+                - cell "10 gün" [ref=f18e317]
+              - button [ref=f18e318]:
+                - cell "UGURPAY-478 UGURPAY-478" [ref=f18e319]:
+                  - text: UGURPAY-478
+                  - generic [ref=f18e320]: UGURPAY-478
+                - cell "ugurpay" [ref=f18e321]
+                - cell "başlamadı" [ref=f18e322]
+                - cell "—" [ref=f18e323]
+                - cell "düşük" [ref=f18e324]
+                - cell "full_auto" [ref=f18e326]
+                - cell "1.08.2026 11:20" [ref=f18e328]
+                - cell "8 gün" [ref=f18e329]
+              - button [ref=f18e330]:
+                - cell "UGURWEB-83 UGURWEB-83" [ref=f18e331]:
+                  - text: UGURWEB-83
+                  - generic [ref=f18e332]: UGURWEB-83
+                - cell "ugurweb" [ref=f18e333]
+                - cell "başlamadı" [ref=f18e334]
+                - cell "—" [ref=f18e335]
+                - cell "düşük" [ref=f18e336]
+                - cell "full_auto" [ref=f18e338]
+                - cell "29.07.2026 11:20" [ref=f18e340]
+                - cell "11 gün" [ref=f18e341]
+              - button [ref=f18e342]:
+                - cell "UGURPAY-455 UGURPAY-455" [ref=f18e343]:
+                  - text: UGURPAY-455
+                  - generic [ref=f18e344]: UGURPAY-455
+                - cell "ugurpay" [ref=f18e345]
+                - cell "başlamadı" [ref=f18e346]
+                - cell "—" [ref=f18e347]
+                - cell "düşük" [ref=f18e348]
+                - cell "full_auto" [ref=f18e350]
+                - cell "27.07.2026 11:20" [ref=f18e352]
+                - cell "13 gün" [ref=f18e353]
+              - button [ref=f18e354]:
+                - cell "UGURDESK-39 UGURDESK-39" [ref=f18e355]:
+                  - text: UGURDESK-39
+                  - generic [ref=f18e356]: UGURDESK-39
+                - cell "ugurmasaustu" [ref=f18e357]
+                - cell "başlamadı" [ref=f18e358]
+                - cell "—" [ref=f18e359]
+                - cell "düşük" [ref=f18e360]
+                - cell "full_auto" [ref=f18e362]
+                - cell "27.07.2026 11:20" [ref=f18e364]
+                - cell "13 gün" [ref=f18e365]
+              - button [ref=f18e366]:
+                - cell "UGURMOB-166 UGURMOB-166" [ref=f18e367]:
+                  - text: UGURMOB-166
+                  - generic [ref=f18e368]: UGURMOB-166
+                - cell "ugurmobil-ios" [ref=f18e369]
+                - cell "başlamadı" [ref=f18e370]
+                - cell "—" [ref=f18e371]
+                - cell "kritik" [ref=f18e372]
+                - cell "full_auto" [ref=f18e374]
+                - cell "25.07.2026 11:20" [ref=f18e376]
+                - cell "15 gün" [ref=f18e377]
+              - button [ref=f18e378]:
+                - cell "UGURPAY-504 UGURPAY-504" [ref=f18e379]:
+                  - text: UGURPAY-504
+                  - generic [ref=f18e380]: UGURPAY-504
+                - cell "ugurmasaustu" [ref=f18e381]
+                - cell "başlamadı" [ref=f18e382]
+                - cell "—" [ref=f18e383]
+                - cell "orta" [ref=f18e384]
+                - cell "full_auto" [ref=f18e386]
+                - cell "23.07.2026 07:20" [ref=f18e388]
+                - cell "18 gün" [ref=f18e389]
+          - paragraph [ref=f18e390]:
+            - text: Satıra tıkla → o ticket'ın adımları, defteri ve açık kapısı. Liste iş akışının durum sözlüğünü kullanır; kapıda bekleyenler doğrudan süzülebilir.
+            - button "Yenile" [ref=f18e391] [cursor=pointer]
+  - region

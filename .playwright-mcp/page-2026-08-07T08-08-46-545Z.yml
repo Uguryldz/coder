@@ -1,0 +1,357 @@
+- generic [ref=f8e2]:
+  - complementary [ref=f8e3]:
+    - generic [ref=f8e4]:
+      - generic [ref=f8e5]: M
+      - generic [ref=f8e6]:
+        - text: Maestro
+        - generic [ref=f8e7]: UI prototipi · mock veri
+    - generic [ref=f8e8]:
+      - generic [ref=f8e9]: Operasyon
+      - link "▦ Panel" [ref=f8e10] [cursor=pointer]:
+        - /url: "#dash"
+        - generic [ref=f8e11]: ▦
+        - text: Panel
+      - link "🎬 Canlı demo (vibe)" [ref=f8e12] [cursor=pointer]:
+        - /url: "#live"
+        - generic [ref=f8e13]: 🎬
+        - text: Canlı demo (vibe)
+      - link "≡ İş akışları 22" [ref=f8e14] [cursor=pointer]:
+        - /url: "#tickets"
+        - generic [ref=f8e15]: ≡
+        - text: İş akışları
+        - generic [ref=f8e16]: "22"
+      - link "⑂ Ana ticket (fan-out)" [ref=f8e17] [cursor=pointer]:
+        - /url: "#fanout"
+        - generic [ref=f8e18]: ⑂
+        - text: Ana ticket (fan-out)
+      - link "❓ Clarification (2b)" [ref=f8e19] [cursor=pointer]:
+        - /url: "#clarify"
+        - generic [ref=f8e20]: ❓
+        - text: Clarification (2b)
+      - link "⇋ Work mode & devir" [ref=f8e21] [cursor=pointer]:
+        - /url: "#workmode"
+        - generic [ref=f8e22]: ⇋
+        - text: Work mode & devir
+      - link "✦ Yeni proje sihirbazı" [ref=f8e23] [cursor=pointer]:
+        - /url: "#greenfield"
+        - generic [ref=f8e24]: ✦
+        - text: Yeni proje sihirbazı
+      - link "💬 Jira'da görünüm" [ref=f8e25] [cursor=pointer]:
+        - /url: "#jira"
+        - generic [ref=f8e26]: 💬
+        - text: Jira'da görünüm
+      - link "⌨ Jira komut seti" [ref=f8e27] [cursor=pointer]:
+        - /url: "#commands"
+        - generic [ref=f8e28]: ⌨
+        - text: Jira komut seti
+      - generic [ref=f8e29]: Yürütme
+      - link "🖥 Runner havuzları" [ref=f8e30] [cursor=pointer]:
+        - /url: "#runners"
+        - generic [ref=f8e31]: 🖥
+        - text: Runner havuzları
+      - link "▶ Canlı sandbox oturumu" [ref=f8e32] [cursor=pointer]:
+        - /url: "#sandbox"
+        - generic [ref=f8e33]: ▶
+        - text: Canlı sandbox oturumu
+      - link "🗄 Cache & çalışma alanı" [ref=f8e34] [cursor=pointer]:
+        - /url: "#cache"
+        - generic [ref=f8e35]: 🗄
+        - text: Cache & çalışma alanı
+      - link "📄 .maestro.yaml" [ref=f8e36] [cursor=pointer]:
+        - /url: "#yaml"
+        - generic [ref=f8e37]: 📄
+        - text: .maestro.yaml
+      - generic [ref=f8e38]: Ajanlar
+      - link "🤖 Variant'lar 9" [ref=f8e39] [cursor=pointer]:
+        - /url: "#variants"
+        - generic [ref=f8e40]: 🤖
+        - text: Variant'lar
+        - generic [ref=f8e41]: "9"
+      - link "⚙ Variant detayı" [ref=f8e42] [cursor=pointer]:
+        - /url: "#variant"
+        - generic [ref=f8e43]: ⚙
+        - text: Variant detayı
+      - link "🎯 Eval / golden ticket" [ref=f8e44] [cursor=pointer]:
+        - /url: "#eval"
+        - generic [ref=f8e45]: 🎯
+        - text: Eval / golden ticket
+      - link "📚 Knowledge kütüphanesi" [ref=f8e46] [cursor=pointer]:
+        - /url: "#knowledge"
+        - generic [ref=f8e47]: 📚
+        - text: Knowledge kütüphanesi
+      - link "📋 Analiz şablonu" [ref=f8e48] [cursor=pointer]:
+        - /url: "#template"
+        - generic [ref=f8e49]: 📋
+        - text: Analiz şablonu
+      - generic [ref=f8e50]: Yönetişim
+      - link "⚡ LLM Gateway" [ref=f8e51] [cursor=pointer]:
+        - /url: "#llm"
+        - generic [ref=f8e52]: ⚡
+        - text: LLM Gateway
+      - link "🔏 PII maskeleme" [ref=f8e53] [cursor=pointer]:
+        - /url: "#pii"
+        - generic [ref=f8e54]: 🔏
+        - text: PII maskeleme
+      - link "₺ Maliyet & kota" [ref=f8e55] [cursor=pointer]:
+        - /url: "#cost"
+        - generic [ref=f8e56]: ₺
+        - text: Maliyet & kota
+      - link "🔒 Denetim izi" [ref=f8e57] [cursor=pointer]:
+        - /url: "#audit"
+        - generic [ref=f8e58]: 🔒
+        - text: Denetim izi
+      - link "📦 Kanıt paketi" [ref=f8e59] [cursor=pointer]:
+        - /url: "#evidence"
+        - generic [ref=f8e60]: 📦
+        - text: Kanıt paketi
+      - link "🛡 Güvenlik bulguları" [ref=f8e61] [cursor=pointer]:
+        - /url: "#security"
+        - generic [ref=f8e62]: 🛡
+        - text: Güvenlik bulguları
+      - link "🔔 Bildirim & eskalasyon" [ref=f8e63] [cursor=pointer]:
+        - /url: "#notify"
+        - generic [ref=f8e64]: 🔔
+        - text: Bildirim & eskalasyon
+      - generic [ref=f8e65]: Sistem
+      - link "⇄ Jira bağlantısı & eşleme" [ref=f8e66] [cursor=pointer]:
+        - /url: "#routing"
+        - generic [ref=f8e67]: ⇄
+        - text: Jira bağlantısı & eşleme
+      - link "🎛 Parametreler (DB)" [ref=f8e68] [cursor=pointer]:
+        - /url: "#params"
+        - generic [ref=f8e69]: 🎛
+        - text: Parametreler (DB)
+      - link "➕ Uygulama ekle" [ref=f8e70] [cursor=pointer]:
+        - /url: "#onboard"
+        - generic [ref=f8e71]: ➕
+        - text: Uygulama ekle
+      - link "👥 Kullanıcılar & roller" [ref=f8e72] [cursor=pointer]:
+        - /url: "#users"
+        - generic [ref=f8e73]: 👥
+        - text: Kullanıcılar & roller
+      - link "⚙ Ayarlar & bağlantılar" [ref=f8e74] [cursor=pointer]:
+        - /url: "#settings"
+        - generic [ref=f8e75]: ⚙
+        - text: Ayarlar & bağlantılar
+      - link "💚 Sistem sağlığı" [ref=f8e76] [cursor=pointer]:
+        - /url: "#health"
+        - generic [ref=f8e77]: 💚
+        - text: Sistem sağlığı
+      - link "🔑 Giriş ekranı" [ref=f8e78] [cursor=pointer]:
+        - /url: "#login"
+        - generic [ref=f8e79]: 🔑
+        - text: Giriş ekranı
+      - link "✔ ✓ Karar defteri" [ref=f8e80] [cursor=pointer]:
+        - /url: "#issues"
+        - generic [ref=f8e81]: ✔
+        - text: ✓ Karar defteri
+    - generic [ref=f8e82]:
+      - generic [ref=f8e83]: Bu bir tıklanabilir maket. Veriler sahte, kod yok.
+      - generic [ref=f8e84]:
+        - button "🌓 Tema" [ref=f8e85] [cursor=pointer]
+        - button "🌐 TR" [ref=f8e86] [cursor=pointer]
+  - main [ref=f8e87]:
+    - generic [ref=f8e88]:
+      - generic [ref=f8e89]:
+        - heading "Jira bağlantısı & eşleme" [level=1] [ref=f8e90]
+        - generic [ref=f8e91]: Proje bağlama → ticket→uygulama eşleşmesi (3 kademe — M99) → analiz & fan-out (M100)
+      - textbox "🔍 Ticket ara… (ör. UGURWEB)" [ref=f8e93]:
+        - /placeholder: 🔍 Ticket ara…  (ör. UGURWEB)
+      - button "🔔 4" [ref=f8e94] [cursor=pointer]
+      - generic [ref=f8e95]: Sistem sağlıklı
+      - generic [ref=f8e97]: 👤 Uğur Yıldız · admin
+    - generic [ref=f8e98]:
+      - generic [ref=f8e99]:
+        - heading "Zincir nasıl işliyor?" [level=3] [ref=f8e101]
+        - generic [ref=f8e103]:
+          - generic [ref=f8e104]: Jira DC bağlantısıglobal · Ayarlar'da
+          - generic [ref=f8e105]: →
+          - generic [ref=f8e106]: Proje bağlamaonboarding · tetikleme modu + kurallar
+          - generic [ref=f8e107]: →
+          - generic [ref=f8e108]: Ticket → uygulama3 kademe (aşağıda)
+          - generic [ref=f8e109]: →
+          - generic [ref=f8e110]: Analizbirincil repo'da keşif + repo kartlarıyla etki matrisi
+          - generic [ref=f8e111]: →
+          - generic [ref=f8e112]: Fan-out (gerekirse)çocuklar parent projesinde · atama analizden
+      - generic [ref=f8e113]:
+        - generic [ref=f8e114]:
+          - generic [ref=f8e115]:
+            - heading "Bağlı Jira projeleri" [level=3] [ref=f8e116]
+            - generic [ref=f8e117]: proje ↔ uygulama N:M
+            - link "+ Proje/uygulama bağla" [ref=f8e118] [cursor=pointer]:
+              - /url: "#onboard"
+          - table [ref=f8e120]:
+            - rowgroup [ref=f8e121]:
+              - row [ref=f8e122]:
+                - columnheader "Proje" [ref=f8e123]
+                - columnheader "Tetikleme" [ref=f8e124]
+                - columnheader "Uygulamalar" [ref=f8e125]
+                - columnheader "Not" [ref=f8e126]
+            - rowgroup [ref=f8e127]:
+              - row [ref=f8e128]:
+                - cell "UGURPAY" [ref=f8e129]
+                - cell "otomatik" [ref=f8e130]
+                - cell "ugurpay" [ref=f8e131]
+                - 'cell "fan-out hedefleri: tüm uygulamalar (analizden)" [ref=f8e133]'
+              - row [ref=f8e134]:
+                - cell "UGURWEB" [ref=f8e135]
+                - 'cell "opt-in (label: maestro)" [ref=f8e136]'
+                - cell "ugurweb" [ref=f8e137]
+                - cell "—" [ref=f8e139]
+              - row [ref=f8e140]:
+                - cell "UGURMOB" [ref=f8e141]
+                - cell "opt-in (/ai-start)" [ref=f8e142]
+                - cell "ugurmobil-ios ugurmobil-android" [ref=f8e143]:
+                  - generic [ref=f8e144]: ugurmobil-ios
+                  - generic [ref=f8e145]: ugurmobil-android
+                - cell "component ayrıştırır · component yoksa AI önerisi (kademe 2)" [ref=f8e146]
+              - row [ref=f8e147]:
+                - cell "UGURDESK" [ref=f8e148]
+                - cell "otomatik" [ref=f8e149]
+                - cell "ugurmasaüstü" [ref=f8e150]
+                - cell "—" [ref=f8e152]
+              - row [ref=f8e153]:
+                - cell "UGURKREDI" [ref=f8e154]
+                - cell "—" [ref=f8e155]
+                - cell "henüz yok" [ref=f8e156]
+                - cell "yeni proje · onboarding sürüyor (adım 3/4)" [ref=f8e158]
+        - generic [ref=f8e159]:
+          - generic [ref=f8e160]:
+            - heading "3 kademeli eşleşme (M99)" [level=3] [ref=f8e161]
+            - generic [ref=f8e162]: her ticket birincil uygulamasını böyle bulur
+          - generic [ref=f8e164]:
+            - generic [ref=f8e165]:
+              - generic [ref=f8e166]: ① kural
+              - generic [ref=f8e167]: proje + component/label → uygulama. ör. UGURMOB + component "android" → ugurmobil-android
+            - generic [ref=f8e168]:
+              - generic [ref=f8e169]: ② AI önerisi
+              - generic [ref=f8e170]: "kural yoksa intake, ticket metninden aday çıkarır (güven skoru). Öneri analiz onay kapısında insanla doğrulanır — PO/TL onayı eşleşmeyi de onaylar. ör. UGURMOB-201: component yok → \"ugurmobil-ios %94\""
+            - generic [ref=f8e171]:
+              - generic [ref=f8e172]: ③ insan
+              - generic [ref=f8e173]:
+                - text: aday da yoksa/çelişkili → akış DURUR, "atama bekleyen" kuyruğu. Studio'dan veya Jira
+                - code [ref=f8e174]: /ai-assign ugurweb
+                - text: komutuyla eşlenir. Sessiz varsayılan yok (M14).
+      - generic [ref=f8e175]:
+        - generic [ref=f8e176]:
+          - heading "Eşleme kuralları (kademe ①)" [level=3] [ref=f8e178]
+          - generic [ref=f8e179]:
+            - table [ref=f8e180]:
+              - rowgroup [ref=f8e181]:
+                - row [ref=f8e182]:
+                  - columnheader "#" [ref=f8e183]
+                  - columnheader "Koşul" [ref=f8e184]
+                  - columnheader "Uygulama" [ref=f8e185]
+                  - columnheader "Mod" [ref=f8e186]
+              - rowgroup [ref=f8e187]:
+                - row [ref=f8e188]:
+                  - cell "1" [ref=f8e189]
+                  - cell "UGURPAY · her ticket" [ref=f8e190]
+                  - cell "ugurpay" [ref=f8e191]
+                  - cell "full-auto" [ref=f8e192]
+                - row [ref=f8e194]:
+                  - cell "2" [ref=f8e195]
+                  - cell "UGURWEB · her ticket" [ref=f8e196]
+                  - cell "ugurweb" [ref=f8e197]
+                  - cell "full-auto" [ref=f8e198]
+                - row [ref=f8e200]:
+                  - cell "3" [ref=f8e201]
+                  - cell "UGURMOB · component=ios" [ref=f8e202]
+                  - cell "ugurmobil-ios" [ref=f8e203]
+                  - cell "full-auto" [ref=f8e204]
+                - row [ref=f8e206]:
+                  - cell "4" [ref=f8e207]
+                  - cell "UGURMOB · component=android" [ref=f8e208]
+                  - cell "ugurmobil-android" [ref=f8e209]
+                  - cell "full-auto" [ref=f8e210]
+                - row [ref=f8e212]:
+                  - cell "5" [ref=f8e213]
+                  - cell "UGURMOB · component YOK" [ref=f8e214]
+                  - cell "→ kademe ② (AI önerisi)" [ref=f8e215]
+                  - cell "—" [ref=f8e216]
+                - row [ref=f8e217]:
+                  - cell "6" [ref=f8e218]
+                  - cell "UGURDESK · her ticket" [ref=f8e219]
+                  - cell "ugurmasaüstü" [ref=f8e220]
+                  - cell "full-auto" [ref=f8e221]
+                - row [ref=f8e223]:
+                  - cell "7" [ref=f8e224]
+                  - cell "label=musteri-verisi (tüm projeler)" [ref=f8e225]
+                  - 'cell "(veri sınıfı: gizli)" [ref=f8e226]'
+                  - cell "human-lead" [ref=f8e227]
+            - generic [ref=f8e229]: Fan-out çocukları (↳) bu tabloya HİÇ girmez — uygulama ataması analizin etki matrisinden yazılır (M100).
+        - generic [ref=f8e230]:
+          - generic [ref=f8e231]:
+            - heading "⚠ Atama bekleyen (kademe ③)" [level=3] [ref=f8e232]
+            - generic [ref=f8e233]: eşleşemeyen ticketlar — akış başlamadı
+          - generic [ref=f8e234]:
+            - generic [ref=f8e235]:
+              - generic [ref=f8e236]: "?"
+              - generic [ref=f8e237]:
+                - text: UGURPAY-731 — Müşteri bildirim tercihi ekranı
+                - generic [ref=f8e238]: "AI adayları çelişkili: ugurweb %41 · ugurmobil-ios %38 — güven eşiği (%70) altında. Reporter'a ve TL'ye bildirim gitti (22 dk önce)."
+              - button "Uygulamaya ata" [ref=f8e239] [cursor=pointer]
+            - generic [ref=f8e240]:
+              - text: "Jira'dan da atanabilir:"
+              - code [ref=f8e241]: /ai-assign ugurweb
+              - text: . Atama audit'e yazılır; benzer ticketlarda AI önerisi bu karardan öğrenmez (v2 — feedback portu sadece veri toplar).
+      - generic [ref=f8e242]:
+        - generic [ref=f8e243]:
+          - heading "Uygulama kayıtları (Application Registry — M100)" [level=3] [ref=f8e244]
+          - generic [ref=f8e245]: eşleşmenin hedefi · her biri repo + platform + repo kartı
+        - generic [ref=f8e246]:
+          - table [ref=f8e247]:
+            - rowgroup [ref=f8e248]:
+              - row [ref=f8e249]:
+                - columnheader "Uygulama" [ref=f8e250]
+                - columnheader "ADO repo" [ref=f8e251]
+                - columnheader "Platform" [ref=f8e252]
+                - columnheader ".maestro.yaml" [ref=f8e253]
+                - columnheader "Repo kartı (knowledge)" [ref=f8e254]
+            - rowgroup [ref=f8e255]:
+              - row [ref=f8e256]:
+                - cell "ugurpay" [ref=f8e257]
+                - cell "UgurBank/ugurpay" [ref=f8e258]
+                - cell "🐧 linux-node" [ref=f8e259]
+                - cell "✓ v3" [ref=f8e261]
+                - cell [ref=f8e263]:
+                  - text: "✓ 14 modül özeti · son tazeleme: son merge'te"
+                  - link "gör ↗" [ref=f8e264] [cursor=pointer]:
+                    - /url: "#knowledge"
+              - row [ref=f8e265]:
+                - cell "ugurweb" [ref=f8e266]
+                - cell "UgurBank/ugurweb" [ref=f8e267]
+                - cell "🐧 linux-node" [ref=f8e268]
+                - cell "✓ v3" [ref=f8e270]
+                - cell [ref=f8e272]:
+                  - text: "✓ 14 modül özeti · son tazeleme: son merge'te"
+                  - link "gör ↗" [ref=f8e273] [cursor=pointer]:
+                    - /url: "#knowledge"
+              - row [ref=f8e274]:
+                - cell "ugurmobil-ios" [ref=f8e275]
+                - cell "UgurBank/ugurmobil-ios" [ref=f8e276]
+                - cell "🍎 macos-xcode" [ref=f8e277]
+                - cell "✓ v3" [ref=f8e279]
+                - cell [ref=f8e281]:
+                  - text: "✓ 14 modül özeti · son tazeleme: son merge'te"
+                  - link "gör ↗" [ref=f8e282] [cursor=pointer]:
+                    - /url: "#knowledge"
+              - row [ref=f8e283]:
+                - cell "ugurmobil-android" [ref=f8e284]
+                - cell "UgurBank/ugurmobil-android" [ref=f8e285]
+                - cell "🤖 linux-android" [ref=f8e286]
+                - cell "✓ v3" [ref=f8e288]
+                - cell [ref=f8e290]:
+                  - text: "✓ 14 modül özeti · son tazeleme: son merge'te"
+                  - link "gör ↗" [ref=f8e291] [cursor=pointer]:
+                    - /url: "#knowledge"
+              - row [ref=f8e292]:
+                - cell "ugurmasaüstü" [ref=f8e293]
+                - cell "UgurBank/ugurmasaustu" [ref=f8e294]
+                - cell "🪟 windows-dotnet" [ref=f8e295]
+                - cell "✓ v3" [ref=f8e297]
+                - cell [ref=f8e299]:
+                  - text: "✓ 14 modül özeti · son tazeleme: son merge'te"
+                  - link "gör ↗" [ref=f8e300] [cursor=pointer]:
+                    - /url: "#knowledge"
+          - generic [ref=f8e301]: Repo kartı = uygulamanın modül/alan özeti (knowledge'da versiyonlu; onboarding'de AI keşfiyle üretilir, her merge'te tazelenir). Analist, etki matrisini çıkarırken DİĞER uygulamaları klonlamadan bu kartlardan değerlendirir — "bu iş masaüstünü etkiler mi?" sorusunun cevabı buradan gelir.

@@ -1,0 +1,212 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - navigation "Ana gezinme" [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: M
+        - generic [ref=e7]:
+          - text: Maestro
+          - generic [ref=e8]: SDLC otomasyonu
+      - generic [ref=e9]:
+        - generic [ref=e10]: İşler
+        - link "Panel" [ref=e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=e17]:
+        - generic [ref=e18]: Ajanlar
+        - link "Ajan tanımları" [ref=e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=e29]: yakında
+      - generic [ref=e30]:
+        - generic [ref=e31]: Denetim
+        - link "Denetim izi" [ref=e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=e40]: yakında
+        - link "Kanıt paketi yakında" [ref=e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=e43]: yakında
+      - generic [ref=e44]:
+        - generic [ref=e45]: Kurulum
+        - link "Kurulum sihirbazı" [ref=e46] [cursor=pointer]:
+          - /url: /setup
+          - generic [ref=e47]: 🧭
+          - text: Kurulum sihirbazı
+        - link "Proje bağlama" [ref=e48] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=e49]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=e50] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=e51]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=e52] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=e53]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=e54] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=e55]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=e56] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=e57]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=e58] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=e59]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=e60]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=e61] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=e62]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=e63]:
+      - banner [ref=e64]:
+        - heading "Kurulum sihirbazı" [level=1] [ref=e65]
+        - generic [ref=e66]:
+          - generic [ref=e67]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=e68]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=e69]: admin
+        - button "Çıkış" [ref=e70] [cursor=pointer]
+      - main [ref=e71]:
+        - generic [ref=e72]:
+          - generic [ref=e73]:
+            - generic [ref=e74]:
+              - heading "Kurulum sihirbazı" [level=3] [ref=e75]
+              - generic [ref=e76]: beş soruda çalışır bir kurulum
+            - generic [ref=e77]:
+              - paragraph [ref=e78]: "Bu sihirbaz Maestro'yu uçtan uca kurar: hangi işi yapmasını istediğinizi seçersiniz, hangi Jira projesi ve hangi kod deposuyla çalışacağını söylersiniz, hangi ticket'ları alacağını belirlersiniz. Hangi ekranın ne işe yaradığını bilmeniz gerekmez. Her adımda geri dönebilirsiniz; yazdıklarınız kaybolmaz."
+              - list [ref=e79]:
+                - listitem [ref=e80]:
+                  - button "1 · Ne yapsın" [ref=e81] [cursor=pointer]
+                - listitem [ref=e82]:
+                  - button "2 · Proje & uygulama" [disabled] [ref=e83] [cursor=pointer]
+                - listitem [ref=e84]:
+                  - button "3 · Hangi ticket'lar" [disabled] [ref=e85] [cursor=pointer]
+                - listitem [ref=e86]:
+                  - button "4 · Jira durumları" [disabled] [ref=e87] [cursor=pointer]
+                - listitem [ref=e88]:
+                  - button "5 · Özet & kaydet" [disabled] [ref=e89] [cursor=pointer]
+          - generic [ref=e90]:
+            - heading "Önce bir eksik var" [level=3] [ref=e92]
+            - generic [ref=e93]:
+              - generic [ref=e94]: Hiç kod deposu bağlantısı tanımlı değil. Maestro'nun kodu nereye yazacağını bilmeden kurulum yapılamaz. Ayarlar & bağlantılar ekranından bir GitHub ya da Azure DevOps bağlantısı ekleyip test edin, sonra buraya dönün.
+              - link "Ayarlar & bağlantılar'a git" [ref=e96] [cursor=pointer]:
+                - /url: /settings
+          - generic [ref=e97]:
+            - generic [ref=e98]:
+              - heading "Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin" [level=3] [ref=e99]
+              - generic [ref=e100]: Aşağıdaki adımları sırayla tamamlayın. Bir sonraki yapmanız gereken adım vurgulanır.
+            - generic [ref=e101]:
+              - list [ref=e102]:
+                - listitem [ref=e103]:
+                  - button "Bağlantıları kur Jira ve GitHub/Azure bağlantını ekle (Ayarlar > Bağlantılar)." [ref=e104] [cursor=pointer]:
+                    - generic [ref=e105]: ✓
+                    - generic [ref=e106]:
+                      - generic [ref=e107]: Bağlantıları kur
+                      - generic [ref=e108]: Jira ve GitHub/Azure bağlantını ekle (Ayarlar > Bağlantılar).
+                - listitem [ref=e109]:
+                  - button "Projeni bağla Bir Jira projesini bir repoya bağla — hazır dinleme kuralları otomatik kurulur (Proje bağlama). Şimdi bunu yap →" [ref=e110] [cursor=pointer]:
+                    - generic [ref=e111]: "2"
+                    - generic [ref=e112]:
+                      - generic [ref=e113]: Projeni bağla
+                      - generic [ref=e114]: Bir Jira projesini bir repoya bağla — hazır dinleme kuralları otomatik kurulur (Proje bağlama).
+                    - generic [ref=e115]: Şimdi bunu yap →
+                - listitem [ref=e116]:
+                  - button "Jira webhook'unu kur Ticket'ın Maestro'ya kendiliğinden düşmesi için Jira admin'inden tek global webhook iste. Nasıl yapılacağı Yardım'da yazıyor." [ref=e117] [cursor=pointer]:
+                    - generic [ref=e118]: "3"
+                    - generic [ref=e119]:
+                      - generic [ref=e120]: Jira webhook'unu kur
+                      - generic [ref=e121]: Ticket'ın Maestro'ya kendiliğinden düşmesi için Jira admin'inden tek global webhook iste. Nasıl yapılacağı Yardım'da yazıyor.
+                - listitem [ref=e122]:
+                  - button "Ajanlarını belgelerle eğit Ajanlar ekranından bir ajan seç ve Bilgi kütüphanesi'ne kurum belgelerini yükle." [ref=e123] [cursor=pointer]:
+                    - generic [ref=e124]: "4"
+                    - generic [ref=e125]:
+                      - generic [ref=e126]: Ajanlarını belgelerle eğit
+                      - generic [ref=e127]: Ajanlar ekranından bir ajan seç ve Bilgi kütüphanesi'ne kurum belgelerini yükle.
+                - listitem [ref=e128]:
+                  - button "Jira'da iş aç, Panel'den izle Onayı Jira'da yorum yazarak ya da ticket'ı bota atayarak ver; akışı Panel'den izle." [ref=e129] [cursor=pointer]:
+                    - generic [ref=e130]: "5"
+                    - generic [ref=e131]:
+                      - generic [ref=e132]: Jira'da iş aç, Panel'den izle
+                      - generic [ref=e133]: Onayı Jira'da yorum yazarak ya da ticket'ı bota atayarak ver; akışı Panel'den izle.
+              - generic [ref=e134]:
+                - generic [ref=e135] [cursor=pointer]:
+                  - checkbox "Jira webhook'u kuruldu (bunu Maestro doğrulayamaz, siz onaylayın)" [ref=e136]
+                  - generic [ref=e137]: Jira webhook'u kuruldu (bunu Maestro doğrulayamaz, siz onaylayın)
+                - button "Anladım, gizle" [ref=e138] [cursor=pointer]
+              - paragraph [ref=e139]: Gizlemek kurulumu tamamlamaz — eksik adımlar Panel'de kısa bir not olarak kalır.
+          - generic [ref=e140]:
+            - generic [ref=e141]:
+              - heading "Ne yapmak istiyorsunuz?" [level=3] [ref=e142]
+              - generic [ref=e143]: 1. adım · bu seçim sonraki adımların varsayılanlarını belirler
+            - generic [ref=e144]:
+              - paragraph [ref=e145]: Maestro'nun bu projede ne yapacağını seçin. Seçtiğiniz işe göre hangi onay kapılarının çalışacağına ve kod deposuna dokunulup dokunulmayacağına sihirbaz karar verir; bunları ayrıca ayarlamanız gerekmez.
+              - radiogroup "Ne yapmak istiyorsunuz?" [ref=e146]:
+                - generic [ref=e147] [cursor=pointer]:
+                  - radio "Yalnızca analiz Maestro talebi inceleyip analiz belgesi hazırlasın; kod yazmasın. Kod deposuna dokunulmaz. Sonuçta yalnızca bir analiz belgesi çıkar ve onayınıza sunulur." [checked] [ref=e148]
+                  - generic [ref=e149]:
+                    - generic [ref=e150]: Yalnızca analiz
+                    - generic [ref=e151]: Maestro talebi inceleyip analiz belgesi hazırlasın; kod yazmasın.
+                    - generic [ref=e152]: Kod deposuna dokunulmaz. Sonuçta yalnızca bir analiz belgesi çıkar ve onayınıza sunulur.
+                - generic [ref=e153] [cursor=pointer]:
+                  - radio "Hata düzeltme Maestro bildirilen hatayı bulup düzeltmeyi kodlasın ve incelemeniz için pull request açsın. Kod yazılır ve pull request açılır. Analiz onay kapısı atlanır; PR yine sizin incelemenizden geçer, merge'i insan yapar." [ref=e154]
+                  - generic [ref=e155]:
+                    - generic [ref=e156]: Hata düzeltme
+                    - generic [ref=e157]: Maestro bildirilen hatayı bulup düzeltmeyi kodlasın ve incelemeniz için pull request açsın.
+                    - generic [ref=e158]: Kod yazılır ve pull request açılır. Analiz onay kapısı atlanır; PR yine sizin incelemenizden geçer, merge'i insan yapar.
+                - generic [ref=e159] [cursor=pointer]:
+                  - 'radio "Yeni özellik geliştirme Maestro talebi analiz etsin, onayınızdan sonra kodlasın ve pull request açsın. En uzun akış: analiz → onay → kod → PR. Her PR için altı kontrolün tamamı çalışır, merge''i insan yapar." [ref=e160]'
+                  - generic [ref=e161]:
+                    - generic [ref=e162]: Yeni özellik geliştirme
+                    - generic [ref=e163]: Maestro talebi analiz etsin, onayınızdan sonra kodlasın ve pull request açsın.
+                    - generic [ref=e164]: "En uzun akış: analiz → onay → kod → PR. Her PR için altı kontrolün tamamı çalışır, merge'i insan yapar."
+          - generic [ref=e167]:
+            - button "Geri" [disabled] [ref=e168]
+            - button "İleri" [ref=e169] [cursor=pointer]
+  - region

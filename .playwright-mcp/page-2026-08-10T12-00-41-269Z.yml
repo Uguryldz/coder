@@ -1,0 +1,284 @@
+- generic [ref=f21e2]:
+  - generic [ref=f21e23]:
+    - navigation "Ana gezinme" [ref=f21e24]:
+      - generic [ref=f21e25]:
+        - generic [ref=f21e26]: M
+        - generic [ref=f21e27]:
+          - text: Maestro
+          - generic [ref=f21e28]: SDLC otomasyonu
+      - generic [ref=f21e29]:
+        - generic [ref=f21e30]: Operasyon
+        - link "Panel" [ref=f21e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f21e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f21e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f21e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f21e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f21e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f21e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f21e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f21e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f21e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f21e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f21e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f21e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f21e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f21e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f21e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f21e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f21e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f21e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f21e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f21e51]:
+        - generic [ref=f21e52]: Yürütme
+        - link "Runner havuzları" [ref=f21e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f21e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f21e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f21e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f21e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f21e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f21e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f21e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f21e61]:
+        - generic [ref=f21e62]: Ajanlar
+        - link "Variant'lar" [ref=f21e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f21e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f21e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f21e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f21e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f21e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f21e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f21e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f21e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f21e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f21e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f21e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f21e75]:
+        - generic [ref=f21e76]: Yönetişim
+        - link "LLM Gateway" [ref=f21e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f21e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f21e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f21e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f21e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f21e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f21e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f21e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f21e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f21e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f21e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f21e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f21e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f21e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f21e91]:
+        - generic [ref=f21e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f21e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f21e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f21e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f21e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f21e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f21e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f21e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f21e100]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f21e101] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f21e102]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f21e103] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f21e104]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f21e105] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f21e106]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f21e107] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f21e108]: ✔
+          - text: Karar defteri
+    - generic [ref=f21e109]:
+      - banner [ref=f21e110]:
+        - heading "Analiz şablonu" [level=1] [ref=f21e111]
+        - generic [ref=f21e112]:
+          - generic [ref=f21e113]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f21e114]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f21e115]: ayse.kaya@bank
+        - button "Çıkış" [ref=f21e116] [cursor=pointer]
+      - main [ref=f21e117]:
+        - generic [ref=f21e118]:
+          - generic [ref=f21e119]:
+            - heading "Analiz şablonu — tasarımcı" [level=3] [ref=f21e120]
+            - generic [ref=f21e121]: Şablon Studio'da tasarlanır; analist çıktısı bu tanımdan üretilen şemayla doğrulanır (M108).
+            - generic [ref=f21e123]:
+              - generic [ref=f21e124]: sürüm v3
+              - button "Önizle" [ref=f21e125] [cursor=pointer]
+              - button "Yeni sürüm olarak kaydet" [ref=f21e126] [cursor=pointer]
+          - generic [ref=f21e127]:
+            - generic [ref=f21e128]:
+              - generic [ref=f21e129]: "Bu şablonu kullanan projeler:"
+              - generic [ref=f21e130]: UGURPAY · v3 · 2 akış pinli
+              - generic [ref=f21e131]: UGURWEB · v3
+            - generic [ref=f21e132]:
+              - generic [ref=f21e133]:
+                - generic [ref=f21e134]:
+                  - heading "Bölümler (2)" [level=3] [ref=f21e135]
+                  - button "+ Bölüm ekle" [ref=f21e137] [cursor=pointer]
+                - generic [ref=f21e138]:
+                  - list [ref=f21e139]:
+                    - listitem [ref=f21e140]:
+                      - generic [ref=f21e141]:
+                        - button "1 Amaç ve gerekçe zorunlu serbest metin amac_ve_gerekce" [active] [ref=f21e142] [cursor=pointer]:
+                          - generic [ref=f21e143]: "1"
+                          - generic [ref=f21e144]:
+                            - generic [ref=f21e145]: Amaç ve gerekçe
+                            - generic [ref=f21e146]:
+                              - generic [ref=f21e147]: zorunlu
+                              - generic [ref=f21e148]: serbest metin
+                              - code [ref=f21e149]: amac_ve_gerekce
+                        - generic [ref=f21e150]:
+                          - button "\"Amaç ve gerekçe\" bölümünü yukarı taşı" [disabled] [ref=f21e151]: ↑
+                          - button "\"Amaç ve gerekçe\" bölümünü aşağı taşı" [ref=f21e152] [cursor=pointer]: ↓
+                          - button "\"Amaç ve gerekçe\" bölümünü çıkar" [ref=f21e153] [cursor=pointer]: ✕
+                    - listitem [ref=f21e154]:
+                      - generic [ref=f21e155]:
+                        - button "2 Etki analizi zorunlu etki matrisi etki_analizi" [ref=f21e156] [cursor=pointer]:
+                          - generic [ref=f21e157]: "2"
+                          - generic [ref=f21e158]:
+                            - generic [ref=f21e159]: Etki analizi
+                            - generic [ref=f21e160]:
+                              - generic [ref=f21e161]: zorunlu
+                              - generic [ref=f21e162]: etki matrisi
+                              - code [ref=f21e163]: etki_analizi
+                        - generic [ref=f21e164]:
+                          - button "\"Etki analizi\" bölümünü yukarı taşı" [ref=f21e165] [cursor=pointer]: ↑
+                          - button "\"Etki analizi\" bölümünü aşağı taşı" [disabled] [ref=f21e166]: ↓
+                          - button "\"Etki analizi\" bölümünü çıkar" [ref=f21e167] [cursor=pointer]: ✕
+                  - paragraph [ref=f21e168]: Sıra, dokümandaki bölüm sırasıdır. ↑ ↓ ile değiştir.
+              - generic [ref=f21e169]:
+                - generic [ref=f21e170]:
+                  - heading "Bölüm 1 · Amaç ve gerekçe" [level=3] [ref=f21e209]
+                  - generic [ref=f21e210]: Bu tanım ajana talimattır ve çıktı buna göre doğrulanır.
+                - generic [ref=f21e211]:
+                  - generic [ref=f21e212]:
+                    - generic [ref=f21e213]: Bölüm başlığı
+                    - textbox "Bölüm başlığı" [ref=f21e214]: Amaç ve gerekçe
+                  - generic [ref=f21e215]:
+                    - generic [ref=f21e216]: Beklenen biçim
+                    - combobox "Beklenen biçim" [ref=f21e217]:
+                      - option "serbest metin" [selected]
+                      - option "madde listesi"
+                      - option "tablo"
+                      - option "etki matrisi"
+                    - paragraph [ref=f21e218]: "Düz paragraf beklenir · şema: metin (en az 2 cümle)."
+                  - generic [ref=f21e219]:
+                    - generic [ref=f21e220]: Açıklama — insanlar için
+                    - textbox "Açıklama — insanlar için" [ref=f21e221]: Neden
+                    - paragraph [ref=f21e222]: Studio'da ve dokümanda bölüm başlığının altında görünür.
+                  - generic [ref=f21e223]:
+                    - generic [ref=f21e224]: AI'ye talimat — bu bölümü nasıl doldursun?
+                    - textbox "AI'ye talimat — bu bölümü nasıl doldursun?" [ref=f21e225]: Amacı üç cümlede yaz
+                    - paragraph [ref=f21e226]: Ajanın prompt'una bu metin girer.
+                  - generic [ref=f21e227]:
+                    - checkbox "Zorunlu bölüm Eksikse analiz insan kapısına hiç gelmez — ajan tekrar üretir (fail-closed)." [checked] [ref=f21e228]
+                    - generic [ref=f21e229]:
+                      - generic [ref=f21e230]: Zorunlu bölüm
+                      - generic [ref=f21e231]: Eksikse analiz insan kapısına hiç gelmez — ajan tekrar üretir (fail-closed).
+                  - generic [ref=f21e232]:
+                    - generic [ref=f21e233]: Örnek metin (few-shot)
+                    - textbox "Örnek metin (few-shot)" [ref=f21e234]: Örnek
+                    - paragraph [ref=f21e235]: Ajana "iyi cevap" ölçüsü olarak verilir.
+                  - paragraph [ref=f21e236]:
+                    - text: "Bu bölümün şema anahtarı:"
+                    - code [ref=f21e237]: amac_ve_gerekce
+                    - text: "· Word çıktısındaki yer tutucusu:"
+                    - code [ref=f21e238]: "{{bolum:1}}"
+        - generic [ref=f21e177]:
+          - heading "Sürüm geçmişi" [level=3] [ref=f21e179]
+          - table [ref=f21e182]:
+            - rowgroup [ref=f21e183]:
+              - row [ref=f21e184]:
+                - columnheader "Sürüm" [ref=f21e185]
+                - columnheader "Tarih" [ref=f21e186]
+                - columnheader "Değiştiren" [ref=f21e187]
+                - columnheader "Değişiklik" [ref=f21e188]
+            - rowgroup [ref=f21e189]:
+              - row [ref=f21e190]:
+                - cell "sürüm v3" [ref=f21e191]
+                - cell "2026-08-10T11:57:57.996Z" [ref=f21e193]
+                - cell "ayse.kaya@bank" [ref=f21e194]
+                - cell "2" [ref=f21e195]
+              - row [ref=f21e196]:
+                - cell "sürüm v2" [ref=f21e197]
+                - cell "2026-08-10T11:57:15.582Z" [ref=f21e199]
+                - cell "u-ayse" [ref=f21e200]
+                - cell "1" [ref=f21e201]
+              - row [ref=f21e202]:
+                - cell "sürüm v1" [ref=f21e203]
+                - cell "2026-08-10T11:50:11.898Z" [ref=f21e205]
+                - cell "installer" [ref=f21e206]
+                - cell "8" [ref=f21e207]
+        - paragraph [ref=f21e208]: "Sürüm pinleme (M83): her akış başladığı sürümle biter. Yeni sürüm yayınlasan bile açık akışlar eski sürümle tamamlanır; kullanılan sürüm ticket'a ve kanıt paketine yazılır."
+  - region

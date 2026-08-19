@@ -1,0 +1,58 @@
+digraph OrkestraBasit {
+  rankdir=TB;
+  bgcolor="white";
+  splines=spline;
+  nodesep=0.7;
+  ranksep=1.0;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=13, shape=box, style=filled,
+        fillcolor="white", color="#1E293B", penwidth=2, margin="0.35,0.25"];
+  edge [fontname="Helvetica", fontsize=11, color="#1E293B", penwidth=1.6];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="22"><B>Jira AI Orkestra — Genel Akış</B></FONT><BR/>
+        <FONT POINT-SIZE="12" COLOR="#64748B">tek Linux sunucu · her kutu bir Docker container</FONT><BR/> >;
+
+  // ---------- Dış sistemler ----------
+  jira [label="JIRA\nticket · yorum · statü", fillcolor="#F1F5F9", penwidth=2.5];
+  git  [label="BITBUCKET / GITHUB / GITLAB\nbranch · PR · CI", fillcolor="#F1F5F9"];
+  claude [label="CLAUDE API\n(şu an mock — çağrı yok)", fillcolor="#FEF2F2", color="#DC2626"];
+
+  // ---------- Orkestra ----------
+  api [label="API\nFastify", fillcolor="#DBEAFE", color="#2563EB", penwidth=2.5];
+
+  temporal [label="SDLC ORKESTRATÖR\nTemporal\nhangi adımdayız · retry · onay bekleme",
+            fillcolor="#DCFCE7", color="#16A34A", penwidth=3];
+
+  worker [label="WORKER\n7 AI ajan burada çalışır\nintake · analyst · developer · dev-reviewer\ntest-designer · test-reviewer · test-runner",
+          fillcolor="#DBEAFE", color="#2563EB", penwidth=2.5];
+
+  sandbox [label="SANDBOX\ngeçici container — iş bitince silinir\nkod çalıştırma · güvenlik taraması",
+           fillcolor="#F3E8FF", color="#9333EA", style="filled,dashed", penwidth=2];
+
+  studio [label="AGENT STUDIO\nNext.js\nadmin arayüzü", fillcolor="#DBEAFE", color="#2563EB"];
+
+  db [label="POSTGRESQL\nworkflow durumu · kayıtlar", shape=cylinder, fillcolor="#FEF9C3", color="#CA8A04", penwidth=2];
+
+  // ---------- Akış ----------
+  jira -> api      [label="  Webhook\l  (ticket · /approve yorumu)\l", penwidth=2.2, color="#EA580C", fontcolor="#C2410C"];
+  git  -> api      [label="  Webhook\l  (PR · CI sonucu)\l", penwidth=2.2, color="#EA580C", fontcolor="#C2410C"];
+
+  api -> temporal  [label="  iş akışını başlat / sinyal gönder  ", penwidth=2.2, color="#16A34A", fontcolor="#15803D"];
+  temporal -> worker [label="  sıradaki adımı çalıştır  ", penwidth=2.2, color="#16A34A", fontcolor="#15803D"];
+
+  worker -> sandbox [label="  kod çalıştır  ", color="#9333EA", fontcolor="#7E22CE", penwidth=2];
+  worker -> claude  [label="  LLM_MODE=real ise  ", style=dashed, color="#DC2626", fontcolor="#B91C1C"];
+
+  worker -> jira [label="  Talep Okuma ve Statü Güncelleme\l   - yorum yaz\l   - iade et / ilerlet\l",
+                  penwidth=2.2, color="#0891B2", fontcolor="#0E7490"];
+  worker -> git  [label="  branch · commit · PR aç  ", color="#0891B2", fontcolor="#0E7490", penwidth=1.8];
+
+  temporal -> db [label="  durumu sakla  ", color="#CA8A04", fontcolor="#A16207"];
+  studio -> api  [label="  yönet  ", color="#64748B"];
+
+  // ---------- Hizalama ----------
+  { rank=same; jira; git; }
+  { rank=same; temporal; studio; }
+  { rank=same; sandbox; claude; }
+}

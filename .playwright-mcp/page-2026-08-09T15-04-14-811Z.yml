@@ -1,0 +1,238 @@
+- generic [ref=f8e2]:
+  - generic [ref=f8e3]:
+    - navigation "Ana gezinme" [ref=f8e4]:
+      - generic [ref=f8e5]:
+        - generic [ref=f8e6]: M
+        - generic [ref=f8e7]:
+          - text: Maestro
+          - generic [ref=f8e8]: SDLC otomasyonu
+      - generic [ref=f8e9]:
+        - generic [ref=f8e10]: Operasyon
+        - link "Panel" [ref=f8e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f8e12]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f8e13] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f8e14]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f8e15] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f8e16]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f8e17] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f8e18]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f8e19] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f8e20]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f8e21] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f8e22]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f8e23] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f8e24]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f8e25] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f8e26]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f8e27] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f8e28]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f8e29] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f8e30]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f8e31]:
+        - generic [ref=f8e32]: Yürütme
+        - link "Runner havuzları" [ref=f8e33] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f8e34]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f8e35] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f8e36]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f8e37] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f8e38]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f8e39] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f8e40]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f8e41]:
+        - generic [ref=f8e42]: Ajanlar
+        - link "Variant'lar" [ref=f8e43] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f8e44]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f8e45] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f8e46]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f8e47] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f8e48]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f8e49] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f8e50]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f8e51] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f8e52]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f8e53] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f8e54]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f8e55]:
+        - generic [ref=f8e56]: Yönetişim
+        - link "LLM Gateway" [ref=f8e57] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f8e58]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f8e59] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f8e60]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f8e61] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f8e62]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f8e63] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f8e64]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f8e65] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f8e66]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f8e67] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f8e68]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f8e69] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f8e70]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f8e71]:
+        - generic [ref=f8e72]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f8e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f8e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f8e75] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f8e76]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f8e77] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f8e78]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f8e79] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f8e80]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f8e81] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f8e82]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f8e83] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f8e84]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f8e85] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f8e86]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f8e87] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f8e88]: ✔
+          - text: Karar defteri
+    - generic [ref=f8e89]:
+      - banner [ref=f8e90]:
+        - heading "Güvenlik bulguları" [level=1] [ref=f8e91]
+        - generic [ref=f8e92]:
+          - generic [ref=f8e93]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f8e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f8e95]: ayse.kaya
+        - button "Çıkış" [ref=f8e96] [cursor=pointer]
+      - main [ref=f8e97]:
+        - generic [ref=f8e98]:
+          - generic [ref=f8e99]:
+            - heading "Bulgular" [level=3] [ref=f8e100]
+            - generic [ref=f8e101]: önem sırasına göre · hiçbiri gizlenmez
+            - generic [ref=f8e102]: 2 bulgu akışı durduruyor
+          - table [ref=f8e106]:
+            - rowgroup [ref=f8e107]:
+              - row [ref=f8e108]:
+                - columnheader "Seviye" [ref=f8e109]
+                - columnheader "Ticket" [ref=f8e110]
+                - columnheader "Araç" [ref=f8e111]
+                - columnheader "Bulgu" [ref=f8e112]
+                - columnheader "Dosya" [ref=f8e113]
+                - columnheader "Durum" [ref=f8e114]
+                - columnheader "Tarih" [ref=f8e115]
+            - rowgroup [ref=f8e116]:
+              - row [ref=f8e117]:
+                - cell "kritik" [ref=f8e118]
+                - cell "UGURDESK-52" [ref=f8e120]
+                - cell "gitleaks" [ref=f8e121]
+                - cell [ref=f8e123]:
+                  - button "Tarayıcı metnini göster" [ref=f8e124] [cursor=pointer]
+                - cell [ref=f8e125]:
+                  - code [ref=f8e126]: src/Eft/BatchImporter.cs:118
+                - cell "kaldı" [ref=f8e127]
+                - cell "2026-08-09T13:29:43.802Z" [ref=f8e129]
+              - row [ref=f8e130]:
+                - cell "yüksek" [ref=f8e131]
+                - cell "UGURDESK-45" [ref=f8e133]
+                - cell "semgrep" [ref=f8e134]
+                - cell [ref=f8e136]:
+                  - button "Tarayıcı metnini göster" [ref=f8e137] [cursor=pointer]
+                - cell [ref=f8e138]:
+                  - code [ref=f8e139]: src/Report/Exporter.cs:244
+                - cell "kaldı" [ref=f8e140]
+                - cell "2026-08-09T11:59:43.802Z" [ref=f8e142]
+              - row [ref=f8e143]:
+                - cell "orta" [ref=f8e144]
+                - cell "UGURPAY-501" [ref=f8e146]
+                - cell "trivy" [ref=f8e147]
+                - cell [ref=f8e149]:
+                  - button "Tarayıcı metnini göster" [ref=f8e150] [cursor=pointer]
+                - cell [ref=f8e151]:
+                  - code [ref=f8e152]: package-lock.json
+                - cell "geçti" [ref=f8e153]
+                - cell "2026-08-07T12:59:43.802Z" [ref=f8e155]
+              - row [ref=f8e156]:
+                - cell "düşük" [ref=f8e157]
+                - cell "UGURWEB-72" [ref=f8e159]
+                - cell "trivy" [ref=f8e160]
+                - cell [ref=f8e162]:
+                  - button "Tarayıcı metnini göster" [ref=f8e163] [cursor=pointer]
+                - cell [ref=f8e164]:
+                  - code [ref=f8e165]: yarn.lock
+                - cell "geçti" [ref=f8e166]
+                - cell "2026-08-09T06:59:43.802Z" [ref=f8e168]
+              - row [ref=f8e169]:
+                - cell "bilgi" [ref=f8e170]
+                - cell "UGURPAY-123" [ref=f8e172]
+                - cell "semgrep" [ref=f8e173]
+                - cell [ref=f8e175]:
+                  - button "Tarayıcı metnini göster" [ref=f8e176] [cursor=pointer]
+                - cell [ref=f8e177]:
+                  - code [ref=f8e178]: src/refund/round.ts:27
+                - cell "geçti" [ref=f8e179]
+                - cell "2026-08-09T08:59:43.802Z" [ref=f8e181]
+        - paragraph [ref=f8e182]: "Fail-closed: tarayıcı imajı çekilemezse ya da çalışmazsa adım kırmızı olur — sessizce \"temiz\" sayılmaz. Eşikler Studio parametresidir (M71)."
+  - region

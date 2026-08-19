@@ -1,0 +1,7 @@
+[     543ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[   72515ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[   75914ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[   75930ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/runs:0
+[   90852ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[   90916ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[   90934ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/runs:0

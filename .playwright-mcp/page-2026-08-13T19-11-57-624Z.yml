@@ -1,0 +1,207 @@
+- generic [ref=f111e2]:
+  - generic [ref=f111e23]:
+    - navigation "Ana gezinme" [ref=f111e24]:
+      - generic [ref=f111e25]:
+        - generic [ref=f111e26]: M
+        - generic [ref=f111e27]:
+          - text: Maestro
+          - generic [ref=f111e28]: SDLC otomasyonu
+      - generic [ref=f111e29]:
+        - generic [ref=f111e30]: İzleme
+        - link "Panel" [ref=f111e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f111e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f111e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f111e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f111e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f111e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f111e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f111e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f111e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f111e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f111e41]:
+        - generic [ref=f111e42]: Çalışma
+        - link "Runner havuzları" [ref=f111e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f111e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f111e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f111e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f111e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f111e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f111e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f111e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f111e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f111e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f111e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f111e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f111e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f111e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f111e57]:
+        - generic [ref=f111e58]: Yönetişim
+        - link "Denetim izi" [ref=f111e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f111e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f111e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f111e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f111e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f111e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f111e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f111e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f111e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f111e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f111e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f111e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f111e71]:
+        - generic [ref=f111e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f111e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f111e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f111e75] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f111e76]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f111e77] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f111e78]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [active] [ref=f111e79] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f111e80]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f111e81] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f111e82]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f111e83] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f111e84]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f111e85] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f111e86]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f111e87] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f111e88]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f111e89]:
+      - banner [ref=f111e90]:
+        - heading "Bildirim & eskalasyon" [level=1] [ref=f111e110]
+        - generic [ref=f111e92]:
+          - generic [ref=f111e93]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f111e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f111e95]: admin
+        - button "Çıkış" [ref=f111e96] [cursor=pointer]
+      - main [ref=f111e97]:
+        - generic [ref=f111e111]:
+          - generic [ref=f111e112]:
+            - generic [ref=f111e113]:
+              - heading "Hatırlatıcı merdiveni" [level=3] [ref=f111e114]
+              - generic [ref=f111e115]: Adımlar, kanallar ve süreler parametreden okunur (M88)
+              - button "Merdiveni düzenle" [ref=f111e117] [cursor=pointer]
+            - generic [ref=f111e118]:
+              - generic [ref=f111e119]:
+                - generic [ref=f111e120]: "24. saat: Jira yorumu"
+                - generic [ref=f111e122]:
+                  - generic [ref=f111e123]: →
+                  - generic [ref=f111e124]: "72. saat: E-posta + Teams"
+                - generic [ref=f111e125]:
+                  - generic [ref=f111e126]: →
+                  - generic [ref=f111e127]: "168. saat: vekile delegasyon"
+              - generic [ref=f111e128]: "Hiçbir aşamada otomatik ret yok. Bekleme bir karar değildir: akış bağlamını korur ve süresiz bekler; merdivenin son adımı bir insana rapordur."
+          - generic [ref=f111e129]:
+            - generic [ref=f111e130]:
+              - heading "Hangi olay nereye bildirilir" [level=3] [ref=f111e131]
+              - generic [ref=f111e132]: Her olay tipinin gideceği kanallar (M45). Boş = bilerek susturulmuş; kural yoksa varsayılan kullanılır.
+              - button "Eşlemeyi düzenle" [ref=f111e134] [cursor=pointer]
+            - generic [ref=f111e135]:
+              - table [ref=f111e137]:
+                - caption [ref=f111e138]: Hangi olay nereye bildirilir
+                - rowgroup [ref=f111e139]:
+                  - row [ref=f111e140]:
+                    - columnheader "Olay" [ref=f111e141]
+                    - columnheader "Kanallar" [ref=f111e142]
+                - rowgroup [ref=f111e143]:
+                  - row [ref=f111e144]:
+                    - cell "Onay kapısı açıldı" [ref=f111e145]
+                    - cell "Jira yorumu" [ref=f111e147]
+                  - row [ref=f111e150]:
+                    - cell "Kapı hatırlatması" [ref=f111e151]
+                    - cell "Jira yorumu" [ref=f111e153]
+                  - row [ref=f111e156]:
+                    - cell "Eskalasyon" [ref=f111e157]
+                    - cell "Teams E-posta · pasif" [ref=f111e159]:
+                      - generic [ref=f111e160]:
+                        - generic [ref=f111e161]: Teams
+                        - generic [ref=f111e162]: E-posta · pasif
+                  - row [ref=f111e163]:
+                    - cell "Netleştirme hatırlatması" [ref=f111e164]
+                    - cell "Jira yorumu" [ref=f111e166]
+                  - row [ref=f111e169]:
+                    - cell "İnsana devir" [ref=f111e170]
+                    - cell "Teams" [ref=f111e172]
+                  - row [ref=f111e175]:
+                    - cell "CI kırmızı (build kırık)" [ref=f111e176]
+                    - cell "Jira yorumu" [ref=f111e178]
+                  - row [ref=f111e181]:
+                    - cell "Kota bekleniyor" [ref=f111e182]
+                    - cell "Teams" [ref=f111e184]
+                  - row [ref=f111e187]:
+                    - cell "Runner sağlık uyarısı" [ref=f111e188]
+                    - cell "Teams" [ref=f111e190]
+                  - row [ref=f111e193]:
+                    - cell "Kill-switch" [ref=f111e194]
+                    - cell "Teams E-posta · pasif" [ref=f111e196]:
+                      - generic [ref=f111e197]:
+                        - generic [ref=f111e198]: Teams
+                        - generic [ref=f111e199]: E-posta · pasif
+              - generic [ref=f111e200]: Yeşil kanallar bu kurulumda gerçekten gönderir; 'pasif' kanallar tanımlı ama runtime'a bağlı değil (kurum sunucusu/webhook gerekir).
+          - generic [ref=f111e201]:
+            - generic [ref=f111e202]:
+              - generic [ref=f111e203]:
+                - heading "Delegasyon zinciri" [level=3] [ref=f111e204]
+                - generic [ref=f111e205]: Vekiller Studio kaydından okunur (tarih aralıklı, audit'li)
+              - paragraph [ref=f111e208]: Tanımlı delegasyon yok
+            - generic [ref=f111e209]:
+              - generic [ref=f111e210]:
+                - heading "Şu an bekleyenler" [level=3] [ref=f111e211]
+                - generic [ref=f111e212]: Açık kapılar ve son gönderilen hatırlatma
+              - paragraph [ref=f111e215]: Bekleyen kapı yok
+  - region

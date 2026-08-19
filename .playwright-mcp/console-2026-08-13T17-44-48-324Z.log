@@ -1,0 +1,50 @@
+[     319ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=afa1d47d:20102
+[ 2199869ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=afa1d47d:20102
+[ 2410175ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2411183ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2413247ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2440076ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2441083ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2443092ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2443266ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2444276ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2446284ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2476294ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2477304ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2479316ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2503101ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2504108ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2506115ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2509323ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2510331ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2512340ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2542348ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2543354ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2545362ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2566122ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2567130ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2569138ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/studio/health:0
+[ 2575372ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2576380ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2578389ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2608396ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2609402ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2611417ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[ 2624431ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:7000/@vite/client:864
+[ 2629145ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/studio/health:0
+[ 2630147ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/studio/health:0
+[ 2632150ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/studio/health:0
+[ 2641422ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2642424ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2644427ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2674431ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2675433ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2677438ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2692154ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/studio/health:0
+[ 2693157ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/studio/health:0
+[ 2695160ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/studio/health:0
+[ 2707442ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2708444ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2710449ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 2734253ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 2734362ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:7000/api/auth/session:0

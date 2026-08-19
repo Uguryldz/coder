@@ -1,0 +1,267 @@
+- generic [ref=f21e2]:
+  - generic [ref=f21e3]:
+    - navigation "Ana gezinme" [ref=f21e4]:
+      - generic [ref=f21e5]:
+        - generic [ref=f21e6]: M
+        - generic [ref=f21e7]:
+          - text: Maestro
+          - generic [ref=f21e8]: SDLC otomasyonu
+      - generic [ref=f21e9]:
+        - generic [ref=f21e10]: İşler
+        - link "Panel" [ref=f21e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f21e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f21e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f21e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f21e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f21e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f21e17]:
+        - generic [ref=f21e18]: Ajanlar
+        - link "Ajan tanımları" [ref=f21e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f21e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f21e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f21e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [active] [ref=f21e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f21e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f21e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f21e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f21e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f21e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f21e29]: yakında
+      - generic [ref=f21e30]:
+        - generic [ref=f21e31]: Denetim
+        - link "Denetim izi" [ref=f21e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f21e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f21e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f21e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f21e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f21e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f21e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f21e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f21e40]: yakında
+        - link "Kanıt paketi yakında" [ref=f21e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f21e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f21e43]: yakında
+      - generic [ref=f21e44]:
+        - generic [ref=f21e45]: Kurulum
+        - link "Proje bağlama" [ref=f21e46] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f21e47]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f21e48] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f21e49]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f21e50] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f21e51]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f21e52] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f21e53]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f21e54] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f21e55]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f21e56] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f21e57]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f21e58]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f21e59] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f21e60]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f21e61]:
+      - banner [ref=f21e62]:
+        - heading "Analiz şablonu" [level=1] [ref=f21e303]
+        - generic [ref=f21e64]:
+          - generic [ref=f21e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f21e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f21e67]: admin
+        - button "Çıkış" [ref=f21e68] [cursor=pointer]
+      - main [ref=f21e69]:
+        - note [ref=f21e305]: "Buradaki bölüm BAŞLIKLARI ve AI TALİMATLARI motora bağlıdır: yayınladığın sürüm bir sonraki analizde geçerli olur (yeniden başlatma gerekmez). Bölüm YAPISI (eklenen/çıkarılan bölümler) ise motorun sabit kurumsal iskeletine bağlıdır — iskelete uymayan bölümler uygulanmaz ve motor günlüğünde belirtilir."
+        - generic [ref=f21e306]:
+          - generic [ref=f21e307]:
+            - heading "Analiz şablonu — tasarımcı" [level=3] [ref=f21e308]
+            - generic [ref=f21e309]: Şablon Studio'da tasarlanır; analist çıktısı bu tanımdan üretilen şemayla doğrulanır (M108).
+            - generic [ref=f21e311]:
+              - generic [ref=f21e312]: sürüm v1
+              - button "Önizle" [ref=f21e313] [cursor=pointer]
+              - button "Yeni sürüm olarak kaydet" [ref=f21e314] [cursor=pointer]
+          - generic [ref=f21e315]:
+            - generic [ref=f21e316]:
+              - generic [ref=f21e317]: "Bu şablonu kullanan projeler:"
+              - generic [ref=f21e318]: OPS · v1
+            - generic [ref=f21e319]:
+              - generic [ref=f21e320]:
+                - generic [ref=f21e321]:
+                  - heading "Bölümler (8)" [level=3] [ref=f21e322]
+                  - button "+ Bölüm ekle" [ref=f21e324] [cursor=pointer]
+                - generic [ref=f21e325]:
+                  - list [ref=f21e326]:
+                    - listitem [ref=f21e327]:
+                      - generic [ref=f21e328]:
+                        - button "1 Amaç ve gerekçe zorunlu serbest metin amac_ve_gerekce" [ref=f21e329] [cursor=pointer]:
+                          - generic [ref=f21e330]: "1"
+                          - generic [ref=f21e331]:
+                            - generic [ref=f21e332]: Amaç ve gerekçe
+                            - generic [ref=f21e333]:
+                              - generic [ref=f21e334]: zorunlu
+                              - generic [ref=f21e335]: serbest metin
+                              - code [ref=f21e336]: amac_ve_gerekce
+                        - generic [ref=f21e337]:
+                          - button "\"Amaç ve gerekçe\" bölümünü yukarı taşı" [disabled] [ref=f21e338]: ↑
+                          - button "\"Amaç ve gerekçe\" bölümünü aşağı taşı" [ref=f21e339] [cursor=pointer]: ↓
+                          - button "\"Amaç ve gerekçe\" bölümünü çıkar" [ref=f21e340] [cursor=pointer]: ✕
+                    - listitem [ref=f21e341]:
+                      - generic [ref=f21e342]:
+                        - button "2 Kapsam zorunlu madde listesi kapsam" [ref=f21e343] [cursor=pointer]:
+                          - generic [ref=f21e344]: "2"
+                          - generic [ref=f21e345]:
+                            - generic [ref=f21e346]: Kapsam
+                            - generic [ref=f21e347]:
+                              - generic [ref=f21e348]: zorunlu
+                              - generic [ref=f21e349]: madde listesi
+                              - code [ref=f21e350]: kapsam
+                        - generic [ref=f21e351]:
+                          - button "\"Kapsam\" bölümünü yukarı taşı" [ref=f21e352] [cursor=pointer]: ↑
+                          - button "\"Kapsam\" bölümünü aşağı taşı" [ref=f21e353] [cursor=pointer]: ↓
+                          - button "\"Kapsam\" bölümünü çıkar" [ref=f21e354] [cursor=pointer]: ✕
+                    - listitem [ref=f21e355]:
+                      - generic [ref=f21e356]:
+                        - button "3 Etki analizi zorunlu etki matrisi etki_analizi" [ref=f21e357] [cursor=pointer]:
+                          - generic [ref=f21e358]: "3"
+                          - generic [ref=f21e359]:
+                            - generic [ref=f21e360]: Etki analizi
+                            - generic [ref=f21e361]:
+                              - generic [ref=f21e362]: zorunlu
+                              - generic [ref=f21e363]: etki matrisi
+                              - code [ref=f21e364]: etki_analizi
+                        - generic [ref=f21e365]:
+                          - button "\"Etki analizi\" bölümünü yukarı taşı" [ref=f21e366] [cursor=pointer]: ↑
+                          - button "\"Etki analizi\" bölümünü aşağı taşı" [ref=f21e367] [cursor=pointer]: ↓
+                          - button "\"Etki analizi\" bölümünü çıkar" [ref=f21e368] [cursor=pointer]: ✕
+                    - listitem [ref=f21e369]:
+                      - generic [ref=f21e370]:
+                        - button "4 Veri ve gizlilik zorunlu serbest metin veri_ve_gizlilik" [ref=f21e371] [cursor=pointer]:
+                          - generic [ref=f21e372]: "4"
+                          - generic [ref=f21e373]:
+                            - generic [ref=f21e374]: Veri ve gizlilik
+                            - generic [ref=f21e375]:
+                              - generic [ref=f21e376]: zorunlu
+                              - generic [ref=f21e377]: serbest metin
+                              - code [ref=f21e378]: veri_ve_gizlilik
+                        - generic [ref=f21e379]:
+                          - button "\"Veri ve gizlilik\" bölümünü yukarı taşı" [ref=f21e380] [cursor=pointer]: ↑
+                          - button "\"Veri ve gizlilik\" bölümünü aşağı taşı" [ref=f21e381] [cursor=pointer]: ↓
+                          - button "\"Veri ve gizlilik\" bölümünü çıkar" [ref=f21e382] [cursor=pointer]: ✕
+                    - listitem [ref=f21e383]:
+                      - generic [ref=f21e384]:
+                        - button "5 Riskler ve önlemler zorunlu tablo riskler_ve_onlemler" [ref=f21e385] [cursor=pointer]:
+                          - generic [ref=f21e386]: "5"
+                          - generic [ref=f21e387]:
+                            - generic [ref=f21e388]: Riskler ve önlemler
+                            - generic [ref=f21e389]:
+                              - generic [ref=f21e390]: zorunlu
+                              - generic [ref=f21e391]: tablo
+                              - code [ref=f21e392]: riskler_ve_onlemler
+                        - generic [ref=f21e393]:
+                          - button "\"Riskler ve önlemler\" bölümünü yukarı taşı" [ref=f21e394] [cursor=pointer]: ↑
+                          - button "\"Riskler ve önlemler\" bölümünü aşağı taşı" [ref=f21e395] [cursor=pointer]: ↓
+                          - button "\"Riskler ve önlemler\" bölümünü çıkar" [ref=f21e396] [cursor=pointer]: ✕
+                    - listitem [ref=f21e397]:
+                      - generic [ref=f21e398]:
+                        - button "6 Geri alma planı zorunlu serbest metin geri_alma_plani" [ref=f21e399] [cursor=pointer]:
+                          - generic [ref=f21e400]: "6"
+                          - generic [ref=f21e401]:
+                            - generic [ref=f21e402]: Geri alma planı
+                            - generic [ref=f21e403]:
+                              - generic [ref=f21e404]: zorunlu
+                              - generic [ref=f21e405]: serbest metin
+                              - code [ref=f21e406]: geri_alma_plani
+                        - generic [ref=f21e407]:
+                          - button "\"Geri alma planı\" bölümünü yukarı taşı" [ref=f21e408] [cursor=pointer]: ↑
+                          - button "\"Geri alma planı\" bölümünü aşağı taşı" [ref=f21e409] [cursor=pointer]: ↓
+                          - button "\"Geri alma planı\" bölümünü çıkar" [ref=f21e410] [cursor=pointer]: ✕
+                    - listitem [ref=f21e411]:
+                      - generic [ref=f21e412]:
+                        - button "7 Test ve kabul kriterleri zorunlu madde listesi test_ve_kabul_kriterleri" [ref=f21e413] [cursor=pointer]:
+                          - generic [ref=f21e414]: "7"
+                          - generic [ref=f21e415]:
+                            - generic [ref=f21e416]: Test ve kabul kriterleri
+                            - generic [ref=f21e417]:
+                              - generic [ref=f21e418]: zorunlu
+                              - generic [ref=f21e419]: madde listesi
+                              - code [ref=f21e420]: test_ve_kabul_kriterleri
+                        - generic [ref=f21e421]:
+                          - button "\"Test ve kabul kriterleri\" bölümünü yukarı taşı" [ref=f21e422] [cursor=pointer]: ↑
+                          - button "\"Test ve kabul kriterleri\" bölümünü aşağı taşı" [ref=f21e423] [cursor=pointer]: ↓
+                          - button "\"Test ve kabul kriterleri\" bölümünü çıkar" [ref=f21e424] [cursor=pointer]: ✕
+                    - listitem [ref=f21e425]:
+                      - generic [ref=f21e426]:
+                        - button "8 Bağımlılıklar opsiyonel madde listesi bagimliliklar" [ref=f21e427] [cursor=pointer]:
+                          - generic [ref=f21e428]: "8"
+                          - generic [ref=f21e429]:
+                            - generic [ref=f21e430]: Bağımlılıklar
+                            - generic [ref=f21e431]:
+                              - generic [ref=f21e432]: opsiyonel
+                              - generic [ref=f21e433]: madde listesi
+                              - code [ref=f21e434]: bagimliliklar
+                        - generic [ref=f21e435]:
+                          - button "\"Bağımlılıklar\" bölümünü yukarı taşı" [ref=f21e436] [cursor=pointer]: ↑
+                          - button "\"Bağımlılıklar\" bölümünü aşağı taşı" [disabled] [ref=f21e437]: ↓
+                          - button "\"Bağımlılıklar\" bölümünü çıkar" [ref=f21e438] [cursor=pointer]: ✕
+                  - paragraph [ref=f21e439]: Sıra, dokümandaki bölüm sırasıdır. ↑ ↓ ile değiştir.
+              - generic [ref=f21e440]:
+                - heading "Bölüm düzenleyici" [level=3] [ref=f21e442]
+                - generic [ref=f21e444]:
+                  - generic [ref=f21e445]: 👈
+                  - paragraph [ref=f21e446]: Soldan bir bölüm seç ya da yeni bölüm ekle.
+        - generic [ref=f21e448]:
+          - heading "Sürüm geçmişi" [level=3] [ref=f21e450]
+          - table [ref=f21e453]:
+            - rowgroup [ref=f21e454]:
+              - row [ref=f21e455]:
+                - columnheader "Sürüm" [ref=f21e456]
+                - columnheader "Tarih" [ref=f21e457]
+                - columnheader "Değiştiren" [ref=f21e458]
+                - columnheader "Değişiklik" [ref=f21e459]
+            - rowgroup [ref=f21e460]:
+              - row [ref=f21e461]:
+                - cell "sürüm v1" [ref=f21e462]
+                - cell "2026-08-10T12:17:48.860Z" [ref=f21e464]
+                - cell "installer" [ref=f21e465]
+                - cell "8" [ref=f21e466]
+        - paragraph [ref=f21e467]: "Sürüm pinleme (M83): her akış başladığı sürümle biter. Yeni sürüm yayınlasan bile açık akışlar eski sürümle tamamlanır; kullanılan sürüm ticket'a ve kanıt paketine yazılır."
+  - region

@@ -1,0 +1,153 @@
+- generic [ref=f148e2]:
+  - generic [ref=f148e3]:
+    - navigation "Ana gezinme" [ref=f148e4]:
+      - generic [ref=f148e5]:
+        - generic [ref=f148e6]: M
+        - generic [ref=f148e7]:
+          - text: Maestro
+          - generic [ref=f148e8]: SDLC otomasyonu
+      - generic [ref=f148e9]:
+        - generic [ref=f148e10]: İzleme
+        - link "Panel" [ref=f148e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f148e12]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f148e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f148e14]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f148e15] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f148e16]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f148e17] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f148e18]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f148e19] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f148e20]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f148e21]:
+        - generic [ref=f148e22]: Çalışma
+        - link "Runner havuzları" [ref=f148e23] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f148e24]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f148e25] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f148e26]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f148e27] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f148e28]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f148e29] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f148e30]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f148e31] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f148e32]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f148e33] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f148e34]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f148e35] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f148e36]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f148e37]:
+        - generic [ref=f148e38]: Yönetişim
+        - link "Denetim izi" [ref=f148e39] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f148e40]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f148e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f148e42]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f148e43] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f148e44]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f148e45] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f148e46]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f148e47] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f148e48]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f148e49] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f148e50]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f148e51]:
+        - generic [ref=f148e52]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f148e53] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f148e54]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f148e55] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f148e56]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f148e57] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f148e58]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f148e59] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f148e60]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f148e61] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f148e62]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f148e63] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f148e64]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f148e65] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f148e66]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f148e67] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f148e68]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f148e69]:
+      - banner [ref=f148e70]:
+        - heading "Uygulama ekle" [level=1] [ref=f148e90]
+        - generic [ref=f148e72]:
+          - generic [ref=f148e73]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f148e74]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f148e75]: admin
+        - button "Çıkış" [ref=f148e76] [cursor=pointer]
+      - main [ref=f148e77]:
+        - generic [ref=f148e91]:
+          - list [ref=f148e92]:
+            - listitem [ref=f148e93]: 1 · Jira kaynağı
+            - listitem [ref=f148e94]: 2 · Repo ve politika
+            - listitem [ref=f148e95]: 3 · .maestro.yaml
+            - listitem [ref=f148e96]: 4 · Kapı ve tetikleme
+          - generic [ref=f148e97]:
+            - generic [ref=f148e98]:
+              - heading ".maestro.yaml" [level=3] [ref=f148e156]
+              - generic [ref=f148e100]: Dosya bir PR olarak önerilir; takım kendi süreciyle onaylar
+            - generic [ref=f148e101]:
+              - paragraph [ref=f148e157]: "Dosya platform profiline göre üretilir ve repoya PR olarak açılır: derleme, lint ve test komutları ile korumalı yollar."
+              - generic [ref=f148e158]: Politikalar (kapsam kuralı, kapı seti, çıktı dili) bu dosyada değil, DB parametrelerindedir (M71).
+          - generic [ref=f148e127]:
+            - heading "İşlemler" [level=3] [ref=f148e129]
+            - generic [ref=f148e130]:
+              - generic [ref=f148e131]:
+                - button "Geri" [active] [ref=f148e138] [cursor=pointer]
+                - button "İleri" [ref=f148e159] [cursor=pointer]
+              - generic [ref=f148e133]: "Bu sihirbaz canlı yapılandırma üretmez: paket admin onayına gider. Onaydan sonra eşleme kuralı, .maestro.yaml PR'ı ve gerekiyorsa taslak pipeline oluşturulur."
+  - region

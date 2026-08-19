@@ -1,0 +1,188 @@
+- generic [ref=f187e84]:
+  - generic [ref=f187e85]:
+    - navigation "Ana gezinme" [ref=f187e86]:
+      - generic [ref=f187e87]:
+        - generic [ref=f187e88]: M
+        - generic [ref=f187e89]:
+          - text: Maestro
+          - generic [ref=f187e90]: SDLC otomasyonu
+      - generic [ref=f187e91]:
+        - generic [ref=f187e92]: İzleme
+        - link "Panel" [ref=f187e93] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f187e94]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f187e95] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f187e96]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f187e97] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f187e98]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f187e99] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f187e100]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f187e101] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f187e102]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f187e103]:
+        - generic [ref=f187e104]: Çalışma
+        - link "Runner havuzları" [ref=f187e105] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f187e106]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f187e107] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f187e108]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f187e109] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f187e110]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f187e111] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f187e112]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f187e113] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f187e114]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f187e115] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f187e116]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f187e117] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f187e118]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f187e119]:
+        - generic [ref=f187e120]: Yönetişim
+        - link "Denetim izi" [ref=f187e121] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f187e122]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f187e123] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f187e124]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f187e125] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f187e126]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f187e127] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f187e128]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f187e129] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f187e130]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f187e131] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f187e132]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f187e133]:
+        - generic [ref=f187e134]: Yönetim
+        - link "Proje bağlama" [ref=f187e135] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f187e136]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f187e137] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f187e138]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f187e139] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f187e140]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f187e141] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f187e142]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f187e143] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f187e144]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f187e145] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f187e146]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f187e147]:
+      - banner [ref=f187e148]:
+        - heading "Proje bağlama" [level=1] [ref=f187e149]
+        - generic [ref=f187e150]:
+          - generic [ref=f187e151]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f187e152]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f187e153]: admin
+        - button "Çıkış" [ref=f187e154] [cursor=pointer]
+      - main [ref=f187e1]:
+        - generic [ref=f187e2]:
+          - generic [ref=f187e3]:
+            - generic [ref=f187e4]:
+              - heading "Nasıl çalışır — 3 adımda proje bağlama" [level=3] [ref=f187e5]
+              - generic [ref=f187e6]: Adımları sırayla izleyin. Şu an bulunduğunuz adım vurgulanır.
+            - list [ref=f187e8]:
+              - listitem [ref=f187e9]:
+                - button "1 Uygulama ekle Jira projesi + repo seç, admin onayına gönder" [ref=f187e10] [cursor=pointer]:
+                  - generic [ref=f187e11]: "1"
+                  - generic [ref=f187e12]:
+                    - generic [ref=f187e13]: Uygulama ekle
+                    - generic [ref=f187e14]: Jira projesi + repo seç, admin onayına gönder
+                - generic [ref=f187e15]: →
+              - listitem [ref=f187e16]:
+                - button "2 Jira eşleme & onay İkinci bir yönetici onaylar; proje bağlanır" [active] [ref=f187e17] [cursor=pointer]:
+                  - generic [ref=f187e18]: "2"
+                  - generic [ref=f187e19]:
+                    - generic [ref=f187e20]: Jira eşleme & onay
+                    - generic [ref=f187e21]: İkinci bir yönetici onaylar; proje bağlanır
+                - generic [ref=f187e22]: →
+              - listitem [ref=f187e23]:
+                - button "3 Dinleme kuralları Hangi ticket'lar işlensin kuralını ekle" [ref=f187e24] [cursor=pointer]:
+                  - generic [ref=f187e25]: "3"
+                  - generic [ref=f187e26]:
+                    - generic [ref=f187e27]: Dinleme kuralları
+                    - generic [ref=f187e28]: Hangi ticket'lar işlensin kuralını ekle
+          - tablist "Proje bağlama adımları" [ref=f187e29]:
+            - tab "1 · Uygulama ekle" [ref=f187e30] [cursor=pointer]
+            - tab "2 · Jira eşleme & onay" [selected] [ref=f187e31] [cursor=pointer]
+            - tab "3 · Dinleme kuralları" [ref=f187e32] [cursor=pointer]
+          - tabpanel "2 · Jira eşleme & onay" [ref=f187e155]:
+            - generic [ref=f187e157]:
+              - generic [ref=f187e158]:
+                - heading "Onay bekleyen uygulamalar" [level=3] [ref=f187e159]
+                - generic [ref=f187e160]: Uygulama ekle'den gelen paketler — bağlamayı ikinci bir yönetici onaylar
+              - table [ref=f187e163]:
+                - rowgroup [ref=f187e164]:
+                  - row [ref=f187e165]:
+                    - columnheader "Proje" [ref=f187e166]
+                    - columnheader "Repo" [ref=f187e167]
+                    - columnheader "Platform" [ref=f187e168]
+                    - columnheader "Öneren" [ref=f187e169]
+                    - columnheader [ref=f187e170]
+                - rowgroup [ref=f187e171]:
+                  - row [ref=f187e172]:
+                    - cell "OPS" [ref=f187e173]
+                    - cell "Uguryldz/maestro-pilot" [ref=f187e174]
+                    - cell "linux-node" [ref=f187e175]
+                    - cell "admin@maestro.local" [ref=f187e176]
+                    - cell [ref=f187e177]:
+                      - generic [ref=f187e178]:
+                        - button "Onayla" [ref=f187e179] [cursor=pointer]
+                        - button "Reddet" [ref=f187e180] [cursor=pointer]
+            - generic [ref=f187e182]:
+              - generic [ref=f187e183]:
+                - heading "Bağlı Jira projeleri" [level=3] [ref=f187e184]
+                - generic [ref=f187e185]: Her projeye bir veya daha fazla uygulama bağlanabilir
+                - button "+ Proje/uygulama bağla" [ref=f187e187] [cursor=pointer]
+              - generic [ref=f187e189]:
+                - generic [ref=f187e190]: 📭
+                - paragraph [ref=f187e191]: Bağlı proje yok
+            - group [ref=f187e192]:
+              - generic "▸ Gelişmiş · Perde arkasında ne oluyor?" [ref=f187e193] [cursor=pointer]
+  - region

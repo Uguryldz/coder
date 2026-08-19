@@ -1,0 +1,261 @@
+- generic [ref=f16e2]:
+  - generic [ref=f16e3]:
+    - navigation "Ana gezinme" [ref=f16e4]:
+      - generic [ref=f16e5]:
+        - generic [ref=f16e6]: M
+        - generic [ref=f16e7]:
+          - text: Maestro
+          - generic [ref=f16e8]: SDLC otomasyonu
+      - generic [ref=f16e9]:
+        - generic [ref=f16e10]: İşler
+        - link "Panel" [ref=f16e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f16e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [active] [ref=f16e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f16e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f16e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f16e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f16e17]:
+        - generic [ref=f16e18]: Ajanlar
+        - link "Ajan tanımları" [ref=f16e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f16e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f16e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f16e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f16e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f16e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f16e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f16e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f16e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f16e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f16e29]: yakında
+      - generic [ref=f16e30]:
+        - generic [ref=f16e31]: Denetim
+        - link "Denetim izi" [ref=f16e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f16e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f16e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f16e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f16e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f16e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f16e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f16e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f16e40]: yakında
+        - link "Kanıt paketi yakında" [ref=f16e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f16e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f16e43]: yakında
+      - generic [ref=f16e44]:
+        - generic [ref=f16e45]: Kurulum
+        - link "Proje bağlama" [ref=f16e46] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f16e47]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f16e48] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f16e49]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f16e50] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f16e51]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f16e52] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f16e53]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f16e54] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f16e55]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f16e56] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f16e57]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f16e58]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f16e59] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f16e60]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f16e61]:
+      - banner [ref=f16e62]:
+        - heading "Canlı akış" [level=1] [ref=f16e147]
+        - generic [ref=f16e64]:
+          - generic [ref=f16e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f16e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f16e67]: admin
+        - button "Çıkış" [ref=f16e68] [cursor=pointer]
+      - main [ref=f16e69]:
+        - generic [ref=f16e148]:
+          - tablist "Canlı akış görünümü" [ref=f16e149]:
+            - tab "Canlı liste" [selected] [ref=f16e150] [cursor=pointer]
+            - tab "Süreç haritası" [ref=f16e151] [cursor=pointer]
+          - tabpanel "Canlı liste" [ref=f16e152]:
+            - generic [ref=f16e153]:
+              - generic [ref=f16e154]:
+                - generic [ref=f16e155]:
+                  - heading "Canlı akış" [level=3] [ref=f16e156]
+                  - generic [ref=f16e157]: Gerçek bir işi başlatın ve canlı izleyin
+                - generic [ref=f16e158]:
+                  - paragraph [ref=f16e159]: "Maestro, canlı Jira'da maestro etiketli bir ticket bulur ve tüm akışı yürütür: analiz, kod yazımı, güvenlik taraması, test, PR ve iki insan onayı. Bu ekrandan bir işi başlatıp adım adım canlı izleyebilirsiniz."
+                  - paragraph [ref=f16e160]: "Canlı Jira: https://uyildiz.atlassian.net · onaycı grubu: jira-users-uyildiz"
+              - generic [ref=f16e161]:
+                - generic [ref=f16e162]:
+                  - heading "Keşfedilen ticket'lar" [level=3] [ref=f16e163]
+                  - generic [ref=f16e164]: gerçek Jira'da maestro etiketli OPS ticket'ları
+                - table [ref=f16e167]:
+                  - caption [ref=f16e168]: Canlı sitede maestro etiketiyle keşfedilen ticket'lar
+                  - rowgroup [ref=f16e169]:
+                    - row [ref=f16e170]:
+                      - columnheader "Ticket" [ref=f16e171]
+                      - columnheader "Durum" [ref=f16e172]
+                      - columnheader [ref=f16e173]
+                  - rowgroup [ref=f16e174]:
+                    - row [ref=f16e175]:
+                      - cell "OPS-17 [E2E-S1] Ödeme ekranına döviz kuru göstergesi" [ref=f16e176]:
+                        - text: OPS-17
+                        - generic [ref=f16e177]: "[E2E-S1] Ödeme ekranına döviz kuru göstergesi"
+                      - cell "Yapılacaklar" [ref=f16e178]
+                      - cell [ref=f16e179]:
+                        - button "▶ Başlat" [ref=f16e180] [cursor=pointer]
+              - generic [ref=f16e181]:
+                - generic [ref=f16e182]:
+                  - heading "Çalışan akış" [level=3] [ref=f16e183]
+                  - generic [ref=f16e184]: adımlar, açık kapı ve belgeler
+                  - link "Jira'da aç ↗" [ref=f16e186] [cursor=pointer]:
+                    - /url: https://uyildiz.atlassian.net/browse/OPS-21
+                - generic [ref=f16e187]:
+                  - paragraph [ref=f16e188]:
+                    - generic [ref=f16e189]: OPS-21
+                    - generic [ref=f16e190]: tamamlandı
+                  - generic [ref=f16e191]:
+                    - generic [ref=f16e192]:
+                      - generic [ref=f16e193]: "1"
+                      - generic [ref=f16e194]:
+                        - text: Ticket okundu
+                        - generic [ref=f16e195]: Maestro GERÇEK Jira'dan ticket'ı çekti, etiketledi, durum yorumunu açtı.
+                      - generic [ref=f16e196]: tamam
+                    - generic [ref=f16e198]:
+                      - generic [ref=f16e199]: "2"
+                      - generic [ref=f16e200]:
+                        - text: Analiz üretildi
+                        - generic [ref=f16e201]: Yapay zeka analizi yazdı; şablon 7 bölüm olarak doğrulandı.
+                      - generic [ref=f16e202]: tamam
+                    - generic [ref=f16e204]:
+                      - generic [ref=f16e205]: "3"
+                      - generic [ref=f16e206]:
+                        - text: İnsan kapısı — analiz onayı
+                        - generic [ref=f16e207]: GERÇEK Jira'da yoruma /approve yazılmasını yokluyor (yetki + grup).
+                      - generic [ref=f16e208]: tamam
+                    - generic [ref=f16e210]:
+                      - generic [ref=f16e211]: "4"
+                      - generic [ref=f16e212]:
+                        - text: Kod yazıldı
+                        - generic [ref=f16e213]: Yapay zeka gerçek dosya içeriği üretti; çalışma alanına yazıldı.
+                      - generic [ref=f16e214]: bekliyor
+                    - generic [ref=f16e216]:
+                      - generic [ref=f16e217]: "5"
+                      - generic [ref=f16e218]:
+                        - text: Tarama
+                        - generic [ref=f16e219]: Üretilen kod kişisel veri sızıntısına karşı tarandı (fail-closed).
+                      - generic [ref=f16e220]: bekliyor
+                    - generic [ref=f16e222]:
+                      - generic [ref=f16e223]: "6"
+                      - generic [ref=f16e224]:
+                        - text: Testler koştu
+                        - generic [ref=f16e225]: Üretilen test dosyası gerçekten çalıştırıldı — sonuç uydurulmadı.
+                      - generic [ref=f16e226]: bekliyor
+                    - generic [ref=f16e228]:
+                      - generic [ref=f16e229]: "7"
+                      - generic [ref=f16e230]:
+                        - text: PR açıldı + CI
+                        - generic [ref=f16e231]: ADO'da (sahte) dal ve pull request açıldı; build sonucu webhook ile geldi.
+                      - generic [ref=f16e232]: bekliyor
+                    - generic [ref=f16e234]:
+                      - generic [ref=f16e235]: "8"
+                      - generic [ref=f16e236]:
+                        - text: İnsan kapısı — PR onayı
+                        - generic [ref=f16e237]: GERÇEK Jira'da ikinci /approve yoklanıyor.
+                      - generic [ref=f16e238]: bekliyor
+                    - generic [ref=f16e240]:
+                      - generic [ref=f16e241]: "9"
+                      - generic [ref=f16e242]:
+                        - text: Merge + kapanış
+                        - generic [ref=f16e243]: PR birleşti, ticket kapatıldı, denetim kaydı doğrulandı. Maestro burada durur — prod'a çıkış (release) kurumun kendi sürecidir.
+                      - generic [ref=f16e244]: bekliyor
+                  - paragraph [ref=f16e246]:
+                    - generic [ref=f16e247]: "Analiz belgeleri hazır:"
+                    - button "PDF indir" [ref=f16e248] [cursor=pointer]
+                    - button "Word indir" [ref=f16e249] [cursor=pointer]
+              - generic [ref=f16e250]:
+                - generic [ref=f16e251]:
+                  - heading "Geçmiş işler" [level=3] [ref=f16e252]
+                  - generic [ref=f16e253]: Tamamlanan akışların kaydı — en yeni en üstte
+                - generic [ref=f16e255]:
+                  - generic [ref=f16e256]:
+                    - generic [ref=f16e257]:
+                      - link "OPS-21" [ref=f16e258] [cursor=pointer]:
+                        - /url: https://uyildiz.atlassian.net/browse/OPS-21
+                      - generic [ref=f16e259]: analiz · 3/9 adım
+                    - generic [ref=f16e260]: durduruldu
+                  - generic [ref=f16e262]:
+                    - generic [ref=f16e263]:
+                      - link "OPS-21" [ref=f16e264] [cursor=pointer]:
+                        - /url: https://uyildiz.atlassian.net/browse/OPS-21
+                      - generic [ref=f16e265]: analiz · 1/9 adım
+                    - generic [ref=f16e266]: durduruldu
+                  - generic [ref=f16e268]:
+                    - generic [ref=f16e269]:
+                      - link "OPS-20" [ref=f16e270] [cursor=pointer]:
+                        - /url: https://uyildiz.atlassian.net/browse/OPS-20
+                      - generic [ref=f16e271]: analiz · 3/9 adım
+                    - generic [ref=f16e272]: durduruldu
+                  - generic [ref=f16e274]:
+                    - generic [ref=f16e275]:
+                      - link "OPS-20" [ref=f16e276] [cursor=pointer]:
+                        - /url: https://uyildiz.atlassian.net/browse/OPS-20
+                      - generic [ref=f16e277]: analiz · 2/9 adım
+                    - generic [ref=f16e278]: durduruldu
+                  - generic [ref=f16e280]:
+                    - generic [ref=f16e281]:
+                      - link "OPS-19" [ref=f16e282] [cursor=pointer]:
+                        - /url: https://uyildiz.atlassian.net/browse/OPS-19
+                      - generic [ref=f16e283]: analiz · 3/9 adım
+                    - generic [ref=f16e284]: durduruldu
+                  - generic [ref=f16e286]:
+                    - generic [ref=f16e287]:
+                      - link "OPS-18" [ref=f16e288] [cursor=pointer]:
+                        - /url: https://uyildiz.atlassian.net/browse/OPS-18
+                      - generic [ref=f16e289]: analiz · 3/9 adım
+                    - generic [ref=f16e290]: durduruldu
+                  - generic [ref=f16e292]:
+                    - generic [ref=f16e293]:
+                      - link "OPS-17" [ref=f16e294] [cursor=pointer]:
+                        - /url: https://uyildiz.atlassian.net/browse/OPS-17
+                      - generic [ref=f16e295]: "analiz · 1/9 adım · role \"analyst\" output invalid after 2 attempt(s): - \"Etki analizi\" bölümü dolu ama Kaynaklar bölümünde bu bölüme ait tek bir kaynak satırı yok — iddiayı ya kaynağa bağla ya da yazma. - \"Test yaklaşımı\" bölümü dolu ama Kaynaklar bölümünde bu bölüme ait tek bir kaynak satırı yok — iddiayı ya kaynağa bağla ya da yazma."
+                    - generic [ref=f16e296]: hata
+  - region

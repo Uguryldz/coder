@@ -1,0 +1,213 @@
+[     550ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  614412ms] [ERROR] [vite] SyntaxError: The requested module '/src/screens/Tickets.tsx?t=1786701120743' does not provide an export named 'TicketsList' @ http://localhost:7000/@vite/client:808
+[  614412ms] [ERROR] [vite] Failed to reload /src/screens/Dash.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  668085ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "dash.all.title" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786701120743:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786701120743:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786701120743:33:27)
+    at DashScreen (http://localhost:7000/src/screens/Dash.tsx?t=1786701963566:201:81)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) The above error occurred in the <DashScreen> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[  668086ms] [ERROR] [studio] render failed MissingMessageError: missing message "dash.all.title" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786701120743:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786701120743:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786701120743:33:27)
+    at DashScreen (http://localhost:7000/src/screens/Dash.tsx?t=1786701963566:201:81)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) 
+    at DashScreen (http://localhost:7000/src/screens/Dash.tsx?t=1786701963566:19:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786701120743:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786701120743:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[  684085ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "dash.all.title" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786701120743:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786701120743:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786701120743:33:27)
+    at DashScreen (http://localhost:7000/src/screens/Dash.tsx?t=1786701979537:201:81)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) The above error occurred in the <DashScreen> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[  684086ms] [ERROR] [studio] render failed MissingMessageError: missing message "dash.all.title" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786701120743:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786701120743:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786701120743:33:27)
+    at DashScreen (http://localhost:7000/src/screens/Dash.tsx?t=1786701979537:201:81)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) 
+    at DashScreen (http://localhost:7000/src/screens/Dash.tsx?t=1786701979537:19:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786701120743:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786701120743:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[  711124ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  764789ms] [ERROR] [vite] ReferenceError: TicketsScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702060379:42:12 @ http://localhost:7000/@vite/client:808
+[  764789ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  924775ms] [ERROR] [vite] ReferenceError: FlowScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702220368:42:9 @ http://localhost:7000/@vite/client:808
+[  924775ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  936834ms] [ERROR] [vite] ReferenceError: PilotScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702232455:40:10 @ http://localhost:7000/@vite/client:808
+[  936834ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  947644ms] [ERROR] [vite] ReferenceError: PilotScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702232455:40:10 @ http://localhost:7000/@vite/client:808
+[  947645ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  954847ms] [ERROR] [vite] ReferenceError: PilotScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702232455:40:10 @ http://localhost:7000/@vite/client:808
+[  954847ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  975371ms] [ERROR] [vite] ReferenceError: PilotScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702269450:40:10 @ http://localhost:7000/@vite/client:808
+[  975371ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[  975383ms] [ERROR] [vite] ReferenceError: PilotScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702269450:40:10 @ http://localhost:7000/@vite/client:808
+[  975383ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[ 1052338ms] [ERROR] [vite] ReferenceError: LlmScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786702347811:57:8 @ http://localhost:7000/@vite/client:808
+[ 1052338ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[ 1061074ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "nav.aiusage" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786702269450:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786702269450:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786702269450:33:27)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:63:17
+    at Array.map (<anonymous>)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:51:15
+    at Array.map (<anonymous>)
+    at Sidebar (http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:40:16)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24) The above error occurred in the <Sidebar> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 1061074ms] [ERROR] [studio] render failed MissingMessageError: missing message "nav.aiusage" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786702269450:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786702269450:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786702269450:33:27)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:63:17
+    at Array.map (<anonymous>)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:51:15
+    at Array.map (<anonymous>)
+    at Sidebar (http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:40:16)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24) 
+    at Sidebar (http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:10:13)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786702356641:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786702269450:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 1069202ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "nav.aiusage" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786702269450:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786702269450:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786702269450:33:27)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:63:17
+    at Array.map (<anonymous>)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:51:15
+    at Array.map (<anonymous>)
+    at Sidebar (http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:40:16)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24) The above error occurred in the <Sidebar> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 1069203ms] [ERROR] [studio] render failed MissingMessageError: missing message "nav.aiusage" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786702269450:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786702269450:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786702269450:33:27)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:63:17
+    at Array.map (<anonymous>)
+    at http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:51:15
+    at Array.map (<anonymous>)
+    at Sidebar (http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:40:16)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24) 
+    at Sidebar (http://localhost:7000/src/shell/Sidebar.tsx?t=1786702356641:10:13)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786702356641:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786702269450:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 1088576ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102

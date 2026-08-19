@@ -1,0 +1,264 @@
+- generic [ref=f7e2]:
+  - generic [ref=f7e23]:
+    - navigation "Ana gezinme" [ref=f7e24]:
+      - generic [ref=f7e25]:
+        - generic [ref=f7e26]: M
+        - generic [ref=f7e27]:
+          - text: Maestro
+          - generic [ref=f7e28]: SDLC otomasyonu
+      - generic [ref=f7e29]:
+        - generic [ref=f7e30]: Operasyon
+        - link "Panel" [ref=f7e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f7e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f7e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f7e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f7e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f7e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f7e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f7e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f7e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f7e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f7e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f7e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f7e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f7e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f7e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f7e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f7e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f7e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f7e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f7e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f7e51]:
+        - generic [ref=f7e52]: Yürütme
+        - link "Runner havuzları" [ref=f7e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f7e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f7e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f7e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f7e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f7e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f7e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f7e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f7e61]:
+        - generic [ref=f7e62]: Ajanlar
+        - link "Variant'lar" [ref=f7e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f7e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f7e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f7e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f7e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f7e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f7e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f7e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f7e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f7e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f7e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f7e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f7e75]:
+        - generic [ref=f7e76]: Yönetişim
+        - link "LLM Gateway" [ref=f7e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f7e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f7e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f7e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f7e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f7e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f7e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f7e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f7e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f7e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f7e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f7e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f7e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f7e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f7e91]:
+        - generic [ref=f7e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f7e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f7e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f7e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f7e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f7e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f7e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f7e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f7e100]: ➕
+          - text: Uygulama ekle
+        - link "Ayarlar & bağlantılar" [ref=f7e101] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f7e102]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f7e103] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f7e104]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f7e105] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f7e106]: ✔
+          - text: Karar defteri
+    - generic [ref=f7e107]:
+      - banner [ref=f7e108]:
+        - heading "Variant'lar" [level=1] [ref=f7e109]
+        - generic [ref=f7e110]:
+          - generic [ref=f7e111]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f7e112]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f7e113]: ayse.kaya@ugurbank.local
+        - button "Çıkış" [ref=f7e114] [cursor=pointer]
+      - main [ref=f7e115]:
+        - generic [ref=f7e116]:
+          - generic [ref=f7e117]:
+            - heading "Ajan variant'ları" [level=3] [ref=f7e118]
+            - generic [ref=f7e119]: 7 rol × platform · her biri versiyonlu persona + knowledge
+          - table [ref=f7e122]:
+            - rowgroup [ref=f7e123]:
+              - row [ref=f7e124]:
+                - columnheader "Variant" [ref=f7e125]
+                - columnheader "Rol" [ref=f7e126]
+                - columnheader "Platform" [ref=f7e127]
+                - columnheader "Model" [ref=f7e128]
+                - columnheader "Aktif sürüm" [ref=f7e129]
+                - columnheader "Knowledge" [ref=f7e130]
+                - columnheader "Eval skoru" [ref=f7e131]
+            - rowgroup [ref=f7e132]:
+              - button [ref=f7e133]:
+                - cell "intake-default" [ref=f7e134]
+                - cell "alım" [ref=f7e135]
+                - cell "default" [ref=f7e136]
+                - cell [ref=f7e137]:
+                  - code [ref=f7e138]: claude-haiku-4-5
+                - cell "v3" [ref=f7e139]
+                - cell "2 dosya" [ref=f7e141]
+                - cell "97" [ref=f7e142]
+              - button [ref=f7e144]:
+                - cell "analyst-desktop" [ref=f7e145]
+                - cell "analist" [ref=f7e146]
+                - cell "desktop" [ref=f7e147]
+                - cell [ref=f7e148]:
+                  - code [ref=f7e149]: claude-opus-5
+                - cell "v3" [ref=f7e150]
+                - cell "2 dosya" [ref=f7e152]
+                - cell "88" [ref=f7e153]
+              - button [ref=f7e155]:
+                - cell "analyst-ios" [ref=f7e156]
+                - cell "analist" [ref=f7e157]
+                - cell "mobile-ios" [ref=f7e158]
+                - cell [ref=f7e159]:
+                  - code [ref=f7e160]: claude-opus-5
+                - cell "v4" [ref=f7e161]
+                - cell "2 dosya" [ref=f7e163]
+                - cell "91" [ref=f7e164]
+              - button [ref=f7e166]:
+                - cell "analyst-web" [ref=f7e167]
+                - cell "analist" [ref=f7e168]
+                - cell "web" [ref=f7e169]
+                - cell [ref=f7e170]:
+                  - code [ref=f7e171]: claude-opus-5
+                - cell "v7" [ref=f7e172]
+                - cell "2 dosya" [ref=f7e174]
+                - cell "94" [ref=f7e175]
+              - button [ref=f7e177]:
+                - cell "engineer-desktop" [ref=f7e178]
+                - cell "geliştirici" [ref=f7e179]
+                - cell "desktop" [ref=f7e180]
+                - cell [ref=f7e181]:
+                  - code [ref=f7e182]: claude-opus-5
+                - cell "v6" [ref=f7e183]
+                - cell "2 dosya" [ref=f7e185]
+                - cell "85" [ref=f7e186]
+              - button [ref=f7e188]:
+                - cell "engineer-ios" [ref=f7e189]
+                - cell "geliştirici" [ref=f7e190]
+                - cell "mobile-ios" [ref=f7e191]
+                - cell [ref=f7e192]:
+                  - code [ref=f7e193]: claude-opus-5
+                - cell "v5" [ref=f7e194]
+                - cell "2 dosya" [ref=f7e196]
+                - cell "89" [ref=f7e197]
+              - button [ref=f7e199]:
+                - cell "engineer-web" [ref=f7e200]
+                - cell "geliştirici" [ref=f7e201]
+                - cell "web" [ref=f7e202]
+                - cell [ref=f7e203]:
+                  - code [ref=f7e204]: claude-opus-5
+                - cell "v11" [ref=f7e205]
+                - cell "2 dosya" [ref=f7e207]
+                - cell "96" [ref=f7e208]
+              - button [ref=f7e210]:
+                - cell "reviewer-web" [ref=f7e211]
+                - cell "kod gözden geçiren" [ref=f7e212]
+                - cell "web" [ref=f7e213]
+                - cell [ref=f7e214]:
+                  - code [ref=f7e215]: claude-opus-5
+                - cell "v9" [ref=f7e216]
+                - cell "2 dosya" [ref=f7e218]
+                - cell "93" [ref=f7e219]
+              - button [ref=f7e221]:
+                - cell "testdes-web" [ref=f7e222]
+                - cell "test tasarımcısı" [ref=f7e223]
+                - cell "web" [ref=f7e224]
+                - cell [ref=f7e225]:
+                  - code [ref=f7e226]: claude-sonnet-5
+                - cell "v8" [ref=f7e227]
+                - cell "2 dosya" [ref=f7e229]
+                - cell "90" [ref=f7e230]
+        - paragraph [ref=f7e232]: "Sürümler değişmez: yeni sürüm yayınlanır, tek adımda geri alınır; çalışan iş akışları kendi sürümüyle biter."
+  - region

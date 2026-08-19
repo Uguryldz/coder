@@ -282,7 +282,7 @@ services:
     environment:
       <<: [*node-env, *node-secrets]
       # Tek imaj, üç rol: entrypoint env ile seçilir.
-      MAESTRO_ENTRYPOINT: apps/deploy/src/bin/migrate.ts
+      MAESTRO_ENTRYPOINT: apps/deploy/dist/bin/migrate.js
     volumes: *ca-volumes
     depends_on:
       postgres:
@@ -297,7 +297,7 @@ services:
     image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env)}
     environment:
       <<: [*node-env, *node-secrets]
-      MAESTRO_ENTRYPOINT: apps/deploy/src/bin/bff.ts
+      MAESTRO_ENTRYPOINT: apps/deploy/dist/bin/bff.js
       # 7001 SABİT — .env'den GELMEZ, ve bu bilinçli bir kısıtlamadır.
       #
       # Bu, BFF'in KONTEYNER İÇİNDEKİ dinleme portudur; dışarıya hiç
@@ -341,7 +341,7 @@ services:
     image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env)}
     environment:
       <<: [*node-env, *node-secrets]
-      MAESTRO_ENTRYPOINT: apps/deploy/src/bin/worker.ts
+      MAESTRO_ENTRYPOINT: apps/deploy/dist/bin/worker.js
     volumes: *ca-volumes
     depends_on:
       temporal: { condition: service_healthy }

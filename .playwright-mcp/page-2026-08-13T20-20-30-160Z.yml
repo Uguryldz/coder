@@ -1,0 +1,165 @@
+- generic [ref=f127e2]:
+  - generic [ref=f127e23]:
+    - navigation "Ana gezinme" [ref=f127e24]:
+      - generic [ref=f127e25]:
+        - generic [ref=f127e26]: M
+        - generic [ref=f127e27]:
+          - text: Maestro
+          - generic [ref=f127e28]: SDLC otomasyonu
+      - generic [ref=f127e29]:
+        - generic [ref=f127e30]: İzleme
+        - link "Panel" [ref=f127e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f127e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f127e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f127e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f127e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f127e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f127e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f127e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f127e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f127e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f127e41]:
+        - generic [ref=f127e42]: Çalışma
+        - link "Runner havuzları" [ref=f127e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f127e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f127e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f127e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f127e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f127e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f127e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f127e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f127e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f127e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f127e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f127e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f127e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f127e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f127e57]:
+        - generic [ref=f127e58]: Yönetişim
+        - link "Denetim izi" [ref=f127e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f127e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f127e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f127e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f127e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f127e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f127e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f127e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f127e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f127e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f127e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f127e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f127e71]:
+        - generic [ref=f127e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f127e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f127e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f127e75] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f127e76]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [active] [ref=f127e77] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f127e78]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f127e79] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f127e80]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f127e81] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f127e82]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f127e83] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f127e84]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f127e85] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f127e86]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f127e87] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f127e88]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f127e89]:
+      - banner [ref=f127e90]:
+        - heading "Uygulama ekle" [level=1] [ref=f127e110]
+        - generic [ref=f127e92]:
+          - generic [ref=f127e93]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f127e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f127e95]: admin
+        - button "Çıkış" [ref=f127e96] [cursor=pointer]
+      - main [ref=f127e97]:
+        - generic [ref=f127e111]:
+          - list [ref=f127e112]:
+            - listitem [ref=f127e113]: 1 · Jira kaynağı
+            - listitem [ref=f127e114]: 2 · Repo ve politika
+            - listitem [ref=f127e115]: 3 · .maestro.yaml
+            - listitem [ref=f127e116]: 4 · Kapı ve tetikleme
+          - generic [ref=f127e117]:
+            - generic [ref=f127e118]:
+              - heading "Jira projesi ve hedef repo" [level=3] [ref=f127e119]
+              - generic [ref=f127e120]: Bu projenin ticket'ları hangi repoya gider?
+            - generic [ref=f127e121]:
+              - generic [ref=f127e122]:
+                - generic [ref=f127e123]:
+                  - generic [ref=f127e124]: Jira projesi
+                  - combobox "Jira projesi" [ref=f127e125]:
+                    - option "— seç —" [selected]
+                - generic [ref=f127e126]:
+                  - generic [ref=f127e127]: ADO reposu
+                  - combobox "ADO reposu" [ref=f127e128]:
+                    - option "— seç —" [selected]
+              - generic [ref=f127e129]: Kural eşleşmeyen ticket asla sessizce bir repoya gitmez.
+          - generic [ref=f127e130]:
+            - generic [ref=f127e131]:
+              - heading "Kuru koşum (M102)" [level=3] [ref=f127e132]
+              - generic [ref=f127e133]: Son ticket'lar bu kurallarla nereye düşerdi?
+              - button "Kuru koşum yap" [disabled] [ref=f127e135]
+            - paragraph [ref=f127e137]: Önce Jira projesi ve repo seç.
+          - generic [ref=f127e138]:
+            - heading "İşlemler" [level=3] [ref=f127e140]
+            - generic [ref=f127e141]:
+              - button "İleri" [ref=f127e143] [cursor=pointer]
+              - generic [ref=f127e144]: "Bu sihirbaz canlı yapılandırma üretmez: paket admin onayına gider. Onaydan sonra eşleme kuralı, .maestro.yaml PR'ı ve gerekiyorsa taslak pipeline oluşturulur."
+  - region

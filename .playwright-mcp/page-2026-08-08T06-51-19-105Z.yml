@@ -1,0 +1,332 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: M
+      - generic [ref=e6]:
+        - text: Maestro
+        - generic [ref=e7]: UI prototipi · mock veri
+    - generic [ref=e8]:
+      - generic [ref=e9]: Operasyon
+      - link "▦ Panel" [ref=e10] [cursor=pointer]:
+        - /url: "#dash"
+        - generic [ref=e11]: ▦
+        - text: Panel
+      - link "📖 Yardım — nasıl kullanılır?" [ref=e12] [cursor=pointer]:
+        - /url: "#help"
+        - generic [ref=e13]: 📖
+        - text: Yardım — nasıl kullanılır?
+      - link "🎬 Canlı demo (vibe)" [ref=e14] [cursor=pointer]:
+        - /url: "#live"
+        - generic [ref=e15]: 🎬
+        - text: Canlı demo (vibe)
+      - link "≡ İş akışları 22" [ref=e16] [cursor=pointer]:
+        - /url: "#tickets"
+        - generic [ref=e17]: ≡
+        - text: İş akışları
+        - generic [ref=e18]: "22"
+      - link "⑂ Ana ticket (fan-out)" [ref=e19] [cursor=pointer]:
+        - /url: "#fanout"
+        - generic [ref=e20]: ⑂
+        - text: Ana ticket (fan-out)
+      - link "❓ Clarification (2b)" [ref=e21] [cursor=pointer]:
+        - /url: "#clarify"
+        - generic [ref=e22]: ❓
+        - text: Clarification (2b)
+      - link "⇋ Work mode & devir" [ref=e23] [cursor=pointer]:
+        - /url: "#workmode"
+        - generic [ref=e24]: ⇋
+        - text: Work mode & devir
+      - link "✦ Yeni proje sihirbazı" [ref=e25] [cursor=pointer]:
+        - /url: "#greenfield"
+        - generic [ref=e26]: ✦
+        - text: Yeni proje sihirbazı
+      - link "💬 Jira'da görünüm" [ref=e27] [cursor=pointer]:
+        - /url: "#jira"
+        - generic [ref=e28]: 💬
+        - text: Jira'da görünüm
+      - link "⌨ Jira komut seti" [ref=e29] [cursor=pointer]:
+        - /url: "#commands"
+        - generic [ref=e30]: ⌨
+        - text: Jira komut seti
+      - generic [ref=e31]: Yürütme
+      - link "🖥 Runner havuzları" [ref=e32] [cursor=pointer]:
+        - /url: "#runners"
+        - generic [ref=e33]: 🖥
+        - text: Runner havuzları
+      - link "▶ Canlı sandbox oturumu" [ref=e34] [cursor=pointer]:
+        - /url: "#sandbox"
+        - generic [ref=e35]: ▶
+        - text: Canlı sandbox oturumu
+      - link "🗄 Cache & çalışma alanı" [ref=e36] [cursor=pointer]:
+        - /url: "#cache"
+        - generic [ref=e37]: 🗄
+        - text: Cache & çalışma alanı
+      - link "📄 .maestro.yaml" [ref=e38] [cursor=pointer]:
+        - /url: "#yaml"
+        - generic [ref=e39]: 📄
+        - text: .maestro.yaml
+      - generic [ref=e40]: Ajanlar
+      - link "🤖 Variant'lar 9" [ref=e41] [cursor=pointer]:
+        - /url: "#variants"
+        - generic [ref=e42]: 🤖
+        - text: Variant'lar
+        - generic [ref=e43]: "9"
+      - link "⚙ Variant detayı" [ref=e44] [cursor=pointer]:
+        - /url: "#variant"
+        - generic [ref=e45]: ⚙
+        - text: Variant detayı
+      - link "🎯 Eval / golden ticket" [ref=e46] [cursor=pointer]:
+        - /url: "#eval"
+        - generic [ref=e47]: 🎯
+        - text: Eval / golden ticket
+      - link "📚 Knowledge kütüphanesi" [ref=e48] [cursor=pointer]:
+        - /url: "#knowledge"
+        - generic [ref=e49]: 📚
+        - text: Knowledge kütüphanesi
+      - link "📋 Analiz şablonu" [ref=e50] [cursor=pointer]:
+        - /url: "#template"
+        - generic [ref=e51]: 📋
+        - text: Analiz şablonu
+      - generic [ref=e52]: Yönetişim
+      - link "⚡ LLM Gateway" [ref=e53] [cursor=pointer]:
+        - /url: "#llm"
+        - generic [ref=e54]: ⚡
+        - text: LLM Gateway
+      - link "🔏 PII maskeleme" [ref=e55] [cursor=pointer]:
+        - /url: "#pii"
+        - generic [ref=e56]: 🔏
+        - text: PII maskeleme
+      - link "₺ Maliyet & kota" [ref=e57] [cursor=pointer]:
+        - /url: "#cost"
+        - generic [ref=e58]: ₺
+        - text: Maliyet & kota
+      - link "🔒 Denetim izi" [ref=e59] [cursor=pointer]:
+        - /url: "#audit"
+        - generic [ref=e60]: 🔒
+        - text: Denetim izi
+      - link "📦 Kanıt paketi" [ref=e61] [cursor=pointer]:
+        - /url: "#evidence"
+        - generic [ref=e62]: 📦
+        - text: Kanıt paketi
+      - link "🛡 Güvenlik bulguları" [ref=e63] [cursor=pointer]:
+        - /url: "#security"
+        - generic [ref=e64]: 🛡
+        - text: Güvenlik bulguları
+      - link "🔔 Bildirim & eskalasyon" [ref=e65] [cursor=pointer]:
+        - /url: "#notify"
+        - generic [ref=e66]: 🔔
+        - text: Bildirim & eskalasyon
+      - generic [ref=e67]: Sistem
+      - link "⇄ Jira bağlantısı & eşleme" [ref=e68] [cursor=pointer]:
+        - /url: "#routing"
+        - generic [ref=e69]: ⇄
+        - text: Jira bağlantısı & eşleme
+      - link "🎛 Parametreler (DB)" [ref=e70] [cursor=pointer]:
+        - /url: "#params"
+        - generic [ref=e71]: 🎛
+        - text: Parametreler (DB)
+      - link "🔌 Maestro MCP" [ref=e72] [cursor=pointer]:
+        - /url: "#mcp"
+        - generic [ref=e73]: 🔌
+        - text: Maestro MCP
+      - link "➕ Uygulama ekle" [ref=e74] [cursor=pointer]:
+        - /url: "#onboard"
+        - generic [ref=e75]: ➕
+        - text: Uygulama ekle
+      - link "👥 Kullanıcılar & roller" [ref=e76] [cursor=pointer]:
+        - /url: "#users"
+        - generic [ref=e77]: 👥
+        - text: Kullanıcılar & roller
+      - link "⚙ Ayarlar & bağlantılar" [ref=e78] [cursor=pointer]:
+        - /url: "#settings"
+        - generic [ref=e79]: ⚙
+        - text: Ayarlar & bağlantılar
+      - link "💚 Sistem sağlığı" [ref=e80] [cursor=pointer]:
+        - /url: "#health"
+        - generic [ref=e81]: 💚
+        - text: Sistem sağlığı
+      - link "🔑 Giriş ekranı" [ref=e82] [cursor=pointer]:
+        - /url: "#login"
+        - generic [ref=e83]: 🔑
+        - text: Giriş ekranı
+      - link "✔ ✓ Karar defteri" [ref=e84] [cursor=pointer]:
+        - /url: "#issues"
+        - generic [ref=e85]: ✔
+        - text: ✓ Karar defteri
+    - generic [ref=e86]:
+      - generic [ref=e87]: Bu bir tıklanabilir maket. Veriler sahte, kod yok.
+      - generic [ref=e88]:
+        - button "🌓 Tema" [ref=e89] [cursor=pointer]
+        - button "🌐 TR" [ref=e90] [cursor=pointer]
+  - main [ref=e91]:
+    - generic [ref=e92]:
+      - generic [ref=e93]:
+        - heading "Yardım — Maestro nasıl kullanılır?" [level=1] [ref=e94]
+        - generic [ref=e95]: "Rolüne göre oku: iş tarafı 2 dakika · geliştirici 3 dakika · admin 10 dakika"
+      - textbox "🔍 Ticket ara… (ör. UGURWEB)" [ref=e97]:
+        - /placeholder: 🔍 Ticket ara…  (ör. UGURWEB)
+      - button "🔔 4" [ref=e98] [cursor=pointer]
+      - generic [ref=e99]: Sistem sağlıklı
+      - generic [ref=e101]: 👤 Uğur Yıldız · admin
+    - generic [ref=e102]:
+      - generic [ref=e104]:
+        - text: "Maestro tek paragrafta: Jira'ya ticket yazarsın → Maestro okur, eksik varsa yorumla sorar → analiz yazar → sen onaylarsın ("
+        - code [ref=e105]: /approve
+        - text: ) → kodu izole sandbox'ta yazar, testleri gerçekten koşturur → ADO'ya PR açar → insan onaylar → merge. Prod'a hiçbir şey çıkarmaz — release kurumun kendi sürecidir.
+        - generic [ref=e106]:
+          - text: "En hızlı öğrenme yolu:"
+          - link "🎬 Canlı demoyu" [ref=e107] [cursor=pointer]:
+            - /url: "#live"
+          - text: bir kez izle (~40 saniye).
+      - generic [ref=e108]:
+        - generic [ref=e110]:
+          - text: 👤 İş tarafı / PO
+          - generic [ref=e111]:
+            - text: Jira'dan hiç çıkmazsın. Ticket yazarsın, gelen analiz yorumuna
+            - code [ref=e112]: /approve
+            - text: veya
+            - code [ref=e113]: /reject <sebep>
+            - text: dersin. Studio'ya girmen gerekmez.
+          - link "Jira görünümünü gör →" [ref=e114] [cursor=pointer]:
+            - /url: "#jira"
+        - generic [ref=e116]:
+          - text: 💻 Geliştirici
+          - generic [ref=e117]:
+            - text: Jira + ADO. PR'ı ADO'da incelersin; istersen
+            - code [ref=e118]: /mode-change
+            - text: ile işi devralırsın, Maestro izlemeye geçer.
+          - link "Work mode'ları gör →" [ref=e119] [cursor=pointer]:
+            - /url: "#workmode"
+        - generic [ref=e121]:
+          - text: 🔧 Admin (kurulumu yapan)
+          - generic [ref=e122]: "Studio senin ekranın: bağlantılar, proje bağlama, parametreler, izleme. Aşağıdaki 'İlk kurulum' sırasını izle."
+          - link "Ayarları gör →" [ref=e123] [cursor=pointer]:
+            - /url: "#settings"
+      - generic [ref=e124]:
+        - generic [ref=e125]:
+          - generic [ref=e126]:
+            - heading "🙋 \"İş analizi alacağım\" — adım adım" [level=3] [ref=e127]
+            - generic [ref=e128]: en sık ilk kullanım
+          - generic [ref=e129]:
+            - generic [ref=e130]:
+              - text: ① Jira'da normal bir ticket aç — serbest metin yeterli, zorunlu alan yok (M98). Projen opt-in modundaysa
+              - code [ref=e131]: maestro
+              - text: etiketi ekle ya da yoruma
+              - code [ref=e132]: /ai-start
+              - text: "yaz. ② Maestro dakikalar içinde ilk yorumu atar. Bilgi eksikse soru sorar — yorumla cevaplarsın, form doldurmazsın. Uydurma yasak: bilmediğini sormak zorunda. ③ \"📋 Analiz hazır\" yorumu gelir: amaç, kapsam, etki matrisi, kabul kriterleri, risk. Şablon kurumunkidir (Studio → Analiz şablonu). ④ Beğendiysen"
+              - code [ref=e133]: /approve
+              - text: . Eksikse
+              - code [ref=e134]: /reject <sebep>
+              - text: "— ajan AYNI oturumda düzeltir, sıfırdan başlamaz. ⑤ Onaydan sonrası work mode'a göre: kodu da Maestro yazsın istemiyorsan"
+              - code [ref=e135]: /mode-change human_lead
+              - text: de — analiz sende kalır, kodu insan yazar.
+            - generic [ref=e136]: İlk haftalarda ret NORMAL. Kalıcı iyileşme, Knowledge'a örnek analiz ve doküman eklemekle olur — otomatik öğrenme yok (v2).
+        - generic [ref=e137]:
+          - generic [ref=e138]:
+            - heading "⚙ İlk kurulum sırası (admin)" [level=3] [ref=e139]
+            - generic [ref=e140]: Jira nasıl bağlanır dahil — M102
+          - generic [ref=e142]:
+            - text: ①
+            - link "Ayarlar & bağlantılar" [ref=e143] [cursor=pointer]:
+              - /url: "#settings"
+            - text: ": Jira DC adresi + servis hesabı PAT'i, ADO PAT, Vault, LLM hesapları. Secret'lar Vault'a yazılır. ② Jira admin'inden tek seferlik TEK global webhook iste (issue created/updated + comment). Proje başına webhook/JQL bakımı YOK — filtre Maestro içinde. ③ Servis hesabı izinleri: Browse · Comment · Edit(label) · Assign · Create/Link Issue. İstenmeyenler: workflow değişikliği, özel alan, eklenti — kuruma sıfır Jira admin yükü. ④"
+            - link "Uygulama ekle" [ref=e144] [cursor=pointer]:
+              - /url: "#onboard"
+            - text: "sihirbazı: ADO repo'yu bağla →"
+            - code [ref=e145]: .maestro.yaml
+            - text: PR önerisi → repo kartı AI keşfi → admin onayı. ⑤
+            - link "Jira bağlantısı & eşleme" [ref=e146] [cursor=pointer]:
+              - /url: "#routing"
+            - text: ": projeyi bağla, tetikleme modunu (otomatik / etiket / komut) ve eşleme kurallarını seç. ⑥ Kuru koşum zorunlu: son 20 ticket \"nereye düşerdi\" önizlemesi → beğendiysen aktive et. Sonrasında proje bazlı pause/unbind her an mümkün."
+      - generic [ref=e147]:
+        - generic [ref=e148]:
+          - generic [ref=e149]:
+            - heading "🖥 On-prem kurulum — neye bağlanır?" [level=3] [ref=e150]
+            - generic [ref=e151]: her şey kurum içinde
+          - generic [ref=e152]:
+            - generic [ref=e153]: "Maestro, kurum içi bir Linux sunucuda Docker compose ile koşar; herkes tarayıcıdan girer, kimseye kurulum yapılmaz. Dışa bağlantıları:"
+            - table [ref=e154]:
+              - rowgroup [ref=e155]:
+                - row [ref=e156]:
+                  - cell "Jira DC" [ref=e157]
+                  - cell "ticket + yorum + webhook" [ref=e158]
+                  - cell "kurum içi" [ref=e159]
+                - row [ref=e160]:
+                  - cell "ADO (Server/Services)" [ref=e161]
+                  - cell "repo + PR + build validation" [ref=e162]
+                  - cell "kurum içi / bulut" [ref=e163]
+                - row [ref=e164]:
+                  - cell "LLM" [ref=e165]
+                  - cell "abonelik havuzu · API · veya on-prem vLLM" [ref=e166]
+                  - cell "proxy'den / kurum içi" [ref=e167]
+                - row [ref=e168]:
+                  - cell "Vault" [ref=e169]
+                  - cell "tüm secret'lar" [ref=e170]
+                  - cell "kurum içi" [ref=e171]
+                - row [ref=e172]:
+                  - cell "S3-uyumlu depolama" [ref=e173]
+                  - cell "kanıt paketleri + arşiv" [ref=e174]
+                  - cell "kurum içi" [ref=e175]
+                - row [ref=e176]:
+                  - cell "SIEM" [ref=e177]
+                  - cell "denetim izi (CEF)" [ref=e178]
+                  - cell "kurum içi" [ref=e179]
+            - generic [ref=e180]: "İçeri açık port YOK: Windows/macOS build makineleri Maestro'ya outbound gRPC ile bağlanır. Tüm dış çıkış egress proxy üzerinden, hedef listesi kısıtlı. Gizli veri sınıfı işler cloud LLM'e çıkmaz — on-prem model veya ai-assist'e düşer."
+        - generic [ref=e181]:
+          - generic [ref=e182]:
+            - heading "📚 AI neye göre çalışıyor?" [level=3] [ref=e183]
+            - generic [ref=e184]: "\"eğitim\" = knowledge paketi"
+          - generic [ref=e185]:
+            - generic [ref=e186]: "Model, kurumunu Knowledge kütüphanesinden öğrenir — sen ne yüklersen o: · Analiz şablonu (kurumunki; yoksa 7 bölümlük varsayılan) · 2-3 örnek geçmiş analiz — \"bizde böyle yazılır\" örneği · Kodlama standartları (varsa) · Repo kartları — her uygulamanın modül özeti; onboarding'de AI keşfeder, sen düzeltirsin, her merge'te tazelenir · Güvenlik politikası, süreç dokümanları — geldikçe, versiyonlu."
+            - generic [ref=e187]:
+              - text: "Emniyet şeridi: bilmediğini sormak zorunda (uydurmak yasak) · hiçbir analiz insan onayı olmadan koda dönmez ·"
+              - code [ref=e188]: protected_paths
+              - text: dizinlerine AI dokunamaz.
+            - link "Knowledge kütüphanesi →" [ref=e189] [cursor=pointer]:
+              - /url: "#knowledge"
+      - generic [ref=e190]:
+        - generic [ref=e191]:
+          - generic [ref=e192]:
+            - heading "⌨ Jira komutları" [level=3] [ref=e193]
+            - generic [ref=e194]: hepsi yorum olarak yazılır
+          - generic [ref=e195]:
+            - table [ref=e196]:
+              - rowgroup [ref=e197]:
+                - row [ref=e198]:
+                  - cell "/approve" [ref=e199]
+                  - cell "kapıyı onayla (yetki + SoD otomatik doğrulanır)" [ref=e200]
+                - row [ref=e201]:
+                  - cell "/reject" [ref=e202]
+                  - cell "reddet — gerekçe ajana aynı oturumda iletilir" [ref=e203]
+                - row [ref=e204]:
+                  - cell "/status" [ref=e205]
+                  - cell "işin hangi adımda olduğunu özetler" [ref=e206]
+                - row [ref=e207]:
+                  - cell "/ai-explain" [ref=e208]
+                  - cell "son değişikliği sade dille anlatır" [ref=e209]
+                - row [ref=e210]:
+                  - cell "/ai-start" [ref=e211]
+                  - cell "opt-in projede akışı başlatır" [ref=e212]
+                - row [ref=e213]:
+                  - cell "/ai-assign" [ref=e214]
+                  - cell "eşleşemeyen ticket'ı uygulamaya atar" [ref=e215]
+                - row [ref=e216]:
+                  - cell "/mode-change" [ref=e217]
+                  - cell "work mode değiştirir (full_auto · ai_assist · human_lead · human_only)" [ref=e218]
+                - row [ref=e219]:
+                  - cell "/ai-takeover" [ref=e220]
+                  - cell "insandaki işi AI'ye devreder (branch rebase edilir)" [ref=e221]
+            - link "Tam komut seti →" [ref=e222] [cursor=pointer]:
+              - /url: "#commands"
+        - generic [ref=e223]:
+          - heading "🚨 Bir şey ters giderse" [level=3] [ref=e225]
+          - generic [ref=e227]:
+            - text: "· Analiz/kod beğenilmedi:"
+            - code [ref=e228]: /reject <sebep>
+            - text: "— normal akış, ajan düzeltir. · Ajan takıldı: 3 ret veya 3 CI hatasında iş OTOMATİK insana devrolur; bildirim gider. · Acil iş: Maestro'yu beklemeden insan yapar (human-only) — Maestro sonradan kanıt kaydı üretir. · Şüpheli durum: 2 seviyeli kill-switch: yalnız yeni iş alımını durdur / her şeyi durdur ("
+            - link "Ayarlar" [ref=e229] [cursor=pointer]:
+              - /url: "#settings"
+            - text: "). · \"Kim ne yaptı?\": her adım"
+            - link "denetim izinde" [ref=e230] [cursor=pointer]:
+              - /url: "#audit"
+            - text: — hash zincirli, silinemez; iş bitiminde kanıt paketi.

@@ -1,0 +1,22 @@
+- generic [ref=f16e2]:
+  - main [ref=f16e3]:
+    - generic [ref=f16e4]:
+      - generic [ref=f16e5]:
+        - generic [ref=f16e6]: M
+        - generic [ref=f16e7]:
+          - text: Maestro
+          - generic [ref=f16e8]: SDLC otomasyonu
+      - generic [ref=f16e11]:
+        - generic [ref=f16e12]:
+          - generic [ref=f16e13]: Kullanıcı adı
+          - textbox "Kullanıcı adı" [ref=f16e14]
+        - generic [ref=f16e15]:
+          - generic [ref=f16e16]: Parola
+          - textbox "Parola" [ref=f16e17]
+        - button "Giriş yap" [ref=f16e18] [cursor=pointer]
+      - generic [ref=f16e20]:
+        - generic [ref=f16e21]: Dil
+        - combobox "Dil" [ref=f16e22]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+  - region

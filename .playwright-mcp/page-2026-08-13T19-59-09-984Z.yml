@@ -1,0 +1,377 @@
+- generic [ref=f120e2]:
+  - generic [ref=f120e23]:
+    - navigation "Ana gezinme" [ref=f120e24]:
+      - generic [ref=f120e25]:
+        - generic [ref=f120e26]: M
+        - generic [ref=f120e27]:
+          - text: Maestro
+          - generic [ref=f120e28]: SDLC otomasyonu
+      - generic [ref=f120e29]:
+        - generic [ref=f120e30]: İzleme
+        - link "Panel" [ref=f120e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f120e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f120e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f120e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f120e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f120e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f120e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f120e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f120e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f120e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f120e41]:
+        - generic [ref=f120e42]: Çalışma
+        - link "Runner havuzları" [ref=f120e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f120e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f120e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f120e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f120e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f120e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f120e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f120e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f120e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f120e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f120e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f120e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f120e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f120e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f120e57]:
+        - generic [ref=f120e58]: Yönetişim
+        - link "Denetim izi" [ref=f120e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f120e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f120e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f120e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f120e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f120e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f120e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f120e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f120e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f120e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f120e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f120e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f120e71]:
+        - generic [ref=f120e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f120e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f120e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f120e75] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f120e76]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f120e77] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f120e78]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f120e79] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f120e80]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [active] [ref=f120e81] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f120e82]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f120e83] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f120e84]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f120e85] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f120e86]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f120e87] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f120e88]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f120e89]:
+      - banner [ref=f120e90]:
+        - heading "Parametreler (DB)" [level=1] [ref=f120e414]
+        - generic [ref=f120e92]:
+          - generic [ref=f120e93]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f120e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f120e95]: admin
+        - button "Çıkış" [ref=f120e96] [cursor=pointer]
+      - main [ref=f120e97]:
+        - generic [ref=f120e415]:
+          - generic [ref=f120e416]:
+            - generic [ref=f120e417]:
+              - heading "Parametreler" [level=3] [ref=f120e418]
+              - generic [ref=f120e419]: DB'de · versiyonlu · audit'li (M71)
+            - table [ref=f120e422]:
+              - caption [ref=f120e423]: Parametreler
+              - rowgroup [ref=f120e424]:
+                - row [ref=f120e425]:
+                  - columnheader "Parametre" [ref=f120e426]
+                  - columnheader "Değer" [ref=f120e427]
+                  - columnheader "Kapsam" [ref=f120e428]
+                  - columnheader "Sürüm" [ref=f120e429]
+                  - columnheader "Değiştiren" [ref=f120e430]
+                  - columnheader "İşlem" [ref=f120e431]
+              - rowgroup [ref=f120e432]:
+                - row [ref=f120e433]:
+                  - cell "binding.dry_run_sample_size Proje bağlarken kuru koşumda incelenecek ticket sayısı" [ref=f120e434]:
+                    - generic [ref=f120e435]:
+                      - code [ref=f120e436]: binding.dry_run_sample_size
+                      - generic [ref=f120e437]: Proje bağlarken kuru koşumda incelenecek ticket sayısı
+                  - cell "20" [ref=f120e438]
+                  - cell "proje" [ref=f120e440]
+                  - cell "v1" [ref=f120e442]
+                  - cell "installer" [ref=f120e444]
+                  - cell [ref=f120e445]:
+                    - button "Düzenle" [ref=f120e446] [cursor=pointer]
+                - row [ref=f120e447]:
+                  - cell "build.timeout_min CI build sonucunun beklenme süresi (dakika)" [ref=f120e448]:
+                    - generic [ref=f120e449]:
+                      - code [ref=f120e450]: build.timeout_min
+                      - generic [ref=f120e451]: CI build sonucunun beklenme süresi (dakika)
+                  - 'cell "{ \"byPlatform\": { \"linux-node\": 30, \"macos-xcode\": 60, \"linux-android\": 30, \"windows-dotnet\": 45 }, \"autoRequeueCount\": 1 }" [ref=f120e452]'
+                  - cell "global" [ref=f120e454]
+                  - cell "v1" [ref=f120e456]
+                  - cell "installer" [ref=f120e458]
+                  - cell [ref=f120e459]:
+                    - button "Düzenle" [ref=f120e460] [cursor=pointer]
+                - row [ref=f120e461]:
+                  - cell "coverage.ratchet 4-göz Kapsam düşemez kuralı ve yeni satır kapsam eşiği" [ref=f120e462]:
+                    - generic [ref=f120e463]:
+                      - code [ref=f120e464]: coverage.ratchet
+                      - generic [ref=f120e465]: 4-göz
+                      - generic [ref=f120e466]: Kapsam düşemez kuralı ve yeni satır kapsam eşiği
+                  - 'cell "{ \"allowDecrease\": false, \"minNewLinePct\": 80 }" [ref=f120e467]'
+                  - cell "uygulama" [ref=f120e469]
+                  - cell "v1" [ref=f120e471]
+                  - cell "installer" [ref=f120e473]
+                  - cell [ref=f120e474]:
+                    - button "İncele" [ref=f120e475] [cursor=pointer]
+                - row [ref=f120e476]:
+                  - cell "dataclass.policy 4-göz Gizli veri sınıfında on-prem model yoksa davranış" [ref=f120e477]:
+                    - generic [ref=f120e478]:
+                      - code [ref=f120e479]: dataclass.policy
+                      - generic [ref=f120e480]: 4-göz
+                      - generic [ref=f120e481]: Gizli veri sınıfında on-prem model yoksa davranış
+                  - 'cell "{ \"backendByClass\": { \"acik\": \"api\", \"gizli\": \"onprem\", \"dahili\": \"api\" }, \"whenOnpremMissing\": \"degrade_ai_assist\" }" [ref=f120e482]'
+                  - cell "global" [ref=f120e484]
+                  - cell "v1" [ref=f120e486]
+                  - cell "installer" [ref=f120e488]
+                  - cell [ref=f120e489]:
+                    - button "İncele" [ref=f120e490] [cursor=pointer]
+                - row [ref=f120e491]:
+                  - cell "escalation.ladder Hatırlatıcı ve eskalasyon merdiveni" [ref=f120e492]:
+                    - generic [ref=f120e493]:
+                      - code [ref=f120e494]: escalation.ladder
+                      - generic [ref=f120e495]: Hatırlatıcı ve eskalasyon merdiveni
+                  - 'cell "{ \"steps\": [ { \"id\": \"reminder-24h\", \"event\": \"gate_reminder\", \"channel\": \"jira\", \"afterHours\": 24 }, { \"id\": \"escalation-72h\", \"event\": \"escalation\", \"channel\": \"teams\", \"afterHours\": 72 }, { \"id\": \"delegate-7d\", \"event\": \"escalation\", \"action\": \"delegate\", \"channel\": \"smtp\", \"afterHours\": 168, \"messageKey\": \"notify.delegated\" } ], \"businessHoursOnly\": false }" [ref=f120e496]'
+                  - cell "global" [ref=f120e498]
+                  - cell "v1" [ref=f120e500]
+                  - cell "installer" [ref=f120e502]
+                  - cell [ref=f120e503]:
+                    - button "Düzenle" [ref=f120e504] [cursor=pointer]
+                - row [ref=f120e505]:
+                  - cell "gates.risk_tiers 4-göz Risk katmanına göre onay kapısı seti" [ref=f120e506]:
+                    - generic [ref=f120e507]:
+                      - code [ref=f120e508]: gates.risk_tiers
+                      - generic [ref=f120e509]: 4-göz
+                      - generic [ref=f120e510]: Risk katmanına göre onay kapısı seti
+                  - 'cell "{ \"orta\": [ \"4\", \"5\", \"11\", \"12\" ], \"dusuk\": [ \"5\", \"12\" ], \"kritik\": [ \"4\", \"5\", \"9\", \"11\", \"12\" ] }" [ref=f120e511]'
+                  - cell "global" [ref=f120e513]
+                  - cell "v1" [ref=f120e515]
+                  - cell "installer" [ref=f120e517]
+                  - cell [ref=f120e518]:
+                    - button "İncele" [ref=f120e519] [cursor=pointer]
+                - row [ref=f120e520]:
+                  - 'cell "killswitch.state 4-göz Kill-switch durumu: kapalı · yalnız intake · tümü" [ref=f120e521]':
+                    - generic [ref=f120e522]:
+                      - code [ref=f120e523]: killswitch.state
+                      - generic [ref=f120e524]: 4-göz
+                      - generic [ref=f120e525]: "Kill-switch durumu: kapalı · yalnız intake · tümü"
+                  - cell "off" [ref=f120e526]
+                  - cell "global" [ref=f120e528]
+                  - cell "v1" [ref=f120e530]
+                  - cell "installer" [ref=f120e532]
+                  - cell [ref=f120e533]:
+                    - button "İncele" [ref=f120e534] [cursor=pointer]
+                - row [ref=f120e535]:
+                  - cell "lang.output AI çıktı dili (analiz, Jira yorumları)" [ref=f120e536]:
+                    - generic [ref=f120e537]:
+                      - code [ref=f120e538]: lang.output
+                      - generic [ref=f120e539]: AI çıktı dili (analiz, Jira yorumları)
+                  - cell "tr" [ref=f120e540]
+                  - cell "proje" [ref=f120e542]
+                  - cell "v1" [ref=f120e544]
+                  - cell "installer" [ref=f120e546]
+                  - cell [ref=f120e547]:
+                    - button "Düzenle" [ref=f120e548] [cursor=pointer]
+                - row [ref=f120e549]:
+                  - 'cell "merge.mode 4-göz Merge modu: insan-merge (varsayılan) veya otomatik merge" [ref=f120e550]':
+                    - generic [ref=f120e551]:
+                      - code [ref=f120e552]: merge.mode
+                      - generic [ref=f120e553]: 4-göz
+                      - generic [ref=f120e554]: "Merge modu: insan-merge (varsayılan) veya otomatik merge"
+                  - cell "human_merge" [ref=f120e555]
+                  - cell "proje" [ref=f120e557]
+                  - cell "v1" [ref=f120e559]
+                  - cell "installer" [ref=f120e561]
+                  - cell [ref=f120e562]:
+                    - button "İncele" [ref=f120e563] [cursor=pointer]
+                - row [ref=f120e564]:
+                  - cell "notify.reminder_channel Hatırlatıcı ve eskalasyon bildirim kanalı" [ref=f120e565]:
+                    - generic [ref=f120e566]:
+                      - code [ref=f120e567]: notify.reminder_channel
+                      - generic [ref=f120e568]: Hatırlatıcı ve eskalasyon bildirim kanalı
+                  - cell "jira" [ref=f120e569]
+                  - cell "global" [ref=f120e571]
+                  - cell "v1" [ref=f120e573]
+                  - cell "installer" [ref=f120e575]
+                  - cell [ref=f120e576]:
+                    - button "Düzenle" [ref=f120e577] [cursor=pointer]
+                - row [ref=f120e578]:
+                  - cell "notify.routing Hangi olay hangi bildirim kanallarına gider" [ref=f120e579]:
+                    - generic [ref=f120e580]:
+                      - code [ref=f120e581]: notify.routing
+                      - generic [ref=f120e582]: Hangi olay hangi bildirim kanallarına gider
+                  - 'cell "{ \"byEvent\": { \"ci_red\": [ \"jira\" ], \"handover\": [ \"teams\" ], \"gate_open\": [ \"jira\" ], \"escalation\": [ \"teams\", \"smtp\" ], \"quota_wait\": [ \"teams\" ], \"kill_switch\": [ \"teams\", \"smtp\" ], \"gate_reminder\": [ \"jira\" ], \"runner_health\": [ \"teams\" ], \"clarification_reminder\": [ \"jira\" ] }, \"default\": [ \"teams\" ] }" [ref=f120e583]'
+                  - cell "global" [ref=f120e585]
+                  - cell "v1" [ref=f120e587]
+                  - cell "installer" [ref=f120e589]
+                  - cell [ref=f120e590]:
+                    - button "Düzenle" [ref=f120e591] [cursor=pointer]
+                - row [ref=f120e592]:
+                  - cell "notify.teams.webhook Teams Incoming Webhook URL'i (bildirim kanalı). Bir bearer kimlik bilgisi taşır; maskeli okunur." [ref=f120e593]:
+                    - generic [ref=f120e594]:
+                      - code [ref=f120e595]: notify.teams.webhook
+                      - generic [ref=f120e596]: Teams Incoming Webhook URL'i (bildirim kanalı). Bir bearer kimlik bilgisi taşır; maskeli okunur.
+                  - 'cell "{ \"url\": \"https://outlook.office.com/webhook/gizli-secret-xyz789\" }" [ref=f120e597]'
+                  - cell "global" [ref=f120e599]
+                  - cell "v2" [ref=f120e601]
+                  - cell "admin@maestro.local" [ref=f120e603]
+                  - cell [ref=f120e604]:
+                    - button "Düzenle" [ref=f120e605] [cursor=pointer]
+                - row [ref=f120e606]:
+                  - cell "publish.targets Üretilen belgelerin hangi hedeflere yayınlanacağı" [ref=f120e607]:
+                    - generic [ref=f120e608]:
+                      - code [ref=f120e609]: publish.targets
+                      - generic [ref=f120e610]: Üretilen belgelerin hangi hedeflere yayınlanacağı
+                  - 'cell "{ \"analysis\": [ \"jira\" ], \"evidence_summary\": [ \"jira\" ] }" [ref=f120e611]'
+                  - cell "proje" [ref=f120e613]
+                  - cell "v1" [ref=f120e615]
+                  - cell "installer" [ref=f120e617]
+                  - cell [ref=f120e618]:
+                    - button "Düzenle" [ref=f120e619] [cursor=pointer]
+                - row [ref=f120e620]:
+                  - cell "quota.warn_pct Abonelik kota penceresinde uyarı eşiği (%)" [ref=f120e621]:
+                    - generic [ref=f120e622]:
+                      - code [ref=f120e623]: quota.warn_pct
+                      - generic [ref=f120e624]: Abonelik kota penceresinde uyarı eşiği (%)
+                  - cell "80" [ref=f120e625]
+                  - cell "global" [ref=f120e627]
+                  - cell "v1" [ref=f120e629]
+                  - cell "installer" [ref=f120e631]
+                  - cell [ref=f120e632]:
+                    - button "Düzenle" [ref=f120e633] [cursor=pointer]
+                - row [ref=f120e634]:
+                  - cell "scan.block_level 4-göz Hangi güvenlik bulgusu seviyesi akışı durdurur" [ref=f120e635]:
+                    - generic [ref=f120e636]:
+                      - code [ref=f120e637]: scan.block_level
+                      - generic [ref=f120e638]: 4-göz
+                      - generic [ref=f120e639]: Hangi güvenlik bulgusu seviyesi akışı durdurur
+                  - cell "high" [ref=f120e640]
+                  - cell "global" [ref=f120e642]
+                  - cell "v1" [ref=f120e644]
+                  - cell "installer" [ref=f120e646]
+                  - cell [ref=f120e647]:
+                    - button "İncele" [ref=f120e648] [cursor=pointer]
+                - row [ref=f120e649]:
+                  - cell "sod.qa_split 4-göz QA senaryo onayı ile sonuç onayı farklı kişi olsun mu" [ref=f120e650]:
+                    - generic [ref=f120e651]:
+                      - code [ref=f120e652]: sod.qa_split
+                      - generic [ref=f120e653]: 4-göz
+                      - generic [ref=f120e654]: QA senaryo onayı ile sonuç onayı farklı kişi olsun mu
+                  - cell "false" [ref=f120e655]
+                  - cell "global" [ref=f120e657]
+                  - cell "v1" [ref=f120e659]
+                  - cell "installer" [ref=f120e661]
+                  - cell [ref=f120e662]:
+                    - button "İncele" [ref=f120e663] [cursor=pointer]
+                - row [ref=f120e664]:
+                  - cell "stuck.threshold Kaç ret/CI hatasından sonra iş insana devredilir" [ref=f120e665]:
+                    - generic [ref=f120e666]:
+                      - code [ref=f120e667]: stuck.threshold
+                      - generic [ref=f120e668]: Kaç ret/CI hatasından sonra iş insana devredilir
+                  - 'cell "{ \"action\": \"handover_ai_assist\", \"ciFailures\": 3, \"gateRejections\": 3 }" [ref=f120e669]'
+                  - cell "global" [ref=f120e671]
+                  - cell "v1" [ref=f120e673]
+                  - cell "installer" [ref=f120e675]
+                  - cell [ref=f120e676]:
+                    - button "Düzenle" [ref=f120e677] [cursor=pointer]
+                - row [ref=f120e678]:
+                  - cell "subscription.queue_enabled Abonelik havuzu dolduğunda kuyruk davranışı" [ref=f120e679]:
+                    - generic [ref=f120e680]:
+                      - code [ref=f120e681]: subscription.queue_enabled
+                      - generic [ref=f120e682]: Abonelik havuzu dolduğunda kuyruk davranışı
+                  - cell "true" [ref=f120e683]
+                  - cell "global" [ref=f120e685]
+                  - cell "v1" [ref=f120e687]
+                  - cell "installer" [ref=f120e689]
+                  - cell [ref=f120e690]:
+                    - button "Düzenle" [ref=f120e691] [cursor=pointer]
+                - row [ref=f120e692]:
+                  - 'cell "trigger.mode Proje tetikleme modu: otomatik · etiket · komut" [ref=f120e693]':
+                    - generic [ref=f120e694]:
+                      - code [ref=f120e695]: trigger.mode
+                      - generic [ref=f120e696]: "Proje tetikleme modu: otomatik · etiket · komut"
+                  - cell "label" [ref=f120e697]
+                  - cell "proje" [ref=f120e699]
+                  - cell "v1" [ref=f120e701]
+                  - cell "installer" [ref=f120e703]
+                  - cell [ref=f120e704]:
+                    - button "Düzenle" [ref=f120e705] [cursor=pointer]
+                - row [ref=f120e706]:
+                  - cell "workspace.max_age_days Hareketsiz çalışma alanının silineceği gün sayısı" [ref=f120e707]:
+                    - generic [ref=f120e708]:
+                      - code [ref=f120e709]: workspace.max_age_days
+                      - generic [ref=f120e710]: Hareketsiz çalışma alanının silineceği gün sayısı
+                  - cell "60" [ref=f120e711]
+                  - cell "global" [ref=f120e713]
+                  - cell "v1" [ref=f120e715]
+                  - cell "installer" [ref=f120e717]
+                  - cell [ref=f120e718]:
+                    - button "Düzenle" [ref=f120e719] [cursor=pointer]
+          - generic [ref=f120e720]: "Politikalar repo dosyasında değil DB'de: tek yerden, versiyonlu, audit'li ve 4-göz onaylı. Repoda yalnız build/test komutları ve korumalı yollar kalır (.maestro.yaml)."
+  - region

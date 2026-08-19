@@ -1,0 +1,334 @@
+- generic [ref=f120e2]:
+  - generic [ref=f120e23]:
+    - navigation "Ana gezinme" [ref=f120e24]:
+      - generic [ref=f120e25]:
+        - generic [ref=f120e26]: M
+        - generic [ref=f120e27]:
+          - text: Maestro
+          - generic [ref=f120e28]: SDLC otomasyonu
+      - generic [ref=f120e29]:
+        - generic [ref=f120e30]: İzleme
+        - link "Panel" [ref=f120e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f120e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f120e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f120e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f120e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f120e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f120e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f120e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f120e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f120e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f120e41]:
+        - generic [ref=f120e42]: Çalışma
+        - link "Runner havuzları" [ref=f120e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f120e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f120e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f120e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f120e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f120e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f120e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f120e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f120e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f120e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f120e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f120e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f120e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f120e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f120e57]:
+        - generic [ref=f120e58]: Yönetişim
+        - link "Denetim izi" [ref=f120e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f120e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f120e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f120e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f120e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f120e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f120e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f120e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f120e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f120e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f120e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f120e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f120e71]:
+        - generic [ref=f120e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f120e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f120e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f120e75] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f120e76]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f120e77] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f120e78]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f120e79] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f120e80]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f120e81] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f120e82]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [active] [ref=f120e83] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f120e84]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f120e85] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f120e86]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f120e87] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f120e88]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f120e89]:
+      - banner [ref=f120e90]:
+        - heading "Kullanıcılar & roller" [level=1] [ref=f120e110]
+        - generic [ref=f120e92]:
+          - generic [ref=f120e93]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f120e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f120e95]: admin
+        - button "Çıkış" [ref=f120e96] [cursor=pointer]
+      - main [ref=f120e97]:
+        - generic [ref=f120e111]:
+          - generic [ref=f120e112]:
+            - generic [ref=f120e113]:
+              - heading "Kullanıcılar" [level=3] [ref=f120e114]
+              - generic [ref=f120e115]: Yerel hesaplar — ekle, düzenle, pasifleştir (M8/M86)
+              - button "➕ Kullanıcı ekle" [ref=f120e117] [cursor=pointer]
+            - table [ref=f120e120]:
+              - caption [ref=f120e121]: Kullanıcılar
+              - rowgroup [ref=f120e122]:
+                - row [ref=f120e123]:
+                  - columnheader "Kullanıcı" [ref=f120e124]
+                  - columnheader "Dizin grubu" [ref=f120e125]
+                  - columnheader "Maestro rolü" [ref=f120e126]
+                  - columnheader "Hesap" [ref=f120e127]
+                  - columnheader [ref=f120e128]
+              - rowgroup [ref=f120e129]:
+                - row [ref=f120e130]:
+                  - cell "admin admin@maestro.local" [ref=f120e131]:
+                    - generic [ref=f120e132]:
+                      - text: admin
+                      - generic [ref=f120e133]: admin@maestro.local
+                  - cell "maestro-admins" [ref=f120e134]
+                  - cell "viewer admin" [ref=f120e135]:
+                    - generic [ref=f120e136]:
+                      - generic [ref=f120e137]: viewer
+                      - generic [ref=f120e138]: admin
+                  - cell "etkin" [ref=f120e139]
+                  - cell [ref=f120e141]:
+                    - generic [ref=f120e142]:
+                      - button "Düzenle" [ref=f120e143] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f120e144] [cursor=pointer]
+                - row [ref=f120e145]:
+                  - cell "ayse.kaya@ugurbank.local u-ayse" [ref=f120e146]:
+                    - generic [ref=f120e147]:
+                      - text: ayse.kaya@ugurbank.local
+                      - generic [ref=f120e148]: u-ayse
+                  - cell "product-owners, tech-leads" [ref=f120e149]
+                  - cell "viewer product-owner tech-lead" [ref=f120e150]:
+                    - generic [ref=f120e151]:
+                      - generic [ref=f120e152]: viewer
+                      - generic [ref=f120e153]: product-owner
+                      - generic [ref=f120e154]: tech-lead
+                  - cell "etkin" [ref=f120e155]
+                  - cell [ref=f120e157]:
+                    - generic [ref=f120e158]:
+                      - button "Düzenle" [ref=f120e159] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f120e160] [cursor=pointer]
+                - row [ref=f120e161]:
+                  - cell "baran.tunc@ugurbank.local u-baran" [ref=f120e162]:
+                    - generic [ref=f120e163]:
+                      - text: baran.tunc@ugurbank.local
+                      - generic [ref=f120e164]: u-baran
+                  - cell "developers" [ref=f120e165]
+                  - cell "viewer developer" [ref=f120e166]:
+                    - generic [ref=f120e167]:
+                      - generic [ref=f120e168]: viewer
+                      - generic [ref=f120e169]: developer
+                  - cell "etkin" [ref=f120e170]
+                  - cell [ref=f120e172]:
+                    - generic [ref=f120e173]:
+                      - button "Düzenle" [ref=f120e174] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f120e175] [cursor=pointer]
+                - row [ref=f120e176]:
+                  - cell "can.ozturk@ugurbank.local u-can" [ref=f120e177]:
+                    - generic [ref=f120e178]:
+                      - text: can.ozturk@ugurbank.local
+                      - generic [ref=f120e179]: u-can
+                  - cell "product-owners" [ref=f120e180]
+                  - cell "viewer product-owner" [ref=f120e181]:
+                    - generic [ref=f120e182]:
+                      - generic [ref=f120e183]: viewer
+                      - generic [ref=f120e184]: product-owner
+                  - cell "etkin" [ref=f120e185]
+                  - cell [ref=f120e187]:
+                    - generic [ref=f120e188]:
+                      - button "Düzenle" [ref=f120e189] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f120e190] [cursor=pointer]
+                - row [ref=f120e191]:
+                  - cell "denetim@ugurbank.local u-denetim" [ref=f120e192]:
+                    - generic [ref=f120e193]:
+                      - text: denetim@ugurbank.local
+                      - generic [ref=f120e194]: u-denetim
+                  - cell "internal-audit" [ref=f120e195]
+                  - cell "viewer" [ref=f120e196]
+                  - cell "etkin" [ref=f120e199]
+                  - cell [ref=f120e201]:
+                    - generic [ref=f120e202]:
+                      - button "Düzenle" [ref=f120e203] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f120e204] [cursor=pointer]
+                - row [ref=f120e205]:
+                  - cell "deniz.op deniz.op@ugurbank.local" [ref=f120e206]:
+                    - generic [ref=f120e207]:
+                      - text: deniz.op
+                      - generic [ref=f120e208]: deniz.op@ugurbank.local
+                  - cell "operators" [ref=f120e209]
+                  - cell "viewer tech-lead" [ref=f120e210]:
+                    - generic [ref=f120e211]:
+                      - generic "Hesap pasif olduğu için bu rol yürürlükte değil." [ref=f120e213]: viewer
+                      - generic "Hesap pasif olduğu için bu rol yürürlükte değil." [ref=f120e215]: tech-lead
+                  - cell "pasif" [ref=f120e216]
+                  - cell [ref=f120e218]:
+                    - button "Düzenle" [ref=f120e220] [cursor=pointer]
+                - row [ref=f120e221]:
+                  - cell "deniz.yalcin@ugurbank.local u-deniz" [ref=f120e222]:
+                    - generic [ref=f120e223]:
+                      - text: deniz.yalcin@ugurbank.local
+                      - generic [ref=f120e224]: u-deniz
+                  - cell "qa" [ref=f120e225]
+                  - cell "viewer qa" [ref=f120e226]:
+                    - generic [ref=f120e227]:
+                      - generic [ref=f120e228]: viewer
+                      - generic [ref=f120e229]: qa
+                  - cell "etkin" [ref=f120e230]
+                  - cell [ref=f120e232]:
+                    - generic [ref=f120e233]:
+                      - button "Düzenle" [ref=f120e234] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f120e235] [cursor=pointer]
+                - row [ref=f120e236]:
+                  - cell "mert.demir@ugurbank.local u-mert" [ref=f120e237]:
+                    - generic [ref=f120e238]:
+                      - text: mert.demir@ugurbank.local
+                      - generic [ref=f120e239]: u-mert
+                  - cell "tech-leads" [ref=f120e240]
+                  - cell "viewer tech-lead" [ref=f120e241]:
+                    - generic [ref=f120e242]:
+                      - generic [ref=f120e243]: viewer
+                      - generic [ref=f120e244]: tech-lead
+                  - cell "etkin" [ref=f120e245]
+                  - cell [ref=f120e247]:
+                    - generic [ref=f120e248]:
+                      - button "Düzenle" [ref=f120e249] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f120e250] [cursor=pointer]
+                - row [ref=f120e251]:
+                  - cell "selin.an selin.an@ugurbank.local" [ref=f120e252]:
+                    - generic [ref=f120e253]:
+                      - text: selin.an
+                      - generic [ref=f120e254]: selin.an@ugurbank.local
+                  - cell "analysts" [ref=f120e255]
+                  - cell "viewer product-owner" [ref=f120e256]:
+                    - generic [ref=f120e257]:
+                      - generic "Hesap pasif olduğu için bu rol yürürlükte değil." [ref=f120e259]: viewer
+                      - generic "Hesap pasif olduğu için bu rol yürürlükte değil." [ref=f120e261]: product-owner
+                  - cell "pasif" [ref=f120e262]
+                  - cell [ref=f120e264]:
+                    - button "Düzenle" [ref=f120e266] [cursor=pointer]
+                - row [ref=f120e267]:
+                  - cell "test.tl test.tl@ugurbank.local" [ref=f120e268]:
+                    - generic [ref=f120e269]:
+                      - text: test.tl
+                      - generic [ref=f120e270]: test.tl@ugurbank.local
+                  - cell "tech-leads" [ref=f120e271]
+                  - cell "viewer tech-lead" [ref=f120e272]:
+                    - generic [ref=f120e273]:
+                      - generic "Hesap pasif olduğu için bu rol yürürlükte değil." [ref=f120e275]: viewer
+                      - generic "Hesap pasif olduğu için bu rol yürürlükte değil." [ref=f120e277]: tech-lead
+                  - cell "pasif" [ref=f120e278]
+                  - cell [ref=f120e280]:
+                    - button "Düzenle" [ref=f120e282] [cursor=pointer]
+          - generic [ref=f120e283]:
+            - generic [ref=f120e284]:
+              - heading "Rol kümesi" [level=3] [ref=f120e285]
+              - generic [ref=f120e286]: Kapalı küme — bir oturumun yetkisi bu listeden okunur
+            - generic [ref=f120e287]:
+              - generic [ref=f120e288]:
+                - generic [ref=f120e289]:
+                  - term [ref=f120e290]:
+                    - generic [ref=f120e291]: admin
+                  - definition [ref=f120e292]: "Tam yetki: kullanıcılar, tüm ayarlar, bağlantılar, acil durdurma. Platformu yönetir."
+                - generic [ref=f120e293]:
+                  - term [ref=f120e294]:
+                    - generic [ref=f120e295]: tech-lead
+                  - definition [ref=f120e296]: "Teknik lider: kod ve PR onay kapıları, mühendislik kararları. Ayar/kurulum görebilir."
+                - generic [ref=f120e297]:
+                  - term [ref=f120e298]:
+                    - generic [ref=f120e299]: product-owner
+                  - definition [ref=f120e300]: "Ürün sahibi / analist yöneticisi: analiz onayı verir, iş riskini yükseltebilir."
+                - generic [ref=f120e301]:
+                  - term [ref=f120e302]:
+                    - generic [ref=f120e303]: qa
+                  - definition [ref=f120e304]: "Test kalite: test senaryosu ve sonuç onay kapıları."
+                - generic [ref=f120e305]:
+                  - term [ref=f120e306]:
+                    - generic [ref=f120e307]: developer
+                  - definition [ref=f120e308]: "Geliştirici: kendi işlerini izler, iş başlatır, netleştirme sorularını yanıtlar."
+                - generic [ref=f120e309]:
+                  - term [ref=f120e310]:
+                    - generic [ref=f120e311]: viewer
+                  - definition [ref=f120e312]: "Yalnız izleme: her giriş yapanın tabanı. Görür ama hiçbir kapıyı onaylayamaz."
+              - generic [ref=f120e313]: "Roller doğrudan verilmez: yetki, dizin grubu üyeliğinin okunmasıyla belirlenir (M8). Bir hesap eklerken ya da düzenlerken grup seçilir; roller platformun o gruplardan çıkardığı okumadır. Kapalı kümenin dışındaki bir grup hiçbir rol vermez."
+          - generic [ref=f120e314]:
+            - generic [ref=f120e315]:
+              - heading "Görevler ayrılığı (SoD)" [level=3] [ref=f120e316]
+              - generic [ref=f120e317]: İş akışı motorunun uyguladığı kurallar (M32/M92)
+            - generic [ref=f120e318]:
+              - list [ref=f120e319]:
+                - listitem [ref=f120e320]: Kodu üreten kimlik ≠ onaylayan kimlik
+                - listitem [ref=f120e321]: PO onayı ≠ Tech Lead onayı
+                - listitem [ref=f120e322]: PR onaylayan ≠ merge eden
+                - listitem [ref=f120e323]: QA senaryo onayı ≠ QA sonuç onayı
+                - listitem [ref=f120e324]: AI servis hesabı onay veremez
+              - generic [ref=f120e325]: AI servis hesabı onay veremez — teknik olarak yetkisi yoktur.
+  - region

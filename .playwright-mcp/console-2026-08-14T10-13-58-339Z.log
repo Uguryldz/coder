@@ -1,0 +1,105 @@
+[     605ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[   98450ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  113174ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  211278ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  218952ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  225461ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  532746ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[  533997ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[  536010ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[  538024ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[  540033ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[  542056ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[  544072ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[  546083ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/studio/pilot/state:0
+[  552623ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  552951ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  555076ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  557100ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  559149ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  561194ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  563212ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  565253ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  567268ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  569292ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  571329ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  573359ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  575372ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  577394ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  579425ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  581469ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  583508ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  585548ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  587591ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  589635ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  591663ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  593683ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  595710ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  597734ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  599779ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  601892ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  604026ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  606087ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  608129ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  610167ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  612187ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  614203ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  616237ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  618270ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  620296ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  622331ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  624362ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  626379ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  628400ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  630418ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  632436ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  634460ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  636472ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  638485ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  640533ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  642583ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  644711ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  646780ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  648847ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  650923ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  652968ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  654988ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  657006ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  659022ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  661044ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  663137ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  665210ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  667268ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  669337ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  671411ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  673436ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  675461ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  677534ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  679561ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  681600ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  683628ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  685643ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  687669ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  689722ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  691751ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  693779ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  695801ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  697823ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  699844ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  701870ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  703886ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  705899ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  707930ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  709968ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  711988ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  714004ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  716043ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  718060ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  720081ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  722111ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  724193ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  726238ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  728260ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  730299ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  732331ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0
+[  734351ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/pilot/state:0

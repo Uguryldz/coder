@@ -1,0 +1,261 @@
+- generic [ref=f6e2]:
+  - generic [ref=f6e3]:
+    - navigation "Ana gezinme" [ref=f6e4]:
+      - generic [ref=f6e5]:
+        - generic [ref=f6e6]: M
+        - generic [ref=f6e7]:
+          - text: Maestro
+          - generic [ref=f6e8]: SDLC otomasyonu
+      - generic [ref=f6e9]:
+        - generic [ref=f6e10]: İşler
+        - link "Panel" [ref=f6e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f6e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f6e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f6e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f6e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f6e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f6e17]:
+        - generic [ref=f6e18]: Ajanlar
+        - link "Ajan tanımları" [ref=f6e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f6e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f6e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f6e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f6e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f6e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f6e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f6e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f6e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f6e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f6e29]: yakında
+      - generic [ref=f6e30]:
+        - generic [ref=f6e31]: Denetim
+        - link "Denetim izi" [ref=f6e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f6e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f6e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f6e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f6e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f6e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f6e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f6e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f6e40]: yakında
+        - link "Kanıt paketi yakında" [ref=f6e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f6e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f6e43]: yakında
+      - generic [ref=f6e44]:
+        - generic [ref=f6e45]: Kurulum
+        - link "Proje bağlama" [ref=f6e46] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f6e47]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f6e48] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f6e49]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f6e50] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f6e51]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f6e52] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f6e53]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f6e54] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f6e55]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f6e56] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f6e57]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f6e58]: yakında
+        - link "Yardım — nasıl kullanılır?" [active] [ref=f6e59] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f6e60]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f6e61]:
+      - banner [ref=f6e62]:
+        - heading "Yardım — nasıl kullanılır?" [level=1] [ref=f6e458]
+        - generic [ref=f6e64]:
+          - generic [ref=f6e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f6e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f6e67]: admin
+        - button "Çıkış" [ref=f6e68] [cursor=pointer]
+      - main [ref=f6e69]:
+        - generic [ref=f6e459]:
+          - generic [ref=f6e460]:
+            - generic [ref=f6e461]:
+              - heading "Yardım — nasıl kullanılır?" [level=3] [ref=f6e462]
+              - generic [ref=f6e463]: Her menü kategorisi bir sekme; her sayfa 'ne işe yarar / nasıl çalışır / örnek' olarak anlatılır.
+            - paragraph [ref=f6e465]: Jira'ya ticket yazarsın; Maestro okur, eksik varsa yorumla sorar, analiz yazar. Sen onaylarsın; kodu izole sandbox'ta yazar ve testleri gerçekten koşturur, sonra PR açar. PR'ı yine insan onaylar ve merge edilir. Prod'a hiçbir şey çıkarmaz — release kurumun kendi sürecidir.
+          - generic [ref=f6e466]:
+            - generic [ref=f6e467]:
+              - heading "Jira'da ne yapmam gerekiyor?" [level=3] [ref=f6e468]
+              - generic [ref=f6e469]: aşağıdakiler canlı dinleme kurallarından okunur — kural değişirse bu metin de değişir
+            - generic [ref=f6e470]:
+              - generic [ref=f6e471]:
+                - generic [ref=f6e472]:
+                  - heading "1. Ticket nasıl açılır" [level=4] [ref=f6e473]
+                  - paragraph [ref=f6e474]: "Bir ticket'ın Maestro'ya düşmesi için aşağıdaki üç şartın HEPSİ birden sağlanmalıdır: doğru projede açılmalı, doğru tipte olmalı ve aşağıdaki bot hesabına atanmalıdır."
+                  - table [ref=f6e476]:
+                    - rowgroup [ref=f6e477]:
+                      - row [ref=f6e478]:
+                        - columnheader "Proje" [ref=f6e479]
+                        - columnheader "Koşul" [ref=f6e480]
+                        - columnheader "Atanacak hesap (bot)" [ref=f6e481]
+                        - columnheader "Çalışacak akış" [ref=f6e482]
+                    - rowgroup [ref=f6e483]:
+                      - row [ref=f6e484]:
+                        - cell "OPS" [ref=f6e485]
+                        - 'cell "Ticket tipi: Görev" [ref=f6e486]':
+                          - generic [ref=f6e487]:
+                            - generic [ref=f6e488]: "Ticket tipi:"
+                            - text: Görev
+                        - cell "712020:b836c135-c9d3-499a-a665-aed43d362cfd" [ref=f6e489]
+                        - cell "analiz" [ref=f6e490]
+                  - paragraph [ref=f6e491]: Üçü birden sağlanmazsa ticket Maestro'ya düşmez. Atama alanına aşağıdaki hesap kimliğini yazın; Jira bunu bot kullanıcısına çözer.
+                - generic [ref=f6e492]:
+                  - heading "2. Webhook nasıl kurulur" [level=4] [ref=f6e493]
+                  - paragraph [ref=f6e494]: "Jira admin'inden tek seferlik tek bir global webhook iste: Jira Ayarları → Sistem → Webhooks → Create a WebHook. Proje başına webhook ya da JQL bakımı gerekmez; filtreleme Maestro içindedir."
+                  - list [ref=f6e495]:
+                    - listitem [ref=f6e496]:
+                      - text: "URL:"
+                      - generic [ref=f6e497]: https://<maestro-sunucusu>/webhooks/jira
+                      - text: <maestro-sunucusu> yerine Maestro'nun Jira'dan erişilebilen adresini yazın (Studio'nun değil, arka ucun adresi).
+                    - listitem [ref=f6e498]: "Olaylar: Issue: created, updated · Comment: created"
+                    - listitem [ref=f6e499]: "Gizli anahtar: Webhook'un secret alanına yazılan değer Maestro tarafında JIRA_WEBHOOK_SECRET_REF ile gösterilen Vault kaydında tutulur (varsayılan: kv/jira#webhook). Anahtarı Studio'ya yazmayın, Vault'a yazın."
+                - generic [ref=f6e500]:
+                  - heading "3. Servis hesabı izinleri" [level=4] [ref=f6e501]
+                  - paragraph [ref=f6e502]: "Servis hesabı izinleri: Browse, Comment, Edit (label), Assign, Create/Link Issue. Workflow değişikliği, özel alan ya da eklenti istenmez — kuruma Jira admin yükü çıkmaz."
+                - generic [ref=f6e503]:
+                  - heading "4. Onay nasıl verilir" [level=4] [ref=f6e504]
+                  - paragraph [ref=f6e505]: Kapıya gelen bir işi onaylamak için ticket'a yalnızca /approve yazan bir yorum bırakın. Yorumda başka metin olmamalıdır. Reddetmek için /reject <sebep> yazın — ajan aynı oturumda düzeltir, sıfırdan başlamaz.
+              - paragraph [ref=f6e506]:
+                - link "Dinleme kurallarını düzenle →" [ref=f6e507] [cursor=pointer]:
+                  - /url: /projects?tab=listening
+          - generic [ref=f6e508]:
+            - generic [ref=f6e509]:
+              - heading "Öne çıkan yetenekler" [level=3] [ref=f6e510]
+              - generic [ref=f6e511]: yeni eklenenler — kısa rehber
+            - generic [ref=f6e513]:
+              - generic [ref=f6e514]:
+                - heading "Oto-başlatma ve hazır kurallar" [level=4] [ref=f6e515]
+                - paragraph [ref=f6e516]: "Bir Jira projesini bağladığında Maestro hazır dinleme kurallarıyla kendiliğinden çalışmaya başlar: uygun ticket'lar ekstra bir kurulum adımı gerekmeden akışa girer. Kuralları daraltmak istersen Kurulum → Proje bağlama → Dinleme kuralları sekmesini kullan."
+              - generic [ref=f6e517]:
+                - 'heading "Onayın iki yolu: /approve yorumu ya da botla atama" [level=4] [ref=f6e518]'
+                - paragraph [ref=f6e519]: "Bir kapıyı onaylamanın iki eşdeğer yolu var: ticket'a yalnız /approve yazan bir yorum bırakmak YA DA ticket'ı Maestro botuna atamak. İkisi de aynı yetki ve görev ayrılığı kontrollerinden geçer; hangisi ekibinin alışkanlığına uyuyorsa onu kullan."
+              - generic [ref=f6e520]:
+                - 'heading "Ajan eğitimi: ajana özel ya da ortak bilgi" [level=4] [ref=f6e521]'
+                - paragraph [ref=f6e522]: Ajanlar → bir ajan → Knowledge'a yüklediğin belge YALNIZ o ajanı eğitir (örn. yalnız analiz ajanına şablon örnekleri). Bilgi kütüphanesine yüklenen belgeler ise bütün ajanlara açıktır — kurum genelindeki standartlar oraya konur.
+              - generic [ref=f6e523]:
+                - 'heading "Netleştirme döngüsü: bot sorar, sen cevaplarsın" [level=4] [ref=f6e524]'
+                - paragraph [ref=f6e525]: "Bilgi eksikse bot uydurmaz: ticket'a sorusunu yorum olarak yazar ve işi sana iade eder. Cevabını yorum olarak yazıp ticket'ı tekrar bota atadığında kaldığı yerden devam eder — form yok, döngü Jira'nın içinde işler."
+              - generic [ref=f6e526]:
+                - 'heading "Denetim raporu: süz ve CSV indir" [level=4] [ref=f6e527]'
+                - paragraph [ref=f6e528]: Denetim ekranında kayıtları Başlangıç/Bitiş tarihi, Aktör, Aksiyon ve serbest metinle süzebilirsin; 'CSV indir' aynı süzgecin TAMAMINI (sayfalama olmadan) tek dosya olarak indirir — regülatöre ya da iç denetime verilecek dosya budur.
+          - tablist "Yardım kategorileri" [ref=f6e529]:
+            - tab "İşler" [selected] [ref=f6e530] [cursor=pointer]
+            - tab "Ajanlar" [ref=f6e531] [cursor=pointer]
+            - tab "Denetim" [ref=f6e532] [cursor=pointer]
+            - tab "Kurulum" [ref=f6e533] [cursor=pointer]
+          - tabpanel "İşler" [ref=f6e534]:
+            - generic [ref=f6e535]:
+              - generic [ref=f6e536]:
+                - heading "Panel" [level=3] [ref=f6e538]
+                - generic [ref=f6e539]:
+                  - generic [ref=f6e540]:
+                    - generic [ref=f6e541]:
+                      - heading "Ne işe yarar" [level=4] [ref=f6e542]
+                      - paragraph [ref=f6e543]: Açılış ekranınız. O an kaç iş çalışıyor, kaçı sizin onayınızı bekliyor, kaçı bitti, kaçı takıldı — hepsini tek bakışta gösterir.
+                    - generic [ref=f6e544]:
+                      - heading "Nasıl çalışır" [level=4] [ref=f6e545]
+                      - paragraph [ref=f6e546]: Tüm iş akışlarının durumunu okuyup üstte sayaçlara çevirir; 'dikkat isteyenleri' (önce hatalılar, sonra en uzun bekleyen onaylar) öne alır. Kurulum tamamlanmadıysa — iş akışı olsa bile — 'nereden başlamalı' rehberini gösterir.
+                    - generic [ref=f6e547]:
+                      - heading "Alanlar & adımlar" [level=4] [ref=f6e548]
+                      - list [ref=f6e549]:
+                        - listitem [ref=f6e550]: Sayaçlar (üstte) — Aktif iş akışı · Kapıda bekleyen · Tamamlanan · Toplam. Tıklanmaz, sadece durum gösterir.
+                        - listitem [ref=f6e551]: Dikkat isteyenler — en acil 5 iş (önce hatalılar, sonra en uzun bekleyen onaylar). Satıra tıkla → o işin detayı açılır.
+                        - listitem [ref=f6e552]: Tüm iş akışları — filtrelenebilir tam liste; buradan herhangi bir işe gidebilirsin.
+                        - listitem [ref=f6e553]: "Kurulum eksikken: '5 adımda çalışır hale getirin' rehberi çıkar (bağlantı → proje bağla → Jira webhook'u → ajanı eğit → izle); her adım kendi durumunu okur, bitince ✓ olur. Rehberi 'Anladım, gizle' ile kapatabilirsin — kurulum eksikse Panel'de kısa bir not kalır."
+                    - generic [ref=f6e554]:
+                      - heading "Örnek" [level=4] [ref=f6e555]
+                      - paragraph [ref=f6e556]: Sabah girersiniz, '3 iş onayınızı bekliyor' sayacını görürsünüz, listeden birine tıklayıp detayına gidersiniz.
+                  - paragraph [ref=f6e557]:
+                    - link "Ekrana git →" [ref=f6e558] [cursor=pointer]:
+                      - /url: /dash
+              - generic [ref=f6e559]:
+                - heading "Canlı akış" [level=3] [ref=f6e561]
+                - generic [ref=f6e562]:
+                  - generic [ref=f6e563]:
+                    - generic [ref=f6e564]:
+                      - heading "Ne işe yarar" [level=4] [ref=f6e565]
+                      - paragraph [ref=f6e566]: Maestro'nun gerçek bir işi baştan sona (analiz → kod → tarama → test → PR) yürütmesini canlı izlediğiniz ekran. Ayrıca tamamlanan işlerin geçmişi burada.
+                    - generic [ref=f6e567]:
+                      - heading "Nasıl çalışır" [level=4] [ref=f6e568]
+                      - paragraph [ref=f6e569]: "İki görünüm: 'Canlı liste' (çalışan işi adım adım) ve 'Süreç haritası' (9 adımlık diyagram). Bir ticket seçip Başlat'a basarsınız; adımlar tamamlandıkça yeşile döner. Biten işler 'Geçmiş işler' listesine düşer."
+                    - generic [ref=f6e570]:
+                      - heading "Alanlar & adımlar" [level=4] [ref=f6e571]
+                      - list [ref=f6e572]:
+                        - listitem [ref=f6e573]: Canlı liste / Süreç haritası (sekmeler) — liste = çalışan iş adım adım; harita = 9 adımlık diyagram.
+                        - listitem [ref=f6e574]: Keşfedilen ticket'lar (tablo) — Ticket · Durum · ▶ Başlat butonu (sadece admin/tech-lead). Başlat → o ticket için akış başlar.
+                        - listitem [ref=f6e575]: Çalışan akış — ticket, durum rozeti (çalışıyor/tamamlandı/hata), açık kapı uyarısı ve 9 adımın canlı durumu (bekliyor/çalışıyor/onay/tamam/hata).
+                        - listitem [ref=f6e576]: "İnsan kapısı açıkken: onayı Studio'dan vermezsin — gerçek Jira ticket'ının yorumuna /approve yazarsın (ekran bunu söyler)."
+                        - listitem [ref=f6e577]: PDF indir / Word indir — analiz belgesi hazır olunca indirilir.
+                        - listitem [ref=f6e578]: "Geçmiş işler (liste) — tamamlanan işler: ticket · akış tipi · kaç adım · sonuç (tamamlandı/durduruldu/hata)."
+                    - generic [ref=f6e579]:
+                      - heading "Örnek" [level=4] [ref=f6e580]
+                      - paragraph [ref=f6e581]: "'maestro' etiketli bir ticket'ı seçip Başlat'a basarsınız, kapıya gelince gerçek Jira ticket'ında yoruma /approve yazıp devam ettirirsiniz."
+                  - paragraph [ref=f6e582]:
+                    - link "Ekrana git →" [ref=f6e583] [cursor=pointer]:
+                      - /url: /pilot
+              - generic [ref=f6e584]:
+                - heading "Canlı oturumlar" [level=3] [ref=f6e586]
+                - generic [ref=f6e587]:
+                  - generic [ref=f6e588]:
+                    - generic [ref=f6e589]:
+                      - heading "Ne işe yarar" [level=4] [ref=f6e590]
+                      - paragraph [ref=f6e591]: Ajanların o an çalıştığı izole çalışma alanları ve durumları (aktif / devam edebilir / insanda bekliyor).
+                    - generic [ref=f6e592]:
+                      - heading "Nasıl çalışır" [level=4] [ref=f6e593]
+                      - paragraph [ref=f6e594]: "Açık oturumları listeler. Güvenlik gereği oturum içeriğini (ham ticket metni sızabilir) göstermez ve elle silme sunmaz — temizlik kendi takvimiyle yapılır. NOT: Bu ortamda oturum durumunu bildiren arka uç henüz kurulu değil, o yüzden sayfa şimdilik boş görünür."
+                    - generic [ref=f6e595]:
+                      - heading "Alanlar & adımlar" [level=4] [ref=f6e596]
+                      - list [ref=f6e597]:
+                        - listitem [ref=f6e598]: Açık oturumlar (tablo) — Ticket · Runner · Oturum durumu (çalışıyor / resume edilebilir / insan çalışıyor) · Boyut · Son erişim.
+                        - listitem [ref=f6e599]: Güvenlik gereği oturum İÇERİĞİ (ham ticket metni sızabilir) gösterilmez ve elle SİLME yoktur — temizlik kendi takvimiyle yapılır; 'insan çalışıyor' durumu ayrı tutulur.
+                        - listitem [ref=f6e600]: "NOT: Bu ortamda oturum durumunu bildiren arka uç kurulu değil, sayfa şimdilik boş görünür."
+                    - generic [ref=f6e601]:
+                      - heading "Örnek" [level=4] [ref=f6e602]
+                      - paragraph [ref=f6e603]: (Hedef) 'ODEME-142 · insanda bekliyor · 320MB' oturumunu görüp bir kişinin hâlâ o çalışma alanında olduğunu anlarsınız.
+                  - paragraph [ref=f6e604]:
+                    - link "Ekrana git →" [ref=f6e605] [cursor=pointer]:
+                      - /url: /sandbox
+  - region

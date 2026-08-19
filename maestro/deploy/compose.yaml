@@ -242,7 +242,7 @@ services:
 
   # ── schema ─────────────────────────────────────────────────────────────────
   # A one-shot job, not a service. It holds a Postgres advisory lock while it
-  # runs (see apps/deploy/src/bin/migrate.ts), so scaling the stack to several
+  # runs (see apps/deploy/dist/bin/migrate.js), so scaling the stack to several
   # replicas cannot produce two concurrent `prisma migrate deploy` runs racing
   # on the `_prisma_migrations` table.
   migrate:
@@ -251,7 +251,7 @@ services:
       context: ..
       dockerfile: deploy/docker/Dockerfile.node
       args:
-        ENTRYPOINT_SCRIPT: apps/deploy/src/bin/migrate.ts
+        ENTRYPOINT_SCRIPT: apps/deploy/dist/bin/migrate.js
     restart: "no"
     depends_on:
       postgres:
@@ -266,7 +266,7 @@ services:
       context: ..
       dockerfile: deploy/docker/Dockerfile.node
       args:
-        ENTRYPOINT_SCRIPT: apps/deploy/src/bin/bff.ts
+        ENTRYPOINT_SCRIPT: apps/deploy/dist/bin/bff.js
     depends_on:
       postgres:
         condition: service_healthy
@@ -303,7 +303,7 @@ services:
       context: ..
       dockerfile: deploy/docker/Dockerfile.node
       args:
-        ENTRYPOINT_SCRIPT: apps/deploy/src/bin/worker.ts
+        ENTRYPOINT_SCRIPT: apps/deploy/dist/bin/worker.js
     depends_on:
       postgres:
         condition: service_healthy

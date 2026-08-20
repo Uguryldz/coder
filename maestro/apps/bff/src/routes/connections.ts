@@ -398,6 +398,16 @@ function mergeLearnedIdentity(input: ConnectionInput, existing: ConnectionRecord
  * the previous ref/mask are carried forward. A present token is enciphered
  * under a fresh reference (rotating the secret) and masked to its last four
  * chars. The plaintext is never stored on the connection and never logged.
+ *
+ * AN EMPTY STRING IS A TOKEN, not an omission. A self-hosted model server
+ * (`openai_compat`) commonly requires no API key, and an operator saying so
+ * explicitly is different from an operator not touching the field. `""` is
+ * therefore enciphered into a real slot like any other value — AES-GCM handles
+ * a zero-length plaintext fine — so the row gets a `secretRef` and reads back
+ * as `secretSet: true` with an empty mask. That combination is the honest
+ * encoding of "a credential is configured and it is deliberately blank", and it
+ * is what lets `ConnectionSecretPort` serve the empty key to the driver instead
+ * of falling through to a `.env` value the operator thought they had replaced.
  */
 async function storeToken(
   secrets: SecretPort,

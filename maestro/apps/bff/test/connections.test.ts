@@ -893,3 +893,227 @@ describe("the Jira bot's Maestro account", () => {
     expect(human?.displayName).toBe("ayse.kaya");
   });
 });
+
+/**
+ * The on-premise model server (`openai_compat`).
+ *
+ * The kind exists because an operator installing this stack behind a bank's
+ * firewall runs their own OpenAI-shaped endpoint — vLLM, llama.cpp, Ollama —
+ * and the panel had no way to represent one: both LLM kinds were cloud vendors
+ * and both demanded a credential. Two things are genuinely different about a
+ * self-hosted server, and both are what these tests pin down. Its API key is
+ * OPTIONAL, so an empty token has to survive the whole path rather than being
+ * refused at the schema; and the operator needs to know WHICH MODEL it serves,
+ * because a reachable server that does not load the configured model is the
+ * failure that otherwise only appears at the first real inference call.
+ *
+ * No network anywhere — `connectorFetch` returns a canned `/v1/models`.
+ */
+describe("on-premise model server (openai_compat)", () => {
+  const ONPREM = {
+    id: "llm-onprem",
+    kind: "openai_compat",
+    displayName: "Kurum içi model",
+    baseUrl: "http://10.0.0.5:8000",
+    authKind: "bearer",
+  } as const;
+
+  /** The real shape a vLLM/Ollama `/v1/models` answer has. */
+  function models(...ids: readonly string[]): ConnectorFetch {
+    return () =>
+      Promise.resolve(
+        new Response(JSON.stringify({ object: "list", data: ids.map((id) => ({ id, object: "model" })) }), {
+          status: 200,
+        }),
+      );
+  }
+
+  async function createOnPrem(
+    h: Harness,
+    admToken: string,
+    over: Record<string, unknown> = {},
+  ): Promise<LightMyRequestResponse> {
+    return post(h, "/studio/connections", admToken, { ...ONPREM, ...over });
+  }
+
+  it("round-trips through create, update and test like any other kind", async () => {
+    const h = await harness({ connectorFetch: models("gpt-oss-120b") });
+    const admToken = await admin(h);
+
+    expect((await createOnPrem(h, admToken, { config: { model: "gpt-oss-120b" }, token: TOKEN })).statusCode).toBe(201);
+
+    // An edit that changes only the display name keeps the stored credential
+    // and the learned config — the same contract every other kind has.
+    const updated = await put(h, "/studio/connections/llm-onprem", admToken, {
+      ...ONPREM,
+      displayName: "Kurum içi model (yeni ad)",
+      config: { model: "gpt-oss-120b" },
+    });
+    expect(updated.statusCode).toBe(200);
+    const row = await h.connections.get("llm-onprem");
+    expect(row?.displayName).toBe("Kurum içi model (yeni ad)");
+    expect(row?.secretMask).toBe(TOKEN.slice(-4));
+
+    const body = (await post(h, "/studio/connections/llm-onprem/test", admToken)).json() as { ok: boolean };
+    expect(body.ok).toBe(true);
+  });
+
+  it("accepts an EMPTY token — a server that needs no key is a real configuration", async () => {
+    const h = await harness({ connectorFetch: models("gpt-oss-120b") });
+    const admToken = await admin(h);
+
+    // The empty string is SENT, not omitted: it means "this endpoint wants no
+    // key", which is a different instruction from "leave the token alone".
+    expect((await createOnPrem(h, admToken, { token: "" })).statusCode).toBe(201);
+
+    // It reached the encipher path and came back out — a stored, decryptable
+    // empty secret rather than a row with no credential at all.
+    const row = await h.connections.get("llm-onprem");
+    expect(row?.secretRef).not.toBeNull();
+    expect(row?.secretMask).toBe("");
+    expect(await h.connectorSecrets.get(row!.secretRef!)).toBe("");
+  });
+
+  it("PROBES a keyless server instead of refusing it with 'no token'", async () => {
+    const calls: { url: string; auth: string | null }[] = [];
+    const connectorFetch: ConnectorFetch = (url, init) => {
+      const headers = new Headers(init?.headers);
+      calls.push({ url, auth: headers.get("authorization") });
+      return Promise.resolve(new Response(JSON.stringify({ data: [{ id: "gpt-oss-120b" }] }), { status: 200 }));
+    };
+    const h = await harness({ connectorFetch });
+    const admToken = await admin(h);
+    await createOnPrem(h, admToken, { token: "", config: { model: "gpt-oss-120b" } });
+
+    const body = (await post(h, "/studio/connections/llm-onprem/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+    };
+    // The old behaviour would have short-circuited to `no_token` and never
+    // dialled a server that answers perfectly well.
+    expect(body.ok).toBe(true);
+    expect(body.messageKey).not.toBe("connections.test.no_token");
+    expect(calls).toHaveLength(1);
+    // No `Authorization: Bearer ` with nothing after it — some servers 401 on
+    // an empty bearer, so the header is omitted entirely.
+    expect(calls[0]?.auth).toBeNull();
+  });
+
+  it("reports the MODELS the server serves — the fact the operator came for", async () => {
+    const h = await harness({ connectorFetch: models("gpt-oss-120b", "qwen2.5-7b") });
+    const admToken = await admin(h);
+    await createOnPrem(h, admToken, { token: TOKEN, config: { model: "gpt-oss-120b" } });
+
+    const body = (await post(h, "/studio/connections/llm-onprem/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+      messageParams?: { models: string; count: string };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.messageKey).toBe("connections.test.ok_models");
+    expect(body.messageParams?.models).toContain("gpt-oss-120b");
+    expect(body.messageParams?.count).toBe("2");
+  });
+
+  it("FAILS when the configured model is not among the ones served", async () => {
+    // The silent killer: the server is up, the key is fine, and every run will
+    // still die at the first inference call because this model is not loaded.
+    const h = await harness({ connectorFetch: models("qwen2.5-7b") });
+    const admToken = await admin(h);
+    await createOnPrem(h, admToken, { token: TOKEN, config: { model: "gpt-oss-120b" } });
+
+    const body = (await post(h, "/studio/connections/llm-onprem/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+      messageParams?: { model: string; models: string };
+    };
+    expect(body.ok).toBe(false);
+    expect(body.messageKey).toBe("connections.test.model_missing");
+    expect(body.messageParams?.model).toBe("gpt-oss-120b");
+    // It names what IS served, so the operator can fix the id rather than guess.
+    expect(body.messageParams?.models).toContain("qwen2.5-7b");
+
+    const row = await h.connections.get("llm-onprem");
+    expect(row?.lastTestOk).toBe(false);
+    expect(row?.lastTestNote).toBe("connections.test.model_missing");
+  });
+
+  it("says so plainly when a 200 carries no readable model list", async () => {
+    const connectorFetch: ConnectorFetch = () => Promise.resolve(new Response("not json", { status: 200 }));
+    const h = await harness({ connectorFetch });
+    const admToken = await admin(h);
+    await createOnPrem(h, admToken, { token: TOKEN });
+
+    const body = (await post(h, "/studio/connections/llm-onprem/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+    };
+    // Reachable and authenticated, but nothing learned about the model — not
+    // dressed up as a green that implies more than was actually checked.
+    expect(body.ok).toBe(true);
+    expect(body.messageKey).toBe("connections.test.ok_no_models");
+  });
+
+  it("strips a trailing /v1 so the probe and the driver dial the SAME path", async () => {
+    const calls: string[] = [];
+    const connectorFetch: ConnectorFetch = (url) => {
+      calls.push(url);
+      return Promise.resolve(new Response(JSON.stringify({ data: [{ id: "gpt-oss-120b" }] }), { status: 200 }));
+    };
+    const h = await harness({ connectorFetch });
+    const admToken = await admin(h);
+    // What every vendor's console prints, and what an operator will paste. The
+    // driver appends `/v1` itself, so left alone this becomes `/v1/v1/...`.
+    await createOnPrem(h, admToken, { baseUrl: "http://10.0.0.5:8000/v1", token: TOKEN });
+
+    await post(h, "/studio/connections/llm-onprem/test", admToken);
+    expect(calls[0]).toBe("http://10.0.0.5:8000/v1/models");
+    expect(calls[0]).not.toContain("/v1/v1");
+  });
+
+  it("reports 401, 404 and an unreachable host as three DISTINCT honest outcomes", async () => {
+    for (const [status, key] of [
+      [401, "connections.test.http_error"],
+      [404, "connections.test.http_error"],
+    ] as const) {
+      const h = await harness({ connectorFetch: () => Promise.resolve(new Response("no", { status })) });
+      const admToken = await admin(h);
+      await createOnPrem(h, admToken, { token: TOKEN });
+      const body = (await post(h, "/studio/connections/llm-onprem/test", admToken)).json() as {
+        ok: boolean;
+        messageKey: string;
+        messageParams?: { status: string };
+      };
+      expect(body.ok).toBe(false);
+      expect(body.messageKey).toBe(key);
+      expect(body.messageParams?.status).toBe(String(status));
+    }
+
+    const down = await harness({ connectorFetch: () => Promise.reject(new Error("ECONNREFUSED")) });
+    const admToken = await admin(down);
+    await createOnPrem(down, admToken, { token: TOKEN });
+    const body = (await post(down, "/studio/connections/llm-onprem/test", admToken)).json() as {
+      ok: boolean;
+      messageKey: string;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.messageKey).toBe("connections.test.unreachable");
+  });
+
+  it("keeps the API key out of every message, row and audit entry", async () => {
+    // The transport throws with the token in its message — the same trap the
+    // GitHub case guards, re-asserted for the kind that has a new probe path.
+    const h = await harness({ connectorFetch: () => Promise.reject(new Error(`connect failed ${TOKEN}`)) });
+    const admToken = await admin(h);
+    await createOnPrem(h, admToken, { token: TOKEN });
+
+    const response = await post(h, "/studio/connections/llm-onprem/test", admToken);
+    expect(response.body).not.toContain(TOKEN);
+
+    const row = await h.connections.get("llm-onprem");
+    expect(JSON.stringify(row)).not.toContain(TOKEN);
+
+    const listed = await get(h, "/studio/connections", admToken);
+    expect(listed.body).not.toContain(TOKEN);
+  });
+});

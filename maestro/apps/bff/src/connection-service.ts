@@ -184,6 +184,39 @@ interface Probe {
   identity?(body: unknown): string | undefined;
   /** How to read the authenticated account's stable id (Jira only, for now). */
   accountId?(body: unknown): string | undefined;
+  /**
+   * This kind's credential is OPTIONAL — a missing token is a configuration to
+   * probe, not a reason to refuse. Only `openai_compat` sets it: a self-hosted
+   * model server on an internal network commonly has no API key at all, and
+   * `runConnectionTest` would otherwise short-circuit to `no_token` and never
+   * dial an endpoint that would have answered perfectly well.
+   */
+  tokenOptional?: boolean;
+}
+
+/**
+ * Strip a trailing `/v1` from a model server's base URL.
+ *
+ * THE TRAP THIS DEFUSES. `OpenAiCompatDriver` builds its request as
+ * `${baseUrl}/v1/chat/completions` — it appends the version segment itself. So
+ * a `baseUrl` that already ends in `/v1` produces `/v1/v1/chat/completions`,
+ * and every model call 404s. Both `install.sh` scripts refuse such a value at
+ * install time with exactly this explanation, which means the trap is already
+ * known and already documented; what was missing was the panel honouring the
+ * same rule.
+ *
+ * The panel NORMALISES rather than refuses, and the asymmetry with `install.sh`
+ * is intended. `https://llm.local/v1` is what every vendor's own documentation
+ * prints and what an operator will paste from their vLLM console — it is the
+ * most likely correct intent, not a typo. An installer runs once and can afford
+ * to stop and teach; a form an admin is actively filling in should accept the
+ * obvious meaning and then SHOW what it stored, which is what the helper text
+ * under the field does. Normalising here also keeps the probe and the eventual
+ * driver call addressing the same server, so a test that goes green is evidence
+ * about the URL a run will really dial.
+ */
+export function normalizeOpenAiBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
 }
 
 /** A stored PAT under HTTP Basic (`email:token`), base64 — Jira Cloud's scheme. */
@@ -245,6 +278,43 @@ export function probeFor(kind: ConnectionKind): Probe | null {
             ? { "x-api-key": token, "anthropic-version": "2023-06-01" }
             : { authorization: `Bearer ${token}` },
       };
+    case "openai_compat":
+      /**
+       * A self-hosted, OpenAI-shaped server. `/v1/models` is the probe, and it
+       * is chosen over a `chat/completions` round-trip on purpose.
+       *
+       * WHAT IT PROVES. That something is listening, that it speaks the OpenAI
+       * protocol (a bare reverse proxy or a wrong port answers, but not with
+       * this shape), that the key is accepted if one is required, and — the
+       * part an operator actually needs — WHICH MODELS ARE SERVED. That last
+       * fact is the one this screen exists to establish: the commonest
+       * on-prem failure is not an unreachable host, it is a `LLM_MODEL` naming
+       * a model this server does not load, and a probe that only checked
+       * reachability would go green on exactly that deployment.
+       *
+       * WHY NOT A REAL COMPLETION. A `POST /v1/chat/completions` with
+       * `max_tokens: 1` would prove more, and it was rejected for two reasons.
+       * It needs a model id to send — which is the very thing being verified,
+       * so a wrong id fails the test for a server that is fine — and on a
+       * cold-loaded on-prem server the first completion can pull weights for
+       * minutes, turning a panel button into a hang. `/models` answers from
+       * memory and names the model, which lets an operator FIX the id instead
+       * of guessing at a timeout. The model list is compared against the
+       * configured id by `modelServedNote` below, so the honest verdict is
+       * still reached without paying for inference.
+       *
+       * The token is presented as a bearer only when there is one; see
+       * `tokenOptional`, and `header` below tolerating "".
+       */
+      return {
+        path: "/v1/models",
+        // An empty key means this server wants none — sending `Bearer ` with
+        // nothing after it makes some servers 401 on a request that would
+        // otherwise have succeeded, so the header is omitted entirely instead.
+        header: (token): Record<string, string> =>
+          token === "" ? {} : { authorization: `Bearer ${token}` },
+        tokenOptional: true,
+      };
     case "vault":
       // A token-lookup-self call is the health-and-auth probe in one.
       return {
@@ -272,6 +342,76 @@ export function probeFor(kind: ConnectionKind): Probe | null {
 }
 
 /**
+ * The model ids an OpenAI-compatible `/v1/models` answer lists.
+ *
+ * The shape is `{ data: [{ id: "..." }, …] }` for vLLM, llama.cpp, Ollama's
+ * compat endpoint and OpenAI itself. Anything that does not parse yields an
+ * empty list rather than throwing: the endpoint answered 200 and the
+ * credential was accepted, which is most of what the test set out to learn,
+ * and a strict parse would turn a working server with an unusual response into
+ * a red connection.
+ */
+export function modelIdsOf(body: unknown): string[] {
+  const data = (body as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return [];
+  const ids: string[] = [];
+  for (const entry of data) {
+    const id = field(entry, "id");
+    if (id !== undefined) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * The verdict on a model server, given what it serves and what was configured.
+ *
+ * Three outcomes, and the middle one is the reason this function exists. A
+ * server that lists the configured model is unambiguously good. A server that
+ * lists models but NOT the configured one is the silent failure this probe was
+ * built to catch — the connection works, the credential works, and every run
+ * will still fail at the first inference call because `LLM_MODEL` names
+ * something this server does not load. It is reported as a FAILURE rather than
+ * a warning: unlike the Jira identity split (which a mid-migration deployment
+ * may legitimately be in), there is no state in which a missing model is
+ * working-as-intended.
+ *
+ * The configured model is compared case-sensitively and exactly. Model ids are
+ * opaque strings a server matches literally, so a "close enough" match here
+ * would bless an id the server will later reject.
+ *
+ * Model ids are NOT secrets — they are the vendor's public catalogue names —
+ * so naming them in the message is safe and is the whole value of the probe.
+ * The list is capped at a handful because the message is rendered in a toast,
+ * and an OpenAI-proxying gateway can list hundreds.
+ */
+export function modelServedNote(
+  models: readonly string[],
+  configuredModel: string | undefined,
+): TestOutcome {
+  const shown = models.slice(0, 5).join(", ");
+  const wanted = configuredModel?.trim();
+
+  if (wanted !== undefined && wanted !== "" && models.length > 0 && !models.includes(wanted)) {
+    return {
+      ok: false,
+      messageKey: "connections.test.model_missing",
+      messageParams: { model: wanted, models: shown, count: String(models.length) },
+    };
+  }
+  if (models.length === 0) {
+    // A 200 with no readable list. The server is up and the credential passed,
+    // but nothing was learned about the model — said plainly rather than
+    // rendered as a green that implies more than was checked.
+    return { ok: true, messageKey: "connections.test.ok_no_models" };
+  }
+  return {
+    ok: true,
+    messageKey: "connections.test.ok_models",
+    messageParams: { models: shown, count: String(models.length) },
+  };
+}
+
+/**
  * Run the live test against the STORED connection using the STORED token.
  *
  * The URL is built from `baseUrl` + the kind's probe path — never from anything
@@ -295,16 +435,27 @@ export async function runConnectionTest(
   if (probe === null) {
     return { ok: false, messageKey: "connections.test.not_implemented", messageParams: { kind: record.kind } };
   }
-  if (token === null) {
+  // A kind whose credential is optional treats "no token stored" as "this
+  // server wants none" and probes anyway; every other kind still refuses, since
+  // dialling a cloud vendor with no credential can only ever produce a 401.
+  if (token === null && probe.tokenOptional !== true) {
     return { ok: false, messageKey: "connections.test.no_token" };
   }
+  const presented = token ?? "";
 
-  const url = `${record.baseUrl.replace(/\/+$/, "")}${probe.path}`;
+  // `openai_compat` carries the version segment in its probe path (`/v1/models`)
+  // because the DRIVER appends `/v1` too — so the stored base must be trimmed of
+  // one if the operator pasted it. Every other kind's `baseUrl` is used as-is.
+  const base =
+    record.kind === "openai_compat"
+      ? normalizeOpenAiBaseUrl(record.baseUrl)
+      : record.baseUrl.replace(/\/+$/, "");
+  const url = `${base}${probe.path}`;
   let response: Response;
   try {
     response = await fetchImpl(url, {
       method: "GET",
-      headers: { accept: "application/json", ...probe.header(token, record.config) },
+      headers: { accept: "application/json", ...probe.header(presented, record.config) },
     });
   } catch {
     // The error is deliberately NOT surfaced: a fetch failure message can carry
@@ -319,6 +470,21 @@ export async function runConnectionTest(
       messageKey: "connections.test.http_error",
       messageParams: { status: String(response.status) },
     };
+  }
+
+  // A model server's answer IS the verdict, so it is read here and returned
+  // directly rather than falling through to the Jira identity machinery below
+  // — none of which applies to a thing that has no `/myself` and no bot.
+  if (record.kind === "openai_compat") {
+    let models: string[];
+    try {
+      models = modelIdsOf(await response.json());
+    } catch {
+      // 200 with a body that is not JSON. Still a reachable, authenticated
+      // endpoint; simply nothing learned about the models.
+      models = [];
+    }
+    return modelServedNote(models, record.config["model"]);
   }
 
   let identity: string | undefined;

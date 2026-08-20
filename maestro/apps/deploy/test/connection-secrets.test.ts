@@ -255,3 +255,68 @@ describe("ConnectionSecretPort", () => {
     });
   });
 });
+
+/**
+ * The self-hosted model server's credential.
+ *
+ * `openai_compat` is the third kind allowed to answer for `kv/llm#api-key`, and
+ * it is the only one whose key may legitimately be EMPTY — an internal vLLM or
+ * Ollama commonly needs none. That makes the empty string a real answer this
+ * resolver has to serve, not a missing value it should fall through on: an
+ * install whose operator deliberately configured "no key" must not silently
+ * revert to a stale `LLM_API_KEY` left in `.env`, or the platform would send an
+ * internal server a credential nobody asked it to send and the operator would
+ * have no way to see it happening.
+ */
+describe("ConnectionSecretPort — the on-premise model server", () => {
+  const onPremRow: ConnectionCredentialRow = {
+    id: "llm-onprem",
+    kind: "openai_compat",
+    secretRef: "connector:llm-onprem:beef01",
+    enabled: true,
+  };
+
+  it("serves the model key from the panel's connection, outranking .env", async () => {
+    const port = new ConnectionSecretPort({
+      connections: connections([onPremRow]),
+      connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "panel-model-anahtari" }),
+      fallback: envPort({ "kv/llm#api-key": "env-model-anahtari" }),
+      log: () => {},
+    });
+    expect(await port.get("kv/llm#api-key")).toBe("panel-model-anahtari");
+  });
+
+  it("serves an EMPTY key as an answer, never as a reason to fall back to .env", async () => {
+    const port = new ConnectionSecretPort({
+      connections: connections([onPremRow]),
+      // The operator said, explicitly, that this server wants no key.
+      connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "" }),
+      fallback: envPort({ "kv/llm#api-key": "eski-env-anahtari" }),
+      log: () => {},
+    });
+    // Falling through here would hand an internal server a credential the
+    // operator thought they had removed.
+    expect(await port.get("kv/llm#api-key")).toBe("");
+  });
+
+  it("leaves every other reference alone — it owns the model key and nothing else", async () => {
+    const port = new ConnectionSecretPort({
+      connections: connections([onPremRow]),
+      connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "panel-model-anahtari" }),
+      fallback: envPort({ "kv/jira#token": "jira-env", "kv/github#token": "github-env" }),
+      log: () => {},
+    });
+    expect(await port.get("kv/jira#token")).toBe("jira-env");
+    expect(await port.get("kv/github#token")).toBe("github-env");
+  });
+
+  it("falls through when the connection is disabled — a switched-off row owns nothing", async () => {
+    const port = new ConnectionSecretPort({
+      connections: connections([{ ...onPremRow, enabled: false }]),
+      connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "panel-model-anahtari" }),
+      fallback: envPort({ "kv/llm#api-key": "env-model-anahtari" }),
+      log: () => {},
+    });
+    expect(await port.get("kv/llm#api-key")).toBe("env-model-anahtari");
+  });
+});

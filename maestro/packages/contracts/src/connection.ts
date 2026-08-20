@@ -24,6 +24,18 @@ export const ConnectionKind = z.enum([
   "ado",
   "openrouter",
   "anthropic",
+  /**
+   * A SELF-HOSTED, OpenAI-shaped model server — vLLM, llama.cpp, Ollama, LM
+   * Studio, anything serving `/v1/chat/completions`. It is a separate kind from
+   * `openrouter`/`anthropic` rather than a flag on them, and that is the whole
+   * point: the kind is what the rest of the platform discriminates on.
+   * `CONNECTION_KIND_FOR_REF` decides which connection may serve
+   * `kv/llm#api-key` by KIND, and `probeFor` picks an auth scheme by KIND — an
+   * on-prem server that presented itself as `openrouter` would be probed with
+   * OpenRouter's assumptions and would have no way to say "my API key is
+   * optional", which is the one thing that is actually different about it.
+   */
+  "openai_compat",
   "vault",
   "smtp",
   "storage",
@@ -108,7 +120,21 @@ export const ConnectionInput = z.object({
   authKind: ConnectionAuthKind,
   config: ConnectionConfig.default({}),
   enabled: z.boolean().default(true),
-  /** Write-only. Present = set/replace the token; absent = keep the existing one. */
-  token: z.string().min(1).max(4096).optional(),
+  /**
+   * Write-only. Present = set/replace the token; absent = keep the existing one.
+   *
+   * The minimum length is ZERO, and that is a deliberate widening for
+   * `openai_compat`. A self-hosted model server on an internal network very
+   * often has no authentication at all — vLLM without `--api-key`, a default
+   * llama.cpp or Ollama — so "" is a real credential state an operator must be
+   * able to express, not a mistake to reject. The distinction the whole shape
+   * rests on is therefore between ABSENT (`undefined` — leave whatever is
+   * stored alone) and PRESENT-BUT-EMPTY (`""` — this server wants no key), and
+   * those are two different instructions that must not collapse into one.
+   * Cloud kinds are not weakened by this: an empty key against OpenRouter or
+   * Jira simply fails its live test, which is the honest outcome and a better
+   * teacher than a form-level refusal.
+   */
+  token: z.string().max(4096).optional(),
 });
 export type ConnectionInput = z.infer<typeof ConnectionInput>;

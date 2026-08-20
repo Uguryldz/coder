@@ -106,7 +106,20 @@ export const CONNECTION_KIND_FOR_REF: Readonly<Record<string, readonly string[]>
   "kv/jira#token": ["jira_cloud", "jira_dc"],
   "kv/github#token": ["github"],
   "kv/ado#token": ["ado"],
-  "kv/llm#api-key": ["openrouter", "anthropic"],
+  /**
+   * All three LLM kinds answer for the one model credential, for the same
+   * reason both Jira kinds share theirs: a deployment dials exactly ONE model
+   * endpoint (`llmConfig` builds a single `openai-compat` driver from
+   * `LLM_BASE_URL`), so whichever kind the operator created is the one that
+   * install talks to and there is no ambiguity to resolve.
+   *
+   * `openai_compat` is the self-hosted lane, and it is the case that makes the
+   * empty-token path matter: such a server often needs no key at all, and the
+   * connection then serves `""` here. That is a REAL answer, not a missing one
+   * — it stops the resolver falling through to a stale `.env` key and sending
+   * an internal server a credential it never asked for.
+   */
+  "kv/llm#api-key": ["openrouter", "anthropic", "openai_compat"],
 };
 
 export interface ConnectionSecretPortOptions {

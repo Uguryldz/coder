@@ -254,6 +254,8 @@ export type ManagedConnectionKind =
   | "ado"
   | "openrouter"
   | "anthropic"
+  /** A self-hosted, OpenAI-shaped model server (vLLM, llama.cpp, Ollama, …). */
+  | "openai_compat"
   | "vault"
   | "smtp"
   | "storage";

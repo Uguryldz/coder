@@ -23,7 +23,7 @@ function baseConnection(over: Record<string, unknown> = {}): unknown {
 }
 
 describe("ConnectionKind / ConnectionAuthKind", () => {
-  it("names the nine kinds the connector surface supports", () => {
+  it("names the ten kinds the connector surface supports", () => {
     expect(ConnectionKind.options).toEqual([
       "jira_cloud",
       "jira_dc",
@@ -31,6 +31,12 @@ describe("ConnectionKind / ConnectionAuthKind", () => {
       "ado",
       "openrouter",
       "anthropic",
+      // The self-hosted lane. Added deliberately: `openrouter` and `anthropic`
+      // are both CLOUD vendors, so an operator running their own OpenAI-shaped
+      // server (vLLM, llama.cpp, Ollama) had no kind to pick and no way to test
+      // a model. It is a distinct kind rather than a flag because the kind is
+      // what `probeFor` and `CONNECTION_KIND_FOR_REF` discriminate on.
+      "openai_compat",
       "vault",
       "smtp",
       "storage",
@@ -104,6 +110,24 @@ describe("ConnectionInput (write shape)", () => {
       token: "ghp_realtokenvalue",
     });
     expect(parsed.token).toBe("ghp_realtokenvalue");
+  });
+
+  it("distinguishes an ABSENT token from an EMPTY one — they are two instructions", () => {
+    const base = {
+      kind: "openai_compat",
+      displayName: "Kurum içi model",
+      baseUrl: "http://10.0.0.5:8000",
+      authKind: "bearer",
+    };
+
+    // Absent: "leave whatever is stored alone" (a config-only edit).
+    expect(ConnectionInput.parse(base).token).toBeUndefined();
+
+    // Present-but-empty: "this server wants no key". A self-hosted vLLM or
+    // Ollama commonly needs none, so the schema must let an operator SAY so —
+    // the old `.min(1)` made that unrepresentable and collapsed it into the
+    // absent case, which silently kept a stale credential instead.
+    expect(ConnectionInput.parse({ ...base, token: "" }).token).toBe("");
   });
 
   it("refuses a config value that is not a string (no token smuggled as config)", () => {

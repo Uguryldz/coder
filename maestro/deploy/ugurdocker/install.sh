@@ -113,9 +113,13 @@ ZORUNLU=(
   POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB REDIS_PASSWORD
   MAESTRO_SECRET_KV_JIRA__WEBHOOK
   LLM_BASE_URL LLM_MODEL LLM_ON_PREM
-  JIRA_TOKEN_REF LLM_API_KEY_REF
   STUDIO_PORT
 )
+# JIRA_TOKEN_REF / LLM_API_KEY_REF bu listede ARTIK YOK ve .env'de de yok.
+# İkisi de sır ADRESİDİR, sır değeri değil; varsayılanları compose'da ve
+# apps/deploy/src/env.ts'te birebir aynı yazılıdır. Zorunlu saymak, .env'den
+# çıkarılmış bir satırı boş bulup kusursuz bir kurulumu reddetmek olurdu.
+# Yazılmışlarsa biçimleri §6'da yine denetlenir.
 EKSIK_VAR=()
 for v in "${ZORUNLU[@]}"; do
   [[ -n "${!v:-}" ]] || EKSIK_VAR+=("$v")

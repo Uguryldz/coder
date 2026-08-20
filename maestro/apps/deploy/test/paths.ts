@@ -75,6 +75,10 @@ export function ugurdockerInstallPath(): string {
   return `${ugurdockerDir()}install.sh`;
 }
 
+export function ugurdockerReadmePath(): string {
+  return `${ugurdockerDir()}README.md`;
+}
+
 export function ugurdockerGitignorePath(): string {
   return `${ugurdockerDir()}.gitignore`;
 }

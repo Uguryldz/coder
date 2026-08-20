@@ -9,7 +9,8 @@ build etmez, hiçbir tar dosyası beklemez. Depoları registry tarafında siz
 yönetirsiniz — paket yalnızca imajın **tam adresini** ister.
 
 **Doldurulacak alan: 4.** Jira jetonu, GitHub jetonu ve model anahtarı bu
-dosyada **durmaz** — kurulumdan sonra panelden girilir (§5).
+dosyada **durmaz** — kurulumdan sonra panelden girilir (§4). `.env.example`
+bilerek kısadır: orada olmayan her ayarın varsayılanı doğrudur (§8).
 
 ---
 
@@ -52,11 +53,14 @@ biri bile kalmışsa hiçbir konteyner başlatmadan durur.
 | `CONNECTOR_MASTER_KEY` | `openssl rand -base64 32` | Panelin jetonlarını **bu** şifreler; koruduğu deponun içinde duramaz. Tam 32 bayt olmalı. |
 | `MAESTRO_SECRET_KV_JIRA__WEBHOOK` | `openssl rand -hex 32` | **Dışarıdan gelen, henüz doğrulanmamış** bir isteği doğrular (§5.4). |
 
-Ayrıca **iki imaj adresi** ve **bir Jira adresi**:
+Ayrıca **bir Jira adresi** (Cloud mu, Data Center mı — hangisini doldurursanız
+o sürücü çalışır) ve kurum registry'si kullanacaksanız **imaj adresleri**.
+İmajlar Docker Hub'dan doğrudan çalışır hâlde gelir; mirror'lıyorsanız satırın
+tamamını değiştirin:
 
 ```bash
-MAESTRO_NODE_IMAGE="<registry>/maestro/node:e22392a"
-MAESTRO_STUDIO_IMAGE="<registry>/maestro/studio:e22392a"
+MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.0"
+MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.0"
 
 # İKİSİNDEN YALNIZCA BİRİ — hangisini doldurursanız o sürücü çalışır:
 JIRA_CLOUD_BASE_URL="https://kurum.atlassian.net"   # Jira Cloud
@@ -230,3 +234,31 @@ docker compose exec -T postgres pg_dump -U maestro maestro | gzip > yedek-$(date
 yetmez: panelden girilen jetonlar onunla şifrelenmiştir ve anahtar
 kaybolduğunda hepsi çözülemez hâle gelir — hepsini panelden yeniden girmek
 gerekir.
+
+---
+
+## 8. `.env`'de OLMAYAN ayarlar — ve neden yok
+
+`.env.example` yalnızca bir operatörün gerçekten **karar vermesi gereken**
+satırları taşır. Aşağıdakiler dosyadan çıkarıldı: her birinin varsayılanı
+`docker-compose.yml` içinde yazılıdır ve kodun kendi varsayılanıyla **birebir
+aynıdır** (`apps/deploy/src/env.ts`). Yani bunları `.env`'e yazmak sistemin
+davranışını değiştirmez — yalnızca değiştirilebilirmiş izlenimi verir.
+
+| Değişken | Sabit varsayılan | Neden `.env`'de değil |
+|---|---|---|
+| `JIRA_TOKEN_REF` | `kv/jira#token` | Sır **adresi**, sır değeri değil. Değiştirirseniz `MAESTRO_SECRET_*` adlarını da yeni referanstan yeniden türetmeniz gerekir — ve bir harf kayarsa sürücü "secret not found" der, siz `.env`'de değeri dolu görürsünüz. |
+| `JIRA_WEBHOOK_SECRET_REF` | `kv/jira#webhook` | Aynı. `MAESTRO_SECRET_KV_JIRA__WEBHOOK` adı **bundan** türetilir. |
+| `GITHUB_TOKEN_REF` | `kv/github#token` | Aynı. |
+| `LLM_API_KEY_REF` | `kv/llm#api-key` | Aynı. |
+| `ADO_TOKEN_REF` · `ADO_WEBHOOK_SECRET_REF` | `kv/ado#token` · `kv/ado#webhook` | Aynı; ayrıca scm portu GitHub olduğu için bugün hiç okunmaz. |
+| `LDAP_BIND_PASSWORD_REF` | `kv/ldap#service-password` | Aynı; yalnızca `IDENTITY_DRIVER="ldaps-bind"` ise okunur. |
+| `LDAP_GROUP_BASE_DN` · `LDAP_USER_FILTER` · `LDAP_GROUP_FILTER` · `LDAP_CA_CERT_PATH` | boş | LDAP'ın **zorunlu** üçlüsü (`LDAP_URL`, `LDAP_USER_BASE_DN`, `LDAP_BIND_DN`) `.env.example`'ın opsiyonel bölümünde durur. Bunlar yalnızca şeması alışılmadık bir dizin için gerekir; gerekirse aynı bölüme elle ekleyin. |
+| `STORAGE_BUCKET` · `STORAGE_REGION` | `maestro-evidence` · `us-east-1` | Yalnızca `NODE_ENV="production"` ile okunur ve o hâlde asıl karar `STORAGE_ENDPOINT`'tir; kova adı değiştirilecekse buraya eklenir. |
+| `VAULT_MOUNTS` | `kv,git` | `git` listede olmak **zorundadır**: Vault sürücüsü kısa ömürlü push kimlik bilgisini o mount'tan üretir. Listeden düşürmek her push'u ilk mühendislik adımında reddettirir. |
+| `BFF_PORT` | `7001` (compose sabitler) | Aynı sayı `healthcheck`'te ve `studio-nginx.conf`'ta da sabit durur. Değişken hâlindeyken değiştiren kurulum, hiç `healthy` olmayan bir `bff` ve hiç başlamayan bir `studio` ile kaldı. |
+| `BUNDLE_VERSION` | — | Paket sürümü artık yalnızca `install.sh` ve bu README'de durur; `.env`'de tutulması iki yerin ayrışmasından başka bir işe yaramıyordu. |
+
+Bir sahanın gerçekten ihtiyacı olursa: değişkeni `.env`'e yazmak yeterlidir,
+compose zaten `${DEGISKEN:-varsayılan}` biçiminde iletir ve yazdığınız değer
+varsayılanı ezer. Compose'da ayrıca bir şey değiştirmek gerekmez.

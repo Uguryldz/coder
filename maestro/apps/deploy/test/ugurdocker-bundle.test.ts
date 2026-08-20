@@ -7,6 +7,7 @@ import {
   ugurdockerEnvExamplePath,
   ugurdockerGitignorePath,
   ugurdockerInstallPath,
+  ugurdockerReadmePath,
 } from "./paths.js";
 
 /**
@@ -42,6 +43,7 @@ const compose = parse(composeText, { merge: true }) as {
 };
 const envExample = readFileSync(ugurdockerEnvExamplePath(), "utf8");
 const install = readFileSync(ugurdockerInstallPath(), "utf8");
+const readme = readFileSync(ugurdockerReadmePath(), "utf8");
 const gitignore = readFileSync(ugurdockerGitignorePath(), "utf8");
 const dockerignore = readFileSync(dockerignorePath(), "utf8");
 
@@ -161,31 +163,55 @@ describe("ugurdocker bundle: a filled-in .env.example installs as-is", () => {
     }
   });
 
-  it("marks the two image addresses too, since no registry prefix can be guessed", () => {
-    for (const key of ["MAESTRO_NODE_IMAGE", "MAESTRO_STUDIO_IMAGE"]) {
+  it("ships every image as a working address, not a placeholder", () => {
+    /**
+     * The images are PUBLISHED now, so a guessable prefix exists and the
+     * example carries it: a pilot installation pulls straight from Docker Hub
+     * and changes nothing here, while a site mirroring into its own Nexus
+     * overwrites the whole line. `DEGISTIR` here would make the published
+     * images unreachable by the documented flow — `install.sh` refuses while
+     * any marker remains, so every operator would have to edit five lines to
+     * arrive back at the values shipped in this file.
+     *
+     * Compose still declares the two application images `${VAR:?}` (asserted
+     * above): a default THERE would resolve for an operator who deleted the
+     * line, and pull an image they never chose.
+     */
+    for (const key of [
+      "MAESTRO_NODE_IMAGE",
+      "MAESTRO_STUDIO_IMAGE",
+      "POSTGRES_IMAGE",
+      "REDIS_IMAGE",
+      "TEMPORAL_IMAGE",
+    ]) {
       const line = envExample.split("\n").find((candidate) => candidate.startsWith(`${key}=`));
       expect(line, `${key} is missing from .env.example`).toBeDefined();
-      expect(line, `${key} ships without a DEGISTIR marker`).toContain("DEGISTIR");
+      expect(line, `${key} still ships as a placeholder`).not.toContain("DEGISTIR");
+      // A tag, and never `latest`: which version is installed must be legible
+      // from the file, and a rollback must have something to roll back to.
+      expect(line, `${key} carries no pinned tag`).toMatch(/=".+:[^:"]+"/);
+      expect(line, `${key} floats on :latest`).not.toMatch(/:latest"/);
     }
   });
 
-  it("demands nothing beyond those six", () => {
+  it("demands nothing beyond those four", () => {
     /**
      * THE SHRINK, as a property rather than an edit.
      *
-     * A seventh DEGISTIR appearing here means a credential crept back into a
+     * A fifth DEGISTIR appearing here means a credential crept back into a
      * file on the server — most likely one the panel already collects, tests
      * live and enciphers. That was the old failure: the panel's Jira token was
      * stored, tested and shown green while every run authenticated with the
      * `.env` one, and no screen could show the difference.
+     *
+     * The list is EXACT, not a superset: the shrink is only real while nothing
+     * may be added without deleting this line and explaining why.
      */
     const marked = envExample
       .split("\n")
       .filter((line) => /^[A-Za-z_][A-Za-z0-9_]*=.*DEGISTIR/.test(line))
       .map((line) => line.slice(0, line.indexOf("=")));
-    expect(marked.sort()).toEqual(
-      ["MAESTRO_NODE_IMAGE", "MAESTRO_STUDIO_IMAGE", ...MANDATORY].sort(),
-    );
+    expect(marked.sort()).toEqual([...MANDATORY].sort());
   });
 
   it("no longer demands the credentials the connector panel now owns", () => {
@@ -312,14 +338,45 @@ describe("ugurdocker bundle: the hardening survives the copy", () => {
  * carefully `.env` was filled in.
  */
 describe("ugurdocker bundle: every documented variable reaches a container", () => {
-  it("documents in .env.example every variable the compose interpolates", () => {
+  it("documents every variable an operator must supply, in .env.example itself", () => {
+    /**
+     * Only the variables compose REQUIRES (`${VAR:?}`) — the ones with no
+     * default anywhere, where an operator who cannot find the name in `.env`
+     * has no way to learn it exists.
+     *
+     * A variable compose defaults (`${VAR:-...}`) is a different case, and
+     * conflating the two is what grew this file to 411 lines: `LDAP_USER_FILTER`
+     * and `STORAGE_REGION` were listed not because anyone sets them but because
+     * this assertion demanded the string be present, and the reader then had to
+     * decide, line by line, which of 31 variables were decisions and which were
+     * restatements of a default. The defaulted ones are documented in
+     * README §8 instead — with their values, so the table can be checked
+     * against compose — and the next test pins that.
+     */
+    const required = new Set(
+      [...composeText.matchAll(/\$\{([A-Z0-9_]+):\?[^}]*\}/g)].map((match) => match[1] as string),
+    );
+    const undocumented = [...required].filter((name) => !envExample.includes(name));
+    expect(undocumented, `undocumented in .env.example: ${undocumented.join(", ")}`).toEqual([]);
+  });
+
+  it("documents every OTHER interpolated variable in the README, if not in .env.example", () => {
+    /**
+     * Removing a line from `.env.example` is only safe while the name stays
+     * findable. A variable that is in neither file is one an operator can only
+     * discover by reading compose — which is the failure mode the assertion
+     * above was written for, reappearing at the place the shrink moved things
+     * to.
+     */
     const referenced = new Set(
       [...composeText.matchAll(/\$\{([A-Z0-9_]+)(?::[?-][^}]*)?\}/g)].map(
         (match) => match[1] as string,
       ),
     );
-    const undocumented = [...referenced].filter((name) => !envExample.includes(name));
-    expect(undocumented, `undocumented in .env.example: ${undocumented.join(", ")}`).toEqual([]);
+    const undocumented = [...referenced].filter(
+      (name) => !envExample.includes(name) && !readme.includes(name),
+    );
+    expect(undocumented, `documented nowhere: ${undocumented.join(", ")}`).toEqual([]);
   });
 
   it("hands the master key to every service that reads a stored token", () => {

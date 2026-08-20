@@ -10,6 +10,7 @@ import { createDb } from "@maestro/db";
 import { FlowType, type TicketKey } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import { bootPlatform } from "../boot.js";
+import { connectionModelFrom } from "../stores/connection-model.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { listenAddress, type DeployEnv } from "../env.js";
 import { selectIdentityProvider } from "../identity.js";
@@ -88,6 +89,11 @@ export async function main(): Promise<void> {
     // connection an admin tests green on this process must be the one the
     // worker's run authenticates with, and two wirings could drift.
     connectionSecrets: connectionSecretsFrom(db),
+    // The model itself, from the same panel rows the credential comes from.
+    // Both processes resolve it through this one factory so the endpoint an
+    // admin tests green in the panel is the one the run dials — the split
+    // `connectionSecrets` closed for the token, closed here for the address.
+    resolveModel: connectionModelFrom(db),
   });
 
   // Before Temporal, before the socket: a deployment whose emergency brake

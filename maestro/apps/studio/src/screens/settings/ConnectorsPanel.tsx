@@ -288,9 +288,26 @@ function ConnectionModal({
   const [token, setToken] = useState("");
   const [touched, setTouched] = useState(false);
 
-  // A self-hosted model server is the one kind that needs a model id and the one
-  // kind whose API key may legitimately be blank.
-  const onPrem = kind === "openai_compat";
+  /**
+   * Whether this row is a MODEL — the kind that needs a model id, whose API key
+   * may legitimately be blank, and which the two new switches below apply to.
+   * The three kinds that speak an inference protocol are exactly the three the
+   * runtime will accept as the active model (`MODEL_CONNECTION_KINDS`), so a
+   * form that offered these fields for a Jira row would be promising something
+   * the resolver ignores.
+   */
+  const isModelKind = kind === "openai_compat" || kind === "openrouter" || kind === "anthropic";
+  /**
+   * Whether the operator ASSERTS this endpoint runs inside the institution.
+   *
+   * Defaulted from the kind for a new row — a self-hosted server almost always
+   * is, a cloud vendor never is — but it stays an explicit switch the admin can
+   * override, because the M18 confidential rule leans on this and on nothing
+   * else. A URL cannot answer it: a private address is evidence about routing,
+   * not a claim about custody.
+   */
+  const [onPrem, setOnPrem] = useState(connection?.onPrem ?? false);
+  const [isDefault, setIsDefault] = useState(connection?.isDefault ?? false);
 
   const idInvalid = !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id.trim());
   const urlInvalid = !isHttpUrl(baseUrl.trim());
@@ -306,10 +323,14 @@ function ConnectionModal({
         // `config` is round-tripped verbatim so a learned `botAccountId`
         // survives an edit; the model id is layered on top for the one kind
         // that has one, and removed again if the operator clears it.
-        config: onPrem
+        config: isModelKind
           ? { ...(connection?.config ?? {}), ...(model.trim() === "" ? {} : { model: model.trim() }) }
           : (connection?.config ?? {}),
         enabled,
+        // Only meaningful for a model row; a Jira connection sends the
+        // harmless defaults rather than a field the resolver would ignore.
+        onPrem: isModelKind && onPrem,
+        isDefault: isModelKind && isDefault,
         // Only send a token when the admin actually entered one — an untouched
         // edit preserves the stored credential.
         // An empty box means two different things by kind. For a self-hosted
@@ -317,7 +338,7 @@ function ConnectionModal({
         // be SENT, or the operator can never express it. For every other kind
         // it means "I did not touch this", and must be withheld so the stored
         // credential survives the edit.
-        ...(changingToken && (token !== "" || onPrem) ? { token } : {}),
+        ...(changingToken && (token !== "" || isModelKind) ? { token } : {}),
       };
       return editing
         ? api.put<{ connection: ManagedConnection }>(`/studio/connections/${connection.id}`, body)
@@ -381,10 +402,10 @@ function ConnectionModal({
         label={t("connections.field.url")}
         value={baseUrl}
         onChange={(event) => setBaseUrl(event.target.value)}
-        {...(onPrem ? { hint: t("connections.field.url_hint_onprem") } : {})}
+        {...(isModelKind ? { hint: t("connections.field.url_hint_onprem") } : {})}
         {...(touched && urlInvalid ? { error: t("connections.error.url") } : {})}
       />
-      {onPrem && (
+      {isModelKind && (
         <Input
           label={t("connections.field.model")}
           value={model}
@@ -392,18 +413,41 @@ function ConnectionModal({
           hint={t("connections.field.model_hint")}
         />
       )}
-      {onPrem && (
-        // The honest caveat, stated where the operator is typing rather than
-        // buried in a README. The API key entered here IS used by every run
-        // (`ConnectionSecretPort` serves `kv/llm#api-key` from this row), but
-        // the address and model name are read from `.env` at composition time
-        // and cannot follow — so a URL typed here is tested and then ignored by
-        // the running services. An operator who is not told that will change the
-        // address here, watch the test go green, and never understand why the
-        // flows still reach the old server.
-        <div className="scr-mini" style={{ opacity: 0.85, lineHeight: 1.5 }}>
-          {t("connections.onprem.env_note")}
-        </div>
+      {isModelKind && (
+        /**
+         * The two switches that used to be `.env` variables.
+         *
+         * What stood here before was an apology: a paragraph telling the
+         * operator that the address and model name they had just typed would be
+         * tested and then ignored, because the running services read
+         * `LLM_BASE_URL`/`LLM_MODEL` from a file. That note is gone because the
+         * thing it described is gone — this form now owns all of it.
+         *
+         * `onPrem` is a SWITCH and not an inference from the URL on purpose: it
+         * is the only thing standing between the confidential class and an
+         * outside endpoint (M18), so it must be something an operator asserts
+         * and an auditor can read.
+         */
+        <>
+          <label className="scr-mini" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={onPrem} onChange={(event) => setOnPrem(event.target.checked)} />
+            {t("connections.field.on_prem")}
+          </label>
+          <div className="scr-mini" style={{ opacity: 0.85, lineHeight: 1.5 }}>
+            {t("connections.field.on_prem_hint")}
+          </div>
+          <label className="scr-mini" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={isDefault}
+              onChange={(event) => setIsDefault(event.target.checked)}
+            />
+            {t("connections.field.is_default")}
+          </label>
+          <div className="scr-mini" style={{ opacity: 0.85, lineHeight: 1.5 }}>
+            {t("connections.field.is_default_hint")}
+          </div>
+        </>
       )}
       <Select
         label={t("connections.field.auth")}
@@ -425,7 +469,7 @@ function ConnectionModal({
           type="password"
           value={token}
           onChange={(event) => setToken(event.target.value)}
-          hint={t(onPrem ? "connections.field.token_hint_optional" : "connections.field.token_hint")}
+          hint={t(isModelKind ? "connections.field.token_hint_optional" : "connections.field.token_hint")}
         />
       ) : (
         <div className="scr-mini" style={{ display: "flex", alignItems: "center", gap: 8 }}>

@@ -33,6 +33,14 @@ export interface ConnectionRecord {
   /** Last four chars of the stored token, or null. The only glimpse a read gets. */
   secretMask: string | null;
   enabled: boolean;
+  /**
+   * M18: whether this endpoint runs INSIDE the institution. Only a model
+   * connection uses it, and the confidential class leans on it and nothing else
+   * — never on a guess made from the URL.
+   */
+  onPrem: boolean;
+  /** Which model answers when a run names none; at most one row may hold it. */
+  isDefault: boolean;
   createdAt: string;
   updatedAt: string;
   lastTestedAt: string | null;

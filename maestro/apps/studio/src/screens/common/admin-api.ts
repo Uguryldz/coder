@@ -274,6 +274,10 @@ export interface ManagedConnection {
   readonly secretMask: string | null;
   readonly secretSet: boolean;
   readonly enabled: boolean;
+  /** M18: the operator's assertion that this endpoint runs inside the bank. */
+  readonly onPrem: boolean;
+  /** Which model answers when a flow names none; at most one row holds it. */
+  readonly isDefault: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly lastTestedAt: string | null;
@@ -295,6 +299,8 @@ export interface ManagedConnectionInput {
   readonly authKind: ManagedConnectionAuthKind;
   readonly config: Readonly<Record<string, string>>;
   readonly enabled: boolean;
+  readonly onPrem: boolean;
+  readonly isDefault: boolean;
   readonly token?: string;
 }
 

@@ -30,6 +30,14 @@ export class OpenAiCompatDriver implements LlmDriver {
   ) {}
 
   async complete(call: DriverCall): Promise<DriverResult> {
+    /**
+     * The address is taken from the CALL, not from the config, when the caller
+     * supplied one — that is what lets a model added in the panel be dialled
+     * without rebuilding the port. `this.cfg.baseUrl` remains the answer for a
+     * deployment that still names its endpoint in the environment, so nothing
+     * that used to work stops working.
+     */
+    const baseUrl = call.baseUrl ?? this.cfg.baseUrl;
     const apiKey = await this.deps.secrets.get(call.credentialRef ?? this.cfg.apiKeyRef);
     const messages = [
       ...(call.system === null ? [] : [{ role: "system", content: call.system }]),
@@ -39,8 +47,18 @@ export class OpenAiCompatDriver implements LlmDriver {
     const json = await postJson(
       {
         driver: this.id,
-        url: `${trimSlash(this.cfg.baseUrl)}/v1/chat/completions`,
-        headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+        url: `${trimSlash(baseUrl)}/v1/chat/completions`,
+        /**
+         * An empty key means this server wants none. Sending a bare `Bearer `
+         * with nothing after it makes some self-hosted servers 401 a request
+         * that would otherwise have succeeded, so the header is omitted
+         * entirely — the same rule the panel's `/v1/models` probe follows, so
+         * the test and the run present identical credentials.
+         */
+        headers: {
+          ...(apiKey === "" ? {} : { authorization: `Bearer ${apiKey}` }),
+          accept: "application/json",
+        },
         body: { model: call.model, max_tokens: call.maxTokens, temperature: call.temperature, messages },
         timeoutMs: this.cfg.timeoutMs,
       },

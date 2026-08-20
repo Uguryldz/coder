@@ -69,6 +69,33 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
     return reply.code(200).send({ connections: rows.map(toConnectionView) });
   });
 
+/**
+ * Make this row the only default, by demoting whichever row held it.
+ *
+ * WHY THE ROUTE AND NOT THE DATABASE. The partial unique index
+ * (`Connection_one_default_model`) is the guarantee that two rows can never
+ * BOTH be default — it is the backstop that makes "at most one" a fact rather
+ * than a convention. But an index can only REFUSE a second default, and
+ * refusing is the wrong behaviour for this action: an admin pressing
+ * "Varsayılan yap" on a second model plainly means "this one instead", not
+ * "fail because another one already is". So the demotion happens here, before
+ * the write, and the index stands behind it to catch anything that bypasses
+ * this path.
+ *
+ * Only rows of the SAME kind family are demoted — a default Jira connection, if
+ * that ever means anything, is a different question from which model answers.
+ */
+async function clearOtherDefaults(
+  store: ConnectionStore,
+  clock: ResolvedDeps["clock"],
+  keepId: string,
+): Promise<void> {
+  for (const row of await store.list()) {
+    if (row.id === keepId || !row.isDefault) continue;
+    await store.put({ ...row, isDefault: false, updatedAt: clock.now().toISOString() });
+  }
+}
+
   /** Create a connection. Zod-validated; a new token is enciphered, never stored raw. */
   app.post("/studio/connections", { preHandler: writeHandler }, async (request, reply) => {
     await assertWritable(deps);
@@ -89,6 +116,9 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
       lastTestedAt: null,
       lastTestOk: null,
     });
+    // A row created AS the default demotes the previous one first, so the
+    // partial unique index never has to refuse a legitimate intent.
+    if (record.isDefault) await clearOtherDefaults(store, deps.clock, record.id);
     await store.put(record);
 
     // Provision the bot's account at CREATE too, not only at test.
@@ -145,6 +175,7 @@ export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps)
       lastTestOk: existing.lastTestOk,
       lastTestNote: existing.lastTestNote,
     });
+    if (record.isDefault) await clearOtherDefaults(store, deps.clock, record.id);
     await store.put(record);
     await audit(deps, request, params.data.id, "updated");
     return reply.code(200).send({ connection: toConnectionView(record) });

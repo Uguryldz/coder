@@ -1,6 +1,7 @@
 import { createJiraCloudWorkPort, createJiraDcWorkPort } from "@maestro/adapter-jira";
 import { t } from "@maestro/config";
 import type { LlmCallLog } from "@maestro/contracts";
+import type { LlmGatewayDeps } from "@maestro/llm-gateway";
 import type { FetchLike } from "@maestro/notify";
 import { defaultPiiPolicy, maskOutbound, type LoadedPiiPolicy } from "@maestro/pii";
 import type { SecretPort, WorkPort } from "@maestro/ports";
@@ -92,6 +93,26 @@ export interface BootOptions {
    * process with no pool (`compose.test.ts`) therefore changes not at all.
    */
   readonly connectionSecrets?: (fallback: SecretPort, env: DeployEnv) => SecretPort;
+
+  /**
+   * Where the ACTIVE MODEL comes from — the panel's rows rather than `.env`.
+   *
+   * The exact counterpart of `connectionSecrets`, and present for the same
+   * reason. That option let an admin own the model's API KEY; this one lets
+   * them own the three facts that decide which model actually answers: the
+   * endpoint, the model id, and whether the server is on-premises.
+   *
+   * A CALLBACK for the same reason as its neighbour: only a service holding the
+   * database pool can build it. Invoked by the gateway on EVERY call, so a model
+   * an operator changes in the panel is live on the next one with no restart —
+   * and so the M18 confidential rule is decided against the endpoint the call
+   * will really dial, not against whatever was true when the process started.
+   *
+   * Absent, the platform reads the model from the environment exactly as it
+   * always did, which is why a process with no pool (`compose.test.ts`) changes
+   * not at all.
+   */
+  readonly resolveModel?: LlmGatewayDeps["resolveModel"];
 }
 
 /** What the publisher needs that only a database-owning service can supply. */
@@ -178,6 +199,9 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
       // Absent, `agentSession` throws and those steps refuse — which is what
       // every deployment did until this was wired.
       ...(agentRunner === undefined ? {} : { agentRunner }),
+      // The panel's model, re-read per call. Absent, every fact stays the
+      // static config's and this deployment behaves exactly as it always has.
+      ...(options.resolveModel === undefined ? {} : { resolveModel: options.resolveModel }),
     },
     // `notify` needs `work` (the jira channel posts through it), `secrets` (the
     // webhook channels read their URL through a SecretPort), and now `fetchImpl`

@@ -276,8 +276,40 @@ function allowed(env: DeployEnv, driver: string): string[] {
   return agentDriverAvailable(env) ? [driver, AGENT_DRIVER] : [driver];
 }
 
+/**
+ * A placeholder endpoint for an install that names none.
+ *
+ * NEVER DIALLED. The driver's schema demands a syntactically valid URL to build
+ * at all, and a stack configured entirely from the panel has no address to give
+ * it at composition time — the panel is how one is added, so boot cannot demand
+ * it. `resolveModel` overrides this on every call that has a row; a call with no
+ * row never reaches a transport, because the gateway raises
+ * `ModelNotConfiguredError` first and by name.
+ *
+ * `.invalid` is the RFC 2606 reserved TLD, guaranteed never to resolve. That is
+ * chosen over a plausible-looking default deliberately: if this value ever DID
+ * escape into a request, the failure must be an instant, obvious DNS refusal —
+ * not a connection to a host somebody else controls.
+ */
+const NO_ENDPOINT_CONFIGURED = "https://model-not-configured.invalid";
+
 export function llmConfig(env: DeployEnv): Record<string, unknown> {
-  const baseUrl = required(env.LLM_BASE_URL, "LLM_BASE_URL", "the llm port has no default endpoint");
+  /**
+   * The endpoint is no longer REQUIRED here.
+   *
+   * It used to be, and that was the wall: `required()` threw at composition
+   * time, so a stack could not boot without `LLM_BASE_URL` — which meant the
+   * panel could never be the place a model is added, because the process had to
+   * be told about one before it would start and serve the panel. Same reasoning
+   * that gave the `work` port a not-configured driver rather than a boot
+   * refusal, and the same consequence: the gap surfaces at first USE, named,
+   * instead of as a process that will not start.
+   *
+   * An install that still names the variable keeps using it verbatim — the
+   * value below feeds the driver exactly as before, and `resolveModel` simply
+   * finds no row to override it with.
+   */
+  const baseUrl = env.LLM_BASE_URL ?? NO_ENDPOINT_CONFIGURED;
   const driver = "openai-compat";
   return {
     /**

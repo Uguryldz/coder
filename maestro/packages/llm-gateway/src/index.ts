@@ -8,6 +8,7 @@ export * from "./gateway.js";
 export * from "./http.js";
 export * from "./masking.js";
 export * from "./messages.js";
+export * from "./model-source.js";
 export * from "./outcomes.js";
 export * from "./policy.js";
 export * from "./pool.js";

@@ -484,8 +484,19 @@ describe("composition root: fail-closed", () => {
     ).toThrow(/repo:definitionId/);
   });
 
-  it("refuses when the LLM endpoint is unset", async () => {
-    await expect(boot(envWithout(DEV_ENV, "LLM_BASE_URL"))).rejects.toThrow(/LLM_BASE_URL/);
+  it("BOOTS when no LLM endpoint is named, because the panel is how one is added", async () => {
+    /**
+     * THIS ASSERTION IS INVERTED ON PURPOSE (M107). It used to demand that a
+     * stack without `LLM_BASE_URL` refuse to start, and that demand was the
+     * wall: the endpoint is now something an admin types into "Ayarlar &
+     * bağlantılar", and a process that will not start until a model is
+     * configured can never be configured through its own panel. Same reasoning
+     * that gave the `work` port a not-configured driver rather than a boot
+     * refusal — and the gap is not swallowed, it is reported by name at first
+     * USE (`ModelNotConfiguredError`, pinned in the gateway's own suite).
+     */
+    const { deployment } = await boot(envWithout(DEV_ENV, "LLM_BASE_URL"));
+    expect(deployment.ports.llm).toBeTypeOf("object");
   });
 
   it("names the port that failed to build", async () => {

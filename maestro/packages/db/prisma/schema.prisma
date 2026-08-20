@@ -929,6 +929,27 @@ model Connection {
   /// secret; the value it belongs to never lives on this table.
   secretMask   String?  @db.VarChar(4)
   enabled      Boolean  @default(true)
+  /// Whether this endpoint runs INSIDE the institution (M18).
+  ///
+  /// Only a model connection uses it, and the `gizli` class leans on it and on
+  /// nothing else — never on a guess made from the URL, because a private-looking
+  /// address is not the same claim as an operator asserting where the weights
+  /// actually run. It replaces `LLM_ON_PREM` for a panel-managed model, and it is
+  /// deliberately per-ROW: an install may hold both an internal server and a
+  /// cloud vendor, and the confidential rule has to be able to tell them apart.
+  ///
+  /// Defaults to FALSE, which is the fail-closed direction: a row whose operator
+  /// never answered the question is treated as cloud, so `gizli` work degrades
+  /// rather than silently shipping a bank's confidential payload off-premises.
+  onPrem       Boolean  @default(false)
+  /// The model this install dials by default, among the rows of its kind.
+  ///
+  /// Exactly one row may hold it (`Connection_one_default_model`, a partial
+  /// unique index). Making it a database fact rather than a UI convention is
+  /// what stops two enabled models both claiming the default and the runtime
+  /// picking whichever the row order happened to return — an install whose
+  /// answering model depends on a query plan is not one a bank can audit.
+  isDefault    Boolean  @default(false)
   createdAt    DateTime @db.Timestamptz(3)
   updatedAt    DateTime @db.Timestamptz(3)
   /// The last LIVE test and its honest verdict. `lastTestOk` is null until the

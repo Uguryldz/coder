@@ -150,13 +150,21 @@ x-node-env: &node-env
 
   # ── Yapay zekâ uç noktası (kurum içi) ──────────────────────────────────────
   # DİKKAT: LLM_BASE_URL sonunda `/v1` OLMAYACAK — sürücü kendisi ekler.
-  LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL gerekli — sonunda /v1 OLMADAN}
-  LLM_MODEL: ${LLM_MODEL:?LLM_MODEL gerekli}
+  # Model artık PANELDEN tanımlanır ("Ayarlar & bağlantılar"): adres, model adı,
+  # anahtar ve "kurum içinde çalışıyor" işareti orada girilir ve kaydedildiği
+  # anda geçerli olur. Bu üç değişken ARTIK ZORUNLU DEĞİL (`:?` kaldırıldı);
+  # boşsa kurulum AÇILIR ve ilk model çağrısında adıyla reddeder. Dolu
+  # bırakılırsa, panelde model satırı olmayan kurulumlar için eski davranış
+  # aynen sürer.
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_MODEL: ${LLM_MODEL:-}
   LLM_API_KEY_REF: ${LLM_API_KEY_REF:-kv/llm#api-key}
   # Uç nokta gerçekten kurum içindeyse true. false kalırsa `gizli` sınıflı
   # işler on-prem model yok sayılır ve analiz "elle tamamlayın" diye bozularak
   # biter — hata değil, EKSİK ÇIKTI.
-  LLM_ON_PREM: ${LLM_ON_PREM:?LLM_ON_PREM gerekli — kurum içi endpoint icin true}
+  # Panelde tanımlı model için OKUNMAZ; oradaki işaret geçerlidir. Yalnız .env
+  # ile yapılandırılmış kurulumlarda anlamını korur.
+  LLM_ON_PREM: ${LLM_ON_PREM:-true}
 
   # ── Kimlik (LDAP/AD) ───────────────────────────────────────────────────────
   # Varsayılan `local`: pilot kurulum yerel hesapla başlar, LDAP sonradan

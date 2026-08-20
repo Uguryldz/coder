@@ -131,13 +131,28 @@ x-node-env: &node-env
   ADO_WEBHOOK_SECRET_REF: ${ADO_WEBHOOK_SECRET_REF:-kv/ado#webhook}
 
   # ── Yapay zekâ uç noktası ──────────────────────────────────────────────────
-  # DİKKAT: LLM_BASE_URL sonunda `/v1` OLMAYACAK — sürücü kendisi ekler.
-  LLM_BASE_URL: ${LLM_BASE_URL:?LLM_BASE_URL gerekli — sonunda /v1 OLMADAN}
-  LLM_MODEL: ${LLM_MODEL:?LLM_MODEL gerekli}
+  # Model artık PANELDEN tanımlanır: "Ayarlar & bağlantılar" ekranında adres,
+  # model adı, anahtar ve "kurum içinde çalışıyor" işareti birlikte girilir ve
+  # kaydedildiği anda çalışan servisler onu kullanır — yeniden başlatma yok.
+  #
+  # Aşağıdaki üç değişken bu yüzden ARTIK ZORUNLU DEĞİL (`:?` kaldırıldı).
+  # Boş bırakılabilir: hiç model tanımlanmamış bir kurulum AÇILIR ve ilk model
+  # çağrısında adıyla ("henüz bir model tanımlanmadı") reddeder — panelin
+  # açılabilmesi için servisin ayakta olması gerekir.
+  #
+  # Dolu bırakılırsa eski davranış aynen sürer: panelde model satırı yoksa bu
+  # değerler kullanılır. Böylece hâlihazırda çalışan bir kurulum bu sürüme
+  # geçtiğinde hiçbir şey değişmez.
+  #
+  # DİKKAT (dolduracaksanız): LLM_BASE_URL sonunda `/v1` OLMAYACAK — sürücü
+  # kendisi ekler. Panele yazarken bu tuzak kendiliğinden temizlenir.
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_MODEL: ${LLM_MODEL:-}
   LLM_API_KEY_REF: ${LLM_API_KEY_REF:-kv/llm#api-key}
-  # Uç nokta gerçekten kurum içindeyse true. false kalırsa `gizli` sınıflı
-  # işler on-prem model yok sayılır ve analiz "elle tamamlayın" diye bozularak
-  # biter — hata değil, EKSİK ÇIKTI.
+  # Panelde tanımlı model için bu değişken OKUNMAZ; oradaki "kurum içinde
+  # çalışıyor" işareti geçerlidir. Yalnız .env ile yapılandırılmış kurulumlarda
+  # anlamını korur: false ise `gizli` sınıflı işler on-prem model yok sayılır
+  # ve analiz "elle tamamlayın" diye biter — hata değil, EKSİK ÇIKTI.
   LLM_ON_PREM: ${LLM_ON_PREM:-true}
 
   # ── Kimlik (LDAP/AD) ───────────────────────────────────────────────────────

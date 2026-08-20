@@ -35,6 +35,10 @@ export interface ConnectionRow {
   secretRef: string | null;
   secretMask: string | null;
   enabled: boolean;
+  /** M18: whether this endpoint runs inside the institution. */
+  onPrem: boolean;
+  /** Which model answers when a run names none; at most one row may hold it. */
+  isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
   lastTestedAt: Date | null;
@@ -127,6 +131,8 @@ function toRecord(row: ConnectionRow): ConnectionRecord {
     secretRef: row.secretRef,
     secretMask: row.secretMask,
     enabled: row.enabled,
+    onPrem: row.onPrem,
+    isDefault: row.isDefault,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastTestedAt: row.lastTestedAt === null ? null : row.lastTestedAt.toISOString(),
@@ -146,6 +152,8 @@ function toRow(record: ConnectionRecord): ConnectionWriteRow {
     secretRef: record.secretRef,
     secretMask: record.secretMask,
     enabled: record.enabled,
+    onPrem: record.onPrem,
+    isDefault: record.isDefault,
     createdAt: new Date(record.createdAt),
     updatedAt: new Date(record.updatedAt),
     lastTestedAt: record.lastTestedAt === null ? null : new Date(record.lastTestedAt),

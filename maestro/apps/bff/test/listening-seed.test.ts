@@ -112,6 +112,8 @@ const JIRA_CONN = {
   lastTestedAt: null,
   lastTestOk: null,
   lastTestNote: null,
+  onPrem: false,
+  isDefault: false,
 };
 
 /** GET /project/{key}/statuses — issue-type groups with the `subtask` flag. */

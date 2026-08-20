@@ -116,8 +116,33 @@ export const DeployEnvSchema = z.object({
   STORAGE_REGION: z.string().min(1).default("us-east-1"),
 
   // ── LLM ─────────────────────────────────────────────────────────────────
-  LLM_BASE_URL: z.string().url().optional(),
-  LLM_MODEL: z.string().min(1).default("gpt-4o-mini"),
+  /**
+   * The model endpoint, when a deployment still names one in its environment.
+   *
+   * BLANKABLE, and that is the trap this shape exists to defuse. Compose passes
+   * an unset variable as `${LLM_BASE_URL:-}` — an EMPTY STRING, not an absent
+   * key — and `z.string().url()` rejects `""`, so the whole process would refuse
+   * to boot over a setting the operator deliberately left blank now that the
+   * panel owns it. `BlankableUrl` in `@maestro/config` exists because this exact
+   * trap already broke a boot once; the same preprocessing is applied here.
+   *
+   * No longer REQUIRED anywhere: a model is added from the panel, and a stack
+   * with neither a variable nor a row boots and refuses at first use by name.
+   */
+  LLM_BASE_URL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().url().optional(),
+  ),
+  /**
+   * Blank-tolerant for the same reason, and the default is what a binding needs
+   * to PARSE — the gateway's schema demands a non-empty model on every binding.
+   * A panel row overrides it per call; absent a row this is what is dialled,
+   * which keeps an install configured only in `.env` working exactly as before.
+   */
+  LLM_MODEL: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).default("gpt-4o-mini"),
+  ),
   LLM_ON_PREM: z
     .enum(["true", "false"])
     .default("false")

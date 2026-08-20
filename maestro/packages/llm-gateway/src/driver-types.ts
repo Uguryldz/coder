@@ -10,6 +10,20 @@ export interface DriverCall {
   maxTokens: number;
   temperature: number;
   /**
+   * Overrides the driver's own endpoint for THIS call.
+   *
+   * Set when the active model came from the panel rather than the environment
+   * (`ModelResolver`). It travels per call for the same reason `credentialRef`
+   * does: a model an operator retargets in the UI must reach the next request
+   * without the port being rebuilt, and a value captured at composition time
+   * could never do that. Absent means "use the configured base URL", which is
+   * what every deployment that still names its endpoint in `.env` gets.
+   *
+   * Only the `openai-compat` driver reads it — it is the one transport whose
+   * server is an operator's choice rather than a vendor's fixed API root.
+   */
+  baseUrl?: string;
+  /**
    * Overrides the driver's own key reference — a subscription seat carries its
    * own credential while riding the same transport (M55).
    */

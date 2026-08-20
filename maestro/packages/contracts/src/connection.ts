@@ -95,6 +95,27 @@ export const Connection = z.object({
   /** Whether a token is stored at all — drives the "set / not set" affordance. */
   secretSet: z.boolean().default(false),
   enabled: z.boolean().default(true),
+  /**
+   * Whether this endpoint runs INSIDE the institution (M18).
+   *
+   * FLAGGED EXCEPTION to the frozen contract, and the second half of the one
+   * `openai_compat` already took. The M18 confidential rule needs a per-ROW
+   * answer, because an install may hold both an internal server and a cloud
+   * vendor and `gizli` must be able to tell them apart. It cannot be inferred
+   * from the URL: a private address is evidence about routing, not a claim
+   * about custody — a private IP can be a tunnel out, a public hostname can
+   * resolve to the basement. So it is something an operator ASSERTS and an
+   * auditor reads, and it defaults false so an unanswered question fails closed.
+   */
+  onPrem: z.boolean().default(false),
+  /**
+   * Whether this is the model the install dials when a run names none.
+   *
+   * At most one row may hold it, enforced by a partial unique index rather than
+   * by this schema: two enabled rows both claiming it would leave the answering
+   * model to row order, which is not something a bank can audit.
+   */
+  isDefault: z.boolean().default(false),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   lastTestedAt: IsoDateTime.nullable().default(null),
@@ -120,6 +141,10 @@ export const ConnectionInput = z.object({
   authKind: ConnectionAuthKind,
   config: ConnectionConfig.default({}),
   enabled: z.boolean().default(true),
+  /** See `Connection.onPrem` — the operator's assertion about where this runs. */
+  onPrem: z.boolean().default(false),
+  /** See `Connection.isDefault` — which model answers when a run names none. */
+  isDefault: z.boolean().default(false),
   /**
    * Write-only. Present = set/replace the token; absent = keep the existing one.
    *

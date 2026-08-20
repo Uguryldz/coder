@@ -12,6 +12,7 @@ import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.
 import { reconcileRunStatuses } from "../stores/reconcile.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { llmCallRecorder } from "../stores/llm-call-log.js";
+import { connectionModelFrom } from "../stores/connection-model.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
 import { connectTemporal } from "../temporal-gateway.js";
@@ -84,6 +85,11 @@ export async function main(): Promise<void> {
       // "Ayarlar & bağlantılar" was previously stored, tested and then ignored
       // by every one of them.
       connectionSecrets: connectionSecretsFrom(db),
+      // The model itself, from the same panel rows the credential comes from.
+      // Both processes resolve it through this one factory so the endpoint an
+      // admin tests green in the panel is the one the run dials — the split
+      // `connectionSecrets` closed for the token, closed here for the address.
+      resolveModel: connectionModelFrom(db),
     });
 
     const execution = buildTurnRunner(env, db, deployment.ports);

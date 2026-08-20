@@ -107,7 +107,6 @@ ZORUNLU=(
   CONNECTOR_MASTER_KEY
   POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB REDIS_PASSWORD
   MAESTRO_BOT_EMAIL
-  LLM_BASE_URL LLM_MODEL LLM_ON_PREM
   MAESTRO_SECRET_KV_LLM__API__2D_KEY
   JIRA_TOKEN_REF LLM_API_KEY_REF
   STUDIO_PORT
@@ -235,7 +234,9 @@ ok "CONNECTOR_MASTER_KEY geçerli (32 bayt)."
 info "Yapılandırma tutarlılığı…"
 
 # LLM_BASE_URL sonunda /v1 → sürücü de ekler → /v1/v1 → her çağrı 404
-if [[ "${LLM_BASE_URL:-}" =~ /v1/?$ ]]; then
+# (Yalnız .env'e adres yazılmışsa. Model artık panelden tanımlanabilir; boş
+# bırakılmışsa denetlenecek bir adres yoktur.)
+if [[ -n "${LLM_BASE_URL:-}" && "${LLM_BASE_URL}" =~ /v1/?$ ]]; then
   err "LLM_BASE_URL sonunda '/v1' var: ${LLM_BASE_URL}"
   err "  Sürücü '/v1/chat/completions' ekler; bu hâliyle '/v1/v1/...' olur ve"
   err "  her model çağrısı 404 döner. Sondaki '/v1' kısmını silin."
@@ -243,7 +244,7 @@ if [[ "${LLM_BASE_URL:-}" =~ /v1/?$ ]]; then
 fi
 
 # Kurum içi endpoint ama on-prem bayrağı kapalı → gizli işler bozularak biter
-if [[ "${LLM_ON_PREM:-}" != "true" ]]; then
+if [[ -n "${LLM_BASE_URL:-}" && "${LLM_ON_PREM:-}" != "true" ]]; then
   warn "LLM_ON_PREM='${LLM_ON_PREM:-}' — 'true' değil."
   warn "  Bu hâlde 'gizli' sınıflı işlerde on-prem model YOK sayılır; analiz"
   warn "  'elle tamamlayın' diye bozularak biter — hata değil, eksik çıktı."

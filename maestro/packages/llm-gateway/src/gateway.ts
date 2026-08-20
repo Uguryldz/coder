@@ -26,6 +26,7 @@ import {
   type SessionOutcome,
   haltedFrom,
 } from "./outcomes.js";
+import { ModelNotConfiguredError, type ModelResolver, type ResolvedModel } from "./model-source.js";
 import { LlmPolicy } from "./policy.js";
 import { SubscriptionPool } from "./pool.js";
 import { type AgentRunner, AgentSessionStore, type SessionPin, describePin } from "./session.js";
@@ -51,6 +52,21 @@ export interface LlmGatewayDeps {
   runId?: () => string | null;
   signRequest?: DriverDeps["signRequest"];
   accessToken?: DriverDeps["accessToken"];
+  /**
+   * The model this install actually dials, re-read on every call (M107).
+   *
+   * When absent, the gateway behaves exactly as it always has and every fact
+   * comes from the static config — which is what keeps this invisible to a
+   * deployment that names its endpoint in `.env`. When present and answering a
+   * row, that row's endpoint, model id and on-prem flag OVERRIDE the config for
+   * that call, so a model added or changed in the panel takes effect with no
+   * restart. When present and answering `null`, the install has no model at all
+   * and the call refuses by name rather than dialling a placeholder.
+   *
+   * See `model-source.ts` for why this is a thunk rather than a value, and for
+   * the one part that deliberately stays a deployment decision.
+   */
+  resolveModel?: ModelResolver;
 }
 
 interface Routed {
@@ -78,6 +94,15 @@ export class LlmGateway implements LlmPort {
   private readonly sessions: AgentSessionStore;
   private readonly drivers = new Map<ApiDriverId, LlmDriver>();
   private readonly now: () => Date;
+  /** On-prem standing from the static config, used when no panel row is active. */
+  private readonly staticOnPrem: ReadonlyMap<ApiDriverId, boolean>;
+  /**
+   * The row `activeModel()` last resolved, held only for the duration of one
+   * call so `policy.resolve` and `route` agree about which server they are
+   * deciding for. It is refreshed before every resolution and never cached
+   * across calls — a model changed in the panel must be live on the next one.
+   */
+  #active: ResolvedModel | null = null;
 
   constructor(
     private readonly cfg: LlmGatewayConfig,
@@ -105,9 +130,23 @@ export class LlmGateway implements LlmPort {
     }
 
     const onPrem = new Map(cfg.drivers.map((d) => [d.driver, d.onPrem && d.enabled] as const));
+    this.staticOnPrem = onPrem;
     this.policy = new LlmPolicy(
       cfg,
-      (id) => onPrem.get(id as ApiDriverId) === true,
+      /**
+       * Whether this driver counts as on-prem RIGHT NOW.
+       *
+       * When a panel row is active it is the authority — an operator who moved
+       * the endpoint to a cloud vendor must not keep the on-prem standing the
+       * `.env` binding had, and one who pointed it at an internal server must
+       * gain it. `#active` is refreshed immediately before every `policy.resolve`
+       * (see `activeModel`), so this closure reads a value that belongs to the
+       * call being decided rather than to whenever the port was built.
+       *
+       * Falling back to the static map when no row is active is what keeps a
+       * deployment configured entirely from `.env` behaving exactly as before.
+       */
+      (id) => (this.#active === null ? onPrem.get(id as ApiDriverId) === true : this.#active.onPrem),
       (id) => (isSubscriptionDriver(id) ? true : this.drivers.has(id as ApiDriverId)),
     );
     this.pool = new SubscriptionPool(cfg.subscriptionPool, this.now);
@@ -117,6 +156,9 @@ export class LlmGateway implements LlmPort {
   /** Thinking roles (M16/M19). One call, one schema, one outcome the caller branches on. */
   async generateObject<T>(request: GenerateObjectRequest, schema: z.ZodType<T>): Promise<GatewayOutcome<T>> {
     const req = GenerateObjectRequestSchema.parse(request);
+    // BEFORE the policy: the confidential rule is decided against the endpoint
+    // this call will really dial, not against whatever was true at boot.
+    const active = await this.#activeModel();
     const decision = this.policy.resolve(req.role, req.variantId, req.dataClass);
     if (decision.kind !== "allow") return haltedFrom(decision);
     // Masking happens BEFORE a seat is taken: a missing masker is a wiring bug,
@@ -124,6 +166,10 @@ export class LlmGateway implements LlmPort {
     const masked = decision.masked ? this.mask(req.input, req.dataClass, "llm-gateway/generate-object") : null;
     const routed = this.route(decision.driver, decision.model);
     if (routed.status !== "ready") return routed;
+    // A panel row names the model too, and it wins: the id the operator typed
+    // is the one the test verified against `/v1/models`, so binding to a stale
+    // `.env` name here would make a green test evidence about nothing.
+    const target = overrideFor(routed, active);
 
     const counter = new CallCounter();
     try {
@@ -133,16 +179,19 @@ export class LlmGateway implements LlmPort {
         schema,
         input: masked === null ? req.input : masked.payload,
         call: {
-          model: routed.model,
+          model: target.model,
           maxTokens: this.cfg.maxTokens,
           temperature: this.cfg.temperature,
           counter,
-          ...(routed.credentialRef === null ? {} : { credentialRef: routed.credentialRef }),
+          ...(target.baseUrl === null ? {} : { baseUrl: target.baseUrl }),
+          ...(target.credentialRef === null ? {} : { credentialRef: target.credentialRef }),
         },
       });
       const { tokensIn, tokensOut, cachePct } = out;
       const { role, variantId, dataClass } = req;
-      const log = this.writeLog({ role, variantId, dataClass, driver: routed.driver, model: routed.model, tokensIn, tokensOut, cachePct });
+      // The log records what was ACTUALLY dialled, so the audit trail names the
+      // model that answered rather than the one a config file still mentions.
+      const log = this.writeLog({ role, variantId, dataClass, driver: routed.driver, model: target.model, tokensIn, tokensOut, cachePct });
       return { status: "ok", value: out.object, log, ...(masked === null ? {} : { unmask: masked.unmask }) };
     } finally {
       // A failed call still burned the seat's quota — retries included.
@@ -167,6 +216,10 @@ export class LlmGateway implements LlmPort {
     const { dataClass, variantId } = opts;
 
     const existing = opts.resumeToken === undefined ? null : this.sessions.resume(opts.resumeToken, opts.workspacePath);
+    // Re-resolved per turn, exactly like the policy is: a model changed in the
+    // panel mid-session must be seen here, and the pin check below is what
+    // decides whether the session may continue on it.
+    await this.#activeModel();
     const decision = this.policy.resolve(role, variantId, dataClass);
     if (decision.kind !== "allow") return haltedFrom(decision);
     const pin: SessionPin = { driver: decision.driver, model: decision.model, dataClass, masked: decision.masked };
@@ -210,6 +263,33 @@ export class LlmGateway implements LlmPort {
     return this.pool.snapshot();
   }
 
+  /**
+   * Refresh the active model row and answer with it.
+   *
+   * Called at the TOP of every port method, before the policy is consulted, so
+   * that the routing decision and the request that follows describe the same
+   * server. Three answers, and each is a different situation:
+   *
+   *   - no resolver wired   → `null`, and every fact stays the static config's.
+   *     This is the path a deployment with `.env` values takes, unchanged.
+   *   - resolver, no row    → `ModelNotConfiguredError`. A fresh install BOOTS
+   *     and refuses HERE, at first use, naming the panel — the same shape the
+   *     work/ci/scan ports use, and the reason the process does not demand a
+   *     model at startup: the panel is how one gets added.
+   *   - resolver with a row → that row wins for this call.
+   */
+  async #activeModel(): Promise<ResolvedModel | null> {
+    const resolve = this.deps.resolveModel;
+    if (resolve === undefined) {
+      this.#active = null;
+      return null;
+    }
+    const active = await resolve();
+    if (active === null) throw new ModelNotConfiguredError();
+    this.#active = active;
+    return active;
+  }
+
   private route(driver: LlmDriverId, model: string): Routed | QueuedOutcome {
     if (!isSubscriptionDriver(driver)) {
       return { status: "ready", driver, model, transport: this.transport(driver as ApiDriverId), credentialRef: null, accountId: null };
@@ -242,6 +322,26 @@ export class LlmGateway implements LlmPort {
     this.deps.onCallLog?.(log);
     return log;
   }
+}
+
+/**
+ * What this call should actually dial, once a panel row has had its say.
+ *
+ * A row overrides the endpoint and the model id, but ONLY for the HTTP
+ * transports. A subscription seat is deliberately left alone: it carries its
+ * own credential and its own vendor endpoint (`route` already picked both from
+ * the pool), and a self-hosted address has no meaning for a CLI running against
+ * a consumer subscription. Overriding it would point a seat at a server it
+ * cannot authenticate to.
+ */
+function overrideFor(
+  routed: Routed,
+  active: ResolvedModel | null,
+): { model: string; baseUrl: string | null; credentialRef: string | null } {
+  if (active === null || routed.accountId !== null) {
+    return { model: routed.model, baseUrl: null, credentialRef: routed.credentialRef };
+  }
+  return { model: active.model, baseUrl: active.baseUrl, credentialRef: active.apiKeyRef };
 }
 
 /** A session may only continue on the exact backend/class/masking it opened with. */

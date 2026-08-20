@@ -801,6 +801,8 @@ const GH_CONN = {
   lastTestedAt: null,
   lastTestOk: null,
   lastTestNote: null,
+  onPrem: false,
+  isDefault: false,
 };
 
 describe("GET /onboarding/scm-connections", () => {
@@ -908,6 +910,8 @@ const JIRA_CONN = {
   lastTestedAt: null,
   lastTestOk: null,
   lastTestNote: null,
+  onPrem: false,
+  isDefault: false,
 };
 
 describe("GET /onboarding/jira-connections", () => {

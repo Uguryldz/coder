@@ -31,6 +31,8 @@ function conn(over: Partial<ConnectionRecord> = {}): ConnectionRecord {
     lastTestedAt: null,
     lastTestOk: null,
     lastTestNote: null,
+    onPrem: false,
+    isDefault: false,
     ...over,
   };
 }

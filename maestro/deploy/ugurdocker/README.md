@@ -59,8 +59,8 @@ o sürücü çalışır) ve kurum registry'si kullanacaksanız **imaj adresleri*
 tamamını değiştirin:
 
 ```bash
-MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.0"
-MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.0"
+MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.1"
+MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.1"
 
 # İKİSİNDEN YALNIZCA BİRİ — hangisini doldurursanız o sürücü çalışır:
 JIRA_CLOUD_BASE_URL="https://kurum.atlassian.net"   # Jira Cloud

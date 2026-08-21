@@ -67,14 +67,23 @@ export interface ConnectionModelDelegate {
 export const MODEL_CONNECTION_KINDS: readonly string[] = ["openai_compat", "openrouter", "anthropic"];
 
 /**
- * The SecretPort reference a model connection's key answers to.
+ * The ENV FALLBACK's SecretPort reference — and that is the only thing it is.
  *
- * Deliberately the SAME reference `llmConfig` has always handed the driver, so
- * `ConnectionSecretPort` keeps resolving it exactly as it does today — from the
- * panel row when one holds a token, from the environment otherwise. Introducing
- * a second reference here would have created a second place for the key to come
- * from, and two credential paths that never meet is the bug this codebase has
- * already fixed once.
+ * A resolved panel row carries its OWN slot instead (`row.secretRef`, the
+ * `connector:<id>:<rand>` reference the panel's `storeToken` wrote), so the
+ * endpoint, the model id, the on-prem flag AND the key are all facts of the
+ * same row. This shared reference appears in exactly two situations: the
+ * static `.env` configuration, which has no row to carry a slot, and a row
+ * whose operator never stored a token (`secretRef` null) — the honest "the
+ * key still lives wherever the deployment keeps it" case.
+ *
+ * It USED to be the reference every resolved row named, with
+ * `ConnectionSecretPort` scanning the connection table to answer it. Since
+ * migration 0021 an install may hold SEVERAL model rows, and two independent
+ * scans — one picking the model by `isDefault`, one picking the key by row
+ * order — could disagree, sending one row's real cloud key as a Bearer header
+ * to another row's server. Carrying the picked row's own slot is what makes
+ * that disagreement unrepresentable.
  */
 export const LLM_API_KEY_REF = "kv/llm#api-key";
 
@@ -132,10 +141,13 @@ export function connectionModelFrom(db: {
        * The database is unreachable, or the table has not been migrated on a
        * stack that predates this change. Neither is a reason to fail a call the
        * ENVIRONMENT can still answer: returning null hands the decision back to
-       * the static config, so a deployment that still names `LLM_BASE_URL` keeps
-       * running exactly as before. An install configured only from the panel
-       * reaches the not-configured refusal instead, which is the honest answer
-       * for it.
+       * the static config — the gateway's `#activeModel` treats a null from
+       * this resolver as "the panel has no answer" and falls back to the
+       * `.env`-derived binding, so a deployment that still names `LLM_BASE_URL`
+       * keeps running exactly as before, a transient outage included. An
+       * install configured only from the panel reaches the not-configured
+       * refusal instead, which is the honest answer for it: with the rows
+       * unreadable and no environment endpoint there is nothing to dial.
        */
       return null;
     }
@@ -154,7 +166,17 @@ export function connectionModelFrom(db: {
        * so it must be something an operator asserted and an auditor can read.
        */
       onPrem: row.onPrem,
-      apiKeyRef: LLM_API_KEY_REF,
+      /**
+       * THE PICKED ROW answers for its own key. `secretRef` is the slot the
+       * panel's `storeToken` enciphered this row's token into — empty string
+       * included, which the driver reads as "send no Authorization header at
+       * all". Naming the row's slot here, rather than the shared reference, is
+       * what guarantees the credential and the endpoint come from the SAME
+       * row: the shared `kv/llm#api-key` fallback is reserved for a row that
+       * never stored a token, and it resolves from the environment only —
+       * never by scanning other rows (see `LLM_API_KEY_REF` above).
+       */
+      apiKeyRef: row.secretRef ?? LLM_API_KEY_REF,
     };
   };
 }

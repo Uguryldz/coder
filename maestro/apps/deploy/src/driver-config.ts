@@ -1,3 +1,4 @@
+import { NO_ENDPOINT_CONFIGURED } from "@maestro/llm-gateway";
 import type { DeployEnv } from "./env.js";
 import { vaultMounts } from "./env.js";
 import { objectLockConfig } from "./object-lock.js";
@@ -277,21 +278,19 @@ function allowed(env: DeployEnv, driver: string): string[] {
 }
 
 /**
- * A placeholder endpoint for an install that names none.
+ * A placeholder endpoint for an install that names none — NEVER DIALLED.
  *
- * NEVER DIALLED. The driver's schema demands a syntactically valid URL to build
- * at all, and a stack configured entirely from the panel has no address to give
- * it at composition time — the panel is how one is added, so boot cannot demand
- * it. `resolveModel` overrides this on every call that has a row; a call with no
- * row never reaches a transport, because the gateway raises
- * `ModelNotConfiguredError` first and by name.
+ * The driver's schema demands a syntactically valid URL to build at all, and a
+ * stack configured entirely from the panel has no address to give it at
+ * composition time — the panel is how one is added, so boot cannot demand it.
  *
- * `.invalid` is the RFC 2606 reserved TLD, guaranteed never to resolve. That is
- * chosen over a plausible-looking default deliberately: if this value ever DID
- * escape into a request, the failure must be an instant, obvious DNS refusal —
- * not a connection to a host somebody else controls.
+ * The constant itself lives in `@maestro/llm-gateway` (`model-source.ts`),
+ * because the gateway is what must RECOGNIZE it: when the panel has no row it
+ * falls back to this static value only if it is a real endpoint, and raises
+ * `ModelNotConfiguredError` by name instead of dialling the placeholder. Two
+ * copies of the string would let the two decisions drift apart silently. The
+ * gateway's copy also carries the RFC 2606 `.invalid` rationale.
  */
-const NO_ENDPOINT_CONFIGURED = "https://model-not-configured.invalid";
 
 export function llmConfig(env: DeployEnv): Record<string, unknown> {
   /**

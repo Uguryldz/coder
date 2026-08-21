@@ -26,7 +26,7 @@ import {
   type SessionOutcome,
   haltedFrom,
 } from "./outcomes.js";
-import { ModelNotConfiguredError, type ModelResolver, type ResolvedModel } from "./model-source.js";
+import { ModelNotConfiguredError, NO_ENDPOINT_CONFIGURED, type ModelResolver, type ResolvedModel } from "./model-source.js";
 import { LlmPolicy } from "./policy.js";
 import { SubscriptionPool } from "./pool.js";
 import { type AgentRunner, AgentSessionStore, type SessionPin, describePin } from "./session.js";
@@ -56,17 +56,31 @@ export interface LlmGatewayDeps {
    * The model this install actually dials, re-read on every call (M107).
    *
    * When absent, the gateway behaves exactly as it always has and every fact
-   * comes from the static config — which is what keeps this invisible to a
-   * deployment that names its endpoint in `.env`. When present and answering a
-   * row, that row's endpoint, model id and on-prem flag OVERRIDE the config for
-   * that call, so a model added or changed in the panel takes effect with no
-   * restart. When present and answering `null`, the install has no model at all
-   * and the call refuses by name rather than dialling a placeholder.
+   * comes from the static config. When present and answering a row, that
+   * row's endpoint, model id, on-prem flag and credential OVERRIDE the config
+   * for that call, so a model added or changed in the panel takes effect with
+   * no restart. When present and answering `null`, the PANEL has no model —
+   * and the static config answers next, which is what keeps a deployment that
+   * names its endpoint in `.env` running unchanged even though both
+   * entrypoints wire this resolver unconditionally. Only when the static
+   * config names no endpoint either (`NO_ENDPOINT_CONFIGURED`) does the call
+   * refuse by name rather than dialling a placeholder.
    *
    * See `model-source.ts` for why this is a thunk rather than a value, and for
    * the one part that deliberately stays a deployment decision.
    */
   resolveModel?: ModelResolver;
+  /**
+   * Where the "which source answered" journal line goes (default console).
+   *
+   * A two-layer model source needs its precedence to be VISIBLE: an operator
+   * whose panel row shadows a `.env` value — or whose `.env` value is quietly
+   * carrying the whole install because no row exists — must be able to read
+   * which one the runs are actually using, or "I changed it and nothing
+   * happened" becomes undiagnosable. Same reasoning, same shape as
+   * `ConnectionSecretPort`'s announcement of a shadowed credential.
+   */
+  log?: (message: string) => void;
 }
 
 interface Routed {
@@ -103,6 +117,21 @@ export class LlmGateway implements LlmPort {
    * across calls — a model changed in the panel must be live on the next one.
    */
   #active: ResolvedModel | null = null;
+  /**
+   * Whether the static config names a REAL endpoint — i.e. any enabled HTTP
+   * driver whose baseUrl is not the never-dialled `NO_ENDPOINT_CONFIGURED`
+   * placeholder `llmConfig` writes for an install with no `LLM_BASE_URL`.
+   * This is what separates "fall back to `.env`" from the honest
+   * `ModelNotConfiguredError`: the refusal is reserved for a stack where the
+   * panel has no row AND the environment names nothing.
+   */
+  readonly #staticEndpointConfigured: boolean;
+  /**
+   * The model-source line last written, deduplicated so the journal says which
+   * layer answers ONCE per change rather than once per call — this resolves on
+   * every request, and a per-call line would bury the thing it is saying.
+   */
+  #announcedSource: string | null = null;
 
   constructor(
     private readonly cfg: LlmGatewayConfig,
@@ -131,6 +160,12 @@ export class LlmGateway implements LlmPort {
 
     const onPrem = new Map(cfg.drivers.map((d) => [d.driver, d.onPrem && d.enabled] as const));
     this.staticOnPrem = onPrem;
+    // Bedrock's baseUrl is optional (the public regional endpoint is implied),
+    // so a driver WITHOUT one still counts as configured; only the explicit
+    // placeholder marks "no endpoint anywhere".
+    this.#staticEndpointConfigured = cfg.drivers.some(
+      (d) => d.enabled && (!("baseUrl" in d) || d.baseUrl !== NO_ENDPOINT_CONFIGURED),
+    );
     this.policy = new LlmPolicy(
       cfg,
       /**
@@ -268,26 +303,52 @@ export class LlmGateway implements LlmPort {
    *
    * Called at the TOP of every port method, before the policy is consulted, so
    * that the routing decision and the request that follows describe the same
-   * server. Three answers, and each is a different situation:
+   * server. The precedence is ROW → ENV → REFUSAL, and each layer is a
+   * different situation:
    *
-   *   - no resolver wired   → `null`, and every fact stays the static config's.
-   *     This is the path a deployment with `.env` values takes, unchanged.
-   *   - resolver, no row    → `ModelNotConfiguredError`. A fresh install BOOTS
-   *     and refuses HERE, at first use, naming the panel — the same shape the
-   *     work/ci/scan ports use, and the reason the process does not demand a
-   *     model at startup: the panel is how one gets added.
    *   - resolver with a row → that row wins for this call.
+   *   - resolver, no row (or no resolver at all) → `null`, and every fact
+   *     stays the static config's. Both entrypoints wire the resolver
+   *     UNCONDITIONALLY, so this is the path every deployment configured only
+   *     in `.env` takes on every call — including the panel-configured stack
+   *     whose database blips, because `connectionModelFrom` maps a read
+   *     failure to `null` rather than failing a call the environment can
+   *     still answer.
+   *   - nothing at either layer (`#staticEndpointConfigured` false) →
+   *     `ModelNotConfiguredError`. A fresh install BOOTS and refuses HERE, at
+   *     first use, naming the panel — the same shape the work/ci/scan ports
+   *     use, and the reason the process does not demand a model at startup:
+   *     the panel is how one gets added.
    */
   async #activeModel(): Promise<ResolvedModel | null> {
-    const resolve = this.deps.resolveModel;
-    if (resolve === undefined) {
+    const active = this.deps.resolveModel === undefined ? null : await this.deps.resolveModel();
+    if (active === null) {
+      if (!this.#staticEndpointConfigured) throw new ModelNotConfiguredError();
+      // Announced only when a panel layer exists to lose: absent a resolver
+      // there is one source, no precedence, and nothing worth a journal line.
+      if (this.deps.resolveModel !== undefined) {
+        this.#announceSource(
+          "env",
+          "[maestro] llm: panelde etkin bir model bağlantısı yok; `.env` yapılandırması (LLM_BASE_URL/LLM_MODEL) kullanılıyor.",
+        );
+      }
       this.#active = null;
       return null;
     }
-    const active = await resolve();
-    if (active === null) throw new ModelNotConfiguredError();
+    this.#announceSource(
+      `panel ${active.baseUrl} ${active.model}`,
+      `[maestro] llm: model panelde tanımlı bağlantıdan çözüldü (${active.baseUrl}, model "${active.model}"); ` +
+        "`.env` içindeki LLM_BASE_URL/LLM_MODEL değerleri yok sayılıyor.",
+    );
     this.#active = active;
     return active;
+  }
+
+  /** Write the model-source line when the answering layer (or row) changes. */
+  #announceSource(key: string, message: string): void {
+    if (this.#announcedSource === key) return;
+    this.#announcedSource = key;
+    (this.deps.log ?? ((m: string) => console.info(m)))(message);
   }
 
   private route(driver: LlmDriverId, model: string): Routed | QueuedOutcome {

@@ -39,12 +39,17 @@
  */
 
 /**
- * What a resolver answers with, or `null` when the install has no model row.
+ * What a resolver answers with, or `null` when the PANEL has no model row.
  *
- * `null` is a REAL answer and not a failure: a fresh stack has configured
- * nothing yet, and the panel is how a model gets added — so the port must
- * compose and the process must boot with no model at all. The refusal happens
- * at first USE, by name, exactly as the `work`/`ci`/`scan` ports refuse.
+ * `null` is a REAL answer and not a failure — and it is the panel's answer
+ * only, never the install's. The gateway holds a second, static layer (the
+ * `.env`-derived driver config), and `null` hands the decision to it: a
+ * deployment that still names `LLM_BASE_URL` keeps running on it exactly as
+ * before the panel existed. Only when the static layer names no endpoint
+ * either (its `baseUrl` is `NO_ENDPOINT_CONFIGURED`) does the call refuse —
+ * at first USE, by name, exactly as the `work`/`ci`/`scan` ports refuse,
+ * because a fresh stack must boot with no model at all so the panel can be
+ * the place one is added.
  */
 export interface ResolvedModel {
   /**
@@ -68,15 +73,43 @@ export interface ResolvedModel {
   readonly onPrem: boolean;
   /**
    * Where the key lives, as a SecretPort reference — never the key itself, so
-   * this object stays safe to log. `ConnectionSecretPort` already answers
-   * `kv/llm#api-key` from the panel row, empty string included, which is what
-   * makes a keyless self-hosted server representable.
+   * this object stays safe to log.
+   *
+   * This is the PICKED ROW'S OWN slot (`connector:<id>:<rand>`, the reference
+   * the panel's `storeToken` wrote), so the endpoint, the model id, the
+   * on-prem flag and the credential are all facts of the same row. It used to
+   * be the shared `kv/llm#api-key` reference, resolved by scanning connection
+   * rows — and with several model rows the scan could pick a DIFFERENT row
+   * than the model resolver did, sending one server another server's key. A
+   * row whose operator never stored a token (secretRef null) names the shared
+   * env reference instead, which is the honest "the key still lives in `.env`"
+   * case; an empty string stored in the slot still means "send no key at all".
    */
   readonly apiKeyRef: string;
 }
 
 /**
- * Resolves the active model, or `null` when none is configured.
+ * The static config's baseUrl on an install that names none — NEVER DIALLED.
+ *
+ * Written by `llmConfig` (apps/deploy) when `LLM_BASE_URL` is absent, because
+ * the driver's schema demands a syntactically valid URL to compose at all, and
+ * a stack configured entirely from the panel has no address to give it at
+ * boot. It lives HERE, not in deploy, because the gateway is what must
+ * RECOGNIZE it: a resolver that finds no panel row falls back to the static
+ * config, and this value is how the gateway tells "a real `.env` endpoint"
+ * from "nothing is configured anywhere" — the only case that may raise
+ * `ModelNotConfiguredError`.
+ *
+ * `.invalid` is the RFC 2606 reserved TLD, guaranteed never to resolve. That
+ * is chosen over a plausible-looking default deliberately: if this value ever
+ * DID escape into a request, the failure must be an instant, obvious DNS
+ * refusal — not a connection to a host somebody else controls.
+ */
+export const NO_ENDPOINT_CONFIGURED = "https://model-not-configured.invalid";
+
+/**
+ * Resolves the panel's active model, or `null` when the panel has none —
+ * the static config then decides, see `ResolvedModel`'s note on `null`.
  *
  * Called on EVERY request on purpose — there is no cache. A model changed in
  * the panel is live on the next call, and the alternative is the class of bug

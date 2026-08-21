@@ -257,18 +257,21 @@ describe("ConnectionSecretPort", () => {
 });
 
 /**
- * The self-hosted model server's credential.
+ * The model server's credential — served BY SLOT, never by kind scan.
  *
- * `openai_compat` is the third kind allowed to answer for `kv/llm#api-key`, and
- * it is the only one whose key may legitimately be EMPTY — an internal vLLM or
- * Ollama commonly needs none. That makes the empty string a real answer this
- * resolver has to serve, not a missing value it should fall through on: an
- * install whose operator deliberately configured "no key" must not silently
- * revert to a stale `LLM_API_KEY` left in `.env`, or the platform would send an
- * internal server a credential nobody asked it to send and the operator would
- * have no way to see it happening.
+ * Since migration 0021 an install may hold SEVERAL model rows, so a kind scan
+ * answering the shared `kv/llm#api-key` could pick a DIFFERENT row than the
+ * model resolver did — one row's key on another row's server, credential
+ * egress with no error anywhere. `connectionModelFrom` therefore hands the
+ * driver the picked row's OWN `connector:` slot, this port serves such slots
+ * directly, and the shared reference belongs to the `.env` fallback alone.
+ *
+ * The empty key stays a REAL answer: an internal vLLM or Ollama commonly needs
+ * none, and an operator who explicitly configured "no key" must not silently
+ * revert to a stale `LLM_API_KEY` left in `.env` — the platform would send an
+ * internal server a credential nobody asked it to send, invisibly.
  */
-describe("ConnectionSecretPort — the on-premise model server", () => {
+describe("ConnectionSecretPort — the model connection's own slot", () => {
   const onPremRow: ConnectionCredentialRow = {
     id: "llm-onprem",
     kind: "openai_compat",
@@ -276,14 +279,16 @@ describe("ConnectionSecretPort — the on-premise model server", () => {
     enabled: true,
   };
 
-  it("serves the model key from the panel's connection, outranking .env", async () => {
+  it("serves a connector: reference straight from the panel's store", async () => {
     const port = new ConnectionSecretPort({
       connections: connections([onPremRow]),
       connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "panel-model-anahtari" }),
       fallback: envPort({ "kv/llm#api-key": "env-model-anahtari" }),
       log: () => {},
     });
-    expect(await port.get("kv/llm#api-key")).toBe("panel-model-anahtari");
+    // The caller (the model resolver) already named the exact row; no scan, no
+    // chance of another row's credential answering in its place.
+    expect(await port.get("connector:llm-onprem:beef01")).toBe("panel-model-anahtari");
   });
 
   it("serves an EMPTY key as an answer, never as a reason to fall back to .env", async () => {
@@ -296,10 +301,39 @@ describe("ConnectionSecretPort — the on-premise model server", () => {
     });
     // Falling through here would hand an internal server a credential the
     // operator thought they had removed.
-    expect(await port.get("kv/llm#api-key")).toBe("");
+    expect(await port.get("connector:llm-onprem:beef01")).toBe("");
   });
 
-  it("leaves every other reference alone — it owns the model key and nothing else", async () => {
+  it("fails LOUDLY on a slot that will not decrypt — no other source's key in its place", async () => {
+    const port = new ConnectionSecretPort({
+      connections: connections([onPremRow]),
+      // Master key rotated: the slot exists on the row but cannot be read.
+      connectorSecrets: connectorPort({}),
+      fallback: envPort({ "kv/llm#api-key": "env-model-anahtari" }),
+      log: () => {},
+    });
+    // Deliberately NOT the shared-kind fallback behaviour: a per-row slot has
+    // no `.env` equivalent, and substituting a credential from a different
+    // source is exactly the cross-wiring the per-row reference forbids. The
+    // panel already shows this row failing its test.
+    await expect(port.get("connector:llm-onprem:beef01")).rejects.toThrow();
+  });
+
+  it("answers the shared kv/llm#api-key from .env ONLY — never by scanning rows", async () => {
+    const port = new ConnectionSecretPort({
+      connections: connections([onPremRow]),
+      connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "panel-model-anahtari" }),
+      fallback: envPort({ "kv/llm#api-key": "env-model-anahtari" }),
+      log: () => {},
+    });
+    // The shared reference is asked only when no panel row answered the model
+    // (or the picked row never stored a token). An enabled row with a token is
+    // NOT allowed to claim it: the row that answers the endpoint is the one
+    // that answers the key, and it does so through its own slot above.
+    expect(await port.get("kv/llm#api-key")).toBe("env-model-anahtari");
+  });
+
+  it("leaves every other reference alone — connector rows do not claim foreign keys", async () => {
     const port = new ConnectionSecretPort({
       connections: connections([onPremRow]),
       connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "panel-model-anahtari" }),
@@ -308,15 +342,5 @@ describe("ConnectionSecretPort — the on-premise model server", () => {
     });
     expect(await port.get("kv/jira#token")).toBe("jira-env");
     expect(await port.get("kv/github#token")).toBe("github-env");
-  });
-
-  it("falls through when the connection is disabled — a switched-off row owns nothing", async () => {
-    const port = new ConnectionSecretPort({
-      connections: connections([{ ...onPremRow, enabled: false }]),
-      connectorSecrets: connectorPort({ "connector:llm-onprem:beef01": "panel-model-anahtari" }),
-      fallback: envPort({ "kv/llm#api-key": "env-model-anahtari" }),
-      log: () => {},
-    });
-    expect(await port.get("kv/llm#api-key")).toBe("env-model-anahtari");
   });
 });

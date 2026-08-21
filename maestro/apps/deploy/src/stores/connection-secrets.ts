@@ -15,9 +15,12 @@ import { EncryptedSecretStore, resolveMasterKey } from "./encrypted-secret.js";
  * the truth.
  *
  * So this is a COMPOSITE, not a new driver. It sits in front of the deployment's
- * real SecretPort and answers the handful of references that a managed
- * connection can now own (`kv/jira#token`, `kv/github#token`, `kv/llm#api-key`,
- * …). Everything else — and every reference no connection has claimed — falls
+ * real SecretPort and answers two families of reference: the handful of shared
+ * ones a managed connection can own by KIND (`kv/jira#token`,
+ * `kv/github#token`, …), and the per-row `connector:` slots the panel writes —
+ * the model resolver names the picked row's slot outright, so the LLM key never
+ * goes through a kind scan at all (see `CONNECTION_KIND_FOR_REF` on why).
+ * Everything else — and every reference no connection has claimed — falls
  * straight through to the port behind it, so a Vault deployment keeps resolving
  * from Vault and nothing that used to work stops working.
  *
@@ -47,6 +50,14 @@ import { EncryptedSecretStore, resolveMasterKey } from "./encrypted-secret.js";
  * token is rotated often and by an admin, an address is chosen once and by
  * whoever installed the stack.
  */
+
+/**
+ * The shape of a connection's own secret slot, as the panel's `storeToken`
+ * writes it: `connector:<connectionId>:<random>`. A reference with this prefix
+ * names one row's credential and nothing else, which is why `get` serves it
+ * from the panel's store directly instead of consulting the kind table.
+ */
+export const CONNECTOR_SECRET_REF_PREFIX = "connector:";
 
 /** What this composite needs of a connection row. Structural, like every store here. */
 export interface ConnectionCredentialRow {
@@ -107,19 +118,26 @@ export const CONNECTION_KIND_FOR_REF: Readonly<Record<string, readonly string[]>
   "kv/github#token": ["github"],
   "kv/ado#token": ["ado"],
   /**
-   * All three LLM kinds answer for the one model credential, for the same
-   * reason both Jira kinds share theirs: a deployment dials exactly ONE model
-   * endpoint (`llmConfig` builds a single `openai-compat` driver from
-   * `LLM_BASE_URL`), so whichever kind the operator created is the one that
-   * install talks to and there is no ambiguity to resolve.
+   * ── WHY THE MODEL KEY (`kv/llm#api-key`) IS DELIBERATELY ABSENT ───────────
+   * It used to be here, mapped to the three LLM kinds, on the claim that a
+   * deployment dials exactly one model endpoint. Migration 0021 made that
+   * claim false: an install may hold SEVERAL model rows (an on-prem
+   * `openai_compat` next to an OpenRouter one), and this table's row scan
+   * answered the shared reference from the FIRST row with a token — while the
+   * model resolver picked its row by `isDefault`. Two independent picks meant
+   * the run could dial one row's endpoint with ANOTHER row's credential: a
+   * cloud vendor's real key sent as a Bearer header to an on-prem server, or
+   * an on-prem row's deliberately empty key 401-ing a cloud vendor forever.
    *
-   * `openai_compat` is the self-hosted lane, and it is the case that makes the
-   * empty-token path matter: such a server often needs no key at all, and the
-   * connection then serves `""` here. That is a REAL answer, not a missing one
-   * — it stops the resolver falling through to a stale `.env` key and sending
-   * an internal server a credential it never asked for.
+   * The model's credential therefore travels WITH the picked row now:
+   * `connectionModelFrom` puts the row's own `connector:` slot into
+   * `ResolvedModel.apiKeyRef`, and this port serves such slots directly (see
+   * `get`). `kv/llm#api-key` still exists, but it belongs to the `.env`
+   * fallback alone — asked only when no panel row answers the model, or when
+   * the picked row never stored a token — and it now falls straight through
+   * to the deployment's own port. Re-adding it to this table would resurrect
+   * the row scan, and with it the mismatch.
    */
-  "kv/llm#api-key": ["openrouter", "anthropic", "openai_compat"],
 };
 
 export interface ConnectionSecretPortOptions {
@@ -199,6 +217,20 @@ export class ConnectionSecretPort implements SecretPort {
    * has not adopted it.
    */
   async get(key: string): Promise<string> {
+    /**
+     * A `connector:` reference IS a row's own slot, named by the caller — the
+     * model resolver hands the driver the picked row's `secretRef`, so the
+     * credential provably belongs to the same row that supplied the endpoint.
+     * It is served from the panel's store directly, and there is deliberately
+     * NO fallback: a per-row slot has no `.env` equivalent, and answering a
+     * failed decrypt with some other source's credential would attach a key
+     * from a different place to this row's server — the exact cross-wiring
+     * the per-row reference exists to make impossible. A slot that will not
+     * decrypt (master key rotated) fails the call loudly instead, and the
+     * panel already shows that row failing its test.
+     */
+    if (key.startsWith(CONNECTOR_SECRET_REF_PREFIX)) return this.#connectorSecrets.get(key);
+
     const kinds = CONNECTION_KIND_FOR_REF[key];
     if (kinds === undefined) return this.#fallback.get(key);
 

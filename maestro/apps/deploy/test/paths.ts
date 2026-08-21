@@ -49,6 +49,10 @@ export function bankaInstallPath(): string {
   return `${bankaDir()}install.sh`;
 }
 
+export function bankaReadmePath(): string {
+  return `${bankaDir()}README.md`;
+}
+
 /**
  * `maestro/deploy/ugurdocker/` — the registry-pull bundle.
  *
@@ -81,6 +85,20 @@ export function ugurdockerReadmePath(): string {
 
 export function ugurdockerGitignorePath(): string {
   return `${ugurdockerDir()}.gitignore`;
+}
+
+/**
+ * `maestro/packages/db/prisma/migrations/` — the schema history itself.
+ *
+ * The installers pin a MINIMUM migration-directory count (`MIG_BEKLENEN`) so a
+ * stale image cannot pass as current. That literal is hand-written in two shell
+ * scripts no compiler reads, and it already went stale once: 0021 landed, the
+ * scripts kept saying 21, and a pre-panel image sailed through the check. The
+ * bundle tests compare the literal against this directory, so the count cannot
+ * drift silently again.
+ */
+export function migrationsDir(): string {
+  return fileURLToPath(new URL("../../../packages/db/prisma/migrations/", import.meta.url));
 }
 
 /**

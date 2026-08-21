@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Maestro — banka içi (internetsiz) kurulum
-# BUNDLE_VERSION: 2026-08-16
+# BUNDLE_VERSION: 2026-08-21
 # =============================================================================
 # Kullanım (bu klasörde):
 #   ./install.sh          # interaktif
@@ -21,7 +21,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-BUNDLE_VERSION="2026-08-16"
+BUNDLE_VERSION="2026-08-21"
 
 ok()   { printf '\033[32m✔\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m⚠\033[0m %s\n' "$*"; }
@@ -100,17 +100,32 @@ ok "Doldurulmamış alan yok."
 # ── 3) ZORUNLU değişkenler dolu mu ───────────────────────────────────────────
 # Boş bırakılınca sistemin AÇILIP HİÇBİR ŞEY YAPMADIĞI değişkenler. Her biri
 # ayrı ayrı kontrol edilir ki hata mesajı hangisinin eksik olduğunu söylesin.
+#
+# ⚠ Bu liste KISADIR ve kısalığı bilinçlidir: Jira jetonu, GitHub jetonu, model
+#   anahtarı ve bot e-postası burada YOKTUR çünkü panelden girilir/öğrenilir.
+#   Bu adlardan birini listeye eklemek, panelin zaten topladığı bir sırrı
+#   ikinci bir yerde daha zorunlu kılmak olurdu — ve iki yer birbirinden
+#   habersiz olduğu sürece ayrışabilirler. Eski paket tam bunu yapıyordu:
+#   banka, panelin hiç okumayacağı sahte bir model anahtarı uydurmak zorunda
+#   kalıyordu.
 info "Zorunlu değişkenler…"
 ZORUNLU=(
   MAESTRO_NODE_IMAGE MAESTRO_STUDIO_IMAGE POSTGRES_IMAGE REDIS_IMAGE TEMPORAL_IMAGE
   NODE_ENV
   CONNECTOR_MASTER_KEY
   POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB REDIS_PASSWORD
-  MAESTRO_BOT_EMAIL
-  MAESTRO_SECRET_KV_LLM__API__2D_KEY
-  JIRA_TOKEN_REF LLM_API_KEY_REF
+  MAESTRO_SECRET_KV_JIRA__WEBHOOK
   STUDIO_PORT
 )
+# JIRA_TOKEN_REF / LLM_API_KEY_REF bu listede ARTIK YOK. İkisi de sır
+# ADRESİDİR, sır değeri değil; varsayılanları compose'da ve
+# apps/deploy/src/env.ts'te birebir aynı yazılıdır. Zorunlu saymak, .env'den
+# çıkarılmış bir satırı boş bulup kusursuz bir kurulumu reddetmek olurdu.
+# Yazılmışlarsa biçimleri §6'da yine denetlenir.
+#
+# MAESTRO_SECRET_KV_JIRA__WEBHOOK ise tek kalan zorunlu SIRDIR ve panele
+# taşınamaz: dışarıdan gelen, henüz doğrulanmamış isteği doğrular ve kontrol
+# fail-closed'dır — sır boşsa her webhook 401 alır ve akış hiç başlamaz.
 EKSIK_VAR=()
 for v in "${ZORUNLU[@]}"; do
   [[ -n "${!v:-}" ]] || EKSIK_VAR+=("$v")
@@ -198,18 +213,19 @@ fi
 # elle yazılmış adlar hiç aranmıyordu: sürücü "secret not found" derken
 # operatör .env'de değeri dolu görüyordu.
 info "Sır değişken adları…"
-for eski in MAESTRO_SECRET_JIRA_TOKEN MAESTRO_SECRET_ADO_TOKEN \
-            MAESTRO_SECRET_LLM_API_KEY MAESTRO_SECRET_LDAP_BIND_PASSWORD; do
+for eski in MAESTRO_SECRET_JIRA_TOKEN MAESTRO_SECRET_JIRA_WEBHOOK MAESTRO_SECRET_ADO_TOKEN \
+            MAESTRO_SECRET_LLM_API_KEY MAESTRO_SECRET_GITHUB_TOKEN \
+            MAESTRO_SECRET_LDAP_BIND_PASSWORD; do
   if grep -qE "^${eski}=" .env 2>/dev/null; then
     err ".env içinde ESKİ sır değişkeni var: ${eski}"
     err "  Bu adı hiçbir sürücü aramaz. Doğru adlar referanstan türetilir:"
-    err "    kv/jira#token  →  MAESTRO_SECRET_KV_JIRA__TOKEN   ('#' ÇİFT alt çizgi)"
-    err "    kv/llm#api-key →  MAESTRO_SECRET_KV_LLM__API__2D_KEY  ('-' → __2D_)"
+    err "    kv/jira#webhook →  MAESTRO_SECRET_KV_JIRA__WEBHOOK   ('#' ÇİFT alt çizgi)"
+    err "    kv/llm#api-key  →  MAESTRO_SECRET_KV_LLM__API__2D_KEY  ('-' → __2D_)"
     die ".env.example'daki adları kullanın."
   fi
 done
 # Referans biçimi: <mount>/<yol>[#alan] — en az bir '/' içermeli.
-for refvar in JIRA_TOKEN_REF LLM_API_KEY_REF JIRA_WEBHOOK_SECRET_REF; do
+for refvar in JIRA_TOKEN_REF LLM_API_KEY_REF JIRA_WEBHOOK_SECRET_REF GITHUB_TOKEN_REF; do
   val="${!refvar:-}"
   [[ -z "$val" ]] && continue
   if [[ "$val" != */* ]]; then
@@ -232,6 +248,17 @@ ok "CONNECTOR_MASTER_KEY geçerli (32 bayt)."
 
 # ── 7) Sık yapılan yapılandırma hataları ─────────────────────────────────────
 info "Yapılandırma tutarlılığı…"
+
+# Model .env'de tanımlı değilse bu bir HATA DEĞİL: adres, model adı ve anahtar
+# artık "Ayarlar & bağlantılar" ekranından girilir ve kaydedildiği anda geçerli
+# olur. Kurulum açılır; model tanımlanana kadar ilk model çağrısı adıyla
+# reddedilir. Operatöre nereye bakacağını söylemek, sessizce geçmekten iyidir.
+if [[ -z "${LLM_BASE_URL:-}" ]]; then
+  info "LLM_BASE_URL boş — model PANELDEN tanımlanacak."
+  info "  Kurulum bitince Studio > 'Ayarlar & bağlantılar' > 'Bağlantı ekle' >"
+  info "  'Kurum içi model sunucusu (OpenAI uyumlu)': adres + model adı +"
+  info "  (gerekiyorsa) anahtar, ardından 'Test et'."
+fi
 
 # LLM_BASE_URL sonunda /v1 → sürücü de ekler → /v1/v1 → her çağrı 404
 # (Yalnız .env'e adres yazılmışsa. Model artık panelden tanımlanabilir; boş
@@ -333,15 +360,22 @@ fi
 
 MIG_SAYI=$(docker run --rm --entrypoint sh "${MAESTRO_NODE_IMAGE}" \
   -c "ls /app/packages/db/prisma/migrations 2>/dev/null | grep -c '^[0-9]'" 2>/dev/null || echo 0)
-# Bu paketin beklediği asgari migration KLASÖRÜ sayısı. Son migration 0020'dir
-# ama klasör sayısı 21'dir: iki klasör 0011 önekini paylaşır
+# Bu paketin beklediği asgari migration KLASÖRÜ sayısı. Son migration 0021'dir
+# (0021_connection_model_registry — panelden model tanımlamanın şeması) ama
+# klasör sayısı 22'dir: iki klasör 0011 önekini paylaşır
 # (0011_failed_run_is_terminal, 0011_listening_rules). Sayıyı en yüksek
 # öneke bakarak tahmin etmek bu yüzden yanlış olur.
+#
+# Bu sayı elle yazılıdır ve bir kez sessizce bayatladı: 0021 eklendiğinde satır
+# 21'de kaldı ve `-ge` karşılaştırması panel-öncesi bir imajı yeşil geçirdi.
+# apps/deploy/test/banka-bundle.test.ts artık bu sayıyı depodaki klasör
+# sayısıyla karşılaştırır — yeni migration eklendiğinde test kırmızıya düşer
+# ve satır güncellenmeden paket çıkamaz.
 #
 # İmaj bundan azını taşıyorsa eski bir koddan build edilmiştir: şema eksik
 # kurulur ve eksik bir sütuna yazan kod hata vermeden çalışır — değer hiç
 # veritabanına ulaşmaz.
-MIG_BEKLENEN=21
+MIG_BEKLENEN=22
 if [[ "${MIG_SAYI}" -ge "${MIG_BEKLENEN}" ]]; then
   ok "  Migration dosyası: ${MIG_SAYI} adet (asgari ${MIG_BEKLENEN})."
 else
@@ -504,10 +538,13 @@ echo "  Loglar  : docker compose logs -f bff"
 echo "  Durum   : docker compose ps"
 echo "  Yedek   : docker compose exec -T postgres pg_dump -U ${POSTGRES_USER} ${POSTGRES_DB} | gzip > yedek.sql.gz"
 echo
-warn "KURULUM BİTMEDİ — README.md 'Kurulumdan sonra mutlaka yapın' bölümünü uygulayın:"
+warn "KURULUM BİTMEDİ — sıradaki iş PANELDE (README.md §5):"
 warn "  1) admin/admin123 parolasını değiştirin"
-warn "  2) bot hesabı 'maestro-admins' grubunda OLMASIN (tek başına dört-göz kuralını geçer)"
-warn "  3) Jira webhook'unu kaydedin (docs/jira-webhook-kurulum.md)"
-warn "  4) MAESTRO_BOT_ACCOUNT_ID ile bağlantının kimliği AYNI mı, panelden doğrulayın"
+warn "  2) Ayarlar & bağlantılar → Jira bağlantısı ekleyin, jetonu girip 'Test et'"
+warn "  3) Ayarlar & bağlantılar → GitHub bağlantısı ekleyin (kod yazan akışlar için)"
+warn "  4) Ayarlar & bağlantılar → kurum içi model sunucusunu ekleyin ('Test et' yeşil olmalı)"
+warn "  5) /setup sihirbazını çalıştırın"
+warn "  6) Jira webhook'unu kaydedin (docs/jira-webhook-kurulum.md)"
+warn "  7) bot hesabı 'maestro-admins' grubunda OLMASIN (tek başına dört-göz kuralını geçer)"
 echo
 warn "ASLA 'docker compose down -v' çalıştırmayın — veritabanını siler."

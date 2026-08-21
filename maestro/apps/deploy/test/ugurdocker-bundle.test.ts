@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
   dockerignorePath,
+  migrationsDir,
   ugurdockerComposePath,
   ugurdockerEnvExamplePath,
   ugurdockerGitignorePath,
@@ -414,6 +415,29 @@ describe("ugurdocker bundle: every documented variable reaches a container", () 
       ).toBe(true);
     }
     expect(envExample).not.toMatch(/-----BEGIN [A-Z ]*PRIVATE KEY-----/);
+  });
+});
+
+/**
+ * Freshness: the number a stale image lies with.
+ */
+describe("ugurdocker bundle: the hand-written migration floor matches the repository", () => {
+  it("expects exactly as many migrations as the repo carries", () => {
+    /**
+     * `MIG_BEKLENEN` is the installer's floor for the migration-directory
+     * count inside the pulled image, and it is a hand-written literal in a
+     * shell script no compiler reads. It went stale exactly once: 0021 landed,
+     * the script kept saying 21, and because the comparison is `-ge` a
+     * pre-panel 1.0.0 image passed the check as green — the check exists to
+     * catch precisely that image. This assertion is the only thing that makes
+     * the literal move when the schema does.
+     */
+    const literal = /^MIG_BEKLENEN=(\d+)$/m.exec(install);
+    expect(literal, "install.sh no longer pins MIG_BEKLENEN").not.toBeNull();
+    const repoCount = readdirSync(migrationsDir(), { withFileTypes: true }).filter(
+      (entry) => entry.isDirectory() && /^\d/.test(entry.name),
+    ).length;
+    expect(Number(literal?.[1])).toBe(repoCount);
   });
 });
 

@@ -1,6 +1,6 @@
 # =============================================================================
 # Maestro — Banka içi (internetsiz) kurulum
-# BUNDLE_VERSION: 2026-08-16
+# BUNDLE_VERSION: 2026-08-21
 # =============================================================================
 # Bu compose HİÇBİR ŞEY BUILD ETMEZ. Tüm imajlar `docker load` ile yüklenmiş
 # ya da kurum registry'sinden çekilmiş olmalıdır (bkz. README.md §1).
@@ -207,10 +207,25 @@ x-node-env: &node-env
 #   '#' ÇİFT alt çizgi, '-' ise `__2D_` olur. Eski paketteki
 #   MAESTRO_SECRET_JIRA_TOKEN gibi adlar hiçbir zaman aranmıyordu; sürücü
 #   "secret not found" derken operatör .env'de değeri dolu görüyordu.
+#
+# ⚠ Bu blok kısadır ve KISALIĞI bilinçlidir: Jira jetonu, GitHub jetonu ve model
+#   anahtarı artık PANELDEN girilir, veritabanına şifreli yazılır ve koşular
+#   oradan okur. Aşağıdakiler yalnızca panelde henüz bağlantı tanımlanmamışken
+#   kullanılan YEDEK yoldur — webhook sırrı hariç (bkz. .env.example §11).
+#
+# ⚠ Webhook sırrı `:?` ile ZORUNLUDUR çünkü doğrulama fail-closed çalışır:
+#   sır konteynere ulaşmazsa `POST /webhooks/jira` HER teslimi 401 ile reddeder
+#   ve akış hiç başlamaz — log'da tek satır, panelde hiçbir belirti olmadan.
 x-node-secrets: &node-secrets
   MAESTRO_SECRET_KV_JIRA__TOKEN: ${MAESTRO_SECRET_KV_JIRA__TOKEN:-}
-  MAESTRO_SECRET_KV_JIRA__WEBHOOK: ${MAESTRO_SECRET_KV_JIRA__WEBHOOK:-}
+  MAESTRO_SECRET_KV_JIRA__WEBHOOK: ${MAESTRO_SECRET_KV_JIRA__WEBHOOK:?MAESTRO_SECRET_KV_JIRA__WEBHOOK gerekli — openssl rand -hex 32}
   MAESTRO_SECRET_KV_LLM__API__2D_KEY: ${MAESTRO_SECRET_KV_LLM__API__2D_KEY:-}
+  # Kod hattının (scm) yedek jetonu. Bu satır OLMADAN .env'de dolu duran
+  # MAESTRO_SECRET_KV_GITHUB__TOKEN konteynere hiç girmez ve ilk SCM çağrısı
+  # SecretNotFoundError ile ölür — operatör ise .env'de değeri dolu görür.
+  # Başlıktaki uyarının ("BURADA OLMAYAN DEĞİŞKEN, KONTEYNERE GİRMEZ") bu
+  # pakette gerçekleşmiş hâli tam olarak buydu.
+  MAESTRO_SECRET_KV_GITHUB__TOKEN: ${MAESTRO_SECRET_KV_GITHUB__TOKEN:-}
   MAESTRO_SECRET_KV_ADO__TOKEN: ${MAESTRO_SECRET_KV_ADO__TOKEN:-}
   MAESTRO_SECRET_KV_ADO__WEBHOOK: ${MAESTRO_SECRET_KV_ADO__WEBHOOK:-}
   MAESTRO_SECRET_KV_LDAP__SERVICE__2D_PASSWORD: ${MAESTRO_SECRET_KV_LDAP__SERVICE__2D_PASSWORD:-}

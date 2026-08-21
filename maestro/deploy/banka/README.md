@@ -1,6 +1,6 @@
 # Maestro — Banka İçi (İnternetsiz) Kurulum
 
-**Paket sürümü: 2026-08-16**
+**Paket sürümü: 2026-08-21**
 *(Bu tarih `.env.example` içindeki `BUNDLE_VERSION` ve `install.sh` başlığıyla
 aynı olmalıdır. Üçü tutmuyorsa elinizdeki paket karışıktır — kurmayın.)*
 
@@ -98,7 +98,7 @@ docker run --rm --entrypoint sh maestro/node:$TAG -c "openssl version"
 # b) Migration klasörlerinin TAMAMI imajda mı
 docker run --rm --entrypoint sh maestro/node:$TAG \
   -c "ls /app/packages/db/prisma/migrations | grep -c '^[0-9]'"
-#    Beklenen: 21  (son migration 0020'dir; iki klasör 0011 önekini paylaşır)
+#    Beklenen: 22  (son migration 0021'dir; iki klasör 0011 önekini paylaşır)
 
 # c) Prisma istemcisi üretilmiş mi  ← EN KRİTİK KONTROL
 #    (pnpm istemciyi .pnpm deposunun içine koyar; yol sürüme göre değişir,
@@ -193,7 +193,11 @@ yüklediğiniz imajların adlarını yazın.
 > kurulumun veritabanı volume'üne bağlanır. "Denemek için yan tarafa kurdum"
 > sanılan işlem, üretimin üstüne yapılmış olur ve hiçbir uyarı çıkmaz.
 
-Ayrıca doğru yazılması gereken iki adres:
+Model adresi ve adı da **bu dosyada değildir**: `LLM_BASE_URL` / `LLM_MODEL`
+boş gelir ve boş kalabilir. Model kurulumdan sonra panelden tanımlanır
+(Ayarlar & bağlantılar → "Kurum içi model sunucusu"); "Test et" sunucunun o
+modeli gerçekten sunduğunu doğrular. Yalnız `.env` üzerinden doldurmayı
+seçerseniz iki tuzağı bilin:
 
 | Alan | Neden önemli |
 |---|---|

@@ -1,7 +1,13 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { bankaComposePath, bankaEnvExamplePath, bankaInstallPath } from "./paths.js";
+import {
+  bankaComposePath,
+  bankaEnvExamplePath,
+  bankaInstallPath,
+  bankaReadmePath,
+  migrationsDir,
+} from "./paths.js";
 
 /**
  * The bank bundle (`deploy/banka/`), checked as data.
@@ -18,6 +24,7 @@ interface ComposeService {
   container_name?: string;
   image?: string;
   ports?: string[];
+  environment?: Record<string, string>;
 }
 
 const composeText = readFileSync(bankaComposePath(), "utf8");
@@ -27,6 +34,7 @@ const compose = parse(composeText, { merge: true }) as {
 };
 const envExample = readFileSync(bankaEnvExamplePath(), "utf8");
 const install = readFileSync(bankaInstallPath(), "utf8");
+const readme = readFileSync(bankaReadmePath(), "utf8");
 
 /**
  * Two installations on one host.
@@ -105,6 +113,19 @@ describe("banka bundle: a filled-in .env.example installs as-is", () => {
     expect(envExample).toContain("CA_BUNDLE_DIR");
   });
 
+  const MANDATORY = [
+    "CONNECTOR_MASTER_KEY",
+    "POSTGRES_PASSWORD",
+    "REDIS_PASSWORD",
+    "MAESTRO_SECRET_KV_JIRA__WEBHOOK",
+    // The bank-specific pair: image tags are minted at build time on the
+    // internet-connected machine (`maestro/node:$TAG`), so unlike the registry
+    // bundle — whose published 1.0.x addresses are known and shipped filled in
+    // — this bundle cannot know them and must make the operator write them.
+    "MAESTRO_NODE_IMAGE",
+    "MAESTRO_STUDIO_IMAGE",
+  ] as const;
+
   it("leaves every mandatory blank marked with the placeholder the installer greps for", () => {
     // `install.sh` refuses while any DEGISTIR remains. That contract only holds
     // if the fields needing a value actually carry the marker.
@@ -112,17 +133,29 @@ describe("banka bundle: a filled-in .env.example installs as-is", () => {
     // The list is SHORT now, and that is the point of it. What is left is
     // infrastructure — the two datastore passwords and the key that enciphers
     // everything else — plus the one inbound secret that cannot come from the
-    // store it would have to authenticate a request against (see below).
-    for (const key of [
-      "CONNECTOR_MASTER_KEY",
-      "POSTGRES_PASSWORD",
-      "REDIS_PASSWORD",
-      "MAESTRO_SECRET_KV_JIRA__WEBHOOK",
-    ]) {
+    // store it would have to authenticate a request against (see below), plus
+    // the two image names only the operator's `docker load` can answer.
+    for (const key of MANDATORY) {
       const line = envExample.split("\n").find((candidate) => candidate.startsWith(`${key}=`));
       expect(line, `${key} is missing from .env.example`).toBeDefined();
       expect(line, `${key} ships without a DEGISTIR marker`).toContain("DEGISTIR");
     }
+  });
+
+  it("demands nothing beyond those six", () => {
+    /**
+     * The list is EXACT, not a superset — and exactness is the property this
+     * bundle silently lost once: while the registry bundle moved the model to
+     * the panel, this file kept `LLM_MODEL="DEGISTIR"`, so a bank was forced
+     * to fill a value the panel was about to own anyway. A new DEGISTIR
+     * appearing here means a credential crept back into a file on the server;
+     * it may not be added without deleting this line and explaining why.
+     */
+    const marked = envExample
+      .split("\n")
+      .filter((line) => /^[A-Za-z_][A-Za-z0-9_]*=.*DEGISTIR/.test(line))
+      .map((line) => line.slice(0, line.indexOf("=")));
+    expect(marked.sort()).toEqual([...MANDATORY].sort());
   });
 
   it("no longer demands the credentials the connector panel now owns", () => {
@@ -141,18 +174,35 @@ describe("banka bundle: a filled-in .env.example installs as-is", () => {
      * either commented out or shipped empty — never a DEGISTIR the installer
      * refuses to start without.
      */
-    for (const key of ["MAESTRO_SECRET_KV_JIRA__TOKEN", "MAESTRO_BOT_ACCOUNT_ID"]) {
+    for (const key of [
+      "MAESTRO_SECRET_KV_JIRA__TOKEN",
+      "MAESTRO_SECRET_KV_GITHUB__TOKEN",
+      "MAESTRO_SECRET_KV_LLM__API__2D_KEY",
+      "MAESTRO_BOT_ACCOUNT_ID",
+      "LLM_MODEL",
+    ]) {
       const line = envExample.split("\n").find((candidate) => candidate.startsWith(`${key}=`));
       expect(line ?? "", `${key} is still a mandatory fill`).not.toContain("DEGISTIR");
     }
 
     // And the installer must not refuse a stack that leaves them to the panel.
     // `ZORUNLU` is the list it dies over; a name in it is a name that has to be
-    // in the file whatever the panel holds.
+    // in the file whatever the panel holds. The bundle DID die over three of
+    // these until the panel-model release reached it: a bank had to invent a
+    // dummy model key to get past a check for a credential the panel owns.
     const mandatory = install.slice(install.indexOf("ZORUNLU=("));
     const list = mandatory.slice(0, mandatory.indexOf(")"));
-    expect(list).not.toContain("MAESTRO_SECRET_KV_JIRA__TOKEN");
-    expect(list).not.toContain("MAESTRO_BOT_ACCOUNT_ID");
+    for (const key of [
+      "MAESTRO_SECRET_KV_JIRA__TOKEN",
+      "MAESTRO_SECRET_KV_GITHUB__TOKEN",
+      "MAESTRO_SECRET_KV_LLM__API__2D_KEY",
+      "MAESTRO_BOT_ACCOUNT_ID",
+      "MAESTRO_BOT_EMAIL",
+      "JIRA_TOKEN_REF",
+      "LLM_API_KEY_REF",
+    ]) {
+      expect(list, `${key} is in the installer's mandatory list`).not.toContain(key);
+    }
   });
 
   it("keeps the webhook secret in the file, with its reason written down", () => {
@@ -201,11 +251,89 @@ describe("banka bundle: every documented variable reaches a container", () => {
       if (match === null) continue;
       const value = (match[2] ?? "").replace(/^["']|["']$/g, "");
       // A placeholder is fine; a filled-in secret in a shipped file is not.
+      // (The old `yerel-endpoint-...` dummy model key is gone: the panel owns
+      // the model key now, so the bundle no longer teaches inventing one.)
       expect(
-        value === "" || value.includes("DEGISTIR") || value.startsWith("yerel-endpoint"),
+        value === "" || value.includes("DEGISTIR"),
         `${match[1]} carries a real-looking value in .env.example`,
       ).toBe(true);
     }
     expect(envExample).not.toMatch(/-----BEGIN [A-Z ]*PRIVATE KEY-----/);
+  });
+});
+
+/**
+ * The secrets anchor, checked against the header's own warning: a variable not
+ * named in `environment:` never reaches the process, however carefully `.env`
+ * was filled in.
+ */
+describe("banka bundle: the secrets the stack depends on actually arrive", () => {
+  it("forwards the GitHub fallback token to every application service", () => {
+    /**
+     * The exact failure the header warns about, and the one this bundle
+     * shipped: `MAESTRO_SECRET_KV_GITHUB__TOKEN` was documented, fillable in
+     * `.env`, visibly correct — and absent from `x-node-secrets`, so the env-
+     * file driver answered the first SCM call with SecretNotFoundError while
+     * the operator stared at a filled-in line.
+     */
+    for (const service of ["migrate", "bff", "worker"]) {
+      expect(
+        compose.services[service]?.environment?.["MAESTRO_SECRET_KV_GITHUB__TOKEN"],
+        `${service} never sees MAESTRO_SECRET_KV_GITHUB__TOKEN`,
+      ).toBeDefined();
+    }
+  });
+
+  it("makes the webhook secret REQUIRED, because its verification fails closed", () => {
+    // `${VAR:-}` here is a stack that starts green and 401s EVERY webhook
+    // delivery: the signature check runs before anything else and an unset
+    // secret rejects all comers. The flow then simply never begins — no error
+    // on the operator's screen, one line per delivery in a log nobody reads.
+    expect(composeText).toContain("${MAESTRO_SECRET_KV_JIRA__WEBHOOK:?");
+    expect(composeText).not.toContain("${MAESTRO_SECRET_KV_JIRA__WEBHOOK:-");
+  });
+});
+
+/**
+ * Freshness: the numbers a stale bundle lies with.
+ */
+describe("banka bundle: the hand-written literals match the repository", () => {
+  it("expects exactly as many migrations as the repo carries", () => {
+    /**
+     * `MIG_BEKLENEN` is the installer's floor for the migration-directory
+     * count inside the image, and it is a hand-written literal in a shell
+     * script no compiler reads. It went stale exactly once: 0021 landed, the
+     * script kept saying 21, and because the comparison is `-ge` a pre-panel
+     * image passed the check as green. This assertion is the only thing that
+     * makes the literal move when the schema does.
+     */
+    const literal = /^MIG_BEKLENEN=(\d+)$/m.exec(install);
+    expect(literal, "install.sh no longer pins MIG_BEKLENEN").not.toBeNull();
+    const repoCount = readdirSync(migrationsDir(), { withFileTypes: true }).filter(
+      (entry) => entry.isDirectory() && /^\d/.test(entry.name),
+    ).length;
+    expect(Number(literal?.[1])).toBe(repoCount);
+  });
+
+  it("carries ONE bundle version, wherever the date is written", () => {
+    // Four places name the version; the README's own header says they must
+    // agree ("Üçü tutmuyorsa elinizdeki paket karışıktır — kurmayın"). The
+    // bundle sat at 2026-08-16 while its sibling moved on — the drift this
+    // test exists to make loud.
+    const fromInstall = /^BUNDLE_VERSION="([0-9-]+)"$/m.exec(install)?.[1];
+    const fromEnv = /^BUNDLE_VERSION="([0-9-]+)"$/m.exec(envExample)?.[1];
+    const fromReadme = /Paket sürümü: ([0-9-]+)/.exec(readme)?.[1];
+    const fromCompose = /BUNDLE_VERSION: ([0-9-]+)/.exec(composeText)?.[1];
+    expect(fromInstall).toBeDefined();
+    expect(fromEnv).toBe(fromInstall);
+    expect(fromReadme).toBe(fromInstall);
+    expect(fromCompose).toBe(fromInstall);
+  });
+
+  it("teaches the panel-era model flow, not the .env one", () => {
+    // The installer must tell an operator with an empty LLM_BASE_URL where the
+    // model is actually defined — silence here reads as "misconfigured".
+    expect(install).toContain("model PANELDEN tanımlanacak");
+    expect(install).toContain("Ayarlar & bağlantılar");
   });
 });

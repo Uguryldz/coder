@@ -361,15 +361,22 @@ fi
 
 MIG_SAYI=$(docker run --rm --entrypoint sh "${MAESTRO_NODE_IMAGE}" \
   -c "ls /app/packages/db/prisma/migrations 2>/dev/null | grep -c '^[0-9]'" 2>/dev/null || echo 0)
-# Bu paketin beklediği asgari migration KLASÖRÜ sayısı. Son migration 0020'dir
-# ama klasör sayısı 21'dir: iki klasör 0011 önekini paylaşır
+# Bu paketin beklediği asgari migration KLASÖRÜ sayısı. Son migration 0021'dir
+# (0021_connection_model_registry — panelden model tanımlamanın şeması) ama
+# klasör sayısı 22'dir: iki klasör 0011 önekini paylaşır
 # (0011_failed_run_is_terminal, 0011_listening_rules). Sayıyı en yüksek öneke
 # bakarak tahmin etmek bu yüzden yanlış olur.
+#
+# Bu sayı elle yazılıdır ve bir kez sessizce bayatladı: 0021 eklendiğinde satır
+# 21'de kaldı ve `-ge` karşılaştırması panel-öncesi bir imajı (1.0.0) yeşil
+# geçirdi. apps/deploy/test/ugurdocker-bundle.test.ts artık bu sayıyı depodaki
+# klasör sayısıyla karşılaştırır — yeni migration eklendiğinde test kırmızıya
+# düşer ve satır güncellenmeden paket çıkamaz.
 #
 # İmaj bundan azını taşıyorsa eski bir koddan build edilmiştir: şema eksik
 # kurulur ve eksik bir sütuna yazan kod hata vermeden çalışır — değer hiç
 # veritabanına ulaşmaz.
-MIG_BEKLENEN=21
+MIG_BEKLENEN=22
 if [[ "${MIG_SAYI}" -ge "${MIG_BEKLENEN}" ]]; then
   ok "  Migration dosyası: ${MIG_SAYI} adet (asgari ${MIG_BEKLENEN})."
 else

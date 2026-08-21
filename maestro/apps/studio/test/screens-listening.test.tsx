@@ -499,6 +499,115 @@ describe("ListeningScreen", () => {
       // The unmapped one says so outright rather than leaving a blank cell.
       expect(screen.getByText("yorum")).toBeTruthy();
     });
+
+    /**
+     * The per-flow truth (audit finding #5). `planFor` gives `duzeltme` no
+     * analysis gate, and the engine only calls `moveStatus("review"|"rejected")`
+     * around that gate — on a düzeltme rule those two moments never occur, so a
+     * status mapped there moves nothing, ever. The form used to offer all five
+     * points for every flow anyway. These tests pin the honest form: the dead
+     * points are disabled with the reason, the gating follows the flow SELECT
+     * live, a stored dead value (written before this gating existed) is shown
+     * and warned about rather than silently dropped, and the table cell tells
+     * the walk from the values that will never fire.
+     */
+    describe("the moments a düzeltme flow can never reach", () => {
+      const DEAD_REASON =
+        "Hata düzeltme akışında analiz onayı adımı yoktur; bu an hiç gerçekleşmez.";
+
+      it("disables the analysis-approval points while düzeltme is selected, and revives them on switch back", async () => {
+        stubFetch([]);
+        renderScreen(ADMIN);
+        await screen.findByText("Yeni kural ekle");
+        await optIn();
+
+        // The default flow (analiz) walks the gate: all five points are live.
+        const onReview = (await screen.findByLabelText(
+          "Analiz onaya çıktığında",
+        )) as HTMLInputElement;
+        expect(onReview.disabled).toBe(false);
+        expect(screen.queryByText(DEAD_REASON)).toBeNull();
+
+        await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "duzeltme");
+        expect(
+          (screen.getByLabelText("Analiz onaya çıktığında") as HTMLInputElement).disabled,
+        ).toBe(true);
+        expect((screen.getByLabelText("Ret gelince") as HTMLInputElement).disabled).toBe(true);
+        // Disabled WITH the reason, once per dead field — not a grey box the
+        // operator has to explain to themselves.
+        expect(screen.getAllByText(DEAD_REASON).length).toBe(2);
+        expect((screen.getByLabelText("İş başladığında") as HTMLInputElement).disabled).toBe(
+          false,
+        );
+
+        // The gating follows the flow select live, in both directions.
+        await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "analiz");
+        expect(
+          (screen.getByLabelText("Analiz onaya çıktığında") as HTMLInputElement).disabled,
+        ).toBe(false);
+        expect(screen.queryByText(DEAD_REASON)).toBeNull();
+      });
+
+      it("shows — not silently drops — a stored onReview on a düzeltme rule, then saves without it", async () => {
+        // A rule written BEFORE the forms gated by flow: `SEED.flowType` is
+        // düzeltme, and its map carries the moment that flow can never reach.
+        const fn = stubFetch([
+          {
+            ...SEED,
+            statusMap: { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" },
+          },
+        ]);
+        renderScreen(ADMIN);
+        await screen.findByText("Hata");
+        await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+
+        // Loads without crashing, and the stored value is VISIBLE — disabled
+        // with the reason, not swallowed on the way into the form.
+        const onReview = (await screen.findByLabelText(
+          "Analiz onaya çıktığında",
+        )) as HTMLInputElement;
+        expect(onReview.value).toBe("İNCELEMEDE");
+        expect(onReview.disabled).toBe(true);
+
+        // The warning names the exact value and says what saving will do, so
+        // the save that follows is the operator's informed confirmation.
+        expect(
+          screen.getByText(/Analiz onaya çıktığında: İNCELEMEDE/),
+        ).toBeTruthy();
+        expect(screen.getByText(/kaydederseniz bu değerler kurala yazılmaz/)).toBeTruthy();
+
+        await userEvent.click(screen.getByRole("button", { name: "Kuralı kaydet" }));
+        const body = await writtenBody(fn);
+        // The dead value is gone from the wire; the live moments survive.
+        expect(body.statusMap).toEqual({ onStart: "Devam Ediyor", onDone: "Tamam" });
+      });
+
+      it("marks the dead value in the table instead of showing it as part of the walk", async () => {
+        stubFetch([
+          {
+            ...SEED,
+            ruleId: "lr_dead",
+            statusMap: { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" },
+          },
+          {
+            ...SEED,
+            ruleId: "lr_live",
+            matchValue: "Görev",
+            flowType: "analiz",
+            statusMap: { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" },
+          },
+        ]);
+        renderScreen(VIEWER); // read-only: only the table renders
+        await screen.findByText("Hata");
+
+        // The düzeltme rule's walk holds only the moments its flow can reach …
+        expect(screen.getByText("Devam Ediyor → Tamam")).toBeTruthy();
+        // … its stored dead value stays visible, marked as never occurring …
+        expect(screen.getByText(/gerçekleşmez: İNCELEMEDE/)).toBeTruthy();
+        // … while the SAME map on an analiz rule keeps its full walk.
+        expect(screen.getByText("Devam Ediyor → İNCELEMEDE → Tamam")).toBeTruthy();
+      });
+    });
   });
 
   it("shows the rule's chosen agents in the list, or 'varsayılan' when unset", async () => {

@@ -31,7 +31,18 @@ export interface ReviewPaneProps {
 export function ReviewPane({ draft, alreadyBound }: ReviewPaneProps): ReactNode {
   const t = useT();
   const defaults = flowDefaults(draft.flowType);
-  const statusMap = buildStatusMap(draft.statusOn, draft.statusDraft, draft.reassignOnNeedInfo);
+  // Flow-aware: `buildStatusMap` writes only the points `firesFor` says this
+  // flow can reach, so a düzeltme draft holding a value at an analysis-approval
+  // moment (typed before the flow was switched) never appears here. This
+  // summary is what the operator SIGNS OFF ON — a line promising "Analiz onaya
+  // çıktığında → İNCELEMEDE" on a rule whose flow has no analysis approval is
+  // a promise the engine will never keep.
+  const statusMap = buildStatusMap(
+    draft.statusOn,
+    draft.statusDraft,
+    draft.reassignOnNeedInfo,
+    draft.flowType,
+  );
 
   // The statuses the ticket will walk, in flow order, as "adım: durum" lines.
   // Built from STATUS_POINTS so a point added on the server cannot go missing

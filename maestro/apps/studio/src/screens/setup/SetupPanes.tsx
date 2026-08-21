@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card, Input, Select } from "../../ui/index.ts";
 import { englishAside, matchValueLabel } from "../common/jira-english.ts";
-import { STATUS_POINTS, type StatusPoint } from "../common/status-map.ts";
+import { STATUS_POINTS, firesFor, type StatusPoint } from "../common/status-map.ts";
 import {
   DATA_CLASSES,
   FLOW_TYPES,
@@ -388,6 +388,14 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
   const setPoint = (point: StatusPoint, value: string): void =>
     onChange({ statusDraft: { ...draft.statusDraft, [point]: value } });
 
+  // Which of the five points the chosen flow can actually reach. `duzeltme`
+  // skips the analysis gate entirely (see `firesFor`), so its two approval
+  // moments are DEAD: a value mapped there would never move a ticket. The dead
+  // fields stay visible but disabled, with the reason as their hint — an
+  // operator who saw five points on an analiz rule must be able to see WHY this
+  // rule has three, not wonder where two went.
+  const livePoints = new Set(firesFor(draft.flowType));
+
   return (
     <Card title={t("setup.status.title")} subtitle={t("setup.status.sub")}>
       <p className="scr-prose">{t("setup.status.intro")}</p>
@@ -409,18 +417,27 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
             {t("setup.status.exact")}
           </p>
           <div className="scr-grid scr-grid--2" style={{ marginTop: 8 }}>
-            {STATUS_POINTS.map((point) =>
-              data.statusNames.length > 0 ? (
+            {STATUS_POINTS.map((point) => {
+              // A dead point is disabled, never hidden, and its hint is the
+              // REASON rather than the usual "what this moment means" — the
+              // honest answer to "neden seçemiyorum?" is a sentence, not a
+              // missing field. A value the draft still holds there (typed under
+              // another flow) stays visible; `buildStatusMap` keeps it off the
+              // wire and the summary never lists it.
+              const dead = !livePoints.has(point);
+              const hint = dead ? t("setup.status.dead_hint") : t(`setup.status.hint.${point}`);
+              return data.statusNames.length > 0 ? (
                 <Select
                   key={point}
                   label={t(`setup.status.point.${point}`)}
                   value={draft.statusDraft[point]}
                   onChange={(e) => setPoint(point, e.target.value)}
+                  disabled={dead}
                   options={[
                     { value: "", label: t("setup.status.skip") },
                     ...data.statusNames.map((v) => ({ value: v, label: v })),
                   ]}
-                  hint={t(`setup.status.hint.${point}`)}
+                  hint={hint}
                 />
               ) : (
                 // Jira's status list could not be read. Free text rather than an
@@ -431,10 +448,11 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
                   label={t(`setup.status.point.${point}`)}
                   value={draft.statusDraft[point]}
                   onChange={(e) => setPoint(point, e.target.value)}
-                  hint={t(`setup.status.hint.${point}`)}
+                  disabled={dead}
+                  hint={hint}
                 />
-              ),
-            )}
+              );
+            })}
           </div>
           <label className="scr-check" style={{ marginTop: 12 }}>
             <input

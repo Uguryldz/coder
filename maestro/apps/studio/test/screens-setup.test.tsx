@@ -285,8 +285,8 @@ describe("setup wizard", () => {
       ]);
     }
 
-    async function reachStatusStep(): Promise<void> {
-      await chooseFlow();
+    async function reachStatusStep(flow?: "duzeltme" | "gelistirme"): Promise<void> {
+      await chooseFlow(flow);
       await fillProject();
       // With no live list the value is a free-text field.
       await screen.findByText("Hangi ticket'ları alsın?");
@@ -390,6 +390,140 @@ describe("setup wizard", () => {
 
       const onStart = (await screen.findByLabelText("İş başladığında")) as HTMLSelectElement;
       expect([...onStart.options].map((o) => o.value)).toEqual(["", ...OPS_STATUSES]);
+    });
+
+    /**
+     * The per-flow truth (audit finding #5). `planFor` gives `duzeltme` no
+     * analysis gate, and the engine only calls `moveStatus("review"|"rejected")`
+     * around that gate — so on a düzeltme rule those two moments simply never
+     * occur. The wizard used to offer all five points anyway, the summary
+     * confirmed the mapping, and the ticket never moved, with no warning ever.
+     * These tests pin the honest rendering: dead points are DISABLED with the
+     * reason (never silently offered as live), absent from the summary the
+     * operator signs off on, and absent from the wire.
+     */
+    describe("the moments a düzeltme flow can never reach", () => {
+      const DEAD_REASON =
+        "Hata düzeltme akışında analiz onayı adımı yoktur; bu an hiç gerçekleşmez.";
+
+      it("disables the two analysis-approval points with the reason, and keeps them off the summary and the wire", async () => {
+        const { fetchImpl, calls } = stubFetch(statusRoutes());
+        renderScreen(<SetupScreen />, { fetchImpl });
+        await reachStatusStep("duzeltme");
+
+        await userEvent.click(screen.getByLabelText("Ticket'ın Jira durumunu da değiştirsin"));
+
+        // Disabled, not hidden: an operator who saw five points on an analiz
+        // rule must read WHY this rule has three, not wonder where two went.
+        const onReview = (await screen.findByLabelText(
+          "Analiz onaya çıktığında",
+        )) as HTMLInputElement;
+        const onRejected = screen.getByLabelText("Ret gelince") as HTMLInputElement;
+        expect(onReview.disabled).toBe(true);
+        expect(onRejected.disabled).toBe(true);
+        // Each dead field carries the reason in place of its usual hint.
+        expect(screen.getAllByText(DEAD_REASON).length).toBe(2);
+        // The three moments the flow DOES reach stay usable.
+        expect((screen.getByLabelText("İş başladığında") as HTMLInputElement).disabled).toBe(false);
+        expect(
+          (screen.getByLabelText("Bilgi eksik olduğunda") as HTMLInputElement).disabled,
+        ).toBe(false);
+        expect((screen.getByLabelText("İş bittiğinde") as HTMLInputElement).disabled).toBe(false);
+
+        await userEvent.type(screen.getByLabelText("İş başladığında"), "Devam Ediyor");
+        await userEvent.type(screen.getByLabelText("İş bittiğinde"), "Tamam");
+        await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+
+        // The summary lists only the moments that will actually fire.
+        await screen.findByText("Özet");
+        const list = screen.getByText("Ticket panoda ne olacak").nextElementSibling as HTMLElement;
+        expect(within(list).getByText("Devam Ediyor")).toBeTruthy();
+        expect(within(list).getByText("Tamam")).toBeTruthy();
+        expect(within(list).queryByText(/Analiz onaya çıktığında|Ret gelince/)).toBeNull();
+
+        await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+        await waitFor(() =>
+          expect(ruleBody(calls).statusMap).toEqual({ onStart: "Devam Ediyor", onDone: "Tamam" }),
+        );
+      });
+
+      it("keeps a value typed under analiz visible but off the wire after a switch to düzeltme", async () => {
+        const { fetchImpl, calls } = stubFetch(statusRoutes());
+        renderScreen(<SetupScreen />, { fetchImpl });
+        await reachStatusStep();
+
+        // Typed while the flow was analiz, where the moment is live.
+        await userEvent.click(screen.getByLabelText("Ticket'ın Jira durumunu da değiştirsin"));
+        await userEvent.type(
+          await screen.findByLabelText("Analiz onaya çıktığında"),
+          "İNCELEMEDE",
+        );
+        await userEvent.type(screen.getByLabelText("İş bittiğinde"), "Tamam");
+
+        // Walk back to step 1 and change the one answer that decides what can fire.
+        await userEvent.click(screen.getByRole("button", { name: "Geri" }));
+        await userEvent.click(screen.getByRole("button", { name: "Geri" }));
+        await userEvent.click(screen.getByRole("button", { name: "Geri" }));
+        await screen.findByText("Ne yapmak istiyorsunuz?");
+        await userEvent.click(screen.getByRole("radio", { name: /Hata düzeltme/ }));
+        await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+        await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+        await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+        await screen.findByText("Hangi ticket'ları alsın?");
+        await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+        await screen.findByText("Jira durumlarını da değiştirsin mi?");
+
+        // What was typed is not eaten — it is visible, disabled, explained …
+        const onReview = (await screen.findByLabelText(
+          "Analiz onaya çıktığında",
+        )) as HTMLInputElement;
+        expect(onReview.value).toBe("İNCELEMEDE");
+        expect(onReview.disabled).toBe(true);
+
+        await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+        // … but the summary the operator signs off on does not promise it …
+        await screen.findByText("Özet");
+        const list = screen.getByText("Ticket panoda ne olacak").nextElementSibling as HTMLElement;
+        expect(within(list).queryByText("İNCELEMEDE")).toBeNull();
+
+        await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+        // … and the wire carries only the moment düzeltme can reach.
+        await waitFor(() => expect(ruleBody(calls).statusMap).toEqual({ onDone: "Tamam" }));
+      });
+
+      it("gates nothing for analiz, whose flow walks every moment", async () => {
+        const { fetchImpl } = stubFetch(statusRoutes());
+        renderScreen(<SetupScreen />, { fetchImpl });
+        await reachStatusStep();
+
+        await userEvent.click(screen.getByLabelText("Ticket'ın Jira durumunu da değiştirsin"));
+        await screen.findByLabelText("İş başladığında");
+        // All five, live — the fix must not shrink the flows it never applied to.
+        for (const label of [
+          "İş başladığında",
+          "Bilgi eksik olduğunda",
+          "Analiz onaya çıktığında",
+          "Ret gelince",
+          "İş bittiğinde",
+        ]) {
+          expect((screen.getByLabelText(label) as HTMLInputElement).disabled).toBe(false);
+        }
+        expect(screen.queryByText(DEAD_REASON)).toBeNull();
+      });
+
+      it("gates nothing for gelistirme either", async () => {
+        const { fetchImpl } = stubFetch(statusRoutes());
+        renderScreen(<SetupScreen />, { fetchImpl });
+        await reachStatusStep("gelistirme");
+
+        await userEvent.click(screen.getByLabelText("Ticket'ın Jira durumunu da değiştirsin"));
+        await screen.findByLabelText("İş başladığında");
+        expect(
+          (screen.getByLabelText("Analiz onaya çıktığında") as HTMLInputElement).disabled,
+        ).toBe(false);
+        expect((screen.getByLabelText("Ret gelince") as HTMLInputElement).disabled).toBe(false);
+        expect(screen.queryByText(DEAD_REASON)).toBeNull();
+      });
     });
   });
 

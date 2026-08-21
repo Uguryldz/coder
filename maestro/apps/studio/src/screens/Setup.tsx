@@ -317,7 +317,16 @@ export function SetupScreen(): ReactNode {
         // wizard writes has the same shape as one the expert screen writes.
         analystVariantId: null,
         engineerVariantId: null,
-        statusMap: buildStatusMap(input.statusOn, input.statusDraft, input.reassignOnNeedInfo),
+        // Flow-aware on purpose: a düzeltme rule never reaches the two
+        // analysis-approval moments, so values a draft may still hold there
+        // (typed before the operator switched flows) stay off the wire — the
+        // summary the operator just confirmed did not list them either.
+        statusMap: buildStatusMap(
+          input.statusOn,
+          input.statusDraft,
+          input.reassignOnNeedInfo,
+          input.flowType,
+        ),
       });
 
       // Mirror to the live pilot so discovery picks the rule up without a

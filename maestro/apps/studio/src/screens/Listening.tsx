@@ -14,6 +14,8 @@ import {
   EMPTY_STATUS_DRAFT,
   STATUS_POINTS,
   buildStatusMap,
+  deadStatusEntries,
+  firesFor,
   statusSummary,
   type StatusDraft,
   type StatusMap,
@@ -179,6 +181,18 @@ export function ListeningScreen(): ReactNode {
   const [reassignOnNeedInfo, setReassignOnNeedInfo] = useState(false);
   const setStatusAt = (point: StatusPoint, value: string): void =>
     setStatusDraft((prev) => ({ ...prev, [point]: value }));
+
+  // Which of the five points the SELECTED flow can reach. `duzeltme` skips the
+  // analysis gate (see `firesFor`), so its two approval moments are dead:
+  // mapping them moves nothing, ever. The fields stay visible but disabled with
+  // the reason — the same gating the wizard applies, from the same helper, so
+  // the two surfaces cannot drift apart about what the engine does.
+  const livePoints = new Set(firesFor(flowType));
+  // Dead points that nonetheless HOLD a value — a rule stored before this
+  // gating existed can carry `onReview` on a düzeltme flow, and the draft keeps
+  // a value typed before the operator switched flows. These are the values a
+  // save will stop storing, so they get a warning, not silence.
+  const deadDraftEntries = deadStatusEntries(statusDraft, flowType);
 
   // Editing an existing rule: its id, or null while the form is adding a new
   // one. The BFF's PUT is a full replace, so the form carries EVERY field of
@@ -417,7 +431,13 @@ export function ListeningScreen(): ReactNode {
       // "" is the "default agent" choice — normalised to null on the wire.
       analystVariantId: analystVariantId === "" ? null : analystVariantId,
       engineerVariantId: engineerVariantId === "" ? null : engineerVariantId,
-      statusMap: buildStatusMap(statusOn, statusDraft, reassignOnNeedInfo),
+      // Flow-aware: only the points `firesFor(flowType)` can reach go on the
+      // wire. A value sitting at a dead point (stored by an older rule, or
+      // typed before the flow was switched) is dropped HERE, after the form has
+      // said so on screen — the warning above the save button names the values
+      // and says they will not be written, so the save itself is the operator's
+      // confirmation.
+      statusMap: buildStatusMap(statusOn, statusDraft, reassignOnNeedInfo, flowType),
     };
     if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
     else create.mutate(body);
@@ -480,15 +500,32 @@ export function ListeningScreen(): ReactNode {
       // only comments has to be visible from the list, not something an operator
       // discovers by opening each rule. A mapped rule shows the statuses it walks
       // through, in flow order; an unmapped one says "yorum" outright rather than
-      // leaving a blank that could read as "not loaded yet".
+      // leaving a blank that could read as "not loaded yet". Only the points the
+      // rule's FLOW can reach count as the walk — a düzeltme rule stored with an
+      // `onReview` (written before the forms gated by flow) shows that value as
+      // "gerçekleşmez", not as a status the ticket will visit.
       cell: (r) => {
-        const steps = statusSummary(r.statusMap);
-        if (steps.length === 0) {
+        const steps = statusSummary(r.statusMap, r.flowType);
+        const dead = deadStatusEntries(r.statusMap, r.flowType);
+        if (steps.length === 0 && dead.length === 0) {
           return <span className="screen-note">{t("listening.status.comment_only_short")}</span>;
         }
+        // A rule whose ONLY mappings are dead is comment-only in practice, so
+        // the cell says "yorum" — but keeps the dead values beside it, because
+        // "yorum" alone would hide that somebody once configured something.
+        const walk =
+          steps.length > 0 ? steps.join(" → ") : t("listening.status.comment_only_short");
         return (
-          <span className="screen-note" title={steps.join(" → ")}>
-            {steps.join(" → ")}
+          <span className="screen-note" title={walk}>
+            {walk}
+            {dead.length > 0 && (
+              <span className="screen-note">
+                {" · "}
+                {t("listening.status.dead_cell", {
+                  values: dead.map((e) => e.value).join(", "),
+                })}
+              </span>
+            )}
           </span>
         );
       },
@@ -717,18 +754,30 @@ export function ListeningScreen(): ReactNode {
                 <>
                   <p className="screen-note">{t("listening.status.exact")}</p>
                   <div className="screen-filters" style={{ marginTop: 10 }}>
-                    {STATUS_POINTS.map((point) =>
-                      statusOptions.length > 0 ? (
+                    {STATUS_POINTS.map((point) => {
+                      // Dead for the selected flow: disabled, never hidden, and
+                      // the hint is the REASON. An operator who mapped five
+                      // points on an analiz rule and now writes a düzeltme one
+                      // should read WHY this rule has three, not wonder where
+                      // two fields went. A value the draft still holds there
+                      // stays visible; the warning below and `buildStatusMap`
+                      // handle what happens to it on save.
+                      const dead = !livePoints.has(point);
+                      const hint = dead
+                        ? t("listening.status.dead_hint")
+                        : t(`listening.status.hint.${point}`);
+                      return statusOptions.length > 0 ? (
                         <Select
                           key={point}
                           label={t(`listening.status.${point}`)}
                           value={statusDraft[point]}
                           onChange={(e) => setStatusAt(point, e.target.value)}
+                          disabled={dead}
                           options={[
                             { value: "", label: t("listening.status.skip") },
                             ...statusOptions.map((v) => ({ value: v, label: v })),
                           ]}
-                          hint={t(`listening.status.hint.${point}`)}
+                          hint={hint}
                         />
                       ) : (
                         // Jira's status list could not be read (no connection,
@@ -741,11 +790,27 @@ export function ListeningScreen(): ReactNode {
                           label={t(`listening.status.${point}`)}
                           value={statusDraft[point]}
                           onChange={(e) => setStatusAt(point, e.target.value)}
-                          hint={t(`listening.status.hint.${point}`)}
+                          disabled={dead}
+                          hint={hint}
                         />
-                      ),
-                    )}
+                      );
+                    })}
                   </div>
+                  {/* Values parked at dead points — an older rule's stored
+                      `onReview`, or text typed before the flow was switched.
+                      Saving will NOT write them, and that must be said before
+                      the save, in the operator's language, naming the exact
+                      values: a stored configuration vanishing without a word is
+                      the same silent dishonesty this gating exists to end. */}
+                  {deadDraftEntries.length > 0 && (
+                    <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
+                      {t("listening.status.dead_warning", {
+                        values: deadDraftEntries
+                          .map((e) => `${t(`listening.status.${e.point}`)}: ${e.value}`)
+                          .join(", "),
+                      })}
+                    </div>
+                  )}
                   <label
                     className="screen-note"
                     style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}

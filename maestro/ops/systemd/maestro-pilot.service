@@ -21,7 +21,7 @@ WorkingDirectory=%h/coder/maestro
 # yoksa boot'u kırmaz (pilot kendi fail-soft davranışıyla açılır/uyarır).
 EnvironmentFile=-%h/coder/maestro/.env
 # .env'de yoksa maestro-baslat.sh ile aynı varsayılan (EnvironmentFile bunu ezer).
-Environment=DATABASE_URL=postgresql://maestro:maestro-local-only@localhost:55432/maestro
+Environment=DATABASE_URL=postgresql://maestro:DEGISTIR-parola-uret-openssl-rand-hex-24@localhost:55432/maestro
 # pnpm/node nvm'den gelir — user unit'in PATH'i çıplaktır, elle verilir.
 Environment=PATH=%h/.nvm/versions/node/v24.15.0/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/env pnpm -F @maestro/deploy exec tsx src/bin/pilot.ts

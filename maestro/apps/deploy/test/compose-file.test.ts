@@ -250,7 +250,7 @@ describe("compose: secrets", () => {
   it("keeps the only committed password local-only and overridable", () => {
     // The Postgres password is reachable only inside the compose network and
     // must stay overridable from the environment.
-    expect(raw).toContain("${POSTGRES_PASSWORD:-maestro-local-only}");
+    expect(raw).toContain("${POSTGRES_PASSWORD:-DEGISTIR-parola-uret-openssl-rand-hex-24}");
   });
 });
 

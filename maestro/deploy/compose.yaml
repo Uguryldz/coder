@@ -54,7 +54,7 @@ x-node-hardening: &node-hardening
 x-node-env: &node-env
   NODE_ENV: ${NODE_ENV:-development}
   MAESTRO_PROFILE: ${MAESTRO_PROFILE:-dev}
-  DATABASE_URL: postgresql://${POSTGRES_USER:-maestro}:${POSTGRES_PASSWORD:-maestro-local-only}@postgres:5432/${POSTGRES_DB:-maestro}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-maestro}:${POSTGRES_PASSWORD:-DEGISTIR-parola-uret-openssl-rand-hex-24}@postgres:5432/${POSTGRES_DB:-maestro}
   TEMPORAL_ADDRESS: temporal:7233
   TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
   # Cross-process coordination (M4): the atomic token bucket (M19), the
@@ -130,7 +130,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-maestro}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maestro-local-only}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-DEGISTIR-parola-uret-openssl-rand-hex-24}
       POSTGRES_DB: ${POSTGRES_DB:-maestro}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -207,7 +207,7 @@ services:
       DB: postgres12
       DB_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-maestro}
-      POSTGRES_PWD: ${POSTGRES_PASSWORD:-maestro-local-only}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-DEGISTIR-parola-uret-openssl-rand-hex-24}
       POSTGRES_SEEDS: postgres
       # Temporal's own databases, kept apart from the application's.
       DBNAME: temporal

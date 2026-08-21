@@ -17,7 +17,7 @@ WorkingDirectory=%h/coder/maestro
 # maestro/.env; baştaki "-" dosya yoksa birimi kırmaz.
 EnvironmentFile=-%h/coder/maestro/.env
 # .env'de yoksa maestro-baslat.sh ile aynı varsayılanlar (EnvironmentFile ezer).
-Environment=DATABASE_URL=postgresql://maestro:maestro-local-only@localhost:55432/maestro
+Environment=DATABASE_URL=postgresql://maestro:DEGISTIR-parola-uret-openssl-rand-hex-24@localhost:55432/maestro
 Environment=MAESTRO_STUDIO_HOST=0.0.0.0
 Environment=MAESTRO_STUDIO_ALLOWED_HOSTS=coder.uguryildiz.tech,localhost
 # pnpm/node nvm'den gelir — user unit'in PATH'i çıplaktır, elle verilir.

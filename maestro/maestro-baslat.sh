@@ -25,7 +25,7 @@ mkdir -p "$LOG_DIR"
 # ── env ──────────────────────────────────────────────────────────────────────
 # .env'i yükle (varsa). set -a: sonrasında export edilenler alt süreçlere geçer.
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
-export DATABASE_URL="${DATABASE_URL:-postgresql://maestro:maestro-local-only@localhost:55432/maestro}"
+export DATABASE_URL="${DATABASE_URL:-postgresql://maestro:DEGISTIR-parola-uret-openssl-rand-hex-24@localhost:55432/maestro}"
 export MAESTRO_STUDIO_HOST="${MAESTRO_STUDIO_HOST:-0.0.0.0}"
 export MAESTRO_STUDIO_ALLOWED_HOSTS="${MAESTRO_STUDIO_ALLOWED_HOSTS:-coder.uguryildiz.tech,localhost}"
 

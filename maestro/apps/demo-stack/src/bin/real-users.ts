@@ -45,7 +45,7 @@ import { listenAddress } from "../address.js";
 
 const DATABASE_URL =
   process.env["DATABASE_URL"] ??
-  "postgresql://maestro:maestro-local-only@localhost:55432/maestro";
+  "postgresql://maestro:DEGISTIR-parola-uret-openssl-rand-hex-24@localhost:55432/maestro";
 
 async function main(): Promise<void> {
   const db = createDb(DATABASE_URL);

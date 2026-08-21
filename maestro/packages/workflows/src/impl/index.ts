@@ -10,7 +10,16 @@ import * as statusMove from "./status-move.js";
 
 export * from "./deps.js";
 export { InMemoryIdempotency } from "./idempotency.js";
-export { LLM_BLOCKED, QUOTA_WAIT, handOver, quotaWait, resolveOutcome } from "./outcome.js";
+export {
+  AUTH_RETRY_MAX_ATTEMPTS,
+  LLM_AUTH_REJECTED,
+  LLM_BLOCKED,
+  QUOTA_WAIT,
+  guardModelCall,
+  handOver,
+  quotaWait,
+  resolveOutcome,
+} from "./outcome.js";
 export { AI_ASSIST_REQUIRED } from "./analysis.js";
 export {
   DOC_TARGETS,

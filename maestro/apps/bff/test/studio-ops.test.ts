@@ -218,6 +218,30 @@ describe("GET /studio/health", () => {
     expect(body.state).toBe("degraded");
     expect(body.services).toHaveLength(2);
   });
+
+  it("an unconfigured connector never colours the overall state", async () => {
+    // "Nobody set up an LLM yet" is a settings to-do, not an outage: the row
+    // must appear honestly as not_configured while the platform stays green.
+    const h = await studioHarness({
+      services: [
+        { service: "bff", state: "healthy", version: "0.1.0", checkedAt: AT, note: null },
+        {
+          service: "llm",
+          state: "not_configured",
+          version: "llm",
+          checkedAt: AT,
+          note: "health.note.not_configured",
+        },
+      ],
+    });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({ method: "GET", url: "/studio/health", headers: auth(token) });
+
+    const body = response.json() as { state: string; services: { state: string }[] };
+    expect(body.state).toBe("healthy");
+    expect(body.services.map((s) => s.state)).toContain("not_configured");
+  });
 });
 
 describe("GET /studio/audit", () => {

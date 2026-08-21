@@ -9,7 +9,7 @@ import { renderAnalysisMarkdown } from "@maestro/publish";
 import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { ActivityDeps, RunContext } from "./deps.js";
-import { resolveOutcome } from "./outcome.js";
+import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { activitySeq, audit, record } from "./record.js";
 
 /**
@@ -138,15 +138,17 @@ async function finishDiscovery(
   explored: { resumeToken: string; finalText: string },
 ): Promise<{ files: number; modules: string[] }> {
   await deps.runs.patch(ticket, { resumeToken: explored.resumeToken });
-  const digest = await deps.llm.generateObject(
-    {
-      role: "analyst",
-      variantId: run.variantId,
-      dataClass: run.dataClass,
-      schemaName: "repo-discovery",
-      input: { appId, findings: explored.finalText },
-    },
-    DiscoveryDigest,
+  const digest = await guardModelCall(deps, run, "discovery-digest", () =>
+    deps.llm.generateObject(
+      {
+        role: "analyst",
+        variantId: run.variantId,
+        dataClass: run.dataClass,
+        schemaName: "repo-discovery",
+        input: { appId, findings: explored.finalText },
+      },
+      DiscoveryDigest,
+    ),
   );
   const resolved = await resolveOutcome(deps, run, "discovery-digest", digest);
   const value = resolved.status === "degraded" ? { files: 0, modules: [] } : resolved.value;
@@ -191,21 +193,25 @@ export async function writeAnalysis(
 ): Promise<{ analysis: AnalysisDoc; risk: RiskTier }> {
   const run = await deps.runs.get(ticket);
   const snapshot = await deps.work.getTicket(ticket);
-  const outcome = await deps.llm.generateObject(
-    {
-      role: "analyst",
-      variantId: run.variantId,
-      dataClass: run.dataClass,
-      schemaName: "analysis-doc",
-      input: {
-        appId,
-        locale: run.locale,
-        templateVersion: run.templateVersion,
-        summary: snapshot.summary,
-        description: snapshot.description,
+  // The auth guard is what keeps a rejected model key from retrying this
+  // activity in silence for days (see `guardModelCall`).
+  const outcome = await guardModelCall(deps, run, "analysis", () =>
+    deps.llm.generateObject(
+      {
+        role: "analyst",
+        variantId: run.variantId,
+        dataClass: run.dataClass,
+        schemaName: "analysis-doc",
+        input: {
+          appId,
+          locale: run.locale,
+          templateVersion: run.templateVersion,
+          summary: snapshot.summary,
+          description: snapshot.description,
+        },
       },
-    },
-    AnalysisDoc,
+      AnalysisDoc,
+    ),
   );
   const resolved = await resolveOutcome(deps, run, "analysis", outcome);
   if (resolved.status === "degraded") throw aiAssistRequired("analysis", resolved.messageKey);

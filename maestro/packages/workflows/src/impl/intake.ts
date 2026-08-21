@@ -12,7 +12,7 @@ import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { IntakeResult } from "../activities.js";
 import type { ActivityDeps } from "./deps.js";
-import { resolveOutcome } from "./outcome.js";
+import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
 
 /**
@@ -99,15 +99,19 @@ export async function matchApplication(
     return matched;
   }
 
-  const outcome = await deps.llm.generateObject(
-    {
-      role: "intake",
-      variantId: run.variantId,
-      dataClass: run.dataClass,
-      schemaName: "app-suggestion",
-      input: { summary: snapshot.summary, description: snapshot.description, components: snapshot.components },
-    },
-    AppSuggestion,
+  // Routed through the auth guard: a driver-thrown `LlmAuthError` must leave
+  // a journal line and stay bounded instead of retrying in silence.
+  const outcome = await guardModelCall(deps, run, "match", () =>
+    deps.llm.generateObject(
+      {
+        role: "intake",
+        variantId: run.variantId,
+        dataClass: run.dataClass,
+        schemaName: "app-suggestion",
+        input: { summary: snapshot.summary, description: snapshot.description, components: snapshot.components },
+      },
+      AppSuggestion,
+    ),
   );
   const resolved = await resolveOutcome(deps, run, "match", outcome);
   if (resolved.status === "degraded") return null;
@@ -132,15 +136,17 @@ export async function matchApplication(
 export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<IntakeResult> {
   const run = await deps.runs.get(ticket);
   const snapshot = await deps.work.getTicket(ticket);
-  const outcome = await deps.llm.generateObject(
-    {
-      role: "intake",
-      variantId: run.variantId,
-      dataClass: run.dataClass,
-      schemaName: "intake-verdict",
-      input: { summary: snapshot.summary, description: snapshot.description, issueType: snapshot.issueType },
-    },
-    IntakeVerdict,
+  const outcome = await guardModelCall(deps, run, "intake", () =>
+    deps.llm.generateObject(
+      {
+        role: "intake",
+        variantId: run.variantId,
+        dataClass: run.dataClass,
+        schemaName: "intake-verdict",
+        input: { summary: snapshot.summary, description: snapshot.description, issueType: snapshot.issueType },
+      },
+      IntakeVerdict,
+    ),
   );
   const resolved = await resolveOutcome(deps, run, "intake", outcome);
   if (resolved.status === "degraded") {

@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 import { AuditChain } from "@maestro/audit";
 import {
   buildServer,
+  compositeHealthReader,
+  connectionHealthReader,
   LocalIdentityProvider,
   BcryptPasswordHasher,
   StaticSettingsReader,
@@ -75,8 +77,9 @@ async function main(): Promise<void> {
   // probed over its own HTTP liveness URL. A probe that cannot reach its target
   // reports `down` with a secret-free note, which is the whole point of the
   // screen. The URLs are fixed deployment facts, not caller input.
-  // Jira Cloud bootstrap credentials (git-ignored .env) — used both by the Flow
-  // screen's workflow reader below AND by the system-health Jira probe here.
+  // Jira Cloud bootstrap credentials (git-ignored .env) — used by the Flow
+  // screen's workflow reader below. (The system-health Jira row no longer
+  // reads them: it comes from the managed connection, further down.)
   const jiraBaseUrl = process.env["JIRA_CLOUD_BASE_URL"];
   const jiraEmail = process.env["JIRA_CLOUD_EMAIL"];
   const jiraToken = process.env["JIRA_CLOUD_API_TOKEN"];
@@ -85,15 +88,25 @@ async function main(): Promise<void> {
   // System-health probes (Sistem sağlığı screen / M6): the services THIS
   // launcher actually depends on, each really contacted — never reported from a
   // config file. Postgres → real `SELECT 1`; pilot/BFF/Studio → their own HTTP
-  // liveness URLs; Jira → an authenticated `/myself` ping (kritik, canlı dış
-  // bağımlılık). A probe that cannot reach its target reports `down` with a
-  // secret-free note, which is the whole point of the screen. The Jira probe is
-  // added only when a credential exists — no credential, no fake "healthy" row.
+  // liveness URLs. A probe that cannot reach its target reports `down` with a
+  // secret-free note, which is the whole point of the screen.
+  // Built BEFORE the read models: the connection rows (Ayarlar > Bağlantılar)
+  // now feed the Sistem sağlığı screen too, so the store and the cipher must
+  // exist first. The SAME instances go into `deps` below — one store, one truth.
+  const connections = new PrismaConnectionStore(db.connection);
+  const connectorSecrets = new EncryptedSecretStore(
+    resolveMasterKey({
+      envValue: process.env["CONNECTOR_MASTER_KEY"],
+      isProduction: false,
+    }),
+    db.connectorSecret,
+  );
+
   const { port: selfPort } = listenAddress();
   const bffHealthUrl = `http://127.0.0.1:${selfPort}/healthz`;
   const studioHealthUrl = process.env["STUDIO_HEALTH_URL"] ?? "http://127.0.0.1:7000/";
   const pilotHealthUrl = process.env["PILOT_HEALTH_URL"] ?? "http://127.0.0.1:7020/api/state";
-  const read = liveReadModels({
+  const probeRead = liveReadModels({
     db,
     audit: auditStore,
     probes: [
@@ -104,23 +117,28 @@ async function main(): Promise<void> {
       httpProbe("bff", bffHealthUrl, { version: "bff", authOptional: true }),
       httpProbe("studio", studioHealthUrl, { version: "studio", authOptional: true }),
       httpProbe("pilot", pilotHealthUrl, { version: "pilot", authOptional: true }),
-      ...(jiraBaseUrl && jiraEmail && jiraToken
-        ? [
-            httpProbe("jira", `${jiraBaseUrl}/rest/api/3/myself`, {
-              version: "jira-cloud",
-              // Basic auth with the bootstrap credential — a 200 proves the token
-              // still authenticates; a 401/403 (authOptional defaults false) reads
-              // as down, which is exactly what an expired token should show.
-              headers: {
-                authorization: `Basic ${Buffer.from(`${jiraEmail}:${jiraToken}`).toString("base64")}`,
-                accept: "application/json",
-              },
-              timeoutMs: 5_000,
-            }),
-          ]
-        : []),
+      // The env-based Jira probe that used to sit here is gone ON PURPOSE: the
+      // connection-backed reader below now owns the "jira" row (same
+      // authenticated `/myself` check, run by `runConnectionTest` against the
+      // credential the PANEL manages — the editable source of truth, per the
+      // note on `settings` below). Keeping both would render two "jira" rows
+      // with two possibly different verdicts, which is exactly the "which
+      // screen do I believe" split this platform keeps refusing to ship.
     ],
   });
+  // The install-rehearsal finding, closed: the health screen listed the
+  // infrastructure but said nothing about the model key — the very credential
+  // whose 403 quietly stalled OPS runs for days. The connection-backed reader
+  // adds llm/jira/scm rows from the managed connections, with three honest
+  // states (sağlıklı / kapalı / yapılandırılmadı) and the last test's verdict
+  // cached on the row, so a one-minute poll never hammers OpenRouter or Jira.
+  const read = {
+    ...probeRead,
+    health: compositeHealthReader([
+      probeRead.health,
+      connectionHealthReader({ store: connections, secrets: connectorSecrets, fetchImpl: fetch }),
+    ]),
+  };
 
   // The Flow screen imports the live Jira workflow (statuses + transitions).
   // It needs a real Cloud driver, which needs a real Jira credential — read it
@@ -178,7 +196,7 @@ async function main(): Promise<void> {
     // OpenRouter connections, tokens AES-encrypted under CONNECTOR_MASTER_KEY.
     // Flow screen: the live Jira workflow reader (undefined → named 503).
     ...(jiraWorkflow ? { jiraWorkflow } : {}),
-    connections: new PrismaConnectionStore(db.connection),
+    connections,
     // Uygulama ekle (Onboard, M100): submitting the wizard registers the picked
     // repo into the real `Application` table this reads elsewhere, so a brand-new
     // repo becomes bindable without a separate import step. Binding stays four-eyes.
@@ -191,13 +209,7 @@ async function main(): Promise<void> {
     // The analysis-guidance store (Bilgi kütüphanesi): "öğren" notes an admin
     // uploads; the enabled ones feed the analyst on a new analysis.
     guidance: new PrismaGuidanceStore(db.analysisGuidance),
-    connectorSecrets: new EncryptedSecretStore(
-      resolveMasterKey({
-        envValue: process.env["CONNECTOR_MASTER_KEY"],
-        isProduction: false,
-      }),
-      db.connectorSecret,
-    ),
+    connectorSecrets,
     studio: {
       variants: new PrismaVariantCatalog(db.variant, db.variantVersion),
       // The write side, so an admin can genuinely create/re-version an agent

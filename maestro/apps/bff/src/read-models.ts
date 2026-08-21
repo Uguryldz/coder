@@ -324,7 +324,14 @@ export interface AuditReader {
 
 export interface ServiceHealth {
   readonly service: string;
-  readonly state: "healthy" | "degraded" | "down";
+  /**
+   * `not_configured` is the honest third answer for a dependency the platform
+   * would USE if it existed — an LLM or Jira connection nobody has created
+   * yet. It is deliberately not `down`: "nobody set this up" and "this is
+   * broken" send an operator to entirely different places, and the aggregate
+   * state must not page anyone over a connector that was never configured.
+   */
+  readonly state: "healthy" | "degraded" | "down" | "not_configured";
   readonly version: string;
   readonly checkedAt: string;
   readonly note: string | null;

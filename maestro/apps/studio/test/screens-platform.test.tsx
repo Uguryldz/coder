@@ -282,6 +282,67 @@ describe("health screen", () => {
     expect(screen.getByText("brand_new_thing")).toBeInTheDocument();
   });
 
+  it("an unconfigured LLM says so honestly and points at the settings screen", async () => {
+    // "Not set up" must be its own state — not a fake green and not a red that
+    // pages somebody — and the row must say WHERE to fix it, in the wizard's
+    // own words (Setup.tsx uses the same link label).
+    const { fetchImpl } = stubFetch([
+      {
+        path: "/studio/health",
+        body: {
+          state: "healthy",
+          services: [
+            SERVICE,
+            {
+              service: "llm",
+              state: "not_configured",
+              version: "llm",
+              checkedAt: SERVICE.checkedAt,
+              note: "health.note.not_configured",
+            },
+          ],
+        },
+      },
+    ]);
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    expect(await screen.findByText("Model sağlayıcı (LLM)")).toBeInTheDocument();
+    expect(screen.getByText("yapılandırılmadı")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Ayarlar & bağlantılar'a git" });
+    expect(link).toHaveAttribute("href", "/settings");
+    // An unconfigured connector is a to-do, not an outage — the platform badge
+    // the server computed stays green beside it.
+    expect(screen.getByText("Tüm servisler sağlıklı")).toBeInTheDocument();
+  });
+
+  it("a failing Jira credential reads kapalı, with the fix link beside the reason", async () => {
+    const { fetchImpl } = stubFetch([
+      {
+        path: "/studio/health",
+        body: {
+          state: "down",
+          services: [
+            {
+              service: "jira",
+              state: "down",
+              version: "jira_cloud",
+              checkedAt: SERVICE.checkedAt,
+              note: "connections.test.no_token",
+            },
+          ],
+        },
+      },
+    ]);
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    expect(await screen.findByText("kapalı")).toBeInTheDocument();
+    // The stored test verdict travels as a catalog key and renders as a sentence.
+    expect(screen.getByText(/Token tanımlı değil/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ayarlar & bağlantılar'a git" })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
+  });
 });
 describe("commands screen", () => {
   it("states that a comment with extra text is not an approval", async () => {

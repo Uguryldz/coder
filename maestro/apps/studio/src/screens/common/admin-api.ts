@@ -198,11 +198,16 @@ export interface SandboxRecord {
 
 // ── /studio/health (LIVE) ─────────────────────────────────────────────────────
 
-export type ServiceState = "healthy" | "degraded" | "down";
+export type ServiceState = "healthy" | "degraded" | "down" | "not_configured";
 
 /** A row of `GET /studio/health` (BFF `ServiceHealth`). */
 export interface ServiceHealth {
   readonly service: string;
+  /**
+   * `not_configured` marks a dependency nobody has set up (an LLM or Jira
+   * connection) — honestly distinct from `down`, which means "configured and
+   * failing". The BFF's aggregate state never carries it.
+   */
   readonly state: ServiceState;
   readonly version: string;
   readonly checkedAt: string;
@@ -210,8 +215,8 @@ export interface ServiceHealth {
 }
 
 export interface HealthResponse {
-  /** Worst state across the services, computed by the BFF. */
-  readonly state: ServiceState;
+  /** Worst state across the services, computed by the BFF; never `not_configured`. */
+  readonly state: "healthy" | "degraded" | "down";
   readonly services: readonly ServiceHealth[];
 }
 

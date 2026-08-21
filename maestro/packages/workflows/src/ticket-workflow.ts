@@ -67,8 +67,20 @@ const acts = proxyActivities<MaestroActivities>({
  * legitimately be spent for longer than that: a run told "come back on Monday"
  * must not be dropped on Saturday. This is not an infinite-retry hazard — a
  * quota failure carries `nextRetryDelay` naming the moment the window reopens,
- * so the run sleeps until then and costs nothing, and every non-quota fault
- * here is non-retryable and still stops on the first attempt.
+ * so the run sleeps until then and costs nothing.
+ *
+ * What this policy CANNOT promise is that every non-quota fault stops early:
+ * to Temporal a plain thrown error is retryable, so a driver exception would
+ * ride this same unlimited ladder. The classification therefore lives in the
+ * ACTIVITIES, where it is replay-safe to change: `resolveOutcome` throws
+ * `blocked` non-retryably, and `guardModelCall` (impl/outcome.ts) bounds a
+ * rejected model key at `AUTH_RETRY_MAX_ATTEMPTS` with a journal line per
+ * attempt — the install rehearsal found a 403'd key retrying here for days
+ * with the run silently `running`. The retry OPTIONS below are deliberately
+ * untouched by that fix: they are recorded into workflow history when an
+ * activity is scheduled, so editing them would change the commands a replay
+ * regenerates, while activity-side classification changes nothing Temporal
+ * compares.
  *
  * `POSITIVE_INFINITY` is the SDK's spelling of "no limit": it drops the field,
  * which is the protocol's default. A literal `0` does NOT mean unlimited here —

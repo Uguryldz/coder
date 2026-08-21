@@ -82,6 +82,10 @@ export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps):
   /** Dependency health (M6), beyond the unauthenticated `/readyz` probe. */
   app.get("/studio/health", { preHandler: opsHandler }, async (_request, reply) => {
     const services = await deps.read.health.services();
+    // `not_configured` never colours the aggregate: an LLM nobody has set up
+    // is a to-do on the settings screen, not a platform that deserves an
+    // amber banner — and letting it degrade the overall state would teach
+    // operators to ignore that banner, which is how a real outage gets missed.
     const worst = services.some((service) => service.state === "down")
       ? "down"
       : services.some((service) => service.state === "degraded")

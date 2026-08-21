@@ -4,7 +4,7 @@ import { buildLivingSummary } from "@maestro/memory";
 import { z } from "zod";
 import type { EngineeringResult, ReviewResult, TestRunResult } from "../activities.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
-import { handOver, quotaWait, resolveOutcome } from "./outcome.js";
+import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
 
 /**
@@ -146,9 +146,11 @@ async function review(
   attempt: number,
 ): Promise<ReviewResult> {
   const run = await deps.runs.get(ticket);
-  const outcome = await deps.llm.generateObject(
-    { role, variantId: run.variantId, dataClass: run.dataClass, schemaName, input: { ticket } },
-    ReviewVerdict,
+  const outcome = await guardModelCall(deps, run, role, () =>
+    deps.llm.generateObject(
+      { role, variantId: run.variantId, dataClass: run.dataClass, schemaName, input: { ticket } },
+      ReviewVerdict,
+    ),
   );
   const resolved = await resolveOutcome(deps, run, role, outcome);
   if (resolved.status === "degraded") {
@@ -184,15 +186,17 @@ export async function designTests(
   attempt = 1,
 ): Promise<{ scenarios: number }> {
   const run = await deps.runs.get(ticket);
-  const outcome = await deps.llm.generateObject(
-    {
-      role: "test_designer",
-      variantId: run.variantId,
-      dataClass: run.dataClass,
-      schemaName: "test-design",
-      input: { ticket },
-    },
-    TestDesign,
+  const outcome = await guardModelCall(deps, run, "test-design", () =>
+    deps.llm.generateObject(
+      {
+        role: "test_designer",
+        variantId: run.variantId,
+        dataClass: run.dataClass,
+        schemaName: "test-design",
+        input: { ticket },
+      },
+      TestDesign,
+    ),
   );
   const resolved = await resolveOutcome(deps, run, "test-design", outcome);
   const scenarios = resolved.status === "degraded" ? 0 : resolved.value.scenarios;
@@ -229,15 +233,17 @@ export async function runTests(
 
   const { report } = finished;
   const red = report.commands.filter((c) => c.exitCode !== 0);
-  const digest = await deps.llm.generateObject(
-    {
-      role: "test_engineer",
-      variantId: run.variantId,
-      dataClass: run.dataClass,
-      schemaName: "test-run",
-      input: { output: report.commands.map((c) => `${c.name}: ${c.stdoutTail}`).join("\n") },
-    },
-    TestRunDigest,
+  const digest = await guardModelCall(deps, run, "test-digest", () =>
+    deps.llm.generateObject(
+      {
+        role: "test_engineer",
+        variantId: run.variantId,
+        dataClass: run.dataClass,
+        schemaName: "test-run",
+        input: { output: report.commands.map((c) => `${c.name}: ${c.stdoutTail}`).join("\n") },
+      },
+      TestRunDigest,
+    ),
   );
   const resolved = await resolveOutcome(deps, run, "test-digest", digest);
   const counted =

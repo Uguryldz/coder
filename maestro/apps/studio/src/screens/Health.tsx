@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Table } from "../ui/index.ts";
@@ -13,7 +14,18 @@ const STATE_TONE: Readonly<Record<ServiceState, BadgeTone>> = {
   healthy: "green",
   degraded: "amber",
   down: "red",
+  // Grey on purpose: "nobody set this up" is a to-do, not an alarm, and an
+  // amber badge here would train operators to ignore amber.
+  not_configured: "gray",
 };
+
+/**
+ * Rows the operator can fix from the settings screen — the managed
+ * connections (LLM / Jira / SCM). Anything else on this table is
+ * infrastructure the settings screen cannot repair, so pointing there would
+ * be a false trail.
+ */
+const CONNECTION_SERVICES: ReadonlySet<string> = new Set(["llm", "jira", "scm"]);
 
 /**
  * Platform dependency health (M6) — the detail behind the unauthenticated
@@ -77,7 +89,18 @@ export function HealthScreen(): ReactNode {
       key: "note",
       header: t("health.col.note"),
       cell: (row) => (
-        <span className="scr-mini">{row.note === null ? "—" : label(row.note, "—")}</span>
+        <span className="scr-mini">
+          {row.note === null ? "—" : label(row.note, "—")}
+          {/* The wizard's pattern (Setup.tsx): a fault the operator cannot fix
+              from THIS page is named and linked to the screen that fixes it.
+              Only for connection-backed rows, and never over a green one. */}
+          {CONNECTION_SERVICES.has(row.service) && row.state !== "healthy" && (
+            <>
+              {" · "}
+              <Link to="/settings">{t("setup.prereq.open_settings")}</Link>
+            </>
+          )}
+        </span>
       ),
     },
   ];

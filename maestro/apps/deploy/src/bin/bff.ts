@@ -1,6 +1,8 @@
 import { AuditChain } from "@maestro/audit";
 import {
   buildServer,
+  compositeHealthReader,
+  connectionHealthReader,
   resolveDeps,
   EnvSettingsReader,
   UNWIRED_CAPABILITY_LINES,
@@ -156,11 +158,35 @@ export async function main(): Promise<void> {
   // the health screen does. Two independent probe sets would let one screen
   // call Jira green while the other calls it red, and an operator would have no
   // way to tell which to believe.
-  const read = liveReadModels({
+  // Built BEFORE the read models: the connection rows now feed the health
+  // screen too, so the store and the secret side must exist first. Same
+  // instances are handed to `deps` below — one store, one cipher, one truth.
+  const connections = new PrismaConnectionStore(db.connection);
+  const connectorSecrets = new EncryptedSecretStore(
+    resolveMasterKey({
+      envValue: process.env["CONNECTOR_MASTER_KEY"],
+      isProduction: env.profile === "prod",
+    }),
+    db.connectorSecret,
+  );
+  const probeRead = liveReadModels({
     db,
     audit: auditStore,
     probes: [postgresProbe(db), temporalProbe(temporal.gateway)],
   });
+  // The rehearsal's finding, closed: `/studio/health` reported Postgres and
+  // Temporal — the parts a bank is least likely to lose — and said nothing
+  // about the LLM key or the Jira credential, the two that actually fail.
+  // The connection-backed reader adds llm/jira/scm rows with three honest
+  // states, cached on the connection row so a health poll never hammers the
+  // provider (see `connectionHealthReader`).
+  const read = {
+    ...probeRead,
+    health: compositeHealthReader([
+      probeRead.health,
+      connectionHealthReader({ store: connections, secrets: connectorSecrets, fetchImpl: fetch }),
+    ]),
+  };
 
   const deps: BffDeps = {
     work: deployment.ports.work,
@@ -253,7 +279,7 @@ export async function main(): Promise<void> {
     // its OWN secret port, deliberately not the Vault driver the platform reads
     // deployment secrets through: a console writes here, and must not be able to
     // rewrite the Vault mount the operator manages.
-    connections: new PrismaConnectionStore(db.connection),
+    connections,
     // The M100 app-registry writer: submitting the onboarding wizard registers
     // the picked repo into the `Application` table this reads elsewhere, so a
     // new repo no longer has to be onboarded through another path before it can
@@ -267,13 +293,7 @@ export async function main(): Promise<void> {
     // → flow-type rows an admin edits from Studio, backing the real DB table.
     listening: new PrismaListeningStore(db.listeningRule),
     guidance: new PrismaGuidanceStore(db.analysisGuidance),
-    connectorSecrets: new EncryptedSecretStore(
-      resolveMasterKey({
-        envValue: process.env["CONNECTOR_MASTER_KEY"],
-        isProduction: env.profile === "prod",
-      }),
-      db.connectorSecret,
-    ),
+    connectorSecrets,
     // Studio's read side, live (M7). Ten of the twelve read models answer from
     // the tables the worker writes; `runners` and `scans` still refuse by name
     // because nothing in this platform writes either, and a store over an

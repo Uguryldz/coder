@@ -36,6 +36,7 @@ function row(over: Partial<RunRow> = {}): RunRow {
   return {
     id: "run-pay-101-0001",
     ticketKey: "PAY-101",
+    appId: APP.appId,
     step: "3",
     status: "running",
     mode: "full_auto",
@@ -93,7 +94,7 @@ describe("PrismaRunContextStore.get", () => {
     const context = await new PrismaRunContextStore(delegate).get("PAY-101");
 
     expect(context.runId).toBe("run-pay-101-0001");
-    expect(context.app.adoRepo).toBe("core-api");
+    expect(context.app?.adoRepo).toBe("core-api");
     expect(context.branch).toBe("maestro/PAY-101");
     expect(context.protectedPaths).toEqual(["infra/**"]);
     expect(context.verification).toEqual([{ name: "test", command: ["pnpm", "test"] }]);
@@ -129,11 +130,24 @@ describe("PrismaRunContextStore.get", () => {
     );
   });
 
-  it("throws when the run has no application rather than inventing a blank one", async () => {
+  it("throws when the run POINTS AT an application that is gone, rather than inventing a blank one", async () => {
+    // `appId` set (the row() default) but the join empty: a dangling
+    // reference, which is the incomplete-context failure it always was.
     const { delegate } = fakeDelegate(row({ application: null }));
     await expect(new PrismaRunContextStore(delegate).get("PAY-101")).rejects.toBeInstanceOf(
       IncompleteRunContextError,
     );
+  });
+
+  it("maps an analysis-only row — appId null on purpose — to a context with app: null", async () => {
+    // The OTHER null: the binding named no application, so the run honestly
+    // has none. Refusing here would fail every activity of a run intake
+    // deliberately started; the activities that need an app refuse for
+    // themselves (`appOf` in impl/delivery.ts).
+    const { delegate } = fakeDelegate(row({ appId: null, application: null }));
+    const context = await new PrismaRunContextStore(delegate).get("PAY-101");
+    expect(context.app).toBeNull();
+    expect(context.runId).toBe("run-pay-101-0001");
   });
 
   /**
@@ -292,6 +306,17 @@ describe("PrismaRunContextStore.create", () => {
     const created = recorded.creates[0] as RunCreate;
     expect(created.variantId).toBe("analyst-default");
     expect(created.templateVersion).toBe("1");
+  });
+
+  it("opens an analysis-only row with the appId column left untouched", async () => {
+    // Omitted, not written as an explicit null: the column keeps its schema
+    // default and a run that HAS an app writes the exact row it always wrote.
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create({ ...newRun, appId: null });
+
+    expect(recorded.creates).toHaveLength(1);
+    expect(Object.hasOwn(recorded.creates[0] as object, "appId")).toBe(false);
+    expect((recorded.creates[0] as RunCreate).status).toBe("running");
   });
 
   it("is a no-op when the ticket already has a live run", async () => {

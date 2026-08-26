@@ -198,6 +198,17 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
           hint={t("setup.project.jira_project_hint")}
         />
       </div>
+      {/* For `analiz` the repository is an OFFER, not a requirement: the
+          analysis is written from the ticket text, and a repo only enriches
+          the impact section. The note stands ABOVE the selects so the operator
+          reads "isteğe bağlı" before wondering why an empty field lets them
+          through — and before going off to request a GitHub token their team
+          does not need. */}
+      {draft.flowType === "analiz" && (
+        <div className="scr-note" style={{ marginTop: 12 }}>
+          {t("setup.project.repo_optional_analiz")}
+        </div>
+      )}
       <div className="scr-grid scr-grid--2" style={{ marginTop: 12 }}>
         <Select
           label={t("setup.project.scm_connection")}

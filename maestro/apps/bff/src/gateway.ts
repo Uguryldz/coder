@@ -45,7 +45,14 @@ export interface RunSummary {
 
 export interface StartRunInput {
   ticket: TicketKey;
-  appId: string;
+  /**
+   * Absent for an analysis-only start: the binding named no application, and
+   * intake only lets the `analiz` flow through that way (`runIntake` still
+   * refuses `no_application` for every flow that writes code). The gateway
+   * omits the field from the workflow input rather than sending a null, so
+   * absence means the same thing on both sides of the wire.
+   */
+  appId?: string;
   mode: WorkMode;
   dataClass: DataClass;
   /**

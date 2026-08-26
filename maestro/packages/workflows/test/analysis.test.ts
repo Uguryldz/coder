@@ -138,3 +138,58 @@ describe("fanOutChildren (M100)", () => {
     expect(fakes.recorded.children).toHaveLength(2);
   });
 });
+
+describe("the analysis-only run — no application bound", () => {
+  const okDoc = () => ({ status: "ok" as const, value: analysisDoc("orta"), log: LOG });
+
+  it("writeAnalysis composes its prompt from the ticket alone, with no appId key", async () => {
+    const fakes = makeFakes({
+      context: { app: null, workspacePath: "" },
+      generateObject: () => okDoc(),
+    });
+    const written = await writeAnalysis(fakes.deps, "PAY-101");
+    expect(written.risk).toBe("orta");
+
+    const call = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc");
+    const input = call?.input as Record<string, unknown>;
+    // Only the repo-derived fact is gone. The analyst must not be told the
+    // application is named "" — and must still get everything the ticket-text
+    // mode genuinely has: the language, the pinned template, the ticket itself.
+    expect(Object.keys(input)).not.toContain("appId");
+    expect(input).toMatchObject({
+      locale: "tr",
+      templateVersion: "analysis@1.0.0",
+      summary: "ödeme iki kez düşüyor",
+      description: "müşteri iki kez ücretlendiriliyor",
+    });
+  });
+
+  it("regression: with an appId the prompt still carries it, unchanged", async () => {
+    const fakes = makeFakes({ generateObject: () => okDoc() });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    const call = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc");
+    expect((call?.input as Record<string, unknown>)["appId"]).toBe("pay");
+  });
+
+  it("fanOutChildren has no primary to exclude: every impacted cell gets its child", async () => {
+    const impact: AnalysisDoc = {
+      ...analysisDoc("orta"),
+      impactMatrix: [
+        { appId: "pay", impacted: true, summary: "ödeme servisi", source: "repo_card" },
+        { appId: "ledger", impacted: true, summary: "muhasebe kaydı", source: "repo_card" },
+        { appId: "crm", impacted: false, summary: "etkisiz", source: "repo_card" },
+      ],
+    };
+    const fakes = makeFakes({ context: { app: null, workspacePath: "" } });
+    const children = await fanOutChildren(fakes.deps, "PAY-101", impact);
+
+    // With a primary app, "pay" would have been the parent's own work item and
+    // been excluded; with none, it is honestly another application. Stable
+    // appId order, unimpacted cells still skipped.
+    expect(children).toHaveLength(2);
+    expect(fakes.recorded.children.map((c) => c.description)).toEqual([
+      "muhasebe kaydı",
+      "ödeme servisi",
+    ]);
+  });
+});

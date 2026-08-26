@@ -25,13 +25,18 @@ import { pageOf } from "./paging.js";
 import { unwired } from "./unwired.js";
 
 /**
- * Self-service onboarding (M93/M102): connecting a Jira project to a repository.
+ * Self-service onboarding (M93/M102): connecting a Jira project to a
+ * repository — or, for an analysis-only team, to no repository at all (the
+ * draft then omits the repo pair and the binding carries `appId: null`; only
+ * the `analiz` flow can start on it).
  *
  * Reading the options is open to the roles that could act on them; both writes
  * are admin/tech-lead, and neither of them CONFIGURES anything. The wizard's
  * last step files a proposal for a second human to approve, because a binding
  * decides where an agent will be allowed to push code — the same reason a
- * guarded parameter takes four eyes (M32/M71/M78).
+ * guarded parameter takes four eyes (M32/M71/M78). That reasoning covers the
+ * repo-less binding too: the second human is confirming precisely that NO
+ * repository is in scope.
  */
 export const ONBOARDING_ROLES = ["admin", "tech-lead"] as const;
 
@@ -51,8 +56,17 @@ export const ONBOARDING_PROPOSAL_PREFIX = "onboarding.binding";
 const DraftBody = z
   .object({
     jiraProject: z.string().trim().min(1).max(32),
-    adoRepo: z.string().trim().min(1).max(128),
-    platform: z.string().trim().min(1).max(32),
+    /**
+     * The repository — OPTIONAL since analysis-only bindings, and optional
+     * TOGETHER with `platform` (the `.superRefine` below): a repo without a
+     * build profile cannot be registered, and a platform without a repo
+     * describes nothing. A draft that omits both proposes a binding with no
+     * application; intake then accepts only the `analiz` flow on it and still
+     * refuses every code-writing flow with `no_application`, so the omission
+     * cannot widen what an agent may touch.
+     */
+    adoRepo: z.string().trim().min(1).max(128).optional(),
+    platform: z.string().trim().min(1).max(32).optional(),
     triggerMode: z.enum(["opt_in", "automatic"]),
     gateSet: z.enum(["risk_tiered", "always_six"]),
     mergeMode: z.enum(["human", "auto"]),
@@ -71,7 +85,16 @@ const DraftBody = z
      */
     dataClass: z.enum(["acik", "dahili", "gizli"]).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((draft, ctx) => {
+    // Both halves of the repository, or neither. A repo with no platform would
+    // register an app that cannot be built; a platform with no repo is a value
+    // with nothing to describe — either way the client dropped a field, and
+    // that is a 400 to report, not a shape to guess a meaning for.
+    if ((draft.adoRepo === undefined) !== (draft.platform === undefined)) {
+      ctx.addIssue({ code: "custom", message: "adoRepo and platform must be sent together" });
+    }
+  });
 
 /** The `?connectionId=` shared by the live SCM-repo and Jira-project listings. */
 const ConnectionIdQuery = z.object({ connectionId: z.string().trim().min(1).max(64) });
@@ -144,8 +167,13 @@ function bindingFromProposal(value: OnboardingProposalValue): BindingWrite {
 /** The shape stored in an `onboarding.binding` pending value (submit writes it). */
 interface OnboardingProposalValue {
   jiraProject: string;
-  adoRepo: string;
-  platform: string;
+  /**
+   * Absent — together with `platform` — on an analysis-only proposal: the
+   * wizard bound no repository, and `appId` below is then `null`. Older
+   * proposals always carry both.
+   */
+  adoRepo?: string;
+  platform?: string;
   triggerMode: "opt_in" | "automatic";
   gateSet: "risk_tiered" | "always_six";
   mergeMode: "human" | "auto";
@@ -156,7 +184,13 @@ interface OnboardingProposalValue {
    * would have — the field is additive, not a re-interpretation of the queue.
    */
   dataClass?: "acik" | "dahili" | "gizli";
-  appId: string;
+  /**
+   * `null` for an analysis-only proposal. `bindingFromProposal` writes it into
+   * `defaults.appId` verbatim, which is the null `parseDefaults` already reads
+   * back — the binding then starts `analiz` runs in ticket-text mode and
+   * intake refuses everything that writes code.
+   */
+  appId: string | null;
 }
 
 /**
@@ -444,6 +478,14 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const actor = sessionActor(sessionOf(request));
     const at = deps.clock.now().toISOString();
     const scopeRef = parsed.data.jiraProject;
+    // Both repo fields, together or not at all (the schema's `.superRefine`
+    // enforced the pairing). Narrowed here ONCE so the registration, the
+    // platform check and the proposal all agree on whether this draft binds a
+    // repository — `null` is the analysis-only draft.
+    const repoHalf =
+      parsed.data.adoRepo === undefined || parsed.data.platform === undefined
+        ? null
+        : { adoRepo: parsed.data.adoRepo, platform: parsed.data.platform };
 
     // Check the PROJECT before writing anything. Registering the repo and only
     // then finding the project unusable would leave a stranded app row with no
@@ -451,20 +493,22 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     // the inventory write below can happen.
     await assertProjectBindable(deps, scopeRef);
 
-    // Register the repo into the inventory, when the deployment wired a writer.
-    // `assertBindable` then finds the row it just wrote and the older
-    // `unknown_app` wall no longer stands between the wizard and a repo the
-    // operator legitimately picked off the live SCM list. The binding stays a
-    // proposal below — this only fills the inventory, it does not route anything.
-    if (deps.appRegistry !== undefined) {
-      const halves = splitRepoFullName(parsed.data.adoRepo);
-      if (halves === null) throw badRequest("invalid_repo_name", { repo: parsed.data.adoRepo });
+    // Register the repo into the inventory, when the deployment wired a writer
+    // AND the draft actually names a repo — an analysis-only draft has no
+    // inventory to fill. `assertBindable` then finds the row it just wrote and
+    // the older `unknown_app` wall no longer stands between the wizard and a
+    // repo the operator legitimately picked off the live SCM list. The binding
+    // stays a proposal below — this only fills the inventory, it does not
+    // route anything.
+    if (deps.appRegistry !== undefined && repoHalf !== null) {
+      const halves = splitRepoFullName(repoHalf.adoRepo);
+      if (halves === null) throw badRequest("invalid_repo_name", { repo: repoHalf.adoRepo });
       await deps.appRegistry.register({
-        appId: parsed.data.adoRepo,
-        displayName: parsed.data.adoRepo,
+        appId: repoHalf.adoRepo,
+        displayName: repoHalf.adoRepo,
         adoProject: halves.adoProject,
         adoRepo: halves.adoRepo,
-        platform: parsed.data.platform,
+        platform: repoHalf.platform,
       });
       // The inventory write is its own audited fact, separate from the binding
       // proposal below: one records that the app now exists, the other that a
@@ -474,28 +518,36 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
       await deps.audit.append({
         actor,
         action: "PARAM_CHANGED",
-        subject: `application:${parsed.data.adoRepo}`,
+        subject: `application:${repoHalf.adoRepo}`,
         at,
         meta: {
           registered: "application",
-          appId: parsed.data.adoRepo,
+          appId: repoHalf.adoRepo,
           adoProject: halves.adoProject,
           adoRepo: halves.adoRepo,
-          platform: parsed.data.platform,
+          platform: repoHalf.platform,
           createdVia: "onboarding",
         },
       });
     }
 
-    const target = await assertBindable(deps, parsed.data);
-    // The selected platform must be the repo's own. A mismatch means the
-    // operator changed the repo after step 2 and the wizard carried a stale
-    // profile — binding on it would build the app in the wrong toolchain.
-    if (parsed.data.platform !== target.platform) {
-      throw conflict("platform_mismatch", {
-        appId: target.appId,
-        platform: target.platform,
-      });
+    // The repo checks only exist when there IS a repo. An analysis-only draft
+    // resolves to no application at all — `assertProjectBindable` above already
+    // proved the project is real and free, which is everything such a draft
+    // can be wrong about.
+    let appId: string | null = null;
+    if (repoHalf !== null) {
+      const target = await assertBindable(deps, { jiraProject: scopeRef, adoRepo: repoHalf.adoRepo });
+      // The selected platform must be the repo's own. A mismatch means the
+      // operator changed the repo after step 2 and the wizard carried a stale
+      // profile — binding on it would build the app in the wrong toolchain.
+      if (repoHalf.platform !== target.platform) {
+        throw conflict("platform_mismatch", {
+          appId: target.appId,
+          platform: target.platform,
+        });
+      }
+      appId = target.appId;
     }
 
     // One open proposal per project. A second one would leave two drafts
@@ -513,7 +565,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     await deps.params.putPending({
       key: ONBOARDING_PROPOSAL_PREFIX,
       scopeRef,
-      value: { ...parsed.data, appId: target.appId },
+      value: { ...parsed.data, appId },
       proposedBy: actor,
       at,
     });
@@ -526,7 +578,10 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
       meta: {
         proposal: "onboarding_binding",
         projectKey: scopeRef,
-        appId: target.appId,
+        // The same honesty rule as intake's RUN_STARTED: a null in a SIEM row
+        // reads as a lost field, while "who proposed binding OPS with no
+        // repository" is a decision the trail must be able to answer.
+        appId: appId ?? "yok (yalnızca analiz)",
         triggerMode: parsed.data.triggerMode,
         gateSet: parsed.data.gateSet,
         mergeMode: parsed.data.mergeMode,
@@ -564,9 +619,13 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
       const value = entry.value as OnboardingProposalValue;
       return {
         projectKey: entry.scopeRef ?? value.jiraProject,
-        appId: value.appId,
-        adoRepo: value.adoRepo,
-        platform: value.platform,
+        // Explicit nulls, not dropped keys, for an analysis-only package: the
+        // approver's screen must render "depo yok — yalnızca analiz" from a
+        // value it can see, and a missing field is indistinguishable from a
+        // serializer bug.
+        appId: value.appId ?? null,
+        adoRepo: value.adoRepo ?? null,
+        platform: value.platform ?? null,
         triggerMode: value.triggerMode,
         gateSet: value.gateSet,
         mergeMode: value.mergeMode,

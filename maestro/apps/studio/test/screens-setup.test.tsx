@@ -624,11 +624,21 @@ describe("setup wizard", () => {
       expect(link.getAttribute("href")).toBe("/settings");
     });
 
-    it("names the missing repository connection", async () => {
+    it("names the missing repository connection once a code-writing flow is picked", async () => {
       const { fetchImpl } = stubFetch(
         baseRoutes([{ path: "/onboarding/scm-connections", body: { connections: [] } }]),
       );
       renderScreen(<SetupScreen />, { fetchImpl });
+
+      // On the default flow (analiz) the card must NOT appear: the repository
+      // is an offer there, and "kurulum yapılamaz" would be a false sentence
+      // for the analysis-only team this install may well be.
+      await screen.findByText("Ne yapmak istiyorsunuz?");
+      expect(screen.queryByText(/Hiç kod deposu bağlantısı tanımlı değil/)).toBeNull();
+
+      // Pick a flow that genuinely needs the repository, and the prerequisite
+      // is named — noun, fix, and where.
+      await userEvent.click(screen.getByRole("radio", { name: /Hata düzeltme/ }));
       expect(await screen.findByText(/Hiç kod deposu bağlantısı tanımlı değil/)).toBeTruthy();
     });
 
@@ -1064,5 +1074,125 @@ describe("setup wizard", () => {
       ).toBeNull();
       globalThis.localStorage.removeItem("maestro.setup.guideDismissed");
     });
+  });
+});
+
+/**
+ * The analysis-only setup (repo optional for the `analiz` flow).
+ *
+ * The audience this exists for is the first pilot's actual shape: a team that
+ * wants analysis documents on its Jira tickets and owns no code repository.
+ * Until this change the wizard demanded an SCM connection, a repository and a
+ * platform for every flow — "Maestro'nun kodu nereye yazacağını bilmeden
+ * kurulum yapılamaz", a sentence that is simply false for `analiz`.
+ */
+describe("setup wizard — analysis without a repository", () => {
+  /** An install with NO repository connection at all. */
+  const noScm = () =>
+    baseRoutes([{ path: "/onboarding/scm-connections", body: { connections: [] } }]);
+
+  /** Step 2 with only the Jira half filled — the analysis-only walk. */
+  async function fillProjectJiraOnly(): Promise<void> {
+    await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+    await userEvent.selectOptions(screen.getByLabelText("Jira bağlantısı"), "jira-1");
+    await screen.findByRole("option", { name: "OPS · Operasyon" });
+    await userEvent.selectOptions(screen.getByLabelText("Jira projesi"), "OPS");
+  }
+
+  it("walks step 2 without a repository, says the offer is optional, and files a repo-less binding", async () => {
+    const { fetchImpl, calls } = stubFetch(noScm());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    // Step 1: analiz is the default and İleri is live despite zero SCM
+    // connections — the prerequisite is per-flow.
+    await chooseFlow();
+
+    // Step 2: the repo fields are an OFFER, named as such, and the empty
+    // selects do not hold the operator hostage.
+    await fillProjectJiraOnly();
+    expect(
+      screen.getByText(/İsteğe bağlı: bir kod deposu bağlarsanız etki analizi dosyalara bakılarak yazılır/),
+    ).toBeTruthy();
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+
+    await fillTickets();
+    await screen.findByText("Jira durumlarını da değiştirsin mi?");
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+
+    // The summary says WHICH MODE the binding is in — ticket-text — instead of
+    // a repo sentence with a hole in it.
+    await screen.findByText("Özet");
+    expect(
+      screen.getByText(/OPS projesine kod deposu bağlanmayacak: analiz belgesi yalnızca ticket metninden üretilecek/),
+    ).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    await waitFor(() => {
+      // The rule carries the analiz flow…
+      const body = ruleBody(calls);
+      expect(body.flowType).toBe("analiz");
+      // …and the binding proposal carries NO repo half at all — omitted, not "".
+      const call = calls.find((c) => c.url.endsWith("/onboarding") && c.method === "POST");
+      expect(call, "no binding proposal was filed").toBeTruthy();
+      expect(call!.body).toEqual({
+        jiraProject: "OPS",
+        triggerMode: "opt_in",
+        gateSet: "risk_tiered",
+        mergeMode: "human",
+        dataClass: "dahili",
+      });
+    });
+  });
+
+  it("keeps repo mode when the analiz operator DOES pick a repository (regression)", async () => {
+    const { fetchImpl, calls } = stubFetch(baseRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await chooseFlow(); // analiz
+    await fillProject(); // picks repo + platform as before
+    await fillTickets();
+    await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await screen.findByText("Özet");
+    // Repo mode's own sentence, not the ticket-text one: picking the repo
+    // accepted the offer.
+    expect(screen.getByText(/Uguryldz\/maestro-pilot deposuna bağlanacak/)).toBeTruthy();
+    expect(screen.queryByText(/kod deposu bağlanmayacak/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+    await waitFor(() => {
+      const call = calls.find((c) => c.url.endsWith("/onboarding") && c.method === "POST");
+      expect(call!.body).toMatchObject({
+        adoRepo: "Uguryldz/maestro-pilot",
+        platform: "linux-node",
+      });
+    });
+  });
+
+  it("does not accept HALF a repository: a started pick must be finished", async () => {
+    const { fetchImpl } = stubFetch(baseRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await chooseFlow(); // analiz
+    await fillProjectJiraOnly();
+    // The operator starts the offer — picks the connection — then stops.
+    await userEvent.selectOptions(screen.getByLabelText("Kod deposu bağlantısı"), "scm-1");
+    await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" });
+
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText("Devam etmek için kodun yazılacağı depoyu seçin."),
+    ).toBeTruthy();
+  });
+
+  it("still blocks düzeltme without a repository connection on the same install (regression)", async () => {
+    const { fetchImpl } = stubFetch(noScm());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await screen.findByText("Ne yapmak istiyorsunuz?");
+    await userEvent.click(screen.getByRole("radio", { name: /Hata düzeltme/ }));
+    await screen.findAllByText(/bir kod deposu bağlantısı gerekir ve bu kurulumda henüz tanımlı değil/);
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

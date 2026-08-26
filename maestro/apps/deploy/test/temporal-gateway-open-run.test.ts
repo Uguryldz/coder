@@ -130,4 +130,30 @@ describe("TemporalRunGateway.signalWithStart — the workflow's start argument",
     expect(Object.hasOwn(seen[0] as object, "statusMap")).toBe(false);
     expect(Object.hasOwn(seen[0] as object, "flow")).toBe(false);
   });
+
+  /**
+   * The analysis-only start (no application). The workflow reads an ABSENT
+   * `appId` as ticket-text mode, so the key must be omitted — while the run
+   * row's hook, whose store models the same fact as a nullable column, gets an
+   * explicit `null` rather than a field that quietly vanished.
+   */
+  it("omits appId from the workflow input and passes null to the run-row hook", async () => {
+    const seen: unknown[] = [];
+    const opened: OpenedRun[] = [];
+    const gateway = gatewayWith(
+      {
+        start: (_type: unknown, options: { args: unknown[] }) => {
+          seen.push(options.args[0]);
+          return Promise.resolve({});
+        },
+      } as unknown as Partial<Client["workflow"]>,
+      async (run) => void opened.push(run),
+    );
+
+    const { appId: _dropped, ...noApp } = INPUT;
+    await gateway.signalWithStart({ ...noApp, flow: "analiz" });
+
+    expect(Object.hasOwn(seen[0] as object, "appId")).toBe(false);
+    expect(opened[0]?.appId).toBeNull();
+  });
 });

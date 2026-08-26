@@ -17,9 +17,30 @@ import { audit, record } from "./record.js";
 
 /** Steps 10b to 13: the pull request, the CI gate, the evidence and the close. */
 
+/**
+ * The run's application, for the steps that cannot exist without one.
+ *
+ * `RunContext.app` is `null` only for an analysis-only run, and the workflow
+ * hands over before the engineering half whenever there is no application —
+ * so reaching this with `null` means that invariant broke somewhere upstream.
+ * Failing non-retryably is the honest answer: no number of retries will bind
+ * a repository to a run whose binding never named one, and inventing a blank
+ * `ApplicationRecord` here would aim a pull request at repo "".
+ */
+function appOf(run: RunContext): NonNullable<RunContext["app"]> {
+  if (run.app === null) {
+    throw ApplicationFailure.create({
+      message: `run ${run.runId} has no application; the engineering path must not be reachable on an analysis-only run`,
+      type: "NoApplicationBound",
+      nonRetryable: true,
+    });
+  }
+  return run.app;
+}
+
 export async function openPullRequest(deps: ActivityDeps, ticket: TicketKey): Promise<PrRef> {
   const run = await deps.runs.get(ticket);
-  const repo = await deps.scm.resolveRepo(run.app);
+  const repo = await deps.scm.resolveRepo(appOf(run));
   // Draft first: the PR exists before build validation is asked for, so a
   // retry of this activity finds the run's `prId` and opens nothing new.
   const opened = await deps.idempotency.once(`${run.runId}:pr`, () =>
@@ -69,10 +90,11 @@ export async function verifyCiOrigin(
   signal: CiResultSignal,
 ): Promise<boolean> {
   const run = await deps.runs.get(ticket);
+  const app = appOf(run);
   const ok =
     signal.ticketKey === ticket &&
-    signal.adoProject === run.app.adoProject &&
-    signal.adoRepo === run.app.adoRepo &&
+    signal.adoProject === app.adoProject &&
+    signal.adoRepo === app.adoRepo &&
     (run.prId === null || signal.prId === run.prId);
 
   await audit(deps, run, {

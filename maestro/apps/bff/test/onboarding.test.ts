@@ -1067,3 +1067,120 @@ describe("GET /onboarding/jira-projects", () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+/**
+ * The analysis-only binding (repo optional for the `analiz` flow).
+ *
+ * The measured defect this closes: the wizard demanded an SCM connection, a
+ * repository and a platform for EVERY flow, and intake refused any binding
+ * without an application — so an analysis team, the actual first-pilot
+ * audience, was forced to bind a code repository it does not own to get a
+ * document produced from ticket text. The draft may now omit the repo pair;
+ * the proposal then carries `appId: null`, approval writes that null into the
+ * binding, and intake accepts only the `analiz` flow on it.
+ */
+describe("the analysis-only onboarding draft — no repository", () => {
+  const ANALYSIS_DRAFT = {
+    jiraProject: "NEWPROJ",
+    triggerMode: "opt_in",
+    gateSet: "risk_tiered",
+    mergeMode: "human",
+    dataClass: "dahili",
+  } as const;
+
+  async function submitAnalysisOnly(app: Harness): Promise<string> {
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: ANALYSIS_DRAFT,
+    });
+    expect(res.statusCode).toBe(202);
+    return token;
+  }
+
+  it("files a proposal whose appId is null, and registers nothing", async () => {
+    const app = await wizard();
+    await submitAnalysisOnly(app);
+
+    const pending = await app.params.pending();
+    const proposal = pending.find((entry) => entry.key === ONBOARDING_PROPOSAL_PREFIX);
+    expect(proposal?.value).toMatchObject({ jiraProject: "NEWPROJ", appId: null });
+    // No repo means no inventory write — there is no application to register.
+    expect((proposal?.value as { adoRepo?: string }).adoRepo).toBeUndefined();
+  });
+
+  it("shows the approver an explicit null, not a dropped field", async () => {
+    const app = await wizard();
+    const token = await submitAnalysisOnly(app);
+
+    const res = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/pending",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const items = res.json().items as Record<string, unknown>[];
+    expect(items).toHaveLength(1);
+    // Explicit nulls: the approver's screen must be able to render "depo yok"
+    // from a value it can see.
+    expect(items[0]).toMatchObject({ projectKey: "NEWPROJ", appId: null, adoRepo: null, platform: null });
+  });
+
+  it("approves into a live binding with NO application — the shape intake reads as analiz-only", async () => {
+    const app = await wizard();
+    await submitAnalysisOnly(app);
+    await app.addUser({ username: "mert.demir", roles: ["admin"], groups: ["maestro-admins"] });
+    const second = await app.login("mert.demir");
+
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/approve",
+      headers: { authorization: `Bearer ${second}` },
+      payload: { projectKey: "NEWPROJ" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const binding = await app.bindings.resolve("NEWPROJ");
+    expect(binding).toMatchObject({
+      projectKey: "NEWPROJ",
+      active: true,
+      appId: null,
+      dataClass: "dahili",
+    });
+  });
+
+  it("records the audit fact in words, not as a lost field", async () => {
+    const app = await wizard();
+    await submitAnalysisOnly(app);
+
+    const events = await app.auditStore.read();
+    const entry = events.find((event) => event.subject === "onboarding:NEWPROJ");
+    expect(entry?.meta).toMatchObject({ appId: "yok (yalnızca analiz)", projectKey: "NEWPROJ" });
+  });
+
+  it("refuses half a repository: adoRepo without platform is a 400", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...ANALYSIS_DRAFT, adoRepo: "Uguryldz/maestro-pilot" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("invalid_onboarding_body");
+  });
+
+  it("refuses the other half too: platform without adoRepo is a 400", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...ANALYSIS_DRAFT, platform: "linux-node" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

@@ -137,7 +137,10 @@ export async function runTicket(
     args: [
       {
         ticket: TICKET,
-        appId: "pay",
+        // `null` OMITS the field — the analysis-only start intake produces.
+        // Absent in the options means the fixture default, which is what every
+        // scenario written before analysis-only bindings expects.
+        ...(scenario.options.appId === null ? {} : { appId: scenario.options.appId ?? "pay" }),
         mode: scenario.options.mode ?? "full_auto",
         dataClass: "dahili",
         // Absent means the full pipeline, which is what every existing

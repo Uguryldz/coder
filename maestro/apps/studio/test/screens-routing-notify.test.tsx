@@ -177,6 +177,32 @@ describe("routing screen", () => {
     expect(await screen.findByRole("button", { name: "Dinleme kuralı ekle" })).toBeInTheDocument();
   });
 
+  it("names an analysis-only package's missing repo instead of showing an empty cell", async () => {
+    // The BFF sends explicit nulls for a repo-less (analysis-only) proposal.
+    // The approver is confirming precisely that no repository is in scope, so
+    // the cell must SAY it — a blank would read as data loss on the one screen
+    // where the second human decides.
+    const noRepoPending = {
+      path: "/onboarding/pending",
+      body: {
+        items: [
+          {
+            ...PENDING_BODY.body.items[0],
+            appId: null,
+            adoRepo: null,
+            platform: null,
+          },
+        ],
+      },
+    };
+    const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY, noRepoPending]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+
+    expect(
+      await screen.findByText("depo yok — yalnızca analiz (belge ticket metninden üretilir)"),
+    ).toBeInTheDocument();
+  });
+
   it("hides the approval queue from a non-admin", async () => {
     const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY, PENDING_BODY]);
     renderScreen(<RoutingScreen />, { fetchImpl, session: VIEWER });

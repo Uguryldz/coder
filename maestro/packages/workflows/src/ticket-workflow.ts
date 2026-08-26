@@ -116,7 +116,20 @@ function workflowNow(): string {
 
 export interface TicketWorkflowInput {
   ticket: TicketKey;
-  appId: string;
+  /**
+   * The PRIMARY application this ticket runs against — OPTIONAL, because an
+   * analysis-only binding legitimately has none: the analysis document is
+   * written from the ticket text, and the repository only ever ENRICHED it
+   * (step 3ö's read-only discovery). Intake refuses to start a code-writing
+   * flow without one (`no_application`, M99 tier ③), so absence here means
+   * "an `analiz` run in ticket-text mode" and nothing else.
+   *
+   * REPLAY SAFETY: every run started before this field widened carries an
+   * appId, and the appId-present path below is command-for-command what it was
+   * — the only new branch (skip discovery, journal why) is reachable only when
+   * the field is absent, which no recorded history has.
+   */
+  appId?: string;
   mode: WorkMode;
   dataClass: DataClass;
   /**
@@ -308,7 +321,21 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   // and a ticket that then goes back to the reporter would have visited the
   // in-progress column for nothing.
   await moveStatus("start", input.statusMap?.onStart);
-  await acts.discoverRepo(ticket, input.appId);
+  if (input.appId === undefined) {
+    // Analysis-only binding: there is no repository to discover, and that is a
+    // configuration the operator chose, not a degradation to hide. The journal
+    // line is the run's own record of WHY step 3ö did nothing — without it an
+    // operator comparing two analiz runs would see one discover twelve files
+    // and the other nothing, with no sentence anywhere explaining the gap.
+    await acts.journal(
+      ticket,
+      "discovery",
+      "keşif atlandı",
+      "kod deposu bağlı değil — keşif atlandı, analiz ticket metninden üretilecek",
+    );
+  } else {
+    await acts.discoverRepo(ticket, input.appId);
+  }
 
   await goto("3", "analiz üretiliyor");
   const written = await thinkActs.writeAnalysis(ticket, input.appId);
@@ -381,6 +408,16 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   }
 
   // ── 6a-10 · engineering loop ─────────────────────────────────────────────
+  // Unreachable without an application by construction — intake refuses to
+  // start a code-writing flow with no appId (`no_application`), and the
+  // `analiz` flow returned above — so this guard is the assertion of that
+  // claim, not a path anything is expected to take. It fails CLOSED into a
+  // handover rather than letting the engineering loop open a session against
+  // a repository that does not exist. Replay-safe: it schedules nothing when
+  // `appId` is present, which every in-flight history is.
+  if (input.appId === undefined) {
+    return handOver("uygulama bağlı değil — mühendislik adımları uygulamasız çalıştırılamaz");
+  }
   const built = await runEngineeringLoop({ acts, longActs, goto, gate }, state, inbox, ticket, required);
   if (built.kind === "handover") return handOver(built.reason);
   const attempt = built.attempts;

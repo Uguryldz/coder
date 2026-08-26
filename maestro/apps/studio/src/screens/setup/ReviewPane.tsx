@@ -3,7 +3,7 @@ import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card } from "../../ui/index.ts";
 import { matchValueLabel } from "../common/jira-english.ts";
 import { STATUS_POINTS, buildStatusMap } from "../common/status-map.ts";
-import { flowDefaults, type SetupDraft } from "./model.ts";
+import { bindsNoRepository, flowDefaults, type SetupDraft } from "./model.ts";
 
 /**
  * Step 5 — "Özet & kaydet".
@@ -107,12 +107,20 @@ export function ReviewPane({ draft, alreadyBound }: ReviewPaneProps): ReactNode 
         </p>
       ) : (
         <>
+          {/* Which MODE the binding is in, stated honestly: the ticket-text
+              sentence and the repo sentence are different promises, and the
+              operator is signing off on one of them. A summary that showed the
+              repo line with an empty {repo} — or said nothing at all — would
+              hide the single most consequential fact of an analysis-only
+              setup: Maestro will never look at any code. */}
           <p className="scr-prose">
-            {t("setup.review.binding_sentence", {
-              project: draft.jiraProject,
-              repo: draft.repoFullName,
-              platform: t(`platform.${draft.platform}`),
-            })}
+            {bindsNoRepository(draft)
+              ? t("setup.review.binding_sentence_norepo", { project: draft.jiraProject })
+              : t("setup.review.binding_sentence", {
+                  project: draft.jiraProject,
+                  repo: draft.repoFullName,
+                  platform: t(`platform.${draft.platform}`),
+                })}
           </p>
           <ul className="setup-review__list">
             <li>{t(`setup.review.trigger.${defaults.triggerMode}`)}</li>

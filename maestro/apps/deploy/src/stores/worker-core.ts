@@ -108,7 +108,11 @@ export function buildWorkerCore(db: Db, options: WorkerCoreOptions): WorkerCore 
         const context = await stores.runs.get(row.ticketKey);
         return {
           ticketKey: context.ticket,
-          app: context.app,
+          // `PublishRunContext.app` models "no application" as absence; the run
+          // context models it as `null` (analysis-only run). Same fact, two
+          // spellings — the publisher then simply has no repo-docs target,
+          // which is correct: there is no repository to receive them.
+          ...(context.app === null ? {} : { app: context.app }),
           dataClass: context.dataClass,
           /**
            * The approvers' addresses and the pinned template version are the

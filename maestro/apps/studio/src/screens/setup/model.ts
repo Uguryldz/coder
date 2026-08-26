@@ -46,6 +46,21 @@ export function flowNeedsRepository(flow: FlowType): boolean {
 }
 
 /**
+ * Whether this draft binds NO repository — the analysis-only, ticket-text
+ * mode. One predicate, read by the summary, the save mutation and the panes,
+ * so the sentence the operator signs off on and the request the wizard sends
+ * cannot disagree about which mode the binding is in.
+ *
+ * Only `analiz` can be repo-less (the other two flows are blocked at step 2
+ * without one), and an `analiz` draft whose operator DID pick a repo stays in
+ * repo mode: the optional offer is "bağlarsanız etki analizi dosyalara
+ * bakarak yazılır", and picking one is accepting it.
+ */
+export function bindsNoRepository(draft: SetupDraft): boolean {
+  return draft.flowType === "analiz" && draft.repoFullName === "";
+}
+
+/**
  * Why a flow cannot be offered right now, as a catalog key — or `null` when it
  * can.
  *
@@ -219,6 +234,17 @@ export function stepBlockedReason(
     case "project":
       if (draft.jiraConnectionId === "") return "setup.blocked.no_jira_connection_picked";
       if (draft.jiraProject === "") return "setup.blocked.no_project";
+      // The repository trio is required exactly when the chosen flow will
+      // write code. `analiz` produces a document from the ticket text, so an
+      // analysis team without a repository — the actual first-pilot audience —
+      // walks through with everything blank; a repo they DID start picking
+      // must still be finished, because "half a repository" is not a binding
+      // either mode can honour.
+      if (!flowNeedsRepository(draft.flowType)) {
+        if (draft.connectionId !== "" && draft.repoFullName === "") return "setup.blocked.no_repo";
+        if (draft.repoFullName !== "" && draft.platform === "") return "setup.blocked.no_platform";
+        return null;
+      }
       if (draft.connectionId === "") return "setup.blocked.no_scm_connection_picked";
       if (draft.repoFullName === "") return "setup.blocked.no_repo";
       if (draft.platform === "") return "setup.blocked.no_platform";

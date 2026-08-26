@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { harness, type Harness } from "./helpers.js";
+import { UGURPAY_BINDING, harness, type Harness } from "./helpers.js";
 import { issueEvent, signed } from "./payloads.js";
 import type { ListeningRuleRecord } from "../src/listening-store.js";
 
@@ -250,5 +250,86 @@ describe("intake pins the rule's status map into the run input", () => {
 
     expect(started).toBeDefined();
     expect(Object.hasOwn(started ?? {}, "statusMap")).toBe(false);
+  });
+});
+
+describe("the analysis-only binding — no application, and only analiz may run", () => {
+  const rules = [
+    rule({ ruleId: "lr_analiz", matchKind: "issuetype", matchValue: "Analiz", flowType: "analiz" }),
+    rule({ ruleId: "lr_gel", matchKind: "issuetype", matchValue: "Görev", flowType: "gelistirme" }),
+  ];
+
+  /** The binding an analysis-only team files: active, but naming no repo. */
+  const NO_APP = { ...UGURPAY_BINDING, appId: null };
+
+  it("accepts and starts an analiz ticket with NO appId anywhere in the input", async () => {
+    const h = await harness({ bindings: [NO_APP], listeningRules: rules });
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-20", issueType: "Analiz" }));
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.json()).toMatchObject({ accepted: true });
+    expect(h.runs.started).toHaveLength(1);
+    const input = h.runs.started[0] as unknown as Record<string, unknown>;
+    expect(input["flow"]).toBe("analiz");
+    // OMITTED, not null: absence is what the workflow reads as "ticket-text
+    // mode", and a null key would be a third spelling nobody parses.
+    expect(Object.keys(input)).not.toContain("appId");
+  });
+
+  it("still refuses a code-writing flow on the same binding (M99 tier ③ unchanged)", async () => {
+    const h = await harness({ bindings: [NO_APP], listeningRules: rules });
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-21", issueType: "Görev" }));
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.json()).toEqual({ accepted: false, reason: "no_application" });
+    expect(h.runs.started).toHaveLength(0);
+    // The ticket still hears it is waiting for a human, exactly as before.
+    expect(h.work.lastComment("UGURPAY-21")).toContain("UGURPAY-21");
+  });
+
+  it("refuses when NO rule matches either — the default is not analiz just because the binding is bare", async () => {
+    // No rule claims the ticket and no deployment default is configured, so
+    // the flow is "the full pipeline" — which writes code, which needs an app.
+    const h = await harness({ bindings: [NO_APP], listeningRules: [] });
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-22", issueType: "Hata" }));
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.json()).toEqual({ accepted: false, reason: "no_application" });
+  });
+
+  it("records the missing application honestly in the RUN_STARTED audit entry", async () => {
+    const h = await harness({ bindings: [NO_APP], listeningRules: rules });
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-23", issueType: "Analiz" }));
+    await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    const entries = await h.auditStore.read();
+    const entry = entries.find((e) => e.action === "RUN_STARTED" && e.subject === "UGURPAY-23");
+    expect(entry).toBeDefined();
+    // In words, not a null a SIEM query would drop: "which app?" must be
+    // answerable with "none — ticket-text analysis" months later.
+    expect(entry?.meta?.["appId"]).toBe("yok (analiz, ticket metninden)");
   });
 });

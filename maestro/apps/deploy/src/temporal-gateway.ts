@@ -70,7 +70,8 @@ export interface TemporalGatewayOptions {
 export interface OpenedRun {
   readonly runId: string;
   readonly ticket: string;
-  readonly appId: string;
+  /** `null` for an analysis-only start — intake sent no application at all. */
+  readonly appId: string | null;
   readonly mode: SignalWithStartInput["mode"];
   readonly dataClass: SignalWithStartInput["dataClass"];
 }
@@ -99,7 +100,7 @@ export class TemporalRunGateway implements RunGateway {
     await this.onRunOpened({
       runId: outcome.workflowId,
       ticket: input.ticket,
-      appId: input.appId,
+      appId: input.appId ?? null,
       mode: input.mode,
       dataClass: input.dataClass,
     });
@@ -221,7 +222,11 @@ export class TemporalRunGateway implements RunGateway {
     const args = [
       {
         ticket: input.ticket,
-        appId: input.appId,
+        // Omitted rather than sent as undefined for an analysis-only start:
+        // absence is what the workflow reads as "no application", and the key
+        // is spread here (not conditionally valued) so a start that HAS an app
+        // serializes exactly the payload it always did.
+        ...(input.appId === undefined ? {} : { appId: input.appId }),
         mode: input.mode,
         dataClass: input.dataClass,
         // Omitted rather than sent as null when nothing named a flow: the

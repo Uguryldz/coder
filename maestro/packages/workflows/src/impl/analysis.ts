@@ -189,7 +189,7 @@ function assertDocument(run: RunContext, doc: AnalysisDoc): void {
 export async function writeAnalysis(
   deps: ActivityDeps,
   ticket: TicketKey,
-  appId: string,
+  appId?: string,
 ): Promise<{ analysis: AnalysisDoc; risk: RiskTier }> {
   const run = await deps.runs.get(ticket);
   const snapshot = await deps.work.getTicket(ticket);
@@ -203,7 +203,11 @@ export async function writeAnalysis(
         dataClass: run.dataClass,
         schemaName: "analysis-doc",
         input: {
-          appId,
+          // `appId` is the ONLY repo-derived fact in this prompt — everything
+          // else (locale, template pin, the ticket's own text) holds without a
+          // repository. An analysis-only run omits it rather than sending a
+          // blank, so the analyst is never told the application is named "".
+          ...(appId === undefined ? {} : { appId }),
           locale: run.locale,
           templateVersion: run.templateVersion,
           summary: snapshot.summary,
@@ -273,8 +277,12 @@ export async function fanOutChildren(
   analysis: AnalysisDoc,
 ): Promise<TicketKey[]> {
   const run = await deps.runs.get(ticket);
+  // The filter excludes the PRIMARY application — the parent ticket already is
+  // its work item. An analysis-only run has no primary application, so there
+  // is no self to exclude: every impacted cell the matrix names is "another"
+  // application, and each honestly gets its child ticket.
   const impacted = analysis.impactMatrix
-    .filter((cell) => cell.impacted && cell.appId !== run.app.appId)
+    .filter((cell) => cell.impacted && (run.app === null || cell.appId !== run.app.appId))
     .sort((a, b) => a.appId.localeCompare(b.appId));
 
   const children: TicketKey[] = [];

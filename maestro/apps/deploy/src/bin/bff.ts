@@ -478,8 +478,12 @@ function notifyChannels(deployment: { selection: { notify: { driver: string; con
 async function checkoutOrNull(
   env: DeployEnv,
   secrets: SecretPort,
-  run: { runId: string; appId: string },
+  run: { runId: string; appId: string | null },
 ): Promise<string | null> {
+  // An analysis-only run has no repository to check out — that is the
+  // binding's deliberate shape, not a clone failure, so there is nothing to
+  // warn about either. The skip is journaled by the workflow itself at 3ö.
+  if (run.appId === null) return null;
   const root = env.source["WORKSPACE_ROOT"]?.trim();
   if (root === undefined || root === "") return null;
 

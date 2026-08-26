@@ -39,9 +39,15 @@ export type JiraProjectsResult =
 /** GET /onboarding/pending — one onboarding package awaiting a second approver (M93). */
 export interface PendingBinding {
   readonly projectKey: string;
-  readonly appId: string;
-  readonly adoRepo: string;
-  readonly platform: string;
+  /**
+   * All three are `null` for an analysis-only package: the proposal binds no
+   * repository and the analysis is written from the ticket text. The approver
+   * is confirming exactly that, so the screen renders the fact as a sentence
+   * rather than an empty cell.
+   */
+  readonly appId: string | null;
+  readonly adoRepo: string | null;
+  readonly platform: string | null;
   readonly triggerMode: "opt_in" | "automatic";
   readonly gateSet: "risk_tiered" | "always_six";
   readonly mergeMode: "human" | "auto";

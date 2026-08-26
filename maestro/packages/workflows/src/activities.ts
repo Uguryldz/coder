@@ -103,7 +103,14 @@ export interface MaestroActivities {
   runIntake(ticket: TicketKey): Promise<IntakeResult>;
   askClarification(ticket: TicketKey, question: string): Promise<void>;
   discoverRepo(ticket: TicketKey, appId: string): Promise<{ files: number; modules: string[] }>;
-  writeAnalysis(ticket: TicketKey, appId: string): Promise<{ analysis: AnalysisDoc; risk: RiskTier }>;
+  /**
+   * `appId` is optional for the same reason `TicketWorkflowInput.appId` is: an
+   * analysis-only binding has no application, and the workflow still schedules
+   * this step — the document is then written from the ticket text alone.
+   * (`discoverRepo` above keeps a REQUIRED appId: the workflow simply does not
+   * schedule discovery when there is no repository to discover.)
+   */
+  writeAnalysis(ticket: TicketKey, appId?: string): Promise<{ analysis: AnalysisDoc; risk: RiskTier }>;
   publishAnalysis(ticket: TicketKey, analysis: AnalysisDoc): Promise<void>;
   fanOutChildren(ticket: TicketKey, analysis: AnalysisDoc): Promise<TicketKey[]>;
 

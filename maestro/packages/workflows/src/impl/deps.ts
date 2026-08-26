@@ -44,7 +44,15 @@ import type {
 export interface RunContext {
   readonly runId: RunId;
   readonly ticket: TicketKey;
-  readonly app: ApplicationRecord;
+  /**
+   * `null` for an analysis-only run: the binding carried no application, so
+   * there is no repository, no branch that means anything, and no PR to open.
+   * Intake only ever starts the `analiz` flow that way, and the workflow hands
+   * over before the engineering half — so the code paths that NEED an app
+   * (`delivery.ts`, fan-out's self-exclusion) treat `null` as "refuse loudly"
+   * or "no self to exclude", never as a blank app to write into.
+   */
+  readonly app: ApplicationRecord | null;
   readonly dataClass: DataClass;
   readonly mode: WorkMode;
   readonly locale: Locale;

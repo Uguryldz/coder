@@ -144,19 +144,6 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     return { accepted: false, reason: "kill_switch" };
   }
 
-  const appId = request.appId ?? binding.appId;
-  if (appId === null || appId === undefined) {
-    // Tier ③ of M99: no rule matched and no human said which application. The
-    // ticket waits for a person; it does not start against a guess.
-    await deps.work.addComment(
-      request.ticket,
-      deps.messages.t(deps.config.locale, BFF_MESSAGE_KEYS.pendingAssignment, {
-        ticket: request.ticket,
-      }),
-    );
-    return { accepted: false, reason: "no_application" };
-  }
-
   // WHICH FLOW — decided here, before the run exists, and passed IN.
   //
   // It cannot be decided inside the workflow: `packages/workflows` may not read
@@ -165,11 +152,38 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
   // read once, on the way in, and the answer travels in the start input — the
   // same shape `openGate` uses to hand a resolved directory group to
   // `canCloseGate` (HANDOFF item 2).
+  //
+  // Decided BEFORE the application check below, because the application check
+  // now depends on it: whether "no application" is a refusal is a question
+  // about which flow would run.
   const flowDecision = await decideFlow(deps, request, projectKey);
+
+  const appId = request.appId ?? binding.appId;
+  if (appId === null || appId === undefined) {
+    // Tier ③ of M99, narrowed to the flows it was written for: no rule matched
+    // an application and no human said which one, so a flow that WRITES CODE
+    // waits for a person rather than starting against a guess. The `analiz`
+    // flow is the deliberate exception — an analysis-only binding carries no
+    // application at all, the document is written from the ticket text, and
+    // refusing it would force an analysis team to bind a repository they do
+    // not own.
+    if (flowDecision.flow !== "analiz") {
+      await deps.work.addComment(
+        request.ticket,
+        deps.messages.t(deps.config.locale, BFF_MESSAGE_KEYS.pendingAssignment, {
+          ticket: request.ticket,
+        }),
+      );
+      return { accepted: false, reason: "no_application" };
+    }
+  }
 
   const outcome = await deps.runs.signalWithStart({
     ticket: request.ticket,
-    appId,
+    // Omitted rather than sent as null for an analysis-only start: absence is
+    // what the workflow reads as "no application", and `StartRunInput` has no
+    // null to give it.
+    ...(appId === null || appId === undefined ? {} : { appId }),
     mode: binding.mode,
     dataClass: binding.dataClass,
     ...(flowDecision.flow === null ? {} : { flow: flowDecision.flow }),
@@ -191,7 +205,11 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
       meta: {
         workflowId: outcome.workflowId,
         projectKey,
-        appId,
+        // An analysis-only start has no application, and the audit row says so
+        // in words rather than holding a null a SIEM query would drop: "which
+        // app did OPS-41 run against?" must be answerable with "none — ticket-
+        // text analysis" months later.
+        appId: appId ?? "yok (analiz, ticket metninden)",
         mode: binding.mode,
         dataClass: binding.dataClass,
         assigned: request.appId !== undefined,

@@ -31,7 +31,9 @@ import {
   ASSIGNED_MATCH_VALUE,
   EMPTY_SETUP_DRAFT,
   SETUP_STEPS,
+  bindsNoRepository,
   flowDefaults,
+  flowNeedsRepository,
   stepBlockedReason,
   type SetupDraft,
   type SetupStep,
@@ -279,8 +281,15 @@ export function SetupScreen(): ReactNode {
    * failed request is not evidence of an empty list either.
    */
   const missingJira = jiraConnections.isSuccess && jiraConnList.length === 0;
+  // Only a prerequisite for the flows that write code. For `analiz` the
+  // repository is an offer (step 2 says so in place), and a warning card
+  // claiming setup cannot proceed would contradict the wizard that then
+  // proceeds — the exact sentence this card used to carry was false for
+  // analysis-only teams.
   const missingScm =
-    scmConnections.isSuccess && (scmConnections.data?.connections ?? []).length === 0;
+    flowNeedsRepository(draft.flowType) &&
+    scmConnections.isSuccess &&
+    (scmConnections.data?.connections ?? []).length === 0;
 
   // ── the two writes ────────────────────────────────────────────────────────
 
@@ -340,8 +349,15 @@ export function SetupScreen(): ReactNode {
       await api.post<{ proposalId: string }>("/onboarding", {
         jiraProject: input.jiraProject,
         // The picked repo travels in `adoRepo` — the wire field the BFF reads.
-        adoRepo: input.repoFullName,
-        platform: input.platform,
+        // OMITTED, together with `platform`, for an analysis-only draft: the
+        // BFF's schema requires the pair together-or-not-at-all, and sending
+        // "" would claim a repository named nothing. A platform value the
+        // draft may still hold (picked before the repo was cleared) stays off
+        // the wire with it — the summary the operator confirmed said
+        // ticket-text mode, and the request has to say the same thing.
+        ...(bindsNoRepository(input)
+          ? {}
+          : { adoRepo: input.repoFullName, platform: input.platform }),
         // The operator's ANSWER, not a default filled in on their behalf. The
         // BFF still falls back to `gizli` when the field is absent, but it must
         // not be absent here: this wizard asked the question, showed the

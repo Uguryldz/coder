@@ -51,7 +51,7 @@ live("stores against a live database", () => {
       const context = await new PrismaRunContextStore(db.workflowRun).get("PAY-201");
 
       expect(context.runId).toBe("run-201");
-      expect(context.app.adoRepo).toBe("core-api");
+      expect(context.app?.adoRepo).toBe("core-api");
       expect(context.branch).toBe("maestro/PAY-201");
       expect(context.verification).toEqual([{ name: "test", command: ["pnpm", "test"] }]);
     });

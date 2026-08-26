@@ -175,12 +175,21 @@ export function RoutingScreen(): ReactNode {
                 {
                   key: "repo",
                   header: t("routing.pending.col.repo"),
-                  cell: (row: PendingBinding) => <span className="scr-mono">{row.adoRepo}</span>,
+                  // An analysis-only package binds no repository, and the
+                  // approver is confirming exactly that — so the cell says it
+                  // in words. An empty cell here would read as data loss on
+                  // the one screen where the second human decides.
+                  cell: (row: PendingBinding) =>
+                    row.adoRepo === null ? (
+                      <span className="scr-mini">{t("routing.pending.norepo")}</span>
+                    ) : (
+                      <span className="scr-mono">{row.adoRepo}</span>
+                    ),
                 },
                 {
                   key: "platform",
                   header: t("routing.pending.col.platform"),
-                  cell: (row: PendingBinding) => row.platform,
+                  cell: (row: PendingBinding) => row.platform ?? "—",
                 },
                 {
                   key: "by",

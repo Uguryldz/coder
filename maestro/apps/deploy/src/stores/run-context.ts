@@ -31,6 +31,14 @@ type CommandSpec = RunContext["verification"][number];
 export interface RunRow {
   id: string;
   ticketKey: string;
+  /**
+   * The FK, read alongside the joined row so `get` can tell two nulls apart:
+   * `appId === null` is an analysis-only run (the binding named no
+   * application, deliberately), while `appId !== null` with a `null` join is a
+   * row pointing at an application that is gone — the incomplete-context
+   * failure it has always been.
+   */
+  appId: string | null;
   step: string;
   /**
    * Read as a plain `string`, not the narrowed union.
@@ -114,16 +122,16 @@ export interface RunUpdate {
  * and filled by `patch` as the workflow discovers it. Writing invented values
  * here would put a branch name in the row before anything created a branch.
  *
- * `appId` is nullable in the schema (a run may start before matching resolves
- * an application, M99) but is required here: the only caller is intake, which
- * has already resolved one. A run created without it would fail `get` with
- * `IncompleteRunContextError` on the first activity — later, and further from
- * the cause.
+ * `appId` is nullable in the schema (M99), and since analysis-only bindings it
+ * is genuinely OPTIONAL here too: intake starts an `analiz` run with no
+ * application when the binding named none, and the column honestly stays NULL.
+ * Omitted rather than written as an explicit null so a caller that HAS an app
+ * writes exactly the row it always wrote.
  */
 export interface RunCreate {
   id: string;
   ticketKey: string;
-  appId: string;
+  appId?: string;
   mode: NonNullable<RunContext["mode"]>;
   dataClass: NonNullable<RunContext["dataClass"]>;
   step: string;
@@ -186,7 +194,12 @@ export type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
 export interface NewRun {
   readonly runId: string;
   readonly ticket: string;
-  readonly appId: string;
+  /**
+   * `null` for an analysis-only run — the binding named no application, so
+   * there is no repository, no checkout and no engineering half. Mirrors
+   * `OpenedRun.appId` (the gateway hands intake's answer straight through).
+   */
+  readonly appId: string | null;
   readonly mode: NonNullable<RunContext["mode"]>;
   readonly dataClass: NonNullable<RunContext["dataClass"]>;
   readonly startedAt: Date;
@@ -285,15 +298,21 @@ export class PrismaRunContextStore implements RunContextStore {
    * gets `{}` back would carry on with an invented branch name and an empty
    * app, and the first thing it does with either is write to a bank's repo.
    *
-   * A run with no `appId` is the same class of problem one level down. The
-   * column is nullable — a run may be created before matching resolves an
-   * application (M99) — but `RunContext.app` is not, and inventing a blank
-   * `ApplicationRecord` here would send the engineering turn at repo "".
+   * The application half distinguishes two nulls. A row whose `appId` IS set
+   * but whose join came back empty points at an application that no longer
+   * exists — the incomplete-context failure it has always been, and inventing
+   * a blank `ApplicationRecord` for it would send the engineering turn at
+   * repo "". A row whose `appId` is itself null is an analysis-only run: the
+   * binding named no application on purpose, `RunContext.app` is honestly
+   * `null`, and the activities that need an app refuse for themselves
+   * (`appOf` in `impl/delivery.ts`).
    */
   async get(ticket: string): Promise<RunContext> {
     const row = await this.liveRun(ticket);
     if (row === null) throw new RunNotFoundError(ticket);
-    if (row.application === null) throw new IncompleteRunContextError(ticket, "application");
+    if (row.appId !== null && row.application === null) {
+      throw new IncompleteRunContextError(ticket, "application");
+    }
     return toRunContext(row, row.application);
   }
 
@@ -326,7 +345,10 @@ export class PrismaRunContextStore implements RunContextStore {
         data: {
           id: input.runId,
           ticketKey: input.ticket,
-          appId: input.appId,
+          // Omitted, not written as null, for an analysis-only run: the column
+          // stays at its schema default and a run that HAS an app writes the
+          // exact row it always wrote.
+          ...(input.appId === null ? {} : { appId: input.appId }),
           mode: input.mode,
           dataClass: input.dataClass,
           // The workflow's own first step and status. Anything else here would
@@ -453,13 +475,15 @@ export function toRunUpdate(changes: Partial<RunContext>): RunUpdate {
   return data;
 }
 
-function toRunContext(row: RunRow, app: ApplicationRow): RunContext {
+function toRunContext(row: RunRow, app: ApplicationRow | null): RunContext {
   return {
     runId: row.id,
     ticket: row.ticketKey,
     step: row.step,
     status: toLifecycle(row.status),
-    app: toApplication(app),
+    // `null` only for an analysis-only row — `get` already refused the other
+    // way a null join can happen (an appId pointing at a vanished application).
+    app: app === null ? null : toApplication(app),
     dataClass: row.dataClass as RunContext["dataClass"],
     mode: row.mode as RunContext["mode"],
     locale: row.locale as RunContext["locale"],

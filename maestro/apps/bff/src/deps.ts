@@ -181,7 +181,13 @@ export interface JiraBinding {
   active: boolean;
   /** `auto` = every ticket; `opt_in` = only the `maestro` label or `/ai-start` (M48a). */
   triggerMode: "auto" | "opt_in";
-  /** RoutingRule outcome; `null` sends the ticket to the assignment queue (M99). */
+  /**
+   * The bound application. `null` has two readings, disambiguated by the FLOW
+   * intake decides: for a code-writing flow it sends the ticket to the
+   * assignment queue (M99 tier ③, as it always has), while for `analiz` it is
+   * the analysis-only binding — the run starts with no application and the
+   * document is written from the ticket text.
+   */
   appId: string | null;
   mode: WorkMode;
   dataClass: DataClass;

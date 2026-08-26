@@ -98,6 +98,14 @@ export interface ScenarioOptions {
   /** What the listening rule asked for; absent is the full pipeline. */
   flow?: FlowType;
   /**
+   * The run's application. Absent means the fixture default (`"pay"`), which
+   * is what every scenario written before analysis-only bindings expects;
+   * `null` OMITS the field from the start input — the shape intake produces
+   * for an analysis-only binding — so a scenario can prove what the workflow
+   * does when there is genuinely no repository.
+   */
+  appId?: string | null;
+  /**
    * The rule's Jira status map ("durum eşlemesi"). Absent is comment-only mode
    * — the ticket is never moved — which is what every scenario written before
    * the map existed expects, and what `scenario.moves` then proves stayed true.
@@ -161,6 +169,13 @@ export class Scenario {
   readonly moves: StatusMoveRequest[] = [];
   /** Set when the `analiz` flow handed the analysis back to the requester. */
   delivered = false;
+  /**
+   * Every discovery the workflow SCHEDULED, by appId. Recording the requests
+   * (like `moves`) is what makes "a run with no application never asks for
+   * discovery" assertable: an empty array proves the activity was never
+   * scheduled, which is a stronger claim than a stub deciding to do nothing.
+   */
+  readonly discoveries: string[] = [];
   readonly escalations: Array<{ step: StepId; hours: number }> = [];
   readonly journal: Array<{ kind: string; title: string; detail: string }> = [];
   readonly engineering: Array<{ resumeToken: string | null; task: string }> = [];
@@ -265,7 +280,10 @@ export function makeActivities(
         at: "2026-08-09T09:30:00+03:00",
       });
     },
-    discoverRepo: async () => ({ files: 12, modules: ["pay-core"] }),
+    discoverRepo: async (_ticket, appId) => {
+      scenario.discoveries.push(appId);
+      return { files: 12, modules: ["pay-core"] };
+    },
     writeAnalysis: async () => ({ analysis: analysisDoc(scenario.risk), risk: scenario.risk }),
     publishAnalysis: async () => {},
     fanOutChildren: async () => [],

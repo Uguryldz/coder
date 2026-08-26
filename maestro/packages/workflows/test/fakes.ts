@@ -51,7 +51,8 @@ export interface Recorded {
   children: Array<{ summary: string; description: string }>;
   turns: AgentTurnRequest[];
   scans: string[];
-  llm: Array<{ role: string; schemaName: string }>;
+  /** `input` rides along so a test can assert WHAT a prompt was composed from. */
+  llm: Array<{ role: string; schemaName: string; input: unknown }>;
 }
 
 export interface Fakes {
@@ -220,7 +221,7 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     },
     llm: {
       generateObject: (req, schema) => {
-        recorded.llm.push({ role: req.role, schemaName: req.schemaName });
+        recorded.llm.push({ role: req.role, schemaName: req.schemaName, input: req.input });
         const outcome = options.generateObject?.(req.schemaName);
         if (outcome === undefined) throw new Error(`fake llm: no answer for ${req.schemaName}`);
         if (outcome.status !== "ok") return Promise.resolve(outcome);

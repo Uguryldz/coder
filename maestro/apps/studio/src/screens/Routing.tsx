@@ -33,6 +33,26 @@ import { RoutingPolicyEditor } from "./routing/RoutingPolicyEditor.tsx";
  * repo an agent may be told to push to, so it is shown, never implied.
  */
 
+/**
+ * The named reasons `POST /onboarding/approve` can give for a seed that did
+ * not run (`seedSkipped.reason`, from `listening-seed.ts` plus the route's own
+ * `seed_error` catch-all), each mapped to its short Turkish/English phrase. An
+ * unknown reason — a BFF newer than this screen — falls back to the generic
+ * one rather than crashing `t()` on a key that does not exist.
+ */
+const SEED_SKIP_REASON_KEYS: Readonly<Record<string, string>> = {
+  issue_types_unavailable: "listening.seedskip.issue_types_unavailable",
+  no_jira_connection: "listening.seedskip.no_jira_connection",
+  bot_account_unknown: "listening.seedskip.bot_account_unknown",
+  listening_unwired: "listening.seedskip.listening_unwired",
+  connections_unwired: "listening.seedskip.connections_unwired",
+  seed_error: "listening.seedskip.seed_error",
+};
+
+function seedSkipReasonKey(reason: string): string {
+  return SEED_SKIP_REASON_KEYS[reason] ?? "listening.seedskip.seed_error";
+}
+
 export function RoutingScreen(): ReactNode {
   const t = useT();
   const api = useApi();
@@ -123,6 +143,8 @@ export function RoutingScreen(): ReactNode {
         nextStep: string;
         /** Ready-made rules auto-seeded on approval; null when nothing ran. */
         listeningSeed?: { created: number; skipped: number } | null;
+        /** WHY nothing ran, when `listeningSeed` is null — never absent silently. */
+        seedSkipped?: { reason: string } | null;
       }>("/onboarding/approve", { projectKey }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["onboarding-pending"] });
@@ -138,6 +160,19 @@ export function RoutingScreen(): ReactNode {
           t("routing.pending.toast.bound_seeded", {
             project: result.projectKey,
             n: String(seeded.created),
+          }),
+        );
+      } else if (result.seedSkipped != null) {
+        // Bound, but the default rules could NOT be seeded — until now this
+        // rendered as the same cheerful "bağlandı" while zero tickets were
+        // listened to. A warning that names the reason and the way out
+        // (test the Jira connection, re-seed from the listening screen, or
+        // write a rule by hand) instead of a green half-truth.
+        toast.show(
+          "warning",
+          t("routing.pending.toast.bound_seed_skipped", {
+            project: result.projectKey,
+            reason: t(seedSkipReasonKey(result.seedSkipped.reason)),
           }),
         );
       } else {

@@ -759,6 +759,41 @@ describe("setup wizard", () => {
     expect(screen.getByText("Özet")).toBeTruthy();
   });
 
+  it("names the violated fields when the binding proposal is refused with a validation 400 (Bulgu A)", async () => {
+    // The BFF's strict DraftBody now answers `invalid_onboarding_body` WITH
+    // `details.issues` — the field-level violations. The wizard must render
+    // them under its translated sentence: the bare code left the operator
+    // diffing an eight-field payload against a schema they cannot see.
+    const { fetchImpl } = stubFetch(
+      baseRoutes([
+        {
+          path: "/onboarding",
+          method: "POST",
+          status: 400,
+          body: {
+            error: "invalid_onboarding_body",
+            details: { issues: ["triggerMode: Required", "platform: String must contain at least 1 character(s)"] },
+          },
+        },
+      ]),
+    );
+    renderScreen(<SetupScreen />, { fetchImpl, session: ADMIN });
+
+    await chooseFlow();
+    await fillProject();
+    await fillTickets();
+    await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await screen.findByText("Özet");
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    // The catalog sentence AND the named fields, on screen rather than in a
+    // four-second toast.
+    expect(await screen.findByText("triggerMode: Required")).toBeTruthy();
+    expect(
+      screen.getByText("platform: String must contain at least 1 character(s)"),
+    ).toBeTruthy();
+  });
+
   it("does not file a binding proposal when the rule write failed", async () => {
     const { fetchImpl, calls } = stubFetch(
       baseRoutes([

@@ -319,18 +319,54 @@ describe("onboarding approve seeds the default listening rules", () => {
 
     const res = await submitAndApprove(h);
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: "bound", projectKey: "NEWPROJ", listeningSeed: null });
+    // `listeningSeed: null` alone was the silent half-setup: "bound" looked
+    // green while no ticket was listened to. The response now NAMES why the
+    // seed did not run, so the screen can warn instead of celebrating.
+    expect(res.json()).toMatchObject({
+      status: "bound",
+      projectKey: "NEWPROJ",
+      listeningSeed: null,
+      seedSkipped: { reason: "issue_types_unavailable" },
+    });
     expect(await h.bindings.resolve("NEWPROJ")).not.toBeNull();
     expect(await h.listening.list()).toHaveLength(0);
     expect(pilotCalls).toHaveLength(0);
   });
 
-  it("FAIL-SOFT: no Jira connection at all — approve still succeeds", async () => {
+  it("FAIL-SOFT: no Jira connection at all — approve still succeeds, and says why nothing was seeded", async () => {
     const { h } = await seedHarness({ onboarding: OPTIONS, managedConnections: [] });
 
     const res = await submitAndApprove(h);
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: "bound", listeningSeed: null });
+    expect(res.json()).toMatchObject({
+      status: "bound",
+      listeningSeed: null,
+      seedSkipped: { reason: "no_jira_connection" },
+    });
     expect(await h.bindings.resolve("NEWPROJ")).not.toBeNull();
+  });
+
+  it("FAIL-SOFT: an unexpected throw mid-seed still binds, reported as seed_error", async () => {
+    // The store's write blows up — not one of the named "cannot seed" states,
+    // so it reaches the approve route's catch. The binding must survive and the
+    // response must still carry a reason rather than a bare null.
+    const { h } = await seedHarness({ onboarding: OPTIONS });
+    h.listening.put = () => Promise.reject(new Error("db down"));
+
+    const res = await submitAndApprove(h);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      status: "bound",
+      listeningSeed: null,
+      seedSkipped: { reason: "seed_error" },
+    });
+    expect(await h.bindings.resolve("NEWPROJ")).not.toBeNull();
+  });
+
+  it("omits seedSkipped entirely when the seed ran", async () => {
+    const { h } = await seedHarness({ onboarding: OPTIONS });
+    const res = await submitAndApprove(h);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).not.toHaveProperty("seedSkipped");
   });
 });

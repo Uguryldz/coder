@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { messageKeyOf } from "../api/errors.ts";
+import { issueDetailsOf, messageKeyOf } from "../api/errors.ts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Button, Card, useToast } from "../ui/index.ts";
@@ -50,6 +50,13 @@ export function OnboardScreen(): ReactNode {
 
   const [draft, setDraft] = useState<OnboardingDraft>(EMPTY_DRAFT);
   const [dryRun, setDryRun] = useState<DryRunResult | null>(null);
+  /**
+   * The field-level violations of a refused submit (a validation 400's
+   * `details.issues`). Kept beside the button rather than only in a toast: a
+   * toast fades in four seconds, and "hangi alan?" is exactly the question the
+   * bare `invalid_onboarding_body` used to leave unanswerable.
+   */
+  const [submitIssues, setSubmitIssues] = useState<readonly string[]>([]);
 
   const options = useQuery({
     queryKey: ["onboarding-options"],
@@ -126,9 +133,15 @@ export function OnboardScreen(): ReactNode {
     onSuccess: () => {
       setDraft(EMPTY_DRAFT);
       setDryRun(null);
+      setSubmitIssues([]);
       toast.show("success", t("onboard.toast.submitted"));
     },
-    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+    onError: (error) => {
+      // The toast carries the sentence; the violated fields (when the 400
+      // named them) stay on screen under the submit button.
+      setSubmitIssues(issueDetailsOf(error));
+      toast.show("error", t(messageKeyOf(error)));
+    },
   });
 
   // A new draft invalidates the evidence: the dry run answered a question about
@@ -137,6 +150,8 @@ export function OnboardScreen(): ReactNode {
   const update = (patch: Partial<OnboardingDraft>): void => {
     setDraft((current) => ({ ...current, ...patch }));
     setDryRun(null);
+    // A changed draft invalidates a complaint about the previous one too.
+    setSubmitIssues([]);
   };
 
   // The live SCM state step 1 renders. A failure body (`ok:false`) becomes a
@@ -211,6 +226,18 @@ export function OnboardScreen(): ReactNode {
         >
           {t("onboard.action.submit")}
         </Button>
+        {submitIssues.length > 0 && (
+          <div className="scr-note scr-note--danger" style={{ marginTop: 11 }}>
+            {t("onboard.error.refused_fields")}
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {submitIssues.map((issue) => (
+                <li key={issue} className="scr-mono">
+                  {issue}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {!maySubmit && (
           <div className="scr-note scr-note--warn" style={{ marginTop: 11 }}>
             {complete ? t("onboard.blocked.dry_run") : t("onboard.blocked.incomplete")}

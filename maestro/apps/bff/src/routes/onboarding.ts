@@ -96,6 +96,23 @@ const DraftBody = z
     }
   });
 
+/**
+ * The field-level violations behind an `invalid_onboarding_body`, in the BFF's
+ * existing error-detail idiom (`details.issues`, the `"path: message"` strings
+ * settings.ts and the notify service already answer with). The bare code told
+ * an operator THAT the draft was refused but never WHICH field — a wizard with
+ * eight fields and a strict schema left them diffing their payload against the
+ * source. Schema violations name fields, never values, so nothing secret can
+ * ride along.
+ */
+function bodyIssues(error: z.ZodError): { issues: string[] } {
+  return {
+    issues: error.issues.map(
+      (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
+    ),
+  };
+}
+
 /** The `?connectionId=` shared by the live SCM-repo and Jira-project listings. */
 const ConnectionIdQuery = z.object({ connectionId: z.string().trim().min(1).max(64) });
 const MatchValuesQuery = z.object({
@@ -288,7 +305,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const store = connectorStore(deps);
     const secrets = connectorSecrets(deps);
     const parsed = ConnectionIdQuery.safeParse(request.query);
-    if (!parsed.success) throw badRequest("invalid_onboarding_body");
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
 
     const connection = await store.get(parsed.data.connectionId);
     if (connection === null) throw badRequest("unknown_connection");
@@ -360,7 +377,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const store = connectorStore(deps);
     const secrets = connectorSecrets(deps);
     const parsed = ConnectionIdQuery.safeParse(request.query);
-    if (!parsed.success) throw badRequest("invalid_onboarding_body");
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
 
     const connection = await store.get(parsed.data.connectionId);
     if (connection === null) throw badRequest("unknown_connection");
@@ -383,7 +400,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const store = connectorStore(deps);
     const secrets = connectorSecrets(deps);
     const parsed = MatchValuesQuery.safeParse(request.query);
-    if (!parsed.success) throw badRequest("invalid_onboarding_body");
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
 
     const connection = await store.get(parsed.data.connectionId);
     if (connection === null) throw badRequest("unknown_connection");
@@ -424,7 +441,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
    */
   app.post("/onboarding/dry-run", { preHandler }, async (request, reply) => {
     const parsed = DryRunBody.safeParse(request.body);
-    if (!parsed.success) throw badRequest("invalid_onboarding_body");
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
 
     await assertProjectBindable(deps, parsed.data.jiraProject);
     const limit = parsed.data.sampleSize ?? DEFAULT_DRY_RUN_SAMPLE;
@@ -467,7 +484,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
    */
   app.post("/onboarding", { preHandler }, async (request, reply) => {
     const parsed = DraftBody.safeParse(request.body);
-    if (!parsed.success) throw badRequest("invalid_onboarding_body");
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
 
     // Nothing is filed while the platform is stopped (M58). A proposal is not
     // an effect, but it is the first half of one, and an incident is not the
@@ -654,7 +671,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
    */
   app.post("/onboarding/approve", { preHandler }, async (request, reply) => {
     const parsed = ApproveBody.safeParse(request.body);
-    if (!parsed.success) throw badRequest("invalid_onboarding_body");
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
     if (deps.bindingWriter === undefined) unwired("bindingWriter");
 
     await assertWritable(deps);
@@ -711,6 +728,12 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     // an error. Failures are logged, nothing more; the admin can re-run the
     // seed later via POST /studio/listening-rules/seed-defaults.
     let listeningSeed: { created: number; skipped: number } | null = null;
+    // WHY the seed did not run, when it did not. Fail-soft used to mean the
+    // reason lived only in a server log line: the screen saw "bound" (green),
+    // zero rules listened to any ticket, and the operator had nothing to act
+    // on. The named reason travels with the response so the approval result
+    // can say "tohumlanamadı: <sebep>" instead of celebrating a half-setup.
+    let seedSkipped: { reason: string } | null = null;
     try {
       const seeded = await seedProjectDefaults(deps, parsed.data.projectKey);
       if (seeded.ok) {
@@ -718,12 +741,17 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
         // Converge the running pilot on the new rules; itself fail-soft.
         if (seeded.created > 0) await mirrorListeningToPilot(deps);
       } else {
+        seedSkipped = { reason: seeded.reason };
         request.log.warn(
           { projectKey: parsed.data.projectKey, reason: seeded.reason },
           "listening seed skipped after onboarding approve",
         );
       }
     } catch (error) {
+      // An unexpected throw (a store write failing mid-seed) has no named
+      // outcome; `seed_error` is the honest catch-all — still fail-soft, the
+      // binding above stays live.
+      seedSkipped = { reason: "seed_error" };
       request.log.warn(
         { projectKey: parsed.data.projectKey, err: error },
         "listening seed failed after onboarding approve",
@@ -732,12 +760,14 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
 
     // The chain's next natural step: this project has no listening rules yet
     // (or, when the seed above ran, they were just created — `listeningSeed`
-    // tells the screen which sentence is true).
+    // tells the screen which sentence is true, and `seedSkipped` carries the
+    // reason when the answer is "none, and here is why").
     return reply.code(200).send({
       status: "bound",
       projectKey: parsed.data.projectKey,
       nextStep: "listening_rule",
       listeningSeed,
+      ...(seedSkipped === null ? {} : { seedSkipped }),
     });
   });
 
@@ -751,7 +781,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
    */
   app.post("/onboarding/reject", { preHandler }, async (request, reply) => {
     const parsed = RejectBody.safeParse(request.body);
-    if (!parsed.success) throw badRequest("invalid_onboarding_body");
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
 
     const open = (await deps.params.pending()).find(
       (candidate) =>

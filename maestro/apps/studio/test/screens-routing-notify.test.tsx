@@ -177,6 +177,40 @@ describe("routing screen", () => {
     expect(await screen.findByRole("button", { name: "Dinleme kuralı ekle" })).toBeInTheDocument();
   });
 
+  it("warns — with the reason — when the approval bound the project but the default rules could not be seeded", async () => {
+    // The fail-soft seed: `listeningSeed: null` used to render as the same
+    // cheerful "bağlandı" while zero tickets were listened to. The response now
+    // names why (`seedSkipped.reason`) and the screen must say it out loud.
+    const { fetchImpl } = stubFetch([
+      ROUTING_BODY,
+      APPS_BODY,
+      PENDING_BODY,
+      {
+        path: "/onboarding/approve",
+        method: "POST",
+        body: {
+          status: "bound",
+          projectKey: "OPS",
+          nextStep: "listening_rule",
+          listeningSeed: null,
+          seedSkipped: { reason: "issue_types_unavailable" },
+        },
+      },
+    ]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+
+    await screen.findByText("Uguryldz/maestro-pilot");
+    await userEvent.click(screen.getByRole("button", { name: "Onayla" }));
+
+    // The warning names the project, the reason and the way out.
+    expect(
+      await screen.findByText(/varsayılan dinleme kuralları kurulamadı/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Jira iş türü listesi okunamadı/)).toBeInTheDocument();
+    // Never the celebratory "otomatik kuruldu" line for a seed that did not run.
+    expect(screen.queryByText(/otomatik kuruldu/)).not.toBeInTheDocument();
+  });
+
   it("names an analysis-only package's missing repo instead of showing an empty cell", async () => {
     // The BFF sends explicit nulls for a repo-less (analysis-only) proposal.
     // The approver is confirming precisely that no repository is in scope, so

@@ -408,6 +408,16 @@ export function ListeningScreen(): ReactNode {
 
   const rules = query.data?.rules ?? [];
 
+  // Bound projects with ZERO rules: the platform looks "live" (the binding is
+  // green) while no ticket is listened to — the exact state a failed default
+  // seed leaves behind (Jira'nın issue-type listesi okunamadı) with nothing on
+  // any screen saying so. Only computed once BOTH lists have actually answered:
+  // an in-flight or failed query is not evidence of an empty rule set.
+  const unlistenedProjects =
+    query.isSuccess && routing.isSuccess
+      ? boundProjects.filter((key) => !rules.some((rule) => rule.projectKey === key))
+      : [];
+
   const onSubmit = (): void => {
     // An `assigned` rule has no value to check for — the assignee IS the whole
     // condition — so requiring one here would make the third kind unsaveable.
@@ -590,6 +600,33 @@ export function ListeningScreen(): ReactNode {
           </div>
         )}
       </Card>
+
+      {/* The loud version of the silent failure: a binding exists, zero rules
+          listen for it, so NOTHING runs — most often because the default seed
+          could not read Jira's issue-type list during approval and failed soft.
+          Named warning + the way out (test the connection, re-seed, or write a
+          rule by hand), instead of a green setup that quietly does nothing. */}
+      {unlistenedProjects.length > 0 && (
+        <Card>
+          <div className="scr-note scr-note--warn">
+            {t("listening.unlistened.warn", { projects: unlistenedProjects.join(", ") })}
+          </div>
+          {canWrite && (
+            <div className="screen-actions">
+              {unlistenedProjects.map((key) => (
+                <Button
+                  key={key}
+                  size="sm"
+                  busy={seed.isPending}
+                  onClick={() => seed.mutate(key)}
+                >
+                  {t("listening.unlistened.seed", { project: key })}
+                </Button>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       {canWrite && (
         <Card

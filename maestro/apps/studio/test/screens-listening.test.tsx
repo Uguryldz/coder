@@ -279,6 +279,57 @@ describe("ListeningScreen", () => {
     expect(await screen.findByText(/Etkin bir Jira bağlantısı yok/)).toBeTruthy();
   });
 
+  /**
+   * The silent half-setup, made loud (Bulgu B). A bound project with ZERO
+   * rules listens to no ticket at all — the state a failed default seed leaves
+   * behind, previously invisible: the binding looked green and this screen
+   * just showed an empty table. The warning must name the project, and the
+   * one-click way out must re-run the seed for exactly that project.
+   */
+  describe("bound project with no rules at all", () => {
+    it("warns by name and re-seeds that project on click", async () => {
+      const fn = stubFetch([]);
+      renderScreen(ADMIN);
+
+      // OPS is bound (the /routing stub) and the rule list is empty.
+      expect(
+        await screen.findByText(/OPS bağlı ama hiç dinleme kuralı yok/),
+      ).toBeTruthy();
+      expect(screen.getByText(/hiçbir ticket dinlenmiyor/)).toBeTruthy();
+
+      await userEvent.click(
+        screen.getByRole("button", { name: "Varsayılan kuralları yükle (OPS)" }),
+      );
+      await waitFor(() => {
+        const posted = fn.mock.calls.find(
+          (c) =>
+            String(c[0]).includes("/studio/listening-rules/seed-defaults") &&
+            (c[1] as RequestInit)?.method === "POST",
+        );
+        expect(posted).toBeTruthy();
+        expect(JSON.parse((posted![1] as RequestInit).body as string).projectKey).toBe("OPS");
+      });
+    });
+
+    it("does not warn when the bound project has a rule", async () => {
+      stubFetch([SEED]); // SEED listens on OPS
+      renderScreen(ADMIN);
+      await screen.findByText("Hata");
+      expect(screen.queryByText(/hiç dinleme kuralı yok/)).toBeNull();
+    });
+
+    it("shows the warning to a viewer too, but without the seed action", async () => {
+      stubFetch([]);
+      renderScreen(VIEWER);
+      expect(
+        await screen.findByText(/OPS bağlı ama hiç dinleme kuralı yok/),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("button", { name: "Varsayılan kuralları yükle (OPS)" }),
+      ).toBeNull();
+    });
+  });
+
   it("hides the seed button from a viewer", async () => {
     stubFetch([SEED]);
     renderScreen(VIEWER);

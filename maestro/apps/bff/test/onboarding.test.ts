@@ -387,6 +387,30 @@ describe("POST /onboarding", () => {
     expect(response.json().error).toBe("invalid_onboarding_body");
   });
 
+  it("names the violated fields in the 400, so the operator sees WHICH field was refused", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+
+    // Two violations at once: a required enum is missing and an unknown key is
+    // sent (the `.strict()` refusal). Both must come back BY NAME — the bare
+    // code left the operator diffing an eight-field payload against the source.
+    const { triggerMode: _dropped, ...rest } = DRAFT;
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...rest, mergeModeX: "auto" },
+    });
+    expect(response.statusCode).toBe(400);
+    const body = response.json() as { error: string; details?: { issues?: string[] } };
+    expect(body.error).toBe("invalid_onboarding_body");
+    const issues = body.details?.issues ?? [];
+    expect(issues.some((issue) => issue.includes("triggerMode"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("mergeModeX"))).toBe(true);
+    // Field names and schema prose only — never an echo of a secret-bearing value.
+    expect(JSON.stringify(issues)).not.toContain("Bearer");
+  });
+
   // ── M100: registering the app directly, then proposing the binding ──────────
 
   /** A draft naming a repo the fixture does NOT contain, as `owner/repo`. */

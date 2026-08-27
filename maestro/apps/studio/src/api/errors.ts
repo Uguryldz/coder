@@ -232,3 +232,17 @@ export function messageKeyOf(error: unknown): string {
   if (error instanceof NetworkError) return error.messageKey;
   return "error.unexpected";
 }
+
+/**
+ * The field-level violations a validation 400 carried (`details.issues`, the
+ * BFF's `"path: message"` strings). Empty for anything else — a screen renders
+ * these UNDER its translated sentence, so the translated line stays the
+ * message and the field names are the actionable part. These are schema field
+ * names and zod's own prose, not server text echoing user values.
+ */
+export function issueDetailsOf(error: unknown): readonly string[] {
+  if (!(error instanceof ApiError)) return [];
+  const details = error.details as { issues?: unknown } | null | undefined;
+  if (details == null || !Array.isArray(details.issues)) return [];
+  return details.issues.filter((issue): issue is string => typeof issue === "string");
+}

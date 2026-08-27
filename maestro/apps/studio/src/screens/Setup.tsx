@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, messageKeyOf } from "../api/errors.ts";
+import { ApiError, issueDetailsOf, messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
@@ -112,11 +112,19 @@ export function SetupScreen(): ReactNode {
    * seconds is the wrong place for a fact the operator has to decide about.
    */
   const [saveProblem, setSaveProblem] = useState<string | null>(null);
+  /**
+   * The field-level violations behind a validation 400 (`details.issues`).
+   * "Taslak reddedildi" alone left the operator diffing their answers against
+   * a schema they cannot see; the named fields under the sentence are what
+   * make the refusal fixable from this screen.
+   */
+  const [saveProblemIssues, setSaveProblemIssues] = useState<readonly string[]>([]);
 
   const patch = (next: Partial<SetupDraft>): void => {
     setDraft((current) => ({ ...current, ...next }));
     // A changed answer invalidates a stale complaint about the previous one.
     setSaveProblem(null);
+    setSaveProblemIssues([]);
   };
 
   // ── the live lists, read from exactly the endpoints /projects reads ────────
@@ -388,6 +396,9 @@ export function SetupScreen(): ReactNode {
         return;
       }
       setSaveProblem(messageKeyOf(error));
+      // A validation 400 names the violated fields; render them under the
+      // sentence rather than leaving "geçersiz gövde" as the whole answer.
+      setSaveProblemIssues(issueDetailsOf(error));
     },
   });
 
@@ -400,10 +411,12 @@ export function SetupScreen(): ReactNode {
 
   const goBack = (): void => {
     setSaveProblem(null);
+    setSaveProblemIssues([]);
     setStepIndex((i) => Math.max(0, i - 1));
   };
   const goNext = (): void => {
     setSaveProblem(null);
+    setSaveProblemIssues([]);
     setStepIndex((i) => Math.min(SETUP_STEPS.length - 1, i + 1));
   };
 
@@ -558,6 +571,19 @@ export function SetupScreen(): ReactNode {
         {saveProblem !== null && (
           <div className="scr-note scr-note--danger" style={{ marginTop: 10 }}>
             {t(saveProblem)}
+            {/* The violated fields, when the refusal named them (a validation
+                400's `details.issues`). Rendered as the BFF's own field/message
+                lines: they are schema field names, and translating them away
+                would hide the one thing the operator can act on. */}
+            {saveProblemIssues.length > 0 && (
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {saveProblemIssues.map((issue) => (
+                  <li key={issue} className="scr-mono">
+                    {issue}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </Card>

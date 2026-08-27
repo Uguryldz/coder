@@ -1,6 +1,6 @@
 # Maestro — Banka İçi (İnternetsiz) Kurulum
 
-**Paket sürümü: 2026-08-21**
+**Paket sürümü: 2026-08-27**
 *(Bu tarih `.env.example` içindeki `BUNDLE_VERSION` ve `install.sh` başlığıyla
 aynı olmalıdır. Üçü tutmuyorsa elinizdeki paket karışıktır — kurmayın.)*
 

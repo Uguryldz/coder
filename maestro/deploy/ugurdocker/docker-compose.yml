@@ -1,6 +1,6 @@
 # =============================================================================
 # Maestro — registry kurulumu (imajlar registry'den ÇEKİLİR)
-# BUNDLE_VERSION: 2026-08-18
+# BUNDLE_VERSION: 2026-08-27
 # =============================================================================
 # Bu compose HİÇBİR ŞEY BUILD ETMEZ ve hiçbir tar dosyası beklemez. Tüm imajlar
 # `docker compose pull` ile registry'den çekilir (bkz. README.md §2).

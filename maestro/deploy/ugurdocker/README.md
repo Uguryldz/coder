@@ -1,6 +1,6 @@
 # Maestro — Registry Kurulumu
 
-**Paket sürümü: 2026-08-18**
+**Paket sürümü: 2026-08-27**
 *(Bu tarih `.env.example` içindeki `BUNDLE_VERSION` ve `install.sh` başlığıyla
 aynı olmalıdır. Üçü tutmuyorsa elinizdeki paket karışıktır — kurmayın.)*
 
@@ -59,8 +59,8 @@ o sürücü çalışır) ve kurum registry'si kullanacaksanız **imaj adresleri*
 tamamını değiştirin:
 
 ```bash
-MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.2"
-MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.2"
+MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.3"
+MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.3"
 
 # İKİSİNDEN YALNIZCA BİRİ — hangisini doldurursanız o sürücü çalışır:
 JIRA_CLOUD_BASE_URL="https://kurum.atlassian.net"   # Jira Cloud
@@ -307,7 +307,7 @@ davranışını değiştirmez — yalnızca değiştirilebilirmiş izlenimi veri
 | `STORAGE_BUCKET` · `STORAGE_REGION` | `maestro-evidence` · `us-east-1` | Yalnızca `NODE_ENV="production"` ile okunur ve o hâlde asıl karar `STORAGE_ENDPOINT`'tir; kova adı değiştirilecekse buraya eklenir. |
 | `VAULT_MOUNTS` | `kv,git` | `git` listede olmak **zorundadır**: Vault sürücüsü kısa ömürlü push kimlik bilgisini o mount'tan üretir. Listeden düşürmek her push'u ilk mühendislik adımında reddettirir. |
 | `BFF_PORT` | `7001` (compose sabitler) | Aynı sayı `healthcheck`'te ve `studio-nginx.conf`'ta da sabit durur. Değişken hâlindeyken değiştiren kurulum, hiç `healthy` olmayan bir `bff` ve hiç başlamayan bir `studio` ile kaldı. |
-| `BUNDLE_VERSION` | — | Paket sürümü artık yalnızca `install.sh` ve bu README'de durur; `.env`'de tutulması iki yerin ayrışmasından başka bir işe yaramıyordu. |
+| `BUNDLE_VERSION` | paketle gelir | Paket sürümü üç yerde birden durur — `install.sh`, `.env.example` ve `docker-compose.yml` başlığı — ve `install.sh` uyumu denetler. Üçlü bir kez sessizce ayrıştı (18 ≠ 19) ve hiçbir şey yakalamadı; artık eşitliği test kilitler, elle değiştirilmez. |
 | `MAESTRO_BOOTSTRAP_PASSWORD` | boş | Boşken ilk `admin` parolası rastgele üretilir ve migrate çıktısına **bir kez** basılır (§4.1) — önerilen budur; bir parolanın diskte bir dosyada durmaması gerekir. Runbook'u sabit ilk parola isteyen saha `.env.example`'ın opsiyonel bölümündeki yorumlu satırı açabilir: parola o zaman hiç basılmaz, ilk girişte değişim yine zorunludur ve değişkeni **yalnız migrate** görür. |
 
 Bir sahanın gerçekten ihtiyacı olursa: değişkeni `.env`'e yazmak yeterlidir,

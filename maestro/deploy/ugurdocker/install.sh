@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Maestro — registry kurulumu (imajlar registry'den çekilir)
-# BUNDLE_VERSION: 2026-08-18
+# BUNDLE_VERSION: 2026-08-27
 # =============================================================================
 # Kullanım (bu klasörde):
 #   ./install.sh          # interaktif (registry login sorar)
@@ -22,7 +22,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-BUNDLE_VERSION="2026-08-18"
+BUNDLE_VERSION="2026-08-27"
 
 ok()   { printf '\033[32m✔\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m⚠\033[0m %s\n' "$*"; }

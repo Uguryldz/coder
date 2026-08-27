@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { bankaNginxConfPath, ugurdockerNginxConfPath } from "./paths.js";
+import { bankaNginxConfPath, dockerfilePath, ugurdockerNginxConfPath } from "./paths.js";
 
 /**
  * The studio nginx config, checked as data — the webhook gateway in particular.
@@ -20,6 +20,12 @@ import { bankaNginxConfPath, ugurdockerNginxConfPath } from "./paths.js";
 const bundles = [
   { name: "ugurdocker", path: ugurdockerNginxConfPath() },
   { name: "banka", path: bankaNginxConfPath() },
+  // The THIRD copy: deploy/docker/studio-nginx.conf is what Dockerfile.studio
+  // bakes into the image itself. The bundles mount their own conf over it, so
+  // a stale image copy is invisible in every bundle install — which is exactly
+  // how it shipped without the webhook gateway in 1.0.2 and was only caught by
+  // inspecting the image, not by any test or install.
+  { name: "docker-image", path: dockerfilePath("studio-nginx.conf") },
 ] as const;
 
 describe.each(bundles)("$name studio-nginx.conf: the webhook gateway", ({ path }) => {
@@ -64,5 +70,23 @@ describe("studio-nginx.conf: the twins", () => {
     const ugurdocker = readFileSync(ugurdockerNginxConfPath(), "utf8");
     const banka = readFileSync(bankaNginxConfPath(), "utf8");
     expect(ugurdocker).toBe(banka);
+  });
+
+  it("the image-embedded conf matches the bundles, comments aside", () => {
+    // The image copy carries its own header (it explains the image context, not
+    // the bundle's), so byte equality is deliberately NOT required. Everything
+    // nginx actually executes must be identical: the bundles OVERWRITE this
+    // file via a compose mount, so any functional drift is masked in every
+    // bundle install and only surfaces on a bare image — as the missing
+    // webhook gateway did in 1.0.2.
+    const directivesOnly = (conf: string): string =>
+      conf
+        .split("\n")
+        .map((line) => line.replace(/#.*$/, "").trimEnd())
+        .filter((line) => line.trim().length > 0)
+        .join("\n");
+    const image = readFileSync(dockerfilePath("studio-nginx.conf"), "utf8");
+    const bundle = readFileSync(ugurdockerNginxConfPath(), "utf8");
+    expect(directivesOnly(image)).toBe(directivesOnly(bundle));
   });
 });

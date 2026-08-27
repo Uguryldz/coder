@@ -1,6 +1,6 @@
 # =============================================================================
 # Maestro — Banka içi (internetsiz) kurulum
-# BUNDLE_VERSION: 2026-08-21
+# BUNDLE_VERSION: 2026-08-27
 # =============================================================================
 # Bu compose HİÇBİR ŞEY BUILD ETMEZ. Tüm imajlar `docker load` ile yüklenmiş
 # ya da kurum registry'sinden çekilmiş olmalıdır (bkz. README.md §1).

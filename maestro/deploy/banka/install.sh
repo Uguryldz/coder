@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Maestro — banka içi (internetsiz) kurulum
-# BUNDLE_VERSION: 2026-08-21
+# BUNDLE_VERSION: 2026-08-27
 # =============================================================================
 # Kullanım (bu klasörde):
 #   ./install.sh          # interaktif
@@ -21,7 +21,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-BUNDLE_VERSION="2026-08-21"
+BUNDLE_VERSION="2026-08-27"
 
 ok()   { printf '\033[32m✔\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m⚠\033[0m %s\n' "$*"; }

@@ -267,23 +267,42 @@ docker compose exec bff node -e "fetch('http://127.0.0.1:7001/readyz').then(r=>c
 ```
 
 **Panel:** `http://<SUNUCU_IP>:7000`
-**İlk giriş:** `admin` / `admin123` — ilk oturumda parola değiştirmeniz istenir.
+**İlk giriş:** `admin` + kurulum sırasında migrate adımının **bir kez** bastığı
+`GEÇİCİ PAROLA` (install.sh çıktısındaki `GEÇİCİ PAROLA` satırı). İlk oturumda
+sistem yeni bir parola belirlemenizi **zorunlu** tutar. Parolayı not etmediyseniz:
+`./reset-admin.sh admin` yenisini üretir.
 
 ---
 
 ## 5. ⚠ KURULUMDAN SONRA MUTLAKA YAPIN
 
-Bu dört maddeyi yapmadan sistem **çalışıyor görünür ama güvenli ya da işlevsel
+Bu beş maddeyi yapmadan sistem **çalışıyor görünür ama güvenli ya da işlevsel
 değildir.** Sırayla uygulayın.
 
-### 5.1 `admin` / `admin123` parolasını değiştirin
+### 5.1 `admin` hesabıyla girin, kalıcı parolanızı belirleyin
 
-Kurulum, ilk girişi mümkün kılmak için `admin` / `admin123` hesabını ekler.
-Bu parola **paketin kaynağında yazılıdır** — yani gizli değildir.
+Kurulum, ilk girişi mümkün kılmak için `admin` hesabını **rastgele üretilmiş
+geçici bir parolayla** ekler ve bu parolayı **yalnızca bir kez**, migrate
+adımının çıktısında basar (`GEÇİCİ PAROLA` satırı). Sabit bir kurulum parolası
+**yoktur** — hiçbir paketin kaynağında yazılı değildir.
 
-Panele `admin` / `admin123` ile girin; sistem parola değiştirmenizi ister,
-yeni parolayı belirleyin. Değiştirene kadar bu hesap yalnızca üç uca erişir,
-ama yine de **kurulumun ilk işi** budur.
+Panele `admin` + geçici parola ile girin; sistem kendi parolanızı belirlemenizi
+**zorunlu** tutar. Değiştirene kadar bu hesap yalnızca üç uca erişir, ama yine
+de **kurulumun ilk işi** budur.
+
+**Geçici parolayı not etmediyseniz ya da parola unutulduysa** — sunucuda, bu
+klasörde:
+
+```bash
+./reset-admin.sh              # admin hesabını sıfırlar
+./reset-admin.sh ayse.kaya    # başka bir hesabı sıfırlar
+```
+
+Betik, uygulama imajının içinde yeni bir rastgele parola üretir, bcrypt'leyip
+veritabanına yazar, parolayı ekrana **bir kez** basar, hesabın açık oturumlarını
+kapatır ve ilk girişte değişimi yine zorunlu kılar. Parola hiçbir yere
+kaydedilmez; not almadıysanız betiği yeniden çalıştırın (her çalıştırma yeni
+parola üretir). `psql` ile elle hash yazmak artık gerekmez ve önerilmez.
 
 ### 5.2 Bot hesabı `maestro-admins` grubunda OLMASIN
 
@@ -304,6 +323,12 @@ Webhook olmadan Maestro talepleri **anında** görmez. Kayıt adımları ve imza
 sırrının nasıl üretileceği ayrı belgede:
 
 **→ [`docs/jira-webhook-kurulum.md`](../../docs/jira-webhook-kurulum.md)**
+
+Webhook adresi panelin kendisiyle **aynı host**'tur:
+`https://<host>/webhooks/jira`. İstek, dışarı açılan tek port olan studio'dan
+girer ve `studio-nginx.conf`'taki `/webhooks/` geçidiyle `bff:7001`'e geçer —
+BFF için ayrı bir port **açılmaz**. Jira Data Center'da belge eki ve pano
+taşıma henüz yoktur; analiz **yorum olarak** teslim edilir (ayrıntı belgede).
 
 Özet: `.env`'deki `MAESTRO_SECRET_KV_JIRA__WEBHOOK` değeri ile Jira'daki webhook
 kaydının `secret` alanı **aynı** olmalıdır. `POST /webhooks/jira` ucu
@@ -340,6 +365,27 @@ docker compose up -d --force-recreate bff worker
 > jetonlar her çağrıda yeniden okunur; "Test et" yeşil olduğu anda koşular da o
 > jetonu kullanır. Yukarıdaki komut yalnızca `.env` değiştiğinde gerekir.
 
+### 5.5 Jira'da onay gruplarını eşleyin (`GATE_GROUPS`)
+
+Onay kapıları (analiz onayı, teknik onay, test onayı) `/approve` yazan kişinin
+**Jira grup üyeliğiyle** doğrulanır. Eşleme verilmediğinde rol adının kendisi
+grup adı sayılır: Jira'nızda `product-owners`, `tech-leads` ve `qa` adında
+gruplar yoksa **her onay "üye değil" diye reddedilir** — kapı fail-closed'dır
+ve koşu onay adımında bekler kalır.
+
+İki seçenekten birini yapın:
+
+- Jira'da bu adlarla (`product-owners`, `tech-leads`, `qa`) grup açıp
+  onaycıları üye yapın, **ya da**
+- `.env` §6b'de rolleri kendi gruplarınıza eşleyin:
+  `GATE_GROUPS="product-owners=<JIRA-GRUBU>,tech-leads=<JIRA-GRUBU>,qa=<JIRA-GRUBU>"`
+  — tek onaycı grubu varsa `GATE_GROUP_DEFAULT="<JIRA-GRUBU>"` tek başına
+  yeter.
+
+Eşleme **hem `bff` hem `worker`** tarafından okunur (biri üyeliği doğrular,
+öteki kapı kaydına sahibi yazar); `.env` değiştiği için ikisini birden
+yenileyin: `docker compose up -d --force-recreate bff worker`
+
 ---
 
 ## 6. Sessiz arızalar — belirtiye göre teşhis
@@ -364,6 +410,7 @@ loglar temizdir, panel çalışır — ama iş görülmez.
 | Model çağrıları **404** | `LLM_BASE_URL` sonunda `/v1` var, sürücü de ekliyor | Sondaki `/v1`'i silin |
 | `unable to verify the first certificate` | Banka kök CA'sı Node'un listesinde yok | `NODE_EXTRA_CA_CERTS` + CA'yı `certs/` içine koyun |
 | Panelde jetonlar bozuk / çözülemiyor | `CONNECTOR_MASTER_KEY` değişti ya da kayboldu | Eski anahtarı geri koyun; yoksa jetonları yeniden girin |
+| Her `/approve` **"üye değil"** diye reddediliyor | Rol adları (`product-owners`/`tech-leads`/`qa`) Jira'da grup olarak yok ve `GATE_GROUPS` eşlenmemiş — kapı fail-closed'dır | §5.5 — `GATE_GROUPS`'u kendi Jira gruplarınıza eşleyin |
 
 ---
 

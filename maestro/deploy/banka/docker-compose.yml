@@ -85,9 +85,10 @@ x-node-env: &node-env
   # durumda da dolu olmalıdır, bu yüzden `:?` ile zorunlu tutuluyor.
   CONNECTOR_MASTER_KEY: ${CONNECTOR_MASTER_KEY:?CONNECTOR_MASTER_KEY gerekli — openssl rand -base64 32}
 
-  # Kurumsal TLS: banka kendi CA'sıyla imzalı Jira DC / TFS sertifikası
-  # kullanıyorsa bu ŞART. Yoksa her çağrı "unable to verify the first
-  # certificate" ile düşer. Dosya aşağıda mount ediliyor.
+  # Kurumsal TLS: banka kendi CA'sıyla imzalı Jira DC / TFS ya da kurum içi
+  # model sunucusu sertifikası kullanıyorsa bu ŞART. Yoksa her çağrı sertifika
+  # hatasıyla düşer; panelin bağlantı testi bunu "TLS sertifikası doğrulanamadı
+  # (<kod>)" diye adıyla söyler. Dosya aşağıda mount ediliyor.
   NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
 
   # ── İş takibi (Jira) ───────────────────────────────────────────────────────
@@ -124,6 +125,21 @@ x-node-env: &node-env
   # ayrışma yolu tam olarak buydu.
   MAESTRO_BOT_EMAIL: ${MAESTRO_BOT_EMAIL:-}
   JIRA_CLOUD_EMAIL: ${JIRA_CLOUD_EMAIL:-}
+
+  # ── Onay kapıları → Jira grupları ──────────────────────────────────────────
+  # /approve kararı, karar verenin JİRA GRUBU üyeliğiyle doğrulanır
+  # (apps/deploy/src/stores/gate-directory.ts). Eşleme boşsa ROL ADININ KENDİSİ
+  # grup adı sayılır (product-owners, tech-leads, qa) — Jira'da o adda grup
+  # YOKSA her onay "üye değil" diye reddedilir; kapı fail-closed'dır.
+  # Biçim rol=grup, virgülle:
+  #   GATE_GROUPS="product-owners=jira-po-grubu,tech-leads=jira-lider-grubu"
+  # HEM bff HEM worker okumak ZORUNDADIR: bff üyeliği bu grupla doğrular,
+  # worker kapı kaydına sahibi bu grupla yazar (bin/worker.ts). Yalnız birine
+  # girerse gerçek bir onay bir süreçte kabul, diğerinde ret olur — bu yüzden
+  # ortak blokta durur.
+  GATE_GROUPS: ${GATE_GROUPS:-}
+  # Tek onaycı gruplu saha için: eşlemede adı geçmeyen HER rol bu gruba düşer.
+  GATE_GROUP_DEFAULT: ${GATE_GROUP_DEFAULT:-}
 
   # ── Kaynak kodu ────────────────────────────────────────────────────────────
   # scm portu GitHub sürücüsüdür ve HER kurulumda kuruludur. Hiçbir zorunlu
@@ -234,6 +250,17 @@ x-node-secrets: &node-secrets
 x-ca-volumes: &ca-volumes
   - ${CA_BUNDLE_DIR:-./certs}:/etc/maestro:ro
 
+# CA dosyaları + depo klonlarının ortak çalışma alanı (yalnız bff ve worker).
+# Kök dosya sistemi read-only, /tmp ise konteyner-BAŞINA tmpfs'tir — bff'in
+# klonladığı depoyu worker orada göremezdi. Bu yüzden İKİ servise de AYNI yola
+# bağlanan tek volume kullanılır: bff koşu başında depoyu oraya klonlar
+# (bin/bff.ts, checkoutOrNull), worker analizde oradan okur
+# (packages/workflows/src/impl/analysis.ts, workspacePath). WORKSPACE_ROOT
+# boşken volume boş durur ve hiçbir şey değişmez.
+x-workspace-volumes: &workspace-volumes
+  - ${CA_BUNDLE_DIR:-./certs}:/etc/maestro:ro
+  - maestro-workspace:/workspace
+
 services:
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -306,6 +333,12 @@ services:
       <<: [*node-env, *node-secrets]
       # Tek imaj, üç rol: entrypoint env ile seçilir.
       MAESTRO_ENTRYPOINT: apps/deploy/dist/bin/migrate.js
+      # İlk `admin` parolası. BOŞKEN rastgele üretilir ve migrate çıktısına
+      # BİR KEZ basılır (önerilen). Runbook'u sabit ilk parola isteyen saha
+      # burada verir; parola o zaman hiç basılmaz ve ilk girişte değişim yine
+      # zorunludur (packages/db/src/seed-first-admin.ts). YALNIZ migrate okur;
+      # bff/worker'a bilerek verilmez — parola yalnızca onu eken sürece girsin.
+      MAESTRO_BOOTSTRAP_PASSWORD: ${MAESTRO_BOOTSTRAP_PASSWORD:-}
     volumes: *ca-volumes
     depends_on:
       postgres:
@@ -343,7 +376,27 @@ services:
       # her istek 502 döner. Varsayılan burada 0.0.0.0'dır ÇÜNKÜ maruziyet
       # konteyner ağıyla sınırlıdır; dışarıya açılan tek şey STUDIO_PORT'tur.
       BFF_HOST: ${BFF_HOST:-0.0.0.0}
-    volumes: *ca-volumes
+      # Hiçbir dinleme kuralı eşleşmeyen ticket'ın düşeceği akış. BOŞKEN TAM
+      # boru hattına düşülür (bin/bff.ts, flowOf) — yalnız analiz kullanan bir
+      # saha .env'de "analiz" vererek bunu daraltabilir. Tanınmayan değer yok
+      # sayılır (analiz | duzeltme | gelistirme). Yalnız BFF okur.
+      MAESTRO_FLOW: ${MAESTRO_FLOW:-}
+      # Jira yorum komutlarını (/approve) YOKLAMAYLA okuma aralığı, milisaniye.
+      # Boş/0 → kapalı. Webhook'u çalışan kurulum AÇMASIN — aynı yorum iki kez
+      # işlenir. Jira Cloud'da webhook imzası doğrulanamadığından /approve'un
+      # ticket'tan işlenebilmesinin TEK yolu budur (bin/bff.ts, startJiraPoller).
+      JIRA_POLL_MS: ${JIRA_POLL_MS:-}
+      # ── Depo keşfi (opsiyonel; boşken analiz depoyu görmeden yapılır) ──────
+      # BFF koşu başlarken depoyu BURAYA klonlar (bin/bff.ts, checkoutOrNull);
+      # worker aynı yoldan okur — maestro-workspace volume'ü bu yüzden ikisine
+      # de bağlıdır. Açmak için .env'de WORKSPACE_ROOT="/workspace" yazın.
+      WORKSPACE_ROOT: ${WORKSPACE_ROOT:-}
+      # Özel depo için jetonun sır ADRESİ (örn. kv/github#token — değer o
+      # zaman MAESTRO_SECRET_KV_GITHUB__TOKEN'dan okunur). github.com dışı bir
+      # SCM için SCM_HOST. İkisi de boşken github.com + anonim klon denenir.
+      SCM_TOKEN_REF: ${SCM_TOKEN_REF:-}
+      SCM_HOST: ${SCM_HOST:-}
+    volumes: *workspace-volumes
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -365,7 +418,9 @@ services:
     environment:
       <<: [*node-env, *node-secrets]
       MAESTRO_ENTRYPOINT: apps/deploy/dist/bin/worker.js
-    volumes: *ca-volumes
+    # workspace dahil: analiz aktiviteleri bff'in klonladığı depoyu
+    # workspacePath'ten okur — mount olmadan yol worker'da hiç var olmaz.
+    volumes: *workspace-volumes
     depends_on:
       temporal: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
@@ -406,6 +461,20 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  # Depo klonlarının ÇALIŞMA alanı — veri değil (kalıcı her şey Postgres'te).
+  # tmpfs + uid=10001 BİLİNÇLİ bir seçimdir: imajlar kök yazmayan uid 10001
+  # ile koşar ve sıradan bir named volume root sahipli doğar — klon daha ilk
+  # mkdir'de EACCES ile düşer, analiz de sessizce depsuz kalırdı. tmpfs,
+  # uid'i bağlarken verebilen taşınabilir tek yoldur; bedeli, yeniden
+  # başlatmada klonların silinmesidir — klon zaten en-iyi-çabadır ve bff
+  # gerektiğinde yeniden klonlar. 1g sınırı RAM'i korur; sığmayan klon analizi
+  # düşürmez, "depo çekilemedi" uyarısıyla depsuz sürer.
+  maestro-workspace:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1g,uid=10001,gid=10001,mode=0770,noexec,nosuid"
 
 networks:
   maestro:

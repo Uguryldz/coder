@@ -35,12 +35,14 @@ interface ComposeService {
   security_opt?: string[];
   environment?: Record<string, string>;
   depends_on?: Record<string, { condition?: string }>;
+  volumes?: string[];
 }
 
 const composeText = readFileSync(ugurdockerComposePath(), "utf8");
 const compose = parse(composeText, { merge: true }) as {
   name?: string;
   services: Record<string, ComposeService>;
+  volumes?: Record<string, unknown>;
 };
 const envExample = readFileSync(ugurdockerEnvExamplePath(), "utf8");
 const install = readFileSync(ugurdockerInstallPath(), "utf8");
@@ -438,6 +440,99 @@ describe("ugurdocker bundle: the hand-written migration floor matches the reposi
       (entry) => entry.isDirectory() && /^\d/.test(entry.name),
     ).length;
     expect(Number(literal?.[1])).toBe(repoCount);
+  });
+});
+
+/**
+ * The audit's pass-through set (B2/B3/B6/B7 + the bootstrap password): every
+ * one of these is READ by the code and used to be absent from `environment:`,
+ * so `.env` could carry it and the process would never see it — the header's
+ * own failure mode. Each assertion names the process that reads the variable,
+ * because handing a variable to the wrong service is the same bug inverted.
+ */
+describe("ugurdocker bundle: the audited variables reach the process that reads them", () => {
+  it("hands the gate-group mapping to BOTH deciders, bff and worker", () => {
+    /**
+     * B2. `/approve` is verified against Jira GROUP membership and the role
+     * names are only defaults (stores/gate-directory.ts). The BFF verifies
+     * membership, the worker writes the owner onto the gate record
+     * (bin/worker.ts) — resolved differently, a real approval passes one
+     * process and is refused by the other.
+     */
+    for (const service of ["bff", "worker"]) {
+      for (const name of ["GATE_GROUPS", "GATE_GROUP_DEFAULT"]) {
+        expect(
+          compose.services[service]?.environment?.[name],
+          `${service} never sees ${name}`,
+        ).toBeDefined();
+      }
+    }
+  });
+
+  it("hands the BFF its own knobs: flow fallback, comment poller, repo checkout", () => {
+    // B3 (MAESTRO_FLOW, bin/bff.ts flowOf), B7 (JIRA_POLL_MS, startJiraPoller)
+    // and B6 (WORKSPACE_ROOT/SCM_*, checkoutOrNull) are all read by the BFF.
+    for (const name of ["MAESTRO_FLOW", "JIRA_POLL_MS", "WORKSPACE_ROOT", "SCM_TOKEN_REF", "SCM_HOST"]) {
+      expect(compose.services["bff"]?.environment?.[name], `bff never sees ${name}`).toBeDefined();
+    }
+  });
+
+  it("hands the bootstrap password to migrate, and ONLY to migrate", () => {
+    // Only migrate plants the first admin (bin/migrate.ts). Every extra
+    // container holding a password is another place it can be read out of.
+    expect(compose.services["migrate"]?.environment?.["MAESTRO_BOOTSTRAP_PASSWORD"]).toBeDefined();
+    for (const service of ["bff", "worker", "postgres", "redis", "temporal", "studio"]) {
+      expect(
+        compose.services[service]?.environment?.["MAESTRO_BOOTSTRAP_PASSWORD"],
+        `${service} carries the bootstrap password`,
+      ).toBeUndefined();
+    }
+  });
+
+  it("keeps every one of them OPTIONAL, so empty still means today's behaviour", () => {
+    // A `:?` on any of these would refuse to start a stack that worked
+    // yesterday. Empty is a supported state for all of them by design.
+    for (const name of [
+      "GATE_GROUPS",
+      "GATE_GROUP_DEFAULT",
+      "MAESTRO_FLOW",
+      "JIRA_POLL_MS",
+      "WORKSPACE_ROOT",
+      "SCM_TOKEN_REF",
+      "SCM_HOST",
+      "MAESTRO_BOOTSTRAP_PASSWORD",
+    ]) {
+      expect(composeText, `${name} became mandatory`).not.toContain(`\${${name}:?`);
+    }
+  });
+
+  it("mounts the shared workspace into bff AND worker at the same path", () => {
+    /**
+     * B6. The BFF clones (checkoutOrNull), the worker READS the clone at
+     * `RunContext.workspacePath` (packages/workflows/src/impl/analysis.ts).
+     * The root filesystem is read-only and /tmp is a PER-CONTAINER tmpfs, so
+     * without one shared volume at one path the worker can never see what the
+     * BFF checked out. Migrate has no business with it.
+     */
+    for (const service of ["bff", "worker"]) {
+      expect(
+        compose.services[service]?.volumes ?? [],
+        `${service} has no workspace mount`,
+      ).toContain("maestro-workspace:/workspace");
+    }
+    expect(compose.services["migrate"]?.volumes ?? []).not.toContain("maestro-workspace:/workspace");
+    expect(compose.volumes, "maestro-workspace volume is not declared").toHaveProperty(
+      "maestro-workspace",
+    );
+  });
+
+  it("gives the workspace volume to uid 10001, or the clone dies on its first mkdir", () => {
+    // A plain named volume is born root-owned; the services run as 10001 and
+    // the checkout would fail EACCES — silently, into a repo-blind analysis.
+    const volume = compose.volumes?.["maestro-workspace"] as
+      | { driver_opts?: { o?: string } }
+      | undefined;
+    expect(volume?.driver_opts?.o ?? "").toContain("uid=10001");
   });
 });
 

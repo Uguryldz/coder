@@ -118,7 +118,10 @@ curl -s http://localhost:7000/api/readyz    # {"status":"ready","checks":{...}}
 ```
 
 **Panel:** `http://<SUNUCU_IP>:7000`
-**İlk giriş:** `admin` / `admin123` — ilk oturumda parola değiştirmeniz istenir.
+**İlk giriş:** `admin` + kurulum sırasında migrate adımının **bir kez** bastığı
+`GEÇİCİ PAROLA` (install.sh çıktısındaki `GEÇİCİ PAROLA` satırı). İlk oturumda
+sistem yeni bir parola belirlemenizi **zorunlu** tutar. Parolayı not etmediyseniz:
+`./reset-admin.sh admin` yenisini üretir.
 
 ---
 
@@ -129,10 +132,30 @@ jetonu, GitHub jetonu ve model anahtarı `.env`'de **yoktur** — panelden
 girilir, veritabanına `CONNECTOR_MASTER_KEY` ile şifreli yazılır ve koşular
 oradan okur. Aşağıdaki adımları sırayla uygulayın.
 
-### 4.1 `admin` / `admin123` parolasını değiştirin
+### 4.1 `admin` hesabıyla girin, kalıcı parolanızı belirleyin
 
-Bu parola **paketin kaynağında yazılıdır** — yani gizli değildir. Panele girin,
-sistem parola değiştirmenizi ister.
+İlk kurulumda migrate, `admin` hesabını **rastgele üretilmiş geçici bir
+parolayla** oluşturur ve bu parolayı **yalnızca bir kez**, kurulum çıktısında
+basar (`GEÇİCİ PAROLA` satırı). Sabit bir kurulum parolası **yoktur** — hiçbir
+paketin kaynağında yazılı değildir.
+
+Panele `admin` + geçici parola ile girin; sistem kendi parolanızı belirlemenizi
+**zorunlu** tutar (o ana kadar hesap yalnızca parola değiştirme/çıkış uçlarına
+erişebilir).
+
+**Geçici parolayı not etmediyseniz ya da parola unutulduysa** — sunucuda, bu
+klasörde:
+
+```bash
+./reset-admin.sh              # admin hesabını sıfırlar
+./reset-admin.sh ayse.kaya    # başka bir hesabı sıfırlar
+```
+
+Betik, uygulama imajının içinde yeni bir rastgele parola üretir, bcrypt'leyip
+veritabanına yazar, parolayı ekrana **bir kez** basar, hesabın açık oturumlarını
+kapatır ve ilk girişte değişimi yine zorunlu kılar. Parola hiçbir yere
+kaydedilmez; not almadıysanız betiği yeniden çalıştırın (her çalıştırma yeni
+parola üretir). `psql` ile elle hash yazmak artık gerekmez ve önerilmez.
 
 ### 4.2 Jira bağlantısını ekleyin
 
@@ -169,6 +192,11 @@ Webhook olmadan Maestro talepleri **anında** görmez. `.env`'deki
 `MAESTRO_SECRET_KV_JIRA__WEBHOOK` değeri ile Jira'daki webhook kaydının
 `secret` alanı **aynı** olmalıdır.
 
+Webhook adresi panelin kendisiyle **aynı host**'tur:
+`https://<host>/webhooks/jira`. İstek, dışarı açılan tek port olan studio'dan
+girer ve `studio-nginx.conf`'taki `/webhooks/` geçidiyle `bff:7001`'e geçer —
+BFF için ayrı bir port **açılmaz**, `BFF_HOST`/`BFF_PORT` ayarlanmaz.
+
 **→ [`docs/jira-webhook-kurulum.md`](../../docs/jira-webhook-kurulum.md)**
 
 `POST /webhooks/jira` ucu fail-closed'dır: sır tanımlı değilse gövde
@@ -186,6 +214,27 @@ onaylayan farklı kişiler olmalıdır. Bot hesabı da bu gruptaysa kural **tek
 başına sağlanabilir** hâle gelir — bot önerir, bot onaylar. Kural teknik olarak
 çalışır, denetim kaydı düzgün görünür, ama ikinci göz diye bir şey kalmaz.
 
+### 4.7 Jira'da onay gruplarını eşleyin (`GATE_GROUPS`)
+
+Onay kapıları (analiz onayı, teknik onay, test onayı) `/approve` yazan kişinin
+**Jira grup üyeliğiyle** doğrulanır. Eşleme verilmediğinde rol adının kendisi
+grup adı sayılır: Jira'nızda `product-owners`, `tech-leads` ve `qa` adında
+gruplar yoksa **her onay "üye değil" diye reddedilir** — kapı fail-closed'dır
+ve koşu onay adımında bekler kalır.
+
+İki seçenekten birini yapın:
+
+- Jira'da bu adlarla (`product-owners`, `tech-leads`, `qa`) grup açıp
+  onaycıları üye yapın, **ya da**
+- `.env`'de rolleri kendi gruplarınıza eşleyin:
+  `GATE_GROUPS="product-owners=<JIRA-GRUBU>,tech-leads=<JIRA-GRUBU>,qa=<JIRA-GRUBU>"`
+  — tek onaycı grubu varsa `GATE_GROUP_DEFAULT="<JIRA-GRUBU>"` tek başına
+  yeter.
+
+Eşleme **hem `bff` hem `worker`** tarafından okunur (biri üyeliği doğrular,
+öteki kapı kaydına sahibi yazar); `.env` değiştiği için ikisini birden
+yenileyin: `docker compose up -d --force-recreate bff worker`
+
 ---
 
 ## 5. Sessiz arızalar — belirtiye göre teşhis
@@ -202,6 +251,7 @@ başına sağlanabilir** hâle gelir — bot önerir, bot onaylar. Kural teknik 
 | Analiz "elle tamamlayın" diye bitiyor | `LLM_ON_PREM` `true` değil: `gizli` sınıflı işlerde on-prem model yok sayılır. Hata değil, **eksik çıktı**. | `LLM_ON_PREM="true"` |
 | Her dış çağrı `unable to verify the first certificate` | Jira/TFS sertifikası kurum CA'sıyla imzalı. | CA dosyasını `certs/` içine koyun, `.env`'de `NODE_EXTRA_CA_CERTS` satırını açın |
 | `secret not found`, ama `.env`'de değer dolu görünüyor | Sır değişkeninin adı elle yazılmış. Ad referanstan **türetilir**: `kv/jira#webhook` → `MAESTRO_SECRET_KV_JIRA__WEBHOOK` (`#` → **çift** alt çizgi, `-` → `__2D_`). | `.env.example`'daki adları birebir kullanın |
+| Her `/approve` "üye değil" diye reddediliyor | Rol adları (`product-owners`/`tech-leads`/`qa`) Jira'da grup olarak yok ve `GATE_GROUPS` eşlenmemiş — kapı fail-closed'dır. | §4.7 — `GATE_GROUPS`'u kendi Jira gruplarınıza eşleyin |
 
 ---
 
@@ -258,6 +308,7 @@ davranışını değiştirmez — yalnızca değiştirilebilirmiş izlenimi veri
 | `VAULT_MOUNTS` | `kv,git` | `git` listede olmak **zorundadır**: Vault sürücüsü kısa ömürlü push kimlik bilgisini o mount'tan üretir. Listeden düşürmek her push'u ilk mühendislik adımında reddettirir. |
 | `BFF_PORT` | `7001` (compose sabitler) | Aynı sayı `healthcheck`'te ve `studio-nginx.conf`'ta da sabit durur. Değişken hâlindeyken değiştiren kurulum, hiç `healthy` olmayan bir `bff` ve hiç başlamayan bir `studio` ile kaldı. |
 | `BUNDLE_VERSION` | — | Paket sürümü artık yalnızca `install.sh` ve bu README'de durur; `.env`'de tutulması iki yerin ayrışmasından başka bir işe yaramıyordu. |
+| `MAESTRO_BOOTSTRAP_PASSWORD` | boş | Boşken ilk `admin` parolası rastgele üretilir ve migrate çıktısına **bir kez** basılır (§4.1) — önerilen budur; bir parolanın diskte bir dosyada durmaması gerekir. Runbook'u sabit ilk parola isteyen saha `.env.example`'ın opsiyonel bölümündeki yorumlu satırı açabilir: parola o zaman hiç basılmaz, ilk girişte değişim yine zorunludur ve değişkeni **yalnız migrate** görür. |
 
 Bir sahanın gerçekten ihtiyacı olursa: değişkeni `.env`'e yazmak yeterlidir,
 compose zaten `${DEGISKEN:-varsayılan}` biçiminde iletir ve yazdığınız değer

@@ -53,6 +53,14 @@ export function bankaReadmePath(): string {
   return `${bankaDir()}README.md`;
 }
 
+export function bankaResetAdminPath(): string {
+  return `${bankaDir()}reset-admin.sh`;
+}
+
+export function bankaNginxConfPath(): string {
+  return `${bankaDir()}studio-nginx.conf`;
+}
+
 /**
  * `maestro/deploy/ugurdocker/` — the registry-pull bundle.
  *
@@ -85,6 +93,14 @@ export function ugurdockerReadmePath(): string {
 
 export function ugurdockerGitignorePath(): string {
   return `${ugurdockerDir()}.gitignore`;
+}
+
+export function ugurdockerResetAdminPath(): string {
+  return `${ugurdockerDir()}reset-admin.sh`;
+}
+
+export function ugurdockerNginxConfPath(): string {
+  return `${ugurdockerDir()}studio-nginx.conf`;
 }
 
 /**

@@ -454,8 +454,12 @@ ok "Compose geçerli."
 #
 # Hiçbir servise, veritabanına ya da ağa dokunmaz: yalnızca ortamı okur.
 info "Ortam, uygulamanın kendi şemasıyla ön doğrulamadan geçiriliyor…"
+# `./dist/env.js` ve çıplak `node`, `./src/env.ts` + tsx DEĞİL: yayınlanmış
+# imaj yalnızca derlenmiş `dist/`i taşır — `src/` de, tsx de imajda YOKTUR
+# (deploy/docker/Dockerfile.node, allow-list budaması). Betik bir kez src/'ı
+# import etti ve her kurulum burada ERR_MODULE_NOT_FOUND ile öldü.
 ONDOGRULAMA='
-import { loadDeployEnv } from "./src/env.ts";
+import { loadDeployEnv } from "./dist/env.js";
 try {
   loadDeployEnv();
   console.log("ORTAM_GECERLI");
@@ -466,16 +470,20 @@ try {
 '
 if ! ONDOGRULAMA_CIKTI=$(docker compose run --rm --no-deps \
       --entrypoint sh bff -c \
-      "cd apps/deploy && node --import tsx --input-type=module -e '${ONDOGRULAMA}'" 2>&1); then
+      "cd apps/deploy && node --input-type=module -e '${ONDOGRULAMA}'" 2>&1); then
   err "Ortam doğrulaması BAŞARISIZ — bu yığın açılamaz."
   printf '%s\n' "${ONDOGRULAMA_CIKTI}" | sed 's/^/    /' >&2
   err ""
   err "Bu, uygulamanın açılışta yaptığı doğrulamanın aynısıdır; şimdi başarısız"
   err "olması, 'migrate' konteynerinin birazdan aynı hatayla ölmesi demektir."
   err ""
-  err "En sık sebebi: compose'un ilettiği bir değişken .env'de HİÇ YOKTUR."
-  err "  Compose \${DEGISKEN:-} yazan her satırı BOŞ DİZE olarak iletir; şema"
-  err "  bazı alanlarda boş dizeyi 'yok' saymaz. Yukarıda adı geçen her"
+  err "Çıktıda ERR_MODULE_NOT_FOUND varsa sorun .env DEĞİLDİR: bu betiğin"
+  err "  import ettiği dosya imajda yoktur. İmajın bu paketle aynı sürümden"
+  err "  geldiğini doğrulayın (imaj apps/deploy/dist/env.js taşımalı)."
+  err ""
+  err "Onun dışında en sık sebep: compose'un ilettiği bir değişken .env'de HİÇ"
+  err "  YOKTUR. Compose \${DEGISKEN:-} yazan her satırı BOŞ DİZE olarak iletir;"
+  err "  şema bazı alanlarda boş dizeyi 'yok' saymaz. Yukarıda adı geçen her"
   err "  değişkeni .env'de ya doğru değerle doldurun ya da tamamen silin."
   die "Ortamı düzeltip tekrar çalıştırın."
 fi
@@ -491,6 +499,13 @@ if ! docker compose run --rm migrate; then
   die "Şema kurulamadı."
 fi
 ok "Şema kuruldu."
+
+# İlk kurulumda migrate 'admin' hesabını RASTGELE bir geçici parolayla üretir ve
+# parolayı YALNIZCA yukarıdaki çıktıda basar ("GEÇİCİ PAROLA" satırı). Parola
+# hiçbir yere kaydedilmez; konteyner --rm ile silindiği için log da kalmaz.
+# Güncelleme kurulumunda (hesap zaten varken) böyle bir satır çıkmaz.
+warn "İLK KURULUMSA: yukarıdaki 'GEÇİCİ PAROLA' satırını ŞİMDİ not edin — bir daha gösterilmez."
+warn "  Not almadıysanız/kaybettiyseniz yenisi:  ./reset-admin.sh admin"
 
 info "Uygulama başlatılıyor…"
 docker compose up -d
@@ -533,13 +548,14 @@ fi
 PORT="${STUDIO_PORT:-7000}"
 echo
 echo "  Panel   : http://<SUNUCU_IP>:${PORT#*:}"
-echo "  Giriş   : admin / admin123   ← İLK İŞİNİZ BUNU DEĞİŞTİRMEK"
+echo "  Giriş   : admin / <migrate çıktısındaki GEÇİCİ PAROLA> — ilk girişte değişim ZORUNLU"
+echo "  Parola  : kaybolduysa  ./reset-admin.sh admin  yeni geçici parola üretir"
 echo "  Loglar  : docker compose logs -f bff"
 echo "  Durum   : docker compose ps"
 echo "  Yedek   : docker compose exec -T postgres pg_dump -U ${POSTGRES_USER} ${POSTGRES_DB} | gzip > yedek.sql.gz"
 echo
 warn "KURULUM BİTMEDİ — sıradaki iş PANELDE (README.md §5):"
-warn "  1) admin/admin123 parolasını değiştirin"
+warn "  1) admin hesabına geçici parolayla girip kendi parolanızı belirleyin (panel zorunlu tutar)"
 warn "  2) Ayarlar & bağlantılar → Jira bağlantısı ekleyin, jetonu girip 'Test et'"
 warn "  3) Ayarlar & bağlantılar → GitHub bağlantısı ekleyin (kod yazan akışlar için)"
 warn "  4) Ayarlar & bağlantılar → kurum içi model sunucusunu ekleyin ('Test et' yeşil olmalı)"

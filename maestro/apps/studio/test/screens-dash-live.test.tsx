@@ -106,7 +106,11 @@ describe("dash — live engine jobs", () => {
     expect(await screen.findByText("Motor henüz bir iş çalıştırmadı.")).toBeInTheDocument();
   });
 
-  it("drops the section (the alert speaks instead) when the pilot is unreachable", async () => {
+  it("treats an absent pilot over a healthy run list as TOPOLOGY, not an outage", async () => {
+    // The prod compose ships NO pilot service at all: `pilot_unreachable` is
+    // its permanent, normal answer while every ticket runs the Temporal line.
+    // The old screen showed the red "no ticket is processed" banner there —
+    // a standing lie. Now: a small note, no alarm, live section hidden.
     const { fetchImpl } = stubFetch([
       ...ROUTES.filter((route) => !route.path.includes("/pilot/")),
       { path: "/studio/pilot/state", status: 503, body: { error: "pilot_unreachable" } },
@@ -114,9 +118,46 @@ describe("dash — live engine jobs", () => {
     ]);
     renderScreen(<DashScreen />, { fetchImpl });
 
+    expect(await screen.findByText(/Prova motoru \(pilot\) bu kurulumda yok/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Akış motoru yanıt vermiyor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Canlı motor işleri")).not.toBeInTheDocument();
+  });
+
+  it("keeps the red 'no ticket is processed' alert for when BOTH engines are unreadable", async () => {
+    // Pilot gone AND the Temporal path's own read broken: only now is
+    // "nobody is processing tickets" a claim the dashboard can stand behind.
+    const { fetchImpl } = stubFetch([
+      ...ROUTES.filter(
+        (route) => !route.path.includes("/pilot/") && route.path !== "/studio/runs",
+      ),
+      { path: "/studio/runs", status: 500, body: { error: "internal_error" } },
+      { path: "/studio/pilot/state", status: 503, body: { error: "pilot_unreachable" } },
+      { path: "/studio/pilot/runs", status: 503, body: { error: "pilot_unreachable" } },
+    ]);
+    renderScreen(<DashScreen />, { fetchImpl });
+
+    expect(await screen.findByText("Akış motoru yanıt vermiyor")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
     });
-    expect(screen.queryByText("Canlı motor işleri")).not.toBeInTheDocument();
+    expect(screen.queryByText("Motor durumu okunamadı")).not.toBeInTheDocument();
+  });
+
+  it("softens ANY OTHER failure to 'status could not be read' — a blip is not an outage", async () => {
+    // A 500 from the BFF proves nothing about the engine: the old screen
+    // shouted "hiçbir ticket işlenmez" over it, which taught operators to
+    // distrust the one alert that matters. Now only the named unreachable
+    // verdict earns the red banner.
+    const { fetchImpl } = stubFetch([
+      ...ROUTES.filter((route) => !route.path.includes("/pilot/")),
+      { path: "/studio/pilot/state", status: 500, body: { error: "internal_error" } },
+      { path: "/studio/pilot/runs", status: 500, body: { error: "internal_error" } },
+    ]);
+    renderScreen(<DashScreen />, { fetchImpl });
+
+    expect(await screen.findByText("Motor durumu okunamadı")).toBeInTheDocument();
+    expect(screen.queryByText("Akış motoru yanıt vermiyor")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

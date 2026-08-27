@@ -1,10 +1,12 @@
 import { loadEnv } from "@maestro/config";
+import { tlsAwareFetchWith } from "@maestro/llm-gateway";
 import type { MaestroPlatform } from "@maestro/mcp-servers";
 import Fastify, {
   type FastifyError,
   type FastifyInstance,
   type FastifyServerOptions,
 } from "fastify";
+import { connectionTlsFlag } from "./connection-service.js";
 import { commandDiagnosticsOf, type BffConfig, type BffDeps, type ResolvedDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { assertCatalog, defaultCatalog } from "./messages.js";
@@ -90,9 +92,15 @@ export function resolveDeps(deps: BffDeps): ResolvedDeps {
     // The internal service call to the pilot. Real `fetch` unless a test injects
     // a stub; the Studio user's token is never attached to it (see studio-pilot.ts).
     pilotFetch: pilotFetch ?? ((input, init) => fetch(input, init)),
-    // The connector live-test transport. Real `fetch` unless a test injects a
-    // stub; the URL is always built from a stored `baseUrl`, never a request.
-    connectorFetch: connectorFetch ?? ((input, init) => fetch(input, init)),
+    // The connector transport (live tests, onboarding lists, listening seed).
+    // Real fetch unless a test injects a stub; the URL is always built from a
+    // stored `baseUrl`, never a request. The default is TLS-AWARE: it applies
+    // the same skip rule as the probe and the runtime drivers — the internal-
+    // address auto rule plus the per-connection `skipTlsVerify` switch, looked
+    // up by host in the connection store on each call — so a Jira DC or ADO
+    // behind a corporate certificate answers the onboarding screens exactly
+    // the way its green connection test promised.
+    connectorFetch: connectorFetch ?? tlsAwareFetchWith(connectionTlsFlag(deps.connections)),
     diagnostics: commandDiagnosticsOf(deps.work),
     counters: { droppedUnbound: 0, droppedKillSwitch: 0, invalidCommands: 0 },
   };

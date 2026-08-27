@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
+import { ApiError } from "../api/errors.ts";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Kpi, riskTone } from "../ui/index.ts";
@@ -89,7 +90,31 @@ export function DashScreen(): ReactNode {
     refetchInterval: 15_000,
     retry: false,
   });
-  const pilotDown = pilot.isError;
+  /**
+   * THREE failure tones, because "the pilot did not answer" is not one fact.
+   *
+   * The topology this must respect: the prod compose (deploy/ugurdocker) has
+   * NO pilot service at all, by design — tickets there run the Temporal line
+   * (webhook → workflow → worker) and show up in `/studio/runs`. So a bare
+   * `pilot_unreachable` is a PERMANENT, NORMAL state on prod, and the old rule
+   * ("pilot down ⇒ red 'no ticket is processed'") told a standing lie there.
+   *
+   * The "nobody is processing" verdict therefore belongs to the TEMPORAL
+   * path's own read — the same `/studio/runs` the tiles are counted from:
+   *  · pilot unreachable AND runs unreadable → the red alert is earned;
+   *    neither engine can be shown to be working.
+   *  · pilot unreachable, runs healthy → the pilot is simply not part of this
+   *    installation (or is off while the real line works): a small note, not
+   *    an alarm.
+   *  · any OTHER pilot error (a blip, a 500) proves nothing about either
+   *    engine — the soft "could not be read, retrying" tone; the 15s poll
+   *    decides what it really was.
+   */
+  const runsBroken = error != null;
+  const pilotGone = pilot.error instanceof ApiError && pilot.error.code === "pilot_unreachable";
+  const pilotDown = pilotGone && runsBroken;
+  const pilotAbsent = pilotGone && !runsBroken;
+  const pilotUnknown = pilot.isError && !pilotGone;
 
   // The engine's REAL jobs — the pilot's own run history, not the DB catalog.
   // Same endpoint and shape the Pilot screen reads (`/studio/pilot/runs`).
@@ -149,6 +174,19 @@ export function DashScreen(): ReactNode {
             <b>{t("dash.pilot_down.title")}</b>
             <div className="screen-note">{t("dash.pilot_down.body")}</div>
           </div>
+        </div>
+      )}
+      {/* Not an alarm: the Temporal line answers, only the pilot is absent —
+          the prod topology, every day. */}
+      {pilotAbsent && (
+        <div className="screen-note" role="status">
+          {t("dash.pilot_absent.note")}
+        </div>
+      )}
+      {/* A status, not an alert: the engine may be fine — only the READ failed. */}
+      {pilotUnknown && (
+        <div className="screen-note" role="status">
+          <b>{t("dash.pilot_unknown.title")}</b> — {t("dash.pilot_unknown.body")}
         </div>
       )}
 

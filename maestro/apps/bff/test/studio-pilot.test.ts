@@ -342,6 +342,111 @@ describe("GET /studio/pilot/events (SSE)", () => {
   });
 });
 
+describe("failed pilot calls are logged and bounded (the panel's red alert has a server-side trace)", () => {
+  /** A harness whose fastify logger writes into an assertable buffer. */
+  async function loggedPilotHarness(fetch: PilotFetch): Promise<{
+    h: Harness;
+    adminToken: string;
+    warns: () => Array<Record<string, unknown>>;
+  }> {
+    const raw: string[] = [];
+    const h = await harness({
+      deps: { pilotFetch: fetch },
+      fastify: {
+        logger: {
+          level: "warn",
+          stream: {
+            write: (line: string) => {
+              raw.push(line);
+            },
+          },
+        },
+      },
+    });
+    await h.addUser({ username: "ops.admin", roles: ["admin"] });
+    return {
+      h,
+      adminToken: await h.login("ops.admin"),
+      warns: () =>
+        raw
+          .map((line) => {
+            try {
+              return JSON.parse(line) as Record<string, unknown>;
+            } catch {
+              return {};
+            }
+          })
+          .filter((entry) => entry["msg"] === "pilot call failed"),
+    };
+  }
+
+  it("a refused dial leaves ONE warn line naming target, cause chain and the returned code", async () => {
+    // The shape undici really throws: a generic wrapper, the code in `cause`.
+    const refused = new TypeError("fetch failed");
+    (refused as { cause?: unknown }).cause = Object.assign(
+      new Error("connect ECONNREFUSED 127.0.0.1:7020"),
+      { code: "ECONNREFUSED" },
+    );
+    const { h, adminToken, warns } = await loggedPilotHarness(() => Promise.reject(refused));
+
+    const res = await h.app.inject({ method: "GET", url: "/studio/pilot/state", headers: auth(adminToken) });
+    expect(res.statusCode).toBe(503);
+    expect((res.json() as { error: string }).error).toBe("pilot_unreachable");
+
+    // Before this line existed, the operator's "hiçbir ticket işlenmez" alert
+    // had NOTHING behind it in the BFF log — nothing to grep, nothing to read.
+    const lines = warns();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      target: "127.0.0.1:7020",
+      kind: "refused",
+      note: "pilot_unreachable",
+    });
+    expect(lines[0]?.["causes"]).toContain("ECONNREFUSED");
+  });
+
+  it("every poll carries an abort signal, and its firing is logged as a TIMEOUT", async () => {
+    // The stub stands in for a pilot that ACCEPTED and hung: it rejects with
+    // exactly what `AbortSignal.timeout` produces, after proving the route
+    // actually attached a signal — the wiring that ends the request-piling
+    // hang, without making the suite wait the real five seconds.
+    const signals: unknown[] = [];
+    const hanging: PilotFetch = (_url, init) => {
+      signals.push(init?.signal);
+      return Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    };
+    const { h, adminToken, warns } = await loggedPilotHarness(hanging);
+
+    const res = await h.app.inject({ method: "GET", url: "/studio/pilot/runs", headers: auth(adminToken) });
+    expect(res.statusCode).toBe(503);
+    expect((res.json() as { error: string }).error).toBe("pilot_unreachable");
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+
+    const lines = warns();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ kind: "timeout", note: "pilot_unreachable" });
+    expect(lines[0]?.["causes"]).toContain("TimeoutError");
+  });
+
+  it("the SSE dial stays UNBOUNDED — an event stream must not be killed by a poll budget", async () => {
+    // The events proxy passes no timeout signal of its own; asserted here so a
+    // future "add the signal everywhere" cleanup cannot quietly break the one
+    // open-ended route. (`callPilot` is not on this path at all.)
+    const signals: unknown[] = [];
+    const dead: PilotFetch = (_url, init) => {
+      signals.push(init?.signal);
+      return Promise.reject(new Error("down"));
+    };
+    const { h, adminToken, warns } = await loggedPilotHarness(dead);
+
+    const res = await h.app.inject({ method: "GET", url: "/studio/pilot/events", headers: auth(adminToken) });
+    expect(res.statusCode).toBe(503);
+    expect(signals[0]).toBeUndefined();
+    // The failure still leaves its warn line, cause chain and all.
+    expect(warns()).toHaveLength(1);
+  });
+});
+
 describe("base URL is config, not request-supplied (no SSRF)", () => {
   it("uses PILOT_BASE_URL from config for the upstream call", async () => {
     const pilot = pilotStub(() => json(SAMPLE_STATE));

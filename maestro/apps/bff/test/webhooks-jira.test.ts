@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BODY_LIMIT_BYTES } from "../src/server.js";
-import { FakeWorkPort } from "./fakes.js";
+import { FakeWorkPort, WEBHOOK_SECRET } from "./fakes.js";
 import { auth, harness, UGURPAY_BINDING } from "./helpers.js";
 import { commentEvent, issueEvent, signed } from "./payloads.js";
 
@@ -269,5 +269,80 @@ describe("request body limit", () => {
 
   it("is an explicit number rather than an inherited default", () => {
     expect(BODY_LIMIT_BYTES).toBeGreaterThan(1024 * 1024);
+  });
+});
+
+describe("silent webhook outcomes leave a server-side trace (denetim B5)", () => {
+  /** A harness whose fastify logger writes into an assertable buffer. */
+  async function loggedHarness(options: Parameters<typeof harness>[0] = {}) {
+    const raw: string[] = [];
+    const h = await harness({
+      ...options,
+      fastify: {
+        logger: {
+          level: "warn",
+          stream: {
+            write: (line: string) => {
+              raw.push(line);
+            },
+          },
+        },
+      },
+    });
+    const lines = (msg: string): Array<Record<string, unknown>> =>
+      raw
+        .map((line) => {
+          try {
+            return JSON.parse(line) as Record<string, unknown>;
+          } catch {
+            return {};
+          }
+        })
+        .filter((entry) => entry["msg"] === msg);
+    return { h, lines };
+  }
+
+  it("a signature rejection answers a bare 401 but WARNS with the verifier's reason", async () => {
+    const { h, lines } = await loggedHarness();
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify(issueEvent({ ticket: "UGURPAY-1" })),
+    });
+
+    // The response stays deliberately bare — an attacker learns nothing new.
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "webhook_unauthenticated" });
+
+    // The operator's side now says WHY. Before this line a wrong webhook
+    // secret looked exactly like "Jira never delivers": zero log output while
+    // every delivery bounced.
+    const warns = lines("webhook signature rejected");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toMatchObject({ webhook: "jira" });
+    expect(String(warns[0]?.["reason"] ?? "")).not.toBe("");
+    // The verifier's reason names the failure, never the shared secret.
+    expect(JSON.stringify(warns)).not.toContain(WEBHOOK_SECRET);
+  });
+
+  it("an unbound-project drop still answers 202 (M102) but WARNS with ticket and reason", async () => {
+    const { h, lines } = await loggedHarness({ bindings: [] });
+    const delivery = signed(issueEvent({ ticket: "UGURWEB-9" }));
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    // Jira's side is unchanged: a 202 that leaks nothing about being watched.
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: false, reason: "unbound" });
+
+    // The in-memory counter dies with the process; the log line survives it.
+    const warns = lines("webhook intake dropped");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toMatchObject({ ticket: "UGURWEB-9", reason: "unbound" });
   });
 });

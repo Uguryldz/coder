@@ -1,5 +1,6 @@
 import { TicketKey } from "@maestro/contracts";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import { classifyNetworkFailure } from "@maestro/llm-gateway";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { authGuard, requireAnyRole } from "../auth/guard.js";
 import type { PilotFetch, ResolvedDeps } from "../deps.js";
@@ -66,14 +67,14 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
   const base = deps.config.pilotBaseUrl.replace(/\/+$/, "");
 
   /** The pilot's live state (discovered tickets, steps, open gate, docsReady). */
-  app.get("/studio/pilot/state", { preHandler }, async (_request, reply) => {
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/state`);
+  app.get("/studio/pilot/state", { preHandler }, async (request, reply) => {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/state`, request.log);
     return relayJson(upstream, reply);
   });
 
   /** The pilot's finished runs, newest first — the "geçmiş işler" history. */
-  app.get("/studio/pilot/runs", { preHandler }, async (_request, reply) => {
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/runs`);
+  app.get("/studio/pilot/runs", { preHandler }, async (request, reply) => {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/runs`, request.log);
     return relayJson(upstream, reply);
   });
 
@@ -81,7 +82,7 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
   app.post("/studio/pilot/start", { preHandler: writeHandler }, async (request, reply) => {
     const parsed = StartBody.safeParse(request.body);
     if (!parsed.success) throw badRequest("invalid_ticket_key");
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/start`, {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/start`, request.log, {
       method: "POST",
       // A fresh header set: the Studio token is deliberately absent here.
       headers: { "content-type": "application/json", accept: "application/json" },
@@ -91,14 +92,14 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
   });
 
   /** Runtime settings the pilot's ⚙ panel reads. Any session may read them. */
-  app.get("/studio/pilot/settings", { preHandler }, async (_request, reply) => {
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/settings`);
+  app.get("/studio/pilot/settings", { preHandler }, async (request, reply) => {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/settings`, request.log);
     return relayJson(upstream, reply);
   });
 
   /** Change settings. Operator-gated at the BFF; the body is forwarded verbatim. */
   app.post("/studio/pilot/settings", { preHandler: writeHandler }, async (request, reply) => {
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/settings`, {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/settings`, request.log, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify(request.body ?? {}),
@@ -117,9 +118,9 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
    * mirror is a no-op success (the pilot keeps its empty set), not a 503 — the DB
    * write the admin saw succeed must not be undone by a mirror hiccup.
    */
-  app.post("/studio/pilot/listening", { preHandler: writeHandler }, async (_request, reply) => {
+  app.post("/studio/pilot/listening", { preHandler: writeHandler }, async (request, reply) => {
     const rules = deps.listening === undefined ? [] : await deps.listening.list();
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/listening`, {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/listening`, request.log, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ rules }),
@@ -138,9 +139,9 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
    * can scope a targeted note to that one agent's context; a pilot that predates
    * the field simply ignores it.
    */
-  app.post("/studio/pilot/guidance", { preHandler: writeHandler }, async (_request, reply) => {
+  app.post("/studio/pilot/guidance", { preHandler: writeHandler }, async (request, reply) => {
     const notes = deps.guidance === undefined ? [] : await deps.guidance.listEnabled();
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/guidance`, {
+    const upstream = await callPilot(deps.pilotFetch, `${base}/api/guidance`, request.log, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({
@@ -161,7 +162,14 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
    */
   app.get("/studio/pilot/doc/:kind", { preHandler }, async (request, reply) => {
     const kind = docKind(request.params);
-    const upstream = await callPilot(deps.pilotFetch, `${base}/api/doc/${kind}`);
+    // Document generation is real work; it gets a budget the polls must not.
+    const upstream = await callPilot(
+      deps.pilotFetch,
+      `${base}/api/doc/${kind}`,
+      request.log,
+      undefined,
+      PILOT_DOC_TIMEOUT_MS,
+    );
     if (!upstream.ok) return relayJson(upstream, reply);
     const buffer = Buffer.from(await upstream.arrayBuffer());
     const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
@@ -184,9 +192,12 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
       upstream = await deps.pilotFetch(`${base}/api/events`, {
         headers: { accept: "text/event-stream" },
       });
-    } catch {
+    } catch (error) {
       // Same honesty as callPilot: a dead pilot is a named 503, not an empty
-      // stream that would render as "connected, nothing happening".
+      // stream that would render as "connected, nothing happening" — and the
+      // same warn line, so the server side names the cause too. No timeout on
+      // this dial: an event stream is open-ended by design.
+      logPilotFailure(request.log, `${base}/api/events`, error);
       return reply.code(503).send({ error: "pilot_unreachable" });
     }
     if (!upstream.ok || upstream.body === null) {
@@ -222,21 +233,67 @@ export async function studioPilotRoutes(app: FastifyInstance, deps: ResolvedDeps
 }
 
 /**
+ * How long a short poll (state/runs/settings/start/mirrors) waits before the
+ * pilot is called gone. Without a bound, a pilot that ACCEPTS and then hangs
+ * held the proxy request open indefinitely — Studio's 15s poll piled request
+ * on request and the operator saw nothing at all, not even the 503.
+ */
+export const PILOT_POLL_TIMEOUT_MS = 5_000;
+
+/**
+ * The document route's budget. Generating the Word/PDF is real work on the
+ * pilot's side, so it gets room the polls must not have. The SSE passthrough
+ * gets NO timeout at all — an event stream is open-ended by design.
+ */
+export const PILOT_DOC_TIMEOUT_MS = 30_000;
+
+/**
  * Call the pilot, turning a connection failure into a NAMED 503 rather than a
  * generic 500. `pilot_unreachable` is a fact an operator can act on ("the pilot
  * is not running"); a fabricated `{ discovered: [] }` would look like a healthy
  * pilot with no work, which is the lie routes/unwired.ts exists to prevent.
+ *
+ * The failure is also LOGGED before it is renamed — the same discipline the
+ * connector test route follows, for the same reason: the response deliberately
+ * carries only the catalog-safe code, and before this line the BFF log said
+ * nothing at all about WHY the proxy refused. The warn carries the target
+ * host:port (config-derived, never a caller's), the error's cause-code chain
+ * (`ECONNREFUSED`, `TimeoutError`, …) and the code the client will see.
  */
 async function callPilot(
   pilotFetch: PilotFetch,
   url: string,
+  log: FastifyBaseLogger,
   init?: RequestInit,
+  timeoutMs = PILOT_POLL_TIMEOUT_MS,
 ): Promise<Response> {
   try {
-    return await pilotFetch(url, init);
-  } catch {
+    return await pilotFetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    logPilotFailure(log, url, error);
     throw unavailable("pilot_unreachable");
   }
+}
+
+/** The one warn line a failed pilot call leaves — codes and target only. */
+function logPilotFailure(log: FastifyBaseLogger, url: string, error: unknown): void {
+  const failure = classifyNetworkFailure(error);
+  let target = "?";
+  try {
+    const parsed = new URL(url);
+    target = `${parsed.hostname}:${parsed.port !== "" ? parsed.port : parsed.protocol === "https:" ? "443" : "80"}`;
+  } catch {
+    /* a diagnostic helper must never itself throw */
+  }
+  log.warn(
+    {
+      target,
+      kind: failure.kind ?? "unknown",
+      causes: failure.codes,
+      note: "pilot_unreachable",
+    },
+    "pilot call failed",
+  );
 }
 
 /**

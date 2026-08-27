@@ -33,6 +33,12 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
     try {
       await deps.work.verifyWebhook(raw, headers);
     } catch (cause) {
+      // The 401 body is deliberately bare (an attacker learns nothing), so the
+      // WHY has to live here, where only the operator reads it. Without this
+      // line a misconfigured webhook secret was indistinguishable from no
+      // deliveries at all — the log said NOTHING while Jira retried into a
+      // wall. The verifier's message names the failure, never the secret.
+      request.log.warn({ webhook: "jira", reason: rejectionReason(cause) }, "webhook signature rejected");
       throw new WebhookRejected("jira", cause);
     }
 
@@ -88,6 +94,17 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
       ...(event.assignee !== undefined ? { assignee: event.assignee } : {}),
       actor: SYSTEM_ACTOR,
     });
+    // A DROPPED intake answers 202 on purpose (M102: an unbound project must
+    // not learn it is being watched) — which used to make the drop perfectly
+    // silent on this side too: the in-memory counter dies with the process,
+    // and the operator asking "why did my ticket do nothing?" had no trace to
+    // find. The trace belongs in the log, where Jira cannot see it.
+    if (!outcome.accepted && (outcome.reason === "unbound" || outcome.reason === "not_opted_in")) {
+      request.log.warn(
+        { ticket: event.ticketKey, reason: outcome.reason },
+        "webhook intake dropped",
+      );
+    }
     return reply.code(202).send(outcome);
   });
 
@@ -109,6 +126,10 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
     try {
       signal = await deps.ci.parseBuildEvent({ headers, body });
     } catch (cause) {
+      // Same trace discipline as the Jira route: the bare 401 gets a
+      // server-side WHY (a wrong Service Hook secret, a shape the parser
+      // refused) — codes and driver prose only, never a credential.
+      request.log.warn({ webhook: "ado", reason: rejectionReason(cause) }, "webhook signature rejected");
       throw new WebhookRejected("ado", cause);
     }
 
@@ -137,6 +158,17 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
       ...(delivered === "delivered" ? { workflowId } : { reason: "no_run" }),
     });
   });
+}
+
+/**
+ * What a signature-rejection warn line says about WHY — the verifier's own
+ * error, named and capped. Driver verify errors describe the failure
+ * ("signature mismatch", a missing header) and never contain the secret, and
+ * the cap keeps a hostile oversized header out of the log line.
+ */
+function rejectionReason(cause: unknown): string {
+  const text = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
+  return text.slice(0, 200);
 }
 
 /**

@@ -189,11 +189,38 @@ export async function runMaestroWorker(
 
 /** Convenience for a plain deployment: connect, build, run, drain. */
 export async function startMaestroWorker(
-  opts: Omit<MaestroWorkerOptions, "connection"> & { readonly address: string },
+  opts: Omit<MaestroWorkerOptions, "connection"> & {
+    readonly address: string;
+    /**
+     * Called with the worker's own state as it changes — `RUNNING` when it is
+     * actually polling the queue, anything else when it is not.
+     *
+     * Exposed so a deployment can answer "can this worker still take work?"
+     * truthfully. Asking BEFORE `run()` would only prove the process started,
+     * which is the very thing that stays true while a worker is wedged.
+     */
+    readonly onState?: (state: string) => void;
+  },
 ): Promise<void> {
   const connection = await NativeConnection.connect({ address: opts.address });
   try {
-    await runMaestroWorker(await createMaestroWorker({ ...opts, connection }));
+    const worker = await createMaestroWorker({ ...opts, connection });
+    const report = opts.onState;
+    if (report !== undefined) {
+      // Polled rather than subscribed: the SDK exposes `getState()` and no
+      // state event, and a one-second poll is far cheaper than the healthcheck
+      // interval it feeds.
+      const ticker = setInterval(() => report(worker.getState()), 1_000);
+      ticker.unref?.();
+      try {
+        await runMaestroWorker(worker);
+      } finally {
+        clearInterval(ticker);
+        report(worker.getState());
+      }
+    } else {
+      await runMaestroWorker(worker);
+    }
   } finally {
     await connection.close();
   }

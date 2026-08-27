@@ -10,6 +10,7 @@ import { docAttacherFor } from "../stores/doc-attacher.js";
 import { statusMoverFor } from "../stores/status-mover.js";
 import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
 import { reconcileRunStatuses } from "../stores/reconcile.js";
+import { healthPortOf, startWorkerLiveness } from "../worker-liveness.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { llmCallRecorder } from "../stores/llm-call-log.js";
 import { connectionModelFrom } from "../stores/connection-model.js";
@@ -161,13 +162,43 @@ export async function main(): Promise<void> {
       audit: workerCore.audit,
     });
 
-    await startMaestroWorker({
-      address,
-      taskQueue,
-      registry: deployment.registry,
-      ports: deployment.selection,
-      core: workerCore,
-    });
+    /**
+     * The container's answer to "can this worker still take an analysis?".
+     *
+     * `restart: unless-stopped` only reacts to the process dying, and the
+     * failure that actually strands an install is the opposite one: the worker
+     * alive but no longer polling. See `worker-liveness.ts`.
+     */
+    const healthPort = healthPortOf(process.env);
+    const liveness = healthPort === null ? null : startWorkerLiveness({ port: healthPort });
+    if (healthPort !== null) {
+      console.info(`[maestro] worker: sağlık ucu açık — :${healthPort}/healthz`);
+    }
+
+    try {
+      await startMaestroWorker({
+        address,
+        taskQueue,
+        registry: deployment.registry,
+        ports: deployment.selection,
+        core: workerCore,
+        /**
+         * READY means the Temporal worker is RUNNING — actually polling the
+         * queue — and nothing weaker.
+         *
+         * Reporting ready before `startMaestroWorker` would have proved only
+         * that the process reached this line, which is exactly the thing that
+         * stays true while a worker is wedged. That would have made the probe
+         * agree with the failure it exists to catch.
+         */
+        onState: (state) => liveness?.setReady(state === "RUNNING"),
+      });
+    } finally {
+      // Reported unready BEFORE the process winds down, so a drain in progress
+      // is never mistaken for a healthy worker by an in-flight probe.
+      liveness?.setReady(false);
+      await liveness?.close();
+    }
   } finally {
     await db.$disconnect();
   }

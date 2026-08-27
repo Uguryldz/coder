@@ -196,9 +196,20 @@ export async function watchUnhealthy(options: AutohealOptions): Promise<void> {
               try {
                 const event = JSON.parse(line) as {
                   id?: string;
-                  Actor?: { Attributes?: Record<string, string> };
+                  Actor?: { ID?: string; Attributes?: Record<string, string> };
                 };
-                const id = event.id;
+                /**
+                 * `Actor.ID` first, lower-case `id` second.
+                 *
+                 * Measured against Docker 29: the modern event carries the
+                 * container in `Actor.ID` and the legacy top-level `id` is
+                 * gone. Reading only the old field meant every event was
+                 * silently skipped — the service logged "izleniyor" and
+                 * rescued nothing, which is the failure mode this whole file
+                 * exists to end. Both are read so one daemon version cannot
+                 * quietly disable it again.
+                 */
+                const id = event.Actor?.ID ?? event.id;
                 if (typeof id !== "string" || id === "") continue;
                 const name = event.Actor?.Attributes?.["name"] ?? id.slice(0, 12);
                 void restart(socketPath, id, name, log);

@@ -233,4 +233,32 @@ describe("autoheal", () => {
     // And the request actually asks for that grace, rather than a stale literal.
     expect(source).toContain("`/containers/${id}/restart?t=${STOP_GRACE_S}`");
   });
+
+  /**
+   * Docker 29 moved the container id out of the top-level `id` and into
+   * `Actor.ID`. Measured against a real daemon: reading only the legacy field
+   * made every event a no-op — the service logged "izleniyor" and rescued
+   * nothing, which is precisely the silent uselessness it exists to end.
+   */
+  it("reads the container id from Actor.ID, as modern Docker sends it", async () => {
+    const fake = await watching();
+
+    fake.emit({
+      Type: "container",
+      Action: "health_status: unhealthy",
+      Actor: { ID: "modern1", Attributes: { name: "maestroprod-worker-1" } },
+    });
+    await settle();
+
+    expect(fake.calls).toContain("POST /containers/modern1/restart?t=30");
+  });
+
+  it("still understands the legacy top-level id", async () => {
+    const fake = await watching();
+
+    fake.emit({ id: "legacy1", Actor: { Attributes: { name: "maestroprod-worker-1" } } });
+    await settle();
+
+    expect(fake.calls).toContain("POST /containers/legacy1/restart?t=30");
+  });
 });

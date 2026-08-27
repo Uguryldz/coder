@@ -1,3 +1,4 @@
+import { CONNECTION_KIND_SPECS, missingConfigKeys } from "@maestro/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -41,7 +42,8 @@ const KINDS: readonly ManagedConnectionKind[] = [
   "storage",
 ];
 
-const AUTH_KINDS: readonly ManagedConnectionAuthKind[] = ["basic", "bearer", "pat", "api_key"];
+/** The order the screen lists families in — required first, optional last. */
+const FAMILIES = ["issue_tracker", "model", "scm", "infra"] as const;
 
 /**
  * The live-test result held per row so the screen can render it inline.
@@ -127,7 +129,7 @@ export function ConnectorsPanel(): ReactNode {
         // whole point of telling the operator.
         const failNote =
           live === undefined && row.lastTestOk === false && row.lastTestNote !== null
-            ? t(row.lastTestNote)
+            ? renderNote(t, row.lastTestNote)
             : live !== undefined && (!live.ok || live.warn === true)
               ? live.text
               : null;
@@ -207,13 +209,34 @@ export function ConnectorsPanel(): ReactNode {
           onRetry={() => void query.refetch()}
           skeletonRows={3}
         >
-          <Table
-            columns={columns}
-            rows={query.data?.connections ?? []}
-            rowKey={(row) => row.id}
-            emptyLabel={t("connections.empty")}
-            caption={t("connections.card.title")}
-          />
+          {/*
+            Grouped by family rather than one flat ten-row table.
+            The families are not decoration: the analysis flow REQUIRES an issue
+            tracker and a model, and works without a repository — the subtitles
+            say so, which is the question operators kept asking.
+          */}
+          {FAMILIES.map((family) => {
+            const rows = (query.data?.connections ?? []).filter(
+              (row) => CONNECTION_KIND_SPECS[row.kind].family === family,
+            );
+            return (
+              <section key={family} style={{ marginBottom: 20 }}>
+                <h3 className="scr-mini" style={{ margin: "0 0 2px", fontWeight: 600 }}>
+                  {t(`connections.family.${family}`)}
+                </h3>
+                <div className="scr-mini" style={{ opacity: 0.8, margin: "0 0 8px", lineHeight: 1.5 }}>
+                  {t(`connections.family.${family}_sub`)}
+                </div>
+                <Table
+                  columns={columns}
+                  rows={rows}
+                  rowKey={(row) => row.id}
+                  emptyLabel={t("connections.empty_family")}
+                  caption={t(`connections.family.${family}`)}
+                />
+              </section>
+            );
+          })}
         </QueryState>
       </Card>
 
@@ -260,6 +283,24 @@ function statusOf(ok: boolean | null, warn = false): { tone: BadgeTone; icon: st
  * is never fetched to prefill (the API would refuse), and an untouched save
  * omits `token`, so the stored credential is preserved.
  */
+/**
+ * Render a STORED test note, which carries its params with it.
+ *
+ * The server encodes them as `key?host=...` (see `noteWithParams` in the BFF).
+ * Rendering the key alone left the operator reading the literal `{host}` in
+ * the six diagnostics that interpolate one — correct on the first test, broken
+ * on every reload, which is worse than useless because it looks like a bug in
+ * the product rather than a missing value.
+ */
+function renderNote(t: ReturnType<typeof useT>, note: string): string {
+  const split = note.indexOf("?");
+  if (split === -1) return t(note);
+  const key = note.slice(0, split);
+  const params: Record<string, string> = {};
+  for (const [name, value] of new URLSearchParams(note.slice(split + 1))) params[name] = value;
+  return t(key, params);
+}
+
 function ConnectionModal({
   connection,
   onClose,
@@ -277,12 +318,18 @@ function ConnectionModal({
   const [kind, setKind] = useState<ManagedConnectionKind>(connection?.kind ?? "jira_cloud");
   const [displayName, setDisplayName] = useState(connection?.displayName ?? "");
   const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? "");
-  const [authKind, setAuthKind] = useState<ManagedConnectionAuthKind>(connection?.authKind ?? "basic");
   const [enabled, setEnabled] = useState(connection?.enabled ?? true);
-  // The model id lives in the connection's non-secret `config` bag — the same
-  // mechanism `email` and `botAccountId` use — rather than in a new column, so
-  // it round-trips through the frozen `Connection` shape untouched.
-  const [model, setModel] = useState(connection?.config["model"] ?? "");
+  /**
+   * The kind's non-secret fields, by config key — `email` for Jira Cloud,
+   * `model` for the inference kinds, `bucket`/`region` for storage.
+   *
+   * One state bag driven by `CONNECTION_KIND_SPECS` rather than a `useState`
+   * per field: the form used to hold exactly one (`model`), so Jira Cloud's
+   * `email` — which its probe REQUIRES to build Basic auth — had nowhere to be
+   * typed, and every Jira Cloud row created from Studio failed its test with a
+   * 401 that pointed at the token instead of the missing address.
+   */
+  const [cfg, setCfg] = useState<Record<string, string>>(() => ({ ...(connection?.config ?? {}) }));
   // On edit with a token set, the field is locked until the admin chooses to change it.
   const [changingToken, setChangingToken] = useState(!editing || !(connection?.secretSet ?? false));
   const [token, setToken] = useState("");
@@ -296,7 +343,8 @@ function ConnectionModal({
    * form that offered these fields for a Jira row would be promising something
    * the resolver ignores.
    */
-  const isModelKind = kind === "openai_compat" || kind === "openrouter" || kind === "anthropic";
+  const spec = CONNECTION_KIND_SPECS[kind];
+  const isModelKind = spec.model === true;
   /**
    * Whether the operator ASSERTS this endpoint runs inside the institution.
    *
@@ -323,7 +371,14 @@ function ConnectionModal({
 
   const idInvalid = !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id.trim());
   const urlInvalid = !isHttpUrl(baseUrl.trim());
-  const blocked = (!editing && idInvalid) || urlInvalid || displayName.trim() === "";
+  /**
+   * The kind's own required fields, checked HERE by the same table the BFF
+   * refuses on (`missingConfigKeys`). Without it the form happily saved a row
+   * whose live test could only ever fail.
+   */
+  const missing = missingConfigKeys(kind, cfg);
+  const blocked =
+    (!editing && idInvalid) || urlInvalid || displayName.trim() === "" || missing.length > 0;
 
   /**
    * The non-secret config bag the save sends: the stored bag verbatim (so a
@@ -333,10 +388,13 @@ function ConnectionModal({
    * of being lost under the verbatim spread.
    */
   const configBag = (): Record<string, string> => {
-    const bag: Record<string, string> = {
-      ...(connection?.config ?? {}),
-      ...(isModelKind && model.trim() !== "" ? { model: model.trim() } : {}),
-    };
+    const bag: Record<string, string> = { ...cfg };
+    // Trim on the way out, and drop an empty optional rather than storing "".
+    for (const field of spec.fields) {
+      const value = (bag[field.key] ?? "").trim();
+      if (value === "") delete bag[field.key];
+      else bag[field.key] = value;
+    }
     if (skipTlsVerify) bag["skipTlsVerify"] = "true";
     else delete bag["skipTlsVerify"];
     return bag;
@@ -348,7 +406,11 @@ function ConnectionModal({
         kind,
         displayName: displayName.trim(),
         baseUrl: baseUrl.trim(),
-        authKind,
+        // The KIND decides the scheme — `probeFor` hardcodes it and never read
+        // this field. It was a four-option picker whose value changed nothing:
+        // an operator could select "Bearer" for Jira Cloud and watch it use
+        // Basic anyway. Now it is stated, not asked.
+        authKind: spec.authKind,
         // `config` is round-tripped verbatim so a learned `botAccountId`
         // survives an edit; the model id is layered on top for the one kind
         // that has one, and the TLS switch for every kind (see `configBag`).
@@ -417,9 +479,37 @@ function ConnectionModal({
       <Select
         label={t("connections.field.kind")}
         value={kind}
-        onChange={(event) => setKind(event.target.value as ManagedConnectionKind)}
-        options={KINDS.map((option) => ({ value: option, label: t(`connections.kind.${option}`) }))}
+        onChange={(event) => {
+          const next = event.target.value as ManagedConnectionKind;
+          setKind(next);
+          /**
+           * Switching kind used to change a string and nothing else, so an
+           * Anthropic URL and a stale `model` key survived a switch to Jira DC
+           * and were saved. The config bag is rebuilt for the NEW kind: keys it
+           * knows are kept (an operator correcting a typo does not retype), the
+           * rest are dropped.
+           */
+          const keep = new Set(CONNECTION_KIND_SPECS[next].fields.map((f) => f.key));
+          setCfg((current) => {
+            const rebuilt: Record<string, string> = {};
+            for (const [key, value] of Object.entries(current)) {
+              if (keep.has(key)) rebuilt[key] = value;
+            }
+            return rebuilt;
+          });
+          setOnPrem(CONNECTION_KIND_SPECS[next].family === "infra" ? true : onPrem);
+        }}
+        options={KINDS.map((option) => ({
+          value: option,
+          // Grouped by family in the label, because a bare ten-item list gave
+          // no clue that jira_cloud and jira_dc are alternatives.
+          label: `${t(`connections.family.${CONNECTION_KIND_SPECS[option].family}`)} · ${t(`connections.kind.${option}`)}`,
+        }))}
       />
+      <div className="scr-mini" style={{ opacity: 0.85 }}>
+        {t("connections.auth.fixed", { scheme: spec.authKind })}
+        {spec.probeless === true ? ` · ${t("connections.probeless")}` : ""}
+      </div>
       <Input
         label={t("connections.field.name")}
         value={displayName}
@@ -428,8 +518,12 @@ function ConnectionModal({
       <Input
         label={t("connections.field.url")}
         value={baseUrl}
+        placeholder={spec.urlExample}
+        // Every kind gets an example now. Five of the ten used to show a bare
+        // "URL" label, so an operator had no way to know whether Jira wanted
+        // the site root or the `/rest/api/3` path.
+        hint={isModelKind ? t("connections.field.url_hint_onprem") : spec.urlExample}
         onChange={(event) => setBaseUrl(event.target.value)}
-        {...(isModelKind ? { hint: t("connections.field.url_hint_onprem") } : {})}
         {...(touched && urlInvalid ? { error: t("connections.error.url") } : {})}
       />
       {/*
@@ -450,14 +544,27 @@ function ConnectionModal({
       <div className="scr-mini" style={{ opacity: 0.85, lineHeight: 1.5 }}>
         {t("connections.field.skip_tls_hint")}
       </div>
-      {isModelKind && (
+      {/*
+        The kind's own fields, from `CONNECTION_KIND_SPECS`. This is what makes
+        Jira Cloud configurable at all: its probe builds Basic auth from
+        `config.email`, and until this loop existed there was no box to type it
+        into.
+      */}
+      {spec.fields.map((field) => (
         <Input
-          label={t("connections.field.model")}
-          value={model}
-          onChange={(event) => setModel(event.target.value)}
-          hint={t("connections.field.model_hint")}
+          key={field.key}
+          label={t(field.labelKey)}
+          value={cfg[field.key] ?? ""}
+          onChange={(event) =>
+            setCfg((current) => ({ ...current, [field.key]: event.target.value }))
+          }
+          {...(field.placeholder === undefined ? {} : { placeholder: field.placeholder })}
+          {...(field.hintKey === undefined ? {} : { hint: t(field.hintKey) })}
+          {...(touched && missing.includes(field.key)
+            ? { error: t("connections.error.missing_config", { fields: t(field.labelKey) }) }
+            : {})}
         />
-      )}
+      ))}
       {isModelKind && (
         /**
          * The two switches that used to be `.env` variables.
@@ -494,12 +601,6 @@ function ConnectionModal({
           </div>
         </>
       )}
-      <Select
-        label={t("connections.field.auth")}
-        value={authKind}
-        onChange={(event) => setAuthKind(event.target.value as ManagedConnectionAuthKind)}
-        options={AUTH_KINDS.map((option) => ({ value: option, label: t(`connections.auth.${option}`) }))}
-      />
       <label className="scr-mini" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           type="checkbox"

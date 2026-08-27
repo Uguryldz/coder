@@ -338,9 +338,16 @@ describe("every failed probe leaves ONE server-side warn line", () => {
     expect(body.ok).toBe(false);
     expect(body.messageKey).toBe("connections.test.tls");
     expect(body.messageParams?.["code"]).toBe("SELF_SIGNED_CERT_IN_CHAIN");
-    // The row's stored note is the same catalog key — the table shows WHY
-    // after a reload too, not just in the immediate toast.
-    expect((await h.connections.get("ado"))?.lastTestNote).toBe("connections.test.tls");
+    // The row's stored note carries the same key AND its params, so the table
+    // shows WHY after a reload too — not just in the immediate toast. Storing
+    // the key alone rendered the literal `{code}` on every refresh, which is
+    // worse than useless: it reads as a bug in the product rather than a
+    // missing value.
+    const note = (await h.connections.get("ado"))?.lastTestNote ?? "";
+    expect(note.split("?")[0]).toBe("connections.test.tls");
+    expect(new URLSearchParams(note.slice(note.indexOf("?") + 1)).get("code")).toBe(
+      "SELF_SIGNED_CERT_IN_CHAIN",
+    );
 
     const warns = lines();
     expect(warns).toHaveLength(1);

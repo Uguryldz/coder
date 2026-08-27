@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { ConnectionId, ConnectionInput } from "@maestro/contracts";
+import {
+  type ConnectionConfig,
+  ConnectionId,
+  ConnectionInput,
+  missingConfigKeys,
+} from "@maestro/contracts";
+import { noteWithParams } from "../connection-note.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { sessionActor } from "../actor.js";
@@ -58,6 +64,30 @@ function connectorDeps(deps: ResolvedDeps): { store: ConnectionStore; secrets: S
   return { store: deps.connections, secrets: deps.connectorSecrets };
 }
 
+/**
+ * Refuse a row whose kind cannot work with the config it carries.
+ *
+ * `ConnectionInput` validates `config` only as a size-capped string bag, so a
+ * `jira_cloud` row with no `email` used to save happily and then fail its live
+ * test with a 401 — which reads as a bad token and sends the operator to
+ * re-issue a credential that was fine. The kind knows what it needs
+ * (`CONNECTION_KIND_SPECS`); this is the one place that enforces it, and the
+ * form marks the same fields from the same table.
+ */
+function assertNotWorse(existing: { config: ConnectionConfig }, next: ConnectionInput): void {
+  const before = new Set(missingConfigKeys(next.kind, existing.config));
+  const opened = missingConfigKeys(next.kind, next.config).filter((key) => !before.has(key));
+  if (opened.length > 0) throw badRequest("missing_config", { fields: opened });
+}
+
+function assertConfigComplete(input: ConnectionInput): void {
+  const missing = missingConfigKeys(input.kind, input.config);
+  // A stable code plus the field names as DETAILS, rather than a code built by
+  // string concatenation: the catalogue key stays greppable and the client can
+  // mark the exact boxes instead of parsing a colon out of an error code.
+  if (missing.length > 0) throw badRequest("missing_config", { fields: missing });
+}
+
 export async function connectionRoutes(app: FastifyInstance, deps: ResolvedDeps): Promise<void> {
   const readHandler = [authGuard(deps), requireAnyRole(...READ_ROLES)];
   const writeHandler = [authGuard(deps), requireAnyRole(...WRITE_ROLES)];
@@ -97,7 +127,7 @@ async function clearOtherDefaults(
 }
 
   /** Create a connection. Zod-validated; a new token is enciphered, never stored raw. */
-  app.post("/studio/connections", { preHandler: writeHandler }, async (request, reply) => {
+    app.post("/studio/connections", { preHandler: writeHandler }, async (request, reply) => {
     await assertWritable(deps);
     const { store, secrets } = connectorDeps(deps);
 
@@ -105,6 +135,7 @@ async function clearOtherDefaults(
     if (!id.success) throw badRequest("invalid_connection_id");
     const body = ConnectionInput.safeParse(request.body);
     if (!body.success) throw badRequest("invalid_connection_body");
+    assertConfigComplete(body.data);
 
     if ((await store.get(id.data)) !== null) throw badRequest("connection_exists");
 
@@ -158,6 +189,7 @@ async function clearOtherDefaults(
 
     const existing = await store.get(params.data.id);
     if (existing === null) throw notFound("no_such_connection");
+    assertNotWorse(existing, body.data);
 
     const secret = await storeToken(secrets, params.data.id, body.data.token, existing);
     // A learned `botAccountId` SURVIVES an edit that does not carry one. The
@@ -267,7 +299,18 @@ async function clearOtherDefaults(
 
     // `outcome.messageKey` is a catalog KEY (e.g. "connection.test.unauthorized"),
     // never raw text — safe to persist as the row's secret-free test note.
-    await store.recordTest(record.id, { at, ok: outcome.ok, note: outcome.messageKey });
+    //
+    // The PARAMS travel with it. Six of the most useful diagnostics interpolate
+    // one ("Sunucu adı çözülemedi (DNS): {host}"), and the panel re-renders the
+    // stored note after a reload with no params — so the operator's best clue
+    // turned into the literal string `{host}` the moment they refreshed. The
+    // column is a 128-char string, so they ride along in it rather than in a
+    // new column: see `noteWithParams`.
+    await store.recordTest(record.id, {
+      at,
+      ok: outcome.ok,
+      note: noteWithParams(outcome.messageKey, outcome.messageParams),
+    });
     const verb = outcome.ok
       ? outcome.accountIdCorrected === undefined
         ? "test_ok"

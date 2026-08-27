@@ -1,5 +1,6 @@
 import type { LightMyRequestResponse } from "fastify";
 import { describe, expect, it } from "vitest";
+import { CONNECTION_NOTE_MAX, noteWithParams } from "../src/connection-note.js";
 import type { ConnectorFetch } from "../src/connection-service.js";
 import { auth, harness, type Harness, type HarnessOptions } from "./helpers.js";
 
@@ -72,6 +73,68 @@ describe("POST /studio/connections", () => {
     // The token lives ONLY in the secret store, under the reference.
     expect(h.connectorSecrets.has(record!.secretRef!)).toBe(true);
     expect(await h.connectorSecrets.get(record!.secretRef!)).toBe(TOKEN);
+  });
+
+  /**
+   * Found by reading the probe against the form: `jira_cloud` authenticates
+   * with `basicAuth(config.email, token)`, and the Studio form had no box for
+   * `email`. Every Jira Cloud row created from Studio therefore sent
+   * `basicAuth("", token)` and came back 401 — which reads as a bad token and
+   * sends the operator off to re-issue a credential that was fine.
+   *
+   * The kind's required fields are now refused HERE, by the same table the form
+   * marks them from, so the row cannot be saved in a state its own test is
+   * guaranteed to fail.
+   */
+  it("refuses a Jira Cloud row with no account e-mail, naming the field", async () => {
+    const h = await harness();
+    const admToken = await admin(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/connections",
+      headers: { authorization: `Bearer ${admToken}` },
+      payload: {
+        id: "jira",
+        kind: "jira_cloud",
+        displayName: "Jira",
+        baseUrl: "https://sirket.atlassian.net",
+        authKind: "basic",
+        config: {},
+        token: TOKEN,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json() as { error?: string; details?: { fields?: string[] } };
+    expect(body.error).toBe("missing_config");
+    // Names the field, so the form can mark the box the operator must fill.
+    expect(body.details?.fields).toEqual(["email"]);
+    // Refused means NOT stored: a half-configured row is worse than none.
+    expect(await h.connections.get("jira")).toBeNull();
+  });
+
+  it("accepts the same row once the e-mail is there", async () => {
+    const h = await harness();
+    const admToken = await admin(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/connections",
+      headers: { authorization: `Bearer ${admToken}` },
+      payload: {
+        id: "jira",
+        kind: "jira_cloud",
+        displayName: "Jira",
+        baseUrl: "https://sirket.atlassian.net",
+        authKind: "basic",
+        config: { email: "bot@sirket.com" },
+        token: TOKEN,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect((await h.connections.get("jira"))?.config["email"]).toBe("bot@sirket.com");
   });
 
   it("never returns the token in the create RESPONSE — only a mask + set flag", async () => {
@@ -190,7 +253,9 @@ describe("POST /studio/connections/:id/test", () => {
     expect(record?.lastTestOk).toBe(true);
     expect(record?.lastTestedAt).not.toBeNull();
     // The note is the outcome's catalog KEY, never raw text or a token.
-    expect(record?.lastTestNote).toBe("connections.test.ok_as");
+    // The note now carries its params (`key?who=...`) so the panel can render
+    // them after a reload; the KEY is what this test is about.
+    expect(record?.lastTestNote?.split("?")[0]).toBe("connections.test.ok_as");
   });
 
   it("reports a failure honestly and never fakes green", async () => {
@@ -209,7 +274,9 @@ describe("POST /studio/connections/:id/test", () => {
     expect(failed?.lastTestOk).toBe(false);
     // The failure note is the catalog key — it explains WHY without leaking the
     // token, the URL's credentials, or a raw driver message.
-    expect(failed?.lastTestNote).toBe("connections.test.http_error");
+    expect(failed?.lastTestNote?.split("?")[0]).toBe("connections.test.http_error");
+    // The status travels with it — without this the panel renders "HTTP {status}".
+    expect(failed?.lastTestNote).toContain("status=");
     expect(JSON.stringify(failed)).not.toContain(TOKEN);
   });
 
@@ -386,7 +453,9 @@ describe("POST /studio/connections/:id/test — the bot account it claims", () =
     // ...nor the connection read that follows it may echo one.
     expect((await get(h, "/studio/connections", admToken)).body).not.toContain(BOT_EMAIL);
     // The stored note is a catalog key, never the probe's prose or its email.
-    expect((await h.connections.get("jira"))?.lastTestNote).toBe("connections.test.ok_bot_fixed");
+    expect((await h.connections.get("jira"))?.lastTestNote?.split("?")[0]).toBe(
+      "connections.test.ok_bot_fixed",
+    );
   });
 
   it("does not resurrect a wrong id when a later edit omits it", async () => {
@@ -1035,7 +1104,7 @@ describe("on-premise model server (openai_compat)", () => {
 
     const row = await h.connections.get("llm-onprem");
     expect(row?.lastTestOk).toBe(false);
-    expect(row?.lastTestNote).toBe("connections.test.model_missing");
+    expect(row?.lastTestNote?.split("?")[0]).toBe("connections.test.model_missing");
   });
 
   it("says so plainly when a 200 carries no readable model list", async () => {
@@ -1115,5 +1184,46 @@ describe("on-premise model server (openai_compat)", () => {
 
     const listed = await get(h, "/studio/connections", admToken);
     expect(listed.body).not.toContain(TOKEN);
+  });
+});
+
+/**
+ * A stored test note has to survive a page reload with its meaning intact.
+ *
+ * Six of the most useful diagnostics interpolate a value — "Sunucu adı
+ * çözülemedi (DNS): {host}" — and the panel re-renders `lastTestNote` from the
+ * database. Storing the key alone meant the operator's best clue turned into
+ * the literal string `{host}` the moment they refreshed: correct on the first
+ * test, broken forever after, and looking like a product bug rather than a
+ * missing value.
+ */
+describe("noteWithParams", () => {
+  it("keeps the bare key when there is nothing to interpolate", () => {
+    expect(noteWithParams("connections.test.ok", undefined)).toBe("connections.test.ok");
+    expect(noteWithParams("connections.test.ok", {})).toBe("connections.test.ok");
+  });
+
+  it("carries the params so the panel can render them after a reload", () => {
+    expect(noteWithParams("connections.test.dns", { host: "jira.banka.local" })).toBe(
+      "connections.test.dns?host=jira.banka.local",
+    );
+  });
+
+  it("encodes values that would otherwise break the encoding", () => {
+    const note = noteWithParams("connections.test.refused", { host: "a b&c=d", port: "8000" });
+    const query = new URLSearchParams(note.slice(note.indexOf("?") + 1));
+    expect(query.get("host")).toBe("a b&c=d");
+    expect(query.get("port")).toBe("8000");
+  });
+
+  /**
+   * The column is `VarChar(128)`. A note that renders with `{host}` still beats
+   * a note that fails to write, so the params are dropped rather than the key
+   * truncated into something that resolves to nothing.
+   */
+  it("drops the params rather than overflowing the column", () => {
+    const note = noteWithParams("connections.test.dns", { host: "x".repeat(200) });
+    expect(note).toBe("connections.test.dns");
+    expect(note.length).toBeLessThanOrEqual(CONNECTION_NOTE_MAX);
   });
 });

@@ -1,5 +1,6 @@
 import type { ConnectionKind } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
+import { noteWithParams } from "./connection-note.js";
 import { runConnectionTest, type ConnectorFetch } from "./connection-service.js";
 import type { ConnectionRecord, ConnectionStore } from "./connection-store.js";
 import type { HealthReader, ServiceHealth } from "./read-models.js";
@@ -88,8 +89,17 @@ export function connectionHealthReader(options: ConnectionHealthOptions): Health
       const testedAt = now().toISOString();
       // Persisted so the connections panel and this screen tell one story —
       // best-effort, because a read model that cannot write must still report.
+      //
+      // Through the same encoder the panel's own probe uses. Writing the bare
+      // key here would have overwritten a note that already carried its params
+      // (`?host=…`) with one that does not, so a refresh of THIS page silently
+      // degraded the other screen's diagnostic to a literal `{host}`.
       await options.store
-        .recordTest(record.id, { at: testedAt, ok: outcome.ok, note: outcome.messageKey })
+        .recordTest(record.id, {
+          at: testedAt,
+          ok: outcome.ok,
+          note: noteWithParams(outcome.messageKey, outcome.messageParams),
+        })
         .catch(() => undefined);
       return {
         service: record.kind,

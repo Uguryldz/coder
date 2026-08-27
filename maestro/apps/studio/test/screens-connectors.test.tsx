@@ -158,15 +158,45 @@ describe("connectors panel", () => {
     await userEvent.type(within(dialog).getByLabelText("Kimlik (id)"), "jira");
     await userEvent.type(within(dialog).getByLabelText("Görünen ad"), "Jira");
     await userEvent.type(within(dialog).getByLabelText(/URL/), "https://ugurbank.atlassian.net");
+    // Jira Cloud authenticates the token WITH this address — the form is
+    // `jira_cloud` by default, and its probe builds `basicAuth(email, token)`.
+    await userEvent.type(within(dialog).getByLabelText(/Bot hesabının e-postası/), "bot@ugurbank.com");
     await userEvent.type(within(dialog).getByLabelText("Token"), "s3cr3t-token");
     await userEvent.click(within(dialog).getByRole("button", { name: /Bağlantı ekle/ }));
 
     await waitFor(() => {
       const post = calls.find((c) => c.method === "POST");
       expect(post).toBeDefined();
-      const body = post?.body as { id: string; token: string };
+      const body = post?.body as { id: string; token: string; config: Record<string, string> };
       expect(body.id).toBe("jira");
       expect(body.token).toBe("s3cr3t-token");
+      expect(body.config["email"]).toBe("bot@ugurbank.com");
     });
+  });
+
+  /**
+   * The failure this whole per-kind table was written for: the form used to
+   * offer three boxes for all ten kinds, so `jira_cloud` — whose probe REQUIRES
+   * `config.email` — could be saved without one. The row then failed its live
+   * test with a 401, which reads as a bad token and sends the operator off to
+   * re-issue a credential that was fine.
+   */
+  it("will not post a Jira Cloud row whose account e-mail is missing", async () => {
+    const { fetchImpl, calls } = stubFetch([LIST]);
+    renderScreen(<ConnectorsPanel />, { fetchImpl, session: ADMIN });
+    await screen.findByText("GitHub");
+
+    await userEvent.click(screen.getByRole("button", { name: /Bağlantı ekle/ }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Kimlik (id)"), "jira");
+    await userEvent.type(within(dialog).getByLabelText("Görünen ad"), "Jira");
+    await userEvent.type(within(dialog).getByLabelText(/URL/), "https://ugurbank.atlassian.net");
+    await userEvent.type(within(dialog).getByLabelText("Token"), "s3cr3t-token");
+    await userEvent.click(within(dialog).getByRole("button", { name: /Bağlantı ekle/ }));
+
+    // Refused in the form, so the request is never made and the dialog stays
+    // open on the box that needs filling.
+    expect(calls.find((c) => c.method === "POST")).toBeUndefined();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });

@@ -163,3 +163,221 @@ export const ConnectionInput = z.object({
   token: z.string().max(4096).optional(),
 });
 export type ConnectionInput = z.infer<typeof ConnectionInput>;
+
+/**
+ * What a connection of each KIND actually needs — one table, read by everything.
+ *
+ * The kind list had grown four copies (this enum, Studio's `KINDS` array,
+ * `ManagedConnectionKind`, and `probeFor`'s switch), and the form rendered the
+ * same three boxes for all ten. Two real failures came out of that:
+ *
+ *  · **Jira Cloud could not be configured from Studio at all.** Its probe
+ *    builds Basic auth from `config.email` (`connection-service.ts`), and the
+ *    form had no field for it — every new row sent `basicAuth("", token)` and
+ *    got a 401 that pointed at the token.
+ *  · **`authKind` was a control that did nothing.** The operator picked one of
+ *    four values; `probeFor` hardcodes the scheme per kind and never read it.
+ *    A picker that cannot change the outcome is worse than no picker.
+ *
+ * So the kind decides, and it says so here: which family it belongs to (the
+ * grouping the screen shows), the auth scheme it really uses, an example URL,
+ * and the non-secret fields it needs — each with the label key and hint key the
+ * form renders. `probeless` marks the kinds that have no live test yet, so the
+ * screen can say so instead of offering a button whose only outcome is red.
+ */
+export const ConnectionFamily = z.enum(["issue_tracker", "scm", "model", "infra"]);
+export type ConnectionFamily = z.infer<typeof ConnectionFamily>;
+
+/** One non-secret config field a kind needs, as the form should render it. */
+export interface ConnectionFieldSpec {
+  /** The `config` key this writes — the same key the probe reads. */
+  readonly key: string;
+  /** Message-catalog key for the label (`connections.cfg.<key>`). */
+  readonly labelKey: string;
+  /** Message-catalog key for the hint under the box; absent = no hint. */
+  readonly hintKey?: string;
+  /** A refusal, not a warning: the kind cannot work without it. */
+  readonly required: boolean;
+  /** Shown greyed inside the empty box. Never a real value. */
+  readonly placeholder?: string;
+}
+
+export interface ConnectionKindSpec {
+  readonly family: ConnectionFamily;
+  /**
+   * The scheme the probe genuinely uses. Carried so the form can SHOW it
+   * (read-only) rather than ask for it — see the note above.
+   */
+  readonly authKind: ConnectionAuthKind;
+  /** A real, typeable example of this kind's base URL. */
+  readonly urlExample: string;
+  readonly fields: readonly ConnectionFieldSpec[];
+  /** True when no live probe exists yet, so the screen must not promise one. */
+  readonly probeless?: boolean;
+  /** True for the kinds that can serve as the active model (M18 routing). */
+  readonly model?: boolean;
+}
+
+export const CONNECTION_KIND_SPECS: Readonly<Record<ConnectionKind, ConnectionKindSpec>> = {
+  jira_cloud: {
+    family: "issue_tracker",
+    authKind: "basic",
+    urlExample: "https://sirket.atlassian.net",
+    fields: [
+      {
+        key: "email",
+        labelKey: "connections.cfg.email",
+        hintKey: "connections.cfg.email_hint",
+        required: true,
+        placeholder: "bot@sirket.com",
+      },
+    ],
+  },
+  jira_dc: {
+    family: "issue_tracker",
+    authKind: "bearer",
+    urlExample: "https://jira.sirket.local",
+    fields: [],
+  },
+  github: {
+    family: "scm",
+    authKind: "bearer",
+    urlExample: "https://api.github.com",
+    fields: [],
+  },
+  ado: {
+    family: "scm",
+    authKind: "basic",
+    urlExample: "https://dev.azure.com/sirket",
+    fields: [],
+  },
+  openrouter: {
+    family: "model",
+    authKind: "bearer",
+    urlExample: "https://openrouter.ai/api/v1",
+    model: true,
+    fields: [
+      {
+        key: "model",
+        labelKey: "connections.cfg.model",
+        hintKey: "connections.cfg.model_hint",
+        /**
+         * Optional, deliberately. The model id is what a RUN asks for, not what
+         * the connection test needs: `probeFor` lists `/models` with the token
+         * alone. Requiring it here would refuse a perfectly good credential
+         * because its owner had not yet decided which model to run — and would
+         * break every stored connection that was created before this field
+         * existed. The resolver refuses an unnamed model at use time, where the
+         * operator can see which run wanted it.
+         */
+        required: false,
+        placeholder: "openai/gpt-4o-mini",
+      },
+    ],
+  },
+  anthropic: {
+    family: "model",
+    authKind: "api_key",
+    urlExample: "https://api.anthropic.com/v1",
+    model: true,
+    fields: [
+      {
+        key: "model",
+        labelKey: "connections.cfg.model",
+        hintKey: "connections.cfg.model_hint",
+        /**
+         * Optional, deliberately. The model id is what a RUN asks for, not what
+         * the connection test needs: `probeFor` lists `/models` with the token
+         * alone. Requiring it here would refuse a perfectly good credential
+         * because its owner had not yet decided which model to run — and would
+         * break every stored connection that was created before this field
+         * existed. The resolver refuses an unnamed model at use time, where the
+         * operator can see which run wanted it.
+         */
+        required: false,
+        placeholder: "claude-sonnet-4-5",
+      },
+    ],
+  },
+  openai_compat: {
+    family: "model",
+    authKind: "bearer",
+    urlExample: "http://10.0.0.5:8000/v1",
+    model: true,
+    fields: [
+      {
+        key: "model",
+        labelKey: "connections.cfg.model",
+        hintKey: "connections.cfg.model_hint",
+        /**
+         * Optional, deliberately. The model id is what a RUN asks for, not what
+         * the connection test needs: `probeFor` lists `/models` with the token
+         * alone. Requiring it here would refuse a perfectly good credential
+         * because its owner had not yet decided which model to run — and would
+         * break every stored connection that was created before this field
+         * existed. The resolver refuses an unnamed model at use time, where the
+         * operator can see which run wanted it.
+         */
+        required: false,
+        placeholder: "Qwen/Qwen2.5-32B-Instruct",
+      },
+    ],
+  },
+  vault: {
+    family: "infra",
+    authKind: "pat",
+    urlExample: "https://vault.sirket.local:8200",
+    fields: [],
+  },
+  smtp: {
+    family: "infra",
+    authKind: "basic",
+    urlExample: "smtp://posta.sirket.local:587",
+    probeless: true,
+    fields: [
+      {
+        key: "from",
+        labelKey: "connections.cfg.from",
+        hintKey: "connections.cfg.from_hint",
+        required: true,
+        placeholder: "maestro@sirket.com",
+      },
+    ],
+  },
+  storage: {
+    family: "infra",
+    authKind: "api_key",
+    urlExample: "https://s3.sirket.local",
+    probeless: true,
+    fields: [
+      {
+        key: "bucket",
+        labelKey: "connections.cfg.bucket",
+        required: true,
+        placeholder: "maestro-belgeler",
+      },
+      { key: "region", labelKey: "connections.cfg.region", required: false, placeholder: "tr-1" },
+    ],
+  },
+};
+
+/** The kinds in one family, in the order the screen should list them. */
+export function kindsInFamily(family: ConnectionFamily): readonly ConnectionKind[] {
+  return ConnectionKind.options.filter((k) => CONNECTION_KIND_SPECS[k].family === family);
+}
+
+/**
+ * Which required config fields a connection is missing.
+ *
+ * Empty means "this row can work". The BFF refuses on a non-empty result and
+ * the form marks the boxes — one rule, so a connection cannot be saved from
+ * Studio in a state the probe is guaranteed to fail on.
+ */
+export function missingConfigKeys(
+  kind: ConnectionKind,
+  config: ConnectionConfig,
+): readonly string[] {
+  return CONNECTION_KIND_SPECS[kind].fields
+    .filter((f) => f.required && (config[f.key] ?? "").trim() === "")
+    .map((f) => f.key);
+}

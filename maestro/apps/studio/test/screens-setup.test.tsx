@@ -60,7 +60,6 @@ function baseRoutes(overrides: readonly Route[] = []): Route[] {
     { path: "/onboarding/jira-match-values", body: { ok: true, values: OPS_ISSUE_TYPES } },
     { path: "/routing", body: { projects: [], rules: [], policy: null } },
     { path: "/studio/listening-rules", method: "POST", status: 201, body: { rule: { ruleId: "lr_1" } } },
-    { path: "/studio/pilot/listening", method: "POST", body: { ok: true } },
     { path: "/onboarding", method: "POST", body: { proposalId: "pr_1" } },
   ];
   // An override REPLACES the route with the same path+method rather than being

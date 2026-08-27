@@ -14,7 +14,7 @@ import {
 } from "../onboarding-service.js";
 import { assertWritable, FOUR_EYES_GROUP } from "../platform/propose.js";
 import { isMasterApprover } from "../platform/master-approver.js";
-import { mirrorListeningToPilot, seedProjectDefaults } from "../listening-seed.js";
+import { seedProjectDefaults } from "../listening-seed.js";
 import { listScmRepos } from "../scm-repos-service.js";
 import { listJiraProjects } from "../jira-projects-service.js";
 import { listJiraMatchValues } from "../jira-match-values-service.js";
@@ -226,11 +226,21 @@ function connectorSecrets(deps: ResolvedDeps): SecretPort {
   return deps.connectorSecrets;
 }
 
-/** The dry run needs only the routing half of the draft; the screen sends exactly that. */
+/**
+ * The dry run needs only the routing half of the draft; the screen sends
+ * exactly that.
+ *
+ * `adoRepo` is OPTIONAL, and that is the whole point of the rehearsal: it
+ * replays a PROJECT's recent tickets against the routing rules and never
+ * touches a repository — it only echoes the name back as the appId. Requiring
+ * it meant an analysis-only operator, who has no repository and needs none,
+ * could not run the rehearsal the wizard makes mandatory, and so could never
+ * finish onboarding.
+ */
 const DryRunBody = z
   .object({
     jiraProject: z.string().trim().min(1).max(32),
-    adoRepo: z.string().trim().min(1).max(128),
+    adoRepo: z.string().trim().max(128).optional(),
     sampleSize: z.coerce.number().int().positive().max(MAX_DRY_RUN_SAMPLE).optional(),
   })
   .strict();
@@ -454,8 +464,9 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
         projectKey: parsed.data.jiraProject,
         // The repo the operator picked — echoed back as the appId. The dry run
         // rehearses the project, so this is the target it rehearsed against, not
-        // a registry lookup.
-        appId: parsed.data.adoRepo,
+        // a registry lookup. Empty on an analysis-only draft, which binds no
+        // application at all: the routing verdicts above are the real answer.
+        appId: parsed.data.adoRepo ?? "",
       }),
     );
   });
@@ -738,8 +749,6 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
       const seeded = await seedProjectDefaults(deps, parsed.data.projectKey);
       if (seeded.ok) {
         listeningSeed = { created: seeded.created, skipped: seeded.skipped };
-        // Converge the running pilot on the new rules; itself fail-soft.
-        if (seeded.created > 0) await mirrorListeningToPilot(deps);
       } else {
         seedSkipped = { reason: seeded.reason };
         request.log.warn(

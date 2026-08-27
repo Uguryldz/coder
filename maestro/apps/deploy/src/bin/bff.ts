@@ -495,11 +495,22 @@ async function checkoutOrNull(
   const tokenRef = env.source["SCM_TOKEN_REF"]?.trim();
   try {
     const token = tokenRef === undefined || tokenRef === "" ? undefined : await secrets.get(tokenRef);
+    const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
     return await prepareWorkspace({
       repo: run.appId,
       root,
       runId: run.runId,
-      ...(env.source["SCM_HOST"]?.trim() === undefined ? {} : { host: env.source["SCM_HOST"]!.trim() }),
+      /**
+       * Blank is ABSENT, not a host.
+       *
+       * `?.trim()` is `undefined` only when the KEY is missing, and both
+       * bundles ship `SCM_HOST: ${SCM_HOST:-}` — present and empty. So an
+       * install that never set it passed `host: ""`, which defeats the
+       * `?? "github.com"` fallback in `prepareWorkspace` and turns every
+       * enrichment clone into `https:///owner/repo.git`. The two settings
+       * above already use this pair; this one had drifted.
+       */
+      ...(scmHost === "" ? {} : { host: scmHost }),
       ...(token === undefined ? {} : { token }),
     });
   } catch (error) {

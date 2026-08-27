@@ -159,6 +159,36 @@ describe("POST /onboarding/dry-run", () => {
     expect(body.sampled).toBe(6);
   });
 
+  /**
+   * An analysis-only install owns no repository and needs none — the analysis
+   * is produced from the ticket text and a repo only ENRICHES the impact
+   * section. The rehearsal replays a PROJECT's tickets against the routing
+   * rules; it never touches a repository and only echoes the name back.
+   *
+   * Requiring `adoRepo` therefore made the wizard's MANDATORY check impossible
+   * for exactly the deployment this product is sold for: the operator could
+   * not rehearse, so they could not submit, so they could not finish setup.
+   */
+  it("rehearses a project with no repository at all", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/dry-run",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { jiraProject: "NEWPROJ" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    // The routing verdicts are the real answer, and they are unchanged.
+    expect(body.byRule).toEqual(["NEWPROJ-1", "NEWPROJ-2"]);
+    expect(body.sampled).toBe(6);
+    // Nothing was invented to stand in for the repository.
+    expect(body.appId).toBe("");
+  });
+
   it("reports an empty history as nothing proved, not as a clean run", async () => {
     const app = await wizard();
     const token = await adminToken(app);

@@ -43,6 +43,19 @@ const EMPTY_DRAFT: OnboardingDraft = {
  * tickets into a payment repository is exactly the mistake this step exists to
  * catch (M14/M99).
  */
+/**
+ * Does this draft name a COMPLETE repository half?
+ *
+ * All three or none: `DraftBody` refuses `adoRepo` without `platform` (and the
+ * reverse), so a draft that has picked a repo but left the platform select on
+ * its placeholder must send neither — otherwise it posts `platform: ""` and
+ * comes back 400 `invalid_onboarding_body`, which is a dead end an operator
+ * cannot read. An analysis-only draft answers false and sends no repo at all.
+ */
+function repoComplete(draft: OnboardingDraft): boolean {
+  return draft.repoFullName !== "" && draft.connectionId !== "" && draft.platform !== "";
+}
+
 export function OnboardScreen(): ReactNode {
   const api = useApi();
   const t = useT();
@@ -109,9 +122,10 @@ export function OnboardScreen(): ReactNode {
     mutationFn: (input: OnboardingDraft) =>
       api.post<DryRunResult>("/onboarding/dry-run", {
         jiraProject: input.jiraProject,
-        // The picked repo travels in `adoRepo` (the wire field the BFF reads);
-        // Faz D widens the submit path to register it as a real application.
-        adoRepo: input.repoFullName,
+        // The picked repo travels in `adoRepo` (the wire field the BFF reads).
+        // Omitted entirely when there is none: the rehearsal is about the
+        // project, and an empty string is refused by the schema.
+        ...(input.repoFullName === "" ? {} : { adoRepo: input.repoFullName }),
       }),
     onSuccess: (result) => setDryRun(result),
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
@@ -124,8 +138,16 @@ export function OnboardScreen(): ReactNode {
       // connection + repo and register a real application.
       api.post<{ proposalId: string }>("/onboarding", {
         jiraProject: input.jiraProject,
-        adoRepo: input.repoFullName,
-        platform: input.platform,
+        /**
+         * Sent together or not at all — `DraftBody` refuses one without the
+         * other, and an analysis-only draft sends neither.
+         *
+         * Keyed on the COMPLETE half rather than on the repo name alone: a
+         * draft that names a repo but whose platform select was returned to
+         * its placeholder would otherwise post `platform: ""` and come back
+         * 400 `invalid_onboarding_body`, a dead end the operator cannot read.
+         */
+        ...(repoComplete(input) ? { adoRepo: input.repoFullName, platform: input.platform } : {}),
         triggerMode: input.triggerMode,
         gateSet: input.gateSet,
         mergeMode: input.mergeMode,
@@ -179,8 +201,22 @@ export function OnboardScreen(): ReactNode {
         : null,
   };
 
-  const complete =
-    draft.jiraProject !== "" && draft.connectionId !== "" && draft.repoFullName !== "" && draft.platform !== "";
+  /**
+   * A repository is an ENRICHMENT, not a gate.
+   *
+   * This screen used to require a repo and a platform, so an analysis-only
+   * install — the whole point of which is that it owns no repository — could
+   * never submit: the SCM select was empty, `connectionId` stayed `""`, and the
+   * button was dead forever under a warning naming a repo that could not be
+   * created. The BFF behind it already accepted a repo-less draft; only this
+   * screen still demanded one.
+   *
+   * The pair is still all-or-nothing, because the wire contract is: a repo
+   * without a platform (or the reverse) is refused by `DraftBody`.
+   */
+  const repoHalf = draft.repoFullName !== "" || draft.connectionId !== "" || draft.platform !== "";
+  const repoHalfComplete = repoComplete(draft);
+  const complete = draft.jiraProject !== "" && (!repoHalf || repoHalfComplete);
   const maySubmit = complete && dryRun !== null;
 
   return (
@@ -213,7 +249,10 @@ export function OnboardScreen(): ReactNode {
       <DryRunPanel
         result={dryRun}
         busy={runDryRun.isPending}
-        ready={draft.jiraProject !== "" && draft.repoFullName !== ""}
+        // The rehearsal replays a PROJECT's tickets against the routing rules;
+        // it never touches a repository, and requiring one made the mandatory
+        // check impossible for an analysis-only draft.
+        ready={draft.jiraProject !== ""}
         onRun={() => runDryRun.mutate(draft)}
       />
 

@@ -346,11 +346,6 @@ export function SetupScreen(): ReactNode {
         ),
       });
 
-      // Mirror to the live pilot so discovery picks the rule up without a
-      // restart. Best-effort, exactly as the expert screen does it: a pilot that
-      // is simply down must not fail a DB write the operator just completed.
-      void api.post("/studio/pilot/listening", { action: "reload" }).catch(() => undefined);
-
       if (alreadyBound) return { awaitingApproval: false };
 
       const defaults = flowDefaults(input.flowType);

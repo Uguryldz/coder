@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -210,5 +210,27 @@ describe("autoheal", () => {
     ) as Record<string, string[]>;
     expect(filters["label"]).toEqual(["com.docker.compose.project=maestroprod"]);
     expect(filters["health"]).toEqual(["unhealthy"]);
+  });
+
+  /**
+   * Found live, twice, on a real install — both times the autohealer LOOKED
+   * fine and did nothing useful.
+   *
+   * The restart request must outlast the stop grace it asks for. They were
+   * both 30s: Docker answers only once the container is back up, so the
+   * request timed out one instant before the reply and the log claimed a
+   * failure for a restart that had SUCCEEDED. An operator reading that goes
+   * hunting for a broken autohealer that works.
+   */
+  it("waits longer for a restart than the stop grace it asks for", async () => {
+    const source = readFileSync(new URL("../src/bin/autoheal.ts", import.meta.url), "utf8");
+    const grace = /const STOP_GRACE_S = (\d+);/u.exec(source);
+    const timeout = /const RESTART_TIMEOUT_MS = \(STOP_GRACE_S \+ (\d+)\)/u.exec(source);
+
+    expect(grace).not.toBeNull();
+    expect(timeout).not.toBeNull();
+    expect(Number(timeout![1])).toBeGreaterThan(0);
+    // And the request actually asks for that grace, rather than a stale literal.
+    expect(source).toContain("`/containers/${id}/restart?t=${STOP_GRACE_S}`");
   });
 });

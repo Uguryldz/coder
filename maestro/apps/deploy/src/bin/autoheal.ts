@@ -40,6 +40,20 @@ const PROJECT_LABEL = "com.docker.compose.project";
 /** How long to wait before reconnecting to the event stream. */
 const RECONNECT_MS = 5_000;
 
+/**
+ * How long Docker may take to stop a container before it is killed, and how
+ * long this waits for the whole restart to come back.
+ *
+ * The two must not be equal. They were — 30s each — and the result was
+ * measured live: the worker drains for its full grace period, Docker answers
+ * only after the container is up again, and the request timed out one instant
+ * before the reply. The restart SUCCEEDED and the log said it had failed,
+ * which is the worst kind of wrong: an operator reading it would go looking
+ * for a broken autohealer that works.
+ */
+const STOP_GRACE_S = 30;
+const RESTART_TIMEOUT_MS = (STOP_GRACE_S + 30) * 1_000;
+
 export interface AutohealOptions {
   readonly project: string;
   readonly socketPath?: string;
@@ -53,9 +67,10 @@ function dockerRequest(
   socketPath: string,
   path: string,
   method: "GET" | "POST",
+  timeoutMs = 30_000,
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const call = request({ socketPath, path, method, timeout: 30_000 }, (response) => {
+    const call = request({ socketPath, path, method, timeout: timeoutMs }, (response) => {
       let body = "";
       response.setEncoding("utf8");
       response.on("data", (chunk: string) => (body += chunk));
@@ -81,7 +96,12 @@ async function restart(
   log: (message: string) => void,
 ): Promise<void> {
   try {
-    const result = await dockerRequest(socketPath, `/containers/${id}/restart?t=30`, "POST");
+    const result = await dockerRequest(
+      socketPath,
+      `/containers/${id}/restart?t=${STOP_GRACE_S}`,
+      "POST",
+      RESTART_TIMEOUT_MS,
+    );
     log(
       result.status >= 200 && result.status < 300
         ? `[maestro] autoheal: ${name} sağlıksız işaretlendi — yeniden başlatıldı`

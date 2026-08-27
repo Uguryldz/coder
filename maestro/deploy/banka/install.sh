@@ -260,6 +260,26 @@ if [[ -z "${LLM_BASE_URL:-}" ]]; then
   info "  (gerekiyorsa) anahtar, ardından 'Test et'."
 fi
 
+# ── autoheal'in soket erişimi ────────────────────────────────────────────────
+# Konteyner uid 10001 ile koşar, soket root:docker sahiplidir. Doğru gid
+# olmadan autoheal her çağrısında EACCES alır ve sessizce işe yaramaz —
+# ilk sürümü tam olarak böyle çıktı, canlıda yakalandı.
+#
+# Elle doldurulmasını beklemek yerine burada bulunur: .env'deki değer hostun
+# gerçeğiyle uyuşmuyorsa düzeltilir ve söylenir.
+if [[ -S "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}" ]]; then
+  GERCEK_GID=$(stat -c '%g' "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}" 2>/dev/null || echo "")
+  if [[ -n "$GERCEK_GID" && "${DOCKER_GID:-}" != "$GERCEK_GID" ]]; then
+    if grep -q '^DOCKER_GID=' .env 2>/dev/null; then
+      sed -i "s|^DOCKER_GID=.*|DOCKER_GID=\"${GERCEK_GID}\"|" .env
+    else
+      printf '\nDOCKER_GID="%s"\n' "$GERCEK_GID" >> .env
+    fi
+    export DOCKER_GID="$GERCEK_GID"
+    ok "Docker soket grubu bulundu ve .env'e yazıldı (DOCKER_GID=${GERCEK_GID})."
+  fi
+fi
+
 # ── Analiz kurulumu: iki değişken sessizce açık kalırsa akış BİTMEZ ──────────
 # Bu ikisi .env'de yorumlu gelir, ve ikisinin de boş kalması sahada aynı
 # cümleye çıkıyor: "analiz bile yapamadım".

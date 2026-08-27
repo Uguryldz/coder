@@ -441,6 +441,17 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
     volumes:
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro
+    # Soketin GRUBUNA ek üyelik. Konteyner uid 10001 ile koşar (paylaşılan
+    # sertleştirme), soket ise root:docker sahiplidir — üyelik olmadan her
+    # çağrı EACCES alır ve autoheal hiçbir şeyi kurtaramaz. Ölçüldü: ilk
+    # sürüm tam olarak böyle sessizce işe yaramıyordu.
+    #
+    # gid HOSTA GÖRE DEĞİŞİR. Kendi sunucunuzunkini şöyle bulun:
+    #   stat -c '%g' /var/run/docker.sock
+    # ve .env'de DOCKER_GID olarak verin. Yanlış/boş bırakılırsa autoheal
+    # kendini kapatmaz; olay akışı koptu diye loglar — sessiz kalmaz.
+    group_add:
+      - ${DOCKER_GID:-999}
     healthcheck:
       test: ["NONE"]
     networks: [maestro]

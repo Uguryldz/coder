@@ -466,3 +466,39 @@ describe("the installer refuses to pass silently over the analysis settings", ()
     expect(flowSection).toContain("onay ");
   });
 });
+
+/**
+ * The autohealer is the only container that talks to the Docker daemon, and
+ * both of its wiring mistakes were invisible until a live install.
+ *
+ * It runs as uid 10001 (the shared hardening) while the socket is root:docker,
+ * so without an extra group membership every call it makes returns EACCES —
+ * the service comes up, logs "izleniyor", and rescues nothing. Measured: the
+ * first version shipped exactly like that.
+ */
+describe("autoheal can actually reach the Docker socket", () => {
+  const autoheal = (compose.services as Record<string, Record<string, unknown>>)["autoheal"];
+
+  it("is in the bundle at all", () => {
+    expect(autoheal).toBeDefined();
+  });
+
+  it("joins the socket's group, because uid 10001 alone gets EACCES", () => {
+    expect(autoheal?.["group_add"]).toEqual([expect.stringContaining("DOCKER_GID")]);
+  });
+
+  it("mounts the socket READ-ONLY — it restarts, it does not build or remove", () => {
+    const volumes = autoheal?.["volumes"] as string[];
+    expect(volumes.some((v) => v.endsWith("/var/run/docker.sock:ro"))).toBe(true);
+  });
+
+  /**
+   * A blank project name would widen the restart filter to EVERY container on
+   * the host. The bin refuses to start without one; the bundle must never be
+   * the thing that hands it an empty string.
+   */
+  it("names the project whose containers it may restart", () => {
+    const env = autoheal?.["environment"] as Record<string, string>;
+    expect(env["COMPOSE_PROJECT_NAME"]).toContain("COMPOSE_PROJECT_NAME");
+  });
+});

@@ -24,14 +24,32 @@ bilerek kısadır: orada olmayan her ayarın varsayılanı doğrudur (§8).
 | Açık port | yalnızca panel portu (varsayılan 7000) |
 | Ağ | sunucudan **registry**'ye, **Jira**'ya ve **LLM uç noktasına** erişim |
 
-İmajları registry'ye siz push edersiniz:
+İmajları registry'ye siz push edersiniz. **Depo adı ve etiket, `.env.example`
+içindeki `MAESTRO_NODE_IMAGE` / `MAESTRO_STUDIO_IMAGE` satırlarıyla birebir
+aynı olmalıdır** — burada başka bir ad kullanırsanız `install.sh` "imaj
+çekilemedi" der ve sebebi listelemediği için aramak zaman alır.
+
+Kaynaktan üretiyorsanız (`deploy/banka/README.md` §3 aynı komutları taşır):
 
 ```bash
-docker tag maestro/node:e22392a   <registry>/maestro/node:e22392a
-docker tag maestro/studio:e22392a <registry>/maestro/studio:e22392a
-docker push <registry>/maestro/node:e22392a
-docker push <registry>/maestro/studio:e22392a
+# depo kökünde
+docker build -f deploy/docker/Dockerfile.node   -t uguryldz/maestro-node:1.0.4   .
+docker build -f deploy/docker/Dockerfile.studio -t uguryldz/maestro-studio:1.0.4 .
 ```
+
+Kurum registry'sine aynarken:
+
+```bash
+docker tag uguryldz/maestro-node:1.0.4   <registry>/maestro-node:1.0.4
+docker tag uguryldz/maestro-studio:1.0.4 <registry>/maestro-studio:1.0.4
+docker push <registry>/maestro-node:1.0.4
+docker push <registry>/maestro-studio:1.0.4
+```
+
+**Beş imajın hepsi aynalanmalıdır.** Uygulamanın iki imajının yanında
+`POSTGRES_IMAGE`, `REDIS_IMAGE` ve `TEMPORAL_IMAGE` de `.env.example`'da
+`docker.io/uguryldz/*` adresini gösterir; yalnız ikisini aynalayan bir kurulum,
+kapalı ağda kalan üçüne erişemez.
 
 ---
 
@@ -59,8 +77,8 @@ o sürücü çalışır) ve kurum registry'si kullanacaksanız **imaj adresleri*
 tamamını değiştirin:
 
 ```bash
-MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.3"
-MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.3"
+MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.4"
+MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.4"
 
 # İKİSİNDEN YALNIZCA BİRİ — hangisini doldurursanız o sürücü çalışır:
 JIRA_CLOUD_BASE_URL="https://kurum.atlassian.net"   # Jira Cloud

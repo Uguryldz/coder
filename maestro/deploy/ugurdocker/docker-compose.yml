@@ -389,13 +389,58 @@ services:
     environment:
       <<: [*node-env, *node-secrets]
       MAESTRO_ENTRYPOINT: apps/deploy/dist/bin/worker.js
+      # Sağlık ucunun portu. Yalnız konteyner içinde dinlenir (dışarı
+      # AÇILMAZ): tek tüketicisi aşağıdaki healthcheck'tir.
+      WORKER_HEALTH_PORT: "7002"
     # workspace dahil: analiz aktiviteleri bff'in klonladığı depoyu
     # workspacePath'ten okur — mount olmadan yol worker'da hiç var olmaz.
     volumes: *workspace-volumes
     depends_on:
       temporal: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    # Worker HTTP sunmaz; canlılık = süreç ayakta (restart politikası korur).
+    # Canlılık = KUYRUĞU YOKLUYOR, "süreç ayakta" değil.
+    #
+    # Eskiden burada `test: ["NONE"]` vardı ve worker'ı yalnız
+    # `restart: unless-stopped` koruyordu — o da SÜRECİN ölmesine tepki verir.
+    # Sahayı asıl kilitleyen arıza bunun tersi: worker ayakta ama artık iş
+    # alamıyor (Temporal bağlantısı düşüp geri gelmiyor, yoklama takılıyor).
+    # Docker'ın gördüğü her ölçüde sağlıklıdır, kuyruk dolar, son başarılı
+    # koşudan sonra log'a tek satır düşmez ve analiz "hiç bitmez".
+    #
+    # WORKER_HEALTH_PORT ucu tam bunu söyler: RUNNING'e ulaşana kadar 503,
+    # ulaştığında 200. Yeniden başlatmayı 'autoheal' servisi yapar —
+    # compose'un kendisi sağlık durumuna göre restart ETMEZ.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7002/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      # Workflow paketini derleyip Temporal'a bağlanması bu kadar sürebilir;
+      # daha kısa bir pencere sağlıklı bir worker'ı açılışta öldürürdü.
+      start_period: 120s
+    networks: [maestro]
+
+  # ── Otomatik iyileşme ───────────────────────────────────────────────────────
+  # Compose sağlık durumuna göre konteyner YENİDEN BAŞLATMAZ:
+  # `restart: unless-stopped` yalnız süreç ölünce devreye girer. Analiz
+  # kurulumunu asıl kilitleyen arıza ise bunun tersi — worker ayakta ama artık
+  # iş alamıyor. Healthcheck bunu görür, Docker `unhealthy` yazar ve sonra
+  # HİÇBİR ŞEY olmaz. Bu servis o halkayı kapatır.
+  #
+  # Yalnız BU yığının konteynerlerini kurtarır (compose proje etiketi) ve tek
+  # bildiği fiil "restart"tır: yaratmaz, silmez, yapılandırma değiştirmez.
+  # Docker soketi salt-okunur bağlanır.
+  autoheal:
+    <<: *node-hardening
+    image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env) — registry öneki dahil tam adres}
+    environment:
+      MAESTRO_ENTRYPOINT: apps/deploy/dist/bin/autoheal.js
+      # Filtrenin kapsamı. Boş kalırsa süreç açılmaz — adsız bir filtre
+      # HOSTTAKİ HER konteyneri kapsardı, ki bu asla olmamalı.
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-maestro}
+      NODE_ENV: ${NODE_ENV:-development}
+    volumes:
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro
     healthcheck:
       test: ["NONE"]
     networks: [maestro]

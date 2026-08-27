@@ -23,6 +23,21 @@ export const BFF_MESSAGE_KEYS = {
   /** The comment's author is not an account the audit trail can attribute (M33). */
   commandUnknownActor: "command.unknown_actor",
   pendingAssignment: "match.pending_assignment",
+  /**
+   * Intake refused the ticket, and the person who typed `/ai-start` is told
+   * why ON THE TICKET.
+   *
+   * This used to return silently: the command was refused, no comment was
+   * posted, no run appeared in Studio, and the only trace was a `warn` line in
+   * a container log. An operator's first attempt on a fresh install produced
+   * nothing at all, anywhere — which is exactly how "I could not even get an
+   * analysis" happens.
+   *
+   * `unbound` stays silent on purpose (M102, see `jira-commands.ts`): the
+   * project is not ours to answer for. This one is, and the fix is a label the
+   * author can add themselves.
+   */
+  intakeNotOptedIn: "intake.not_opted_in",
 } as const;
 
 export type BffMessageKey = (typeof BFF_MESSAGE_KEYS)[keyof typeof BFF_MESSAGE_KEYS];

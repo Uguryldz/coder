@@ -282,7 +282,34 @@ async function intakeCommand(
   outcome: IntakeOutcome,
   ticket: TicketKey,
 ): Promise<CommandOutcome> {
-  if (!outcome.accepted) return { accepted: false, command, reason: outcome.reason };
+  if (!outcome.accepted) {
+    /**
+     * Answer ON THE TICKET, where the person who typed the command is looking.
+     *
+     * `kill_switch` and `no_application` already comment from inside intake;
+     * these two returned in silence, so a `/ai-start` on a fresh install
+     * produced no comment, no run and no visible trace — the operator's first
+     * attempt simply vanished. Refusing is fine; refusing invisibly is not.
+     */
+    /**
+     * `unbound` is NOT answered, deliberately — see this file's header (M102).
+     * The single global webhook sees every project in the instance, so a reply
+     * would tell the author that Maestro is watching a project it was never
+     * bound to. That silence is a decision, not an oversight.
+     *
+     * `not_opted_in` is different: the project IS bound, the author is entitled
+     * to know the platform is there, and the only thing missing is a label they
+     * can add themselves. Leaving that one silent made a `/ai-start` look like
+     * a platform that was down.
+     */
+    if (outcome.reason === "not_opted_in") {
+      await reply(deps, ticket, BFF_MESSAGE_KEYS.intakeNotOptedIn, {
+        ticket,
+        label: deps.config.optInLabel,
+      });
+    }
+    return { accepted: false, command, reason: outcome.reason };
+  }
   await reply(deps, ticket, BFF_MESSAGE_KEYS.commandAccepted, { command: `/${command}` });
   return { accepted: true, command, workflowId: outcome.workflowId };
 }

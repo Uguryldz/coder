@@ -241,6 +241,36 @@ if [[ -z "${LLM_BASE_URL:-}" ]]; then
   info "  (gerekiyorsa) anahtar, ardından 'Test et'."
 fi
 
+# ── Analiz kurulumu: iki değişken sessizce açık kalırsa akış BİTMEZ ──────────
+# Bu ikisi .env'de yorumlu gelir, ve ikisinin de boş kalması sahada aynı
+# cümleye çıkıyor: "analiz bile yapamadım".
+#
+#  · MAESTRO_FLOW boş  → kural dışı kalan ticket TAM boru hattına girer. Analiz
+#    yazılır, iki kapıdan geçer, sonra mühendislik adımında RUNNER_IMAGE_LINUX
+#    yok diye ölür — yani iş bittikten SONRA, en pahalı yerde.
+#  · JIRA_POLL_MS boş  → Jira yorumundaki /approve hiç okunmaz. Jira Cloud'da
+#    webhook imzası doğrulanamadığı için bu tek yoldur; kapı sonsuza dek açık
+#    bekler ve koşu "takıldı" görünür.
+#
+# Kurulum bunları dayatmaz — kod yazan bir saha için ikisi de doğru olabilir —
+# ama sessizce geçmez: soran bir betik, bir hafta sonra log okuyan operatörden
+# ucuzdur.
+if [[ -z "${MAESTRO_FLOW:-}" ]]; then
+  warn "MAESTRO_FLOW boş: hiçbir kurala uymayan ticket KOD YAZAN akışa düşer."
+  warn "  Bu paket sanal makine filosu (RUNNER_IMAGE_LINUX) TAŞIMAZ; o akış"
+  warn "  analiz yazıldıktan ve iki kapı onaylandıktan SONRA hata verir."
+  warn "  Yalnız analiz için kurduysanız .env'de:  MAESTRO_FLOW=\"analiz\""
+  onay "Böyle devam edilsin mi (kod yazan akış açık kalsın)?" \
+    || die "MAESTRO_FLOW=\"analiz\" yazıp tekrar çalıştırın."
+fi
+if [[ -z "${JIRA_POLL_MS:-}" || "${JIRA_POLL_MS:-0}" == "0" ]]; then
+  warn "JIRA_POLL_MS boş: ticket'a yazılan /approve OKUNMAZ, kapılar açık kalır."
+  warn "  Jira Cloud kullanıyorsanız .env'de:  JIRA_POLL_MS=\"60000\""
+  warn "  (Webhook'u çalışan bir Data Center kurulumunda kapalı kalması DOĞRUdur.)"
+  onay "Böyle devam edilsin mi (yoklama kapalı kalsın)?" \
+    || die "JIRA_POLL_MS ayarlayıp tekrar çalıştırın."
+fi
+
 # LLM_BASE_URL sonunda /v1 → sürücü de ekler → /v1/v1 → her çağrı 404
 # (Yalnız .env'e adres yazılmışsa. Model artık panelden tanımlanabilir; boş
 # bırakılmışsa denetlenecek bir adres yoktur.)

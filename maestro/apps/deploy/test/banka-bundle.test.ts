@@ -425,3 +425,44 @@ describe("banka bundle: the hand-written literals match the repository", () => {
     expect(install).toContain("Ayarlar & bağlantılar");
   });
 });
+
+/**
+ * The two settings that decide whether an analysis install can finish a ticket.
+ *
+ * Both ship commented out in `.env.example`, and both failing silently produces
+ * the same field report: "the analysis never finished". Reproduced on a clean
+ * install of the real bundle:
+ *
+ *  · `MAESTRO_FLOW` empty — a ticket that matches no listening rule takes the
+ *    FULL pipeline. The analysis is written, both gates are approved, and the
+ *    run then dies in the engineering turn because `RUNNER_IMAGE_LINUX` is
+ *    unset: after the work is done, at the most expensive point.
+ *  · `JIRA_POLL_MS` empty — `/approve` written on the ticket is never read. On
+ *    Jira Cloud the webhook signature cannot be verified, so polling is the
+ *    ONLY path; without it every gate waits forever and the run looks stuck.
+ *
+ * The installer does not force either — a code-writing site legitimately wants
+ * both off — but it must not pass over them in silence. Asking costs one
+ * prompt; not asking costs an operator a week of reading logs.
+ */
+describe("the installer refuses to pass silently over the analysis settings", () => {
+  it("warns when no flow is set, and says what happens", () => {
+    expect(install).toContain("MAESTRO_FLOW");
+    // Names the consequence, not just the variable.
+    expect(install).toMatch(/KOD YAZAN akışa düşer/);
+    expect(install).toMatch(/MAESTRO_FLOW=\\"analiz\\"/);
+  });
+
+  it("warns when the Jira poller is off, and says approvals will not be read", () => {
+    expect(install).toContain("JIRA_POLL_MS");
+    expect(install).toMatch(/\/approve OKUNMAZ/);
+    // And says when leaving it off is CORRECT, so a DC site is not scared into
+    // enabling a second reader for comments its webhook already delivers.
+    expect(install).toMatch(/Data Center/);
+  });
+
+  it("asks rather than dies, because both settings have legitimate off states", () => {
+    const flowSection = install.slice(install.indexOf("MAESTRO_FLOW boş"));
+    expect(flowSection).toContain("onay ");
+  });
+});

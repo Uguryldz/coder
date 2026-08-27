@@ -232,6 +232,24 @@ describe("Jira command path (M105)", () => {
     expect(h.runs.started).toHaveLength(1);
   });
 
+  /**
+   * Silence here is a DECISION, not an oversight (M102).
+   *
+   * One global webhook sees every project in the Jira instance. Answering on a
+   * project nobody bound — even to refuse — would tell its author that Maestro
+   * is watching a project it was never given. So `unbound` posts nothing, and
+   * this test exists so a future "why is this silent?" does not turn a security
+   * boundary into a bug report.
+   */
+  it("says NOTHING on a project nobody bound, so the platform is not disclosed", async () => {
+    const h = await harness({ bindings: [] });
+
+    const response = await deliver(h, "/ai-start");
+
+    expect(response.json()).toMatchObject({ accepted: false, reason: "unbound" });
+    expect(h.work.lastComment(TICKET) ?? "").toBe("");
+  });
+
   it("records the application when /ai-assign names one", async () => {
     const h = await harness({
       bindings: [

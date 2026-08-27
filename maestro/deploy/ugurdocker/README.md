@@ -33,17 +33,17 @@ Kaynaktan üretiyorsanız (`deploy/banka/README.md` §3 aynı komutları taşır
 
 ```bash
 # depo kökünde
-docker build -f deploy/docker/Dockerfile.node   -t uguryldz/maestro-node:1.0.4   .
-docker build -f deploy/docker/Dockerfile.studio -t uguryldz/maestro-studio:1.0.4 .
+docker build -f deploy/docker/Dockerfile.node   -t uguryldz/maestro-node:1.0.5   .
+docker build -f deploy/docker/Dockerfile.studio -t uguryldz/maestro-studio:1.0.5 .
 ```
 
 Kurum registry'sine aynarken:
 
 ```bash
-docker tag uguryldz/maestro-node:1.0.4   <registry>/maestro-node:1.0.4
-docker tag uguryldz/maestro-studio:1.0.4 <registry>/maestro-studio:1.0.4
-docker push <registry>/maestro-node:1.0.4
-docker push <registry>/maestro-studio:1.0.4
+docker tag uguryldz/maestro-node:1.0.5   <registry>/maestro-node:1.0.5
+docker tag uguryldz/maestro-studio:1.0.5 <registry>/maestro-studio:1.0.5
+docker push <registry>/maestro-node:1.0.5
+docker push <registry>/maestro-studio:1.0.5
 ```
 
 **Beş imajın hepsi aynalanmalıdır.** Uygulamanın iki imajının yanında
@@ -77,8 +77,8 @@ o sürücü çalışır) ve kurum registry'si kullanacaksanız **imaj adresleri*
 tamamını değiştirin:
 
 ```bash
-MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.4"
-MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.4"
+MAESTRO_NODE_IMAGE="<registry>/maestro-node:1.0.5"
+MAESTRO_STUDIO_IMAGE="<registry>/maestro-studio:1.0.5"
 
 # İKİSİNDEN YALNIZCA BİRİ — hangisini doldurursanız o sürücü çalışır:
 JIRA_CLOUD_BASE_URL="https://kurum.atlassian.net"   # Jira Cloud

@@ -85,7 +85,6 @@ function stubFetch(rules: object[], seedAnswer: SeedAnswer = {}): ReturnType<typ
     if (u.includes("/studio/listening-rules") && method === "PUT") {
       return Response.json({ rule: { ...SEED } }, { status: 200 });
     }
-    if (u.includes("/studio/pilot/listening")) return Response.json({ ok: true });
     // The assignee field pre-fills from a tested Jira connection's botAccountId.
     if (u.includes("/onboarding/jira-connections")) {
       return Response.json({ connections: [] });

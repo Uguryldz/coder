@@ -23,18 +23,21 @@ const MOCK_VIEW_IDS = [
 ] as const;
 
 /**
- * Screens added AFTER the mock froze, or reshaped after it. `pilot` (Dalga D) is
- * Studio's face for the pilot's real-Jira flow, `flow` draws that project's live
- * Jira workflow as SVG. `projects` is the ONE page that gathers the three
- * project-binding steps — add application, Jira mapping & approval, listening
- * rules — which used to be the separate `onboard`, `routing` and `listening`
- * screens (now its tabs; their old paths redirect into it). `setup` is the
- * guided wizard that walks a non-technical operator through the SAME
- * configuration in outcome language; `projects` stays as the expert path, which
- * is why both are here rather than one replacing the other. Listed explicitly so
- * the coverage check stays honest: a dropped or accidental screen still fails.
+ * Screens added AFTER the mock froze, or reshaped after it. `projects` is the
+ * ONE page that gathers the three project-binding steps — add application, Jira
+ * mapping & approval, listening rules — which used to be the separate
+ * `onboard`, `routing` and `listening` screens (now its tabs; their old paths
+ * redirect into it). `setup` is the guided wizard that walks a non-technical
+ * operator through the SAME configuration in outcome language; `projects` stays
+ * as the expert path, which is why both are here rather than one replacing the
+ * other. Listed explicitly so the coverage check stays honest: a dropped or
+ * accidental screen still fails.
+ *
+ * `pilot` (Dalga D) was here too — Studio's face for the retired pilot engine's
+ * real-Jira flow, with `flow` as its process map. Both are gone with the engine;
+ * their paths redirect to the Panel so old links still resolve.
  */
-const POST_MOCK_VIEW_IDS = ["pilot", "projects", "setup"] as const;
+const POST_MOCK_VIEW_IDS = ["projects", "setup"] as const;
 const EXPECTED_VIEW_IDS = [...MOCK_VIEW_IDS, ...POST_MOCK_VIEW_IDS];
 
 describe("route table", () => {

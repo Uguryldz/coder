@@ -59,7 +59,7 @@ export function StartGuide({
     { key: "step2", done: setup.hasBinding, to: "/projects?tab=onboard" },
     { key: "webhook", done: setup.hasWebhook, to: "/help?cat=system#jira" },
     { key: "step3", done: setup.hasTrainedAgent, to: "/variants" },
-    { key: "step4", done: false, to: "/pilot" }, // "watch" — the goal, never auto-checked
+    { key: "step4", done: false, to: "/dash" }, // "watch" — the goal, never auto-checked
   ];
   const nextIdx = steps.findIndex((s) => !s.done);
 

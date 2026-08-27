@@ -42,7 +42,6 @@ const ROUTES = [
     status: 201,
     body: { note: { id: "ag_9", title: "yeni.md", content: "x", enabled: true, updatedAt: "2026-08-15T09:00:00.000Z", variantId: "analyst-web" } },
   },
-  { path: "/studio/pilot/guidance", method: "POST", body: { ok: true } },
 ] as const;
 
 /** Fire the hidden file input directly (display:none defeats user-event). */
@@ -87,7 +86,7 @@ describe("variant detail — knowledge tab, targeted guidance", () => {
     await waitFor(() => expect(tab).toHaveTextContent("Knowledge2"));
   });
 
-  it("uploads a document WITH this variant's id, then mirrors into the pilot", async () => {
+  it("uploads a document WITH this variant’s id, and mirrors nowhere else", async () => {
     const { fetchImpl, calls } = stubFetch([...ROUTES]);
     renderScreen(<VariantScreen />, {
       fetchImpl,
@@ -108,14 +107,9 @@ describe("variant detail — knowledge tab, targeted guidance", () => {
       expect(post?.body).toMatchObject({ fileName: "yeni.md", variantId: "analyst-web" });
     });
 
-    // After the write the enabled set is pushed into the running pilot.
-    await waitFor(() => {
-      expect(
-        calls.some(
-          (call) => call.url.endsWith("/studio/pilot/guidance") && call.method === "POST",
-        ),
-      ).toBe(true);
-    });
+    // The write used to be mirrored into the running pilot. That engine is
+    // retired, and a call to it now would be a request to nothing.
+    expect(calls.some((call) => call.url.includes("/studio/pilot/"))).toBe(false);
   });
 
   it("hides the upload button and actions from a viewer (write is admin/tech-lead)", async () => {

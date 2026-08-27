@@ -269,8 +269,7 @@ export function VariantScreen(): ReactNode {
  * A document uploaded here becomes a guidance note with `variantId` set to this
  * variant, so it is injected only into THIS agent's context (the Knowledge
  * screen's upload stays global — every agent). After a successful write the
- * enabled set is mirrored into the running pilot, exactly like the general
- * library does, and the shared ["guidance"] query refreshes both screens.
+ * shared ["guidance"] query refreshes both screens.
  */
 function VariantGuidance({
   variantId,
@@ -295,8 +294,6 @@ function VariantGuidance({
 
   const invalidate = (): void => {
     void queryClient.invalidateQueries({ queryKey: ["guidance"] });
-    // Push the new enabled set into the running pilot so the NEXT analysis uses it.
-    void api.post("/studio/pilot/guidance", {}).catch(() => undefined);
   };
 
   const upload = useMutation({

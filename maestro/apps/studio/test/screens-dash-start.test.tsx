@@ -59,8 +59,6 @@ function panelRoutes(
         nextCursor: null,
       },
     },
-    { path: "/studio/pilot/state", body: { running: false, ticketKey: null } },
-    { path: "/studio/pilot/runs", body: { runs: [] } },
     { path: "/onboarding/jira-connections", body: { connections: [{ id: "jira" }] } },
     { path: "/onboarding/scm-connections", body: { connections: [] } },
     { path: "/routing", body: { projects: over.projects ?? [{ projectKey: "OPS" }] } },

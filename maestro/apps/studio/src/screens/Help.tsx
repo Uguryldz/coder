@@ -27,7 +27,7 @@ import "./shared/screens.css";
  * a group the menu does not.
  */
 const CATEGORIES: readonly { readonly id: string; readonly pages: readonly string[] }[] = [
-  { id: "start", pages: ["dash", "pilot", "sandbox"] },
+  { id: "start", pages: ["dash", "sandbox"] },
   { id: "ai", pages: ["variants", "knowledge", "template", "doctemplate", "eval"] },
   { id: "compliance", pages: ["audit", "pii", "aiusage", "security", "evidence"] },
   { id: "system", pages: ["projects", "notify", "users", "settings", "params", "health", "runners"] },
@@ -43,7 +43,6 @@ const PAGE_LINK: Readonly<Record<string, string>> = {
   template: "/template",
   doctemplate: "/doctemplate",
   notify: "/notify",
-  pilot: "/pilot",
   knowledge: "/knowledge",
   audit: "/audit",
   evidence: "/evidence",

@@ -495,9 +495,12 @@ describe("HelpScreen", () => {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
     expect(screen.getAllByRole("tab")).toHaveLength(4);
-    // The start tab (default) now explains the daily-work pages.
-    expect(screen.getByText("Canlı akış")).toBeInTheDocument();
+    // The start tab (default) now explains the daily-work pages. "Canlı akış"
+    // is NOT among them any more: that guide described the retired pilot
+    // engine's screen, and a guide to a page that no longer exists is worse
+    // than no guide at all.
     expect(screen.getByText("Canlı oturumlar")).toBeInTheDocument();
+    expect(screen.queryByText("Canlı akış")).not.toBeInTheDocument();
   });
 
   it("moves a group's pages with it — agents own the knowledge and template pages", async () => {

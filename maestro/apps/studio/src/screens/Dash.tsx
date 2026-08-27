@@ -1,12 +1,8 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "../api/errors.ts";
-import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Kpi, riskTone } from "../ui/index.ts";
-import type { BadgeTone } from "../ui/index.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { ageLabel } from "./shared/format.ts";
 import { useRuns, type RunRow } from "./shared/runs.ts";
@@ -40,28 +36,8 @@ function needsHuman(run: RunRow): boolean {
   return run.status === "fail" || run.status === "handover";
 }
 
-/** Mirrors apps/pilot/src/state.ts `RunHistoryEntry` — same wire type Pilot.tsx reads. */
-interface PilotRunWire {
-  readonly runId: string;
-  readonly ticketKey: string;
-  readonly browseUrl: string | null;
-  readonly flowType: string | null;
-  readonly outcome: "tamamlandı" | "durduruldu" | "hata";
-  readonly detail: string | null;
-  readonly stepsDone: number;
-  readonly stepsTotal: number;
-  readonly finishedAt: string;
-}
-
-const PILOT_OUTCOME_TONE: Readonly<Record<PilotRunWire["outcome"], BadgeTone>> = {
-  "tamamlandı": "green",
-  "durduruldu": "amber",
-  "hata": "red",
-};
-
 export function DashScreen(): ReactNode {
   const t = useT();
-  const api = useApi();
   const navigate = useNavigate();
   /**
    * The four KPI tiles are counted from THIS response, and `TicketsList` below
@@ -79,55 +55,18 @@ export function DashScreen(): ReactNode {
    */
   const { data, isPending, error, refetch } = useRuns(200);
 
-  // Is the flow engine (pilot) alive? If its state cannot be read, no job can
-  // run and the operator would otherwise not know — the dashboard shows work,
-  // not the absence of a worker. A short poll drives a plain alert when it is
-  // unreachable, so "nobody is processing tickets" is visible, not silent.
-  const pilot = useQuery({
-    queryKey: ["pilot-health"],
-    queryFn: ({ signal }) =>
-      api.get<{ running: boolean; ticketKey: string | null }>("/studio/pilot/state", { signal }),
-    refetchInterval: 15_000,
-    retry: false,
-  });
   /**
-   * THREE failure tones, because "the pilot did not answer" is not one fact.
+   * There is ONE engine to report on now, and `useRuns` above already reads it.
    *
-   * The topology this must respect: the prod compose (deploy/ugurdocker) has
-   * NO pilot service at all, by design — tickets there run the Temporal line
-   * (webhook → workflow → worker) and show up in `/studio/runs`. So a bare
-   * `pilot_unreachable` is a PERMANENT, NORMAL state on prod, and the old rule
-   * ("pilot down ⇒ red 'no ticket is processed'") told a standing lie there.
-   *
-   * The "nobody is processing" verdict therefore belongs to the TEMPORAL
-   * path's own read — the same `/studio/runs` the tiles are counted from:
-   *  · pilot unreachable AND runs unreadable → the red alert is earned;
-   *    neither engine can be shown to be working.
-   *  · pilot unreachable, runs healthy → the pilot is simply not part of this
-   *    installation (or is off while the real line works): a small note, not
-   *    an alarm.
-   *  · any OTHER pilot error (a blip, a 500) proves nothing about either
-   *    engine — the soft "could not be read, retrying" tone; the 15s poll
-   *    decides what it really was.
+   * This screen used to open with a second, parallel account of the platform's
+   * health: a poll of the pilot's `/studio/pilot/state` behind three banner
+   * tones, and a "live jobs" card built from the pilot's own run history. The
+   * pilot is retired, so all of it could only ever render the absent-engine
+   * case — a standing warning about a component this installation no longer
+   * has, above numbers that were already telling the truth. The run list below
+   * IS the live picture: `/studio/runs` joins the catalog to the workflow
+   * state, and a failed read of it surfaces through `QueryState` as itself.
    */
-  const runsBroken = error != null;
-  const pilotGone = pilot.error instanceof ApiError && pilot.error.code === "pilot_unreachable";
-  const pilotDown = pilotGone && runsBroken;
-  const pilotAbsent = pilotGone && !runsBroken;
-  const pilotUnknown = pilot.isError && !pilotGone;
-
-  // The engine's REAL jobs — the pilot's own run history, not the DB catalog.
-  // Same endpoint and shape the Pilot screen reads (`/studio/pilot/runs`).
-  const pilotRuns = useQuery({
-    queryKey: ["pilot-runs"],
-    queryFn: ({ signal }) =>
-      api.get<{ runs: readonly PilotRunWire[] }>("/studio/pilot/runs", { signal }),
-    refetchInterval: 15_000,
-    retry: false,
-  });
-  const engineJobs = pilotRuns.data?.runs ?? [];
-  const runningTicket = pilot.data?.running === true ? pilot.data.ticketKey : null;
-
   const runs = useMemo(() => data?.runs ?? [], [data]);
 
   const stats = useMemo(() => {
@@ -167,86 +106,6 @@ export function DashScreen(): ReactNode {
 
   return (
     <div className="screen-stack">
-      {pilotDown && (
-        <div className="dash-alert" role="alert">
-          <span className="dash-alert__icon">⚠</span>
-          <div>
-            <b>{t("dash.pilot_down.title")}</b>
-            <div className="screen-note">{t("dash.pilot_down.body")}</div>
-          </div>
-        </div>
-      )}
-      {/* Not an alarm: the Temporal line answers, only the pilot is absent —
-          the prod topology, every day. */}
-      {pilotAbsent && (
-        <div className="screen-note" role="status">
-          {t("dash.pilot_absent.note")}
-        </div>
-      )}
-      {/* A status, not an alert: the engine may be fine — only the READ failed. */}
-      {pilotUnknown && (
-        <div className="screen-note" role="status">
-          <b>{t("dash.pilot_unknown.title")}</b> — {t("dash.pilot_unknown.body")}
-        </div>
-      )}
-
-      {/* The engine's real jobs, on top: what the pilot is running NOW and what
-          it actually finished. Hidden while the pilot is unreachable — the
-          alert above already says so, and an empty card would double the news. */}
-      {!pilotDown && !pilotRuns.isError && (
-        <Card title={t("dash.live.title")} subtitle={t("dash.live.subtitle")}>
-          {runningTicket === null && engineJobs.length === 0 ? (
-            <p className="screen-note">{t("dash.live.empty")}</p>
-          ) : (
-            <div className="screen-steps">
-              {runningTicket !== null && (
-                <button
-                  type="button"
-                  className="screen-step"
-                  style={{ cursor: "pointer", width: "100%", textAlign: "left" }}
-                  onClick={() => void navigate("/pilot")}
-                >
-                  <span className="screen-step__title">
-                    <b className="screen-mono">{runningTicket}</b>
-                  </span>
-                  <span className="screen-step__state">
-                    <Badge tone="blue">{t("dash.live.now")}</Badge>
-                  </span>
-                </button>
-              )}
-              {engineJobs.map((job) => {
-                const age = ageLabel(job.finishedAt);
-                return (
-                  <button
-                    key={job.runId}
-                    type="button"
-                    className="screen-step"
-                    style={{ cursor: "pointer", width: "100%", textAlign: "left" }}
-                    onClick={() => void navigate("/pilot")}
-                  >
-                    <span className="screen-step__title">
-                      <b className="screen-mono">{job.ticketKey}</b>
-                      <span className="screen-note">
-                        {" "}
-                        {job.flowType !== null ? `${job.flowType} · ` : ""}
-                        {t("pilot.history.steps", {
-                          done: String(job.stepsDone),
-                          total: String(job.stepsTotal),
-                        })}
-                        {age === null ? "" : ` · ${t(age.key, age.params)}`}
-                      </span>
-                    </span>
-                    <span className="screen-step__state">
-                      <Badge tone={PILOT_OUTCOME_TONE[job.outcome] ?? "gray"}>{job.outcome}</Badge>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      )}
-
       {/* Setup is not this screen's job any more — the Panel is a REPORT.
           The five-step checklist now lives where the work happens, in the
           wizard, and what stays here is the one line that says the platform is

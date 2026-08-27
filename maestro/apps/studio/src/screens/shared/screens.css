@@ -491,12 +491,3 @@
   margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid var(--border);
   font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--ink, inherit);
 }
-
-/* Dashboard alert banner: the flow engine (pilot) is unreachable. */
-.dash-alert {
-  display: flex; gap: 12px; align-items: flex-start;
-  padding: 14px 16px; border-radius: 10px;
-  background: color-mix(in srgb, var(--red, #dc2626) 9%, transparent);
-  border: 1px solid color-mix(in srgb, var(--red, #dc2626) 32%, transparent);
-}
-.dash-alert__icon { font-size: 18px; line-height: 1.4; flex: none; }

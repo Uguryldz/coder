@@ -2,23 +2,23 @@ import type { ReactNode } from "react";
 import { ConnectorsPanel } from "./settings/ConnectorsPanel.tsx";
 import { InfrastructurePanel } from "./settings/InfrastructurePanel.tsx";
 import { KillSwitchPanel } from "./settings/KillSwitchPanel.tsx";
-import { PilotSettingsPanel } from "./settings/PilotSettingsPanel.tsx";
 
 /**
  * Ayarlar & bağlantılar — the platform's outbound connections, the
  * infrastructure it runs on, and the kill switch.
  *
- * Four sections, all real:
+ * Three sections, all real:
  *  · {@link ConnectorsPanel} — the ADMIN-EDITABLE outbound connections (Jira,
  *    GitHub, OpenRouter…): add a URL + token, test it LIVE, token stored
  *    AES-encrypted and shown only as a mask (M9/migration 0010).
  *  · {@link InfrastructurePanel} — the READ-ONLY deployment facts from
  *    `/settings`: the workflow engine, the database, the LLM endpoint and the
  *    ports wired (or not) by `deploy/.env`.
- *  · {@link PilotSettingsPanel} — the flow engine's runtime settings, proxied
- *    to the pilot (`/studio/pilot/settings`); schema-agnostic so engine-side
- *    additions survive a Studio round-trip.
  *  · {@link KillSwitchPanel} — the two-level emergency stop (M58).
+ *
+ * The engine-settings panel that sat between them is gone with the pilot it
+ * proxied to: its fields were the pilot's own runtime vocabulary, and the
+ * Temporal line takes none of them.
  *
  * A read-only "deployment facts" table was once removed from this screen
  * because it restated the editable panel under the same heading. That was true
@@ -37,7 +37,6 @@ export function SettingsScreen(): ReactNode {
     <div className="scr-stack">
       <ConnectorsPanel />
       <InfrastructurePanel />
-      <PilotSettingsPanel />
       <KillSwitchPanel />
     </div>
   );

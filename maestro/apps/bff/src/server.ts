@@ -28,7 +28,6 @@ import { runRoutes } from "./routes/runs.js";
 import { studioCatalogRoutes } from "./routes/studio-catalog.js";
 import { templateRoutes } from "./routes/template.js";
 import { studioOpsRoutes } from "./routes/studio-ops.js";
-import { studioPilotRoutes } from "./routes/studio-pilot.js";
 import { studioRunRoutes } from "./routes/studio-runs.js";
 import { studioEvalRoutes } from "./routes/studio-eval.js";
 import { studioGovernanceRoutes } from "./routes/studio-governance.js";
@@ -36,15 +35,11 @@ import { studioSurfaceRoutes } from "./routes/studio-surface.js";
 import { studioVariantRoutes } from "./routes/studio-variants.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 
-/** The loopback the pilot listens on by default (apps/pilot: UI_PORT 7020). */
-export const DEFAULT_PILOT_BASE_URL = "http://127.0.0.1:7020";
-
 export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
   actorDomain: "corp",
   locale: "tr",
   sessionTtlMs: SESSION_TTL_MS,
   optInLabel: "maestro",
-  pilotBaseUrl: DEFAULT_PILOT_BASE_URL,
   // No default identity. An unset engine account means "nothing to compare
   // against", and the connector test skips its identity check entirely — the
   // alternative (guessing an id) would let the test accuse a correct connection.
@@ -62,7 +57,7 @@ export const DEFAULT_CONFIG: Omit<BffConfig, "env"> = {
 export const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 
 export function resolveDeps(deps: BffDeps): ResolvedDeps {
-  const { messages, clock, config, studio, pilotFetch, connectorFetch, ...rest } = deps;
+  const { messages, clock, config, studio, connectorFetch, ...rest } = deps;
   // `loadEnv` throws in production when a connection value is missing (M6);
   // reading it here means the process cannot come up half-configured.
   const env = config?.env ?? loadEnv();
@@ -74,24 +69,18 @@ export function resolveDeps(deps: BffDeps): ResolvedDeps {
     messages: messages ?? defaultCatalog,
     clock: clock ?? { now: () => new Date() },
     // Precedence: an explicit config override wins, then the env variable, then
-    // the loopback default. The pilot base URL is a CONFIG value at every layer
-    // — never request-supplied — so the proxy cannot be pointed at a host a
-    // caller chose (no SSRF).
+    // the built-in default.
     config: {
       env,
       ...DEFAULT_CONFIG,
-      ...(env.PILOT_BASE_URL !== undefined ? { pilotBaseUrl: env.PILOT_BASE_URL } : {}),
       // The engine's own account, read straight off the validated env — the same
-      // variable `apps/pilot` boots its discovery JQL from, so the two halves of
+      // variable the runtime boots its discovery JQL from, so the two halves of
       // the deployment are compared against ONE source rather than two copies.
       ...(env.MAESTRO_BOT_ACCOUNT_ID !== undefined
         ? { engineBotAccountId: env.MAESTRO_BOT_ACCOUNT_ID }
         : {}),
       ...config,
     },
-    // The internal service call to the pilot. Real `fetch` unless a test injects
-    // a stub; the Studio user's token is never attached to it (see studio-pilot.ts).
-    pilotFetch: pilotFetch ?? ((input, init) => fetch(input, init)),
     // The connector transport (live tests, onboarding lists, listening seed).
     // Real fetch unless a test injects a stub; the URL is always built from a
     // stored `baseUrl`, never a request. The default is TLS-AWARE: it applies
@@ -202,11 +191,6 @@ export async function buildServer(
   // through the same guards and the same project scoping as everything above.
   await app.register(async (scope) => studioRunRoutes(scope, resolved));
   await app.register(async (scope) => studioOpsRoutes(scope, resolved));
-  // The pilot proxy (Dalga D): Studio's one face for the pilot's real-Jira flow.
-  // A thin control surface — it forwards to the pilot's HTTP API and never
-  // becomes the flow engine. Own encapsulation context so its SSE passthrough
-  // does not touch the JSON API's serialisation.
-  await app.register(async (scope) => studioPilotRoutes(scope, resolved));
   await app.register(async (scope) => studioCatalogRoutes(scope, resolved));
   // The last eight screens: the variant catalogue, the two auditor surfaces,
   // and the product rules (commands, MCP manifest). The endpoints whose stores

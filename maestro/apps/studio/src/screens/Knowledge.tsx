@@ -150,8 +150,8 @@ export function KnowledgeScreen(): ReactNode {
 /**
  * The "öğren" library — analysis guidance an operator uploads so the AI takes it
  * into account when preparing a NEW analysis. Upload a note, toggle whether the
- * AI learns from it, delete it. The enabled notes are mirrored into the pilot
- * and injected into the analyst's context ("dikkat edilecekler").
+ * AI learns from it, delete it. The enabled notes are injected into the
+ * analyst's context ("dikkat edilecekler") when the next analysis runs.
  */
 function GuidanceLibrary(): ReactNode {
   const t = useT();
@@ -173,8 +173,6 @@ function GuidanceLibrary(): ReactNode {
 
   const invalidate = (): void => {
     void queryClient.invalidateQueries({ queryKey: ["guidance"] });
-    // Push the new enabled set into the running pilot so the NEXT analysis uses it.
-    void api.post("/studio/pilot/guidance", {}).catch(() => undefined);
   };
 
   const add = useMutation({
@@ -193,8 +191,8 @@ function GuidanceLibrary(): ReactNode {
    * File → note ("ajan eğitimi"). The file is read in the browser and posted as
    * `{ fileName, contentBase64 }` JSON — same pipeline (auth, error codes) as
    * every other write; the BFF extracts the text (docx included) and stores an
-   * enabled note. `invalidate()` then refreshes the list AND pushes the enabled
-   * set into the running pilot, exactly like a typed note.
+   * enabled note. `invalidate()` then refreshes the list, exactly like a typed
+   * note.
    */
   const upload = useMutation({
     mutationFn: async (file: File) => {

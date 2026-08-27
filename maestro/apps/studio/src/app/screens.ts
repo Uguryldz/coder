@@ -68,9 +68,9 @@ export const SCREENS: readonly ScreenDef[] = [
   // "tickets" (İş akışları) merged into the Panel — Dash renders TicketsList and
   // /tickets redirects to /dash (routes.tsx). No SCREENS row: it is not a page of
   // its own any more, just a redirect.
-  // Canlı akış = Pilot (list) + Flow (map) as two tabs of one page (WatchScreen).
-  // /flow redirects to /pilot?view=map (routes.tsx); no separate SCREENS row.
-  { id: "pilot", path: "pilot", titleKey: "screen.pilot.title", navKey: "nav.pilot", group: "start", icon: "🎥" },
+  // "Canlı akış" (pilot list + flow map) is gone with the retired pilot engine:
+  // both views read the pilot's own 9-step state, a vocabulary the Temporal line
+  // does not speak. Live work is the Panel's own list, over /studio/runs.
   { id: "sandbox", path: "sandbox", titleKey: "screen.sandbox.title", navKey: "nav.sandbox", group: "start", icon: "▶" },
 
   // ── ② AJANLAR — the manager's own AI config, simplified ──────────────────

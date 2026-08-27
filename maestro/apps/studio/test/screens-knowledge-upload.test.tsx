@@ -21,7 +21,6 @@ const NOTE = {
 const ROUTES = [
   { path: "/studio/guidance", body: { notes: [] } },
   { path: "/studio/guidance/upload", method: "POST", status: 201, body: { note: NOTE } },
-  { path: "/studio/pilot/guidance", method: "POST", body: { ok: true } },
 ] as const;
 
 /**
@@ -36,7 +35,7 @@ function chooseFile(file: File): void {
 }
 
 describe("guidance file upload", () => {
-  it("posts the file as { fileName, contentBase64 } and mirrors into the pilot", async () => {
+  it("posts the file as { fileName, contentBase64 } and mirrors nowhere else", async () => {
     const { fetchImpl, calls } = stubFetch([...ROUTES]);
     renderScreen(<KnowledgeScreen />, { fetchImpl, session: ADMIN });
 
@@ -57,14 +56,9 @@ describe("guidance file upload", () => {
       expect(new TextDecoder().decode(bytes)).toBe(content);
     });
 
-    // After the write the enabled set is pushed into the running pilot.
-    await waitFor(() => {
-      expect(
-        calls.some(
-          (call) => call.url.endsWith("/studio/pilot/guidance") && call.method === "POST",
-        ),
-      ).toBe(true);
-    });
+    // The write used to be mirrored into the running pilot. That engine is
+    // retired, and a call to it now would be a request to nothing.
+    expect(calls.some((call) => call.url.includes("/studio/pilot/"))).toBe(false);
   });
 
   it("shows the translated refusal when the BFF rejects the file type", async () => {

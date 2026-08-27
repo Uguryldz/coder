@@ -306,29 +306,3 @@ export async function seedProjectDefaults(
   const result = await seedDefaultRules(deps.listening, projectKey, botAccountId, fetched.issueTypes);
   return { ok: true, ...result };
 }
-
-// ── pilot mirror ──────────────────────────────────────────────────────────────
-
-/**
- * Mirror the CURRENT rule set into the running pilot — the same convergence
- * contract as `POST /studio/pilot/listening` (routes/studio-pilot.ts): the BFF
- * reads the full list from its own store (the DB source of truth) and forwards
- * it to the pilot's `/api/listening`. FAIL-SOFT by design: the DB write the
- * caller just made must never be undone or turned into an error by a mirror
- * hiccup, so an unreachable pilot returns `false` rather than throwing. The
- * next Studio edit (or pilot restart) converges the pilot again.
- */
-export async function mirrorListeningToPilot(deps: ResolvedDeps): Promise<boolean> {
-  try {
-    const rules = deps.listening === undefined ? [] : await deps.listening.list();
-    const base = deps.config.pilotBaseUrl.replace(/\/+$/, "");
-    const response = await deps.pilotFetch(`${base}/api/listening`, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ rules }),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}

@@ -5,7 +5,7 @@ import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ListeningRuleRecord, ListeningStore } from "../listening-store.js";
 import { ASSIGNED_MATCH_VALUE, FLOW_TYPES, MATCH_KINDS, StatusMapSchema } from "../listening-store.js";
-import { mirrorListeningToPilot, seedProjectDefaults } from "../listening-seed.js";
+import { seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { assertWritable } from "../platform/propose.js";
@@ -168,9 +168,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
    * Honesty rules: a missing Jira connection or an untested one (no bot
    * account) is a NAMED 409 the operator can fix; a Jira read that fails is the
    * fail-soft fallback — NO rules are written (never invented type names) and
-   * the response says why with `created: 0`. After a successful seed the full
-   * rule set is mirrored into the running pilot, fail-soft like the
-   * `/studio/pilot/listening` mirror: a mirror hiccup never undoes the DB write.
+   * the response says why with `created: 0`.
    */
   app.post(
     "/studio/listening-rules/seed-defaults",
@@ -201,8 +199,6 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
 
       if (outcome.created > 0) {
         await audit(deps, request, `seed:${body.data.projectKey}`, "seeded");
-        // Converge the running pilot on the new rule set; fail-soft by contract.
-        await mirrorListeningToPilot(deps);
       }
       return reply
         .code(200)

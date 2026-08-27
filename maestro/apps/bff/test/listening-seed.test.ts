@@ -124,33 +124,15 @@ const STATUSES_PAYLOAD = [
   { id: "4", name: "Hikaye", subtask: false, statuses: [] },
 ];
 
-interface PilotCall {
-  url: string;
-  body: unknown;
-}
-
-/** Harness with a seedable Jira read and a captured pilot mirror. */
-async function seedHarness(
-  options: HarnessOptions = {},
-): Promise<{ h: Harness; pilotCalls: PilotCall[] }> {
-  const pilotCalls: PilotCall[] = [];
+/** Harness with a seedable Jira read. */
+async function seedHarness(options: HarnessOptions = {}): Promise<{ h: Harness }> {
   const h = await harness({
     managedConnections: [JIRA_CONN],
     connectorFetch: () => Promise.resolve(Response.json(STATUSES_PAYLOAD)),
     ...options,
-    deps: {
-      pilotFetch: (url: string, init?: RequestInit) => {
-        pilotCalls.push({
-          url,
-          body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
-        });
-        return Promise.resolve(Response.json({ ok: true }));
-      },
-      ...options.deps,
-    },
   });
   await h.connectorSecrets.set("connector:jira:1", "jira_stored_token");
-  return { h, pilotCalls };
+  return { h };
 }
 
 async function adminToken(h: Harness): Promise<string> {
@@ -168,8 +150,8 @@ function seed(h: Harness, token: string, projectKey = "OPS"): Promise<LightMyReq
 }
 
 describe("POST /studio/listening-rules/seed-defaults", () => {
-  it("seeds one rule per non-subtask issue type and mirrors the set to the pilot", async () => {
-    const { h, pilotCalls } = await seedHarness();
+  it("seeds one rule per non-subtask issue type", async () => {
+    const { h } = await seedHarness();
     const token = await adminToken(h);
 
     const res = await seed(h, token);
@@ -184,18 +166,13 @@ describe("POST /studio/listening-rules/seed-defaults", () => {
     expect(stored.find((rule) => rule.matchValue === "Hata")?.flowType).toBe("duzeltme");
     expect(stored.every((rule) => rule.assigneeAccountId === BOT)).toBe(true);
 
-    // The pilot mirror was pushed with the FULL current rule set.
-    expect(pilotCalls).toHaveLength(1);
-    expect(pilotCalls[0]!.url).toMatch(/\/api\/listening$/);
-    expect((pilotCalls[0]!.body as { rules: unknown[] }).rules).toHaveLength(3);
-
     // The seed is an audited write.
     const events = await h.auditStore.read();
     expect(events.some((event) => event.subject === "listening-rule:seed:OPS")).toBe(true);
   });
 
-  it("is idempotent: a second call creates nothing, skips everything, mirrors nothing", async () => {
-    const { h, pilotCalls } = await seedHarness();
+  it("is idempotent: a second call creates nothing and skips everything", async () => {
+    const { h } = await seedHarness();
     const token = await adminToken(h);
     expect((await seed(h, token)).statusCode).toBe(200);
 
@@ -203,8 +180,6 @@ describe("POST /studio/listening-rules/seed-defaults", () => {
     expect(again.statusCode).toBe(200);
     expect(again.json()).toMatchObject({ created: 0, skipped: 3 });
     expect(await h.listening.list()).toHaveLength(3);
-    // No new rules → no second mirror push.
-    expect(pilotCalls).toHaveLength(1);
   });
 
   it("falls back honestly when Jira's type list cannot be read: no rules, no invented names", async () => {
@@ -292,8 +267,8 @@ async function submitAndApprove(h: Harness): Promise<LightMyRequestResponse> {
 }
 
 describe("onboarding approve seeds the default listening rules", () => {
-  it("a freshly approved project gets its rules automatically, mirrored to the pilot", async () => {
-    const { h, pilotCalls } = await seedHarness({ onboarding: OPTIONS });
+  it("a freshly approved project gets its rules automatically", async () => {
+    const { h } = await seedHarness({ onboarding: OPTIONS });
 
     const res = await submitAndApprove(h);
     expect(res.statusCode).toBe(200);
@@ -307,12 +282,11 @@ describe("onboarding approve seeds the default listening rules", () => {
     expect(rules).toHaveLength(3);
     expect(rules.every((rule) => rule.projectKey === "NEWPROJ")).toBe(true);
     expect(rules.find((rule) => rule.matchValue === "Hata")?.flowType).toBe("duzeltme");
-    expect(pilotCalls).toHaveLength(1);
   });
 
   it("FAIL-SOFT: a seed that cannot run never breaks the approval", async () => {
     // Jira unreachable during the seed — the approve must still bind.
-    const { h, pilotCalls } = await seedHarness({
+    const { h } = await seedHarness({
       onboarding: OPTIONS,
       connectorFetch: () => Promise.reject(new Error("jira down")),
     });
@@ -330,7 +304,6 @@ describe("onboarding approve seeds the default listening rules", () => {
     });
     expect(await h.bindings.resolve("NEWPROJ")).not.toBeNull();
     expect(await h.listening.list()).toHaveLength(0);
-    expect(pilotCalls).toHaveLength(0);
   });
 
   it("FAIL-SOFT: no Jira connection at all — approve still succeeds, and says why nothing was seeded", async () => {

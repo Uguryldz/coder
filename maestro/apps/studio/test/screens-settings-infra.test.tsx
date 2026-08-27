@@ -236,7 +236,6 @@ describe("settings screen wiring", () => {
     const { fetchImpl } = stubFetch([
       SETTINGS,
       { path: "/studio/connections", body: { connections: [] } },
-      { path: "/studio/pilot/settings", status: 404, body: { error: "not_found" } },
       { path: "/studio/killswitch", status: 404, body: { error: "not_found" } },
     ]);
     renderScreen(<SettingsScreen />, { fetchImpl, session: ADMIN });

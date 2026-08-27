@@ -40,8 +40,11 @@ export function AppRoutes(): ReactNode {
           <Route path="listening" element={<Navigate to="/projects?tab=listening" replace />} />
           {/* İş akışları list merged into the Panel; keep the old path working. */}
           <Route path="tickets" element={<Navigate to="/dash" replace />} />
-          {/* Süreç haritası (flow) merged into Canlı akış as its map tab. */}
-          <Route path="flow" element={<Navigate to="/pilot?view=map" replace />} />
+          {/* "Canlı akış" and its process map were the retired pilot engine's two
+              faces. Their paths still resolve — a bookmark must not 404 — and
+              land on the Panel, which is where live work is actually read now. */}
+          <Route path="pilot" element={<Navigate to="/dash" replace />} />
+          <Route path="flow" element={<Navigate to="/dash" replace />} />
           {/* LLM Gateway merged into AI usage & cost as its traffic tab. */}
           <Route path="llm" element={<Navigate to="/cost?view=traffic" replace />} />
           {SCREENS.map((screen) => {

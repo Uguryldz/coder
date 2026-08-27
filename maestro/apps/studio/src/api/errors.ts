@@ -136,6 +136,9 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   // Connector-management surface (Connection / ConnectorSecret, migration 0010)
   invalid_connection_id: "error.invalid_connection_id",
   invalid_connection_body: "error.invalid_connection_body",
+  // The kind's own required config is missing (`CONNECTION_KIND_SPECS`). The
+  // response carries `details.fields`, so the form can mark the exact boxes.
+  missing_config: "error.missing_config",
   connection_exists: "error.connection_exists",
   no_such_connection: "error.no_such_connection",
   unknown_connection: "error.unknown_connection",
@@ -212,10 +215,6 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
    * one person it was made for.
    */
   capability_not_wired: "error.capability_not_wired",
-  // Pilot proxy (Dalga D)
-  invalid_doc_kind: "error.invalid_doc_kind",
-  pilot_unreachable: "error.pilot_unreachable",
-  pilot_bad_response: "error.pilot_bad_response",
 };
 
 export function errorMessageKey(code: string): string {

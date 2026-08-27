@@ -30,9 +30,9 @@ import "./shared/screens.css";
  * Turns Maestro's discovery from hard-coded code into rows an admin edits here:
  * "in project X, a ticket assigned to the bot whose <status|issuetype> is
  * <value> runs as <analiz|duzeltme|gelistirme>". Backed by the real DB table
- * (migration 0011) through `/studio/listening-rules`, and — for the running
- * pilot to actually pick the rules up — mirrored to the pilot's own live store
- * via `/studio/pilot/listening` on every write (the pilot cannot read the DB).
+ * (migration 0011) through `/studio/listening-rules`, which is the single
+ * source of truth: the Temporal line reads discovery from that table, so a
+ * saved rule is a live rule with nothing to mirror anywhere.
  *
  * Each rule also carries an OPTIONAL Jira status map — which status the ticket
  * moves to at each point of the flow. Absent is the default and means
@@ -162,7 +162,7 @@ export function ListeningScreen(): ReactNode {
   const [matchValue, setMatchValue] = useState("");
   const [flowType, setFlowType] = useState<FlowType>("analiz");
   // Which agent variant runs each side of the flow. "" means "default agent"
-  // and is sent as null — the pilot then picks its own.
+  // and is sent as null — the engine then picks its own.
   const [analystVariantId, setAnalystVariantId] = useState("");
   const [engineerVariantId, setEngineerVariantId] = useState("");
 
@@ -287,10 +287,6 @@ export function ListeningScreen(): ReactNode {
       api.post<{ rule: ListeningRule }>("/studio/listening-rules", body),
     onSuccess: () => {
       invalidate();
-      // Mirror to the live pilot so discovery picks the rule up without a
-      // restart. Best-effort: the DB is the source of truth, and a pilot that is
-      // simply down must not fail the DB write the admin just saw succeed.
-      void api.post("/studio/pilot/listening", { action: "reload" }).catch(() => undefined);
       toast.show("success", t("listening.toast.created"));
       setMatchValue("");
       // The status map is per-rule, not a form default: leaving it filled after
@@ -311,7 +307,6 @@ export function ListeningScreen(): ReactNode {
       api.put<{ rule: ListeningRule }>(`/studio/listening-rules/${ruleId}`, body),
     onSuccess: () => {
       invalidate();
-      void api.post("/studio/pilot/listening", { action: "reload" }).catch(() => undefined);
       toast.show("success", t("listening.toast.updated"));
       cancelEdit();
     },
@@ -347,8 +342,7 @@ export function ListeningScreen(): ReactNode {
 
   // One-click defaults: the BFF reads the project's Jira issue types and seeds
   // a rule per type (bug-like types → düzeltme, the rest → analiz), skipping
-  // any value that already has a rule. The server mirrors to the live pilot
-  // itself, so there is no client-side reload call here.
+  // any value that already has a rule.
   //
   // The response is 200 in TWO shapes: `{created, skipped, rules}` on a real
   // seed, and `{created: 0, skipped: 0, rules: [], reason:
@@ -400,7 +394,6 @@ export function ListeningScreen(): ReactNode {
       api.delete<{ ok?: boolean }>(`/studio/listening-rules/${ruleId}`),
     onSuccess: () => {
       invalidate();
-      void api.post("/studio/pilot/listening", { action: "reload" }).catch(() => undefined);
       toast.show("success", t("listening.toast.deleted"));
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),

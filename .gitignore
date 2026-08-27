@@ -1,0 +1,7 @@
+# Playwright MCP'nin tarayıcı oturumlarından bıraktığı konsol/sayfa dökümleri.
+# Hata ayıklarken üretilir, hiçbir zaman kaynak değildir; 700+ dosyaya ulaşıp
+# `git status`'u okunmaz hale getiriyordu.
+.playwright-mcp/
+
+# Tarayıcı tatbikatlarından kalan ekran görüntüleri.
+ui-tatbikat-*.png

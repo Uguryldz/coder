@@ -486,8 +486,6 @@ describe("tickets: archiving a run", () => {
    */
   it("counts the dashboard KPIs over the same default scope the list shows", async () => {
     const { fetchImpl, calls } = stubFetch({
-      "/api/studio/pilot/state": () => json({ running: false, ticketKey: null }),
-      "/api/studio/pilot/runs": () => json({ runs: [] }),
       "/api/studio/runs": () => json(RUN_PAGE),
     });
     renderScreen(<DashScreen />, { fetchImpl });

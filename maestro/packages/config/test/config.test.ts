@@ -70,7 +70,6 @@ describe("loadEnv (M6 fail-closed)", () => {
       VAULT_ADDR: "",
       STORAGE_ENDPOINT: "",
       EGRESS_PROXY_URL: "",
-      PILOT_BASE_URL: "",
       DATABASE_URL: "  ",
     });
     expect(env.ADO_BASE_URL).toBeUndefined();

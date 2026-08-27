@@ -40,18 +40,28 @@ compose projesinin konteynerlerini, yalnız `restart` fiiliyle. Soket salt-okunu
 **Açılış taraması şart**: Docker `unhealthy`'yi yalnız GEÇİŞ anında yayınlar, yani zaten takılı
 olan hiç olay üretmez. Canlıda doğrulandı: tarama takılı worker'ı bulup kurtardı.
 
-## Devam eden (bu satır yazılırken)
-- Tam test paketi (`turbo run test typecheck --concurrency=2`)
-- `docker build` → `uguryldz/maestro-node:1.0.4` ve `uguryldz/maestro-studio:1.0.4`
-- Sonraki adım: **push** (kullanıcı onayı var: "son bi tarama yap eminsen çıkalım")
+## BİTTİ: imajlar yayınlandı ve canlıda doğrulandı
+`uguryldz/maestro-node:1.0.4` ve `uguryldz/maestro-studio:1.0.4` Docker Hub'da.
+Yayınlanan imajla TEMİZ kurulum yapıldı: yedi servis de sağlıklı (worker dahil — 1.0.3'te
+healthcheck kodu olmadığı için `unhealthy` görünüyordu).
+
+**Autoheal canlıda kanıtlandı**: kasten sağlıksız bir konteyner yaratıldı, autoheal yakalayıp
+yeniden başlattı (`StartedAt` değişti). Not: `RestartCount` DEĞİŞMEZ — Docker API üzerinden
+yapılan restart o sayaca yazılmaz, yalnız Docker'ın kendi restart politikası artırır.
+
+İmaj yayınlandıktan SONRA üç ayrı hata daha bulundu ve düzeltildi (hepsi yalnız gerçek
+kurulumda görünür, hepsinde servis "çalışıyor gibi" görünüp hiçbir şey kurtarmıyordu):
+1. `EACCES /var/run/docker.sock` — uid 10001 soket grubunda değildi. `group_add` + install.sh
+   artık gid'i `stat -c '%g'` ile kendisi buluyor.
+2. İstek zaman aşımı, istediği kapanma süresine eşitti (30s/30s) — restart BAŞARILI oluyor,
+   log "başarısız" yazıyordu.
+3. Docker 29 konteyner kimliğini `Actor.ID`'de taşıyor, üst düzey `id` yok — her olay sessizce
+   atlanıyordu.
 
 ## Sıradaki iş
-1. İmajlar bitince `docker push` (iki imaj).
-2. Prod yığınını 1.0.4 ile yeniden kurup worker'ın `healthy` olduğunu doğrula — 1.0.3'te
-   healthcheck kodu olmadığı için `unhealthy` görünüyordu, bu BEKLENEN durumdu.
-3. Jira token'ı olmadığı için prod yığınında gerçek ticket koşturulamadı. Analiz zincirinin
-   LLM'e kadarki kısmı kanıtlandı (imajın içinden gerçek OpenRouter çağrısı HTTP 200, on-prem
-   `openai_compat` bağlantısı yeşil), Jira'lı uçtan uca kanıt eksik.
+Jira token'ı olmadığı için prod yığınında gerçek ticket koşturulamadı. Analiz zincirinin
+LLM'e kadarki kısmı kanıtlandı (imajın içinden gerçek OpenRouter çağrısı HTTP 200, on-prem
+`openai_compat` bağlantısı yeşil), **Jira'lı uçtan uca kanıt eksik**.
 
 ## Testler
 Tek tek: bff 918/918 · deploy 784/784 · studio 404/404 · workflows 199/199 · config 26/26 ·

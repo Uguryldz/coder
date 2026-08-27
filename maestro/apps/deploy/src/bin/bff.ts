@@ -13,6 +13,7 @@ import { FlowType, type TicketKey } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import { bootPlatform } from "../boot.js";
 import { connectionModelFrom } from "../stores/connection-model.js";
+import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { listenAddress, type DeployEnv } from "../env.js";
 import { selectIdentityProvider } from "../identity.js";
@@ -96,6 +97,10 @@ export async function main(): Promise<void> {
     // admin tests green in the panel is the one the run dials — the split
     // `connectionSecrets` closed for the token, closed here for the address.
     resolveModel: connectionModelFrom(db),
+    // The handshake, from the same panel rows again: a connection whose
+    // admin flagged "TLS doğrulamasını atla" is dialled without certificate
+    // verification by every adapter, matching the probe that tested it green.
+    tlsSkipFlag: tlsSkipFlagFrom(db),
   });
 
   // Before Temporal, before the socket: a deployment whose emergency brake

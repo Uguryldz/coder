@@ -1,4 +1,5 @@
 import type { Connection, ConnectionInput, ConnectionKind } from "@maestro/contracts";
+import { classifyNetworkFailure, insecureFetch, shouldSkipTlsVerify } from "@maestro/llm-gateway";
 import type { ConnectionRecord } from "./connection-store.js";
 import type { UserDirectory, UserRecord } from "./deps.js";
 
@@ -20,8 +21,57 @@ import type { UserDirectory, UserRecord } from "./deps.js";
  * with no network, and so the test path never reaches for a global. The URL is
  * built by this service from the STORED `baseUrl` — never from the request
  * body — so a test cannot be pointed at an arbitrary host by its caller.
+ *
+ * ONE exception to the injection: an `openai_compat` probe whose dial skips
+ * TLS verification (see `runConnectionTest`) goes through undici's own fetch,
+ * because the skip can only ride on an undici dispatcher and this signature
+ * has no seam for one. Such URLs are https + internal/flagged only, so the
+ * offline suites (http/public fixtures) never take that path.
  */
 export type ConnectorFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * The explicit-switch half of the TLS rule, bound to the connection STORE —
+ * the answer to "did an admin flag this host's connection with
+ * `skipTlsVerify`?" for a URL about to be dialled.
+ *
+ * `server.ts` wraps the default connector transport with it
+ * (`tlsAwareFetchWith`), so every BFF-side call that reaches a managed
+ * connection's server — the onboarding repo/project lists, the listening
+ * seed, not just the probe — follows the same skip rule the probe and the
+ * runtime drivers do. Matching is by HOSTNAME: the flag is an assertion about
+ * a server, and the row's own probe URL, an API sub-path, or a differently
+ * spelled port must not dodge it. Read per call (the `resolveModel` idiom) so
+ * a switch flipped in the panel is live on the next request; any store
+ * failure reads as "not flagged" — fail closed onto full verification.
+ */
+export function connectionTlsFlag(
+  store: { list(): Promise<readonly ConnectionRecord[]> } | undefined,
+): (url: string) => Promise<boolean> {
+  return async (url) => {
+    if (store === undefined) return false;
+    let host: string;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      return false;
+    }
+    let rows: readonly ConnectionRecord[];
+    try {
+      rows = await store.list();
+    } catch {
+      return false;
+    }
+    return rows.some((row) => {
+      if (!row.enabled || row.config["skipTlsVerify"] !== "true") return false;
+      try {
+        return new URL(row.baseUrl).hostname === host;
+      } catch {
+        return false;
+      }
+    });
+  };
+}
 
 /** The last four characters of a token — the only glimpse a read is ever given. */
 export function maskToken(token: string): string {
@@ -133,6 +183,15 @@ export interface TestOutcome {
    * value so the panel can name what was wrong; never an email.
    */
   accountIdCorrected?: { from: string };
+  /**
+   * SECRET-FREE transport diagnostics, set only when the probe's fetch threw.
+   * `host` is the target's hostname alone (never the full URL, whose query
+   * could carry a key); `causes` is the error's `code` chain (`ENOTFOUND`,
+   * `SELF_SIGNED_CERT_IN_CHAIN`, …) — vendor constants that structurally
+   * cannot quote a header or a token. The route logs this; it is deliberately
+   * NOT part of the HTTP response, which speaks in catalog keys.
+   */
+  diagnostic?: { host: string; causes: readonly string[] };
   /**
    * The connection's real owner is NOT the account the engine acts as. Both
    * halves are internally consistent — the connection has faithfully learned
@@ -416,13 +475,73 @@ export function modelServedNote(
 }
 
 /**
+ * How long the live test waits before calling the target gone (see the
+ * `signal` in `runConnectionTest`). Exported so the tests that prove the
+ * timeout classification can reason about the budget.
+ */
+export const PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * A thrown probe fetch, turned into the most specific honest verdict the
+ * error's `code` chain supports.
+ *
+ * Before this existed, every network failure — a typo'd hostname, a closed
+ * port, a silent firewall AND an unintroduced corporate root CA — collapsed
+ * into one "Adrese ulaşılamadı", and the operator with the on-prem OpenShift
+ * model server had nothing to act on. Each kind now gets its own catalog key,
+ * with the TLS one carrying this deployment's real fixes (the connection's
+ * "TLS doğrulamasını atla" switch, or certs/ + NODE_EXTRA_CA_CERTS — exactly
+ * what the ugurdocker and banka docker-compose files already mount and pass
+ * through to the bff and worker containers).
+ *
+ * `unreachable` survives as the LAST RESORT only: an error whose codes this
+ * map does not know keeps the old honest message rather than a guess.
+ */
+export function probeFailure(error: unknown, url: string): TestOutcome {
+  const failure = classifyNetworkFailure(error);
+  const { host, port } = targetOf(url);
+  // Codes + hostname only — what the route's warn log carries. Never the full
+  // URL and never anything read off the error's message.
+  const diagnostic = { host, causes: failure.codes };
+  switch (failure.kind) {
+    case "dns":
+      return { ok: false, messageKey: "connections.test.dns", messageParams: { host }, diagnostic };
+    case "refused":
+      return { ok: false, messageKey: "connections.test.refused", messageParams: { host, port }, diagnostic };
+    case "timeout":
+      return { ok: false, messageKey: "connections.test.timeout", diagnostic };
+    case "tls":
+      return { ok: false, messageKey: "connections.test.tls", messageParams: { code: failure.code ?? "?" }, diagnostic };
+    case null:
+      return { ok: false, messageKey: "connections.test.unreachable", diagnostic };
+  }
+}
+
+/** Hostname + effective port of the probe URL, for messages and the log. */
+function targetOf(url: string): { host: string; port: string } {
+  try {
+    const parsed = new URL(url);
+    return {
+      host: parsed.hostname,
+      port: parsed.port !== "" ? parsed.port : parsed.protocol === "https:" ? "443" : "80",
+    };
+  } catch {
+    // The URL is built from a validated stored baseUrl, so this is unreachable
+    // in practice — but a diagnostic helper must never itself throw.
+    return { host: "?", port: "?" };
+  }
+}
+
+/**
  * Run the live test against the STORED connection using the STORED token.
  *
  * The URL is built from `baseUrl` + the kind's probe path — never from anything
  * the caller sent — so a viewer cannot turn the test into an SSRF or an
  * exfiltration channel. A missing token, a non-2xx, a probe that does not exist
- * for this kind, and a thrown fetch are four distinct honest outcomes; none of
- * them is reported as ok, and none of them puts the token in the message.
+ * for this kind, and a thrown fetch are distinct honest outcomes — and the
+ * thrown fetch itself fans out by cause (`probeFailure`: DNS, refused,
+ * timeout, TLS, or the unreachable last resort); none of them is reported as
+ * ok, and none of them puts the token in the message.
  */
 export async function runConnectionTest(
   record: ConnectionRecord,
@@ -455,17 +574,44 @@ export async function runConnectionTest(
       ? normalizeOpenAiBaseUrl(record.baseUrl)
       : record.baseUrl.replace(/\/+$/, "");
   const url = `${base}${probe.path}`;
+  /**
+   * TLS skip, for EVERY kind, under the same rule the runtime transports
+   * apply (wendoc's test=run symmetry): the row's explicit
+   * `config.skipTlsVerify` switch, or an address that is demonstrably internal
+   * (loopback/RFC1918/`.local`, https only — see `tls.ts` for the trade-off).
+   * All kinds, because the corporate-certificate wall is not a model-server
+   * specialty — a bank's Azure DevOps Server and Jira DC sit behind the same
+   * CA — and the runtime side follows the same rule end to end: the LLM
+   * driver through `postJson`, the ado/jira/github adapters through the
+   * `tlsAwareFetchWith` transport their composition root injects. The
+   * insecure dial must go through undici's own fetch, because the injected
+   * `fetchImpl` has no seam a dispatcher could ride through.
+   */
+  const dial = shouldSkipTlsVerify(url, record.config["skipTlsVerify"] === "true")
+    ? insecureFetch
+    : fetchImpl;
   let response: Response;
   try {
-    response = await fetchImpl(url, {
+    response = await dial(url, {
       method: "GET",
       headers: { accept: "application/json", ...probe.header(presented, record.config) },
+      // Bounded on purpose. The bare `fetch` this runs on has no timeout of its
+      // own, so a host that ACCEPTS and then never answers (a firewall that
+      // swallows, a wrong port that happens to listen) used to hang the panel's
+      // Test button until undici's multi-minute default gave up. Ten seconds is
+      // generous for `/v1/models` — it answers from memory, never pulls weights
+      // — and the abort classifies as `timeout` below rather than a hang.
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-  } catch {
-    // The error is deliberately NOT surfaced: a fetch failure message can carry
-    // the URL and, on some runtimes, request headers — which is where the token
-    // is. The screen gets an honest "unreachable", not a stack trace.
-    return { ok: false, messageKey: "connections.test.unreachable" };
+  } catch (error) {
+    // The error's MESSAGE is still never surfaced — it can carry the URL and,
+    // on some runtimes, request headers, which is where the token is. But its
+    // `code` chain is walked (`classifyNetworkFailure`): codes are vendor
+    // constants that cannot quote a secret, and they are the difference
+    // between "unreachable" and the four distinct repairs an operator can
+    // actually perform (fix DNS, open the port, widen the firewall, introduce
+    // the corporate root CA).
+    return probeFailure(error, url);
   }
 
   if (response.status < 200 || response.status >= 300) {

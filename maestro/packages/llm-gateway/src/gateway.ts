@@ -220,6 +220,7 @@ export class LlmGateway implements LlmPort {
           counter,
           ...(target.baseUrl === null ? {} : { baseUrl: target.baseUrl }),
           ...(target.credentialRef === null ? {} : { credentialRef: target.credentialRef }),
+          ...(target.skipTlsVerify ? { skipTlsVerify: true } : {}),
         },
       });
       const { tokensIn, tokensOut, cachePct } = out;
@@ -398,11 +399,18 @@ export class LlmGateway implements LlmPort {
 function overrideFor(
   routed: Routed,
   active: ResolvedModel | null,
-): { model: string; baseUrl: string | null; credentialRef: string | null } {
+): { model: string; baseUrl: string | null; credentialRef: string | null; skipTlsVerify: boolean } {
   if (active === null || routed.accountId !== null) {
-    return { model: routed.model, baseUrl: null, credentialRef: routed.credentialRef };
+    return { model: routed.model, baseUrl: null, credentialRef: routed.credentialRef, skipTlsVerify: false };
   }
-  return { model: active.model, baseUrl: active.baseUrl, credentialRef: active.apiKeyRef };
+  return {
+    model: active.model,
+    baseUrl: active.baseUrl,
+    credentialRef: active.apiKeyRef,
+    // Rides with the row's address: the handshake the probe tested is the
+    // handshake the run performs (see `ResolvedModel.skipTlsVerify`).
+    skipTlsVerify: active.skipTlsVerify === true,
+  };
 }
 
 /** A session may only continue on the exact backend/class/masking it opened with. */

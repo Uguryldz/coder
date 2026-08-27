@@ -205,6 +205,27 @@ async function clearOtherDefaults(
 
     const at = deps.clock.now().toISOString();
 
+    // EVERY failed probe leaves a server-side trace. The response deliberately
+    // speaks in secret-free catalog keys, and before this line that discipline
+    // meant the operator's "Adrese ulaşılamadı" had NO counterpart in the BFF
+    // log at all — nothing to grep, nothing for support to read. The warn
+    // carries what the response may not: the cause-code chain the transport
+    // reported (`ENOTFOUND`, `SELF_SIGNED_CERT_IN_CHAIN`, …). Still under the
+    // same secrecy rule — the target's HOSTNAME only (never the full URL or a
+    // header), codes only (never an error message that could quote either).
+    if (!outcome.ok) {
+      request.log.warn(
+        {
+          connection: record.id,
+          kind: record.kind,
+          host: outcome.diagnostic?.host ?? hostOf(record.baseUrl),
+          causes: outcome.diagnostic?.causes ?? [],
+          note: outcome.messageKey,
+        },
+        "connection test failed",
+      );
+    }
+
     // A successful Jira test learned the bot's own accountId. Persist it in the
     // connection's (non-secret) config so a listening rule can offer "the bot"
     // by name instead of asking an operator to hand-copy a 40-char GUID. Only on
@@ -468,6 +489,19 @@ async function readToken(secrets: SecretPort, ref: string): Promise<string | nul
     // A ref with no secret (a hand-broken row) tests as "no token" rather than
     // taking the endpoint down.
     return null;
+  }
+}
+
+/**
+ * Hostname of a stored base URL, for the failed-test log line when the outcome
+ * carries no transport diagnostic (no-token, HTTP status, missing model). The
+ * hostname alone — a URL's path/query never reaches the log.
+ */
+function hostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return "?";
   }
 }
 

@@ -86,6 +86,22 @@ export interface ResolvedModel {
    * case; an empty string stored in the slot still means "send no key at all".
    */
   readonly apiKeyRef: string;
+  /**
+   * The row's "skip TLS certificate verification" switch
+   * (`config.skipTlsVerify === "true"` in the connection's non-secret bag).
+   *
+   * Carried here so the RUN performs the same handshake the panel's probe
+   * did — the probe honours the flag through `shouldSkipTlsVerify`, and a
+   * green test over a skipped handshake followed by a run that verified (and
+   * failed) would be the exact test≠run asymmetry this resolver exists to
+   * close. Internal addresses (loopback/RFC1918/`.local`) skip automatically
+   * regardless of this flag; see `tls.ts` for the rule and its trade-off.
+   *
+   * Optional, and absence means OFF: a resolver predating the flag keeps its
+   * exact old meaning, and an unanswered question fails closed onto full
+   * verification.
+   */
+  readonly skipTlsVerify?: boolean;
 }
 
 /**

@@ -28,12 +28,16 @@ function required<T>(value: T | undefined, name: string, why: string): T {
   return value;
 }
 
-export function jiraConfig(env: DeployEnv, secrets: unknown): Record<string, unknown> {
+export function jiraConfig(env: DeployEnv, secrets: unknown, fetchImpl?: unknown): Record<string, unknown> {
   return {
     baseUrl: required(env.base.JIRA_BASE_URL, "JIRA_BASE_URL", "the work port has no default instance"),
     tokenRef: env.JIRA_TOKEN_REF,
     webhookSecretRef: env.JIRA_WEBHOOK_SECRET_REF,
-    deps: { secrets },
+    // `fetchImpl` is the TLS-aware transport the composition root builds
+    // (`tlsAwareFetchWith`) — a Jira DC behind the bank's own CA follows the
+    // same skip rule the panel's probe applied when its test went green.
+    // Absent, the adapter falls back to the global fetch exactly as before.
+    deps: { secrets, ...(fetchImpl === undefined ? {} : { fetchImpl }) },
   };
 }
 
@@ -52,7 +56,7 @@ export function jiraConfig(env: DeployEnv, secrets: unknown): Record<string, unk
  * variable, which keeps this identical in shape to the Vault-backed path a
  * bank would use.
  */
-export function jiraCloudConfig(env: DeployEnv, secrets: unknown): Record<string, unknown> {
+export function jiraCloudConfig(env: DeployEnv, secrets: unknown, fetchImpl?: unknown): Record<string, unknown> {
   const read = (name: string): string | undefined => {
     const value = env.source[name];
     return value === undefined || value.trim() === "" ? undefined : value;
@@ -77,7 +81,8 @@ export function jiraCloudConfig(env: DeployEnv, secrets: unknown): Record<string
     // from its own mount, which is the point of naming secrets this way.
     apiTokenRef: env.JIRA_TOKEN_REF ?? "kv/jira#token",
     webhookSecretRef: env.JIRA_WEBHOOK_SECRET_REF,
-    deps: { secrets },
+    // Same TLS-aware transport seam as `jiraConfig` — see the note there.
+    deps: { secrets, ...(fetchImpl === undefined ? {} : { fetchImpl }) },
   };
 }
 

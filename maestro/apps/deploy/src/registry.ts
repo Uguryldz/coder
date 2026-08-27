@@ -54,6 +54,15 @@ export interface RegistrationDeps {
   readonly notify: NotifyDeps;
   readonly publish: PublishDeps;
   readonly scan: ScanDeps;
+  /**
+   * The TLS-aware transport for the SCM/CI adapters (ado, github) —
+   * `tlsAwareFetchWith`, built by `bootPlatform`. An Azure DevOps Server or
+   * GitHub Enterprise behind the bank's own CA is then dialled under the same
+   * skip rule the panel's connection probe tested green with (the internal-
+   * address auto rule plus the per-connection `skipTlsVerify` switch).
+   * Absent, the adapters keep the global fetch exactly as before.
+   */
+  readonly workFetch?: (input: string, init?: RequestInit) => Promise<Response>;
 }
 
 /**
@@ -76,6 +85,10 @@ export function buildRegistry(deps: RegistrationDeps): PortRegistry {
     // module's job (M44/M80).
     resolveToken: (tokenRef) => deps.secrets.get(tokenRef),
     issueSecret: (scope, ttlSeconds) => deps.secrets.issueShortLived(scope, ttlSeconds),
+    // The TLS-aware transport (see `RegistrationDeps.workFetch`) — bound here
+    // for the same layering reason as the secret callbacks: the adapter must
+    // not know where the rule comes from.
+    ...(deps.workFetch === undefined ? {} : { fetch: deps.workFetch }),
   });
   // GitHub speaks the `scm` port for every deployment (see `profile.ts`). Same
   // callback shape as ADO and for the same reason: the adapter must not import
@@ -86,6 +99,11 @@ export function buildRegistry(deps: RegistrationDeps): PortRegistry {
   registerGithubDrivers(registry, {
     resolveToken: (tokenRef) => deps.secrets.get(tokenRef),
     issueSecret: (scope, ttlSeconds) => deps.secrets.issueShortLived(scope, ttlSeconds),
+    // Same TLS-aware transport as ADO: a GitHub Enterprise Server behind the
+    // corporate CA hits the identical wall, and the rule must not differ by
+    // vendor. Cloud github.com never matches the skip rule, so it is inert
+    // for the default deployment.
+    ...(deps.workFetch === undefined ? {} : { fetch: deps.workFetch }),
   });
   registerStorageDrivers(registry);
   registerLlmDrivers(registry, deps.llm);

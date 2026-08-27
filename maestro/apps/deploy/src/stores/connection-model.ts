@@ -100,6 +100,18 @@ function modelIdOf(configJson: unknown): string | null {
 }
 
 /**
+ * The row's "skip TLS certificate verification" switch, from the same
+ * non-secret config bag as the model id. Stored as the STRING `"true"`
+ * because `ConnectionConfig` is a string→string record by contract; anything
+ * else — absent, `"false"`, junk — reads as off, so an unanswered question
+ * fails closed onto full verification.
+ */
+function skipTlsVerifyOf(configJson: unknown): boolean {
+  if (typeof configJson !== "object" || configJson === null) return false;
+  return (configJson as Record<string, unknown>)["skipTlsVerify"] === "true";
+}
+
+/**
  * Which row serves this install, or `null` when none does.
  *
  * A row qualifies only when it is ENABLED, names a model KIND, and carries a
@@ -177,6 +189,12 @@ export function connectionModelFrom(db: {
        * never by scanning other rows (see `LLM_API_KEY_REF` above).
        */
       apiKeyRef: row.secretRef ?? LLM_API_KEY_REF,
+      /**
+       * The handshake follows the row too: the probe honoured this switch
+       * when the panel's test went green, and the run must perform the same
+       * handshake or the green is evidence about nothing (test=run symmetry).
+       */
+      skipTlsVerify: skipTlsVerifyOf(row.configJson),
     };
   };
 }

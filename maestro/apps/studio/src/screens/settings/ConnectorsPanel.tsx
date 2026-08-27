@@ -308,10 +308,39 @@ function ConnectionModal({
    */
   const [onPrem, setOnPrem] = useState(connection?.onPrem ?? false);
   const [isDefault, setIsDefault] = useState(connection?.isDefault ?? false);
+  /**
+   * Skip TLS certificate verification for this connection — for EVERY kind,
+   * because the corporate-certificate wall is not a model-server specialty: a
+   * bank's Azure DevOps Server and Jira DC sit behind the same in-house CA.
+   * Stored in the non-secret `config` bag like `model`, as the string "true",
+   * and REMOVED when off — an absent key is the fail-closed default everywhere
+   * it is read. The hint owns the honest trade-off (spoofing exposure) and the
+   * durable alternative (NODE_EXTRA_CA_CERTS).
+   */
+  const [skipTlsVerify, setSkipTlsVerify] = useState(
+    connection?.config["skipTlsVerify"] === "true",
+  );
 
   const idInvalid = !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id.trim());
   const urlInvalid = !isHttpUrl(baseUrl.trim());
   const blocked = (!editing && idInvalid) || urlInvalid || displayName.trim() === "";
+
+  /**
+   * The non-secret config bag the save sends: the stored bag verbatim (so a
+   * learned `botAccountId` survives), the model id layered on for the model
+   * kinds, and the TLS switch layered on for all — written as "true" when on,
+   * REMOVED when off, so toggling off actually clears the stored flag instead
+   * of being lost under the verbatim spread.
+   */
+  const configBag = (): Record<string, string> => {
+    const bag: Record<string, string> = {
+      ...(connection?.config ?? {}),
+      ...(isModelKind && model.trim() !== "" ? { model: model.trim() } : {}),
+    };
+    if (skipTlsVerify) bag["skipTlsVerify"] = "true";
+    else delete bag["skipTlsVerify"];
+    return bag;
+  };
 
   const save = useMutation({
     mutationFn: () => {
@@ -322,10 +351,8 @@ function ConnectionModal({
         authKind,
         // `config` is round-tripped verbatim so a learned `botAccountId`
         // survives an edit; the model id is layered on top for the one kind
-        // that has one, and removed again if the operator clears it.
-        config: isModelKind
-          ? { ...(connection?.config ?? {}), ...(model.trim() === "" ? {} : { model: model.trim() }) }
-          : (connection?.config ?? {}),
+        // that has one, and the TLS switch for every kind (see `configBag`).
+        config: configBag(),
         enabled,
         // Only meaningful for a model row; a Jira connection sends the
         // harmless defaults rather than a field the resolver would ignore.
@@ -405,6 +432,24 @@ function ConnectionModal({
         {...(isModelKind ? { hint: t("connections.field.url_hint_onprem") } : {})}
         {...(touched && urlInvalid ? { error: t("connections.error.url") } : {})}
       />
+      {/*
+        Offered on EVERY kind rather than special-cased per kind: the
+        corporate-certificate wall stands in front of an in-house ADO or Jira
+        DC exactly as it does a model server, and the hint — not a hidden
+        checkbox — is what keeps a cloud connection's admin from flipping it
+        by accident.
+      */}
+      <label className="scr-mini" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={skipTlsVerify}
+          onChange={(event) => setSkipTlsVerify(event.target.checked)}
+        />
+        {t("connections.field.skip_tls")}
+      </label>
+      <div className="scr-mini" style={{ opacity: 0.85, lineHeight: 1.5 }}>
+        {t("connections.field.skip_tls_hint")}
+      </div>
       {isModelKind && (
         <Input
           label={t("connections.field.model")}

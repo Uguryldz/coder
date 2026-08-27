@@ -13,6 +13,7 @@ import { reconcileRunStatuses } from "../stores/reconcile.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { llmCallRecorder } from "../stores/llm-call-log.js";
 import { connectionModelFrom } from "../stores/connection-model.js";
+import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
 import { connectTemporal } from "../temporal-gateway.js";
@@ -90,6 +91,11 @@ export async function main(): Promise<void> {
       // admin tests green in the panel is the one the run dials — the split
       // `connectionSecrets` closed for the token, closed here for the address.
       resolveModel: connectionModelFrom(db),
+      // The handshake, from the same panel rows again: a connection whose
+      // admin flagged "TLS doğrulamasını atla" is dialled without certificate
+      // verification by every adapter — the run performs the exact handshake
+      // the panel's green test did.
+      tlsSkipFlag: tlsSkipFlagFrom(db),
     });
 
     const execution = buildTurnRunner(env, db, deployment.ports);

@@ -1,7 +1,7 @@
 import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
 import { t } from "@maestro/config";
 import type { CiResultSignal, Locale, ParamDefinition } from "@maestro/contracts";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { InMemoryUserDirectory, LocalIdentityProvider } from "../src/auth/local-identity.js";
 import { InMemorySessionStore } from "../src/auth/sessions.js";
 import type {
@@ -344,6 +344,12 @@ export const TEST_WORKFLOW_GRAPH: JiraWorkflowGraphView = {
 
 export interface HarnessOptions {
   groups?: Record<string, readonly string[]>;
+  /**
+   * Fastify server options passed straight to `buildServer`. What the
+   * failed-probe log tests use: a `logger` with a capturing `stream`, so a
+   * `request.log.warn` line can be asserted rather than taken on faith.
+   */
+  fastify?: FastifyServerOptions;
   bindings?: readonly JiraBinding[];
   ciSignal?: CiResultSignal | null;
   adoAuthorization?: string;
@@ -487,7 +493,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     connectorFetch:
       options.connectorFetch ?? (() => Promise.resolve(new Response("{}", { status: 200 }))),
     ...options.deps,
-  });
+  }, options.fastify === undefined ? {} : { fastify: options.fastify });
 
   const addUser: Harness["addUser"] = async (user) => {
     await identity.provision({

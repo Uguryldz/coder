@@ -61,6 +61,10 @@ export class OpenAiCompatDriver implements LlmDriver {
         },
         body: { model: call.model, max_tokens: call.maxTokens, temperature: call.temperature, messages },
         timeoutMs: this.cfg.timeoutMs,
+        // The row's explicit switch; `postJson` layers the internal-address
+        // auto rule on top — the same pair the panel's probe applies, so the
+        // run's handshake is the one the green test proved.
+        skipTlsVerify: call.skipTlsVerify === true,
       },
       { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry, counter: call.counter },
     );

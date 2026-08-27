@@ -1,7 +1,7 @@
 import { createJiraCloudWorkPort, createJiraDcWorkPort } from "@maestro/adapter-jira";
 import { t } from "@maestro/config";
 import type { LlmCallLog } from "@maestro/contracts";
-import type { LlmGatewayDeps } from "@maestro/llm-gateway";
+import { tlsAwareFetchWith, type LlmGatewayDeps } from "@maestro/llm-gateway";
 import type { FetchLike } from "@maestro/notify";
 import { defaultPiiPolicy, maskOutbound, type LoadedPiiPolicy } from "@maestro/pii";
 import type { SecretPort, WorkPort } from "@maestro/ports";
@@ -113,6 +113,22 @@ export interface BootOptions {
    * not at all.
    */
   readonly resolveModel?: LlmGatewayDeps["resolveModel"];
+
+  /**
+   * The explicit half of the TLS-skip rule: "did an admin flag this URL's
+   * host with `skipTlsVerify` on a managed connection?" — the third member of
+   * the `connectionSecrets`/`resolveModel` family, bound to the same table
+   * for the same reason (only a service with the pool can build it, and it
+   * must be read per call so a panel change is live with no restart —
+   * `tlsSkipFlagFrom`).
+   *
+   * It feeds the TLS-aware transport handed to the work/scm adapters and, on
+   * its internal-address auto half, applies even when this option is absent:
+   * a loopback/RFC1918/`.local` https endpoint skips verification with or
+   * without a database (see `tlsAwareFetchWith`). A process with no pool
+   * simply never answers "flagged", which fails closed onto verification.
+   */
+  readonly tlsSkipFlag?: (url: string) => boolean | Promise<boolean>;
 }
 
 /** What the publisher needs that only a database-owning service can supply. */
@@ -163,7 +179,16 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
    * into a null dereference at the first notification, which is exactly the
    * failure mode this file exists to prevent.
    */
-  const work = buildWorkPort(env, secrets);
+  /**
+   * The transport the work/scm/ci adapters dial with. TLS-aware: the
+   * internal-address auto rule plus the panel's per-connection
+   * `skipTlsVerify` switch (`options.tlsSkipFlag`), so a Jira DC / TFS /
+   * GitHub Enterprise behind the bank's own CA is dialled under the exact
+   * rule the panel's connection probe tested green with (test=run symmetry).
+   * Every host the rule does not name is verified precisely as before.
+   */
+  const workFetch = tlsAwareFetchWith(options.tlsSkipFlag);
+  const work = buildWorkPort(env, secrets, workFetch);
   /**
    * The same story as `work`, for the same reason: `publish`'s `docx`/`pdf`
    * targets (M103r) write the generated file to an object store, and
@@ -182,6 +207,9 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
   const registry = buildRegistry({
     secrets,
     work,
+    // The scm/ci adapters (ado, github) dial with the same TLS-aware
+    // transport the work port was built on — one rule, every vendor.
+    workFetch,
     llm: {
       secrets,
       piiPolicy: policy,
@@ -232,6 +260,9 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
     secrets,
     ...(options.sql === undefined ? {} : { sql: options.sql }),
     ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    // The registry's own work-port instance follows the same handshake rule
+    // as the one built above — two clients, one TLS decision.
+    workFetch,
   };
   const deployment = resolveDeployment(inputs);
 
@@ -266,16 +297,16 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
  * could produce two differently-authenticated Jira clients. Both now call the
  * same function over the same variables.
  */
-function buildWorkPort(env: DeployEnv, secrets: SecretPort): WorkPort {
+function buildWorkPort(env: DeployEnv, secrets: SecretPort, fetchImpl?: unknown): WorkPort {
   assertOneJiraInstance(env.source);
   const choice = workDriverFor(env.source);
   // A fresh install has named no Jira at all. It must still boot — the wizard
   // is how one gets configured — so the port composes and refuses on first use.
   if (choice.problem === "neither") return notConfiguredWorkPort();
   if (choice.driver === JIRA_CLOUD_DRIVER) {
-    return createJiraCloudWorkPort(jiraCloudConfig(env, secrets));
+    return createJiraCloudWorkPort(jiraCloudConfig(env, secrets, fetchImpl));
   }
-  return createJiraDcWorkPort(jiraConfig(env, secrets));
+  return createJiraDcWorkPort(jiraConfig(env, secrets, fetchImpl));
 }
 
 /**

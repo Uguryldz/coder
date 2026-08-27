@@ -28,6 +28,14 @@ export interface DriverCall {
    * own credential while riding the same transport (M55).
    */
   credentialRef?: string;
+  /**
+   * The panel row's "skip TLS certificate verification" switch, travelling
+   * beside `baseUrl` because they are facts of the same row: the address the
+   * operator retargets in the UI may sit behind a corporate/self-signed
+   * certificate, and the run must perform the same handshake the panel's
+   * green test did. Only the `openai-compat` driver reads it, like `baseUrl`.
+   */
+  skipTlsVerify?: boolean;
   /** Counts the physical attempts this call costs, so quota can burn them (M55). */
   counter?: CallCounter;
 }

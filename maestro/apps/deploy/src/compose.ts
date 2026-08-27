@@ -44,6 +44,14 @@ export interface DeploymentInputs {
   /** `pg-blob` writes through this; the dev profile passes the Postgres client. */
   readonly sql?: unknown;
   readonly fetchImpl?: unknown;
+  /**
+   * The TLS-aware transport for the WORK adapters (`tlsAwareFetchWith` —
+   * built by `bootPlatform`), so a Jira DC behind the bank's own CA is
+   * dialled under the same skip rule the panel's probe tested green with.
+   * Deliberately separate from `fetchImpl`, which belongs to the storage
+   * driver: a test stubbing storage traffic must not hijack Jira's.
+   */
+  readonly workFetch?: unknown;
 }
 
 export interface PortChoice {
@@ -90,8 +98,8 @@ export function buildPortSelection(inputs: DeploymentInputs): DeploymentSelectio
     workChoice.problem === "neither"
       ? {}
       : workDriver === JIRA_CLOUD_DRIVER
-        ? jiraCloudConfig(env, secrets)
-        : jiraConfig(env, secrets);
+        ? jiraCloudConfig(env, secrets, inputs.workFetch)
+        : jiraConfig(env, secrets, inputs.workFetch);
   // The scm port is GitHub by default and ADO only where a deployment says so.
   // `githubConfig` demands nothing of the operator (see it for why), which is
   // what lets the engineering ports COMPOSE on an install that has not been

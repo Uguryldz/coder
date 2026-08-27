@@ -14,6 +14,7 @@
     "@maestro/contracts": "workspace:*",
     "@maestro/pii": "workspace:*",
     "@maestro/ports": "workspace:*",
+    "undici": "^7.29.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {

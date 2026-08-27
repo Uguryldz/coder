@@ -1,5 +1,7 @@
 import type { RateLimitConfig, RetryConfig } from "./config.js";
 import { LlmAuthError, LlmHttpError, LlmRateLimitError, LlmResponseError } from "./errors.js";
+import { networkFailureSummary } from "./net-cause.js";
+import { insecureFetch, shouldSkipTlsVerify } from "./tls.js";
 
 /** Narrow `fetch` shape the drivers depend on — keeps tests offline. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -52,6 +54,12 @@ export interface JsonRequest {
   headers: Record<string, string>;
   body: unknown;
   timeoutMs: number;
+  /**
+   * The connection's explicit "skip certificate verification" switch. The
+   * internal-address AUTO rule (`needsTlsSkip`) is applied by `postJson`
+   * itself on top of this, so the probe and the run cannot drift apart.
+   */
+  skipTlsVerify?: boolean;
 }
 
 /**
@@ -87,6 +95,16 @@ export interface RequestContext {
 export async function postJson(req: JsonRequest, ctx: RequestContext): Promise<unknown> {
   let lastError: Error | undefined;
 
+  // The SAME skip rule the panel's connection probe applies (wendoc's test=run
+  // symmetry): the row's explicit switch, or an address that is demonstrably
+  // internal. The insecure dial must go through undici's own fetch — the
+  // injected `fetchImpl` has no seam a dispatcher could ride through — so on
+  // this one path the injected transport is bypassed on purpose. Every test
+  // URL is public-shaped, so offline stubs are unaffected.
+  const dial = shouldSkipTlsVerify(req.url, req.skipTlsVerify === true)
+    ? insecureFetch
+    : ctx.deps.fetchImpl;
+
   for (let attempt = 1; attempt <= ctx.retry.maxAttempts; attempt += 1) {
     const wait = ctx.bucket.take();
     if (wait > 0) await ctx.deps.sleep(wait);
@@ -94,14 +112,28 @@ export async function postJson(req: JsonRequest, ctx: RequestContext): Promise<u
     let res: Response;
     ctx.counter?.attempt();
     try {
-      res = await ctx.deps.fetchImpl(req.url, {
+      res = await dial(req.url, {
         method: "POST",
         headers: { ...req.headers, "content-type": "application/json" },
         body: JSON.stringify(req.body),
         signal: AbortSignal.timeout(req.timeoutMs),
       });
     } catch (cause) {
-      lastError = new LlmHttpError(0, req.driver, req.url, String(cause), `${req.driver} ${req.url}: transport error`);
+      // The REAL reason sits in the cause chain's `code`s (undici wraps every
+      // transport failure in a generic "fetch failed"). Naming it here is what
+      // lets a run journal say "TLS sertifikası doğrulanamadı
+      // (SELF_SIGNED_CERT_IN_CHAIN)" instead of a bare fetch error — the same
+      // classification the panel's connection test renders as a catalog key.
+      // Codes only, never the inner message: a message can quote the URL and
+      // its headers, and that is where the key lives.
+      const summary = networkFailureSummary(cause);
+      lastError = new LlmHttpError(
+        0,
+        req.driver,
+        req.url,
+        String(cause),
+        `${req.driver} ${req.url}: transport error${summary === null ? "" : ` — ${summary}`}`,
+      );
       if (attempt < ctx.retry.maxAttempts) await backoff(ctx, attempt, null);
       continue;
     }

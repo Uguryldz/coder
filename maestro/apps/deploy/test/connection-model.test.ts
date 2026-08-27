@@ -87,7 +87,27 @@ describe("connectionModelFrom", () => {
       // answered by a row SCAN, and with several model rows the scan and the
       // model pick could disagree — one row's key on another row's server.
       apiKeyRef: "connector:model-1:abc",
+      // No flag in the config bag = full verification, said explicitly so the
+      // run's handshake is never left to an undefined read.
+      skipTlsVerify: false,
     });
+  });
+
+  it("carries the row's skipTlsVerify switch to the run's handshake", async () => {
+    // The probe honoured this flag when the panel's test went green; the
+    // resolver must hand the same answer to the driver, or the green test is
+    // evidence about a handshake no run performs.
+    const flagged = await connectionModelFrom(
+      db([row({ configJson: { model: "gpt-oss-120b", skipTlsVerify: "true" } })]),
+    )();
+    expect(flagged?.skipTlsVerify).toBe(true);
+
+    // Anything but the exact string "true" — junk, "false", a boolean that
+    // should never be there — fails closed onto verification.
+    const junk = await connectionModelFrom(
+      db([row({ configJson: { model: "gpt-oss-120b", skipTlsVerify: "yes" } })]),
+    )();
+    expect(junk?.skipTlsVerify).toBe(false);
   });
 
   it("names the env fallback reference for a row that never stored a token", async () => {

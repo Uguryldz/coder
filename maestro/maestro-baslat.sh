@@ -79,8 +79,8 @@ cat <<EOF
   MAESTRO AYAKTA
 ════════════════════════════════════════════════════════════
   Studio (arayüz) : http://localhost:7000
-  Dışarıdan       : https://coder.uguryildiz.tech
-  Giriş           : admin / admin123
+  Dışarıdan       : http://coder.uguryildiz.tech
+  Giriş           : admin (parola operatörde; unutulursa ./deploy/ugurdocker/reset-admin.sh deseni)
 
   Loglar          : $LOG_DIR/
   Durdurmak için  : ./maestro-baslat.sh stop

@@ -90,20 +90,43 @@ export async function main(): Promise<void> {
      * demo half must never touch a bank's database), and N replicas start at
      * once. A fresh clean install would otherwise have no account anyone could
      * log in with — nobody could reach the screen that creates the first real
-     * user. The password is `admin123`, deliberately policy-exempt, and the
-     * account is FORCED to change it on first login (M8, banking standard). The
-     * moment a real admin exists — including the bootstrap admin after they have
-     * changed their password — this is a no-op and never resets the credential.
+     * user. The password is GENERATED (packages/db/src/bootstrap-password.ts)
+     * and printed below EXACTLY ONCE — install.sh runs this container in the
+     * operator's terminal, so the one printing lands in front of the one person
+     * who needs it. The account is FORCED to change it on first login (M8,
+     * banking standard). The moment a real admin exists — including the
+     * bootstrap admin after they have changed their password — this is a no-op
+     * and never resets or re-prints the credential.
+     *
+     * `MAESTRO_BOOTSTRAP_PASSWORD` (env, optional) lets a dev stack or a
+     * runbook choose the initial credential instead; the password is then NOT
+     * printed (whoever set the variable already knows it) and the forced
+     * first-login change still applies.
      */
     const bootstrapHasher = new BcryptPasswordHasher();
-    const admin = await seedFirstAdmin(firstAdminDbOf(db), (password) =>
-      bootstrapHasher.hash(password),
+    const suppliedBootstrapPassword = process.env["MAESTRO_BOOTSTRAP_PASSWORD"]?.trim();
+    const admin = await seedFirstAdmin(
+      firstAdminDbOf(db),
+      (password) => bootstrapHasher.hash(password),
+      suppliedBootstrapPassword ? { password: suppliedBootstrapPassword } : undefined,
     );
-    console.info(
-      admin.seeded
-        ? "[maestro] first-run admin planted (admin / admin123) — password change forced on first login"
-        : "[maestro] an admin account already exists, leaving the bootstrap seed alone",
-    );
+    if (!admin.seeded) {
+      console.info("[maestro] an admin account already exists, leaving the bootstrap seed alone");
+    } else if (suppliedBootstrapPassword) {
+      console.info(
+        "[maestro] first-run admin planted (admin) — password from MAESTRO_BOOTSTRAP_PASSWORD, change forced on first login",
+      );
+    } else {
+      // Turkish on purpose: these five lines are the hand-over of the only
+      // credential a fresh install has, and the operator reading them is the
+      // same person install.sh talks to in Turkish.
+      console.info("[maestro] ─────────────────────────────────────────────────────────────");
+      console.info("[maestro] İLK KURULUM: 'admin' yönetici hesabı oluşturuldu.");
+      console.info(`[maestro] GEÇİCİ PAROLA (yalnızca bu satırda gösterilir): ${admin.password}`);
+      console.info("[maestro] İlk girişte sistem yeni bir parola belirlemenizi ZORUNLU tutar.");
+      console.info("[maestro] Parola kaybolursa: sunucuda ./reset-admin.sh admin  (bkz. README).");
+      console.info("[maestro] ─────────────────────────────────────────────────────────────");
+    }
 
     /**
      * Plant the default agent variants if this install has none (M38).

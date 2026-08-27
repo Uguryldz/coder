@@ -101,6 +101,12 @@ export function LoginForm(): ReactNode {
           </form>
         </Card>
 
+        {/* Honest, because there is no self-service reset: accounts are local
+            and the platform sends no e-mail. The supported path is the operator
+            running reset-admin.sh on the server (deploy bundles), which prints
+            a one-time temporary password and forces a change on next login. */}
+        <p className="login__forgot">{t("login.forgot")}</p>
+
         <div className="login__lang">
           <Select
             label={t("shell.language")}

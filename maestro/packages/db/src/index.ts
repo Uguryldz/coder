@@ -62,21 +62,25 @@ export type { ParamWriteDb, ParamVersionWritten, WriteParamVersionInput } from "
 export { seedParams } from "./seed.js";
 export type { SeedParamsOptions, SeedParamsResult } from "./seed.js";
 
-// The first-run bootstrap admin (banking standard): a policy-EXEMPT `admin`/
-// `admin123` account, forced to change its password on first login (M8).
+// The first-run bootstrap admin (banking standard): an `admin` account planted
+// with a RANDOM, one-time-logged password and forced to change it on first
+// login (M8). The generator is exported for the operator reset flow too
+// (apps/deploy/src/reset-admin.ts).
 export {
   seedFirstAdmin,
   firstAdminDbOf,
   FIRST_ADMIN_USERNAME,
-  FIRST_ADMIN_PASSWORD,
   FIRST_ADMIN_DISPLAY_NAME,
   FIRST_ADMIN_GROUP,
 } from "./seed-first-admin.js";
 export type {
   PasswordHashFn,
   SeedFirstAdminDb,
+  SeedFirstAdminOptions,
   SeedFirstAdminResult,
 } from "./seed-first-admin.js";
+export { generateBootstrapPassword, BOOTSTRAP_PASSWORD_LENGTH } from "./bootstrap-password.js";
+export type { RandomIntFn } from "./bootstrap-password.js";
 
 // The analysis template a fresh install starts with (M108).
 export { seedAnalysisTemplate } from "./seed-template.js";

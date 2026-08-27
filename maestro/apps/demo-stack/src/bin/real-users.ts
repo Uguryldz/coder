@@ -1,7 +1,9 @@
 /**
  * Dev launcher: the demo stack, but with the identity/session/user surface
- * pointed at the REAL Postgres (so a DB-seeded `admin`/`admin123` bootstrap
- * account and its must-change-password flow can be exercised in a browser).
+ * pointed at the REAL Postgres (so the DB-seeded `admin` bootstrap account —
+ * random password printed once by the migrate log, or fixed via
+ * MAESTRO_BOOTSTRAP_PASSWORD before the first migrate — and its
+ * must-change-password flow can be exercised in a browser).
  *
  * Everything ELSE stays the demo's in-memory reality — this needs no corporate
  * Jira/ADO/S3/LLM endpoints, unlike the prod `apps/deploy` boot which is
@@ -226,7 +228,9 @@ async function main(): Promise<void> {
   await server.listen({ host, port });
 
   console.log(`\n  BFF (gerçek kullanıcı DB'si) http://${host}:${port}`);
-  console.log(`  Giriş: admin / admin123  → ilk girişte parola değiştirme\n`);
+  console.log(
+    `  Giriş: admin / <ilk migrate logundaki GEÇİCİ PAROLA ya da MAESTRO_BOOTSTRAP_PASSWORD>  → ilk girişte parola değiştirme\n`,
+  );
 
   const studioDir = fileURLToPath(new URL("../../../studio", import.meta.url));
   spawn("pnpm", ["dev"], { cwd: studioDir, stdio: "inherit" });

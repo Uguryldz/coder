@@ -204,6 +204,48 @@ describe("discoverOnce", () => {
     expect(asked).toHaveLength(2);
   });
 
+  /**
+   * A round that finds nothing must still SAY so.
+   *
+   * Measured on the live install: a healthy sweep printed nothing at all when
+   * every matching ticket was already known, so the log looked exactly the
+   * same as a sweep that had never started — and "my tickets are not arriving"
+   * is precisely the moment an operator needs those two told apart. The status
+   * endpoint knows, but it needs a session; the log is what gets read first.
+   */
+  it("reports the round even when it starts nothing", async () => {
+    const logged: string[] = [];
+    await discoverOnce({
+      deps: {} as never,
+      search: { searchIssues: () => Promise.resolve({ issues: [{ key: "OPS-1" }] }) },
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve(["OPS-1"] as never),
+      intervalMs: 0,
+      log: (message) => logged.push(message),
+    });
+
+    const summary = logged.find((line) => line.includes("tur bitti"));
+    expect(summary).toBeDefined();
+    // It says what it searched with and what it took, so "1 rule, 0 taken"
+    // reads as a working sweep rather than a broken one.
+    expect(summary).toContain("1 kural");
+    expect(summary).toContain("0 ticket");
+  });
+
+  it("says so when there is no enabled rule to search with", async () => {
+    const logged: string[] = [];
+    await discoverOnce({
+      deps: {} as never,
+      search: { searchIssues: () => Promise.resolve({ issues: [] }) },
+      rules: () => Promise.resolve([{ ...RULE, enabled: false }]),
+      known: () => Promise.resolve([]),
+      intervalMs: 0,
+      log: (message) => logged.push(message),
+    });
+
+    expect(logged.join(" ")).toContain("açık dinleme kuralı yok");
+  });
+
   it("survives an unreadable rule list rather than throwing at the timer", async () => {
     const result = await discoverOnce({
       deps: {} as never,

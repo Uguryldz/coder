@@ -172,7 +172,9 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   }
   if (rules.length === 0) {
     // Zero rules is a real, reportable state — not a failure. The panel says
-    // "nothing to look for" rather than leaving the operator to guess.
+    // "nothing to look for" rather than leaving the operator to guess, and so
+    // does the log: silence here would read as a sweep that is not running.
+    log("[keşif] tur bitti: açık dinleme kuralı yok, aranacak bir şey yok");
     record({ lastError: null, rulesSearched: 0, lastStarted: 0 });
     return [];
   }
@@ -183,6 +185,8 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   // `assigned` wildcard beside a per-issuetype rule), and starting it twice
   // would be two runs for one piece of work.
   const seenThisRound = new Set<string>();
+  /** Keys Jira returned this round, before the already-known filter. */
+  let scanned = 0;
 
   for (const rule of rules) {
     if (started.length >= cap) break;
@@ -196,6 +200,7 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
         fields: ["key"],
       });
       keys = page.issues.map((issue) => issue.key).filter((key): key is string => key !== undefined);
+      scanned += keys.length;
     } catch (error) {
       // One rule's failure must not stop the others: a project whose
       // permissions changed would otherwise freeze discovery for every project.
@@ -232,6 +237,20 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       }
     }
   }
+  /**
+   * Every round says what it did, including the empty ones.
+   *
+   * Measured on the live install: a healthy sweep that found nothing printed
+   * NOTHING, so "the sweep is running and there is no new ticket" and "the
+   * sweep never ran" looked identical in the log — and the operator whose
+   * tickets are not arriving cannot tell those two apart, which is the whole
+   * question they are asking. The status endpoint knows, but it needs a
+   * session; the log is what an operator reads first.
+   */
+  log(
+    `[keşif] tur bitti: ${rules.length} kural arandı, ${started.length} ticket alındı` +
+      `${scanned === 0 ? "" : `, ${scanned} eşleşme görüldü`}`,
+  );
   record({ lastError: null, rulesSearched: rules.length, lastStarted: started.length });
   return started;
 }

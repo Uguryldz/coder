@@ -33,6 +33,27 @@ const ALLOWED_HOSTS = (process.env["MAESTRO_STUDIO_ALLOWED_HOSTS"] ?? "")
   .map((name) => name.trim())
   .filter((name) => name.length > 0);
 
+/**
+ * Say which names ARE allowed, at start-up.
+ *
+ * Vite's refusal names the host it rejected and tells the reader to edit
+ * `vite.config.js` — advice that does not apply here, because the list comes
+ * from an environment variable. Worse, the usual cause is a one-character
+ * difference between the name in the variable and the name the proxy sends
+ * (`code.` vs `coder.`), and neither the refusal nor the config file shows
+ * what the running server actually accepts. Printing it turns a five-minute
+ * hunt into a glance at the log.
+ */
+if (ALLOWED_HOSTS.length > 0) {
+  console.info(`[studio] izin verilen host adları: ${ALLOWED_HOSTS.join(", ")}`);
+} else if (STUDIO_HOST !== "127.0.0.1") {
+  console.warn(
+    "[studio] MAESTRO_STUDIO_ALLOWED_HOSTS boş ve sunucu loopback dışına bağlandı — " +
+      "ters vekilden gelen istekler 'Blocked request' ile reddedilir. " +
+      "Vekilin ilettiği adı bu değişkene yazın (virgülle ayırarak).",
+  );
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {

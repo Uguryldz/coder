@@ -238,6 +238,31 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
             : JSON.stringify(flowDecision.statusMap),
       },
     });
+
+    /**
+     * Say ON THE TICKET that the work was picked up.
+     *
+     * Reported from the field: an operator assigned a ticket to the bot, the
+     * sweep took it, a run started — and Jira showed nothing at all. From
+     * where they were sitting, assigning the ticket had done nothing; the only
+     * evidence lived in a panel they had no reason to open yet.
+     *
+     * Only on `started`. A delivery that JOINED a run already going has
+     * nothing new to announce, and a second "picked this up" comment on the
+     * same ticket reads as the platform having lost track of itself.
+     *
+     * Fail-soft: the run is under way and a comment that could not be posted
+     * must not undo it. Jira being briefly unreachable is not a reason to
+     * refuse work it already accepted.
+     */
+    await deps.work
+      .addComment(
+        request.ticket,
+        deps.messages.t(deps.config.locale, BFF_MESSAGE_KEYS.intakeAccepted, {
+          ticket: request.ticket,
+        }),
+      )
+      .catch(() => undefined);
   }
 
   return { accepted: true, workflowId: outcome.workflowId ?? workflowIdFor(request.ticket), started: outcome.started };

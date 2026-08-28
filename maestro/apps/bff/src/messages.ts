@@ -38,6 +38,11 @@ export const BFF_MESSAGE_KEYS = {
    * author can add themselves.
    */
   intakeNotOptedIn: "intake.not_opted_in",
+  /**
+   * The ticket was taken and a run started — said on the ticket, because that
+   * is where the person who assigned it is looking.
+   */
+  intakeAccepted: "intake.accepted",
 } as const;
 
 export type BffMessageKey = (typeof BFF_MESSAGE_KEYS)[keyof typeof BFF_MESSAGE_KEYS];

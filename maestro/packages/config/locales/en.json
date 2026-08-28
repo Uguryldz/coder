@@ -952,6 +952,7 @@
   "help.trouble.stuck": "If the agent is stuck: after three rejections or three CI failures the work is handed to a human automatically and a notification goes out.",
   "help.trouble.wrong_app": "If a ticket landed on the wrong application, correct it with /ai-assign <application>.",
   "help.troubleshooting": "If something goes wrong",
+  "intake.accepted": "Maestro has picked up {ticket}. The analysis is being prepared; progress is posted here as comments, and any approval will be asked for on this ticket.",
   "intake.manual_completion": "I could not assess this request automatically (the model response was unusable). Please complete the missing details by hand.",
   "intake.not_opted_in": "{ticket} was not started: this project only accepts labelled tickets. Add the \"{label}\" label to the ticket and try again.",
   "issues.col.at": "Date",

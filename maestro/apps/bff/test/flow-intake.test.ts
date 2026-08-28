@@ -51,6 +51,43 @@ describe("intake picks the flow PER TICKET, not per deployment", () => {
     rule({ ruleId: "lr_analiz", matchKind: "issuetype", matchValue: "Analiz", flowType: "analiz", priority: 20 }),
   ];
 
+  /**
+   * Reported from the field, in these words: "dinleyip cevap dönmedi, işleme
+   * alındı diye bir yorum yok."
+   *
+   * The operator assigned a ticket to the bot, the sweep took it and a run
+   * started — and Jira showed nothing. From where they were sitting, assigning
+   * the ticket had done nothing at all: the only evidence was in a panel they
+   * had no reason to open yet.
+   */
+  it("says on the ticket that the work was picked up", async () => {
+    const h = await harness({ listeningRules: rules });
+
+    await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" });
+
+    const comment = h.work.lastComment("UGURPAY-1") ?? "";
+    expect(comment).toContain("UGURPAY-1");
+    // Names what happens next, not just that something happened.
+    expect(comment).toMatch(/analiz|onay/i);
+  });
+
+  /**
+   * A delivery that JOINED a run already going has nothing new to announce,
+   * and a second "picked this up" on the same ticket reads as the platform
+   * having lost track of itself.
+   */
+  it("does not announce again when a second delivery joins the same run", async () => {
+    const h = await harness({ listeningRules: rules });
+
+    await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" });
+    const onTicket = (): number =>
+      h.work.comments.filter((c: { ticket: string }) => c.ticket === "UGURPAY-1").length;
+    const first = onTicket();
+    await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" });
+
+    expect(onTicket()).toBe(first);
+  });
+
   it("runs two tickets of the SAME project on two DIFFERENT flows", async () => {
     const h = await harness({ listeningRules: rules });
 

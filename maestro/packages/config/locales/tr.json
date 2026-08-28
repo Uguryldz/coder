@@ -952,6 +952,7 @@
   "help.trouble.stuck": "Ajan takıldıysa: üç ret ya da üç CI hatasında iş otomatik olarak insana devrolur ve bildirim gider.",
   "help.trouble.wrong_app": "Ticket yanlış uygulamaya düştüyse /ai-assign <uygulama> ile düzelt.",
   "help.troubleshooting": "Bir şey ters giderse",
+  "intake.accepted": "Maestro {ticket} işleme aldı. Analiz hazırlanıyor; ilerleme bu ticket'a yorum olarak yazılacak ve onay gerektiğinde burada sorulacak.",
   "intake.manual_completion": "Talebi otomatik değerlendiremedim (model yanıtı kullanılabilir değildi). Lütfen eksikleri elle tamamlayın.",
   "intake.not_opted_in": "{ticket} başlatılamadı: bu proje yalnız etiketli ticket'ları alıyor. Ticket'a \"{label}\" etiketini ekleyip tekrar deneyin.",
   "issues.col.at": "Tarih",

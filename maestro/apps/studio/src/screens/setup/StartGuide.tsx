@@ -57,7 +57,15 @@ export function StartGuide({
   const steps: readonly StepDef[] = [
     { key: "step1", done: setup.hasConn, to: "/settings" },
     { key: "step2", done: setup.hasBinding, to: "/projects?tab=onboard" },
-    { key: "webhook", done: setup.hasWebhook, to: "/help?cat=system#jira" },
+    /**
+     * Ticket intake: EITHER path satisfies it.
+     *
+     * A Jira webhook is the better one when the operator can register it —
+     * instant, no polling. A sweep is the answer when they cannot, which is
+     * most banks. Marking this done only on the webhook told a perfectly
+     * working polling install that it was missing a step it did not need.
+     */
+    { key: "webhook", done: setup.hasWebhook || setup.hasSweep, to: "/listening" },
     { key: "step3", done: setup.hasTrainedAgent, to: "/variants" },
     { key: "step4", done: false, to: "/dash" }, // "watch" — the goal, never auto-checked
   ];

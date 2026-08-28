@@ -413,6 +413,24 @@ export async function main(): Promise<void> {
           matchValue: row.matchValue,
           enabled: row.enabled,
         })),
+      /**
+       * The operator's interval, from `jira.discover_minutes`.
+       *
+       * Read from the parameter table rather than the environment so it can be
+       * changed from the panel and take effect on the NEXT round — on a bank's
+       * server a container restart is a change request, not a click.
+       *
+       * A missing row (or a value that is not a number) answers null, which
+       * the loop reads as "keep the boot default".
+       */
+      intervalMinutes: async () => {
+        const row = await db.paramVersion.findFirst({
+          where: { key: "jira.discover_minutes" },
+          orderBy: { version: "desc" },
+        });
+        const value = row?.valueJson;
+        return typeof value === "number" && Number.isFinite(value) ? value : null;
+      },
       // Every ticket that already has a row, in ANY state: a finished run must
       // not be started again by the next sweep, and a failed one is a decision
       // for a person, not something to retry on a timer.

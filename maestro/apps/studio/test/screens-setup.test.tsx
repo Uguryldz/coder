@@ -1091,7 +1091,7 @@ describe("setup wizard", () => {
       expect(
         await screen.findByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
       ).toBeTruthy();
-      expect(screen.getByText("Jira webhook'unu kur")).toBeTruthy();
+      expect(screen.getByText("Ticket girişini aç")).toBeTruthy();
       // The wizard is still a wizard: the guide sits ABOVE the first question,
       // it does not replace it.
       expect(screen.getByText("Ne yapmak istiyorsunuz?")).toBeTruthy();

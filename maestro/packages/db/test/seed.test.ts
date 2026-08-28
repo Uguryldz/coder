@@ -64,6 +64,11 @@ const MOCK_PARAM_KEYS: Record<string, string> = {
 };
 
 const DECISION_ONLY_KEYS: Record<string, string> = {
+  // Not from a mock screen: the sweep interval came from a live install where
+  // no ticket ever arrived because nothing was asking Jira, and the operator
+  // needed to tune it from the panel rather than by editing a file on the
+  // server and restarting a container.
+  "jira.discover_minutes": "keşif",
   "killswitch.state": "M58",
   "binding.dry_run_sample_size": "M102",
   "dataclass.policy": "M18/M63",

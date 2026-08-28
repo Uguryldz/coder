@@ -28,6 +28,7 @@ const DONE: SetupState = {
   hasBinding: true,
   hasTrainedAgent: true,
   hasWebhook: true,
+  hasSweep: false,
   complete: true,
   loading: false,
 };
@@ -82,7 +83,7 @@ describe("panel — setup guidance lives in the wizard now", () => {
     // …and the checklist is not what it chose to say about it.
     expect(screen.queryByText(GUIDE_TITLE)).not.toBeInTheDocument();
     expect(screen.queryByText("Bağlantıları kur")).not.toBeInTheDocument();
-    expect(screen.queryByText("Jira webhook'unu kur")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ticket girişini aç")).not.toBeInTheDocument();
     // The runs really did load, so this is a report screen showing its report.
     expect(screen.getByText("Aktif iş akışı")).toBeInTheDocument();
   });
@@ -144,7 +145,7 @@ describe("start guide — steps", () => {
 
     expect(screen.getByText("Bağlantıları kur")).toBeInTheDocument();
     expect(screen.getByText("Projeni bağla")).toBeInTheDocument();
-    expect(screen.getByText("Jira webhook'unu kur")).toBeInTheDocument();
+    expect(screen.getByText("Ticket girişini aç")).toBeInTheDocument();
     expect(screen.getByText("Ajanlarını belgelerle eğit")).toBeInTheDocument();
     expect(screen.getByText("Jira'da iş aç, Panel'den izle")).toBeInTheDocument();
 
@@ -156,7 +157,7 @@ describe("start guide — steps", () => {
   it("moves the nudge to the webhook when it is the only open step", () => {
     renderScreen(<StartGuide {...guideProps({ hasWebhook: false, complete: false })} />);
 
-    const webhook = screen.getByText("Jira webhook'unu kur").closest("button")!;
+    const webhook = screen.getByText("Ticket girişini aç").closest("button")!;
     expect(webhook.className).toContain("dash-start__step--next");
     expect(screen.getByText("Bağlantıları kur").closest("button")!.className).toContain(
       "dash-start__step--done",

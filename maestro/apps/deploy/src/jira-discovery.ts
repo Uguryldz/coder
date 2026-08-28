@@ -57,6 +57,19 @@ export interface DiscoveryOptions {
   /** Ticket keys the platform already knows about — never started twice. */
   readonly known: () => Promise<readonly TicketKey[]>;
   readonly intervalMs: number;
+  /**
+   * The interval as the OPERATOR set it, in minutes, re-read each tick.
+   *
+   * `intervalMs` is the boot-time default from the environment; this is the
+   * live value from `jira.discover_minutes`. Read per round rather than at
+   * start-up so tightening it in the panel takes effect on the next sweep
+   * instead of the next restart — which on a bank's server is a change
+   * request, not a click.
+   *
+   * Absent (or a read that fails) means "use the boot default": a parameter
+   * store that is briefly unavailable must not stop the sweep.
+   */
+  readonly intervalMinutes?: () => Promise<number | null>;
   /** Most tickets to take from one search. A guard, not a page size. */
   readonly maxPerRound?: number;
   readonly log?: (message: string) => void;
@@ -237,14 +250,43 @@ export function startJiraDiscovery(options: DiscoveryOptions): { stop: () => voi
       return [];
     });
   };
-  const timer = setInterval(() => void tick(), options.intervalMs);
-  // Never hold the process open for a discovery loop.
-  timer.unref?.();
-  void tick();
+  /**
+   * Rescheduled after every round rather than a fixed `setInterval`, because
+   * the operator can change the interval while it runs. A fixed timer would
+   * keep the interval it was created with until the process restarted.
+   */
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const schedule = (ms: number): void => {
+    timer = setTimeout(() => void loop(), ms);
+    timer.unref?.();
+  };
+  const loop = async (): Promise<void> => {
+    if (stopped) return;
+    await tick();
+    if (stopped) return;
+    let ms = options.intervalMs;
+    try {
+      const minutes = await options.intervalMinutes?.();
+      // 0 means "off": stop rescheduling rather than spinning on a zero delay.
+      if (minutes !== null && minutes !== undefined) {
+        if (minutes <= 0) {
+          (options.log ?? console.log)("[keşif] tarama panelden kapatıldı");
+          status.current = { ...status.current, enabled: false };
+          return;
+        }
+        ms = minutes * 60_000;
+        status.current = { ...status.current, enabled: true, intervalMs: ms };
+      }
+    } catch {
+      // A parameter store that is briefly down must not stop the sweep.
+    }
+    schedule(ms);
+  };
+  void loop();
   return {
     stop: (): void => {
       stopped = true;
-      clearInterval(timer);
+      if (timer !== null) clearTimeout(timer);
     },
   };
 }

@@ -36,6 +36,15 @@ export interface SetupState {
    * report: a real `GET /studio/webhook-status` would replace it.
    */
   readonly hasWebhook: boolean;
+  /**
+   * Is a ticket sweep running? The OTHER way a ticket can arrive.
+   *
+   * The checklist used to treat the webhook as the only path, so an install
+   * that polls Jira instead was told forever that it was missing a step it did
+   * not need — and one that had neither was told the same thing, with no way to
+   * tell the two apart.
+   */
+  readonly hasSweep: boolean;
   /** Every step above is finished → the guide has nothing left to teach. */
   readonly complete: boolean;
   /** True until every underlying read has settled. */
@@ -95,6 +104,19 @@ export function useSetupState(webhookAck: boolean): SetupState {
     queryFn: ({ signal }) => api.get<{ projects: readonly unknown[] }>("/routing", { signal }),
     retry: false,
   });
+  /**
+   * Is anything picking tickets up? Either path counts.
+   *
+   * A webhook is the better one when it exists; the sweep is the answer for a
+   * site that cannot register one. Treating the webhook as the only path told
+   * a polling install forever that it was missing a step it did not need.
+   */
+  const sweep = useQuery({
+    queryKey: ["listening-status"],
+    queryFn: ({ signal }) =>
+      api.get<{ enabled: boolean }>("/studio/listening-status", { signal }),
+    retry: false,
+  });
   const variants = useQuery({
     queryKey: ["variants"],
     queryFn: ({ signal }) =>
@@ -106,6 +128,7 @@ export function useSetupState(webhookAck: boolean): SetupState {
     (jiraConns.data?.connections.length ?? 0) > 0 || (scmConns.data?.connections.length ?? 0) > 0;
   const hasBinding = (routing.data?.projects.length ?? 0) > 0;
   const hasTrainedAgent = (variants.data?.variants ?? []).some((v) => (v.knowledgeFiles ?? 0) > 0);
+  const hasSweep = sweep.data?.enabled === true;
 
   const loading =
     jiraConns.isPending || scmConns.isPending || routing.isPending || variants.isPending;
@@ -115,7 +138,19 @@ export function useSetupState(webhookAck: boolean): SetupState {
     hasBinding,
     hasTrainedAgent,
     hasWebhook: webhookAck,
-    complete: hasConn && hasBinding && hasTrainedAgent && webhookAck,
+    hasSweep,
+    /**
+     * Done means "tickets can arrive and be worked", not "every optional
+     * extra is filled in".
+     *
+     * Two changes from the first version, both measured against a real
+     * install that was working and told otherwise. Ticket INTAKE is satisfied
+     * by either path — a webhook or a running sweep — because those are
+     * alternatives, not a checklist. And uploaded knowledge files are NOT
+     * required: they improve an analysis, they do not enable one, and
+     * demanding them left a finished setup showing a permanent banner.
+     */
+    complete: hasConn && hasBinding && (webhookAck || hasSweep),
     loading,
   };
 }

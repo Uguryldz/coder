@@ -130,6 +130,27 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     defaultValue: 60,
   },
   {
+    /**
+     * How often Maestro asks Jira whether there are new tickets, in minutes.
+     * `0` turns the sweep off.
+     *
+     * A parameter rather than an environment variable because it is an
+     * OPERATIONAL choice, not a deployment one: an operator watching tickets
+     * arrive too slowly should be able to tighten it from the panel, without a
+     * container restart and without editing a file on the server. The env
+     * variable stays as the boot-time default for a fresh install.
+     *
+     * The webhook remains the better path when a site can register one — this
+     * is what the rest of them use.
+     */
+    key: "jira.discover_minutes",
+    scope: "global",
+    type: "number",
+    guarded: false,
+    descriptionKey: "params.description.jira_discover_minutes",
+    defaultValue: 5,
+  },
+  {
     // M54 — stuck protection: three rejections at the same gate OR three
     // identical CI failures hand the work to a human in ai_assist, with the
     // whole journal. N is a parameter precisely because 3 is a guess.

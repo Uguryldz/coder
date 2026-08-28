@@ -414,7 +414,7 @@ export async function main(): Promise<void> {
           enabled: row.enabled,
         })),
       /**
-       * The operator's interval, from `jira.discover_minutes`.
+       * The operator's interval, from `jira.discover_seconds`.
        *
        * Read from the parameter table rather than the environment so it can be
        * changed from the panel and take effect on the NEXT round — on a bank's
@@ -423,9 +423,9 @@ export async function main(): Promise<void> {
        * A missing row (or a value that is not a number) answers null, which
        * the loop reads as "keep the boot default".
        */
-      intervalMinutes: async () => {
+      intervalSeconds: async () => {
         const row = await db.paramVersion.findFirst({
-          where: { key: "jira.discover_minutes" },
+          where: { key: "jira.discover_seconds" },
           orderBy: { version: "desc" },
         });
         const value = row?.valueJson;

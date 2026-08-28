@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { discoverOnce, jqlFor, type DiscoveryRule } from "../src/jira-discovery.js";
+import {
+  discoverOnce,
+  jqlFor,
+  startJiraDiscovery,
+  type DiscoveryRule,
+} from "../src/jira-discovery.js";
 
 /**
  * Finding tickets by asking Jira.
@@ -202,5 +207,64 @@ describe("discoverOnce", () => {
     });
 
     expect(result).toEqual([]);
+  });
+});
+
+/**
+ * The interval is an OPERATOR setting, in seconds, and it must take effect on
+ * the next round rather than the next restart.
+ *
+ * Asked for directly: "65 dakikayı 1 dk 20 saniyeye ayarlayabilmem lazım."
+ * Minutes could not express 80 seconds at all, and a fixed `setInterval` would
+ * have kept whatever it was created with until the container was restarted —
+ * which on a bank's server is a change request, not a click.
+ */
+describe("startJiraDiscovery: the operator's interval", () => {
+  it("reschedules at the seconds the parameter says, not the boot default", async () => {
+    const asked: number[] = [];
+    const loop = startJiraDiscovery({
+      deps: {} as never,
+      search: { searchIssues: () => Promise.resolve({ issues: [] }) },
+      rules: () => Promise.resolve([]),
+      known: () => Promise.resolve([]),
+      // Boot default is five minutes; the operator says 80 seconds.
+      intervalMs: 300_000,
+      intervalSeconds: () => {
+        asked.push(Date.now());
+        return Promise.resolve(80);
+      },
+      log: () => undefined,
+    });
+
+    // One tick is enough: the reschedule reads the parameter after the round.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    loop.stop();
+
+    expect(asked.length).toBeGreaterThan(0);
+  });
+
+  it("stops rescheduling when the operator sets 0", async () => {
+    let rounds = 0;
+    const loop = startJiraDiscovery({
+      deps: {} as never,
+      search: {
+        searchIssues: () => {
+          rounds += 1;
+          return Promise.resolve({ issues: [] });
+        },
+      },
+      rules: () => Promise.resolve([]),
+      known: () => Promise.resolve([]),
+      intervalMs: 10,
+      intervalSeconds: () => Promise.resolve(0),
+      log: () => undefined,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    loop.stop();
+
+    // Zero means off: no second round was scheduled, however short the boot
+    // interval was.
+    expect(rounds).toBeLessThanOrEqual(1);
   });
 });

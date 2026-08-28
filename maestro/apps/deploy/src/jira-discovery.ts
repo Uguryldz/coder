@@ -58,7 +58,7 @@ export interface DiscoveryOptions {
   readonly known: () => Promise<readonly TicketKey[]>;
   readonly intervalMs: number;
   /**
-   * The interval as the OPERATOR set it, in minutes, re-read each tick.
+   * The interval as the OPERATOR set it, in SECONDS, re-read each tick.
    *
    * `intervalMs` is the boot-time default from the environment; this is the
    * live value from `jira.discover_minutes`. Read per round rather than at
@@ -68,8 +68,10 @@ export interface DiscoveryOptions {
    *
    * Absent (or a read that fails) means "use the boot default": a parameter
    * store that is briefly unavailable must not stop the sweep.
+   *
+   * Seconds, not minutes: an operator who wants 80s must be able to say 80.
    */
-  readonly intervalMinutes?: () => Promise<number | null>;
+  readonly intervalSeconds?: () => Promise<number | null>;
   /** Most tickets to take from one search. A guard, not a page size. */
   readonly maxPerRound?: number;
   readonly log?: (message: string) => void;
@@ -266,15 +268,15 @@ export function startJiraDiscovery(options: DiscoveryOptions): { stop: () => voi
     if (stopped) return;
     let ms = options.intervalMs;
     try {
-      const minutes = await options.intervalMinutes?.();
+      const seconds = await options.intervalSeconds?.();
       // 0 means "off": stop rescheduling rather than spinning on a zero delay.
-      if (minutes !== null && minutes !== undefined) {
-        if (minutes <= 0) {
+      if (seconds !== null && seconds !== undefined) {
+        if (seconds <= 0) {
           (options.log ?? console.log)("[keşif] tarama panelden kapatıldı");
           status.current = { ...status.current, enabled: false };
           return;
         }
-        ms = minutes * 60_000;
+        ms = seconds * 1_000;
         status.current = { ...status.current, enabled: true, intervalMs: ms };
       }
     } catch {

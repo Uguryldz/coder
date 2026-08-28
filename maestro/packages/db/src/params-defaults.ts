@@ -131,8 +131,13 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
   },
   {
     /**
-     * How often Maestro asks Jira whether there are new tickets, in minutes.
+     * How often Maestro asks Jira whether there are new tickets, in SECONDS.
      * `0` turns the sweep off.
+     *
+     * Seconds rather than minutes because the operator asked for 80s and could
+     * not express it: a minute is too coarse a unit for a knob whose whole
+     * purpose is "how quickly does a ticket show up". Minutes forced a choice
+     * between 60s and 120s with nothing in between.
      *
      * A parameter rather than an environment variable because it is an
      * OPERATIONAL choice, not a deployment one: an operator watching tickets
@@ -143,12 +148,12 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
      * The webhook remains the better path when a site can register one — this
      * is what the rest of them use.
      */
-    key: "jira.discover_minutes",
+    key: "jira.discover_seconds",
     scope: "global",
     type: "number",
     guarded: false,
-    descriptionKey: "params.description.jira_discover_minutes",
-    defaultValue: 5,
+    descriptionKey: "params.description.jira_discover_seconds",
+    defaultValue: 300,
   },
   {
     // M54 — stuck protection: three rejections at the same gate OR three

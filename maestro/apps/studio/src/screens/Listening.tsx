@@ -104,6 +104,22 @@ const FLOW_TONE: Readonly<Record<FlowType, BadgeTone>> = {
   gelistirme: "green",
 };
 
+/**
+ * `95000` → `"1 dk 35 sn"`, `300000` → `"5 dk"`, `45000` → `"45 sn"`.
+ *
+ * Rounded to nothing: the interval is a number the operator typed, and a
+ * screen that rounds 80s to "1 dakika" reads as the setting having been
+ * ignored.
+ */
+function durationLabel(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes === 0) return `${seconds} sn`;
+  if (seconds === 0) return `${minutes} dk`;
+  return `${minutes} dk ${seconds} sn`;
+}
+
 /** What `/studio/listening-status` answers; see the BFF route for why. */
 interface SweepStatus {
   readonly enabled: boolean;
@@ -624,8 +640,11 @@ export function ListeningScreen(): ReactNode {
             {sweep.data.enabled && (
               <>
                 {" "}
+                {/* Gerçek süre, dakikaya yuvarlanmadan: 80 saniyeye ayarlayan
+                    operatörün ekranda "1 dakika" görmesi, ayarladığı şeyin
+                    tutmadığını düşündürür. */}
                 {t("listening.sweep.every", {
-                  minutes: String(Math.round(sweep.data.intervalMs / 60000)),
+                  duration: durationLabel(sweep.data.intervalMs),
                 })}
                 {sweep.data.lastRunAt !== null && (
                   <>

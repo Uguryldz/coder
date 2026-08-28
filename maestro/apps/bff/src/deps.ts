@@ -667,7 +667,30 @@ export interface BffConfig {
   engineBotAccountId: string;
 }
 
+/**
+ * What the ticket sweep last did, when a deployment runs one.
+ *
+ * Optional because the sweep is: an install whose Jira webhook works has no
+ * reason to poll. Absent means "not configured", which is a different answer
+ * from "configured and finding nothing" — and an operator whose tickets are
+ * not arriving needs to tell those two apart.
+ *
+ * A function rather than a value: the loop lives in the composition root
+ * (`apps/deploy`), which this package may not import, and its status changes
+ * every round.
+ */
+export type DiscoveryStatusReader = () => {
+  readonly enabled: boolean;
+  readonly intervalMs: number;
+  readonly lastRunAt: string | null;
+  readonly lastStarted: number;
+  readonly rulesSearched: number;
+  readonly lastError: string | null;
+};
+
 export interface BffDeps {
+  /** See {@link DiscoveryStatusReader}; absent on a webhook-only install. */
+  discoveryStatus?: DiscoveryStatusReader;
   work: WorkPort;
   workEvents: WorkEventReader;
   ci: CiPort;

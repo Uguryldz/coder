@@ -36,17 +36,54 @@ describe.each(bundles)("$name studio-nginx.conf: the webhook gateway", ({ path }
   });
 
   it("proxies it to bff:7001 WITHOUT stripping the prefix", () => {
-    // The BFF serves `/webhooks/jira` from its root, so the path must arrive
-    // intact: /webhooks/ → http://bff:7001/webhooks/. A proxy_pass ending in
-    // a bare `/` here would strip the prefix and produce a 404 on the BFF —
-    // the same silent-dead-endpoint failure with a different status code.
-    expect(conf).toMatch(/location\s+\/webhooks\/\s*\{[^}]*proxy_pass\s+http:\/\/bff:7001\/webhooks\/;/s);
+    /**
+     * The BFF serves `/webhooks/jira` from its root, so the path must arrive
+     * intact: /webhooks/ → bff:7001/webhooks/. Losing the prefix here is a 404
+     * on the BFF — the same silent-dead-endpoint failure with a different
+     * status code.
+     *
+     * The prefix is now preserved by an explicit `rewrite` rather than by
+     * `proxy_pass`'s trailing slash, because the upstream travels in a
+     * VARIABLE (so nginx re-resolves the container's IP; see the resolver note
+     * in the conf). nginx does not rewrite the URI when `proxy_pass` contains
+     * a variable, so the rewrite does it in the open.
+     */
+    expect(conf).toContain("rewrite ^/webhooks/(.*)$ /webhooks/$1 break;");
+    expect(conf).toContain("set $bff_webhook http://bff:7001;");
+    expect(conf).toContain("proxy_pass         $bff_webhook;");
   });
 
   it("keeps the /api/ proxy that the panel itself depends on", () => {
     // The webhook gateway was ADDED next to this block; a refactor that merges
-    // or renames them must keep both doors open.
-    expect(conf).toMatch(/location\s+\/api\/\s*\{[^}]*proxy_pass\s+http:\/\/bff:7001\/;/s);
+    // or renames them must keep both doors open. The `/api/` prefix is stripped
+    // by the rewrite (see the webhook test above for why it is not the
+    // trailing slash any more).
+    expect(conf).toContain("rewrite ^/api/(.*)$ /$1 break;");
+    expect(conf).toContain("set $bff_upstream http://bff:7001;");
+    expect(conf).toContain("proxy_pass         $bff_upstream;");
+  });
+
+  /**
+   * The bug this configuration exists to prevent, stated as a test.
+   *
+   * nginx resolves an upstream NAME once at start-up and keeps that IP for
+   * life. On a compose network that means "bff restarted → the panel 502s
+   * forever", which is exactly what happened in production: the BFF was
+   * updated and the panel went dead until somebody restarted nginx too.
+   */
+  it("re-resolves the upstream, so a restarted BFF does not 502 the panel", () => {
+    expect(conf).toMatch(/resolver\s+127\.0\.0\.11\b/);
+    // The `set` must come BEFORE the rewrite: `rewrite ... break` skips the
+    // rest of the block, so a later `set` never runs and the variable is empty.
+    // Comments are stripped first: they mention `rewrite` by name, and a test
+    // that reads prose would fail on an accurate explanation.
+    const code = conf
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("#"))
+      .join("\n");
+    expect(code.indexOf("set $bff_upstream")).toBeLessThan(
+      code.indexOf("rewrite ^/api/"),
+    );
   });
 
   it("contains no directive that rewrites the response/request body", () => {

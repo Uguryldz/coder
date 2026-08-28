@@ -21,6 +21,7 @@ import {
   type StatusMap,
   type StatusPoint,
 } from "./common/status-map.ts";
+import { ageLabel } from "./shared/format.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import "./shared/screens.css";
 
@@ -103,6 +104,16 @@ const FLOW_TONE: Readonly<Record<FlowType, BadgeTone>> = {
   gelistirme: "green",
 };
 
+/** What `/studio/listening-status` answers; see the BFF route for why. */
+interface SweepStatus {
+  readonly enabled: boolean;
+  readonly intervalMs: number;
+  readonly lastRunAt: string | null;
+  readonly lastStarted: number;
+  readonly rulesSearched: number;
+  readonly lastError: string | null;
+}
+
 export function ListeningScreen(): ReactNode {
   const t = useT();
   const api = useApi();
@@ -115,6 +126,24 @@ export function ListeningScreen(): ReactNode {
     queryKey: ["listening-rules"],
     queryFn: ({ signal }) =>
       api.get<{ rules: readonly ListeningRule[] }>("/studio/listening-rules", { signal }),
+    retry: false,
+  });
+
+  /**
+   * Is anything actually LOOKING for tickets?
+   *
+   * The rules below say what Maestro should pick up. Without this the screen
+   * could not say whether a sweep was running at all — and an operator whose
+   * tickets never arrive has to tell three states apart: the sweep is off, it
+   * runs and finds nothing, or it is failing. Each needs a different fix.
+   *
+   * Refetched on an interval so the "last run" line ages honestly rather than
+   * freezing at whatever it said when the screen opened.
+   */
+  const sweep = useQuery({
+    queryKey: ["listening-status"],
+    queryFn: ({ signal }) => api.get<SweepStatus>("/studio/listening-status", { signal }),
+    refetchInterval: 30_000,
     retry: false,
   });
 
@@ -574,6 +603,55 @@ export function ListeningScreen(): ReactNode {
     <div className="screen-stack">
       <Card title={t("listening.title")} subtitle={t("listening.sub")}>
         <p className="screen-note">{t("listening.intro")}</p>
+        {/*
+          Whether anything is LOOKING, above the rules that say what to look
+          for. Three states, three different fixes — and the screen used to
+          show none of them.
+        */}
+        {sweep.data !== undefined && (
+          <div
+            className="screen-note"
+            style={{
+              marginTop: 10,
+              padding: "8px 10px",
+              borderRadius: 6,
+              background: sweep.data.enabled ? "rgba(21,128,61,0.08)" : "rgba(161,92,7,0.10)",
+            }}
+          >
+            <strong>
+              {sweep.data.enabled ? t("listening.sweep.on") : t("listening.sweep.off")}
+            </strong>
+            {sweep.data.enabled && (
+              <>
+                {" "}
+                {t("listening.sweep.every", {
+                  minutes: String(Math.round(sweep.data.intervalMs / 60000)),
+                })}
+                {sweep.data.lastRunAt !== null && (
+                  <>
+                    {" · "}
+                    {t("listening.sweep.last", {
+                      // `ageLabel` answers with a catalog key + params, so the
+                      // "3 dakika önce" wording lives in the catalogue like
+                      // every other string.
+                      age: (() => {
+                        const label = ageLabel(sweep.data.lastRunAt);
+                        return label === null ? "—" : t(label.key, label.params);
+                      })(),
+                      started: String(sweep.data.lastStarted),
+                      rules: String(sweep.data.rulesSearched),
+                    })}
+                  </>
+                )}
+                {sweep.data.lastError !== null && (
+                  <div style={{ marginTop: 4, color: "#b91c1c" }}>
+                    {t("listening.sweep.error", { reason: sweep.data.lastError })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
         {canWrite && (
           <div
             style={{

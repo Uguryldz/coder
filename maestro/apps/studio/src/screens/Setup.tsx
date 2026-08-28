@@ -444,6 +444,38 @@ export function SetupScreen(): ReactNode {
 
   return (
     <div className="scr-stack">
+      {/*
+        What is ALREADY connected, before the wizard asks for anything new.
+
+        `/routing` has carried this list all along and the screen used it for
+        one thing only: a warning when the operator picked a project that was
+        already bound. So an operator who had just finished the wizard came
+        back, saw the same empty form, and had no way to tell whether their
+        project had been saved — the panel knew and did not say.
+      */}
+      {boundProjects.length > 0 && (
+        <Card title={t("setup.bound.title")} subtitle={t("setup.bound.sub")}>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {(routing.data?.projects ?? []).map((project) => (
+              <li key={project.projectKey} className="scr-prose" style={{ marginBottom: 4 }}>
+                <strong className="scr-mono">{project.projectKey}</strong>
+                {/* Boş anahtar da yok sayılır: `/routing` bir projeyi notsuz
+                    dönebilir, ve `t("")` katalogda karşılığı olmayan bir
+                    anahtardır — ekrana ham anahtar basmaktansa hiç basma. */}
+                {project.noteKey === undefined || project.noteKey === ""
+                  ? ""
+                  : ` — ${t(project.noteKey, project.noteParams ?? {})}`}
+                {project.apps.length > 0 && (
+                  <span className="scr-mini" style={{ opacity: 0.8 }}>
+                    {" · "}
+                    {project.apps.join(", ")}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       <Card title={t("setup.title")} subtitle={t("setup.sub")}>
         <p className="scr-prose">{t("setup.intro")}</p>
         {/* The step strip: where the operator is, and how much is left. Every

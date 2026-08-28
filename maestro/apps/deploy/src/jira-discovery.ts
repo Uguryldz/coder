@@ -62,6 +62,47 @@ export interface DiscoveryOptions {
   readonly log?: (message: string) => void;
 }
 
+/**
+ * What the last discovery round did — the panel's answer to "is this working?".
+ *
+ * An operator whose tickets are not arriving has no way to tell the difference
+ * between "the sweep is off", "the sweep runs and finds nothing", and "the
+ * sweep is failing" — and those three need three different fixes. The loop
+ * knows; this is where it says so.
+ *
+ * Process-local on purpose: it describes THIS process's loop, and a second
+ * replica's rounds are not this one's to report.
+ */
+export interface DiscoveryStatus {
+  /** Whether a sweep is configured at all. */
+  readonly enabled: boolean;
+  readonly intervalMs: number;
+  /** ISO timestamp of the last completed round; null before the first. */
+  readonly lastRunAt: string | null;
+  /** Tickets taken in the last round. */
+  readonly lastStarted: number;
+  /** Rules the last round searched with — zero means nothing to look for. */
+  readonly rulesSearched: number;
+  /** The last round's failure, if it had one. */
+  readonly lastError: string | null;
+}
+
+const status: { current: DiscoveryStatus } = {
+  current: {
+    enabled: false,
+    intervalMs: 0,
+    lastRunAt: null,
+    lastStarted: 0,
+    rulesSearched: 0,
+    lastError: null,
+  },
+};
+
+/** The last round's outcome, for the Studio screen. */
+export function discoveryStatus(): DiscoveryStatus {
+  return status.current;
+}
+
 /** How many tickets one round may start, unless the caller says otherwise. */
 const DEFAULT_MAX_PER_ROUND = 20;
 
@@ -99,9 +140,15 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
     rules = (await options.rules()).filter((rule) => rule.enabled);
   } catch (error) {
     log(`[keşif] dinleme kuralları okunamadı: ${String(error)}`);
+    record({ lastError: String(error), rulesSearched: 0, lastStarted: 0 });
     return [];
   }
-  if (rules.length === 0) return [];
+  if (rules.length === 0) {
+    // Zero rules is a real, reportable state — not a failure. The panel says
+    // "nothing to look for" rather than leaving the operator to guess.
+    record({ lastError: null, rulesSearched: 0, lastStarted: 0 });
+    return [];
+  }
 
   const known = new Set<string>(await options.known().catch(() => []));
   const started: TicketKey[] = [];
@@ -158,7 +205,17 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       }
     }
   }
+  record({ lastError: null, rulesSearched: rules.length, lastStarted: started.length });
   return started;
+}
+
+/** Stamp the round's outcome onto the status the panel reads. */
+function record(round: Pick<DiscoveryStatus, "lastError" | "rulesSearched" | "lastStarted">): void {
+  status.current = {
+    ...status.current,
+    ...round,
+    lastRunAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -171,6 +228,7 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
  * every round is not.
  */
 export function startJiraDiscovery(options: DiscoveryOptions): { stop: () => void } {
+  status.current = { ...status.current, enabled: true, intervalMs: options.intervalMs };
   let stopped = false;
   const tick = async (): Promise<void> => {
     if (stopped) return;

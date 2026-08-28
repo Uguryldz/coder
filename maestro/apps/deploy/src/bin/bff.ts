@@ -24,7 +24,7 @@ import { PrismaListeningStore } from "../stores/listening.js";
 import { PrismaGuidanceStore } from "../stores/guidance.js";
 import { PrismaRunContextStore } from "../stores/run-context.js";
 import { activeAnalystVariantId, activeTemplateVersion } from "../stores/run-pins.js";
-import { startJiraDiscovery, type IssueSearcher } from "../jira-discovery.js";
+import { discoveryStatus, startJiraDiscovery, type IssueSearcher } from "../jira-discovery.js";
 import { startJiraPoller } from "../jira-poller.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { prepareWorkspace } from "../stores/workspace-prepare.js";
@@ -330,6 +330,9 @@ export async function main(): Promise<void> {
       decisions: new AuditDecisionReader(auditStore),
     },
     read,
+    // The rules screen shows what SHOULD be picked up; this lets it also say
+    // whether anything is looking. See `routes/listening.ts`.
+    discoveryStatus,
     config: {
       env: env.base,
       /**

@@ -130,6 +130,31 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
     return reply.code(200).send({ rules });
   });
 
+  /**
+   * Is the ticket sweep running, and what did it last find?
+   *
+   * The rules screen could show what Maestro is SUPPOSED to pick up and had no
+   * way to say whether anything was actually looking. An operator whose
+   * tickets never arrive has to distinguish three states that need three
+   * different fixes: the sweep is off, it runs and finds nothing, or it is
+   * failing. This answers exactly that.
+   */
+  app.get("/studio/listening-status", { preHandler: readHandler }, async (_request, reply) => {
+    const read = deps.discoveryStatus;
+    return reply.code(200).send(
+      read === undefined
+        ? {
+            enabled: false,
+            intervalMs: 0,
+            lastRunAt: null,
+            lastStarted: 0,
+            rulesSearched: 0,
+            lastError: null,
+          }
+        : read(),
+    );
+  });
+
   /** Create a rule. A duplicate trigger (unique index) becomes a 409. */
   app.post("/studio/listening-rules", { preHandler: writeHandler }, async (request, reply) => {
     await assertWritable(deps);

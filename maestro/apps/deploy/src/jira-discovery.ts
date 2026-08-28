@@ -1,0 +1,192 @@
+import { type ResolvedDeps, runIntake } from "@maestro/bff";
+import type { TicketKey } from "@maestro/contracts";
+
+/**
+ * Finding tickets by ASKING Jira, instead of waiting to be told.
+ *
+ * Until this existed a ticket could reach the platform by exactly two paths: a
+ * Jira webhook, or a person typing `/ai-start`. Both are things somebody else
+ * has to set up first — and when neither is in place the product looks broken
+ * in the most confusing way possible: the panel is up, the connection tests
+ * green, the rules are right, and no ticket ever appears. Measured on the
+ * customer's own install, where the BFF had logged zero webhook deliveries
+ * since the day it was built.
+ *
+ * A webhook is still the better path when it exists: it is instant and it costs
+ * no polling. This is the path for everyone else — a Jira Cloud site whose
+ * signature cannot be verified, a Data Center behind a firewall that cannot
+ * call in, or an operator who simply has no admin rights on the Jira instance.
+ *
+ * It lives beside the BFF rather than inside the workflow for the reason the
+ * comment poller gives: an activity may not poll (Temporal replays it), and a
+ * workflow that slept between polls would bill a timer per ticket per interval.
+ */
+
+/**
+ * Reading a search is not on `WorkPort`.
+ *
+ * The port carries what the WORKFLOW needs — a ticket, a comment, a transition
+ * — and searching is not part of that: the engine is told which ticket to run,
+ * it does not go looking. The Cloud driver offers it on its concrete type
+ * (`searchIssues`), so asking for the one method keeps this loop testable and
+ * states exactly how much of Jira it touches.
+ */
+export interface IssueSearcher {
+  searchIssues(request: {
+    jql: string;
+    maxResults?: number;
+    fields?: string[];
+  }): Promise<{ issues: Array<{ key?: string }> }>;
+}
+
+/** One listening rule, as much of it as discovery needs. */
+export interface DiscoveryRule {
+  readonly projectKey: string;
+  readonly assigneeAccountId: string;
+  readonly matchKind: "status" | "issuetype" | "assigned";
+  readonly matchValue: string;
+  readonly enabled: boolean;
+}
+
+export interface DiscoveryOptions {
+  readonly deps: ResolvedDeps;
+  /** The driver that can run a JQL search; see {@link IssueSearcher}. */
+  readonly search: IssueSearcher;
+  /** The listening rules, re-read each round so a new rule is picked up. */
+  readonly rules: () => Promise<readonly DiscoveryRule[]>;
+  /** Ticket keys the platform already knows about — never started twice. */
+  readonly known: () => Promise<readonly TicketKey[]>;
+  readonly intervalMs: number;
+  /** Most tickets to take from one search. A guard, not a page size. */
+  readonly maxPerRound?: number;
+  readonly log?: (message: string) => void;
+}
+
+/** How many tickets one round may start, unless the caller says otherwise. */
+const DEFAULT_MAX_PER_ROUND = 20;
+
+/**
+ * The JQL a rule matches with.
+ *
+ * Every rule is anchored to its project AND to the bot's account, because that
+ * pair is what "Maestro was given this ticket" means — the same pair the rule
+ * itself is keyed on. Without the assignee clause a search would sweep up every
+ * ticket in the project, including ones nobody meant to hand over.
+ *
+ * `assigned` is the wildcard rule: assignment alone is the trigger, so it adds
+ * no third clause. The other two narrow it by status or issue type.
+ */
+export function jqlFor(rule: DiscoveryRule): string {
+  const quoted = (value: string): string => `"${value.replace(/"/gu, '\\"')}"`;
+  const base = `project = ${quoted(rule.projectKey)} AND assignee = ${quoted(rule.assigneeAccountId)}`;
+  if (rule.matchKind === "status") return `${base} AND status = ${quoted(rule.matchValue)}`;
+  if (rule.matchKind === "issuetype") return `${base} AND issuetype = ${quoted(rule.matchValue)}`;
+  return base;
+}
+
+/**
+ * One discovery round: ask Jira what it has, start what is new.
+ *
+ * Returns the keys it started, so a caller (and the tests) can see the round's
+ * effect without reading the log.
+ */
+export async function discoverOnce(options: DiscoveryOptions): Promise<readonly TicketKey[]> {
+  const log = options.log ?? ((message: string): void => console.log(message));
+  const cap = options.maxPerRound ?? DEFAULT_MAX_PER_ROUND;
+
+  let rules: readonly DiscoveryRule[];
+  try {
+    rules = (await options.rules()).filter((rule) => rule.enabled);
+  } catch (error) {
+    log(`[keşif] dinleme kuralları okunamadı: ${String(error)}`);
+    return [];
+  }
+  if (rules.length === 0) return [];
+
+  const known = new Set<string>(await options.known().catch(() => []));
+  const started: TicketKey[] = [];
+  // Deduped across rules: several rules routinely match one ticket (an
+  // `assigned` wildcard beside a per-issuetype rule), and starting it twice
+  // would be two runs for one piece of work.
+  const seenThisRound = new Set<string>();
+
+  for (const rule of rules) {
+    if (started.length >= cap) break;
+    let keys: string[];
+    try {
+      const page = await options.search.searchIssues({
+        jql: jqlFor(rule),
+        maxResults: cap,
+        // The key is all this needs; asking for fields would pull ticket text
+        // through a path that has no business holding it.
+        fields: ["key"],
+      });
+      keys = page.issues.map((issue) => issue.key).filter((key): key is string => key !== undefined);
+    } catch (error) {
+      // One rule's failure must not stop the others: a project whose
+      // permissions changed would otherwise freeze discovery for every project.
+      log(`[keşif] ${rule.projectKey}/${rule.matchValue}: ${String(error)}`);
+      continue;
+    }
+
+    for (const key of keys) {
+      if (started.length >= cap) break;
+      if (known.has(key) || seenThisRound.has(key)) continue;
+      seenThisRound.add(key);
+
+      /**
+       * `explicit: true` — the rule IS the human decision.
+       *
+       * An operator wrote a listening rule saying "tickets assigned to the bot
+       * in this project, of this type, are ours". Making the ticket ALSO carry
+       * an opt-in label would be asking the same question twice, and the second
+       * asking is the one nobody remembers to answer.
+       */
+      const outcome = await runIntake(options.deps, {
+        ticket: key as TicketKey,
+        actor: "maestro-worker",
+        explicit: true,
+      }).catch((error: unknown) => ({ accepted: false as const, reason: String(error) }));
+
+      if (outcome.accepted) {
+        started.push(key as TicketKey);
+        log(`[keşif] ${key} alındı (${rule.projectKey}/${rule.matchKind}=${rule.matchValue})`);
+      } else {
+        // Not an error: a refusal is usually a kill switch or a project whose
+        // binding was paused, and both are states an operator chose.
+        log(`[keşif] ${key} alınmadı: ${outcome.reason}`);
+      }
+    }
+  }
+  return started;
+}
+
+/**
+ * Poll Jira for new tickets until stopped.
+ *
+ * Off unless the caller passes an interval, the same way the comment poller is:
+ * an installation whose webhook works does not need this, and two paths
+ * starting the same ticket is the one outcome worth avoiding. `runIntake`
+ * itself is idempotent per ticket, so an overlap is safe — but paying for it
+ * every round is not.
+ */
+export function startJiraDiscovery(options: DiscoveryOptions): { stop: () => void } {
+  let stopped = false;
+  const tick = async (): Promise<void> => {
+    if (stopped) return;
+    await discoverOnce(options).catch((error: unknown) => {
+      (options.log ?? console.log)(`[keşif] tur başarısız: ${String(error)}`);
+      return [];
+    });
+  };
+  const timer = setInterval(() => void tick(), options.intervalMs);
+  // Never hold the process open for a discovery loop.
+  timer.unref?.();
+  void tick();
+  return {
+    stop: (): void => {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
+}

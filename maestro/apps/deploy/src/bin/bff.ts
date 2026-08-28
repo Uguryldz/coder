@@ -24,6 +24,7 @@ import { PrismaListeningStore } from "../stores/listening.js";
 import { PrismaGuidanceStore } from "../stores/guidance.js";
 import { PrismaRunContextStore } from "../stores/run-context.js";
 import { activeAnalystVariantId, activeTemplateVersion } from "../stores/run-pins.js";
+import { startJiraDiscovery, type IssueSearcher } from "../jira-discovery.js";
 import { startJiraPoller } from "../jira-poller.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { prepareWorkspace } from "../stores/workspace-prepare.js";
@@ -379,6 +380,45 @@ export async function main(): Promise<void> {
         ).map((row) => row.ticketKey as TicketKey),
     });
     console.log(`[maestro] jira komut yoklaması açık (${pollMs} ms)`);
+  }
+
+  /**
+   * Ticket DISCOVERY (`jira-discovery.ts`).
+   *
+   * Separate from the comment poller above, and for a different failure: that
+   * one reads `/approve` on tickets the platform already has, this one finds
+   * the tickets in the first place. Without it a ticket reaches Maestro only
+   * through a Jira webhook or somebody typing `/ai-start` — and on an install
+   * where neither is set up, the product looks broken in the most confusing way
+   * available: panel up, connection green, rules correct, no tickets ever.
+   *
+   * Own interval so the two can be tuned apart: comments are cheap and want to
+   * be quick, a JQL sweep is not and does not.
+   */
+  const discoverMs = Number(env.source["JIRA_DISCOVER_MS"]?.trim() ?? 0);
+  if (Number.isFinite(discoverMs) && discoverMs > 0) {
+    startJiraDiscovery({
+      deps: resolveDeps(deps),
+      // The concrete driver: searching is not on `WorkPort`.
+      search: deployment.ports.work as unknown as IssueSearcher,
+      intervalMs: discoverMs,
+      rules: async () =>
+        (await db.listeningRule.findMany({ orderBy: { priority: "asc" } })).map((row) => ({
+          projectKey: row.projectKey,
+          assigneeAccountId: row.assigneeAccountId,
+          matchKind: row.matchKind as "status" | "issuetype" | "assigned",
+          matchValue: row.matchValue,
+          enabled: row.enabled,
+        })),
+      // Every ticket that already has a row, in ANY state: a finished run must
+      // not be started again by the next sweep, and a failed one is a decision
+      // for a person, not something to retry on a timer.
+      known: async () =>
+        (await db.workflowRun.findMany({ select: { ticketKey: true }, take: 500 })).map(
+          (row) => row.ticketKey as TicketKey,
+        ),
+    });
+    console.log(`[maestro] jira ticket keşfi açık (${discoverMs} ms)`);
   }
 
   const app = await buildServer(deps);

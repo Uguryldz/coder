@@ -386,6 +386,7 @@ services:
       # işlenir. Jira Cloud'da webhook imzası doğrulanamadığından /approve'un
       # ticket'tan işlenebilmesinin TEK yolu budur (bin/bff.ts, startJiraPoller).
       JIRA_POLL_MS: ${JIRA_POLL_MS:-}
+      JIRA_DISCOVER_MS: ${JIRA_DISCOVER_MS:-}
       # ── Depo keşfi (opsiyonel; boşken analiz depoyu görmeden yapılır) ──────
       # BFF koşu başlarken depoyu BURAYA klonlar (bin/bff.ts, checkoutOrNull);
       # worker aynı yoldan okur — maestro-workspace volume'ü bu yüzden ikisine

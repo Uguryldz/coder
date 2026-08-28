@@ -1323,7 +1323,7 @@
   "nav.mcp": "Maestro MCP",
   "nav.notify": "Notification & escalation",
   "nav.onboard": "Add application",
-  "nav.params": "Parameters (DB)",
+  "nav.params": "Parameters",
   "nav.pii": "PII masking",
   "nav.projects": "Project binding",
   "nav.routing": "Bound projects & approval",

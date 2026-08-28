@@ -87,6 +87,7 @@ function run(ticketKey: string, updatedAt: string, extra: Partial<RunCatalogRow>
     mode: "full_auto",
     risk: "orta",
     dataClass: "dahili",
+  step: "3",
     status: "running",
     prId: null,
     matchJson: { via: "rule", ruleId: "rule-1", appId: "ugurpay" },

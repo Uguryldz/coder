@@ -61,21 +61,29 @@ describe("jqlFor", () => {
    * without the assignee clause a sweep would take every ticket in the
    * project, including ones nobody handed over.
    */
+  /**
+   * The account id goes in BARE, inside `in (...)`.
+   *
+   * Measured on the live site: `assignee = "712020:b836…"` returns nothing —
+   * Jira reads a quoted value as a display name or e-mail, and an account id
+   * is neither. Every sweep came back empty while reporting six rules searched
+   * and no error, which is the most misleading way a search can fail.
+   */
   it("anchors every rule to its project and the bot account", () => {
     expect(jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*" })).toBe(
-      'project = "OPS" AND assignee = "712020:bot"',
+      'project = "OPS" AND assignee in (712020:bot)',
     );
   });
 
   it("narrows by issue type", () => {
     expect(jqlFor(RULE)).toBe(
-      'project = "OPS" AND assignee = "712020:bot" AND issuetype = "Görev"',
+      'project = "OPS" AND assignee in (712020:bot) AND issuetype = "Görev"',
     );
   });
 
   it("narrows by status", () => {
     expect(jqlFor({ ...RULE, matchKind: "status", matchValue: "İNCELEMEDE" })).toBe(
-      'project = "OPS" AND assignee = "712020:bot" AND status = "İNCELEMEDE"',
+      'project = "OPS" AND assignee in (712020:bot) AND status = "İNCELEMEDE"',
     );
   });
 

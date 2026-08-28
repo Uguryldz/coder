@@ -103,9 +103,17 @@ export const SCREENS: readonly ScreenDef[] = [
   { id: "runners", path: "runners", titleKey: "screen.runners.title", navKey: "nav.runners", group: "system", icon: "🖥", soon: true },
   { id: "help", path: "help", titleKey: "screen.help.title", navKey: "nav.help", group: "system", icon: "📖" },
 
+  /**
+   * Parametreler menüde: motor bağlı, değerler CANLI.
+   *
+   * "Motora bağlı değilken gizli, bağlanınca geri gelir" diye çıkarılmıştı ve
+   * geri getiren kod hiç yazılmadı — motor bağlandı, ekran gizli kaldı. Sonuç:
+   * tarama sıklığı gibi operatörün ayarlaması gereken 21 değer, yalnız adresi
+   * elle yazan birinin ulaşabildiği bir sayfada durdu.
+   */
+  { id: "params", path: "params", titleKey: "screen.params.title", navKey: "nav.params", group: "system", icon: "🎛", roles: ["admin", "tech-lead"] },
+
   // ── Sidebar'da GÖRÜNMEZ (rota olarak erişilir) ──────────────────────────
-  // params: motora bağlı değilken menüden gizli — motora bağlanınca menüye geri gelir.
-  { id: "params", path: "params", titleKey: "screen.params.title", icon: "🎛", roles: ["admin", "tech-lead"] },
   // detail: bir tablo satırından açılır. Diğerleri maket-galeri artığı: statik
   // içerik, operatör aracı değil — rota kalır ama menüden çıkarıldı.
   { id: "detail", path: "detail/:ticket", titleKey: "screen.detail.title" },

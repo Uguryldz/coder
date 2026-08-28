@@ -54,6 +54,13 @@ export interface RunCatalogRow {
    * `running` because a crashed workflow cannot correct its own history.
    */
   status: WorkflowRunStatus;
+  /**
+   * How far the run got. The panel's ticket list has a "Adım" column and had
+   * nothing to put in it: the workflow writes this column on every transition
+   * (`journal` → `runs.patch`), and the read model never selected it, so every
+   * row rendered "—" no matter where the run actually was.
+   */
+  step: string;
   prId: number | null;
   matchJson: unknown;
   startedAt: Date;
@@ -359,6 +366,7 @@ export function toRunRecord(
     // unassessed run to elsewhere.
     risk: row.risk ?? "orta",
     dataClass: row.dataClass,
+    step: row.step,
     // Straight through, NOT defaulted. The column is NOT NULL and carries the
     // platform's verdict; passing it verbatim is what lets the route notice
     // that the row says `fail` while the engine still says `running`.

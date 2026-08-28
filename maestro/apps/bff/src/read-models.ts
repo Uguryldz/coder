@@ -61,6 +61,14 @@ export interface RunRecord {
   readonly risk: RiskTier;
   readonly dataClass: DataClass;
   /**
+   * How far the run got — the ticket list's "Adım" column.
+   *
+   * The workflow writes it on every transition and the list rendered "—" for
+   * every row anyway, because this field did not exist: the read model had the
+   * column in the database and dropped it on the way out.
+   */
+  readonly step: string;
+  /**
    * The PLATFORM's verdict on the run — `WorkflowRun.status`, the column the
    * reconciler writes when it compares the catalog against the engine.
    *

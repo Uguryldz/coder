@@ -49,6 +49,7 @@ export const RUN: RunRecord = {
   mode: "full_auto",
   risk: "orta",
   dataClass: "dahili",
+  step: "3",
   // Live, and deliberately so: the harness opens a gate for this ticket, so
   // the engine answers `gate` for it. A LIVE record over a `gate` engine answer
   // is the case where the engine must win, and it is the default every Studio

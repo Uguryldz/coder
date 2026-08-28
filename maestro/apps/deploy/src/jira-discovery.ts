@@ -134,7 +134,19 @@ const DEFAULT_MAX_PER_ROUND = 20;
  */
 export function jqlFor(rule: DiscoveryRule): string {
   const quoted = (value: string): string => `"${value.replace(/"/gu, '\\"')}"`;
-  const base = `project = ${quoted(rule.projectKey)} AND assignee = ${quoted(rule.assigneeAccountId)}`;
+  /**
+   * The assignee is matched as an ACCOUNT ID, not as a quoted name.
+   *
+   * Measured against the live site: `assignee = "712020:b836…"` returns
+   * nothing. Jira Cloud reads a quoted value as a display name or e-mail and
+   * an account id is neither, so every sweep came back empty while the panel
+   * reported six rules searched and zero tickets taken — the most misleading
+   * shape a failure can have, because nothing errors.
+   *
+   * The documented form for an id is bare, and Jira's own docs recommend
+   * `assignee in (id)` for account ids specifically.
+   */
+  const base = `project = ${quoted(rule.projectKey)} AND assignee in (${rule.assigneeAccountId.replace(/[^A-Za-z0-9:._-]/gu, "")})`;
   if (rule.matchKind === "status") return `${base} AND status = ${quoted(rule.matchValue)}`;
   if (rule.matchKind === "issuetype") return `${base} AND issuetype = ${quoted(rule.matchValue)}`;
   return base;

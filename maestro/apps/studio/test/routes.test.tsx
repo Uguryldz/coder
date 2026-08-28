@@ -83,4 +83,21 @@ describe("route table", () => {
     expect(screenById("detail")?.path).toBe("detail/:ticket");
     expect(screenById("detail")?.navKey).toBeUndefined();
   });
+
+  /**
+   * The parameters screen is REACHABLE from the menu.
+   *
+   * It was pulled out with a note saying it would come back "once the engine
+   * is connected", and the code that would bring it back was never written.
+   * The engine has been connected for a while; the screen stayed hidden, so
+   * the twenty-odd operational values an operator is supposed to tune —
+   * including the sweep interval — lived on a page only someone typing the URL
+   * by hand could reach.
+   */
+  it("keeps the parameters screen in the menu, not just on a route", () => {
+    const params = screenById("params");
+    expect(params?.path).toBe("params");
+    expect(params?.navKey).toBe("nav.params");
+    expect(params?.group).toBe("system");
+  });
 });

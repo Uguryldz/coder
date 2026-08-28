@@ -1,80 +1,53 @@
 # HANDOFF
 
 ## DURUM
-Beş commit hazır (`c6c9799` → `06bc27a`), çalışma ağacı temiz, imajlar **1.0.4** olarak
-derleniyor. Kullanıcının şikâyeti "proda deploy edince yüzlerce hata alıyorum, analiz bile
-yapamadım" idi; bu oturumda temiz bir prod kurulumu sıfırdan yapıldı ve sebepler bulundu.
+**1.0.8 canlıda, yedi servis de sağlıklı.** `uguryldz/maestro-node:1.0.8` ve
+`uguryldz/maestro-studio:1.0.8` Docker Hub'da. Çalışma ağacı temiz.
 
-## Prod kurulumu SORUNSUZ kalkıyor
-Temiz dizinde `install.sh` çalıştırıldı: altı konteyner sağlıklı, migrate geçici parolayı
-düzgün bastı, panel ve API erişilebilir. Hata kurulumun kendisinde DEĞİL.
+## Bu turda çıkan imajlar
+- **1.0.7** — panel ve keşif düzeltmeleri (parametre menüsü, JQL bare-id, adım sütunu,
+  "işleme alındı" yorumu, saniyelik tarama aralığı, sihirbazda bağlı projeler)
+- **1.0.8** — keşif turu artık kendini bildiriyor (aşağıda)
 
-## "Analiz bile yapamadım"ın iki sebebi (ikisi de `.env`'de yorumlu geliyordu)
-1. **`MAESTRO_FLOW` boş** → kurala uymayan ticket TAM boru hattına girer: analiz yazılır, iki
-   kapı onaylanır, sonra mühendislik adımında `RUNNER_IMAGE_LINUX` yok diye ölür. İş bittikten
-   SONRA, en pahalı yerde. (OPS-38 böyle öldü.)
-2. **`JIRA_POLL_MS` boş** → ticket'a yazılan `/approve` hiç okunmaz. Jira Cloud'da webhook
-   imzası doğrulanamadığı için yoklama TEK yoldur; kapı sonsuza dek bekler.
+## 1.0.8'in tek düzeltmesi: sessiz tur
+1.0.7 canlıya alındıktan sonra ölçüldü: tarama açık, altı kural etkin, bağlantı yeşil —
+ve logda keşiften **tek satır yok**. `discoverOnce` yalnız ticket alınınca ya da hata olunca
+yazıyordu; her eşleşmenin zaten `WorkflowRun` satırı varsa sağlıklı tur hiçbir şey basmıyor.
 
-`install.sh` artık ikisini de kontrol edip onay istiyor (dayatmıyor — kod yazan saha için ikisi
-de meşru). Davranış `banka-bundle.test.ts`'te kilitli.
+Sonuç: **çalışan tarama ile hiç başlamamış tarama logda birebir aynı görünüyordu.** Durum ucu
+(`/studio/listening-status`) biliyor ama oturum istiyor; operatör önce loga bakar.
 
-## Bu oturumda düzeltilen diğer gerçek hatalar
-- **Jira Cloud Studio'dan HİÇ kurulamıyordu**: sürücü `config.email` ile Basic auth kurar,
-  formda o kutu yoktu → her satır `basicAuth("", token)` gönderip 401 alıyordu.
-- **`authKind` seçicisi ölüydü**: dört seçenek sunuyordu, `probeFor` şemayı türden belirliyor
-  ve o alanı hiç okumuyordu. Kaldırıldı.
-- **Test notu parametrelerini kaybediyordu**: "DNS: {host}" sayfa yenilenince literal `{host}`.
-  İki prob (panel + sağlık sayfası) artık aynı kodlayıcıyı kullanıyor.
-- **Boş `SCM_HOST`** her klonlamayı `https:///owner/repo.git` yapıyordu (`?.trim()` yalnız
-  anahtar YOKKEN `undefined` döner; compose `${SCM_HOST:-}` gönderiyor = var ve boş).
-- **`/projects` → "Uygulama ekle"** repo olmadan hiç gönderilemiyordu; kuru koşu da repo
-  istiyordu (oysa prova depoya hiç dokunmaz).
-- **Worker healthcheck'i `NONE`'dı**: ayakta ama iş alamayan worker'ı kimse göremiyordu.
+Artık her tur konuşuyor. Canlı kanıt:
+`[keşif] tur bitti: 6 kural arandı, 0 ticket alındı, 14 eşleşme görüldü`
+Yani Jira'ya gidiyor, 14 ticket buluyor, hepsi zaten koşulmuş olduğu için yenisini başlatmıyor.
 
-## Autoheal — "analiz botu hiç ölmeyecek"
-Compose sağlık durumuna göre restart ETMEZ (`restart: unless-stopped` yalnız süreç ölünce).
-Ölçüldü: prod test yığınında worker sekiz dakika `unhealthy`, `RestartCount` 0.
-`apps/deploy/src/bin/autoheal.ts` bu halkayı kapatıyor — aynı node imajından koşar, yalnız bu
-compose projesinin konteynerlerini, yalnız `restart` fiiliyle. Soket salt-okunur.
-**Açılış taraması şart**: Docker `unhealthy`'yi yalnız GEÇİŞ anında yayınlar, yani zaten takılı
-olan hiç olay üretmez. Canlıda doğrulandı: tarama takılı worker'ı bulup kurtardı.
-
-## BİTTİ: imajlar yayınlandı ve canlıda doğrulandı
-`uguryldz/maestro-node:1.0.4` ve `uguryldz/maestro-studio:1.0.4` Docker Hub'da.
-Yayınlanan imajla TEMİZ kurulum yapıldı: yedi servis de sağlıklı (worker dahil — 1.0.3'te
-healthcheck kodu olmadığı için `unhealthy` görünüyordu).
-
-**Autoheal canlıda kanıtlandı**: kasten sağlıksız bir konteyner yaratıldı, autoheal yakalayıp
-yeniden başlattı (`StartedAt` değişti). Not: `RestartCount` DEĞİŞMEZ — Docker API üzerinden
-yapılan restart o sayaca yazılmaz, yalnız Docker'ın kendi restart politikası artırır.
-
-İmaj yayınlandıktan SONRA üç ayrı hata daha bulundu ve düzeltildi (hepsi yalnız gerçek
-kurulumda görünür, hepsinde servis "çalışıyor gibi" görünüp hiçbir şey kurtarmıyordu):
-1. `EACCES /var/run/docker.sock` — uid 10001 soket grubunda değildi. `group_add` + install.sh
-   artık gid'i `stat -c '%g'` ile kendisi buluyor.
-2. İstek zaman aşımı, istediği kapanma süresine eşitti (30s/30s) — restart BAŞARILI oluyor,
-   log "başarısız" yazıyordu.
-3. Docker 29 konteyner kimliğini `Actor.ID`'de taşıyor, üst düzey `id` yok — her olay sessizce
-   atlanıyordu.
-
-## Sıradaki iş
-Jira token'ı olmadığı için prod yığınında gerçek ticket koşturulamadı. Analiz zincirinin
-LLM'e kadarki kısmı kanıtlandı (imajın içinden gerçek OpenRouter çağrısı HTTP 200, on-prem
-`openai_compat` bağlantısı yeşil), **Jira'lı uçtan uca kanıt eksik**.
+## Canlıda doğrulanan
+- Parametre menü girdisi panelde (`navKey:"nav.params"` bundle içinde)
+- Tarama aralığı **panelden** geliyor: param 20 sn → ölçülen tur arası **21 sn**
+  (`ParamVersion.jira.discover_seconds`, sürüm 3)
+- nginx `/api/` yolu çalışıyor (401 = oturum istiyor, doğru davranış)
+- BFF açılış logu: `jira ticket keşfi açık (300000 ms)` — boot varsayılanı, ilk turdan sonra
+  panel değeri devralıyor
 
 ## Testler
-Tek tek: bff 918/918 · deploy 784/784 · studio 404/404 · workflows 199/199 · config 26/26 ·
-pii 154/154 · adapter-jira 67/67. Turbo'nun toplu koşusu bu makinede YÜK yüzünden ALAKASIZ
-paketleri kırmızı gösterebiliyor (23 GB kullanımda, yük ortalaması 17) — düşen paketi TEK
-BAŞINA koştur, geçiyorsa kod sağlamdır.
+deploy 808/808 · tsc temiz. Diğerleri 1.0.7 turunda yeşildi: bff 920, studio 405,
+db 231 (+10 atlandı), config 26. Turbo'nun toplu koşusu bu makinede YÜK yüzünden ALAKASIZ
+paketleri kırmızı gösterebiliyor — düşen paketi TEK BAŞINA koştur.
+
+## Sıradaki iş
+- **Bağlantı testi gerçek bir tamamlama çağrısı yapmalı.** Şu an `/models` çağırıyor: kredisi
+  bitmiş OpenRouter anahtarı testi GEÇİYOR, sonra koşu 2. adımda 403 ile takılıyor. Canlıda
+  bir kez yaşandı. Kullanıcı kararı bekliyor.
+- **Bot hesabını sil**: `User` tablosunda `712020.b836c135-…@corp`, `maestro-admins` üyesi
+  (dört-göz muafiyeti). **Bankaya giderken SİL.**
 
 ## Tuzaklar
 - `pkill -f "src/bin/worker.ts"` kendi kabuğunu vurur; `\.ts` diye kaçır.
 - Jira Cloud auth **Basic** (`email:token`), DC **Bearer** — iki ayrı sürücü.
-- `contracts`/`ports` FROZEN — ama `FlowType` ve `CONNECTION_KIND_SPECS` contracts'a eklendi
-  (workflows paketi BFF'i import edemez, M44).
-- `unbound` sessizliği KASITLI (M102): tek küresel webhook her projeyi görür, cevap vermek
-  "Maestro burayı izliyor" bilgisini sızdırır. Testle korunuyor — bug sanıp "düzeltme".
-- Bot hesabı `User` tablosunda `maestro-admins` üyesi (dört-göz muafiyeti). **Bankaya giderken SİL.**
-- `.playwright-mcp/` artık `.gitignore`'da (734 dosya `git status`'u okunmaz yapıyordu).
+- JQL'de hesap kimliği **tırnaksız** ve `in (...)` içinde olmalı; `assignee = "712020:…"`
+  sessizce boş döner.
+- `ParamVersion` sütunları: `key, scopeRef, version, valueJson, guarded, changedBy,
+  approvedBy, at` — `changedAt`/`status` YOK.
+- BFF host'a port yayınlamaz; panele `http://127.0.0.1:7000/api/...` üzerinden git.
+- `unbound` sessizliği KASITLI (M102) — bug sanıp "düzeltme".
+- Canlı `/login`'e dokunma; launcher restart oturumu düşürür.

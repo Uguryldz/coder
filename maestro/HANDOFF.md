@@ -97,8 +97,9 @@ gösterebiliyor — düşen paketi TEK BAŞINA koştur.
 - **Bağlantı testi gerçek bir tamamlama çağrısı yapmalı.** Şu an `/models` çağırıyor:
   kredisi bitmiş anahtar testi GEÇİYOR, sonra koşu 2. adımda 403 ile takılıyor.
   Canlıda bir kez yaşandı. Kullanıcı kararı bekliyor.
-- **Bot hesabını sil**: `User` tablosunda `712020.b836c135-…@corp`, `maestro-admins`
-  üyesi (dört-göz muafiyeti). **Bankaya giderken SİL.**
+- ~~Bot hesabını sil~~ **KAPANDI** (2026-08-29 doğrulandı): `User` tablosunda
+  `712020…` satırı YOK. Kalan iki hesap: `admin` (kurulumun yarattığı, meşru) ve
+  `jira-bot-jira` (hiçbir grupta değil, yönetici yetkisi yok).
 
 ## Tuzaklar
 - `pkill -f "src/bin/worker.ts"` kendi kabuğunu vurur; `\.ts` diye kaçır.

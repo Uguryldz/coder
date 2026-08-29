@@ -291,6 +291,16 @@ if [[ -z "${JIRA_POLL_MS:-}" || "${JIRA_POLL_MS:-0}" == "0" ]]; then
     || die "JIRA_POLL_MS ayarlayıp tekrar çalıştırın."
 fi
 
+if [[ -n "${JIRA_DISCOVER_MS:-}" && "${JIRA_DISCOVER_MS:-0}" != "0" \
+      && -z "${JIRA_CLOUD_BASE_URL:-}" ]]; then
+  warn "JIRA_DISCOVER_MS dolu ama Jira CLOUD bağlantısı yok."
+  warn "  Ticket TARAMASI (JQL) yalnız Jira Cloud sürücüsünde vardır; Data Center"
+  warn "  kurulumunda tarama çalışmaz ve ticket'lar yalnız WEBHOOK ile gelir."
+  warn "  Data Center kullanıyorsanız webhook'u kurduğunuzdan emin olun."
+  onay "Böyle devam edilsin mi (tarama kapalı, yalnız webhook)?" \
+    || die "Jira Cloud bağlantısı tanımlayın ya da JIRA_DISCOVER_MS'i boşaltın."
+fi
+
 # LLM_BASE_URL sonunda /v1 → sürücü de ekler → /v1/v1 → her çağrı 404
 # (Yalnız .env'e adres yazılmışsa. Model artık panelden tanımlanabilir; boş
 # bırakılmışsa denetlenecek bir adres yoktur.)

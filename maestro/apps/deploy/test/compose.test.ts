@@ -583,6 +583,46 @@ describe("workWiringNote", () => {
     expect(note).toMatch(/BAĞLANTISI bunun yerine GEÇMEZ/);
   });
 
+  /**
+   * Log satırının bu turda kapattığı kör nokta: yukarıdaki cümle DOĞRUdur ve
+   * yine de bir bankada saatler yaktı — DC adresi Cloud satırına yazılmıştı ve
+   * "Cloud, çünkü o değişken dolu" cümlesinden operatörün kendi hatasını
+   * çıkarması bekleniyordu. Adres zaten elde: Cloud örnekleri *.atlassian.net
+   * altındadır, bir iç ağ adı orası olamaz.
+   */
+  it("adres Cloud'a benzemiyorsa çelişkiyi ADIYLA söyler", async () => {
+    const env = await loadDeployEnv({
+      ...envWithout(DEV_ENV, "JIRA_BASE_URL"),
+      JIRA_CLOUD_BASE_URL: "https://jira.banka.local:8443",
+      MAESTRO_BOT_EMAIL: "bot@bank.invalid",
+    });
+    const note = workWiringNote(env, "jira-cloud");
+    expect(note).toMatch(/BENZEMİYOR/);
+    // Nereye taşınacağı söylenmeli — teşhis tek başına bir düzeltme değil.
+    expect(note).toContain("JIRA_BASE_URL");
+    // Ve YİNE adres yazılmaz: bu satır bir log toplayıcısına gidiyor.
+    expect(note).not.toContain("banka.local");
+  });
+
+  it("ters yön de aynı desende: DC değişkeninde bir Cloud adresi", async () => {
+    const env = await loadDeployEnv({ ...DEV_ENV, JIRA_BASE_URL: "https://banka.atlassian.net" });
+    const note = workWiringNote(env, "jira-dc");
+    expect(note).toMatch(/BENZEMİYOR/);
+    expect(note).toContain("JIRA_CLOUD_BASE_URL");
+    // Adresin KENDİSİ yok. Cümledeki `*.atlassian.net` sabit bir örnektir —
+    // kurulumun konak adı (`banka.`) hiçbir yerde geçmez.
+    expect(note).not.toContain("banka.atlassian.net");
+  });
+
+  it("adres sürücüyle uyumluysa fazladan bir satır EKLEMEZ", async () => {
+    const env = await loadDeployEnv({
+      ...envWithout(DEV_ENV, "JIRA_BASE_URL"),
+      JIRA_CLOUD_BASE_URL: "https://banka.atlassian.net",
+      MAESTRO_BOT_EMAIL: "bot@bank.invalid",
+    });
+    expect(workWiringNote(env, "jira-cloud")).not.toMatch(/BENZEMİYOR/);
+  });
+
   it("prints no URL — a Jira base URL can carry userinfo", async () => {
     const env = await loadDeployEnv({
       ...envWithout(DEV_ENV, "JIRA_BASE_URL"),

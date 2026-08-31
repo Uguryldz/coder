@@ -18,6 +18,8 @@ import {
   PROFILES,
   ProfileError,
   WORKER_PORT_KEYS,
+  jiraUrlLooksLikeCloud,
+  jiraUrlMatchesDriver,
   type DriverMap,
 } from "../src/profile.js";
 
@@ -172,5 +174,99 @@ describe("parseProfile", () => {
 
   it("refuses an unset profile rather than guessing", () => {
     expect(() => parseProfile(undefined)).toThrow(ProfileError);
+  });
+});
+
+/**
+ * Adres ile sürücünün çelişkisi — bir bankada saatler yakan sessiz-yanlışın
+ * testi.
+ *
+ * Sürücü seçimi adresin İÇİNE bakmaz (bakmamalı da: seçen şey hangi değişkenin
+ * dolu olduğudur), ve tam o kör noktada bir Data Center adresi
+ * `JIRA_CLOUD_BASE_URL` satırına yazılınca sistem Cloud protokolüyle DC'ye
+ * gidiyor, hiçbir yerde hata görünmüyordu. Buradaki heuristik o çelişkiyi
+ * adlandırır — reddetmez, çünkü yanılabilir.
+ */
+describe("jiraUrlLooksLikeCloud", () => {
+  it.each([
+    "https://banka.atlassian.net",
+    "https://banka.atlassian.net/",
+    "https://banka.atlassian.net/jira/software",
+    // Büyük harf: konak adı büyük/küçük harf duyarsızdır.
+    "https://BANKA.ATLASSIAN.NET",
+    // Şemasız yazım — `.env` dosyalarında sık.
+    "banka.atlassian.net",
+    // Eski, nadir ama gerçek Atlassian barındırma alanı.
+    "https://banka.jira.com",
+    // Mutlak DNS adı yazımı: aynı konak.
+    "https://banka.atlassian.net.",
+    // Çıplak hâl: bir örnek adresi değil ama Atlassian'ındır, uyarı üretmesin.
+    "https://atlassian.net",
+  ])("Cloud olarak tanır: %s", (url) => {
+    expect(jiraUrlLooksLikeCloud(url)).toBe(true);
+  });
+
+  it.each([
+    // Bankayı yakan tam da bu satırdı.
+    "https://jira.banka.local",
+    // Port: `hostname` onu düşürür, ama iç ağ adı yine iç ağ adıdır.
+    "https://jira.banka.local:8443",
+    "jira.banka.local:8080",
+    "https://10.20.30.40:8080",
+    "https://jira.banka.corp/browse",
+    "https://jira.banka.intra",
+    // Sonek TAKLİDİ: sonun sonuna bakıldığı için elenir.
+    "https://evil-atlassian.net.banka.local",
+    // `atlassian.net` bir ALT dize olarak geçiyor ama konak adı o değil.
+    "https://atlassian.net.banka.local",
+    // Boş ve boşluk: okunacak adres yok → "Cloud'a benziyor" DEMEYİZ.
+    "",
+    "   ",
+    // Ayrıştırılamayan çöp.
+    "http://",
+    ":::",
+  ])("Cloud saymaz: %s", (url) => {
+    expect(jiraUrlLooksLikeCloud(url)).toBe(false);
+  });
+
+  it("boşlukları kırpar — .env satırları sondaki boşlukla gelebilir", () => {
+    expect(jiraUrlLooksLikeCloud("  https://banka.atlassian.net  ")).toBe(true);
+  });
+});
+
+describe("jiraUrlMatchesDriver", () => {
+  it("Cloud değişkeninde iç ağ adresi bir ÇELİŞKİdir", () => {
+    expect(jiraUrlMatchesDriver({ JIRA_CLOUD_BASE_URL: "https://jira.banka.local" })).toBe(
+      false,
+    );
+  });
+
+  it("Cloud değişkeninde gerçek bir Cloud adresi çelişki değildir", () => {
+    expect(jiraUrlMatchesDriver({ JIRA_CLOUD_BASE_URL: "https://banka.atlassian.net" })).toBe(
+      true,
+    );
+  });
+
+  it("ters yön de aynı hatadır: DC değişkeninde bir Cloud adresi", () => {
+    expect(jiraUrlMatchesDriver({ JIRA_BASE_URL: "https://banka.atlassian.net" })).toBe(false);
+  });
+
+  it("DC değişkeninde iç ağ adresi beklenen hâldir", () => {
+    expect(jiraUrlMatchesDriver({ JIRA_BASE_URL: "https://jira.banka.local:8443" })).toBe(true);
+  });
+
+  it("hiç adres yoksa soru anlamsızdır — null, false değil", () => {
+    // `false` bir ÇELİŞKİ iddiasıdır ve kurulmamış bir yığında yanlış olurdu:
+    // orada söylenecek söz zaten "yapılandırılmamış" satırının kendisi.
+    expect(jiraUrlMatchesDriver({})).toBeNull();
+  });
+
+  it("ikisi birden doluysa null — o açılış zaten adıyla reddediliyor", () => {
+    expect(
+      jiraUrlMatchesDriver({
+        JIRA_BASE_URL: "https://jira.banka.local",
+        JIRA_CLOUD_BASE_URL: "https://banka.atlassian.net",
+      }),
+    ).toBeNull();
   });
 });

@@ -21,6 +21,7 @@ import { adminToken, memberToken, studioHarness } from "./studio-fixtures.js";
 const DC: DeploymentConfigFacts = {
   workDriver: "jira-dc",
   workDriverVariable: "JIRA_BASE_URL",
+  cloudUrlLooksLikeCloud: true,
   sweepEnabled: true,
   sweepSeconds: 300,
   sweepSource: "varsayilan",
@@ -54,6 +55,63 @@ describe("buildConfigFindings", () => {
     expect(driver.detailParams).toEqual({ variable: "JIRA_BASE_URL" });
     // Sızıntı testi: serileşmiş yanıtın hiçbir yerinde bir adres olamaz.
     expect(JSON.stringify(findings)).not.toMatch(/https?:\/\//);
+  });
+
+  /**
+   * Bu turun bütün sebebi: sürücü satırı DOĞRU cümleyi kuruyordu ve yine de
+   * yanlış kurulumu yeşil gösteriyordu. "Cloud, çünkü JIRA_CLOUD_BASE_URL
+   * dolu" — doğru; eksik olan, o değişkenin içindeki adresin bir Cloud adresi
+   * olmadığıydı.
+   */
+  it("bir Cloud sürücüsünün altında Cloud'a benzemeyen adres UYARIdır", () => {
+    const findings = buildConfigFindings({
+      ...HEALTHY,
+      deployment: {
+        ...DC,
+        workDriver: "jira-cloud",
+        workDriverVariable: "JIRA_CLOUD_BASE_URL",
+        cloudUrlLooksLikeCloud: false,
+      },
+    });
+    const driver = row(findings, "jira_driver");
+
+    expect(driver.severity).toBe("uyari");
+    expect(driver.detailKey).toBe("config.detail.jira_driver.url_not_cloud");
+    expect(driver.fixKey).toBe("config.fix.jira_driver.url_not_cloud");
+    // Yalnız değişken ADI taşınır — adres bu pakete zaten hiç girmedi.
+    expect(driver.detailParams).toEqual({ variable: "JIRA_CLOUD_BASE_URL" });
+    expect(JSON.stringify(findings)).not.toMatch(/https?:\/\//);
+    // Uyarı, kırmızı değil: Cloud'un önündeki bir kurum vekili bu satırı
+    // haklı çıkarabilir, ve yanılabilen bir işaret kırmızı olmamalı.
+    expect(worstSeverity(findings)).not.toBe("sorun");
+  });
+
+  it("ters yön aynı desende: DC sürücüsünün altında bir Cloud adresi", () => {
+    const driver = row(
+      buildConfigFindings({
+        ...HEALTHY,
+        deployment: { ...DC, cloudUrlLooksLikeCloud: false },
+      }),
+      "jira_driver",
+    );
+
+    expect(driver.severity).toBe("uyari");
+    expect(driver.detailKey).toBe("config.detail.jira_driver.url_is_cloud");
+    expect(driver.fixKey).toBe("config.fix.jira_driver.url_is_cloud");
+    expect(driver.detailParams).toEqual({ variable: "JIRA_BASE_URL" });
+  });
+
+  it("soru anlamsızsa (null) satır yeşil kalır — uydurulmuş bir uyarı yok", () => {
+    const driver = row(
+      buildConfigFindings({
+        ...HEALTHY,
+        deployment: { ...DC, cloudUrlLooksLikeCloud: null },
+      }),
+      "jira_driver",
+    );
+
+    expect(driver.severity).toBe("iyi");
+    expect(driver.detailKey).toBe("config.detail.jira_driver.chosen");
   });
 
   it("an unconfigured Jira is the loudest row on the screen", () => {

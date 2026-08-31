@@ -181,6 +181,97 @@ export function workDriverVariableName(
   return chosen.driver === JIRA_CLOUD_DRIVER ? "JIRA_CLOUD_BASE_URL" : "JIRA_BASE_URL";
 }
 
+/** Atlassian'ın barındırdığı Jira örneklerinin konak adı sonekleri. */
+const CLOUD_HOST_SUFFIXES = [".atlassian.net", ".jira.com"] as const;
+
+/**
+ * Adres bir Jira CLOUD adresine benziyor mu — saf, ağsız, tek girdili.
+ *
+ * ── NEDEN BİR HEURİSTİK VAR ─────────────────────────────────────────────────
+ * Sürücüyü seçen tek şey HANGİ değişkenin dolu olduğu (`workDriverFor`), ve o
+ * karar adresin İÇİNE hiç bakmaz. Bu doğru bir tasarım — ama bir kör noktası
+ * var ve bir bankada saatler yakan tam olarak o oldu: bir Data Center adresi
+ * `JIRA_CLOUD_BASE_URL` satırına yazılınca sistem Cloud sürücüsüyle açılıyor,
+ * `/rest/api/3` + `Basic` ile DC'ye gidiyor, ve HİÇBİR yerde hata görünmüyor.
+ * Panel yeşil (panel bağlantısı ayrı bir yol), boot log'u "Cloud, çünkü
+ * JIRA_CLOUD_BASE_URL dolu" diyor ve bu cümle DOĞRU — yalnızca yanlış olan
+ * şeyi tarif ediyor.
+ *
+ * Adresin kendisi bu çelişkiyi ele veriyor: Atlassian'ın barındırdığı Jira
+ * örnekleri HER ZAMAN `*.atlassian.net` (nadiren eski `*.jira.com`) altındadır.
+ * `jira.banka.local`, bir IP, bir `.corp`/`.intra` adı bir Cloud örneği
+ * OLAMAZ — o adres Data Center'ındır ve yanlış satıra yazılmıştır.
+ *
+ * ── NEDEN "SORUN" DEĞİL "UYARI" ─────────────────────────────────────────────
+ * Çünkü teorik olarak yanılabilir: bir kurum Cloud'un önüne kendi vekilini
+ * (`jira-proxy.banka.local`) koyabilir ve Cloud sürücüsü orada DOĞRU seçimdir.
+ * Bu yüzden burası bir kapı değil bir işaret: cevabı `boolean`, ve onu okuyan
+ * iki yer de (boot notu, panel satırı) uyarı üretir, reddetmez.
+ *
+ * ── SÖZLEŞME ────────────────────────────────────────────────────────────────
+ * Cevap tek bir `boolean`: URL'in kendisi bu fonksiyondan DIŞARI çıkmaz. Bu
+ * bilerek — çağıranların ikisi de (boot banner'ı, panel yanıtı) bir Jira taban
+ * adresinin taşıyabileceği userinfo'yu asla yazmamalı. Kenar durumlar:
+ *
+ *  · şema yok      → `jira.banka.local:8080` gibi yazımlar yaygın; şemasız
+ *                    adresi `https://` varsayarak ayrıştırıyoruz, yoksa
+ *                    `URL` onu `jira:` şeması sanır ve konak adı boş çıkar;
+ *  · port / yol    → `URL.hostname` ikisini de düşürür, `:8443` bir soneki
+ *                    bozmaz;
+ *  · büyük harf    → `hostname` zaten küçültür, yine de açıkça küçültüyoruz;
+ *  · boş / bozuk   → `false`: adres okunamıyorsa "Cloud'a benziyor" DEMEYİZ,
+ *                    ve bu yön güvenli olan yön (uyarı çıkar, sessizlik değil);
+ *  · tam eşleşme   → `atlassian.net` (alt alan adı olmadan) bir örnek adresi
+ *                    değildir ama Atlassian'a aittir; sonek listesindeki nokta
+ *                    onu dışarıda bırakmasın diye çıplak hâli de kabul edilir;
+ *  · sahte sonek   → `evil-atlassian.net.banka.local` sonek eşleşmesiyle
+ *                    ELENİR, çünkü karşılaştırma konak adının SONUNA bakar.
+ */
+export function jiraUrlLooksLikeCloud(url: string): boolean {
+  const trimmed = url.trim();
+  if (trimmed === "") return false;
+  // Şemasız yazımlar (`jira.banka.local:8080`) yaygın ve `URL` onları
+  // `jira:` şemalı sayıp konak adını boş bırakır — o yüzden bir şema ekliyoruz.
+  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  let host: string;
+  try {
+    host = new URL(withScheme).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === "") return false;
+  // Sondaki nokta (`x.atlassian.net.`) mutlak DNS adı yazımıdır, aynı konaktır.
+  const normalized = host.endsWith(".") ? host.slice(0, -1) : host;
+  return CLOUD_HOST_SUFFIXES.some(
+    (suffix) => normalized.endsWith(suffix) || normalized === suffix.slice(1),
+  );
+}
+
+/**
+ * Sürücü ile adresin ÇELİŞİP çelişmediği — `true` = çelişmiyor, `false` =
+ * adres seçilen sürücünün ait olduğu Jira çeşidine benzemiyor.
+ *
+ * `null`, sorunun anlamsız olduğu hâller: hiçbir adres yok (kurulmamış), ya da
+ * ikisi birden dolu (açılış zaten reddediyor). "Bilmiyoruz" ile "iyi" arasındaki
+ * farkı korumak bu cevabın bütün değeri.
+ *
+ * İki yön de aynı desende ele alınır, çünkü iki yön de aynı hatanın iki
+ * yüzüdür: Cloud sürücüsünde iç ağ adresi (DC adresi Cloud satırına yazılmış),
+ * DC sürücüsünde `*.atlassian.net` (Cloud adresi DC satırına yazılmış).
+ */
+export function jiraUrlMatchesDriver(
+  source: Record<string, string | undefined>,
+): boolean | null {
+  const chosen = workDriverFor(source);
+  if (chosen.problem !== null) return null;
+  if (chosen.driver === JIRA_CLOUD_DRIVER) {
+    return jiraUrlLooksLikeCloud(source["JIRA_CLOUD_BASE_URL"] ?? "");
+  }
+  return !jiraUrlLooksLikeCloud(source["JIRA_BASE_URL"] ?? "");
+}
+
 /**
  * The conflict, refused by name.
  *

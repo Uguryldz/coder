@@ -102,6 +102,19 @@ export interface DeploymentConfigFacts {
    * `JIRA_CLOUD_BASE_URL`), ya da hiçbiri doluysa null. DEĞERİ değil ADI.
    */
   readonly workDriverVariable: string | null;
+  /**
+   * Adres, seçilen sürücünün ait olduğu Jira çeşidine BENZİYOR mu.
+   *
+   * `null` = soru anlamsız (hiç adres yok, ya da ikisi birden dolu). `false` =
+   * çelişki: Cloud sürücüsü seçilmiş ama adres `*.atlassian.net` değil (yani
+   * bir Data Center adresi Cloud satırına yazılmış), ya da tersi.
+   *
+   * KARAR BURADA VERİLMEZ, yalnız TAŞINIR: heuristik `apps/deploy`'daki
+   * `jiraUrlLooksLikeCloud`ta, yani URL'in gerçekten görüldüğü yerde çalışır ve
+   * buraya tek bir `boolean` olarak gelir. Bu bilerek: adres bu pakete hiç
+   * girmezse, bu paketin hiçbir yanıtından sızamaz.
+   */
+  readonly cloudUrlLooksLikeCloud: boolean | null;
   /** Ticket taraması gerçekten çalışıyor mu (zamanlayıcı kuruldu mu). */
   readonly sweepEnabled: boolean;
   /** Tarama periyodu, saniye. Kapalıyken 0. */
@@ -213,6 +226,43 @@ function workDriverFindings(facts: DeploymentConfigFacts | null): ConfigFinding[
         value: "yapilandirilmamis",
         detailKey: "config.detail.jira_driver.none",
         fixKey: "config.fix.jira_driver.none",
+      },
+    ];
+  }
+  /**
+   * ADRES SÜRÜCÜYE BENZEMİYOR — bu satırın var olma sebebi.
+   *
+   * Sürücü satırı kendi başına yeşildi ve doğruydu: "Cloud, çünkü
+   * JIRA_CLOUD_BASE_URL dolu" cümlesi bir bankada saatler yaktığı gün de
+   * DOĞRUYDU. Eksik olan, o değişkenin İÇİNDEKİ adresin bir Cloud adresi
+   * olmadığıydı — bir Data Center adresi yanlış satıra yazılmıştı, sistem
+   * Cloud sürücüsüyle (`/rest/api/3`, `Basic`) DC'ye gidiyordu ve hiçbir
+   * ekran bunu göremiyordu.
+   *
+   * `uyari`, `sorun` değil: bir kurum Cloud'un önüne kendi vekilini koyabilir
+   * ve o durumda Cloud sürücüsü DOĞRU seçimdir. Yanılabilen bir işaret
+   * kırmızıya boyanırsa operatör kırmızıyı yok saymayı öğrenir — bu ekranın
+   * en pahalıya patlayacak kaybı o olurdu.
+   *
+   * `null` sessizce geçilir: soru anlamsızsa (adres yok, ya da ikisi birden
+   * dolu) uydurulmuş bir cevap vermek "bilmiyoruz"dan kötüdür.
+   */
+  if (facts.cloudUrlLooksLikeCloud === false) {
+    const cloud = facts.workDriverVariable === "JIRA_CLOUD_BASE_URL";
+    return [
+      {
+        id: "jira_driver",
+        severity: "uyari",
+        value: facts.workDriver,
+        detailKey: cloud
+          ? "config.detail.jira_driver.url_not_cloud"
+          : "config.detail.jira_driver.url_is_cloud",
+        // Yine yalnız ADLAR. Adresin kendisi bu pakete hiç girmedi: buraya
+        // gelen tek şey bir boolean.
+        detailParams: { variable: facts.workDriverVariable },
+        fixKey: cloud
+          ? "config.fix.jira_driver.url_not_cloud"
+          : "config.fix.jira_driver.url_is_cloud",
       },
     ];
   }

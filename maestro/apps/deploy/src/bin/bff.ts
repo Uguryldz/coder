@@ -19,7 +19,7 @@ import { variantAwareModelFrom, variantModelReaderFrom } from "../stores/variant
 import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { listenAddress, type DeployEnv } from "../env.js";
-import { workDriverVariableName } from "../profile.js";
+import { jiraUrlMatchesDriver, workDriverVariableName } from "../profile.js";
 import { panelTaniRaporu } from "../tani-panel.js";
 import type { KosuSatiri } from "../tani.js";
 import { selectIdentityProvider } from "../identity.js";
@@ -449,6 +449,7 @@ export async function main(): Promise<void> {
       deploymentConfig.current ?? {
         workDriver: deployment.selection.work.driver,
         workDriverVariable: workDriverVariableName(env.source),
+        cloudUrlLooksLikeCloud: jiraUrlMatchesDriver(env.source),
         sweepEnabled: false,
         sweepSeconds: 0,
         sweepSource: "varsayilan",
@@ -954,6 +955,10 @@ export async function main(): Promise<void> {
   deploymentConfig.current = {
     workDriver: deployment.selection.work.driver,
     workDriverVariable: workDriverVariableName(env.source),
+    // Adresin sürücüye BENZEYİP benzemediği — kararı `jiraUrlMatchesDriver`
+    // burada, URL'in gerçekten görüldüğü yerde veriyor ve dışarı yalnız bir
+    // boolean çıkıyor. Adresin kendisi `@maestro/bff` paketine hiç girmez.
+    cloudUrlLooksLikeCloud: jiraUrlMatchesDriver(env.source),
     sweepEnabled: discoveryRun !== undefined,
     sweepSeconds: discoveryRun === undefined ? 0 : Math.round(discoverMs / 1000),
     sweepSource: discoverConfigured ? "env" : "varsayilan",

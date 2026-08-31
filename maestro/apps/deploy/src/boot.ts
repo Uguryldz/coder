@@ -15,6 +15,7 @@ import { loadDeployEnv, type DeployEnv } from "./env.js";
 import { objectLockConfig } from "./object-lock.js";
 import {
   assertOneJiraInstance,
+  jiraUrlMatchesDriver,
   JIRA_CLOUD_DRIVER,
   NOT_CONFIGURED_DRIVER,
   workDriverFor,
@@ -448,12 +449,42 @@ export function workWiringNote(env: DeployEnv, driver: string): string | null {
   const variable = workDriverVariableName(env.source);
   if (variable === null) return null;
   const flavour = driver === JIRA_CLOUD_DRIVER ? "Jira Cloud" : "Jira Data Center";
-  return (
+  const line =
     `[maestro] work sürücüsü ${flavour} (${driver}) — çünkü ${variable} dolu. ` +
     "Sürücüyü seçen başka bir değişken YOKTUR (WORK_DRIVER kaldırıldı). Bu kurulum " +
     `${flavour} kullanmıyorsa adres YANLIŞ değişkene yazılmış demektir: doğru olanı ` +
-    `doldurup ${variable} satırını SİLİN (ikisi birden dolu olursa açılış reddedilir).`
-  );
+    `doldurup ${variable} satırını SİLİN (ikisi birden dolu olursa açılış reddedilir).`;
+  /**
+   * VE ADRESİN KENDİSİ NE DİYOR.
+   *
+   * Yukarıdaki cümle hangi değişkenin dolu olduğunu söyler ve doğrudur — ama
+   * bir bankada saatler yaktığı gün de doğruydu: DC adresi `JIRA_CLOUD_BASE_URL`
+   * satırına yazılmıştı, log "Cloud, çünkü o değişken dolu" diyordu, ve
+   * operatörün o cümleden kendi hatasını çıkarması gerekiyordu. Adres zaten
+   * elimizde: Cloud örnekleri her zaman `*.atlassian.net` altındadır, bir iç ağ
+   * adı ORASI olamaz. `jiraUrlMatchesDriver` bu karşılaştırmayı yapar ve
+   * `false` derse çelişki adıyla söylenir — panelin `jira_driver` uyarısıyla
+   * AYNI fonksiyondan, yani log ile ekran asla ayrışamaz.
+   *
+   * Yanılabilir (Cloud'un önündeki bir kurum vekili), o yüzden cümle bir emir
+   * değil bir soru — ve bir açılışı reddetmez. ADRES YİNE YAZILMAZ: cevabı bir
+   * boolean, ve bu satır bir log toplayıcısına gidiyor.
+   */
+  if (jiraUrlMatchesDriver(env.source) === false) {
+    const target = driver === JIRA_CLOUD_DRIVER ? "JIRA_BASE_URL" : "JIRA_CLOUD_BASE_URL";
+    const gorunen = driver === JIRA_CLOUD_DRIVER ? "Jira Cloud" : "Jira Data Center";
+    const gercek = driver === JIRA_CLOUD_DRIVER ? "Jira Data Center" : "Jira Cloud";
+    return (
+      `${line}\n[maestro] UYARI: ${variable} içindeki adres bir ${gorunen} adresine ` +
+      `BENZEMİYOR (Cloud örnekleri her zaman *.atlassian.net, nadiren *.jira.com). ` +
+      `Bu kurulum ${gercek} kullanıyorsa adres YANLIŞ satırda demektir: ${target} ` +
+      `satırına taşıyıp ${variable} satırını silin ve servisleri yeniden başlatın. ` +
+      "Aksi hâlde istekler yanlış API kökü ve yanlış kimlik biçimiyle gider " +
+      "(Cloud: /rest/api/3 + Basic, Data Center: /rest/api/2 + Bearer PAT). " +
+      `${gorunen} önünde kendi vekiliniz varsa bu satırı yok sayabilirsiniz.`
+    );
+  }
+  return line;
 }
 
 /**

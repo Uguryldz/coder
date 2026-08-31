@@ -345,4 +345,197 @@ describe("silent webhook outcomes leave a server-side trace (denetim B5)", () =>
     expect(warns).toHaveLength(1);
     expect(warns[0]).toMatchObject({ ticket: "UGURWEB-9", reason: "unbound" });
   });
+
+  /**
+   * The distinction the operator actually needs.
+   *
+   * Only REFUSALS were logged, so a working webhook and a webhook that never
+   * arrived produced identical evidence: nothing. Those two send an operator to
+   * two different places — a firewall rule versus a gate that was already
+   * closed — and they had no way to tell which they were in.
+   */
+  it("a VERIFIED delivery is logged, so 'never arrived' and 'arrived and handled' differ", async () => {
+    const { h, lines } = await loggedHarness();
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-42" }));
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.statusCode).toBe(202);
+    const verified = lines("webhook delivery verified");
+    expect(verified).toHaveLength(1);
+    expect(verified[0]).toMatchObject({
+      webhook: "jira",
+      event: "jira:issue_created",
+      ticket: "UGURPAY-42",
+    });
+
+    // And the outcome, so a taken intake is as visible as a dropped one.
+    expect(lines("webhook intake handled")[0]).toMatchObject({
+      ticket: "UGURPAY-42",
+      accepted: true,
+    });
+  });
+
+  /**
+   * The verified line is written AFTER verification, never before.
+   *
+   * An unverified delivery is an unauthenticated stranger: letting it write a
+   * `webhookEvent` name of its choosing into the operator's log would make the
+   * log itself an injection surface.
+   */
+  it("does not log a delivery that failed verification as verified", async () => {
+    const { h, lines } = await loggedHarness();
+    await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify(issueEvent({ ticket: "UGURPAY-1" })),
+    });
+
+    expect(lines("webhook delivery verified")).toHaveLength(0);
+    expect(lines("webhook signature rejected")).toHaveLength(1);
+  });
+
+  /**
+   * The SECURITY refusal that used to be perfectly silent.
+   *
+   * An edited comment carries no command (K-2/M32/M51): in Jira DC "Edit All
+   * Comments" is a routine project-lead permission, so honouring one would let
+   * its holder approve a gate AS SOMEONE ELSE. The parser answers "no command"
+   * — which meant the approver saw their `/approve` ignored with nothing
+   * anywhere naming the rule that ignored it.
+   */
+  it("WARNS by name when an edited comment is refused (SoD protection)", async () => {
+    const { h, lines } = await loggedHarness();
+    const delivery = signed(
+      commentEvent({
+        ticket: "UGURPAY-42",
+        author: "mert.demir",
+        body: "/approve",
+        created: "2026-08-09T09:05:00.000+0300",
+        updated: "2026-08-09T09:07:00.000+0300",
+      }),
+    );
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.statusCode).toBe(202);
+    const warns = lines(
+      "webhook comment refused: an edited comment carries no command (SoD protection)",
+    );
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toMatchObject({
+      webhook: "jira",
+      ticket: "UGURPAY-42",
+      reason: "edited_comment",
+    });
+    // And no command was honoured.
+    expect(lines("webhook command handled")).toHaveLength(0);
+  });
+
+  /**
+   * A command that WAS honoured — including the legitimate non-acceptance.
+   *
+   * `no_open_gate` is not an operator error; it is the gate already being
+   * closed, or the poller having answered the same comment a moment earlier.
+   * Until it was logged it looked exactly like a delivery that never arrived.
+   */
+  it("logs a handled command with its verdict, and the reason when refused", async () => {
+    const { h, lines } = await loggedHarness();
+    const delivery = signed(
+      commentEvent({ ticket: "UGURPAY-42", author: "mert.demir", body: "/approve" }),
+    );
+    await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    const handled = lines("webhook command handled");
+    expect(handled).toHaveLength(1);
+    expect(handled[0]).toMatchObject({
+      webhook: "jira",
+      ticket: "UGURPAY-42",
+      command: "approve",
+      author: "mert.demir",
+    });
+    // The verdict is there whichever way it went — that IS the diagnostic.
+    expect(handled[0]).toHaveProperty("accepted");
+  });
+
+  /**
+   * An author that is an e-mail address is masked.
+   *
+   * A Data Center identity falls back to `emailAddress` when the user carries
+   * neither `name` nor `key` (`adapter-jira/src/mapping.ts` → `userIdOf`), and
+   * an e-mail address in a bank's log aggregator is personal data the platform
+   * masks everywhere else (`packages/pii`).
+   */
+  it("masks an author that is an e-mail address", async () => {
+    const { h, lines } = await loggedHarness();
+    const delivery = signed(
+      commentEvent({ ticket: "UGURPAY-42", author: "mert.demir@banka.com.tr", body: "/approve" }),
+    );
+    await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    const handled = lines("webhook command handled");
+    expect(handled).toHaveLength(1);
+    expect(handled[0]?.["author"]).toBe("m*********@banka.com.tr");
+    expect(JSON.stringify(handled)).not.toContain("mert.demir@banka.com.tr");
+  });
+
+  /**
+   * The property that makes every line above safe to ask an operator for.
+   *
+   * These lines are what a bank pastes into a ticket when listening does not
+   * work. Not one of them may carry the webhook secret, and none may carry the
+   * comment BODY — a Jira comment in a bank routinely names a person, an
+   * account or an amount.
+   */
+  it("leaks neither the webhook secret nor the comment body into ANY line", async () => {
+    const { h, lines: _lines } = await loggedHarness();
+    const captured: string[] = [];
+    // Re-drive with the raw buffer so every line is inspected, not just the
+    // ones a message filter selected.
+    const raw: string[] = [];
+    const logged = await harness({
+      fastify: {
+        logger: { level: "warn", stream: { write: (line: string) => void raw.push(line) } },
+      },
+    });
+    const secretBody = "/reject IBAN TR33 0006 1005 1978 6457 8413 26 yanlış";
+    const delivery = signed(
+      commentEvent({ ticket: "UGURPAY-42", author: "mert.demir", body: secretBody }),
+    );
+    await logged.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+    captured.push(...raw);
+
+    const all = captured.join("\n");
+    expect(all).not.toContain(WEBHOOK_SECRET);
+    expect(all).not.toContain("TR33 0006 1005 1978 6457 8413 26");
+    expect(all).not.toContain("x-hub-signature");
+    // The ticket key and the command name are business data and DO appear —
+    // otherwise the line would be useless to the operator it is written for.
+    expect(all).toContain("UGURPAY-42");
+    void h;
+  });
 });

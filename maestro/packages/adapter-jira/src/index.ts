@@ -12,6 +12,7 @@ export * from "./cloud/workflow.js";
 export * from "./commands.js";
 export * from "./config.js";
 export * from "./datetime.js";
+export * from "./dc-comment-command.js";
 export * from "./errors.js";
 export * from "./mapping.js";
 export * from "./register.js";

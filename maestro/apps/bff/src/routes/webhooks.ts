@@ -48,8 +48,34 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
     } catch {
       // Only reachable for a delivery that DID verify, so this really is a
       // Jira-side malformation rather than an attack.
+      request.log.warn({ webhook: "jira" }, "webhook payload malformed");
       throw badRequest("malformed_payload");
     }
+
+    /**
+     * A VERIFIED delivery, said out loud — the line this route was missing.
+     *
+     * Only refusals were logged, so "Jira never called us" and "Jira called us
+     * and we handled it" produced the SAME log: nothing. That is precisely the
+     * distinction an operator whose `/approve` did nothing has to make first,
+     * and the two answers send them to two different places (a firewall rule
+     * versus a gate that was already closed). Logged AFTER verification, never
+     * before: an unverified delivery is an unauthenticated stranger and must
+     * not get to write a chosen event name into the log.
+     *
+     * The event name and the ticket key only. Never the body: a Jira comment
+     * payload carries the comment TEXT, which in a bank routinely names a
+     * person, an account or an amount.
+     */
+    const delivery = describeDelivery(deps, payload);
+    request.log.warn(
+      {
+        webhook: "jira",
+        event: delivery.event,
+        ...(delivery.ticket === null ? {} : { ticket: delivery.ticket }),
+      },
+      "webhook delivery verified",
+    );
 
     // A VERIFIED delivery whose contents the driver cannot make sense of — an
     // author with no identifiable account, a shape this version does not know —
@@ -66,7 +92,58 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
 
     if (envelope !== null) {
       const outcome = await handleCommand(deps, envelope);
+      /**
+       * The command, and what became of it.
+       *
+       * `no_open_gate` is the case this line exists for. It is not a refusal an
+       * operator did anything wrong to earn — the gate was already closed, or
+       * the poller answered the same comment a moment earlier — but until it
+       * was logged it looked exactly like a delivery that never arrived. The
+       * command NAME and the verdict are logged; a `/reject` reason is not,
+       * because it is free text on a bank's ticket and belongs in the audit
+       * chain rather than in a log aggregator.
+       */
+      request.log.warn(
+        {
+          webhook: "jira",
+          ticket: envelope.ticketKey,
+          command: envelope.command.name,
+          author: maskAuthor(envelope.author),
+          accepted: outcome.accepted,
+          ...("reason" in outcome && typeof outcome.reason === "string"
+            ? { reason: outcome.reason }
+            : {}),
+        },
+        "webhook command handled",
+      );
       return reply.code(202).send(outcome);
+    }
+
+    /**
+     * A comment that carried NO command — including the one refused because it
+     * was EDITED.
+     *
+     * The edit refusal is a security decision (K-2/M32/M51): in Jira DC "Edit
+     * All Comments" is a routine project-lead permission, so an edited comment
+     * names the original author while somebody else supplied the text, and
+     * honouring it would let its holder approve a gate AS SOMEONE ELSE. The
+     * parser answers "no command" for it, which made the refusal completely
+     * silent — the approver saw their `/approve` ignored with nothing anywhere
+     * naming the rule that ignored it. Warned by name here.
+     *
+     * An ordinary comment that is simply not a command is the common case and
+     * stays quiet: a thread of normal conversation must not fill the log.
+     */
+    if (delivery.kind === "comment" && delivery.edited) {
+      request.log.warn(
+        {
+          webhook: "jira",
+          ticket: delivery.ticket,
+          event: delivery.event,
+          reason: "edited_comment",
+        },
+        "webhook comment refused: an edited comment carries no command (SoD protection)",
+      );
     }
 
     let refusal: { accepted: false; reason: string } | null;
@@ -77,7 +154,17 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
     } catch {
       return reply.code(202).send({ accepted: false, reason: "unreadable_event" });
     }
-    if (refusal !== null) return reply.code(202).send(refusal);
+    if (refusal !== null) {
+      // "It looked like a command and was not one" — a typo, a `/reject` with
+      // no reason. The author already gets a reply on the ticket (M14/M105);
+      // this is the operator's copy, so a wave of them is visible without
+      // reading every ticket.
+      request.log.warn(
+        { webhook: "jira", ticket: delivery.ticket, reason: refusal.reason },
+        "webhook invalid command",
+      );
+      return reply.code(202).send(refusal);
+    }
 
     if (event.kind !== "issue" || event.ticketKey === undefined) {
       return reply.code(202).send({ accepted: false, reason: "not_intake" });
@@ -101,8 +188,23 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
     // find. The trace belongs in the log, where Jira cannot see it.
     if (!outcome.accepted && (outcome.reason === "unbound" || outcome.reason === "not_opted_in")) {
       request.log.warn(
-        { ticket: event.ticketKey, reason: outcome.reason },
+        { webhook: "jira", ticket: event.ticketKey, reason: outcome.reason },
         "webhook intake dropped",
+      );
+    } else {
+      // The other half of the same pair: an intake that was TAKEN. Without it
+      // the log said something only when a ticket was dropped, so a working
+      // install produced the same silence as a broken one.
+      request.log.warn(
+        {
+          webhook: "jira",
+          ticket: event.ticketKey,
+          accepted: outcome.accepted,
+          ...(!outcome.accepted && typeof outcome.reason === "string"
+            ? { reason: outcome.reason }
+            : {}),
+        },
+        "webhook intake handled",
       );
     }
     return reply.code(202).send(outcome);
@@ -158,6 +260,82 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
       ...(delivered === "delivered" ? { workflowId } : { reason: "no_run" }),
     });
   });
+}
+
+/**
+ * What a verified delivery IS, for the log line — read structurally off the
+ * raw payload rather than through the driver.
+ *
+ * Two reasons it does not use `deps.workEvents.read`. That reader THROWS on a
+ * payload it cannot map (a comment with no identifiable author is exactly such
+ * a payload), and a log line must never be the thing that turns a 202 into a
+ * 500. And it is optional on `ResolvedDeps` shapes older than this route.
+ * Everything below is read defensively and answers `null` rather than raising.
+ *
+ * Only three facts are extracted, and none of them is content: the event name
+ * Jira chose, the issue key, and whether the comment was EDITED. The comment
+ * body is deliberately never touched.
+ */
+interface DeliveryShape {
+  readonly kind: "comment" | "issue" | "other";
+  readonly event: string;
+  readonly ticket: string | null;
+  /** True for a `comment_updated`, or a `comment_created` whose timestamps disagree. */
+  readonly edited: boolean;
+}
+
+function describeDelivery(_deps: ResolvedDeps, payload: unknown): DeliveryShape {
+  const envelope = asRecord(payload);
+  const event = typeof envelope?.["webhookEvent"] === "string" ? envelope["webhookEvent"] : "unknown";
+  const issue = asRecord(envelope?.["issue"]);
+  const ticket = typeof issue?.["key"] === "string" ? issue["key"] : null;
+  const comment = asRecord(envelope?.["comment"]);
+
+  if (comment !== null && (event === "comment_created" || event === "comment_updated")) {
+    const created = comment["created"];
+    const updated = comment["updated"];
+    return {
+      kind: "comment",
+      event,
+      ticket,
+      // Same rule the driver enforces (`adapter-jira/src/webhook.ts` →
+      // `isEdited`), restated here because this line must not depend on the
+      // driver having agreed to parse the payload at all.
+      edited:
+        event === "comment_updated" ||
+        (typeof created === "string" && typeof updated === "string" && created !== updated),
+    };
+  }
+
+  return {
+    kind: event.startsWith("jira:issue_") ? "issue" : "other",
+    event,
+    ticket,
+    edited: false,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * A comment author for the log.
+ *
+ * On Jira Cloud this is an opaque `accountId` and on Data Center a username —
+ * both ordinary business data an operator needs in order to match a log line
+ * to a person. But a Data Center identity falls back to `emailAddress` when a
+ * user carries neither `name` nor `key`, and an e-mail address is personal
+ * data this platform masks everywhere else (`packages/pii`). Masked only when
+ * it looks like one, so the common case stays readable.
+ */
+export function maskAuthor(author: string): string {
+  const at = author.indexOf("@");
+  if (at <= 0) return author;
+  const local = author.slice(0, at);
+  return `${local.slice(0, 1)}${"*".repeat(Math.max(local.length - 1, 1))}@${author.slice(at + 1)}`;
 }
 
 /**

@@ -3,7 +3,7 @@ import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card } from "../../ui/index.ts";
 import { matchValueLabel } from "../common/jira-english.ts";
 import { STATUS_POINTS, buildStatusMap } from "../common/status-map.ts";
-import { bindsNoRepository, flowDefaults, type SetupDraft } from "./model.ts";
+import { bindsNoRepository, flowDefaults, intakePolls, type SetupDraft } from "./model.ts";
 
 /**
  * Step 5 — "Özet & kaydet".
@@ -26,9 +26,19 @@ export interface ReviewPaneProps {
    * an approval queue that has nothing in it.
    */
   readonly alreadyBound: boolean;
+  /**
+   * Whether a changed command-intake setting takes effect without a service
+   * restart, as the platform reports it; `undefined` while unknown.
+   *
+   * On the summary because this is the last screen before the button: an
+   * operator who is about to switch a bank's approvals onto polling must read
+   * "servis yeniden başlatılınca geçerli olur" HERE, not discover it by
+   * approving a ticket afterwards and watching nothing happen.
+   */
+  readonly intakeAppliesLive?: boolean | undefined;
 }
 
-export function ReviewPane({ draft, alreadyBound }: ReviewPaneProps): ReactNode {
+export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPaneProps): ReactNode {
   const t = useT();
   const defaults = flowDefaults(draft.flowType);
   // Flow-aware: `buildStatusMap` writes only the points `firesFor` says this
@@ -98,7 +108,29 @@ export function ReviewPane({ draft, alreadyBound }: ReviewPaneProps): ReactNode 
         </>
       )}
 
-      {/* 3 — the binding: repo, build profile, and the three derived answers the
+      {/* 3 — how an approval given on the ticket reaches Maestro. Its own
+          section because it is the one answer here that decides whether the
+          gates this rule creates can be CLOSED at all: a run whose `/approve`
+          is never read waits forever, and that failure is invisible from every
+          other screen. */}
+      <h4 className="setup-review__h">{t("setup.review.intake_heading")}</h4>
+      <p className="scr-prose">{t(`setup.review.intake_sentence.${draft.commandIntake}`)}</p>
+      {intakePolls(draft.commandIntake) && (
+        <p className="scr-note">
+          {t("setup.review.intake_seconds", { seconds: String(draft.pollSeconds) })}
+        </p>
+      )}
+      {/* WHEN it starts applying. Never guessed: the unknown case says so
+          rather than picking the friendlier of the two sentences. */}
+      <p className="scr-note">
+        {intakeAppliesLive === undefined
+          ? t("setup.intake.applies_unknown")
+          : intakeAppliesLive
+            ? t("setup.intake.applies_live")
+            : t("setup.intake.applies_restart")}
+      </p>
+
+      {/* 4 — the binding: repo, build profile, and the three derived answers the
           operator never had to give. */}
       <h4 className="setup-review__h">{t("setup.review.binding_heading")}</h4>
       {alreadyBound ? (
@@ -183,6 +215,12 @@ export function DonePane({ draft, awaitingApproval }: DonePaneProps): ReactNode 
         </li>
         <li>{t("setup.done.next_assign")}</li>
         <li>{t("setup.done.next_watch")}</li>
+        {/* Where the approval is given, in the words of the answer they just
+            chose. A webhook-only install that never registered its webhook is
+            the case this line is for: the operator is told, on the screen that
+            ends the setup, that `/approve` on the ticket is what they picked
+            and what has to work. */}
+        <li>{t(`setup.done.next_approve.${draft.commandIntake}`)}</li>
       </ol>
     </Card>
   );

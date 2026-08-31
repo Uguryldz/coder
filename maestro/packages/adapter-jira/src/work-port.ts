@@ -3,6 +3,7 @@ import { CapabilityNotSupportedError, type WorkPort } from "@maestro/ports";
 import { adfToWikiMarkup, toAdfDocument } from "./adf.js";
 import { JiraDcClient, type FetchLike, type TokenProvider } from "./client.js";
 import type { JiraDcConfig } from "./config.js";
+import { parseDcCommandFromComment, type DcCommentCommand } from "./dc-comment-command.js";
 import {
   JiraArgumentError,
   JiraLinkFailedError,
@@ -186,6 +187,48 @@ export class JiraDcWorkPort implements WorkPort {
       "too_many_pages",
       `stopped after ${MAX_GROUP_PAGES} pages of ${this.config.groupPageSize}`,
     );
+  }
+
+  /**
+   * One page of an issue's comments, raw as the server recorded them
+   * (fixtures/comments-list.json) — the poll source that feeds
+   * `parseCommandFromComment`.
+   *
+   * DRIVER-SPECIFIC CAPABILITY, not a `WorkPort` method: the port carries what
+   * the WORKFLOW needs, and reading a thread is not that (the engine is
+   * signalled, it does not look). The Cloud driver offers the same method for
+   * the same reason.
+   *
+   * WHY DC needs it at all. The signed webhook above is this driver's primary
+   * command path and stays primary — but a Data Center behind a corporate
+   * firewall often cannot call out to Maestro, and then `/approve` written on
+   * the ticket reaches nothing at all: the approval gate waits forever and
+   * nobody can say why. This is the fallback (`apps/deploy/src/jira-poller.ts`,
+   * enabled by `JIRA_POLL_MS`).
+   *
+   * REST v2's shape is v3's: `{ startAt, maxResults, total, comments: [...] }`.
+   * A response that is not that shape raises rather than returning an empty
+   * list — silently reading zero comments looks exactly like "nobody approved
+   * yet", which is the failure this method exists to end.
+   */
+  async listComments(key: TicketKey): Promise<unknown[]> {
+    const issueKey = requireTicketKey(key, "key");
+    const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}/comment`, {});
+    const comments = asRecord(raw)?.["comments"];
+    if (!Array.isArray(comments)) throw new JiraResponseError("comments", ["response carries no comments array"]);
+    return comments;
+  }
+
+  /**
+   * Direct entry for the comment poller: one v2 comment resource + its issue
+   * key. The comment resource carries only an issue-id URL, so the caller —
+   * who polled a specific issue — supplies the key.
+   *
+   * Enforces the same K-2 rule as the webhook path: an edited comment carries
+   * no command. See `dc-comment-command.ts`.
+   */
+  parseCommandFromComment(ticketKey: string, comment: unknown): DcCommentCommand {
+    return parseDcCommandFromComment(ticketKey, comment);
   }
 
   /** Verified webhook payload → command, or null. Never throws on unknown commands. */

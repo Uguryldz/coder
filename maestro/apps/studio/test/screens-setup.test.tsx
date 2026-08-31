@@ -59,6 +59,19 @@ function baseRoutes(overrides: readonly Route[] = []): Route[] {
     },
     { path: "/onboarding/jira-match-values", body: { ok: true, values: OPS_ISSUE_TYPES } },
     { path: "/routing", body: { projects: [], rules: [], policy: null } },
+    // Step 5's read: what is in force now, and whether this driver can poll at
+    // all. A Jira Cloud connection can, so the default fixture says so.
+    {
+      path: "/studio/command-intake",
+      body: {
+        mode: "webhook",
+        pollSeconds: 0,
+        canReadComments: true,
+        appliesLive: true,
+        source: "default",
+      },
+    },
+    { path: "/settings", method: "PUT", body: { results: [] } },
     { path: "/studio/listening-rules", method: "POST", status: 201, body: { rule: { ruleId: "lr_1" } } },
     { path: "/onboarding", method: "POST", body: { proposalId: "pr_1" } },
   ];
@@ -111,6 +124,21 @@ async function fillTickets(value = "Hata", label = "Hata (Bug)"): Promise<void> 
   await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 }
 
+/**
+ * Walk step 5 (how approvals arrive) by ACCEPTING what the platform already
+ * does, and move on to the summary.
+ *
+ * Accepting rather than answering is the point for every test that is not
+ * about this step: an unchanged answer must not write a parameter version, so
+ * these walks also assert — by way of `settingsCalls` staying empty in the
+ * happy-path test — that the wizard does not churn a global setting on a run
+ * that never touched it.
+ */
+async function skipIntake(): Promise<void> {
+  await screen.findByText("Onaylar Maestro'ya nasıl ulaşsın?");
+  await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+}
+
 /** The body of the POST that created the listening rule. */
 function ruleBody(calls: readonly { url: string; method: string; body: unknown }[]): Record<string, unknown> {
   const call = calls.find(
@@ -153,7 +181,11 @@ describe("setup wizard", () => {
     expect(screen.getByText("Bu adım isteğe bağlı; dokunmadan geçebilirsiniz.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 
-    // Step 5 spells the configuration back as sentences, not as a field dump.
+    // Step 5 — how approvals arrive — accepted as-is; nothing changes, so no
+    // parameter is written (asserted below).
+    await skipIntake();
+
+    // Step 6 spells the configuration back as sentences, not as a field dump.
     await screen.findByText("Özet");
     expect(
       screen.getByText(
@@ -190,6 +222,7 @@ describe("setup wizard", () => {
     await fillProject();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
     await screen.findByText("Özet");
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
 
@@ -223,6 +256,7 @@ describe("setup wizard", () => {
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
 
     // Stated BEFORE the button, so the wait is expected rather than discovered.
+    await skipIntake();
     await screen.findByText("Özet");
     expect(screen.getByText(/ikinci bir yöneticinin onayını bekler/)).toBeTruthy();
 
@@ -258,6 +292,7 @@ describe("setup wizard", () => {
     await fillProject();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
     await screen.findByText("Özet");
 
     // Promising a four-eyes approval for a live binding sends the operator
@@ -317,6 +352,7 @@ describe("setup wizard", () => {
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 
       // The summary lists exactly the two points, in flow order.
+      await skipIntake();
       await screen.findByText("Özet");
       const list = screen.getByText("Ticket panoda ne olacak").nextElementSibling as HTMLElement;
       expect(within(list).getByText("Devam Ediyor")).toBeTruthy();
@@ -342,6 +378,7 @@ describe("setup wizard", () => {
       await screen.findByLabelText("İş başladığında");
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 
+      await skipIntake();
       await screen.findByText("Özet");
       expect(
         screen.getByText(
@@ -362,6 +399,7 @@ describe("setup wizard", () => {
         await screen.findByLabelText("Bilgi eksikken ticket'ı rapor edene geri ata"),
       );
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+      await skipIntake();
       await screen.findByText("Özet");
       await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
 
@@ -434,6 +472,7 @@ describe("setup wizard", () => {
         await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 
         // The summary lists only the moments that will actually fire.
+        await skipIntake();
         await screen.findByText("Özet");
         const list = screen.getByText("Ticket panoda ne olacak").nextElementSibling as HTMLElement;
         expect(within(list).getByText("Devam Ediyor")).toBeTruthy();
@@ -480,6 +519,7 @@ describe("setup wizard", () => {
         expect(onReview.disabled).toBe(true);
 
         await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+        await skipIntake();
         // … but the summary the operator signs off on does not promise it …
         await screen.findByText("Özet");
         const list = screen.getByText("Ticket panoda ne olacak").nextElementSibling as HTMLElement;
@@ -743,6 +783,7 @@ describe("setup wizard", () => {
     await fillProject();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
     await screen.findByText("Özet");
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
 
@@ -782,6 +823,7 @@ describe("setup wizard", () => {
     await fillProject();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
     await screen.findByText("Özet");
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
 
@@ -810,6 +852,7 @@ describe("setup wizard", () => {
     await fillProject();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
     await screen.findByText("Özet");
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
     await screen.findByText(/Bu ticket'lar için zaten bir dinleme kuralı var/);
@@ -863,6 +906,7 @@ describe("setup wizard", () => {
       // the live bug when a rule was written from the English list.
       await fillTickets("Görev", "Görev (Task)");
       await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+      await skipIntake();
       await screen.findByText("Özet");
       await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
 
@@ -955,6 +999,7 @@ describe("setup wizard", () => {
 
       // Its OWN sentence — the conditioned one with an empty value spliced in
       // (`değeri "" olan ticket'lar`) would describe nothing.
+      await skipIntake();
       await screen.findByText("Özet");
       expect(
         screen.getByText(
@@ -1055,6 +1100,7 @@ describe("setup wizard", () => {
 
       // Stated on the summary before it is sent — the class decides whether a
       // cloud model may see the tickets, so it is not a hidden field.
+      await skipIntake();
       await screen.findByText("Özet");
       expect(
         screen.getByText("Veri sınıfı: Açık — ticket içeriği her modele gönderilebilir."),
@@ -1153,6 +1199,7 @@ describe("setup wizard — analysis without a repository", () => {
     await fillTickets();
     await screen.findByText("Jira durumlarını da değiştirsin mi?");
     await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    await skipIntake();
 
     // The summary says WHICH MODE the binding is in — ticket-text — instead of
     // a repo sentence with a hole in it.
@@ -1188,6 +1235,7 @@ describe("setup wizard — analysis without a repository", () => {
     await fillProject(); // picks repo + platform as before
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
     await screen.findByText("Özet");
     // Repo mode's own sentence, not the ticket-text one: picking the repo
     // accepted the offer.
@@ -1228,5 +1276,311 @@ describe("setup wizard — analysis without a repository", () => {
     await userEvent.click(screen.getByRole("radio", { name: /Hata düzeltme/ }));
     await screen.findAllByText(/bir kod deposu bağlantısı gerekir ve bu kurulumda henüz tanımlı değil/);
     expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+/**
+ * Step 5 — "Onaylar Maestro'ya nasıl ulaşsın?".
+ *
+ * The failure this step closes is the most expensive one on the platform.
+ * `/approve` written on a ticket is the documented way to pass a gate, and
+ * whether it was ever READ depended on `JIRA_POLL_MS` — an environment variable
+ * in a file on a server a bank operator has no shell on. So a run reached a
+ * gate, a human approved it in the only place they had been told to, and the
+ * gate waited forever with nothing anywhere naming the cause.
+ *
+ * What is worth testing is therefore not "does a radio render" but the promises
+ * this step makes: that the answer is SAVED where the platform reads it, that
+ * an unchanged answer writes nothing, that an install which cannot poll is told
+ * so instead of being allowed to pick it, and that the operator learns when the
+ * change takes effect rather than being left to find out from a stuck ticket.
+ */
+describe("setup wizard — how approvals arrive", () => {
+  /** A platform whose driver cannot read comments, so polling is impossible. */
+  function noReader(): Route[] {
+    return baseRoutes([
+      {
+        path: "/studio/command-intake",
+        body: {
+          mode: "webhook",
+          pollSeconds: 0,
+          canReadComments: false,
+          appliesLive: true,
+          source: "default",
+        },
+      },
+    ]);
+  }
+
+  /** Walk to step 5 with the shortest possible path. */
+  async function reachIntake(routes: readonly Route[] = baseRoutes()): Promise<
+    ReturnType<typeof stubFetch>
+  > {
+    const stub = stubFetch(routes);
+    renderScreen(<SetupScreen />, { fetchImpl: stub.fetchImpl });
+    await chooseFlow();
+    await fillProject();
+    await fillTickets();
+    await screen.findByText("Jira durumlarını da değiştirsin mi?");
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    await screen.findByText("Onaylar Maestro'ya nasıl ulaşsın?");
+    return stub;
+  }
+
+  /** Every PUT /settings the wizard made. */
+  function settingsCalls(
+    calls: readonly { url: string; method: string; body: unknown }[],
+  ): { url: string; method: string; body: unknown }[] {
+    return calls.filter((c) => c.url.endsWith("/settings") && c.method === "PUT");
+  }
+
+  it("asks the question in outcome language, with no environment variable in sight", async () => {
+    await reachIntake();
+
+    // The three answers, each said as what it DOES rather than as its mechanism.
+    expect(screen.getByRole("radio", { name: /Jira bize haber versin/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /İkisi birden/ })).toBeTruthy();
+    // The whole point of the step: an operator never has to know this name.
+    expect(screen.queryByText(/JIRA_POLL_MS/)).toBeNull();
+  });
+
+  /**
+   * The wizard opens on what the PLATFORM does, not on its own preference.
+   * Showing "webhook" to an install that has been polling for months is a lie
+   * the operator would then save back over a working configuration.
+   */
+  it("opens on the answer that is already in force", async () => {
+    await reachIntake(
+      baseRoutes([
+        {
+          path: "/studio/command-intake",
+          body: {
+            mode: "poll",
+            pollSeconds: 90,
+            canReadComments: true,
+            appliesLive: true,
+            source: "env",
+          },
+        },
+      ]),
+    );
+
+    expect(
+      (screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect((screen.getByLabelText("Sorma aralığı (saniye)") as HTMLInputElement).value).toBe("90");
+  });
+
+  /** The interval is only asked for when something will actually read it. */
+  it("asks for an interval only once an answer that polls is chosen", async () => {
+    await reachIntake();
+    expect(screen.queryByLabelText("Sorma aralığı (saniye)")).toBeNull();
+
+    await userEvent.click(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }));
+    expect(await screen.findByLabelText("Sorma aralığı (saniye)")).toBeTruthy();
+    // The cost of the answer, stated where the answer is given.
+    expect(screen.getByText(/yoklama Jira'ya yük bindirir/)).toBeTruthy();
+  });
+
+  it("saves the chosen intake and interval as the platform's own parameters", async () => {
+    const { calls } = await reachIntake();
+
+    await userEvent.click(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }));
+    const seconds = await screen.findByLabelText("Sorma aralığı (saniye)");
+    await userEvent.clear(seconds);
+    await userEvent.type(seconds, "120");
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+
+    await screen.findByText("Özet");
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    await waitFor(() => {
+      const put = settingsCalls(calls);
+      expect(put).toHaveLength(1);
+      const changes = (put[0]!.body as { changes: { key: string; value: unknown }[] }).changes;
+      expect(changes).toEqual([
+        { key: "jira.command_intake", scopeRef: null, value: "poll" },
+        { key: "jira.poll_seconds", scopeRef: null, value: 120 },
+      ]);
+    });
+  });
+
+  /**
+   * A GLOBAL setting in a per-project wizard. An operator adding their fourth
+   * project must not mint a new parameter version — and a new audit row — for a
+   * value nobody touched.
+   */
+  it("writes no parameter at all when the answer was not changed", async () => {
+    const { calls } = await reachIntake();
+
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    await screen.findByText("Özet");
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    await screen.findByText("Kurulum tamam");
+    expect(settingsCalls(calls)).toHaveLength(0);
+  });
+
+  /**
+   * Switching polling OFF must not leave an interval behind that reads as
+   * "still polling"; the mode is what decides, and zero says so on the wire.
+   */
+  it("sends a zero interval when the operator goes back to webhook-only", async () => {
+    const { calls } = await reachIntake(
+      baseRoutes([
+        {
+          path: "/studio/command-intake",
+          body: {
+            mode: "poll",
+            pollSeconds: 60,
+            canReadComments: true,
+            appliesLive: true,
+            source: "param",
+          },
+        },
+      ]),
+    );
+
+    await userEvent.click(screen.getByRole("radio", { name: /Jira bize haber versin/ }));
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    await screen.findByText("Özet");
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    await waitFor(() => {
+      const changes = (settingsCalls(calls)[0]!.body as {
+        changes: { key: string; value: unknown }[];
+      }).changes;
+      expect(changes[0]!.value).toBe("webhook");
+      expect(changes[1]!.value).toBe(0);
+    });
+  });
+
+  /**
+   * THE capability test. Silently accepting an answer that cannot work is the
+   * worst outcome available on this screen: the operator would leave believing
+   * approvals are read, and the gate would wait forever exactly as before.
+   */
+  it("names why polling is unavailable and refuses to move on with it", async () => {
+    await reachIntake(noReader());
+
+    // Shown and explained, never hidden: an operator has to be able to see the
+    // answer to "why can't I poll?".
+    expect(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ })).toBeTruthy();
+    await userEvent.click(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }));
+
+    await screen.findAllByText(/tanımlı iş bağlantısı ticket yorumlarını okuyamıyor/);
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("still lets the webhook answer through on an install that cannot poll", async () => {
+    await reachIntake(noReader());
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  /**
+   * An unreached or failed capability read is UNKNOWN, not "cannot". Telling an
+   * operator their driver cannot poll on the strength of a 404 would push them
+   * back onto the webhook — the path that was already failing when they came to
+   * this screen.
+   */
+  it("does not accuse the driver of anything while the capability is unknown", async () => {
+    // No /studio/command-intake route at all: the harness answers 404.
+    await reachIntake(
+      baseRoutes().filter((r) => r.path !== "/studio/command-intake"),
+    );
+
+    await userEvent.click(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }));
+    expect(screen.queryByText(/ticket yorumlarını okuyamıyor/)).toBeNull();
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  /** An interval below the floor is a Jira outage, not a setting. */
+  it("refuses an interval that would hammer the bank's Jira", async () => {
+    await reachIntake();
+    await userEvent.click(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }));
+    const seconds = await screen.findByLabelText("Sorma aralığı (saniye)");
+    await userEvent.clear(seconds);
+    await userEvent.type(seconds, "2");
+
+    expect(screen.getByText(/Sorma aralığı çok kısa/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("refuses an interval so long the approval would sit for hours", async () => {
+    await reachIntake();
+    await userEvent.click(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }));
+    const seconds = await screen.findByLabelText("Sorma aralığı (saniye)");
+    await userEvent.clear(seconds);
+    await userEvent.type(seconds, "99999");
+
+    expect(screen.getByText(/Sorma aralığı çok uzun/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  /**
+   * "İkisi birden" is the answer that raises the obvious question — will my
+   * approval be acted on twice? The operator is entitled to read the mechanism,
+   * not to be told to trust the platform.
+   */
+  it("explains the double-processing guard when both paths are chosen", async () => {
+    await reachIntake();
+    expect(screen.queryByText(/Aynı onay iki kez işlenmez/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("radio", { name: /İkisi birden/ }));
+    expect(await screen.findByText(/Aynı onay iki kez işlenmez/)).toBeTruthy();
+  });
+
+  /**
+   * WHEN the change applies, read from the platform rather than assumed.
+   * Promising "hemen geçerli" on a deployment that needs a restart leaves an
+   * operator approving tickets into a void — the same silent wait this step
+   * exists to end.
+   */
+  it("promises a live change only when the platform reports one", async () => {
+    await reachIntake();
+    expect(screen.getByText(/kaydedildiği anda geçerli olur/)).toBeTruthy();
+  });
+
+  it("says a restart is needed when the platform says so", async () => {
+    await reachIntake(
+      baseRoutes([
+        {
+          path: "/studio/command-intake",
+          body: {
+            mode: "webhook",
+            pollSeconds: 0,
+            canReadComments: true,
+            appliesLive: false,
+            source: "default",
+          },
+        },
+      ]),
+    );
+
+    expect(
+      screen.getByText(/ancak Maestro servisi yeniden başlatıldıktan sonra geçerli olur/),
+    ).toBeTruthy();
+  });
+
+  /** The one answer here that is not about the project being configured. */
+  it("warns that the choice is platform-wide, not per-project", async () => {
+    await reachIntake();
+    expect(screen.getByText(/Bu seçim tüm platform için geçerlidir/)).toBeTruthy();
+  });
+
+  /** The summary the operator signs off on has to carry this answer too. */
+  it("summarises the chosen intake before the save button", async () => {
+    await reachIntake();
+    await userEvent.click(screen.getByRole("radio", { name: /Biz Jira'ya soralım/ }));
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+
+    await screen.findByText("Özet");
+    expect(screen.getByText(/belirli aralıklarla Jira'ya sorarak alacak/)).toBeTruthy();
+    expect(screen.getByText("Sorma aralığı: 60 saniye.")).toBeTruthy();
   });
 });

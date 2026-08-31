@@ -105,8 +105,99 @@ export const ASSIGNED_MATCH_VALUE = "*";
 export const DATA_CLASSES = ["acik", "dahili", "gizli"] as const;
 export type DataClass = (typeof DATA_CLASSES)[number];
 
-/** The five panes, in the order an operator walks them. */
-export const SETUP_STEPS = ["flow", "project", "tickets", "status", "review"] as const;
+/**
+ * How the commands written on a ticket reach Maestro (`jira.command_intake`).
+ *
+ * `/approve` and `/reject <sebep>` arrive as ticket comments, and there are
+ * exactly two ways to read one: Jira calls us (the webhook), or we ask Jira
+ * (the poller). They are ALTERNATIVES, not a checklist — which is why this is
+ * one question with three answers rather than two independent switches.
+ */
+export const COMMAND_INTAKES = ["webhook", "poll", "both"] as const;
+export type CommandIntake = (typeof COMMAND_INTAKES)[number];
+
+/** Whether this answer makes Maestro poll Jira at an interval. */
+export function intakePolls(intake: CommandIntake): boolean {
+  return intake !== "webhook";
+}
+
+/**
+ * The interval offered when an operator first turns polling on, in seconds.
+ *
+ * Mirrors `jira.poll_seconds`'s seeded default. A minute is the compromise the
+ * parameter's comment argues for: a command is a person waiting at their desk,
+ * so a five-minute wait reads as the platform being broken — and reading the
+ * comments of the handful of tickets with an OPEN run is not what makes a Jira
+ * instance slow.
+ */
+export const DEFAULT_POLL_SECONDS = 60;
+
+/**
+ * The bounds the wizard accepts for the interval.
+ *
+ * A floor because 1 second is not a setting, it is an outage: this loop reads
+ * every open ticket's comment thread each round, and a bank's Jira is shared
+ * with everyone else in the bank. A ceiling because an interval measured in
+ * hours silently turns the answer "biz Jira'ya soralım" back into the failure
+ * it was meant to fix — a gate nobody can close in a working day.
+ */
+export const MIN_POLL_SECONDS = 15;
+export const MAX_POLL_SECONDS = 3600;
+
+/**
+ * Why this intake cannot be offered on this install — as a catalog key, or
+ * `null` when it can.
+ *
+ * `canReadComments` is `undefined` while the capability is still unknown (the
+ * request is in flight, or it failed), and unknown is NOT the same as "cannot":
+ * the same rule `flowUnavailableReason` follows. Telling an operator their Jira
+ * driver cannot poll because a status endpoint has not answered yet would push
+ * them onto the webhook — the one path that was already failing when they came
+ * to this screen.
+ *
+ * The answer is shown BESIDE the option and blocks "İleri" rather than hiding
+ * the choice. A silently missing option answers "why can't I poll?" with
+ * nothing, and an operator who cannot see the answer they were told to pick
+ * files a support ticket instead.
+ */
+export function intakeUnavailableReason(
+  intake: CommandIntake,
+  canReadComments: boolean | undefined,
+): string | null {
+  if (!intakePolls(intake)) return null;
+  if (canReadComments === undefined) return null;
+  return canReadComments ? null : "setup.intake.no_reader";
+}
+
+/**
+ * Whether step 5's answer differs from what the platform already holds — and
+ * therefore whether saving should write the parameters at all.
+ *
+ * The wizard is per-project and this setting is global. An operator adding
+ * their fourth project must not mint a new parameter version, and a new audit
+ * row, for a value they never touched — which is what an unconditional write
+ * would do on every run.
+ *
+ * An UNKNOWN current state (the read failed, or the endpoint is not there)
+ * counts as changed: the operator answered the question, and the only honest
+ * response to "I could not read what is in force" is to write what they said.
+ * Silently dropping the answer is the failure this whole step exists to end.
+ *
+ * The interval is only compared when the answer polls. A webhook-only draft
+ * carries whatever number the field last held, and treating that as a change
+ * would write a parameter version on a wizard run that changed nothing.
+ */
+export function intakeChanged(
+  draft: Pick<SetupDraft, "commandIntake" | "pollSeconds">,
+  current: { readonly mode: CommandIntake; readonly pollSeconds: number } | undefined,
+): boolean {
+  if (current === undefined) return true;
+  if (current.mode !== draft.commandIntake) return true;
+  return intakePolls(draft.commandIntake) && current.pollSeconds !== draft.pollSeconds;
+}
+
+/** The six panes, in the order an operator walks them. */
+export const SETUP_STEPS = ["flow", "project", "tickets", "status", "intake", "review"] as const;
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 export interface SetupDraft {
@@ -142,6 +233,19 @@ export interface SetupDraft {
   readonly statusOn: boolean;
   readonly statusDraft: StatusDraft;
   readonly reassignOnNeedInfo: boolean;
+  /**
+   * Step 5 — how `/approve` reaches Maestro (`jira.command_intake`).
+   *
+   * The one PLATFORM-WIDE answer in an otherwise per-project draft, and the
+   * wizard says so on the pane: it is written to the global parameter, so an
+   * operator running the wizard a second time for a second project is changing
+   * a setting the first project shares. Asked here anyway, because this is the
+   * screen a first-time operator sees and the setting decides whether the
+   * approval they are about to configure can ever be given from the ticket.
+   */
+  readonly commandIntake: CommandIntake;
+  /** Step 5 — the polling interval in SECONDS; ignored for webhook-only. */
+  readonly pollSeconds: number;
 }
 
 /**
@@ -169,6 +273,13 @@ export const EMPTY_SETUP_DRAFT: SetupDraft = {
   statusOn: false,
   statusDraft: EMPTY_STATUS_DRAFT,
   reassignOnNeedInfo: false,
+  // The starting answer is what the platform ALREADY does, not what the wizard
+  // recommends: the screen overwrites both fields with the stored parameters
+  // once they load, and a draft that started on "poll" would show an operator
+  // their webhook-only install as though it polled. `webhook` is also the
+  // seeded default, so the two agree on a fresh install.
+  commandIntake: "webhook",
+  pollSeconds: DEFAULT_POLL_SECONDS,
 };
 
 /**
@@ -222,6 +333,12 @@ export function stepBlockedReason(
   step: SetupStep,
   draft: SetupDraft,
   scmConnectionCount: number | null = null,
+  /**
+   * Whether the configured work driver can read a comment thread at all —
+   * `undefined` while that is still unknown. Mirrors the BFF's
+   * `canReadComments`; see `intakeUnavailableReason`.
+   */
+  canReadComments: boolean | undefined = undefined,
 ): string | null {
   switch (step) {
     case "flow":
@@ -263,6 +380,24 @@ export function stepBlockedReason(
       // filled nothing in is not blocked — `buildStatusMap` folds that back to
       // comment-only, which is exactly what the summary will say.
       return null;
+    case "intake": {
+      // A driver that cannot read a comment thread cannot poll for commands.
+      // Named rather than hidden, and it stops "İleri" — accepting the answer
+      // and then not polling is the silent failure this whole step exists to
+      // end.
+      const unavailable = intakeUnavailableReason(draft.commandIntake, canReadComments);
+      if (unavailable !== null) return unavailable;
+      // The interval only has to be sane when it is going to be USED. A
+      // webhook-only install carries whatever number the field last held, and
+      // must not be blocked by a value nothing will read.
+      if (intakePolls(draft.commandIntake)) {
+        if (!Number.isFinite(draft.pollSeconds) || draft.pollSeconds < MIN_POLL_SECONDS) {
+          return "setup.blocked.poll_too_fast";
+        }
+        if (draft.pollSeconds > MAX_POLL_SECONDS) return "setup.blocked.poll_too_slow";
+      }
+      return null;
+    }
     case "review":
       return null;
   }

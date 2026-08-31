@@ -6,8 +6,9 @@ import { canReadComments } from "../src/jira-poller.js";
  *
  * The composition root used to hand the poller `ports.work as unknown as
  * { listComments(...) }` — a cast TypeScript accepts and the runtime does not.
- * `listComments` exists ONLY on the Jira Cloud driver: the Data Center work
- * port has no such method, and Azure DevOps has no work port at all.
+ * `listComments` is a DRIVER-specific capability, not a `WorkPort` method:
+ * both Jira drivers offer it (Cloud REST v3, Data Center REST v2 — see
+ * `jira-poller-dc.test.ts`), and Azure DevOps has no work port at all.
  *
  * The consequence is the one a bank feels first. `/approve` written on the
  * ticket is the documented way to pass a gate; with no comment reader it is
@@ -21,10 +22,12 @@ describe("canReadComments", () => {
   });
 
   /**
-   * Shaped like the real Data Center work port: everything the workflow needs
-   * — ticket, comment WRITING, transition — and no comment READING.
+   * A work driver that writes comments but cannot read them. This used to be
+   * the Data Center port's exact shape; DC reads a thread now, so the case
+   * survives as the general one — a driver may still arrive without it, and
+   * the check must stay a real check rather than a cast.
    */
-  it("rejects a work driver that cannot read comments — the DC case", () => {
+  it("rejects a work driver that cannot read comments", () => {
     const dcWorkPort = {
       getTicket: () => Promise.resolve({}),
       addComment: () => Promise.resolve({ commentId: "1" }),

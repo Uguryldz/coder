@@ -32,6 +32,12 @@ import {
   type IssueSearcher,
 } from "../jira-discovery.js";
 import { canReadComments, startJiraPoller } from "../jira-poller.js";
+import {
+  startCommandIntake,
+  type CommandIntakeDecision,
+  type CommandIntakeHandle,
+} from "../command-intake.js";
+import { intakeLabel, listeningBannerLine, listeningWarningLine } from "../listening-banner.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { prepareWorkspace } from "../stores/workspace-prepare.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
@@ -200,6 +206,19 @@ export async function main(): Promise<void> {
     ]),
   };
 
+  /**
+   * The command-intake supervisor, held in a box because the two things that
+   * need it are built in the wrong order for a plain binding.
+   *
+   * `deps` has to READ its status — the wizard asks through
+   * `GET /studio/command-intake` — and the supervisor has to be handed `deps`
+   * to run commands through. One of the two must therefore be late-bound, and
+   * it is this one: the status reader below closes over the box and reads
+   * `.current` when the wizard actually asks, exactly as `discoveryRun` closes
+   * over its holder for the panel's sweep button.
+   */
+  const commandIntake: { current?: CommandIntakeHandle } = {};
+
   const deps: BffDeps = {
     work: deployment.ports.work,
     workEvents: jiraWorkEventReader(),
@@ -340,6 +359,26 @@ export async function main(): Promise<void> {
     // whether anything is looking. See `routes/listening.ts`.
     discoveryStatus,
     /**
+     * What the setup wizard reads through `GET /studio/command-intake`.
+     *
+     * Read through a HOLDER for the same reason `discoveryRun` is: `deps` is
+     * built here and the intake supervisor is started further down (it needs
+     * the work driver), so this closes over the variable and answers when the
+     * wizard actually asks. Until the supervisor exists the answer is the
+     * conservative one the route would have produced on its own — webhook-only,
+     * no comment reader, restart required — because a wizard that offers
+     * polling on an install where nothing polls is the exact failure this whole
+     * setting was added to end.
+     */
+    commandIntakeStatus: () =>
+      commandIntake.current?.status() ?? {
+        mode: "webhook" as const,
+        pollSeconds: 0,
+        canReadComments: false,
+        appliesLive: false,
+        source: "default" as const,
+      },
+    /**
      * The "şimdi tara" button.
      *
      * `deps` is built here, but the sweep is wired further down (it needs the
@@ -383,50 +422,135 @@ export async function main(): Promise<void> {
   };
 
   /**
-   * The Jira command poller (`jira-poller.ts`).
+   * HOW ticket commands reach this deployment (`command-intake.ts`).
    *
-   * Off unless `JIRA_POLL_MS` names an interval. A deployment whose webhook
-   * works does not need it, and two paths reading the same comments would
-   * answer every command twice. On, it is the ONLY way a Cloud site can close
-   * a gate: `verifyWebhook` is not supported there, so `/approve` written on
-   * the ticket reaches nothing without this loop.
+   * `/approve` and `/reject <sebep>` arrive as ticket comments, and there are
+   * exactly two ways to read one: Jira calls us (`POST /webhooks/jira`), or we
+   * ask Jira (`jira-poller.ts`). WEBHOOK IS PRIMARY on both Jira drivers — each
+   * verifies a signed delivery — and a deployment whose webhook arrives does
+   * not need the loop.
+   *
+   * The loop is the only remaining way in for the deployment where the call
+   * never ARRIVES: a Data Center inside a corporate network with no outbound
+   * route to Maestro, or a Cloud site where no webhook was ever registered.
+   * There, `/approve` written on the ticket reaches nothing without it and the
+   * gate waits forever.
+   *
+   * Running BOTH is safe rather than double-counted: the loop de-dupes by
+   * author+timestamp within the process, and behind it `decideGate` refuses a
+   * decision on a gate that is already closed — so a comment the webhook
+   * already answered costs a logged refusal, never a second approval.
+   *
+   * WHICH of the three runs is no longer decided here. It used to be read once,
+   * at boot, out of `JIRA_POLL_MS` — an environment variable, in a file, on a
+   * server a bank operator has no shell on. The answer now comes from a
+   * parameter the setup wizard asks for in words, and `startCommandIntake`
+   * SUPERVISES it: the stored answer is re-read on a timer and the poller is
+   * started, stopped or re-intervalled to match, so a change saved from the
+   * panel applies without a container restart. `JIRA_POLL_MS` survives as the
+   * boot-time default for installs that already set it — see
+   * `resolveCommandIntake` for the precedence and why it is that way round.
    */
-  const pollMs = Number(env.source["JIRA_POLL_MS"]?.trim() ?? 0);
   const commentReader = canReadComments(deployment.ports.work) ? deployment.ports.work : null;
-  if (Number.isFinite(pollMs) && pollMs > 0 && commentReader !== null) {
-    startJiraPoller({
-      deps: resolveDeps(deps),
-      // The concrete driver: reading a thread is not on `WorkPort`. Asked for
-      // by name rather than cast — see `canReadComments`.
-      comments: commentReader,
-      intervalMs: pollMs,
-      // Live runs, re-read each round so a gate opened a second ago is polled
-      // without waiting for a restart.
-      openTickets: async () =>
-        (
-          await db.workflowRun.findMany({
-            where: { status: { notIn: ["done", "cancelled"] } },
-            orderBy: { startedAt: "desc" },
-            take: 50,
-          })
-        ).map((row) => row.ticketKey as TicketKey),
-    });
-    console.log(`[maestro] jira komut yoklaması açık (${pollMs} ms)`);
-  } else if (Number.isFinite(pollMs) && pollMs > 0) {
+
+  /**
+   * The BANNER, printed before the first round.
+   *
+   * This is the line to ask an operator for when they report that listening
+   * does not work: it names the driver, the endpoint Jira has to reach, what is
+   * in force, where that answer came from, and whether the driver can read a
+   * comment at all. See `listening-banner.ts` for why each of those five is on
+   * it and why no secret is.
+   */
+  const bannerFor = (intake: CommandIntakeDecision): void => {
+    const banner = {
+      driver: deployment.selection.work.driver,
+      canReadComments: commentReader !== null,
+      webhookPath: "/webhooks/jira",
+      intake,
+    };
+    console.info(listeningBannerLine(banner));
+    const warning = listeningWarningLine(banner);
+    if (warning !== null) console.warn(warning);
+  };
+
+  /** What the banner last announced, so a LIVE change prints a delta and not a repeat. */
+  let announced: CommandIntakeDecision | null = null;
+
+  commandIntake.current = startCommandIntake({
     /**
-     * Asked for, and impossible — said once, at boot, instead of throwing per
-     * ticket per interval into a log nobody reads.
-     *
-     * This is the failure a bank feels first: `/approve` on the ticket is the
-     * documented way to pass a gate, and on a driver with no comment reader it
-     * is never seen. The run waits forever and looks stuck for no reason.
+     * The two parameters, re-read EVERY round. That is what makes the setting
+     * apply without a restart, and it is the whole reason the supervisor exists.
      */
-    console.warn(
-      `[maestro] jira komut yoklaması İSTENDİ (${pollMs} ms) ama bu iş sürücüsü yorum ` +
-        "okuma sunmuyor — yoklama kapalı. Ticket'a yazılan /approve OKUNMAZ; " +
-        "onaylar panelden verilmelidir. (Yorum okuma yalnız Jira Cloud sürücüsünde vardır.)",
-    );
-  }
+    readStored: async () => {
+      const [mode, seconds] = await Promise.all([
+        db.paramVersion.findFirst({
+          where: { key: "jira.command_intake" },
+          orderBy: { version: "desc" },
+        }),
+        db.paramVersion.findFirst({
+          where: { key: "jira.poll_seconds" },
+          orderBy: { version: "desc" },
+        }),
+      ]);
+      return { mode: mode?.valueJson, pollSeconds: seconds?.valueJson };
+    },
+    // Backwards compatibility: with no stored answer this variable still
+    // decides, so an install that has been polling since before the setting
+    // existed keeps polling after the upgrade.
+    envPollMs: env.source["JIRA_POLL_MS"],
+    // The server-side lock: a driver with no comment reader never polls, no
+    // matter what is stored. Asked once — a driver does not grow a method at
+    // runtime — and reported honestly on the status the wizard reads.
+    canReadComments: commentReader !== null,
+    startPoller: (intervalMs) =>
+      startJiraPoller({
+        deps: resolveDeps(deps),
+        // The concrete driver: reading a thread is not on `WorkPort`. Asked for
+        // by name rather than cast — see `canReadComments`. Non-null by
+        // construction: `startPoller` is only called when the flag above is true.
+        comments: commentReader as NonNullable<typeof commentReader>,
+        intervalMs,
+        // Live runs, re-read each round so a gate opened a second ago is polled
+        // without waiting for a restart.
+        openTickets: async () =>
+          (
+            await db.workflowRun.findMany({
+              where: { status: { notIn: ["done", "cancelled"] } },
+              orderBy: { startedAt: "desc" },
+              take: 50,
+            })
+          ).map((row) => row.ticketKey as TicketKey),
+      }),
+    /**
+     * Every decision the supervisor takes, said out loud — but only when it
+     * CHANGED.
+     *
+     * The first call is the boot banner. Every later one is an operator having
+     * saved a different answer in the panel, and printing the transition is
+     * what lets them verify from the log that their click took effect. Printing
+     * the unchanged answer every thirty seconds would bury it.
+     */
+    onDecision: (intake) => {
+      if (announced === null) {
+        announced = intake;
+        bannerFor(intake);
+        return;
+      }
+      if (
+        announced.mode === intake.mode &&
+        announced.pollSeconds === intake.pollSeconds &&
+        announced.source === intake.source
+      ) {
+        return;
+      }
+      console.info(
+        `[dinleme] komut alımı değişti: ${intakeLabel(announced)} → ${intakeLabel(intake)} ` +
+          `(kaynak: ${intake.source === "param" ? "panel" : intake.source === "env" ? "JIRA_POLL_MS" : "varsayılan"})`,
+      );
+      announced = intake;
+    },
+  });
 
   /**
    * Ticket DISCOVERY (`jira-discovery.ts`).
@@ -568,6 +692,11 @@ export async function main(): Promise<void> {
   }
 
   install(async () => {
+    // The supervision timer and any running poller, stopped BEFORE the socket
+    // closes. A loop that outlives the process's other resources keeps handles
+    // open — and worse, a round that starts during shutdown reaches a database
+    // that is about to disconnect.
+    commandIntake.current?.stop();
     await app.close();
     await temporal.close();
     await db.$disconnect();

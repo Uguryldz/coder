@@ -156,6 +156,64 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     defaultValue: 300,
   },
   {
+    /**
+     * HOW Maestro receives the commands written on a ticket — `/approve`,
+     * `/reject <sebep>` and the rest.
+     *
+     * Three answers, and they are alternatives rather than a checklist:
+     *  · `webhook`  — Jira calls us. The default, and the right answer whenever
+     *                 a site can register the webhook: a command is acted on in
+     *                 the second it is written and Jira is never polled.
+     *  · `poll`     — we ask Jira. The answer for a Data Center inside a
+     *                 corporate network with no outbound route to Maestro, or a
+     *                 Cloud site where nobody may register a webhook.
+     *  · `both`     — webhook primary, polling as the safety net. Costs Jira a
+     *                 request per interval and is not free; it exists because a
+     *                 webhook that silently stops arriving is invisible.
+     *
+     * A PARAMETER rather than an environment variable, for the same reason as
+     * `jira.discover_seconds` above: this is an operational choice an operator
+     * makes while watching the platform behave, not a deployment fact. Asking a
+     * bank operator to know `JIRA_POLL_MS` — and to get a shell on the server
+     * and restart a container to change it — is what made this setting
+     * effectively unreachable, so a gate stayed open and nobody could say why.
+     * `JIRA_POLL_MS` remains the BOOT-TIME default for installs that already
+     * set it (see `apps/deploy/src/bin/bff.ts`); a stored value here wins.
+     *
+     * Not guarded: it changes how a command ARRIVES, never who may give one.
+     * Every command still runs through `handleCommand`, which checks the gate's
+     * membership against the Jira account that wrote the comment, whichever
+     * path carried it.
+     */
+    key: "jira.command_intake",
+    scope: "global",
+    type: "enum",
+    guarded: false,
+    enumValues: ["webhook", "poll", "both"],
+    descriptionKey: "params.description.jira_command_intake",
+    defaultValue: "webhook",
+  },
+  {
+    /**
+     * How often Maestro asks Jira for new ticket comments, in SECONDS — the
+     * interval behind `jira.command_intake` = `poll`/`both`. Ignored when the
+     * intake is webhook-only.
+     *
+     * Seconds for the same reason the sweep interval is (an operator asked for
+     * 80s and could not express it in minutes), and 60 rather than the sweep's
+     * 300 because these are two different costs: a JQL search across a project
+     * is expensive and a comment read on the handful of tickets with an OPEN
+     * run is not. A command is a person waiting at their desk, so the interval
+     * that matters is the one that keeps them waiting.
+     */
+    key: "jira.poll_seconds",
+    scope: "global",
+    type: "number",
+    guarded: false,
+    descriptionKey: "params.description.jira_poll_seconds",
+    defaultValue: 60,
+  },
+  {
     // M54 — stuck protection: three rejections at the same gate OR three
     // identical CI failures hand the work to a human in ai_assist, with the
     // whole journal. N is a parameter precisely because 3 is a guess.

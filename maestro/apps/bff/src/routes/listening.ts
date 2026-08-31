@@ -156,6 +156,42 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
   });
 
   /**
+   * How ticket COMMANDS reach this deployment — the setup wizard's fifth
+   * question, answered by the platform rather than guessed by the screen.
+   *
+   * `/approve` and `/reject <sebep>` arrive as ticket comments, and there are
+   * two ways to read one: Jira calls us (webhook), or we ask Jira (the poller
+   * in `apps/deploy/src/jira-poller.ts`). The wizard asks which, and it can
+   * only ask honestly if it knows three things this route reports: what is in
+   * force now, whether the work driver can read a comment thread AT ALL, and
+   * whether a saved change is picked up without a service restart.
+   *
+   * The middle one is the reason this endpoint exists. Offering "biz Jira'ya
+   * soralım" on a driver with no `listComments`, accepting the answer and then
+   * never polling is the worst outcome available on this screen — an approval
+   * gate that waits forever with a setting that says it should not.
+   *
+   * A deployment that reports nothing gets the CONSERVATIVE answer rather than
+   * a 503: webhook-only, no comment reader, restart required. The wizard has to
+   * stay walkable on an install that predates this route, and every one of
+   * those defaults makes it promise less rather than more.
+   */
+  app.get("/studio/command-intake", { preHandler: readHandler }, async (_request, reply) => {
+    const read = deps.commandIntakeStatus;
+    return reply.code(200).send(
+      read === undefined
+        ? {
+            mode: "webhook",
+            pollSeconds: 0,
+            canReadComments: false,
+            appliesLive: false,
+            source: "default",
+          }
+        : read(),
+    );
+  });
+
+  /**
    * Sweep NOW — the "test" button behind the rules screen.
    *
    * Asked for directly after a sweep that was configured, healthy and taking

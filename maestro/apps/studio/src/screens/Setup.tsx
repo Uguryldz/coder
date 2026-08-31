@@ -24,17 +24,21 @@ import {
   webhookAcked,
   writeFlag,
 } from "./dash/setup-state.ts";
-import { FlowPane, ProjectPane, StatusPane, TicketsPane } from "./setup/SetupPanes.tsx";
+import { FlowPane, IntakePane, ProjectPane, StatusPane, TicketsPane } from "./setup/SetupPanes.tsx";
 import type { PaneData } from "./setup/SetupPanes.tsx";
 import { DonePane, ReviewPane } from "./setup/ReviewPane.tsx";
 import {
   ASSIGNED_MATCH_VALUE,
+  DEFAULT_POLL_SECONDS,
   EMPTY_SETUP_DRAFT,
   SETUP_STEPS,
   bindsNoRepository,
   flowDefaults,
   flowNeedsRepository,
+  intakeChanged,
+  intakePolls,
   stepBlockedReason,
+  type CommandIntake,
   type SetupDraft,
   type SetupStep,
 } from "./setup/model.ts";
@@ -53,14 +57,23 @@ import "./shared/screens.css";
  * map is buried inside that form, or that binding a project needs a colleague
  * to approve it before anything runs.
  *
- * So the wizard asks the five questions in the order the ANSWERS depend on each
+ * So the wizard asks the six questions in the order the ANSWERS depend on each
  * other, in outcome language:
  *
  *   1 ne yapmak istiyorsun   → the flow type, which decides the defaults below
  *   2 hangi proje & uygulama → the Jira project and the repo (four-eyes)
  *   3 hangi ticket'lar       → the listening rule's trigger
  *   4 Jira durumları         → the optional status map, OFF by default
- *   5 özet & kaydet          → in sentences, then two writes
+ *   5 onaylar nasıl gelsin   → webhook / yoklama / ikisi, the command intake
+ *   6 özet & kaydet          → in sentences, then the writes
+ *
+ * Step 5 is the one that is not about the project at all: it is the global
+ * `jira.command_intake` parameter, asked here because this is the screen a
+ * first-time operator sees and because the answer decides whether the approval
+ * gates the other five steps create can ever be closed from a ticket. It used
+ * to be reachable only as `JIRA_POLL_MS` in a file on the server — so on an
+ * install whose webhook could not arrive, `/approve` was never read and the run
+ * waited forever with nothing saying why.
  *
  * Nothing here is a new capability. Every field maps to something `/projects`
  * can already set, every write goes to an endpoint that already exists, and the
@@ -75,6 +88,30 @@ import "./shared/screens.css";
 
 /** Mirrors the BFF's WRITE_ROLES for both surfaces this wizard writes to. */
 const WRITE_ROLES = ["admin"] as const;
+
+/**
+ * What `GET /studio/command-intake` answers; see the BFF route for why each
+ * field is there. `canReadComments` is the capability the wizard cannot guess
+ * and must not assume.
+ */
+interface CommandIntakeStatus {
+  readonly mode: CommandIntake;
+  readonly pollSeconds: number;
+  readonly canReadComments: boolean;
+  readonly appliesLive: boolean;
+  readonly source: "param" | "env" | "default";
+}
+
+/**
+ * The two parameter keys step 5 writes (`packages/db/src/params-defaults.ts`).
+ *
+ * Named here rather than inlined at the call site because they are a CONTRACT
+ * with the seed: a typo would be a 404 `unknown_param` at save time, on the
+ * last click of a five-step wizard, after the listening rule has already been
+ * written.
+ */
+const INTAKE_PARAM_KEY = "jira.command_intake";
+const POLL_SECONDS_PARAM_KEY = "jira.poll_seconds";
 
 export function SetupScreen(): ReactNode {
   const t = useT();
@@ -186,6 +223,56 @@ export function SetupScreen(): ReactNode {
   const boundProjects = routing.data?.projects?.map((p) => p.projectKey) ?? [];
   const alreadyBound = draft.jiraProject !== "" && boundProjects.includes(draft.jiraProject);
 
+  /**
+   * How ticket commands reach this platform TODAY — step 5's starting point,
+   * and its capability check.
+   *
+   * Read rather than assumed for two separate reasons. The wizard must open on
+   * what the platform actually does (showing "webhook" to an install that has
+   * been polling for months is a lie the operator would then save back), and it
+   * must know whether the work driver can read a comment thread at all — the
+   * one fact that decides whether "biz Jira'ya soralım" is an answer or a
+   * silent no-op.
+   *
+   * `retry: false` and a soft failure: an older BFF has no such route, and a
+   * 404 must leave the step walkable with its capability UNKNOWN rather than
+   * blocking a wizard over a question that is optional to the rule being
+   * written.
+   */
+  const intake = useQuery({
+    queryKey: ["command-intake"],
+    queryFn: ({ signal }) => api.get<CommandIntakeStatus>("/studio/command-intake", { signal }),
+    retry: false,
+  });
+
+  /**
+   * Adopt the platform's current answer once — never after the operator has
+   * touched the radio group.
+   *
+   * Same discipline as the bot-account pre-fill above: a live value fills an
+   * untouched field and never overwrites a decision. Without the touch guard a
+   * refetch would silently walk an operator's choice back to what the server
+   * still holds, mid-wizard, with no visible cause.
+   */
+  const [intakeTouched, setIntakeTouched] = useState(false);
+  const intakeMode = intake.data?.mode;
+  const intakePollSeconds = intake.data?.pollSeconds;
+  useEffect(() => {
+    if (intakeTouched || intakeMode === undefined) return;
+    setDraft((current) => ({
+      ...current,
+      commandIntake: intakeMode,
+      // A platform that is not polling reports 0 seconds, which is not an
+      // interval an operator can be shown in a field: it is the ABSENCE of one.
+      // The offered default takes its place, so switching to "yoklama" starts
+      // from a sane number rather than from zero.
+      pollSeconds:
+        typeof intakePollSeconds === "number" && intakePollSeconds > 0
+          ? intakePollSeconds
+          : DEFAULT_POLL_SECONDS,
+    }));
+  }, [intakeMode, intakePollSeconds, intakeTouched]);
+
   // The bot's own accountId, learned when a Jira connection was tested. With it
   // step 3 pre-fills itself instead of asking an operator to hand-copy a 40-char
   // GUID out of a Jira profile URL.
@@ -276,6 +363,12 @@ export function SetupScreen(): ReactNode {
         : null,
     statusNames: statusNames.data?.ok === true ? (statusNames.data.values ?? []) : [],
     botKnown: botAccountId !== null,
+    // UNDEFINED until the platform has actually answered. An unreached or
+    // failed read must not be rendered as "this driver cannot poll" — that
+    // sentence pushes the operator back onto the webhook, which is the path
+    // that was already failing when they came to this screen.
+    canReadComments: intake.data?.canReadComments,
+    intakeAppliesLive: intake.data?.appliesLive,
   };
 
   // ── prerequisites ─────────────────────────────────────────────────────────
@@ -316,6 +409,43 @@ export function SetupScreen(): ReactNode {
    */
   const save = useMutation({
     mutationFn: async (input: SetupDraft) => {
+      /**
+       * Command intake FIRST, before either of the two writes below.
+       *
+       * Order chosen the same way the two existing writes were: by what a
+       * partial failure leaves behind. This one decides whether an approval
+       * given on a ticket is ever READ, so it must not sit behind a listening
+       * rule that can legitimately fail on a duplicate trigger — an operator
+       * re-running the wizard after that 409 would have configured everything
+       * except the one setting that lets them approve anything.
+       *
+       * Written through `PUT /settings`, which is the platform's ONE parameter
+       * path (`putParam`): a second write route around it would mean the audit
+       * trail and the four-eyes guard depend on which screen was used. Neither
+       * key is guarded, so both come back `applied` rather than `pending`.
+       *
+       * Skipped entirely when the answer has not changed. This is a GLOBAL
+       * setting in a per-project wizard: an operator adding their fourth
+       * project should not write a new parameter version — and a new audit row
+       * — for a value nobody touched.
+       */
+      if (intakeChanged(input, intake.data)) {
+        await api.put("/settings", {
+          changes: [
+            { key: INTAKE_PARAM_KEY, scopeRef: null, value: input.commandIntake },
+            // The interval travels even for a webhook-only answer, so the
+            // number the operator last chose survives switching polling off and
+            // on again. `jira.command_intake` is what decides whether anything
+            // reads it — the interval alone never starts a poller.
+            {
+              key: POLL_SECONDS_PARAM_KEY,
+              scopeRef: null,
+              value: intakePolls(input.commandIntake) ? input.pollSeconds : 0,
+            },
+          ],
+        });
+      }
+
       await api.post<{ rule: unknown }>("/studio/listening-rules", {
         projectKey: input.jiraProject,
         assigneeAccountId: input.assigneeAccountId.trim(),
@@ -373,6 +503,10 @@ export function SetupScreen(): ReactNode {
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["listening-rules"] });
       void queryClient.invalidateQueries({ queryKey: ["routing"] });
+      // The intake parameters may have just changed; re-read so a second run of
+      // the wizard opens on what is now in force rather than on the value this
+      // one replaced.
+      void queryClient.invalidateQueries({ queryKey: ["command-intake"] });
       setFinished(result);
       toast.show("success", t("setup.toast.saved"));
     },
@@ -401,7 +535,7 @@ export function SetupScreen(): ReactNode {
 
   // The repository count is what step 1 needs: a flow that writes code cannot
   // be walked toward on an install that has no repository connection.
-  const blocked = stepBlockedReason(step, draft, data.scmConnectionCount);
+  const blocked = stepBlockedReason(step, draft, data.scmConnectionCount, data.canReadComments);
   const isLast = stepIndex === SETUP_STEPS.length - 1;
 
   const goBack = (): void => {
@@ -560,7 +694,23 @@ export function SetupScreen(): ReactNode {
         />
       )}
       {step === "status" && <StatusPane draft={draft} data={data} onChange={patch} />}
-      {step === "review" && <ReviewPane draft={draft} alreadyBound={alreadyBound} />}
+      {step === "intake" && (
+        <IntakePane
+          draft={draft}
+          data={data}
+          onChange={(next) => {
+            // Any touch of this step's two fields stops the platform's own
+            // answer from being adopted over it on the next refetch.
+            if (next.commandIntake !== undefined || next.pollSeconds !== undefined) {
+              setIntakeTouched(true);
+            }
+            patch(next);
+          }}
+        />
+      )}
+      {step === "review" && (
+        <ReviewPane draft={draft} alreadyBound={alreadyBound} intakeAppliesLive={data.intakeAppliesLive} />
+      )}
 
       <Card>
         <div className="screen-actions">

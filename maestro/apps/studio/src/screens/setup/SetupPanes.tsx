@@ -4,9 +4,14 @@ import { Card, Input, Select } from "../../ui/index.ts";
 import { englishAside, matchValueLabel } from "../common/jira-english.ts";
 import { STATUS_POINTS, firesFor, type StatusPoint } from "../common/status-map.ts";
 import {
+  COMMAND_INTAKES,
   DATA_CLASSES,
   FLOW_TYPES,
+  MAX_POLL_SECONDS,
+  MIN_POLL_SECONDS,
   flowUnavailableReason,
+  intakePolls,
+  intakeUnavailableReason,
   type DataClass,
   type FlowType,
   type MatchKind,
@@ -59,6 +64,28 @@ export interface PaneData {
   readonly statusNames: readonly string[];
   /** True once a connection has reported a bot account id (step 3's pre-fill). */
   readonly botKnown: boolean;
+  /**
+   * Whether the configured work driver can read a ticket's comment thread —
+   * `undefined` while that is still unknown (the request is in flight, or the
+   * endpoint is not there).
+   *
+   * The wizard's answer to the worst outcome available here: an operator picks
+   * "biz Jira'ya soralım", the wizard saves it, and nothing ever polls because
+   * the driver has no `listComments`. Mirrors the BFF's own `canReadComments`
+   * check rather than a guess from the connection's `kind` — which driver
+   * offers what has changed once already, and a screen that hardcodes the
+   * answer goes stale silently.
+   */
+  readonly canReadComments: boolean | undefined;
+  /**
+   * Whether the poller can be started/stopped WITHOUT restarting the service,
+   * as the platform itself reports it. `undefined` while unknown.
+   *
+   * Decides which of two sentences the pane shows, and they are not
+   * interchangeable: "hemen devreye girer" on a deployment that needs a restart
+   * is exactly the silent wait this step exists to end.
+   */
+  readonly intakeAppliesLive: boolean | undefined;
 }
 
 export interface PaneProps {
@@ -478,6 +505,138 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
           </p>
         </>
       )}
+    </Card>
+  );
+}
+
+/**
+ * Step 5 — "Onaylar Maestro'ya nasıl ulaşsın?".
+ *
+ * The step this wizard was missing, and the failure it closes is the most
+ * expensive one on the platform: `/approve` written on a ticket is the
+ * documented way to pass a gate, and whether it is ever READ depended on
+ * `JIRA_POLL_MS` — an environment variable in a file on the server, which a
+ * bank operator cannot edit and cannot be expected to have heard of. So a run
+ * would reach an approval gate, a human would approve it in the only place they
+ * were told to, and the gate would wait forever with nothing anywhere saying
+ * why.
+ *
+ * Asked as ONE question with three answers rather than two switches, because
+ * webhook and polling are alternatives: they read the same comments, and an
+ * operator who understood them as independent options would turn both on
+ * without meaning to pay for both.
+ *
+ * Its own step rather than a field on step 2 for a reason the pane states out
+ * loud: this is the one PLATFORM-WIDE answer in a per-project wizard. Buried in
+ * "hangi proje, hangi uygulama?" it would read as a property of that project,
+ * and the second run of the wizard would silently change the first project's
+ * behaviour.
+ */
+export function IntakePane({ draft, data, onChange }: PaneProps): ReactNode {
+  const t = useT();
+  const polls = intakePolls(draft.commandIntake);
+
+  return (
+    <Card title={t("setup.intake.title")} subtitle={t("setup.intake.sub")}>
+      <p className="scr-prose">{t("setup.intake.intro")}</p>
+
+      <div className="setup-choices" role="radiogroup" aria-label={t("setup.intake.title")}>
+        {COMMAND_INTAKES.map((intake) => {
+          /**
+           * Why this answer cannot be given on this install, if it cannot.
+           *
+           * Shown, selectable and explained — never hidden. The two polling
+           * answers are unavailable on a driver with no comment reader, and an
+           * operator whose webhook cannot arrive is precisely the person who
+           * came here to pick one: silence would leave them clicking "İleri"
+           * on a setting that does nothing.
+           */
+          const blocked = intakeUnavailableReason(intake, data.canReadComments);
+          return (
+            <label
+              key={intake}
+              className={
+                "setup-choice" +
+                (draft.commandIntake === intake ? " setup-choice--on" : "") +
+                (blocked === null ? "" : " setup-choice--blocked")
+              }
+            >
+              <input
+                type="radio"
+                name="setup-intake"
+                value={intake}
+                checked={draft.commandIntake === intake}
+                onChange={() => onChange({ commandIntake: intake })}
+              />
+              <span className="setup-choice__body">
+                <span className="setup-choice__label">{t(`setup.intake.name.${intake}`)}</span>
+                <span className="setup-choice__desc">{t(`setup.intake.desc.${intake}`)}</span>
+                {/* What the answer COSTS. The two polling answers put load on
+                    the bank's Jira, every interval, forever — an operator
+                    should read that before the click, not discover it from a
+                    Jira administrator afterwards. */}
+                <span className="setup-choice__meta">{t(`setup.intake.meta.${intake}`)}</span>
+                {blocked !== null && (
+                  <span className="scr-note scr-note--warn">{t(blocked)}</span>
+                )}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      {/* The interval, asked only when it will be used. A webhook-only install
+          has no interval to argue about, and a field that does nothing is a
+          field that teaches the operator to ignore this screen. */}
+      {polls && (
+        <div style={{ marginTop: 12 }}>
+          <Input
+            label={t("setup.intake.seconds")}
+            type="number"
+            min={MIN_POLL_SECONDS}
+            max={MAX_POLL_SECONDS}
+            value={String(draft.pollSeconds)}
+            // An empty field parses to NaN rather than 0: 0 is a MEANING here
+            // ("off") and typing over the value must not pass through it. NaN
+            // is what `stepBlockedReason` refuses with the range sentence.
+            onChange={(e) => onChange({ pollSeconds: Number.parseInt(e.target.value, 10) })}
+            hint={t("setup.intake.seconds_hint", {
+              min: String(MIN_POLL_SECONDS),
+              max: String(MAX_POLL_SECONDS),
+            })}
+          />
+          <div className="scr-note scr-note--warn" style={{ marginTop: 8 }}>
+            {t("setup.intake.load_warning")}
+          </div>
+        </div>
+      )}
+
+      {/* "İkisi birden" — the duplicate-processing question, answered before it
+          is asked. Two paths reading the same comments IS a real risk, and the
+          operator is entitled to know which mechanism stops it rather than
+          being told to trust the platform. */}
+      {draft.commandIntake === "both" && (
+        <div className="scr-note" style={{ marginTop: 12 }}>
+          {t("setup.intake.double_guard")}
+        </div>
+      )}
+
+      {/* WHEN the answer takes effect. Read from the platform rather than
+          assumed: promising "hemen geçerli" on a deployment that needs a
+          restart would leave the operator waiting on a gate that is never
+          polled — the same silent wait this step exists to end. */}
+      <p className="scr-note" style={{ marginTop: 12 }}>
+        {data.intakeAppliesLive === undefined
+          ? t("setup.intake.applies_unknown")
+          : data.intakeAppliesLive
+            ? t("setup.intake.applies_live")
+            : t("setup.intake.applies_restart")}
+      </p>
+
+      {/* This one answer is not about the project the operator just configured. */}
+      <div className="scr-note scr-note--warn" style={{ marginTop: 12 }}>
+        {t("setup.intake.global_note")}
+      </div>
     </Card>
   );
 }

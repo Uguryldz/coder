@@ -1,4 +1,4 @@
-import { parseCommandFromComment } from "@maestro/adapter-jira";
+import { parseCommandFromComment, type CloudCommentCommand } from "@maestro/adapter-jira";
 import { handleCommand, projectKeyOf, type ResolvedDeps } from "@maestro/bff";
 import type { TicketKey } from "@maestro/contracts";
 
@@ -6,11 +6,14 @@ import type { TicketKey } from "@maestro/contracts";
  * Reading Jira commands by polling, because the webhook cannot always reach us.
  *
  * `/approve`, `/reject <sebep>` and the rest arrive as ticket comments, and the
- * only path that reads them is `POST /webhooks/jira`. Two deployments cannot
- * use it: Jira Cloud's driver has no `verifyWebhook` at all
- * (`CapabilityNotSupportedError`), and a Data Center behind a firewall may not
- * be able to call in. Both then have a workflow engine that opens gates nobody
- * can close.
+ * only path that reads them is `POST /webhooks/jira`. A deployment whose Jira
+ * cannot reach that endpoint has a workflow engine that opens gates nobody can
+ * close. Both drivers verify webhooks now (Cloud's `verifyWebhook`
+ * stopped being a `CapabilityNotSupportedError` — see
+ * `adapter-jira/src/cloud/work-port.ts`), so what is left is the deployment
+ * where the call never ARRIVES: a Data Center inside a corporate network with
+ * no outbound route to Maestro, or a Cloud site where nobody registered the
+ * webhook.
  *
  * The pilot solved this the same way and for the same reason
  * (`apps/pilot/src/poll.ts`). This is that loop, feeding the command handler
@@ -32,9 +35,19 @@ import type { TicketKey } from "@maestro/contracts";
  *
  * Asking for the one method rather than the whole driver keeps this loop
  * testable and says exactly how much of Jira it touches.
+ *
+ * `parseCommandFromComment` is OPTIONAL and, when present, authoritative: a
+ * comment resource does not look the same on the two products. Cloud (REST v3)
+ * serves an ADF body and identifies people by `accountId`; Data Center (REST
+ * v2) serves a wiki-markup STRING and has no `accountId` at all, only
+ * `name`/`key`/`emailAddress`. Running a DC comment through the Cloud parser
+ * therefore threw "comment has no identifiable author" on every real DC
+ * thread. Each driver owns the reading of its own comments; the fallback below
+ * is the Cloud parser, for a reader that offers none.
  */
 export interface CommentReader {
   listComments(ticket: TicketKey): Promise<unknown[]>;
+  parseCommandFromComment?(ticketKey: string, comment: unknown): CloudCommentCommand;
 }
 
 export interface PollerOptions {
@@ -64,21 +77,75 @@ type Seen = Set<string>;
  * Same shape as the sweep's `canSearch`, and for the same reason: the
  * composition root used to cast `ports.work` to a comment reader with `as
  * unknown as`, which TypeScript accepts and the runtime does not.
- * `listComments` exists ONLY on the Jira Cloud driver — a Data Center install
- * has no such method, so every ticket threw once per interval and the error was
- * swallowed per-ticket. The visible effect is the one that matters in a bank:
- * `/approve` written on a ticket is never read, so an approval gate waits
- * forever and nobody can say why.
+ * `listComments` used to exist ONLY on the Jira Cloud driver — a Data Center
+ * install had no such method, so every ticket threw once per interval and the
+ * error was swallowed per-ticket. The visible effect is the one that matters in
+ * a bank: `/approve` written on a ticket is never read, so an approval gate
+ * waits forever and nobody can say why. The DC driver offers the reader now,
+ * so this answers true for BOTH Jira drivers — but it stays a real check
+ * rather than a cast, because Azure DevOps still has no work port at all and a
+ * future driver may again have no thread to read.
  */
-export function canReadComments(
-  driver: unknown,
-): driver is { listComments(t: TicketKey): Promise<unknown[]> } {
+export function canReadComments(driver: unknown): driver is CommentReader {
   return (
     typeof driver === "object" &&
     driver !== null &&
     typeof (driver as { listComments?: unknown }).listComments === "function"
   );
 }
+
+/**
+ * What one round did, counted rather than narrated.
+ *
+ * The poller used to log NOTHING at all: a deployment whose `/approve` was
+ * never honoured could not tell, from the log, whether the loop was even
+ * running — let alone whether Jira answered, whether the comment was read, or
+ * why it was passed over. Every one of those is a different fix, and the
+ * operator has only the container log to work from.
+ *
+ * A round prints ONE line built from these counters, never a line per ticket:
+ * at a 60-second interval a per-ticket line is thousands of lines a day, and a
+ * log nobody can read is the same as no log.
+ */
+interface RoundTally {
+  tickets: number;
+  comments: number;
+  commands: number;
+  /** Already answered in an earlier round — the de-dupe memory did its job. */
+  duplicates: number;
+  /** Looked like a command and could not be honoured (typo, missing reason). */
+  malformed: number;
+  /**
+   * Refused because the comment was edited, or could not prove it was not.
+   * Counted apart from every other skip because it is a SECURITY decision
+   * (K-2/M32/M51), not a shrug — see the WARN in {@link pollTicket}.
+   */
+  editRefused: number;
+  /** Tickets whose read threw — Jira unreachable, 401/403, an unknown shape. */
+  failed: number;
+}
+
+function emptyTally(): RoundTally {
+  return {
+    tickets: 0,
+    comments: 0,
+    commands: 0,
+    duplicates: 0,
+    malformed: 0,
+    editRefused: 0,
+    failed: 0,
+  };
+}
+
+/**
+ * Whether a per-ticket failure is worth its own line.
+ *
+ * A round that fails on EVERY ticket is one fact, not fifty, so the summary
+ * carries the count and only the first few failures are named. The first one
+ * is almost always the whole story (a wrong PAT answers 401 for every ticket),
+ * and the cap keeps a Jira outage from filling the log.
+ */
+const MAX_NAMED_FAILURES = 3;
 
 export function startJiraPoller(options: PollerOptions): { stop: () => void } {
   const seen: Seen = new Set();
@@ -87,23 +154,52 @@ export function startJiraPoller(options: PollerOptions): { stop: () => void } {
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
+    const tally = emptyTally();
     let tickets: readonly TicketKey[] = [];
     try {
       tickets = await options.openTickets();
     } catch (error) {
-      log(`[poller] açık ticket listesi okunamadı: ${String(error)}`);
+      log(`[yoklama] açık ticket listesi okunamadı: ${describeError(error)}`);
       return;
     }
+    tally.tickets = tickets.length;
+
+    let named = 0;
     for (const ticket of tickets) {
       if (stopped) return;
       try {
-        await pollTicket(options.deps, options.comments, ticket, seen, log);
+        await pollTicket(options.deps, options.comments, ticket, seen, log, tally);
       } catch (error) {
         // One ticket's failure must not stop the others: a comment on a ticket
         // whose project was unbound mid-run would otherwise freeze every gate.
-        log(`[poller] ${ticket}: ${String(error)}`);
+        tally.failed += 1;
+        if (named < MAX_NAMED_FAILURES) {
+          named += 1;
+          // The ticket key and the driver's own message — never a token, never
+          // the request headers. `describeError` is what keeps that promise.
+          log(`[yoklama] ${ticket} okunamadı: ${describeError(error)}`);
+        }
       }
     }
+
+    if (stopped) return;
+    /**
+     * ONE line per round, printed even when the round found nothing.
+     *
+     * The empty round is the important one. "The poller is running and nobody
+     * has approved anything" and "the poller is not running at all" are the two
+     * states an operator with a stuck gate has to tell apart, and without this
+     * line they look identical: silence. Same lesson the sweep already learned
+     * (`jira-discovery.ts`).
+     */
+    log(
+      `[yoklama] tur bitti: ${tally.tickets} ticket, ${tally.comments} yorum, ` +
+        `${tally.commands} komut işlendi` +
+        (tally.duplicates > 0 ? `, ${tally.duplicates} zaten görülmüş` : "") +
+        (tally.malformed > 0 ? `, ${tally.malformed} hatalı komut` : "") +
+        (tally.editRefused > 0 ? `, ${tally.editRefused} düzenlenmiş yorum reddedildi` : "") +
+        (tally.failed > 0 ? `, ${tally.failed} ticket okunamadı` : ""),
+    );
   };
 
   const timer = setInterval(() => void tick(), options.intervalMs);
@@ -125,10 +221,50 @@ async function pollTicket(
   ticket: TicketKey,
   seen: Seen,
   log: (m: string) => void,
+  tally: RoundTally,
 ): Promise<void> {
   const comments = await reader.listComments(ticket);
+  tally.comments += comments.length;
   for (const comment of comments) {
-    const { envelope } = parseCommandFromComment(ticket, comment);
+    // The driver's own reader when it has one (DC's v2 shape differs from
+    // Cloud's v3 in both body and identity — see `CommentReader`).
+    let parsed: CloudCommentCommand;
+    try {
+      parsed =
+        reader.parseCommandFromComment?.(ticket, comment) ?? parseCommandFromComment(ticket, comment);
+    } catch (error) {
+      /**
+       * A comment this driver refuses to parse.
+       *
+       * The loudest case is the one the K-2 rule produces: a comment with no
+       * `updated` timestamp cannot PROVE it was never edited, and an edited
+       * comment must never carry a command (in Jira DC "Edit All Comments" is
+       * a routine project-lead permission, so honouring one would let its
+       * holder approve a gate AS SOMEONE ELSE — M32/M51). That is a security
+       * refusal and it must not be silent: an operator whose `/approve` did
+       * nothing needs to read the reason rather than guess at it.
+       */
+      tally.editRefused += 1;
+      log(
+        `[yoklama] ${ticket}: yorum komut üretmedi — ${describeError(error)} ` +
+          "(düzenlenmiş yorum komut üretemez — görevler ayrılığı koruması)",
+      );
+      continue;
+    }
+
+    if (parsed.invalid !== null && parsed.invalid !== undefined) {
+      /**
+       * It LOOKED like a command and could not be honoured — a typo, a
+       * `/reject` with no reason. Distinguished from "not a command at all",
+       * which is the overwhelmingly common case and is counted silently: a
+       * thread full of ordinary conversation must not fill the log.
+       */
+      tally.malformed += 1;
+      log(`[yoklama] ${ticket}: hatalı komut — ${describeInvalid(parsed.invalid)}`);
+      continue;
+    }
+
+    const { envelope } = parsed;
     if (envelope === null) continue;
 
     // Keyed by author AND timestamp: the comment id is not on the parsed
@@ -136,15 +272,86 @@ async function pollTicket(
     // Jira produces. Content is deliberately not part of the key — a second
     // `/approve` from a second person is a second decision, not a repeat.
     const id = `${ticket}:${envelope.author}:${envelope.at}`;
-    if (seen.has(id)) continue;
+    if (seen.has(id)) {
+      tally.duplicates += 1;
+      continue;
+    }
     seen.add(id);
 
     // The author is the Jira account that wrote the comment, which is exactly
     // what the gate's membership check needs — no mapping from a local login
     // to a directory identity, because the decision was made IN the directory.
     const outcome = await handleCommand(deps, envelope);
-    log(`[poller] ${ticket} ${envelope.command.name} → ${JSON.stringify(outcome)}`);
+    tally.commands += 1;
+    /**
+     * The one per-COMMAND line, and it is worth the space: a command is a rare
+     * event (somebody typed it) and it is the exact event the operator is
+     * looking for. The author is masked because a Data Center identity may BE
+     * an e-mail address (`userIdOf` falls back to `emailAddress`), and an
+     * e-mail address in a bank's log aggregator is personal data.
+     */
+    log(
+      `[yoklama] ${ticket} ${envelope.command.name} (${maskAuthor(envelope.author)}) → ` +
+        describeOutcome(outcome),
+    );
   }
+}
+
+/**
+ * An error as a log line: its name and message, capped.
+ *
+ * Never the error OBJECT and never its stack. A driver error may carry a
+ * response body, and a response body may carry anything the server chose to
+ * echo — including, on a misconfigured proxy, the `Authorization` header it
+ * was sent. The cap is the second guard: an oversized body must not become an
+ * unbounded log line.
+ */
+function describeError(error: unknown): string {
+  const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return text.slice(0, 200);
+}
+
+/** The refusal a malformed command produced — the catalog KEY, never the body. */
+function describeInvalid(invalid: unknown): string {
+  const record = invalid as { command?: unknown; messageKey?: unknown } | null;
+  const command = typeof record?.command === "string" ? record.command : "?";
+  const key = typeof record?.messageKey === "string" ? record.messageKey : "invalid";
+  return `${command} (${key})`;
+}
+
+/**
+ * A command's outcome as one short phrase.
+ *
+ * `JSON.stringify(outcome)` was the old line, and it is the wrong shape for a
+ * log: a `/reject` outcome carries the operator's free-text REASON, which on a
+ * bank's ticket routinely names a person or an account. The verdict and the
+ * refusal code are what an operator needs; the reason is already on the ticket
+ * and in the audit chain, where it belongs.
+ */
+function describeOutcome(outcome: unknown): string {
+  const record = outcome as { accepted?: unknown; reason?: unknown } | null;
+  if (record?.accepted === true) return "kabul edildi";
+  const reason = typeof record?.reason === "string" ? record.reason : "reddedildi";
+  return `kabul edilmedi (${reason})`;
+}
+
+/**
+ * A comment author for the log.
+ *
+ * On Jira Cloud this is an opaque `accountId` and on Data Center a username —
+ * both ordinary business data. But `userIdOf` falls back to `emailAddress`
+ * when a DC user carries neither `name` nor `key`, so the value CAN be an
+ * e-mail address, and that is personal data the platform masks everywhere else
+ * (`packages/pii`). Masked only when it looks like one, so the common case
+ * stays readable and an operator can still match the line to a person.
+ */
+export function maskAuthor(author: string): string {
+  const at = author.indexOf("@");
+  if (at <= 0) return author;
+  const local = author.slice(0, at);
+  const domain = author.slice(at + 1);
+  const head = local.slice(0, 1);
+  return `${head}${"*".repeat(Math.max(local.length - 1, 1))}@${domain}`;
 }
 
 /** Project key of a ticket, re-exported so callers filter without a second parser. */

@@ -703,7 +703,57 @@ export type DiscoveryStatusReader = () => {
  */
 export type DiscoveryRunner = () => Promise<readonly string[]>;
 
+/**
+ * How ticket COMMANDS (`/approve`, `/reject <sebep>`) reach this deployment,
+ * as the composition root can actually observe it.
+ *
+ * Exists so the setup wizard can ask "webhook mu, yoklama mı?" honestly instead
+ * of writing a setting and hoping. Three facts, and each answers a question the
+ * screen could otherwise only guess at:
+ *
+ *  · `canReadComments` — whether the configured work driver can read a comment
+ *    thread AT ALL. The same check the poller makes (`canReadComments` in
+ *    `apps/deploy/src/jira-poller.ts`); without it the wizard would offer
+ *    polling on a driver that has no `listComments`, the operator would pick
+ *    it, and nothing would ever poll. A setting silently accepted and not
+ *    honoured is the worst outcome this endpoint prevents.
+ *  · `appliesLive` — whether changing the setting takes effect without a
+ *    service restart. The wizard shows one of two different sentences, and
+ *    saying "hemen geçerli" on a deployment that needs a restart leaves an
+ *    operator waiting on a gate nothing is polling.
+ *  · `mode`/`pollSeconds` — what is in force RIGHT NOW, so the wizard opens on
+ *    the platform's real answer rather than on its own default.
+ *
+ * A function rather than a value, like the discovery reader above: the
+ * composition root owns the poller, this package may not import it, and the
+ * answer changes when an operator saves a new one.
+ */
+export type CommandIntakeStatusReader = () => {
+  /** What is in force now: webhook-only, polling, or both. */
+  readonly mode: "webhook" | "poll" | "both";
+  /** The interval in seconds when polling; 0 when nothing polls. */
+  readonly pollSeconds: number;
+  /** Whether the work driver can read a comment thread (poll is possible). */
+  readonly canReadComments: boolean;
+  /** Whether a saved change is picked up without a service restart. */
+  readonly appliesLive: boolean;
+  /**
+   * Where the value in force came from: the stored parameter, the legacy
+   * `JIRA_POLL_MS` environment variable, or the seeded default. The wizard says
+   * so, because "kayıtlı ayar" and "env'den geliyor" send an operator to two
+   * different places when the answer surprises them.
+   */
+  readonly source: "param" | "env" | "default";
+};
+
 export interface BffDeps {
+  /**
+   * See {@link CommandIntakeStatusReader}. Optional: a deployment that wires no
+   * poller at all reports nothing, and the route answers a conservative
+   * "webhook-only, restart required" rather than 503 — the wizard must still be
+   * walkable on an install this endpoint has never heard of.
+   */
+  commandIntakeStatus?: CommandIntakeStatusReader;
   /** See {@link DiscoveryStatusReader}; absent on a webhook-only install. */
   discoveryStatus?: DiscoveryStatusReader;
   /** See {@link DiscoveryRunner}; absent on a webhook-only install. */

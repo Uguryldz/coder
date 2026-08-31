@@ -81,6 +81,13 @@ const DECISION_ONLY_KEYS: Record<string, string> = {
   // needed to tune it from the panel rather than by editing a file on the
   // server and restarting a container.
   "jira.discover_seconds": "keşif",
+  // Not from a mock screen either: how a ticket COMMAND reaches Maestro. The
+  // wizard asks it ("Jira bize haber versin" / "biz Jira'ya soralım"), because
+  // the only way to answer it used to be `JIRA_POLL_MS` in a file on the
+  // server — so on an install whose webhook could not arrive, `/approve` was
+  // never read and the gate waited forever.
+  "jira.command_intake": "komut alımı",
+  "jira.poll_seconds": "komut alımı",
   "killswitch.state": "M58",
   "binding.dry_run_sample_size": "M102",
   "dataclass.policy": "M18/M63",

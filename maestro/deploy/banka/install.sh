@@ -221,6 +221,16 @@ fi
 info "Motor kimliği…"
 if [[ -z "${MAESTRO_BOT_ACCOUNT_ID:-}" ]]; then
   ok "MAESTRO_BOT_ACCOUNT_ID boş — kimlik panelden, bağlantı testinde öğrenilecek."
+  # Boş bırakmak geçerli bir seçim, ama BEDELSİZ değil: kimlik hiçbir yerde
+  # yokken netleştirme dönüşü kapalı kalır ve kapalılığı hiçbir yerde hata
+  # üretmez. Kurulumu DURDURMUYORUZ (kimlik zaten bu aşamada bilinemez — panel
+  # testi ondan sonra yapılıyor), ama operatör bu adımın hâlâ önünde olduğunu
+  # bilmeli. Başlangıç günlüğü de aynı şeyi `netlestirme-donusu=` ile yazar.
+  warn "Netleştirme dönüşü ŞU AN KAPALI: Maestro bir talepte eksik bilgi sorup ticket'ı"
+  warn "  size attığında, düzeltip geri atsanız bile koşu uyanmaz ve analiz üretilmez."
+  warn "  AÇMAK İÇİN (kurulumdan sonra, tek sefer): panelde Ayarlar > Bağlantılar >"
+  warn "  Jira bağlantısını TEST edin — kimlik /myself ile kendiliğinden öğrenilir."
+  warn "  Doğrulama: başlangıç günlüğünde 'netlestirme-donusu=acik(...)' görünmeli."
 elif [[ "${MAESTRO_BOT_ACCOUNT_ID}" =~ [@] ]]; then
   err "MAESTRO_BOT_ACCOUNT_ID bir e-posta gibi görünüyor: ${MAESTRO_BOT_ACCOUNT_ID}"
   err "  Beklenen: Jira Cloud accountId (profil adresindeki son parça),"

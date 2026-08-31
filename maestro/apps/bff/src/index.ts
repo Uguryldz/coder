@@ -1,4 +1,5 @@
 export * from "./actor.js";
+export * from "./bot-identity.js";
 export * from "./clarify-reentry.js";
 export * from "./connection-health.js";
 export * from "./connection-service.js";

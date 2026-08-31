@@ -3,6 +3,7 @@ import {
   buildServer,
   compositeHealthReader,
   connectionHealthReader,
+  resolveBotIdentity,
   resolveDeps,
   EnvSettingsReader,
   UNWIRED_CAPABILITY_LINES,
@@ -38,7 +39,12 @@ import {
   type CommandIntakeDecision,
   type CommandIntakeHandle,
 } from "../command-intake.js";
-import { intakeLabel, listeningBannerLine, listeningWarningLine } from "../listening-banner.js";
+import {
+  intakeLabel,
+  listeningBannerLine,
+  listeningWarningLine,
+  type ClarifyReentryStatus,
+} from "../listening-banner.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { prepareWorkspace } from "../stores/workspace-prepare.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
@@ -479,6 +485,21 @@ export async function main(): Promise<void> {
   const ticketReader = canReadTickets(deployment.ports.work) ? deployment.ports.work : null;
 
   /**
+   * Motorun Jira kimliği, HER SORULDUĞUNDA yeniden çözülür.
+   *
+   * `MAESTRO_BOT_ACCOUNT_ID`, o boşsa panelde bağlantı testinin öğrendiği
+   * kimlik. Kural ve gerekçesi tek yerde: `@maestro/bff`'in `bot-identity.ts`
+   * dosyası — düşüş yalnız .env boşken yapılır, çünkü ayrışma ancak dolu
+   * olduğunda mümkündür.
+   *
+   * Boot'ta bir kez değil her çağrıda okunuyor: operatör bağlantı testini
+   * kurulumdan sonra yapıyor, ve bir yeniden başlatmayı beklemek bu kanalın
+   * "yeşil görünüp kapalı kalması" demek olurdu.
+   */
+  const resolveEngineIdentity = async (): Promise<string | null> =>
+    (await resolveBotIdentity(env.source["MAESTRO_BOT_ACCOUNT_ID"] ?? "", connections))?.accountId ?? null;
+
+  /**
    * The BANNER, printed before the first round.
    *
    * This is the line to ask an operator for when they report that listening
@@ -487,16 +508,36 @@ export async function main(): Promise<void> {
    * comment at all. See `listening-banner.ts` for why each of those five is on
    * it and why no secret is.
    */
-  const bannerFor = (intake: CommandIntakeDecision): void => {
+  const bannerFor = async (intake: CommandIntakeDecision): Promise<void> => {
     const banner = {
       driver: deployment.selection.work.driver,
       canReadComments: commentReader !== null,
       webhookPath: "/webhooks/jira",
       intake,
+      clarifyReentry: await clarifyReentryStatus(),
     };
     console.info(listeningBannerLine(banner));
     const warning = listeningWarningLine(banner);
     if (warning !== null) console.warn(warning);
+  };
+
+  /**
+   * Yeniden giriş kanalının banner'a yazılacak hâli.
+   *
+   * Sıra ÖNEMLİ: ticket okuyucusunun yokluğu önce sorulur, çünkü o durumda
+   * kimlik doğru olsa bile yoklama kanalı kurulamaz — operatöre önce
+   * düzeltebileceği şeyi söylemek, düzeltemeyeceğinin ardına saklamaktan
+   * iyidir. Kimlik ise ikinci: onu panelde bir tıkla açabiliyor.
+   *
+   * NOT: bu, YOKLAMA kanalının durumudur. Webhook yolu (`clarify-reentry.ts`)
+   * ticket okuyucusuna ihtiyaç duymaz — olayın kendisi atananı taşır — ama bot
+   * kimliğine ikisi de muhtaçtır, ve kapalılığın asıl sessiz sebebi odur.
+   */
+  const clarifyReentryStatus = async (): Promise<ClarifyReentryStatus> => {
+    const identity = await resolveBotIdentity(env.source["MAESTRO_BOT_ACCOUNT_ID"] ?? "", connections);
+    if (identity === null) return { state: "closed", reason: "no_bot_account" };
+    if (ticketReader === null) return { state: "closed", reason: "no_ticket_reader" };
+    return { state: "open", source: identity.source };
   };
 
   /** What the banner last announced, so a LIVE change prints a delta and not a repeat. */
@@ -538,9 +579,7 @@ export async function main(): Promise<void> {
         // Netleştirme yeniden girişi: ikisi de varsa açık, yoksa o kanal
         // bu kurulumda yok (webhook'u çalışan bir kurulumda zaten gerekmez).
         ...(ticketReader === null ? {} : { tickets: ticketReader }),
-        ...(env.source["MAESTRO_BOT_ACCOUNT_ID"] === undefined
-          ? {}
-          : { botAccountId: env.source["MAESTRO_BOT_ACCOUNT_ID"] }),
+        botAccountId: resolveEngineIdentity,
         intervalMs,
         // Live runs, re-read each round so a gate opened a second ago is polled
         // without waiting for a restart.
@@ -565,7 +604,7 @@ export async function main(): Promise<void> {
     onDecision: (intake) => {
       if (announced === null) {
         announced = intake;
-        bannerFor(intake);
+        void bannerFor(intake);
         return;
       }
       if (

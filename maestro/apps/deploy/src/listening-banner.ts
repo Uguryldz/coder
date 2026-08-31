@@ -3,7 +3,7 @@ import type { CommandIntakeDecision } from "./command-intake.js";
 /**
  * The ONE line an operator sends us when "dinleme çalışmıyor".
  *
- * A gate that waits forever has four possible causes and they need four
+ * A gate that waits forever has several possible causes and they need
  * different fixes — and until this line existed, all four produced the same
  * evidence: nothing. The operator could not tell whether
  *
@@ -11,17 +11,21 @@ import type { CommandIntakeDecision } from "./command-intake.js";
  *   (b) the webhook never arrived or arrived and was refused,
  *   (c) Jira was reachable,
  *   (d) which driver was installed and whether it can read a comment at all,
+ *   (e) whether the clarification RE-ENTRY channel is open at all — the run
+ *       that waits at 2b for an answer the operator has already given.
  *
  * and neither could we, from a screenshot of a green start-up log. This banner
- * answers (a) and (d) outright, and it names the endpoint and the interval that
- * make (b) and (c) readable in the round lines that follow it.
+ * answers (a), (d) and (e) outright, and it names the endpoint and the interval
+ * that make (b) and (c) readable in the round lines that follow it.
  *
  * It is printed ONCE, at boot, before the first round — it is the first thing
  * in the log and the first thing to ask for.
  *
  * NOTHING SECRET GOES IN IT. Not the PAT, not the webhook secret, not the
- * `Authorization` header: it carries a driver id, a path, an interval and two
- * booleans, every one of which is a deployment fact rather than a credential.
+ * `Authorization` header: it carries a driver id, a path, an interval and a few
+ * flags, every one of which is a deployment fact rather than a credential. The
+ * bot's account id is NOT among them either — the channel's state is printed,
+ * never the identity it compares against.
  * The base URL is not here either — the wiring banner already prints it, and
  * repeating a URL that may carry userinfo is how a secret reaches a log by
  * accident.
@@ -35,7 +39,30 @@ export interface ListeningBanner {
   readonly webhookPath: string;
   /** What is in force: webhook-only, polling, or both — and where it came from. */
   readonly intake: CommandIntakeDecision;
+  /**
+   * Netleştirme yeniden giriş kanalının durumu — açıksa kimliğin NEREDEN
+   * geldiği, kapalıysa NEDEN.
+   *
+   * Bu satırın var olma sebebi, bannerın kendi var olma sebebiyle aynı: kanal
+   * kapalıyken hiçbir yerde hata görünmüyordu. Operatör kurulumu yeşil
+   * bitiriyor, ticket'ı düzeltip Maestro'ya geri atıyor, ve koşu 2b'de sonsuza
+   * dek bekliyor — çünkü karşılaştıracak bir bot kimliği yok. Kapalılığın
+   * kendisi bir kusur değil (kimliksiz ölçüm yapmaktansa durmak doğru), ama
+   * SESSİZ kapalılık kusurun ta kendisi.
+   */
+  readonly clarifyReentry: ClarifyReentryStatus;
 }
+
+/** Yeniden giriş kanalı: açıksa kimliğin kaynağı, kapalıysa gerekçesi. */
+export type ClarifyReentryStatus =
+  /** Kimlik `MAESTRO_BOT_ACCOUNT_ID`'den geldi. */
+  | { readonly state: "open"; readonly source: "env" }
+  /** Kimlik panelde bağlantı testinin öğrendiği değerden geldi. */
+  | { readonly state: "open"; readonly source: "connection" }
+  /** Hiçbir kaynakta bot kimliği yok — kanal kapalı. */
+  | { readonly state: "closed"; readonly reason: "no_bot_account" }
+  /** İş sürücüsü ticket okuyamıyor; webhook yolu varsa kanal yine de çalışır. */
+  | { readonly state: "closed"; readonly reason: "no_ticket_reader" };
 
 /** Where the answer in force came from, in the operator's words. */
 function sourceLabel(source: CommandIntakeDecision["source"]): string {
@@ -65,8 +92,24 @@ export function listeningBannerLine(banner: ListeningBanner): string {
     `komut-alımı=${intakeLabel(banner.intake)}`,
     `kaynak=${sourceLabel(banner.intake.source)}`,
     `yorum-okuma=${banner.canReadComments ? "var" : "YOK"}`,
+    `netlestirme-donusu=${clarifyLabel(banner.clarifyReentry)}`,
   ];
   return `[dinleme] ${parts.join(" ")}`;
+}
+
+/**
+ * Yeniden giriş kanalının tek kelimelik hâli — kapalıysa gerekçesiyle.
+ *
+ * Kaynağı da yazıyor, çünkü "açık" iki farklı kurulum anlamına geliyor ve
+ * ikisinin teşhisi ayrı: `.env` yazılı bir değerdir, `bağlantı` panelde
+ * öğrenilmiş bir değerdir. Kimlik yanlışsa operatörün hangisini düzelteceğini
+ * bu kelime söylüyor.
+ */
+function clarifyLabel(status: ClarifyReentryStatus): string {
+  if (status.state === "open") {
+    return status.source === "env" ? "acik(.env)" : "acik(baglanti)";
+  }
+  return status.reason === "no_bot_account" ? "KAPALI(bot-kimligi-yok)" : "KAPALI(ticket-okunamiyor)";
 }
 
 /**
@@ -83,6 +126,16 @@ export function listeningWarningLine(banner: ListeningBanner): string | null {
       "yalnız webhook ile alınabilir, yoklama açılamaz. Webhook Jira'dan bu adrese " +
       `ulaşamıyorsa onaylar panelden verilmelidir. (Yorum okumayı Jira Cloud ve Jira ` +
       "Data Center sürücüleri sunar; kurulu sürücü bunlardan biri değil.)"
+    );
+  }
+  if (banner.clarifyReentry.state === "closed" && banner.clarifyReentry.reason === "no_bot_account") {
+    return (
+      "[dinleme] UYARI: netleştirme dönüşü KAPALI — bot kimliği yok. Maestro bir ticket'ta " +
+      "eksik bilgi sorduğunda, kullanıcı ticket'ı düzeltip Maestro'ya geri atasa bile koşu " +
+      "UYANMAZ ve analiz üretilmez; hiçbir yerde hata görünmez. Açmak için: panelde " +
+      "Ayarlar > Bağlantılar > Jira bağlantısını TEST edin (kimlik /myself ile kendiliğinden " +
+      "öğrenilir), ya da MAESTRO_BOT_ACCOUNT_ID'yi elle doldurun (Jira Cloud: profil " +
+      "adresindeki accountId; Data Center: kullanıcı adı)."
     );
   }
   if (banner.intake.mode === "webhook") {

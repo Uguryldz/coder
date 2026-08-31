@@ -106,7 +106,9 @@ async function round(options: RoundOptions = {}): Promise<RoundResult> {
     intervalMs: 3_600_000,
     log: (message) => lines.push(message),
     ...(options.noTicketReader === true ? {} : { tickets: ticketReader }),
-    ...(options.noBotAccount === true ? {} : { botAccountId: BOT }),
+    // Kimlik artık her tur ÇÖZÜLÜYOR (boot'ta bir kez okunmuyor): kurulumdan
+    // sonra panelde öğrenilen bir kimliğin yeniden başlatma beklememesi için.
+    ...(options.noBotAccount === true ? {} : { botAccountId: () => Promise.resolve(BOT) }),
   });
 
   await settle();

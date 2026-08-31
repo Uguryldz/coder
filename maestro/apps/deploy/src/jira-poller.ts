@@ -93,11 +93,16 @@ export interface PollerOptions {
    */
   readonly tickets?: TicketReader;
   /**
-   * Motorun çalıştığı hesap (`MAESTRO_BOT_ACCOUNT_ID`). Boş/verilmemişse
-   * yeniden giriş kapalı: karşılaştırılacak bir kimlik yoksa "bot'a atandı"
-   * ölçülemez.
+   * Motorun çalıştığı hesabı ÇÖZEN işlev. `null` dönerse yeniden giriş bu turda
+   * kapalı: karşılaştırılacak bir kimlik yoksa "bot'a atandı" ölçülemez.
+   *
+   * Sabit bir değer değil, HER TUR sorulan bir soru — çünkü kimlik boot'tan
+   * SONRA öğrenilebiliyor: `MAESTRO_BOT_ACCOUNT_ID` boş bırakılan bir kurulumda
+   * doğru cevap panelde bağlantı testi yapıldığı an ortaya çıkar. Boot'ta bir
+   * kez okunsaydı, o testten sonra bile kanal yeniden başlatılana dek kapalı
+   * kalırdı. Çözümün kuralı `apps/bff/src/bot-identity.ts`'te.
    */
-  readonly botAccountId?: string;
+  readonly botAccountId?: () => Promise<string | null>;
 }
 
 /**
@@ -394,9 +399,10 @@ async function clarifyReentry(
   tally: RoundTally,
 ): Promise<void> {
   const reader = options.tickets;
-  const bot = options.botAccountId?.trim() ?? "";
+  if (reader === undefined || wokeUp.has(ticket)) return;
   // Okuyucusu ya da karşılaştıracak kimliği olmayan kurulumda bu kanal yok.
-  if (reader === undefined || bot === "" || wokeUp.has(ticket)) return;
+  const bot = (await options.botAccountId?.().catch(() => null))?.trim() ?? "";
+  if (bot === "") return;
 
   let state;
   try {

@@ -7,6 +7,7 @@ import {
   intakeLabel,
   listeningBannerLine,
   listeningWarningLine,
+  type ListeningBanner,
 } from "../src/listening-banner.js";
 
 /**
@@ -264,7 +265,9 @@ describe("the listening banner", () => {
     driver: "jira-dc",
     canReadComments: true,
     webhookPath: "/webhooks/jira",
-  };
+    // Kanal açık: bu blok yeniden girişi değil, diğer alanları sınıyor.
+    clarifyReentry: { state: "open", source: "env" },
+  } satisfies Omit<ListeningBanner, "intake">;
 
   it("names driver, endpoint, mode, source and comment-reading in one line", () => {
     const line = listeningBannerLine({
@@ -278,6 +281,42 @@ describe("the listening banner", () => {
     expect(line).toContain("yorum-okuma=var");
     // One line, so it survives being copied out of a container log.
     expect(line.split("\n")).toHaveLength(1);
+  });
+
+  /**
+   * Kapalı bir kanalın SESSİZ kalmaması.
+   *
+   * Bot kimliği hiçbir yerde yokken netleştirme dönüşü çalışmaz: operatör
+   * ticket'ı düzeltip Maestro'ya geri atar, koşu 2b'de sonsuza dek bekler ve
+   * hiçbir yerde hata görünmez. Kapalılık bir kusur değil (kimliksiz bir
+   * karşılaştırma yankı korumasını delerdi), ama sessizliği kusurun kendisi —
+   * bu yüzden hem banner alanı hem de gerekçeli bir uyarı satırı var.
+   */
+  it("says whether the clarification re-entry channel is open, and from which source", () => {
+    const of = (clarifyReentry: ListeningBanner["clarifyReentry"]): string =>
+      listeningBannerLine({ ...base, clarifyReentry, intake: { mode: "both", pollSeconds: 60, source: "param" } });
+    expect(of({ state: "open", source: "env" })).toContain("netlestirme-donusu=acik(.env)");
+    expect(of({ state: "open", source: "connection" })).toContain("netlestirme-donusu=acik(baglanti)");
+    expect(of({ state: "closed", reason: "no_bot_account" })).toContain(
+      "netlestirme-donusu=KAPALI(bot-kimligi-yok)",
+    );
+    expect(of({ state: "closed", reason: "no_ticket_reader" })).toContain(
+      "netlestirme-donusu=KAPALI(ticket-okunamiyor)",
+    );
+  });
+
+  it("spells out the consequence, and the one-click fix, when no bot identity is known", () => {
+    const warning = listeningWarningLine({
+      ...base,
+      clarifyReentry: { state: "closed", reason: "no_bot_account" },
+      intake: { mode: "both", pollSeconds: 60, source: "param" },
+    });
+    // Sonucu söylüyor: koşu uyanmaz. Ve düzeltmeyi: panelde bağlantı testi.
+    expect(warning).toContain("netleştirme dönüşü KAPALI");
+    expect(warning).toContain("UYANMAZ");
+    expect(warning).toContain("Bağlantılar");
+    // Kimliğin KENDİSİ asla banner'a ya da uyarıya yazılmaz.
+    expect(warning).not.toContain("maestro-bot");
   });
 
   it("distinguishes the three sources an operator would chase differently", () => {

@@ -1,5 +1,6 @@
 import type { TicketKey, WorkflowRunState } from "@maestro/contracts";
 import { ClarificationAnswerSignal } from "@maestro/contracts";
+import { resolveBotIdentity } from "./bot-identity.js";
 import type { ResolvedDeps, WorkEvent } from "./deps.js";
 import { workflowIdFor } from "./gateway.js";
 import { SIGNALS } from "./signal-names.js";
@@ -99,8 +100,14 @@ export async function tryClarifyReentry(
 
   // Bot kimliği ÖNCE: yapılandırılmamışsa 1. ve 2. katman ölçülemez, ve
   // ölçülemeyen bir korumayla ilerlemek korumasız ilerlemektir.
-  const bot = botAccountId(deps);
-  if (bot === null) return { kind: "skipped", reason: "bot_account_unconfigured" };
+  //
+  // Kaynak `MAESTRO_BOT_ACCOUNT_ID`, o boşsa bağlantı testinin öğrendiği
+  // kimlik — düşüşün neden yalnız boşken güvenli olduğu `bot-identity.ts`'te.
+  // Kısaca: kurulum sırası kimliği bağlantı testinden SONRA öğreniyor, ve
+  // yalnız .env okumak bu kanalı yeşil görünen her kurulumda kapalı bırakıyordu.
+  const identity = await resolveBotIdentity(deps.config.engineBotAccountId, deps.connections);
+  if (identity === null) return { kind: "skipped", reason: "bot_account_unconfigured" };
+  const bot = identity.accountId;
 
   const workflowId = workflowIdFor(event.ticketKey);
   let state: WorkflowRunState | null;
@@ -153,22 +160,6 @@ export async function tryClarifyReentry(
   const delivered = await deps.runs.signal(workflowId, SIGNALS.clarificationAnswered, signal);
   if (delivered !== "delivered") return { kind: "no_run" };
   return { kind: "signalled", workflowId, ticket: event.ticketKey };
-}
-
-/**
- * Motorun çalıştığı hesap (`MAESTRO_BOT_ACCOUNT_ID`), ya da yapılandırılmamışsa
- * `null`.
- *
- * Yönetilen bağlantının `config.botAccountId` alanı DEĞİL, bilerek. O alan
- * bağlantının kendi token'ının sahibi — doğru olduğu zaman ikisi aynıdır, ama
- * ayrıştıklarında (`engineIdentityWarning`'in uyardığı durum) doğru cevap
- * motorun kim olduğudur: ticket'ın kime atanmasını beklediğimiz, işi kimin
- * hesabıyla aldığımızdır. Ayrıca bu okuma senkron ve bağlantı deposundan
- * bağımsız; webhook yolunun her teslimatta bir tablo okumasına gerek kalmıyor.
- */
-function botAccountId(deps: ResolvedDeps): string | null {
-  const configured = deps.config.engineBotAccountId.trim();
-  return configured === "" ? null : configured;
 }
 
 /**

@@ -12,6 +12,12 @@ import type {
   WorkMode,
 } from "@maestro/contracts";
 import type { CiPort, SecretPort, WorkPort } from "@maestro/ports";
+import type {
+  ClarifyReentryState,
+  DeploymentConfigReader,
+  TaniReportBuilder,
+  VariantModelFacts,
+} from "./config-health.js";
 import type { ConnectionStore } from "./connection-store.js";
 import type { ListeningStore } from "./listening-store.js";
 import type { GuidanceStore } from "./guidance-store.js";
@@ -788,6 +794,41 @@ export interface BffDeps {
    * generic message sends them to the wrong one half the time.
    */
   sweepUnavailableReason?: () => string;
+  /**
+   * NASIL kurulmuş — hangi Jira sürücüsü, tarama, webhook sırrı, statü
+   * taşıma yeteneği. See {@link DeploymentConfigReader}.
+   *
+   * Aynı geç-bağlama sözleşmesi: `deps` kurulurken sürücü henüz kurulmamış
+   * olabilir, o yüzden bir fonksiyon. Yokluğunda `/studio/config-health`
+   * 503 vermez — bildirilmemiş satırları "bilinmiyor" olarak döner, çünkü
+   * "bu kurulum bunu raporlamıyor" ile "bu kurulum bozuk" iki ayrı cevaptır
+   * ve ikisini karıştırmak tam olarak bu ekranın kapattığı hata sınıfıdır.
+   */
+  deploymentConfig?: DeploymentConfigReader;
+  /**
+   * Netleştirme dönüşünün durumu, kökün hesapladığı hâliyle
+   * (`bin/bff.ts:clarifyReentryStatus`). Asenkron: bot kimliği bağlantı
+   * deposundan okunabilir (`bot-identity.ts`).
+   */
+  clarifyReentryStatus?: () => Promise<ClarifyReentryState>;
+  /**
+   * Varyantların model denetimi — `auditVariantModels`in panele çıkan yüzü.
+   * Kök çağırır, burası yalnız okur; denetim mantığı `@maestro/db`de tektir.
+   */
+  variantModelAudit?: () => Promise<VariantModelFacts>;
+  /**
+   * Panelden indirilen TANI RAPORU — bitmiş bir HTML sayfası.
+   *
+   * Sayfayı bu paket ÜRETMEZ, üreteni çağırır. Üretici `apps/deploy`de
+   * (`tani.ts`), çünkü rapor kompozisyon kökünün bildiği şeylerden oluşuyor:
+   * sürücü, `.env`, Temporal geçidi, canlı Jira. Bağımlılık zaten o yönde
+   * (`@maestro/deploy` → `@maestro/bff`), tersi mümkün değil — ve olmamalı da.
+   *
+   * `undefined` bir kurulumda uç 503-by-name döner: rapor üretemeyen bir
+   * kurulumda boş bir HTML indirmek, bu ekranın kapatmaya çalıştığı
+   * "yarım rapora bakıp sorun yok demek" hatasının ta kendisi olurdu.
+   */
+  taniReport?: TaniReportBuilder;
   work: WorkPort;
   workEvents: WorkEventReader;
   ci: CiPort;

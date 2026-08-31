@@ -1,6 +1,7 @@
 export * from "./actor.js";
 export * from "./bot-identity.js";
 export * from "./clarify-reentry.js";
+export * from "./config-health.js";
 export * from "./connection-health.js";
 export * from "./connection-service.js";
 export * from "./scm-repos-service.js";

@@ -8,8 +8,9 @@ import {
   EnvSettingsReader,
   UNWIRED_CAPABILITY_LINES,
   type BffDeps,
+  type DeploymentConfigFacts,
 } from "@maestro/bff";
-import { createDb } from "@maestro/db";
+import { auditVariantModels, createDb } from "@maestro/db";
 import { FlowType, type TicketKey } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import { bootPlatform } from "../boot.js";
@@ -18,6 +19,9 @@ import { variantAwareModelFrom, variantModelReaderFrom } from "../stores/variant
 import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { listenAddress, type DeployEnv } from "../env.js";
+import { workDriverVariableName } from "../profile.js";
+import { panelTaniRaporu } from "../tani-panel.js";
+import type { KosuSatiri } from "../tani.js";
 import { selectIdentityProvider } from "../identity.js";
 import { PrismaKillSwitchStore } from "../stores/killswitch.js";
 import { PrismaAppRegistryWriter } from "../stores/app-registry-writer.js";
@@ -49,6 +53,7 @@ import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { prepareWorkspace } from "../stores/workspace-prepare.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
+import { statusMoverFor } from "../stores/status-mover.js";
 import { PrismaBindingWriter, PrismaJiraProjectBindings } from "../stores/bindings.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
 import { PrismaParamStore } from "../stores/params-store.js";
@@ -240,6 +245,21 @@ export async function main(): Promise<void> {
    */
   const commandIntake: { current?: CommandIntakeHandle } = {};
 
+  /**
+   * Panelin "Yapılandırma" bölümünün okuduğu kurulum gerçekleri
+   * (`GET /studio/config-health`), aynı geç-bağlama kutusunda.
+   *
+   * İçindeki her alan bu dosyanın DAHA AŞAĞISINDA hesaplanıyor — tarama
+   * zamanlayıcısı, sürücünün yorum/statü yetenekleri, webhook sırrının
+   * referansı — ama `deps` burada kuruluyor. `commandIntake` ve `discoveryRun`
+   * ile birebir aynı çözüm: kutu şimdi, içi sonra, okuma ise panel gerçekten
+   * sorduğunda.
+   *
+   * Doldurulana kadar `null`: uç bunu "bilinmiyor" satırı olarak gösterir,
+   * uydurma bir yeşil olarak değil.
+   */
+  const deploymentConfig: { current?: DeploymentConfigFacts } = {};
+
   const deps: BffDeps = {
     work: deployment.ports.work,
     workEvents: jiraWorkEventReader(),
@@ -420,6 +440,108 @@ export async function main(): Promise<void> {
       sweepReason ??
       "Bu kurulumda ticket taraması açık değil. .env dosyasına JIRA_DISCOVER_MS " +
         "ekleyip (örn. 300000) servisleri yeniden başlatın.",
+    /**
+     * Kurulum gerçekleri, kutudan okunur. Kutu henüz dolmadıysa dolmadığı
+     * söylenir — `deploymentConfig` alanının yokluğu ucun "bilinmiyor" cevabına
+     * çevirdiği şey, ve o cevap yeşil bir yalandan iyidir.
+     */
+    deploymentConfig: () =>
+      deploymentConfig.current ?? {
+        workDriver: deployment.selection.work.driver,
+        workDriverVariable: workDriverVariableName(env.source),
+        sweepEnabled: false,
+        sweepSeconds: 0,
+        sweepSource: "varsayilan",
+        sweepOffReason: null,
+        webhookSecretConfigured: false,
+        canMoveStatus: false,
+      },
+    /**
+     * Netleştirme dönüşü — banner'ın yazdığı durumun AYNISI, aynı fonksiyondan.
+     * Panel ile boot log'unun bu konuda ayrışabilmesi, teşhis ekranının en
+     * pahalıya patlayacak kusuru olurdu.
+     */
+    clarifyReentryStatus: () => clarifyReentryStatus(),
+    /**
+     * Ajan modelleri denetimi — `./ajan-modelleri.sh`'in çağırdığı denetimin
+     * ta kendisi (`auditVariantModels`), `apply` OLMADAN. Panel hiçbir satırı
+     * onarmaz; yalnız raporlar, tıpkı `bin/migrate.ts`in açılışta yaptığı gibi.
+     */
+    variantModelAudit: async () => {
+      const result = await auditVariantModels(db);
+      return {
+        scanned: result.scanned,
+        // Yalnız varyant ADLARI. Model adı operatörün yazdığı serbest bir
+        // metindir ve bu yanıtın sözleşmesi kapalı değerlerdir.
+        cloudModelVariants: result.findings.map((finding) => finding.variantId),
+      };
+    },
+    /**
+     * Panelden indirilen tanı raporu (`GET /studio/tani`).
+     *
+     * Sayfayı `tani-panel.ts` kuruyor ve `taniHtml`i ÇAĞIRIYOR — betiğin
+     * kullandığı üreticinin aynısı, kopyası değil. 1. bölümün bulguları da
+     * `buildConfigFindings`ten, yani panelin "Yapılandırma" tablosunu besleyen
+     * fonksiyondan geliyor: ekran ile rapor aynı cümleyi söylemek ZORUNDA,
+     * yoksa ikisi ayrıştığı gün hangisine inanılacağı bilinmez.
+     *
+     * SERVİS LOG'LARI YOK ve bu raporun kendi 4. bölümünde adıyla yazılı —
+     * gerekçesi `tani-panel.ts`in başındaki nota yazılmış (docker soketi
+     * bilerek bağlı değil).
+     */
+    taniReport: () =>
+      panelTaniRaporu({
+        // Ucun okuduğu gerçeklerin AYNISI. İki ayrı toplayıcı yazmak, raporun
+        // ekrandan farklı bir şey söyleyebilmesi demekti.
+        config: async () => ({
+          deployment: deploymentConfig.current ?? null,
+          intake: commandIntake.current?.status() ?? null,
+          clarify: await clarifyReentryStatus(),
+          variants: await (async () => {
+            const denetim = await auditVariantModels(db);
+            return {
+              scanned: denetim.scanned,
+              cloudModelVariants: denetim.findings.map((finding) => finding.variantId),
+            };
+          })(),
+          statusMaps: await (async () => {
+            const kurallar = await db.listeningRule.findMany({
+              select: { statusMapJson: true },
+            });
+            return {
+              ruleCount: kurallar.length,
+              mappedRuleCount: kurallar.filter((kural) => kural.statusMapJson != null).length,
+            };
+          })(),
+        }),
+        akis: {
+          toplam: () => db.workflowRun.count(),
+          adimDagilimi: async () =>
+            (await db.workflowRun.groupBy({ by: ["step"], _count: { _all: true } }))
+              .map((grup) => [grup.step, grup._count._all] as const)
+              .sort((sol, sag) => sol[0].localeCompare(sag[0])),
+          // 2b = netleştirme kapısı. BİTMİŞ koşular dışarıda: 2b'den geçip
+          // tamamlanmış bir koşu cevap beklemiyor.
+          netlestirmeBekleyen: async () =>
+            (
+              await db.workflowRun.findMany({
+                where: { step: "2b", status: { in: ["running", "gate", "queued"] } },
+                orderBy: { updatedAt: "desc" },
+                take: 100,
+              })
+            ).map(kosuSatiri),
+          sonKosular: async () =>
+            (await db.workflowRun.findMany({ orderBy: { updatedAt: "desc" }, take: 40 })).map(
+              kosuSatiri,
+            ),
+          // BFF'in kendi geçidi: "açık workflow" tanımının ikinci bir istemcide
+          // ayrışmasına kapı bırakmamak için.
+          temporalAcik: async () => (await temporal.gateway.list({ onlyRunning: true, limit: 200 })).length,
+        },
+        hostAdi: env.source["HOSTNAME"] ?? "(bilinmiyor)",
+        imajSurumu: env.source["MAESTRO_IMAGE_TAG"] ?? "(bilinmiyor)",
+        now: () => new Date(),
+      }),
     config: {
       env: env.base,
       /**
@@ -642,19 +764,58 @@ export async function main(): Promise<void> {
   let discoveryRun: (() => Promise<readonly string[]>) | undefined;
   /** Set when the sweep is impossible for a reason other than "not asked for". */
   let sweepReason: string | undefined;
-  const discoverMs = Number(env.source["JIRA_DISCOVER_MS"]?.trim() ?? 0);
   /**
    * The driver's searcher, or nothing.
    *
    * This used to be `ports.work as unknown as IssueSearcher` — a cast
-   * TypeScript accepts and the runtime does not. Only Jira Cloud has
-   * `searchIssues`; on Data Center and on Azure DevOps every round threw
-   * "searchIssues is not a function", silently on the timer and as a bare 500
-   * behind the panel's button. Asked, not asserted, so a driver that cannot be
-   * swept is reported instead of failing once per interval.
+   * TypeScript accepts and the runtime does not. Asked, not asserted, so a
+   * driver that cannot be swept is reported instead of failing once per
+   * interval.
+   *
+   * Both Jira drivers answer this now. It used to be Cloud only, and on Data
+   * Center the consequence was not "no sweep" but "no way in AT ALL" — see
+   * `packages/adapter-jira/src/search.ts` for the three-way deadlock that
+   * created and why DC's `/rest/api/2/search` always could have broken it.
+   * The check stays real because Azure DevOps still has no work port.
    */
   const workPort: unknown = deployment.ports.work;
   const searcher: IssueSearcher | null = canSearch(workPort) ? workPort : null;
+
+  /**
+   * The sweep interval, and WHERE it came from.
+   *
+   * ── Why there is a default at all ────────────────────────────────────────
+   * This codebase's standing rule is that a silent default is worse than an
+   * absent feature, and the rule is right nearly everywhere. It is wrong here,
+   * and the field proved it: on a closed-network Data Center no webhook can be
+   * registered, so the sweep is not an optimisation over the webhook — it is
+   * the ONLY door a ticket can come through. Leaving it off by default meant
+   * shipping an install whose every green light was truthful and which could
+   * never start a single run. "Varsayılan kapalı" was the operator's own
+   * description of the fault.
+   *
+   * So the default is ON, and the cost of being wrong is bounded in a way the
+   * old default's was not: a sweep nobody needed costs one JQL query per rule
+   * every five minutes against a Jira that is already answering this platform's
+   * writes, and `runIntake` is idempotent per ticket so an overlap with a
+   * working webhook starts nothing twice.
+   *
+   * ── What keeps it from being SILENT ──────────────────────────────────────
+   * The source travels with the value and is printed at boot. An operator
+   * reading the log is told the sweep is on, at what interval, and that nobody
+   * configured it — which is precisely the sentence whose absence made the
+   * previous behaviour a defect rather than a choice.
+   *
+   * `JIRA_DISCOVER_MS=0` still means OFF, explicitly. The default may not
+   * override a written answer, including a written "no".
+   */
+  const discoverRaw = env.source["JIRA_DISCOVER_MS"]?.trim() ?? "";
+  const discoverEnvMs = Number(discoverRaw);
+  const discoverConfigured = discoverRaw.length > 0 && Number.isFinite(discoverEnvMs);
+  /** Five minutes: gentle on a bank's Jira, and a worst case of 5 min to intake. */
+  const DEFAULT_DISCOVER_MS = 300_000;
+  const discoverMs = discoverConfigured ? discoverEnvMs : DEFAULT_DISCOVER_MS;
+  const discoverSource = discoverConfigured ? "JIRA_DISCOVER_MS" : "varsayılan";
 
   if (Number.isFinite(discoverMs) && discoverMs > 0 && searcher !== null) {
     /**
@@ -706,7 +867,14 @@ export async function main(): Promise<void> {
     // The panel's button runs ONE round with the same options; it does not
     // touch the timer, so pressing it never changes the schedule.
     discoveryRun = async () => discoverOnce(discoveryOptions);
-    console.log(`[maestro] jira ticket keşfi açık (${discoverMs} ms)`);
+    console.info(
+      `[maestro] ticket taraması AÇIK — her ${Math.round(discoverMs / 1000)} sn ` +
+        `(kaynak: ${discoverSource}). Yeni ticket'lar dinleme kurallarından üretilen ` +
+        "JQL ile bulunur; webhook'suz kurulumda bir ticket'ın akışa girmesinin tek yolu budur." +
+        (discoverConfigured
+          ? ""
+          : " Bu değeri kimse yazmadı: kapatmak için .env'e JIRA_DISCOVER_MS=0 ekleyin."),
+    );
   } else if (Number.isFinite(discoverMs) && discoverMs > 0) {
     /**
      * Asked for, and impossible.
@@ -717,15 +885,22 @@ export async function main(): Promise<void> {
      * nothing in the log connected the two. Said at boot instead, once, by
      * name.
      */
+    /**
+     * Aranamayan bir sürücü. İki Jira sürücüsü de arama sunduğuna göre bu,
+     * pratikte iş portu olmayan bir kurulum demektir (Azure DevOps) — ve o
+     * kurulumda ticket'ın girebileceği başka bir kapı olduğunu SÖYLEMEK
+     * gerekir, yoksa operatör düzeltilecek bir ayar arar ve bulamaz.
+     */
     sweepReason =
       "Bu kurulumun iş sürücüsü ticket araması sunmuyor, bu yüzden tarama " +
-      "çalışamaz. JQL araması yalnız Jira Cloud bağlantısında vardır — " +
-      "Jira Data Center kurulumları ticket'ları webhook ile alır. " +
-      "Bağlantılar ekranından Jira Cloud bağlantısını kontrol edin.";
+      "çalışamaz. Arama Jira Cloud ve Jira Data Center sürücülerinde vardır; " +
+      "kurulu sürücü bunlardan biri değil. Bağlantılar ekranından Jira " +
+      "bağlantısını kontrol edin.";
     console.warn(
-      `[maestro] ticket keşfi İSTENDİ (${discoverMs} ms) ama bu iş sürücüsü arama sunmuyor — ` +
-        "tarama kapalı. JQL araması yalnız Jira Cloud sürücüsünde vardır; " +
-        "Jira Data Center kurulumları ticket'ları webhook ile alır.",
+      `[maestro] ticket taraması KAPALI — istendi (${discoverMs} ms, kaynak: ${discoverSource}) ama ` +
+        "bu iş sürücüsü arama sunmuyor. Arama Jira Cloud ve Jira Data Center " +
+        "sürücülerinde vardır; kurulu sürücü bunlardan biri değil. Bu kurulumda " +
+        "ticket'lar yalnız webhook ile ya da panelden elle girebilir.",
     );
   } else if (searcher !== null) {
     /**
@@ -743,13 +918,57 @@ export async function main(): Promise<void> {
      * common configuration and this is not a fault. It is here so the log can
      * ANSWER the question the panel's 503 raises.
      */
-    console.info(
-      "[maestro] ticket taraması KAPALI — JIRA_DISCOVER_MS boş ya da 0. Bu sürücü arama " +
-        "sunuyor, yani tarama açılabilir: .env'e JIRA_DISCOVER_MS=300000 (5 dk) ekleyip " +
-        "servisleri yeniden başlatın. Webhook'u çalışan bir kurulumda gerekmez — " +
-        "ticket'lar webhook ile gelir ve panelin 'Şimdi tara' düğmesi 503 döner.",
+    /**
+     * Tarama, AÇIKÇA kapatılmış: `JIRA_DISCOVER_MS=0`. Artık tek yolu bu —
+     * varsayılan açık olduğu için "boş bıraktım" bu dala hiç düşmüyor.
+     *
+     * Uyarı olarak yazılıyor, bilgi olarak değil: webhook'u olmayan bir
+     * kurulumda bu satır "hiçbir ticket asla girmeyecek" demektir, ve
+     * operatörün bunu boot log'unda görmesi gerekir.
+     */
+    console.warn(
+      "[maestro] ticket taraması KAPALI — .env'de JIRA_DISCOVER_MS=0 yazıyor. Bu sürücü " +
+        "arama SUNUYOR, yani kapalılık bir kısıt değil bir tercih. Jira webhook'u da " +
+        "kurulmadıysa hiçbir ticket akışa GİREMEZ: panel açık, bağlantı yeşil ve hiç koşu " +
+        "başlamaz. Açmak için satırı silin ya da JIRA_DISCOVER_MS=300000 (5 dk) yazın.",
     );
   }
+
+  /**
+   * Kutuyu doldur — panelin "Yapılandırma" bölümünün okuyacağı gerçekler.
+   *
+   * TAM BURADA, çünkü yukarıdaki üç dalın hangisine girildiği ancak burada
+   * belli oluyor: tarama kuruldu mu (`discoveryRun`), kurulmadıysa hangi
+   * sebeple (`sweepReason`). Daha erken doldurmak, boot log'unun söylediğinden
+   * BAŞKA bir şey gösteren bir panel demek olurdu.
+   *
+   * Her alan zaten hesaplanmış bir değerin taşınmasıdır; burada hiçbir karar
+   * YENİDEN verilmiyor:
+   *  · sürücü ve onu seçen değişken → `workDriverVariableName` (boot banner'ın
+   *    kullandığı fonksiyonun aynısı),
+   *  · tarama → `discoveryRun`/`sweepReason`/`discoverMs`/`discoverSource`,
+   *  · statü taşıma → `statusMoverFor` (worker'ın kullandığı yapısal yoklama),
+   *  · webhook → `JIRA_WEBHOOK_SECRET_REF`in DOLU olup olmadığı; referansın
+   *    kendisi bile taşınmıyor, yalnız boş olup olmadığı.
+   */
+  deploymentConfig.current = {
+    workDriver: deployment.selection.work.driver,
+    workDriverVariable: workDriverVariableName(env.source),
+    sweepEnabled: discoveryRun !== undefined,
+    sweepSeconds: discoveryRun === undefined ? 0 : Math.round(discoverMs / 1000),
+    sweepSource: discoverConfigured ? "env" : "varsayilan",
+    sweepOffReason:
+      discoveryRun !== undefined
+        ? null
+        : sweepReason !== undefined
+          ? "surucu-arama-sunmuyor"
+          : "kapatildi",
+    // Referansın DEĞERİ değil, yalnız yazılmış olup olmadığı. `driver-config.ts`
+    // bu değişkeni sır deposundaki bir yola çeviriyor; sırrın kendisi hiçbir
+    // zaman bu sürecin belleğinden panele geçmez.
+    webhookSecretConfigured: (env.source["JIRA_WEBHOOK_SECRET_REF"] ?? "").trim() !== "",
+    canMoveStatus: statusMoverFor(deployment.ports.work) !== undefined,
+  };
 
   const app = await buildServer(deps);
   const { host, port } = listenAddress(env);
@@ -899,6 +1118,30 @@ async function checkoutOrNull(
 function required<T>(value: T | undefined, name: string): T {
   if (value === undefined) throw new Error(`${name}: required — the BFF cannot serve without it (M6)`);
   return value;
+}
+
+/**
+ * Bir koşu satırının tanı raporuna giren kadarı.
+ *
+ * `updatedAt` saniyeye yuvarlanıp boşlukla ayrılıyor: rapor bir insanın
+ * okuyacağı bir sayfa, ve ISO'nun `T`si ile milisaniyeleri o sayfada gürültü.
+ * `bin/tani.ts`teki `bicimle` ile aynı biçim — iki rapor arasında aynı koşuyu
+ * gözle eşleştirebilmek için.
+ */
+function kosuSatiri(row: {
+  id: string;
+  ticketKey: string;
+  step: string;
+  status: string;
+  updatedAt: Date;
+}): KosuSatiri {
+  return {
+    id: row.id,
+    ticketKey: row.ticketKey,
+    step: row.step,
+    status: row.status,
+    updatedAt: row.updatedAt.toISOString().replace("T", " ").slice(0, 19),
+  };
 }
 
 if (isEntrypoint(import.meta.url)) {

@@ -62,6 +62,11 @@ export function bankaVariantAuditPath(): string {
   return `${bankaDir()}ajan-modelleri.sh`;
 }
 
+/** `deploy/banka/tani.sh` — the single-file HTML diagnostic bundle. */
+export function bankaTaniPath(): string {
+  return `${bankaDir()}tani.sh`;
+}
+
 export function bankaNginxConfPath(): string {
   return `${bankaDir()}studio-nginx.conf`;
 }
@@ -107,6 +112,11 @@ export function ugurdockerResetAdminPath(): string {
 /** `deploy/ugurdocker/ajan-modelleri.sh` — the audit script's twin. */
 export function ugurdockerVariantAuditPath(): string {
   return `${ugurdockerDir()}ajan-modelleri.sh`;
+}
+
+/** `deploy/ugurdocker/tani.sh` — the diagnostic script's twin. */
+export function ugurdockerTaniPath(): string {
+  return `${ugurdockerDir()}tani.sh`;
 }
 
 export function ugurdockerNginxConfPath(): string {

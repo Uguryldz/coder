@@ -160,6 +160,28 @@ export function workDriverFor(source: Record<string, string | undefined>): WorkD
 }
 
 /**
+ * HANGİ değişken sürücüyü seçti — adı, asla değeri.
+ *
+ * `workWiringNote` bu cevabı boot log'u için satır içinde hesaplıyordu ve panel
+ * de aynı cevabı gösterecek. İki yerde iki kopya, tam olarak "log DC diyor
+ * panel Cloud diyor" gibi bir teşhis kâbusunun kaynağıdır — o yüzden tek yer.
+ *
+ * `null` iki degenerate durumu birden kapsar: hiçbiri dolu değil (kurulmamış),
+ * ya da ikisi birden dolu (açılış zaten `assertOneJiraInstance` ile reddediyor,
+ * ve reddedilmiş bir açılışta "hangi değişken" sorusunun doğru cevabı yoktur).
+ *
+ * DEĞER DÖNMEZ: bir Jira taban adresi `https://kullanici:parola@...` biçiminde
+ * userinfo taşıyabilir ve bu fonksiyonun cevabı hem log'a hem panele gidiyor.
+ */
+export function workDriverVariableName(
+  source: Record<string, string | undefined>,
+): string | null {
+  const chosen = workDriverFor(source);
+  if (chosen.problem !== null) return null;
+  return chosen.driver === JIRA_CLOUD_DRIVER ? "JIRA_CLOUD_BASE_URL" : "JIRA_BASE_URL";
+}
+
+/**
  * The conflict, refused by name.
  *
  * Called where the port is actually built. The message names BOTH variables

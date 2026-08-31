@@ -18,6 +18,7 @@ import {
   JIRA_CLOUD_DRIVER,
   NOT_CONFIGURED_DRIVER,
   workDriverFor,
+  workDriverVariableName,
 } from "./profile.js";
 import { buildRegistry } from "./registry.js";
 import { buildSecretPort } from "./secrets.js";
@@ -440,11 +441,12 @@ export function workWiringNote(env: DeployEnv, driver: string): string | null {
     );
   }
   // Which variable decided, so a driver id that surprises the operator names
-  // its own cause. Recomputed rather than threaded through: `workDriverFor` is
-  // pure and reads the same `env.source` the composition root read.
-  const chosen = workDriverFor(env.source);
-  if (chosen.problem !== null) return null;
-  const variable = driver === JIRA_CLOUD_DRIVER ? "JIRA_CLOUD_BASE_URL" : "JIRA_BASE_URL";
+  // its own cause. Recomputed rather than threaded through: the helper is pure
+  // and reads the same `env.source` the composition root read — and it is
+  // SHARED with the panel's yapılandırma satırı, so the log and the screen can
+  // never name two different variables.
+  const variable = workDriverVariableName(env.source);
+  if (variable === null) return null;
   const flavour = driver === JIRA_CLOUD_DRIVER ? "Jira Cloud" : "Jira Data Center";
   return (
     `[maestro] work sürücüsü ${flavour} (${driver}) — çünkü ${variable} dolu. ` +

@@ -220,6 +220,35 @@ export interface HealthResponse {
   readonly services: readonly ServiceHealth[];
 }
 
+// ── /studio/config-health (LIVE) ─────────────────────────────────────────────
+
+/**
+ * Bir yapılandırma satırının ağırlığı (BFF `ConfigSeverity`). Servis
+ * canlılığının `ServiceState`'inden AYRI bir küme, çünkü ayrı bir soruyu
+ * cevaplıyor: "bu kurulum doğru mu kurulmuş", "şu an ayakta mı" değil.
+ */
+export type ConfigSeverity = "sorun" | "uyari" | "iyi" | "bilgi";
+
+/** Bir satır (BFF `ConfigFinding`). Hiçbir alanı sır taşımaz — bkz. config-health.ts. */
+export interface ConfigFinding {
+  readonly id: string;
+  readonly severity: ConfigSeverity;
+  /** Kapalı kümeden bir değer; ekran `config.value.<value>` ile çevirir. */
+  readonly value: string;
+  /** Katalog anahtarı; sunucu cümle yazmaz. */
+  readonly detailKey: string | null;
+  readonly detailParams?: Readonly<Record<string, string>>;
+  /** Çözümün katalog anahtarı; `iyi` satırlarda null. */
+  readonly fixKey: string | null;
+  readonly fixParams?: Readonly<Record<string, string>>;
+}
+
+export interface ConfigHealthResponse {
+  readonly state: ConfigSeverity;
+  /** Sunucunun sıraladığı hâliyle: `sorun` en üstte. Ekran yeniden sıralamaz. */
+  readonly findings: readonly ConfigFinding[];
+}
+
 // ── /settings (REQUESTED) ─────────────────────────────────────────────────────
 
 export type ConnectionStatus = "connected" | "degraded" | "unconfigured";

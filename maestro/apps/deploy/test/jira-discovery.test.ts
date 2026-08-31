@@ -86,6 +86,26 @@ describe("jqlFor", () => {
     const jql = jqlFor({ ...RULE, matchValue: 'Gör"ev' });
     expect(jql).toContain('issuetype = "Gör\\"ev"');
   });
+
+  /**
+   * NO BOT ACCOUNT, NO QUERY — the boundary that keeps an admin service
+   * account from sweeping the whole bank.
+   *
+   * `flow-decision.ts` reads an empty `assigneeAccountId` as "whoever it is
+   * assigned to", which is safe THERE (it only classifies a ticket somebody
+   * already handed over) and catastrophic here (it decides what to go and
+   * fetch). The old line emitted `assignee in ()`, which Jira rejects — so the
+   * rule swept nothing forever while looking like a rule that found nothing.
+   * The dangerous neighbour is one edit away: drop the clause instead and the
+   * sweep starts runs on every project the admin account can see.
+   */
+  it.each([
+    ["empty", ""],
+    ["blank", "   "],
+    ["punctuation only", "!!!"],
+  ])("refuses to build a query for a rule whose bot account is %s", (_label, account) => {
+    expect(jqlFor({ ...RULE, assigneeAccountId: account })).toBeNull();
+  });
 });
 
 describe("discoverOnce", () => {
@@ -139,7 +159,7 @@ describe("discoverOnce", () => {
    * decision into an endless loop of runs.
    */
   it("skips a ticket that already has a run", async () => {
-    const jql = jqlFor(RULE);
+    const jql = jqlFor(RULE)!;
     const { started } = await run({
       rules: [RULE],
       found: { [jql]: ["OPS-1", "OPS-2"] },
@@ -155,8 +175,8 @@ describe("discoverOnce", () => {
    * per matching rule would be N runs for one piece of work.
    */
   it("starts a ticket once even when two rules match it", async () => {
-    const byType = jqlFor(RULE);
-    const byAssignment = jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*" });
+    const byType = jqlFor(RULE)!;
+    const byAssignment = jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*" })!;
     const { started } = await run({
       rules: [RULE, { ...RULE, matchKind: "assigned", matchValue: "*" }],
       found: { [byType]: ["OPS-7"], [byAssignment]: ["OPS-7"] },
@@ -165,6 +185,29 @@ describe("discoverOnce", () => {
     expect(started.filter((key) => key === "OPS-7")).toHaveLength(
       started.includes("OPS-7") ? 1 : 0,
     );
+  });
+
+  /**
+   * The round-level half of the fail-closed rule: a rule with no bot account
+   * must not merely produce a harmless query, it must produce NO REQUEST.
+   *
+   * Asserted on `asked` rather than on `started`, because "started nothing" is
+   * also what a search that ran and matched nothing looks like — and the whole
+   * risk here is a query that DOES reach a Jira the service account is admin
+   * on. The good rule beside it proves the skip is surgical: one bad rule must
+   * not disarm the sweep.
+   */
+  it("never sends a search for a rule with no bot account", async () => {
+    const good = jqlFor(RULE)!;
+    const { asked } = await run({
+      rules: [{ ...RULE, assigneeAccountId: "" }, RULE],
+      found: { [good]: ["OPS-5"] },
+    });
+
+    // The accountless rule produced NO request, and the good rule beside it
+    // still did: one misconfigured rule must not disarm the whole sweep.
+    expect(asked).toEqual([good]);
+    expect(asked.some((jql) => jql.includes("in ()"))).toBe(false);
   });
 
   /**
@@ -313,12 +356,19 @@ describe("startJiraDiscovery: the operator's interval", () => {
  * Which drivers can be swept at all.
  *
  * The composition root used to hand the sweep `ports.work as unknown as
- * IssueSearcher`. TypeScript accepts that cast; the runtime does not. Only the
- * Jira Cloud driver has `searchIssues` — so on an Azure DevOps install (where
- * the work port is a different object entirely) and on Jira Data Center, every
+ * IssueSearcher`. TypeScript accepts that cast; the runtime does not, and every
  * round threw "searchIssues is not a function": silently on the timer, and as a
  * bare HTTP 500 behind the panel's "şimdi tara" button, which is where the
  * customer finally saw it.
+ *
+ * Jira Data Center used to be on the failing side of this line, and the cost
+ * was far worse than a missing optimisation. On a closed-network DC no webhook
+ * can be registered, and the comment poller only ever looks at tickets that
+ * ALREADY have a run (`openTickets` reads `db.workflowRun`) — so with the sweep
+ * unavailable too, nothing could ever enter the platform at all. The DC driver
+ * offers `searchIssues` now (`/rest/api/2/search`, which DC always had), so
+ * both Jira drivers answer true here. The check stays real because Azure
+ * DevOps still has no work port.
  *
  * Asking the object is what a cast pretended to do. These pin the question.
  */
@@ -327,7 +377,7 @@ describe("canSearch", () => {
     expect(canSearch({ searchIssues: () => Promise.resolve({ issues: [] }) })).toBe(true);
   });
 
-  it("rejects a work driver that has no search — the ADO and DC case", () => {
+  it("rejects a work driver that has no search — the ADO case", () => {
     // Shaped like a real work port: everything the workflow needs, no search.
     const workPortWithoutSearch = {
       getTicket: () => Promise.resolve({}),

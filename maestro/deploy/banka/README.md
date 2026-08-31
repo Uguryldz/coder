@@ -427,6 +427,56 @@ yenileyin: `docker compose up -d --force-recreate bff worker`
 
 ## 6. Sessiz arızalar — belirtiye göre teşhis
 
+### 6.0 Önce bunu çalıştırın: tek dosyalık tanı raporu
+
+Aşağıdaki tabloyu tek tek denemeden önce, sunucuda **bu klasörde**:
+
+```bash
+./tani.sh                    # her şey, servis başına son 200 satır log
+./tani.sh --satir 500        # daha uzun log kuyruğu
+./tani.sh --jira-yok         # canlı Jira denemesini ATLA
+./tani.sh --ticket ABC-123   # canlı okumada bu ticket'ı kullan
+./tani.sh --cikti /yol/x.html
+```
+
+Çıktı: `maestro-tani-YYYYAAGG-SSDD.html` — **tek dosya**, gömülü CSS, harici
+kaynak yok. Tarayıcıda açılır, yazdırılabilir, destek için gönderilebilir.
+
+**Dört bölüm var:**
+
+1. **Yapılandırma teşhisi** (en üstte, en önemli) — hangi Jira sürücüsü seçili
+   ve **hangi değişken** seçti; tarama ve yoklama açık mı, periyodu ne, değer
+   **nereden** geliyor; bot kimliği var mı (netleştirme döngüsü buna bağlı);
+   ajan modelleri erişilebilir mi; webhook sırrı tanımlı mı; migration sayısı
+   beklenen mi; dinleme kuralları ve statü haritası. Sorunlular **kırmızı**,
+   iyiler **yeşil**, bilinmeyenler **sarı** — ve her sorunlu satırda **ne
+   yapılacağı** yazar.
+2. **Akış durumu** — kaç koşu, hangi adımda; **2b'de bekleyenler ayrı** (bunlar
+   netleştirme cevabı bekleyen koşulardır); son koşular; Temporal'daki açık
+   workflow sayısı.
+3. **Jira bağlantı testi (canlı)** — `getTicket`, `listComments`, `searchIssues`
+   ve statü geçişlerinin **listelenmesi** gerçekten denenir; her biri için
+   başarılı mı, HTTP kodu ne, hata varsa sebebi ne.
+4. **Servis log'ları** — hata/uyarı satırları **öne çıkarılmış**, her servis
+   katlanabilir bir bölümde. Gürültü (postgres checkpoint, temporal yaşam
+   döngüsü, nginx 2xx erişim satırları) ayıklanır ve **kaç satır gizlendiği
+   yazılır** — çünkü elle toplanan bir logda asıl hata tam olarak bunların
+   altında kaybolmuştu.
+
+**Güvenlidir:** hiçbir tabloya yazmaz, hiçbir ticket'a yorum düşmez, **hiçbir
+statü geçişi uygulamaz** (geçişleri yalnızca *listeler*). Canlı bir yığında
+çalıştırılabilir.
+
+**Sırlar maskelenir:** jeton/parola/anahtar **değerleri** hiç yazılmaz — yalnızca
+"tanımlı/tanımsız". URL'lerdeki `//kullanıcı:parola@` maskelenir, log satırları
+da maskeden geçer. Yine de bu **en iyi çabadır**: göndermeden önce bir göz atın.
+
+Çıkış kodu `3` ise rapor üretildi **ve kritik bulgu var** — sayfanın en
+üstündeki kırmızı satırlar, bu kurulumda sessizce çalışmayan işleri gösterir.
+
+### 6.1 Belirti tablosu
+
+
 Buradaki arızaların ortak özelliği: **hiçbiri hata vermez.** Sistem açıktır,
 loglar temizdir, panel çalışır — ama iş görülmez.
 

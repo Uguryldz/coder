@@ -65,6 +65,14 @@ const MISSING: Readonly<Record<string, string>> = {
     "architecture proposal, a step state or a repo-setup record for a ticket whose " +
     "repository does not exist yet, so there is nothing to report. An empty step list " +
     "would render as a wizard that has not started rather than a capability that is absent",
+  tani:
+    "no TaniReportBuilder is injected — the diagnostic report (`apps/deploy/src/tani.ts`) is " +
+    "assembled by the composition root, which is the only layer that knows the work driver, " +
+    "the `.env` this stack booted with and the Temporal gateway. Until one is wired the " +
+    "download refuses rather than hand back an empty page, which is the worse failure here: " +
+    "an operator who opens a blank report and concludes nothing is wrong is exactly the " +
+    "silent-wrong the report exists to end. Run `./tani.sh` on the server meanwhile — it " +
+    "produces the FULLER report, service logs included",
   "jira-workflow":
     "no JiraWorkflowReader is injected — the workflow-import screen (M102) reads a " +
     "project's statuses and transitions off LIVE Jira, and this deployment did not wire a " +

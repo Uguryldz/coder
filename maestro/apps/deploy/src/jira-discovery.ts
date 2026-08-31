@@ -153,7 +153,7 @@ const DEFAULT_MAX_PER_ROUND = 20;
  * `assigned` is the wildcard rule: assignment alone is the trigger, so it adds
  * no third clause. The other two narrow it by status or issue type.
  */
-export function jqlFor(rule: DiscoveryRule): string {
+export function jqlFor(rule: DiscoveryRule): string | null {
   const quoted = (value: string): string => `"${value.replace(/"/gu, '\\"')}"`;
   /**
    * The assignee is matched as an ACCOUNT ID, not as a quoted name.
@@ -167,7 +167,34 @@ export function jqlFor(rule: DiscoveryRule): string {
    * The documented form for an id is bare, and Jira's own docs recommend
    * `assignee in (id)` for account ids specifically.
    */
-  const base = `project = ${quoted(rule.projectKey)} AND assignee in (${rule.assigneeAccountId.replace(/[^A-Za-z0-9:._-]/gu, "")})`;
+  const account = rule.assigneeAccountId.replace(/[^A-Za-z0-9:._-]/gu, "");
+
+  /**
+   * NO BOT ACCOUNT, NO SEARCH — the sweep's fail-closed boundary.
+   *
+   * `flow-decision.ts` reads an EMPTY `assigneeAccountId` as "whoever the
+   * ticket is assigned to": a deliberate wildcard, and a safe one there,
+   * because that code only ever CLASSIFIES a ticket somebody already handed to
+   * the platform. Here the same emptiness would mean something entirely
+   * different — it would decide which tickets to go and FETCH.
+   *
+   * The old line pasted the empty value in regardless and produced
+   * `project = "OPS" AND assignee in ()`. That is malformed JQL, so Jira
+   * answered 400, and the round's own catch logged it once per interval and
+   * moved on: a rule that silently swept NOTHING, forever, looking exactly like
+   * a rule that swept and found nothing.
+   *
+   * The service account this platform runs as is routinely a Jira ADMIN, and an
+   * admin sees every project in the bank. So the failure mode on the other side
+   * of one small JQL edit is not "no tickets" but "every ticket": drop the
+   * clause and the sweep starts runs on, and comments onto, tickets belonging
+   * to teams who have never heard of Maestro. Refusing to build a query at all
+   * is the only safe answer, and returning `null` says so in the type — a
+   * caller cannot forget to check a string that is not there.
+   */
+  if (account.length === 0) return null;
+
+  const base = `project = ${quoted(rule.projectKey)} AND assignee in (${account})`;
   if (rule.matchKind === "status") return `${base} AND status = ${quoted(rule.matchValue)}`;
   if (rule.matchKind === "issuetype") return `${base} AND issuetype = ${quoted(rule.matchValue)}`;
   return base;
@@ -208,13 +235,36 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   const seenThisRound = new Set<string>();
   /** Keys Jira returned this round, before the already-known filter. */
   let scanned = 0;
+  /** Rules that could not be turned into a bounded query — see `jqlFor`. */
+  let skippedRules = 0;
 
   for (const rule of rules) {
     if (started.length >= cap) break;
+
+    /**
+     * A rule that cannot be turned into a BOUNDED query is skipped, loudly.
+     *
+     * `jqlFor` answers null only for a rule with no bot account, and the reason
+     * that must not become a search is written there. It must not become
+     * SILENCE either: this is a misconfigured rule an admin can fix in the
+     * panel, and the sweep quietly ignoring it forever is how "my rule does
+     * nothing" becomes unanswerable.
+     */
+    const jql = jqlFor(rule);
+    if (jql === null) {
+      skippedRules += 1;
+      log(
+        `[keşif] ${rule.projectKey}/${rule.matchKind}=${rule.matchValue}: kuralda bot hesabı yok, ` +
+          "aranmadı — hesapsız bir arama projedeki HERKESİN ticket'ını kapsardı. " +
+          "Panelde Dinleme Kuralları'ndan kurala Maestro bot hesabını yazın.",
+      );
+      continue;
+    }
+
     let keys: string[];
     try {
       const page = await options.search.searchIssues({
-        jql: jqlFor(rule),
+        jql,
         maxResults: cap,
         // The key is all this needs; asking for fields would pull ticket text
         // through a path that has no business holding it.
@@ -269,10 +319,14 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
    * session; the log is what an operator reads first.
    */
   log(
-    `[keşif] tur bitti: ${rules.length} kural arandı, ${started.length} ticket alındı` +
-      `${scanned === 0 ? "" : `, ${scanned} eşleşme görüldü`}`,
+    `[keşif] tur bitti: ${rules.length - skippedRules} kural arandı, ${started.length} ticket alındı` +
+      `${scanned === 0 ? "" : `, ${scanned} eşleşme görüldü`}` +
+      // Counted in the summary too, not only in the per-rule line above: an
+      // operator scanning one line per round must see that some rules were
+      // never searched at all.
+      `${skippedRules === 0 ? "" : `, ${skippedRules} kural bot hesabı olmadığı için atlandı`}`,
   );
-  record({ lastError: null, rulesSearched: rules.length, lastStarted: started.length });
+  record({ lastError: null, rulesSearched: rules.length - skippedRules, lastStarted: started.length });
   return started;
 }
 

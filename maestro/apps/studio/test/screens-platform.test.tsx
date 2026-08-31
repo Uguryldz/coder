@@ -9,7 +9,7 @@ import { OnboardScreen } from "../src/screens/Onboard.tsx";
 import { RunnersScreen } from "../src/screens/Runners.tsx";
 import { SandboxScreen } from "../src/screens/Sandbox.tsx";
 import { YamlScreen } from "../src/screens/Yaml.tsx";
-import { renderScreen, stubFetch } from "./harness.tsx";
+import { ADMIN, renderScreen, stubFetch } from "./harness.tsx";
 
 function runner(overrides: Record<string, unknown>) {
   return {
@@ -344,6 +344,170 @@ describe("health screen", () => {
     );
   });
 });
+
+/**
+ * Yapılandırma bölümü — operatörün istediği tek cümlenin ekrandaki hâli:
+ * "DC ise DC göreyim orada".
+ *
+ * NOT: `stubFetch` yolu `endsWith` ile eşliyor, yani `/studio/config-health`
+ * `/studio/health` ile de biten bir yol. Bu yüzden dar olan HER ZAMAN önce
+ * yazılıyor — sıra bozulursa yapılandırma sorgusu servis yanıtını alır.
+ */
+describe("health screen — yapılandırma", () => {
+  const SERVICES = {
+    state: "healthy",
+    services: [
+      {
+        service: "postgres",
+        state: "healthy",
+        version: "16.4",
+        checkedAt: "2026-08-08T12:00:00.000Z",
+        note: null,
+      },
+    ],
+  };
+
+  function withConfig(body: unknown) {
+    return stubFetch([
+      { path: "/studio/config-health", body },
+      { path: "/studio/health", body: SERVICES },
+    ]);
+  }
+
+  it("says WHICH Jira in words, and names the variable that chose it", async () => {
+    const { fetchImpl } = withConfig({
+      state: "iyi",
+      findings: [
+        {
+          id: "jira_driver",
+          severity: "iyi",
+          value: "jira-dc",
+          detailKey: "config.detail.jira_driver.chosen",
+          detailParams: { variable: "JIRA_BASE_URL" },
+          fixKey: null,
+        },
+      ],
+    });
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    expect(await screen.findByText("Jira sürücüsü")).toBeInTheDocument();
+    expect(screen.getByText("Jira Data Center")).toBeInTheDocument();
+    expect(screen.getByText(/JIRA_BASE_URL dolu olduğu için/)).toBeInTheDocument();
+    // Servis canlılığı bölümü olduğu gibi duruyor.
+    expect(await screen.findByText("PostgreSQL")).toBeInTheDocument();
+  });
+
+  it("shows the fix beside a problem row and nothing beside a green one", async () => {
+    const { fetchImpl } = withConfig({
+      state: "sorun",
+      findings: [
+        {
+          id: "jira_driver",
+          severity: "sorun",
+          value: "yapilandirilmamis",
+          detailKey: "config.detail.jira_driver.none",
+          fixKey: "config.fix.jira_driver.none",
+        },
+        {
+          id: "webhook",
+          severity: "bilgi",
+          value: "tanimsiz",
+          detailKey: "config.detail.webhook.absent",
+          fixKey: "config.fix.webhook.absent",
+        },
+      ],
+    });
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    expect(await screen.findByText("YAPILANDIRILMAMIŞ")).toBeInTheDocument();
+    expect(screen.getByText(/YALNIZCA BİRİNİ doldurup/)).toBeInTheDocument();
+    // DC'de webhook'suzluk bir hata gibi görünmüyor: "bilgi" rozeti.
+    expect(screen.getByText("bilgi")).toBeInTheDocument();
+    expect(screen.getByText("Yapılandırmada sorun var")).toBeInTheDocument();
+  });
+
+  it("keeps the server's order — problems stay at the top", async () => {
+    const { fetchImpl } = withConfig({
+      state: "sorun",
+      findings: [
+        { id: "clarify", severity: "sorun", value: "KAPALI", detailKey: null, fixKey: null },
+        { id: "sweep", severity: "iyi", value: "acik", detailKey: null, fixKey: null },
+      ],
+    });
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    await screen.findByText("Netleştirme dönüşü");
+    const names = screen.getAllByRole("row").map((r) => r.textContent ?? "");
+    const clarify = names.findIndex((text) => text.includes("Netleştirme dönüşü"));
+    const sweep = names.findIndex((text) => text.includes("Ticket taraması"));
+    expect(clarify).toBeLessThan(sweep);
+  });
+
+  it("a config row the catalog has never heard of appears instead of blanking the page", async () => {
+    const { fetchImpl } = withConfig({
+      state: "uyari",
+      findings: [
+        { id: "yepyeni_sey", severity: "uyari", value: "garip", detailKey: null, fixKey: null },
+      ],
+    });
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    expect(await screen.findByText("yepyeni_sey")).toBeInTheDocument();
+    expect(screen.getByText("garip")).toBeInTheDocument();
+  });
+
+  /**
+   * İndirme butonu ve YANINDAKİ eksiklik cümlesi.
+   *
+   * Cümle testin konusu, süsü değil: panelden inen rapor servis log'larını
+   * içermiyor, ve operatörün bunu butona basmadan ÖNCE okuması gerekiyor.
+   * Yarım rapora bakıp "sorun yok" demek, bu ekranın kapatmaya geldiği
+   * sessiz-yanlışın ta kendisi.
+   */
+  it("offers the report download and says, beside it, what the report is missing", async () => {
+    const { fetchImpl } = withConfig({
+      state: "iyi",
+      findings: [{ id: "sweep", severity: "iyi", value: "acik", detailKey: null, fixKey: null }],
+    });
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    expect(
+      await screen.findByRole("button", { name: "Tanı raporu indir (.html)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/SERVİS LOG'LARINI İÇERMEZ/)).toBeInTheDocument();
+    expect(screen.getByText(/\.\/tani\.sh/)).toBeInTheDocument();
+  });
+
+  it("hides the download from a tech-lead who may still read the table", async () => {
+    const { fetchImpl } = withConfig({
+      state: "iyi",
+      findings: [{ id: "sweep", severity: "iyi", value: "acik", detailKey: null, fixKey: null }],
+    });
+    renderScreen(<HealthScreen />, {
+      fetchImpl,
+      session: { ...ADMIN, roles: ["tech-lead"] },
+    });
+
+    // Tablo görünüyor…
+    expect(await screen.findByText("Ticket taraması")).toBeInTheDocument();
+    // …ama rapor düğmesi ve onun uyarısı yok. Asıl kapı sunucuda (403).
+    expect(screen.queryByRole("button", { name: /Tanı raporu indir/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/SERVİS LOG'LARINI İÇERMEZ/)).not.toBeInTheDocument();
+  });
+
+  it("a failing config query does NOT take the service table down with it", async () => {
+    const { fetchImpl } = stubFetch([
+      { path: "/studio/config-health", body: { error: "boom" }, status: 500 },
+      { path: "/studio/health", body: SERVICES },
+    ]);
+    renderScreen(<HealthScreen />, { fetchImpl });
+
+    // Teşhis eklentisinin, teşhis etmeye geldiği ekranı karartması olacak en
+    // kötü şeydir — servisler hâlâ okunabilir.
+    expect(await screen.findByText("PostgreSQL")).toBeInTheDocument();
+  });
+});
+
 describe("commands screen", () => {
   it("states that a comment with extra text is not an approval", async () => {
     const { fetchImpl } = stubFetch([

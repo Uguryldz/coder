@@ -2,9 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { auditCsvFileName, auditEventsToCsv, filterAuditEvents } from "../audit-filter.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
+import type { StatusMapFacts } from "../config-health.js";
+import { buildConfigFindings, worstSeverity } from "../config-health.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest } from "../errors.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
+import { unwired } from "./unwired.js";
 
 /**
  * The operator's half of Studio: what is waiting on a human, what the fleet is
@@ -93,6 +96,90 @@ export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps):
         : "healthy";
     return reply.code(200).send({ state: worst, services });
   });
+
+  /**
+   * NASIL kurulmuş — yapılandırma teşhisi (`config-health.ts`).
+   *
+   * `/studio/health`ten AYRI bir uç, ve bu bilinçli bir karar: o uç bir
+   * CANLILIK ölçümüdür (probe'lar, 60 sn'de bir, cevabı zamanla değişir), bu
+   * ise bir KURULUM gerçeğidir (`.env`'de hangi değişken dolu, sürücü ne
+   * yapabiliyor). İkisini tek yanıta katmak `state` toplayıcısını bozardı:
+   * yapılandırılmamış bir Jira, kapalı bir Postgres ile aynı kırmızıyı
+   * üretirdi — oysa biri bir dosya satırı, diğeri bir kesinti. Ayrıca bu uç
+   * veritabanına da bakıyor (varyant denetimi, statü eşlemeleri) ve o okuma
+   * canlılık yoklamasının döngüsüne ait değil.
+   *
+   * Ayrılığın ikinci faydası: `/studio/health` yanıtı BİR HARF DEĞİŞMEDİ, yani
+   * mevcut ekran, testler ve alarm kuralları etkilenmedi.
+   *
+   * KABLOLANMAMIŞ KURULUMDA 503 DEĞİL: eksik bilgiler "bilinmiyor" satırı
+   * olarak döner. Bir teşhis ekranının kendisi teşhis edilemez hâle gelirse,
+   * kapattığı hata sınıfını yeniden açar.
+   */
+  app.get("/studio/config-health", { preHandler: opsHandler }, async (_request, reply) => {
+    const [clarify, variants] = await Promise.all([
+      // Bir okuma hatası "kapalı" DEĞİLDİR: bilinmezliği kapalılık gibi
+      // göstermek, operatörü olmayan bir arızayı düzeltmeye gönderirdi.
+      settled(deps.clarifyReentryStatus),
+      settled(deps.variantModelAudit),
+    ]);
+    const findings = buildConfigFindings({
+      deployment: deps.deploymentConfig?.() ?? null,
+      intake: deps.commandIntakeStatus?.() ?? null,
+      clarify,
+      variants,
+      statusMaps: await statusMapFacts(deps),
+    });
+    return reply.code(200).send({ state: worstSeverity(findings), findings });
+  });
+
+  /**
+   * TANI RAPORU — sunucuya SSH'lemeden, docker'a girmeden indirilen HTML.
+   *
+   * Operatörün isteği buydu: "bu scripti uidan göremezmiyim, docker içine
+   * girmeden". `./tani.sh`e erişmek bir kabuk, bir SSH anahtarı ve docker
+   * yetkisi istiyor — bankada üçü de bir talep formu demek, ve teşhis aracının
+   * ulaşılamaz olması onu var olmamış saymakla aynı kapıya çıkıyor.
+   *
+   * ── NEDEN ADMIN, `opsHandler` DEĞİL ────────────────────────────────────────
+   * Ekrandaki yapılandırma TABLOSU tech-lead'e de açık — orada her satır kapalı
+   * bir durum ve bir katalog anahtarı. Bu rapor öyle değil: canlı Jira
+   * denemelerinin hata gövdelerini, koşu/ticket anahtarlarını ve akış durumunu
+   * TEK bir dosyada topluyor, ve o dosya tasarımı gereği e-postayla, destek
+   * ticket'ıyla, ekran görüntüsüyle dolaşıyor. Toplanmış hâlin ağırlığı
+   * parçaların toplamından fazla, o yüzden gate de daha dar.
+   *
+   * ── EKSİK OLAN, RAPORUN İÇİNDE SÖYLENİR ────────────────────────────────────
+   * Bu rapor `./tani.sh`in ALT KÜMESİ: servis log'ları yok, çünkü BFF bir
+   * konteynerin içinde ve kardeş konteynerlerin log'una erişemez (docker
+   * soketi bağlı değil ve bağlanmamalı). Eksikliği HTML'in kendi 4. bölümünde
+   * adıyla yazılı — üretici öyle kuruyor. Yarım bir rapora bakıp "sorun yok"
+   * demek, bu ekranın kapatmaya geldiği hatanın ta kendisi olurdu.
+   *
+   * 503-by-name, boş sayfa değil: raporu üretemeyen bir kurulumda indirilen boş
+   * bir HTML, aynı sessiz-yanlışın daha kötü hâli olurdu.
+   */
+  app.get(
+    "/studio/tani",
+    { preHandler: [preHandler, requireAnyRole("admin")] },
+    async (_request, reply) => {
+      if (deps.taniReport === undefined) unwired("tani");
+      const report = await deps.taniReport();
+      return reply
+        .code(200)
+        .header("content-type", "text/html; charset=utf-8")
+        // `attachment`: tarayıcıda AÇILMAK yerine inmesi için. Sayfa maskeden
+        // geçmiş log ve Jira hata gövdeleri taşıyor, ve bir sekmede açılan
+        // sayfa tarayıcı geçmişine yerleşir — indirilen bir dosya, operatörün
+        // sildiği zaman gerçekten giden bir eserdir.
+        .header("content-disposition", `attachment; filename="${report.fileName}"`)
+        // Bir tanı raporu üretildiği ANIN fotoğrafıdır; ara bir vekilin onu
+        // saklayıp bir sonraki operatöre eski hâlini vermesi, teşhis aracının
+        // verebileceği en yanlış cevap.
+        .header("cache-control", "no-store")
+        .send(report.html);
+    },
+  );
 
   const auditHandler = [preHandler, requireAnyRole(...AUDIT_ROLES)];
 
@@ -221,4 +308,44 @@ function poolState(accounts: readonly { state: string }[]): {
     disabled: count("disabled"),
     hasCapacity: ready > 0,
   };
+}
+
+/**
+ * Bir isteğe bağlı okuyucunun cevabı, ya da null.
+ *
+ * Kablolanmamış (`undefined`) ve FIRLATAN okuyucu aynı cevabı veriyor, ve bu
+ * doğru: ikisi de "bu gerçeği bilmiyoruz" demek. Fırlatanın 500 olması,
+ * veritabanı bir an takıldığı için bütün teşhis ekranını karartırdı — oysa
+ * ekranın geri kalan altı satırı hâlâ okunabilir durumda.
+ */
+async function settled<T>(read: (() => Promise<T>) | undefined): Promise<T | null> {
+  if (read === undefined) return null;
+  try {
+    return await read();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Dinleme kurallarının statü eşlemesi tarafı — kaç kural var, kaçında eşleme
+ * dolu.
+ *
+ * Kuralların kendisinden sayılıyor, ayrı bir sayaçtan değil: bir sayaç
+ * kurallarla ayrışabilir ve ekran "eşleme var" derken hiçbir ticket kıpırdamaz.
+ * Depo kablolanmamışsa null — 503 değil, çünkü bu ekranın tek bir satırı.
+ */
+async function statusMapFacts(deps: ResolvedDeps): Promise<StatusMapFacts | null> {
+  if (deps.listening === undefined) return null;
+  try {
+    const rules = await deps.listening.list();
+    return {
+      ruleCount: rules.length,
+      mappedRuleCount: rules.filter(
+        (rule) => rule.statusMap != null && Object.keys(rule.statusMap).length > 0,
+      ).length,
+    };
+  } catch {
+    return null;
+  }
 }

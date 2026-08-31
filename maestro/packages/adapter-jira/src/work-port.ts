@@ -12,6 +12,7 @@ import {
   JiraResponseError,
 } from "./errors.js";
 import { ISSUE_FIELDS, mapIssueToSnapshot } from "./mapping.js";
+import { searchDcIssues, type DcSearchPage, type DcSearchRequest } from "./search.js";
 import {
   currentStatusNameOf,
   foldStatusName,
@@ -239,6 +240,39 @@ export class JiraDcWorkPort implements WorkPort {
     const comments = asRecord(raw)?.["comments"];
     if (!Array.isArray(comments)) throw new JiraResponseError("comments", ["response carries no comments array"]);
     return comments;
+  }
+
+  /**
+   * JQL araması — bir ticket'ın webhook OLMADAN platforma girebildiği tek yol.
+   *
+   * SÜRÜCÜYE ÖZGÜ YETENEK, donmuş `WorkPort`'un bir metodu değil: `listComments`
+   * ve `readAvailableTransitions` ile aynı desen. `apps/deploy`'un keşif döngüsü
+   * sürücüyü tam olarak bu metodun VARLIĞIYLA yokluyor (`canSearch`, yapısal
+   * kontrol), yani bunu eklemek keşfi DC'de açan şeyin kendisidir.
+   *
+   * ── Neden bu metot bugüne dek yoktu, ve neden yokluğu ölümcüldü ───────────
+   * `searchIssues` yalnız Cloud sürücüsünde vardı, ve `canSearch` DC'de false
+   * dönüyordu. Tamamen kapalı bir kurulumda (webhook kaydedilemeyen bir Data
+   * Center) bu üç şeyi aynı anda doğru kılıyordu:
+   *
+   *   · webhook gelmiyor  → intake yolu kapalı;
+   *   · yorum yoklaması yalnız ZATEN koşusu olan ticket'lara bakıyor
+   *     (`openTickets` = `db.workflowRun`) → hiç koşu yokken liste boş;
+   *   · tarama DC'de hiç başlamıyor → yeni ticket bulunamıyor.
+   *
+   * Üçü birlikte kısır bir döngü: panel yeşil, bağlantı yeşil, kurallar doğru,
+   * ve hiçbir ticket asla akışa girmiyor — hiçbir yerde de hata yok.
+   *
+   * ── Neden mümkün ──────────────────────────────────────────────────────────
+   * DC'de arama YOK değildi; yalnızca sürücüye YAZILMAMIŞTI. REST v2
+   * `GET /rest/api/2/search` ucunu `jql`/`startAt`/`maxResults`/`fields` ile
+   * sunuyor (Atlassian Server/DC dokümanı, Context7 ile doğrulandı). Cevap
+   * şekli Cloud'unkinden farklı — DC klasik `startAt`/`total` sayfalamasını
+   * sürdürüyor, Cloud imleç sayfalamasına geçti — bu yüzden ayrıştırıcı ayrı
+   * bir dosyada (`search.ts`), ortak olan yalnız `issues` dizisi.
+   */
+  searchIssues(request: DcSearchRequest): Promise<DcSearchPage> {
+    return searchDcIssues(this.client, request);
   }
 
   /**

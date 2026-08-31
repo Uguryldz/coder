@@ -54,7 +54,7 @@ describe("projects page (tabbed binding)", () => {
             path: "/routing",
             body: {
               projects: [
-                { projectKey: "OPS", trigger: "label", apps: ["Uguryldz/maestro-pilot"], noteKey: "routing.note.active_label", noteParams: { label: "maestro" } },
+                { projectKey: "OPS", apps: ["Uguryldz/maestro-pilot"], noteKey: "routing.note.active_by_rule" },
               ],
               rules: [],
               policy: { backendByClass: {}, whenOnpremMissing: "block" },

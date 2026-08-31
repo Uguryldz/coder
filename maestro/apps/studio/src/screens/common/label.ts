@@ -87,7 +87,7 @@ export function useEnumLabel(): (keyPrefix: string, value: unknown) => EnumLabel
 
 /**
  * Render a WHOLE sentence the server chose, as a catalog key plus its
- * substitutions — `{ noteKey: "routing.note.active_label", noteParams: {…} }`.
+ * substitutions — `{ noteKey: "routing.note.dry_run", noteParams: {…} }`.
  *
  * The difference from {@link useEnumLabel}: that one owns the key prefix and
  * receives only the enum value, which is right when the screen knows the family

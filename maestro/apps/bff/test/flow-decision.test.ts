@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { flowDecisionFor, ruleFor, rulesFor, type ClassifiableTicket } from "../src/flow-decision.js";
+import {
+  flowDecisionFor,
+  ruleFor,
+  rulesFor,
+  statusGateOf,
+  type ClassifiableTicket,
+} from "../src/flow-decision.js";
 import type { ListeningRuleRecord } from "../src/listening-store.js";
 
 /**
@@ -398,5 +404,282 @@ describe("flowDecisionFor — every ticket assigned to the bot", () => {
     expect(ruleFor([CATCH_ALL, specific], ticket({ assignee: "712020:bot", issueType: "Hata" }))?.ruleId).toBe(
       "lr_bug",
     );
+  });
+});
+
+/**
+ * HANGİ AJAN — kuralın ajan seçimi, karara iliştirilmiş hâlde.
+ *
+ * Bu blok bir KOPUKLUĞU ölçüyor: `ListeningRule` sütunları vardı (0022), panel
+ * yazıyordu, BFF okuyordu — ama karar buradan çıkarken ajan iğnesi düşüyor ve
+ * `apps/deploy/src/bin/bff.ts` her koşuyu alfabetik olarak ilk analist
+ * varyantına bağlıyordu. Yani kural ekranında ajan seçilebiliyor, seçim hiçbir
+ * şeyi değiştirmiyordu.
+ */
+describe("flowDecisionFor — kararı veren kuralın ajan seçimi", () => {
+  it("kazanan kuralın iki ajanını da karara taşır", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_ajanli",
+        matchValue: "Hata",
+        analystVariantId: "analyst-kredi",
+        engineerVariantId: "engineer-dotnet",
+      }),
+    ];
+    const decision = flowDecisionFor(rules, ticket({ issueType: "Hata" }), null);
+    expect(decision.analystVariantId).toBe("analyst-kredi");
+    expect(decision.engineerVariantId).toBe("engineer-dotnet");
+  });
+
+  it("ajanı yalnızca BİR tarafta seçen kural, diğerini varsayılana bırakır", () => {
+    // Analiz akışı yazan bir kurul mühendis ajanı seçmeyebilir; bu bir eksik
+    // değil, bir tercih — ve o taraf kurulum varsayılanına düşmeli.
+    const rules = [rule({ matchValue: "Hata", analystVariantId: "analyst-kredi" })];
+    const decision = flowDecisionFor(rules, ticket({ issueType: "Hata" }), null);
+    expect(decision.analystVariantId).toBe("analyst-kredi");
+    expect(decision.engineerVariantId).toBeUndefined();
+  });
+
+  /**
+   * GERİYE DÖNÜK UYUM — bu paketin en önemli tek testi.
+   *
+   * Ajan seçimi bir DARALTMA'dır, bir kapı değil: seçmemiş her mevcut kural
+   * bugüne kadar nasıl koşuyorsa öyle koşmalı. Alan `null` olarak DEĞİL, HİÇ
+   * yazılmaz — yokluk, çağıran tarafta "kurulum varsayılanına düş" demek.
+   */
+  it("ajan seçmemiş kuralda iki alanı da HİÇ yazmaz", () => {
+    const rules = [rule({ matchValue: "Hata" })];
+    const decision = flowDecisionFor(rules, ticket({ issueType: "Hata" }), null);
+    expect(decision.analystVariantId).toBeUndefined();
+    expect(decision.engineerVariantId).toBeUndefined();
+    expect("analystVariantId" in decision).toBe(false);
+    expect("engineerVariantId" in decision).toBe(false);
+  });
+
+  it("boş ve yalnızca boşluktan oluşan seçimi 'seçilmedi' sayar", () => {
+    // Panel bir seçimi kaldırdığında satırda "" mi `null` mü kaldığı bir
+    // depolama ayrıntısı; koşuya boş bir varyant kimliği geçmek ise gateway
+    // sözleşmesini ilk model çağrısında bozar.
+    const rules = [rule({ matchValue: "Hata", analystVariantId: "", engineerVariantId: "   " })];
+    const decision = flowDecisionFor(rules, ticket({ issueType: "Hata" }), null);
+    expect(decision.analystVariantId).toBeUndefined();
+    expect(decision.engineerVariantId).toBeUndefined();
+  });
+
+  it("hiçbir kural eşleşmediğinde ajan da seçilmez", () => {
+    const byDefault = flowDecisionFor([rule({ matchValue: "Hata" })], ticket({ issueType: "Görev" }), "analiz");
+    expect(byDefault.reason).toBe("default");
+    expect(byDefault.analystVariantId).toBeUndefined();
+
+    const none = flowDecisionFor([], ticket({ issueType: "Hata" }), null);
+    expect(none.reason).toBe("none");
+    expect(none.engineerVariantId).toBeUndefined();
+  });
+
+  /**
+   * Çakışmada ajanlar da KAZANAN kuraldan, `statusMap` ile aynı gerekçeyle:
+   * bir kuralın akışını başka bir kuralın ajanıyla koşturmak, çakışmayı
+   * çözmek değil, üçüncü bir yapılandırma uydurmaktır.
+   */
+  it("çakışmayı kazanan kuralın ajanlarını alır, karıştırmaz", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_fix",
+        matchKind: "issuetype",
+        matchValue: "Hata",
+        flowType: "duzeltme",
+        priority: 1,
+        analystVariantId: "analyst-yanlis",
+        engineerVariantId: "engineer-yanlis",
+      }),
+      rule({
+        ruleId: "lr_an",
+        matchKind: "status",
+        matchValue: "Yapılacak",
+        flowType: "analiz",
+        priority: 2,
+        analystVariantId: "analyst-kredi",
+      }),
+    ];
+    const decision = flowDecisionFor(rules, ticket({ issueType: "Hata", status: "Yapılacak" }), null);
+    expect(decision.reason).toBe("rule_conflict");
+    expect(decision.ruleId).toBe("lr_an");
+    expect(decision.analystVariantId).toBe("analyst-kredi");
+    // Kazanan kural mühendis seçmedi; kaybedenin seçimi devralınmaz.
+    expect(decision.engineerVariantId).toBeUndefined();
+  });
+});
+
+/**
+ * STATÜ KAPISI — her kuralda, tetikleme tipinden BAĞIMSIZ (0024).
+ *
+ * Operatörün kendi cümlesi: "bota atanan her ticket seçsem de o statüde
+ * atanıyor olmalı. Yani atanmış olsa da izin verdiğim analiz statüsünde
+ * değilse, o olmadan çalışmamalı."
+ *
+ * Bu blok bu cümlenin testi. Öncesinde dört tetikleme tipi ALTERNATİFTİ:
+ * `assigned` seçildiğinde statüye HİÇ bakılmıyordu, dolayısıyla bota atanmış
+ * her ticket — panonun neresinde olursa olsun — işleniyordu. Bu, servis hesabı
+ * ADMIN olan bir bankada her projedeki her atamanın analize girmesi demekti.
+ */
+describe("flowDecisionFor — statü kapısı her kuralda sorulur", () => {
+  const BOT = "712020:bot";
+
+  it("bota atanmış + DOĞRU statü → işlenir", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_atanan",
+        matchKind: "assigned",
+        matchValue: "*",
+        assigneeAccountId: BOT,
+        allowedStatuses: ["Analiz"],
+        flowType: "analiz",
+      }),
+    ];
+    const decision = flowDecisionFor(rules, ticket({ assignee: BOT, status: "Analiz" }), null);
+    expect(decision.reason).toBe("rule");
+    expect(decision.ruleId).toBe("lr_atanan");
+    expect(decision.flow).toBe("analiz");
+  });
+
+  /**
+   * KULLANICININ ASIL İSTEDİĞİ TEST.
+   *
+   * Ticket bota ATANMIŞ ve tetikleme tipi tam da "bota atanan her ticket" —
+   * yani 0024 öncesi bu kural KESİNLİKLE eşleşirdi. Statü izin verilenler
+   * arasında olmadığı için artık eşleşmiyor.
+   */
+  it("bota atanmış + YANLIŞ statü → İŞLENMEZ", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_atanan",
+        matchKind: "assigned",
+        matchValue: "*",
+        assigneeAccountId: BOT,
+        allowedStatuses: ["Analiz"],
+        flowType: "analiz",
+      }),
+    ];
+    const decision = flowDecisionFor(rules, ticket({ assignee: BOT, status: "Tamam" }), null);
+    // Hiçbir kural eşleşmedi: kurulum varsayılanı yok, akış seçilmedi.
+    expect(decision.reason).toBe("none");
+    expect(decision.ruleId).toBeUndefined();
+    expect(rulesFor(rules, ticket({ assignee: BOT, status: "Tamam" }))).toEqual([]);
+  });
+
+  it("statü kapısı ISSUETYPE kuralında da sorulur — tetikleme tipinden bağımsız", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_hata",
+        matchKind: "issuetype",
+        matchValue: "Hata",
+        assigneeAccountId: BOT,
+        allowedStatuses: ["Yapılacak"],
+      }),
+    ];
+    // Tip tutuyor, statü tutmuyor: 0024 öncesi eşleşirdi.
+    expect(rulesFor(rules, ticket({ assignee: BOT, issueType: "Hata", status: "Tamam" }))).toEqual(
+      [],
+    );
+    // Aynı ticket, izin verilen statüde: eşleşir.
+    const ok = flowDecisionFor(
+      rules,
+      ticket({ assignee: BOT, issueType: "Hata", status: "Yapılacak" }),
+      null,
+    );
+    expect(ok.ruleId).toBe("lr_hata");
+  });
+
+  it("statü kapısı ETİKET kuralında da sorulur", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_etiket",
+        matchKind: "label",
+        matchValue: "maestro",
+        assigneeAccountId: BOT,
+        allowedStatuses: ["Yapılacak"],
+      }),
+    ];
+    expect(
+      rulesFor(rules, ticket({ assignee: BOT, labels: ["maestro"], status: "Tamam" })),
+    ).toEqual([]);
+  });
+
+  it("birden çok izinli statüden HERHANGİ biri yeterlidir", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_coklu",
+        matchKind: "assigned",
+        matchValue: "*",
+        assigneeAccountId: BOT,
+        allowedStatuses: ["Yapılacaklar", "Analiz Bekliyor"],
+        flowType: "analiz",
+      }),
+    ];
+    for (const status of ["Yapılacaklar", "Analiz Bekliyor"]) {
+      expect(flowDecisionFor(rules, ticket({ assignee: BOT, status }), null).ruleId).toBe(
+        "lr_coklu",
+      );
+    }
+    expect(rulesFor(rules, ticket({ assignee: BOT, status: "Devam Ediyor" }))).toEqual([]);
+  });
+
+  /**
+   * BİLİNMEYEN STATÜ KAPALI SAYILIR — kapının fail-closed yönü.
+   *
+   * Statüsü okunmamış bir ticket'ı statü-kısıtlı bir kuralla işlemek, tam
+   * olarak kapının engellemek için var olduğu şeyi yapmak olurdu.
+   */
+  it("statüsü OKUNMAMIŞ ticket, statü kısıtı olan kuralla eşleşmez", () => {
+    const rules = [
+      rule({
+        ruleId: "lr_atanan",
+        matchKind: "assigned",
+        matchValue: "*",
+        assigneeAccountId: BOT,
+        allowedStatuses: ["Analiz"],
+      }),
+    ];
+    expect(rulesFor(rules, ticket({ assignee: BOT, status: null }))).toEqual([]);
+  });
+
+  /**
+   * MEVCUT KURALLAR: statü kısıtı olmayan kural ÇALIŞIR.
+   *
+   * 0024 öncesi yazılmış her satır bu durumda. Fail-closed backfill bankanın
+   * bugün çalışan her kuralını, kimse hiçbir şey değiştirmeden, sessizce
+   * durdururdu. Çalışırlar — ama `statusGateOf` bu durumu ADLANDIRIR ve panel,
+   * karar dökümü ve tarama günlüğü aynı adı okur; sessiz bir fail-open değil.
+   */
+  it("statü kısıtı OLMAYAN mevcut kural aynen çalışır (geriye dönük uyumluluk)", () => {
+    for (const allowedStatuses of [undefined, null, []] as const) {
+      const rules = [
+        rule({
+          ruleId: "lr_eski",
+          matchKind: "assigned",
+          matchValue: "*",
+          assigneeAccountId: BOT,
+          flowType: "analiz",
+          ...(allowedStatuses === undefined ? {} : { allowedStatuses }),
+        }),
+      ];
+      const decision = flowDecisionFor(rules, ticket({ assignee: BOT, status: "Tamam" }), null);
+      expect(decision.ruleId, `allowedStatuses=${JSON.stringify(allowedStatuses)}`).toBe("lr_eski");
+    }
+  });
+
+  it("statü kısıtsız kuralı GÖRÜNÜR kılar — sessiz fail-open değil", () => {
+    const ungated = rule({ ruleId: "lr_eski", matchKind: "assigned", matchValue: "*" });
+    const gated = rule({ ruleId: "lr_yeni", allowedStatuses: ["Analiz"] });
+    expect(statusGateOf(ungated, "Tamam")).toBe("ungated");
+    expect(statusGateOf(gated, "Analiz")).toBe("open");
+    expect(statusGateOf(gated, "Tamam")).toBe("closed");
+    expect(statusGateOf(gated, null)).toBe("unknown_status");
+  });
+
+  it("statü karşılaştırması baştaki/sondaki boşluğa takılmaz", () => {
+    const gated = rule({ allowedStatuses: ["  Analiz  "] });
+    expect(statusGateOf(gated, "Analiz")).toBe("open");
+    expect(statusGateOf(gated, " Analiz ")).toBe("open");
   });
 });

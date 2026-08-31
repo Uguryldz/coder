@@ -23,7 +23,8 @@ import { z } from "zod";
 export type FlowType = "analiz" | "duzeltme" | "gelistirme";
 
 /**
- * Which ticket field a rule matches on. Mirrors the DB CHECK (migration 0020).
+ * Which ticket field a rule matches on — THE trigger. Mirrors the DB CHECK
+ * (migrations 0020, 0023).
  *
  * `assigned` is the odd one and is deliberately in the same enum rather than a
  * separate flag: it matches NO field at all. The rule fires on the assignment
@@ -31,11 +32,24 @@ export type FlowType = "analiz" | "duzeltme" | "gelistirme";
  * which is the trigger most first-time operators actually want and the one the
  * two-member domain made unsayable. See `ASSIGNED_MATCH_VALUE` for why such a
  * rule still carries a value.
+ *
+ * `label` (0023) is the second odd one, for the opposite reason: it is the only
+ * MANY-VALUED field. A ticket has one status and one issue type, but any number
+ * of labels, so `flow-decision.ts` matches it by MEMBERSHIP, not equality.
+ *
+ * It arrived here from somewhere else. The opt-in label used to live on the
+ * PROJECT BINDING (`JiraProjectBinding.triggerLabel`) as a gate in FRONT of the
+ * rules: a ticket without that one label was refused before any rule was even
+ * consulted. Two trigger definitions that did not know about each other gave
+ * the same ticket two different answers — the sweep passed `explicit: true` and
+ * skipped the gate, the webhook did not and dropped the ticket as
+ * `not_opted_in`. One trigger, defined in one place, is the fix; the gate is
+ * gone from `runIntake` and the label is a rule kind like the other three.
  */
-export type MatchKind = "status" | "issuetype" | "assigned";
+export type MatchKind = "status" | "issuetype" | "assigned" | "label";
 
 export const FLOW_TYPES: readonly FlowType[] = ["analiz", "duzeltme", "gelistirme"];
-export const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype", "assigned"];
+export const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype", "assigned", "label"];
 
 /**
  * The value an `assigned` rule stores. NOT a wildcard anybody interprets — no
@@ -105,6 +119,72 @@ export const StatusMapSchema = z
 export type StatusMap = z.infer<typeof StatusMapSchema>;
 
 /**
+ * HANGİ STATÜDEKİ ticket bu kuralla işlenebilir — statü KAPISI (0024).
+ *
+ * `StatusMapSchema` ile karıştırılmamalı ve karıştırılması kolay olduğu için
+ * burada yazıyor: `statusMap` "ticket'ı NEREYE taşıyayım" der (çıktı),
+ * `allowedStatuses` ise "ticket NEREDEYSE işleyebilirim" der (giriş kapısı).
+ * Biri panoyu sürer, diğeri işi almaya izin verir.
+ *
+ * Liste, çünkü bir kural birden çok statüye meşru olarak izin verebilir
+ * ("Yapılacaklar" ve "Analiz Bekliyor"); operatörü aynı akış/ajan/eşleme
+ * ayarlarını iki ayrı kurala kopyalamaya zorlamak, o iki kopyanın zamanla
+ * ayrışmasını garanti etmek olurdu.
+ */
+export const AllowedStatusesSchema = z.array(StatusName);
+
+/** İzin verilen statü adları. `null` = "statü kısıtı yok" — aşağıdaki nota bakın. */
+export type AllowedStatuses = readonly string[];
+
+/**
+ * Bir `allowedStatusesJson` kolon değerini okur, FAIL-SAFE.
+ *
+ * `parseStatusMap` ile aynı duruş ve aynı gerekçe: okuma yolu, teşhis ettiği
+ * işi düşüremez. Elle SQL ile yazılmış, gelecekteki bir sürümden gelmiş ya da
+ * içine string konmuş bir değer `null`'a düşer.
+ *
+ * VE BURADA `null`'A DÜŞMEK GENİŞLETİCİDİR — statü kapısını kaldırır. Bu
+ * yüzden `onInvalid` isteğe bağlı değil, çağıranın raporlaması gereken bir şey:
+ * bozuk bir satır yüzünden kapının sessizce açılması, bu kapının var olma
+ * sebebinin tam tersidir. `parseStatusMap`'te bozulma DARALTICIYDI (yorum
+ * moduna düşerdi), burada GENİŞLETİCİ; fark, uyarının neden zorunlu olduğudur.
+ *
+ * Boş dizi `null`'a normalize edilir: "hiçbir statüye izin verilmedi" ile
+ * "statü kısıtı yok" iki ayrı cevap gibi durup tek bir davranışa (kural hiç
+ * çalışmaz / kural her statüde çalışır) indiğinde, hangisinin kastedildiğini
+ * kimse söyleyemez. Bir temsil, bir anlam: yok = kısıt yok.
+ */
+export function parseAllowedStatuses(
+  value: unknown,
+  onInvalid?: (reason: string) => void,
+): AllowedStatuses | null {
+  if (value === null || value === undefined) return null;
+  const parsed = AllowedStatusesSchema.safeParse(value);
+  if (!parsed.success) {
+    onInvalid?.(parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; "));
+    return null;
+  }
+  const cleaned = parsed.data.map((name) => name.trim()).filter((name) => name !== "");
+  return cleaned.length === 0 ? null : cleaned;
+}
+
+/**
+ * Bir kuralın statü kapısı YOK mu — panelin, dökümün ve tarama günlüğünün
+ * aynı soruyu aynı şekilde sorması için tek yer.
+ *
+ * 0024 öncesi yazılmış her `assigned`/`issuetype`/`label` kuralı bu durumda ve
+ * bunlar ÇALIŞMAYA DEVAM EDER (bkz. `flow-decision.ts` `matches`). Çalışmaya
+ * devam etmeleri, görünmez olmaları demek değil: bu yüklem, o kuralı işaretleyen
+ * her yüzeyin okuduğu şey.
+ */
+export function hasNoStatusGate(rule: {
+  allowedStatuses?: AllowedStatuses | null;
+}): boolean {
+  const allowed = rule.allowedStatuses;
+  return allowed === null || allowed === undefined || allowed.length === 0;
+}
+
+/**
  * Parse a `statusMapJson` column value, FAIL-SAFE.
  *
  * The read path must never be the thing that takes discovery down. A map that
@@ -142,8 +222,22 @@ export interface ListeningRuleRecord {
   /** The account a ticket must be assigned to (the Maestro Bot accountId). */
   assigneeAccountId: string;
   matchKind: MatchKind;
-  /** The status name or issue-type name that triggers this rule. */
+  /** The status name, issue-type name or LABEL that triggers this rule. */
   matchValue: string;
+  /**
+   * HANGİ STATÜDEKİ ticket işlenebilir — her kuralda sorulan STATÜ KAPISI
+   * (0024), `matchKind`'dan bağımsız.
+   *
+   * `matches()` bu kapıyı HER ZAMAN kontrol eder: tetikleme tipi `assigned`
+   * bile olsa, ticket bu listede olmayan bir statüdeyse kural eşleşmez.
+   *
+   * `null`/absent (0024 öncesi yazılmış kurallar) = "statü kısıtı yok". Kural
+   * çalışır — mevcut kurulumu sessizce durdurmamak için — ama panelde, karar
+   * dökümünde ve tarama günlüğünde bu eksiklik açıkça işaretlenir
+   * (`hasNoStatusGate`). Sessiz bir fail-open, bu alanın var olma sebebinin
+   * kendisi olurdu.
+   */
+  allowedStatuses?: AllowedStatuses | null;
   flowType: FlowType;
   priority: number;
   enabled: boolean;

@@ -660,7 +660,7 @@ async function jiraBolumu(
  * literaline hem gerçek migration klasörüne karşı kilitliyor — sayı ancak
  * üçü birden güncellenirse geçer.
  */
-export const BEKLENEN_MIGRATION = 23;
+export const BEKLENEN_MIGRATION = 26;
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const jiraKapali = argv.includes("--jira-yok");

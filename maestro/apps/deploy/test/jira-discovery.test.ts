@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { flowDecisionFor } from "../../bff/src/flow-decision.js";
 import {
   canSearch,
+  classifyingFieldsOf,
   discoverOnce,
   jqlFor,
   startJiraDiscovery,
@@ -71,6 +73,71 @@ describe("jqlFor", () => {
     );
   });
 
+  /**
+   * STATÜ KAPISI SORGUYA HER ZAMAN GİRER (0024).
+   *
+   * Kararın (`flow-decision.ts`) yanlış statüdeki ticket'ı işlememesi yetmez:
+   * o noktada ticket ÇOKTAN OKUNMUŞTUR. Bu platformun servis hesabı ADMIN
+   * olduğu için okuma da bir maliyettir — bağlanmamış statüdeki ticket'lar hiç
+   * ÇEKİLMEMELİ. `boundProjects`ün sorguyu projeye hapsetmesiyle aynı gerekçe.
+   */
+  it("statüyü BOTA ATANMA kuralının sorgusuna da koyar — tetikleme tipinden bağımsız", () => {
+    expect(
+      jqlFor({
+        ...RULE,
+        matchKind: "assigned",
+        matchValue: "*",
+        allowedStatuses: ["Analiz"],
+      }),
+    ).toBe('project = "OPS" AND assignee in (712020:bot) AND status in ("Analiz")');
+  });
+
+  it("statüyü İŞ TİPİ kuralının sorgusuna da koyar", () => {
+    expect(jqlFor({ ...RULE, allowedStatuses: ["Yapılacak"] })).toBe(
+      'project = "OPS" AND assignee in (712020:bot) AND status in ("Yapılacak") AND issuetype = "Görev"',
+    );
+  });
+
+  it("birden çok izinli statüyü tek bir in(...) listesine koyar", () => {
+    expect(
+      jqlFor({
+        ...RULE,
+        matchKind: "assigned",
+        matchValue: "*",
+        allowedStatuses: ["Yapılacaklar", "Analiz Bekliyor"],
+      }),
+    ).toBe(
+      'project = "OPS" AND assignee in (712020:bot) AND status in ("Yapılacaklar", "Analiz Bekliyor")',
+    );
+  });
+
+  /**
+   * Kısıtsız kuralda hiç eklenmez. Boş bir `status in ()` malformed JQL'dir;
+   * Jira 400 döner ve turun catch'i onu turda bir kez loglayıp geçer — yani
+   * kural sessizce, sonsuza dek HİÇBİR ŞEY aramış olur. `jqlFor`un var olma
+   * sebebi olan sessiz-sonsuz hatanın ta kendisi.
+   */
+  it("statü kısıtı YOKSA sorguya statü yan tümcesi eklemez (mevcut kurallar)", () => {
+    for (const allowedStatuses of [undefined, null, []] as const) {
+      expect(
+        jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*", allowedStatuses }),
+        `allowedStatuses=${JSON.stringify(allowedStatuses)}`,
+      ).toBe('project = "OPS" AND assignee in (712020:bot)');
+    }
+  });
+
+  it("sadece boşluktan oluşan statü adlarını atar, sorguyu bozmaz", () => {
+    expect(
+      jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*", allowedStatuses: ["  ", "Analiz"] }),
+    ).toBe('project = "OPS" AND assignee in (712020:bot) AND status in ("Analiz")');
+  });
+
+  it("statü adındaki tırnağı kaçırır — JQL enjeksiyonu olmaz", () => {
+    expect(
+      jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*", allowedStatuses: ['Ana"liz'] }),
+    ).toBe('project = "OPS" AND assignee in (712020:bot) AND status in ("Ana\\"liz")');
+  });
+
   it("narrows by status", () => {
     expect(jqlFor({ ...RULE, matchKind: "status", matchValue: "İNCELEMEDE" })).toBe(
       'project = "OPS" AND assignee in (712020:bot) AND status = "İNCELEMEDE"',
@@ -115,6 +182,10 @@ describe("discoverOnce", () => {
     found: Record<string, string[]>;
     known?: string[];
     maxPerRound?: number;
+    /** The bound+active projects. Omitted = the seam is not wired at all. */
+    boundProjects?: readonly string[];
+    /** A binding source that FAILS, for the fail-closed test. */
+    boundProjectsThrows?: boolean;
   }): Promise<{ started: readonly string[]; asked: readonly string[] }> {
     const { search, asked } = fakeSearch(options.found);
     const started: string[] = [];
@@ -132,10 +203,101 @@ describe("discoverOnce", () => {
       known: () => Promise.resolve((options.known ?? []) as never),
       intervalMs: 0,
       ...(options.maxPerRound === undefined ? {} : { maxPerRound: options.maxPerRound }),
+      ...(options.boundProjectsThrows === true
+        ? { boundProjects: () => Promise.reject(new Error("db down")) }
+        : options.boundProjects === undefined
+          ? {}
+          : { boundProjects: () => Promise.resolve(options.boundProjects!) }),
       log: () => undefined,
     });
     return { started: result, asked };
   }
+
+  /**
+   * BAĞLANMAMIŞ PROJEYE SORGU GİTMEZ — kapsamın dış sınırı.
+   *
+   * Kuralın `projectKey`'i serbest metin: bir yazım hatası, sonradan bağlantısı
+   * kaldırılmış bir proje, ya da elle yazılmış bir satır, bu kurulumun hiç
+   * verilmediği bir projeyi adlandırabilir. `runIntake` böyle bir ticket'ı
+   * `unbound` diye reddeder ve KOŞU başlamaz — ama o noktada ARAMA çoktan
+   * yapılmıştır, ve engellenmesi gereken şey odur.
+   *
+   * Burada `started` değil `asked` üzerinden doğrulanıyor, ve bu testin bütün
+   * meselesi bu: "hiçbir şey başlatmadı", arayıp bir şey bulamamış bir turun da
+   * görüntüsüdür. Riskin kendisi, bankanın Jira'sına GİDEN sorgudur — servis
+   * hesabı rutin olarak ADMIN'dir ve bağlanmamış bir proje, kapsam dışı bir
+   * proje değil, Maestro'yu hiç duymamış bir ekibin ticket'larıdır.
+   */
+  it("never queries a project the operator did not bind, even for a valid rule", async () => {
+    const { asked, started } = await run({
+      rules: [RULE, { ...RULE, projectKey: "GIZLI" }],
+      found: {},
+      boundProjects: ["OPS"],
+    });
+
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('project = "OPS"');
+    expect(asked.join(" ")).not.toContain("GIZLI");
+    expect(started).toHaveLength(0);
+  });
+
+  /**
+   * BOTA ATANMIŞ OLMAK TEK BAŞINA YETMEZ.
+   *
+   * `assigned` bir tetikleme TİPİDİR, kapsamı genişleten bir muafiyet değil:
+   * proje kapısı onun da ÜSTÜNDEDİR. Aksi hâlde "bota atanan her ticket" kuralı,
+   * admin bir hesapla bankanın her projesine açılan bir kapı olurdu — ki
+   * kullanıcının kurgusunda proje HER ZAMAN şart, tetikleme tipi onun İÇİNDE
+   * bir seçimdir.
+   */
+  it("an `assigned` rule on an unbound project is still not searched", async () => {
+    const { asked } = await run({
+      rules: [{ ...RULE, projectKey: "GIZLI", matchKind: "assigned", matchValue: "*" }],
+      found: {},
+      boundProjects: ["OPS"],
+    });
+
+    expect(asked).toHaveLength(0);
+  });
+
+  /**
+   * DURAKLATILAN PROJE, TARAMADAN DA ÇIKAR.
+   *
+   * Bağlı proje listesi `state = active` satırlarından gelir, "satır var"dan
+   * değil: `paused` bir bağlama bilerek canlı DEĞİLDİR, ve duraklatan operatör
+   * duraklatmanın hemen etkili olmasını bekler. Bu test o listenin daralmasının
+   * turu gerçekten daralttığını sabitler.
+   */
+  it("stops searching a project as soon as it leaves the bound set", async () => {
+    const before = await run({ rules: [RULE], found: {}, boundProjects: ["OPS"] });
+    const after = await run({ rules: [RULE], found: {}, boundProjects: [] });
+
+    expect(before.asked).toHaveLength(1);
+    expect(after.asked).toHaveLength(0);
+  });
+
+  /**
+   * BAĞLI PROJE LİSTESİ OKUNAMAZSA TUR DURUR — fail-closed.
+   *
+   * "Süzemedik, o hâlde süzmeyelim" bu kurulumda en tehlikeli daldır: admin bir
+   * servis hesabıyla süzgeçsiz bir tur, bankanın her projesine sorgu göndermek
+   * demektir. Geçici olarak hiç taramamak, geniş taramaktan iyidir.
+   */
+  it("skips the whole round when the bound-project list cannot be read", async () => {
+    const { asked } = await run({ rules: [RULE], found: {}, boundProjectsThrows: true });
+    expect(asked).toHaveLength(0);
+  });
+
+  /**
+   * KURAL YOKSA HİÇBİR ŞEY — "hepsini al" dalı yok.
+   *
+   * Boş kural kümesinin geniş bir sorguya (ya da varsayılan bir JQL'e) düşmesi,
+   * bu döngüde bir kolaylık değil bir kaza olurdu.
+   */
+  it("asks nothing at all when there are no rules", async () => {
+    const { asked } = await run({ rules: [], found: {}, boundProjects: ["OPS"] });
+    expect(asked).toHaveLength(0);
+  });
 
   it("asks Jira once per enabled rule", async () => {
     const { asked } = await run({
@@ -197,6 +359,108 @@ describe("discoverOnce", () => {
    * on. The good rule beside it proves the skip is surgical: one bad rule must
    * not disarm the sweep.
    */
+  /**
+   * TARAMANIN OKUDUĞU TICKET, KURALIN KENDİSİYLE EŞLEŞMELİ — DÖRT TETİKLEME
+   * TİPİNİN HEPSİNDE.
+   *
+   * Ölçülen hata: tarama `runIntake`'e yalnızca ticket anahtarını veriyordu.
+   * `flow-decision.ts` her kuralı dört `null`'a karşı karşılaştırıyor, HİÇBİRİ
+   * eşleşmiyor, ve tarama tam da bir kural yüzünden bulduğu ticket'ı o kural
+   * hiç yokmuş gibi çalıştırıyordu — kuralın akışı da statü eşlemesi de
+   * kayboluyor, analiz-only bağlamada ise ticket `no_application` ile
+   * reddediliyordu. Sahada görülen: "ticket geliyor ama ajan çalışmıyor".
+   *
+   * Bu test sorgu METNİNİ değil, ELDEN ELE GEÇEN VERİYİ sürüyor: gerçek bir
+   * Jira `issue` belgesi (webhook'un taşıdığının aynısı) taramanın okuyucusuna,
+   * onun okuduğu alanlar da gerçek eşleştiriciye verilir. Yalnız JQL'i
+   * doğrulayan bir test bu hatayı göremezdi — sorgu zaten doğruydu.
+   *
+   * Dört tipin hepsi döngüde, çünkü bugünkü hata sınıfı tam olarak "bir yolda
+   * çalışıyor, diğerinde sessizce çalışmıyor": bir tetikleme tipinin yalnız
+   * webhook'ta çalışıp taramada çalışmaması hiçbir yerde hata üretmez.
+   */
+  it.each(["status", "issuetype", "label", "assigned"] as const)(
+    "a %s rule: what the sweep reads off Jira matches that same rule",
+    (matchKind) => {
+      const matchValue = matchKind === "assigned" ? "*" : "Analiz Bekliyor";
+      const rule: DiscoveryRule = { ...RULE, matchKind, matchValue };
+
+      /**
+       * The document Jira answers the search with. Every field is populated
+       * whatever the rule matched on — a real ticket has a status, a type, an
+       * assignee and labels regardless of which one triggered the rule, and a
+       * fixture that filled only the matched one would hide a reader that looks
+       * at the wrong field.
+       */
+      const issue = {
+        key: "OPS-91",
+        fields: {
+          status: { name: matchKind === "status" ? matchValue : "Devam Ediyor" },
+          issuetype: { name: matchKind === "issuetype" ? matchValue : "Görev" },
+          assignee: { accountId: rule.assigneeAccountId },
+          // A second label beside the matched one: a label rule must match by
+          // MEMBERSHIP, and a matcher that compared the whole list (or only
+          // its first entry) would pass a single-label fixture and fail here.
+          labels: matchKind === "label" ? ["baska-etiket", matchValue] : ["baska-etiket"],
+        },
+      };
+
+      const handed = classifyingFieldsOf(issue);
+
+      const decided = flowDecisionFor(
+        [
+          {
+            ruleId: "lr_1",
+            projectKey: rule.projectKey,
+            assigneeAccountId: rule.assigneeAccountId,
+            matchKind: rule.matchKind,
+            matchValue: rule.matchValue,
+            flowType: "analiz",
+            priority: 100,
+            enabled: true,
+            analystVariantId: null,
+            engineerVariantId: null,
+            statusMap: null,
+          },
+        ] as never,
+        {
+          projectKey: rule.projectKey,
+          status: handed.status ?? null,
+          issueType: handed.issueType ?? null,
+          assignee: handed.assignee ?? null,
+          labels: handed.labels ?? null,
+        } as never,
+        null,
+      );
+
+      expect(decided.reason, `${matchKind} kuralı eşleşmedi`).toBe("rule");
+      expect(decided.flow).toBe("analiz");
+    },
+  );
+
+  /**
+   * Bir alanı taşımayan teslimat, o alandaki kuralı eşleştirmemeli.
+   *
+   * Okuyucunun yokluğu boş dizeye ya da boş listeye çevirmesi, `matchValue`'su
+   * boş bir kuralı HER ticket'a uydururdu — ve bunu sessizce yapardı. Yokluk
+   * "sormadık" demeye devam etmeli.
+   */
+  it("omits a field the payload does not carry, rather than inventing one", () => {
+    expect(classifyingFieldsOf({ key: "OPS-91", fields: {} })).toEqual({});
+    expect(classifyingFieldsOf({ key: "OPS-91" })).toEqual({});
+  });
+
+  /**
+   * Etiketsiz bir ticket ile etiketi OKUNMAMIŞ bir ticket farklı cevaplardır.
+   * `[]` "bu ticket'ın etiketi yok" der (etiket kuralı doğru şekilde
+   * eşleşmez); yokluk "bakmadık" der. İkisi de eşleşmemeli, ama aynı sebeple
+   * değil — ve `[]`'in yokluğa çevrilmesi bir kuralı boş listeye karşı
+   * "eşleşti" sayan bir okuyucuya kapı açardı.
+   */
+  it("keeps an empty label list distinct from an absent one", () => {
+    expect(classifyingFieldsOf({ key: "OPS-91", fields: { labels: [] } })).toEqual({ labels: [] });
+  });
+
   it("never sends a search for a rule with no bot account", async () => {
     const good = jqlFor(RULE)!;
     const { asked } = await run({

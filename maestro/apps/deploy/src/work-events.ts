@@ -14,6 +14,18 @@ import type { WorkEvent, WorkEventReader } from "@maestro/bff";
  * parser would be a second grammar to keep in step with Jira, and the two
  * would drift on the first payload shape nobody thought to test.
  */
+/**
+ * THE THREE FIELD READERS ARE EXPORTED, and that is the point of them.
+ *
+ * A webhook delivery and a JQL search result are the SAME `issue` document —
+ * `fields.status.name`, `fields.labels`, `fields.assignee.accountId` — served
+ * by two endpoints. The discovery sweep (`jira-discovery.ts`) now reads the
+ * same three fields off its search page so a swept ticket reaches intake as
+ * fully described as a delivered one. Sharing these functions rather than
+ * writing a second set is not tidiness: two hand-rolled grammars for one Jira
+ * document is exactly how the two entry points end up classifying the same
+ * ticket differently, which is the failure this whole change is undoing.
+ */
 export function jiraWorkEventReader(): WorkEventReader {
   return {
     read(payload: unknown): WorkEvent {
@@ -57,7 +69,7 @@ export function jiraWorkEventReader(): WorkEventReader {
  * "do not take it". A payload that simply omitted the field must not be read
  * as that, so it stays absent and the caller decides.
  */
-function labelsOf(issue: unknown): string[] | null {
+export function labelsOf(issue: unknown): string[] | null {
   const fields = asRecord(asRecord(issue)?.["fields"]);
   const labels = fields?.["labels"];
   if (!Array.isArray(labels)) return null;
@@ -72,7 +84,7 @@ function labelsOf(issue: unknown): string[] | null {
  * holds — an admin picks it off the Studio screen as the words they see in
  * Jira. Whitespace-only is treated as absent: a rule must not match on it.
  */
-function nameOf(issue: unknown, field: string): string | null {
+export function nameOf(issue: unknown, field: string): string | null {
   const fields = asRecord(asRecord(issue)?.["fields"]);
   const name = asRecord(fields?.[field])?.["name"];
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
@@ -90,7 +102,7 @@ function nameOf(issue: unknown, field: string): string | null {
  * `null` (unassigned, or a payload that omitted the field) matches only rules
  * that name no assignee.
  */
-function assigneeOf(issue: unknown): string | null {
+export function assigneeOf(issue: unknown): string | null {
   const fields = asRecord(asRecord(issue)?.["fields"]);
   const assignee = asRecord(fields?.["assignee"]);
   if (assignee === null) return null;

@@ -4,7 +4,13 @@ import { z } from "zod";
 import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ListeningRuleRecord, ListeningStore } from "../listening-store.js";
-import { ASSIGNED_MATCH_VALUE, FLOW_TYPES, MATCH_KINDS, StatusMapSchema } from "../listening-store.js";
+import {
+  ASSIGNED_MATCH_VALUE,
+  AllowedStatusesSchema,
+  FLOW_TYPES,
+  MATCH_KINDS,
+  StatusMapSchema,
+} from "../listening-store.js";
 import { seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, conflict, notFound } from "../errors.js";
@@ -76,6 +82,25 @@ const StatusMapRef = StatusMapSchema.nullish().transform((value) =>
   value == null || Object.keys(value).length === 0 ? null : value,
 );
 
+/**
+ * IZIN VERILEN STATULER — her kuralda sorulan statu kapisi (0024).
+ *
+ * Yokluk, `null` ve bos dizi tek bir seye normalize olur: `null` = "statu
+ * kisiti yok". `StatusMapRef`in gerekcesinin aynisi — bir anlamin iki temsili,
+ * er ya da gec birbirinden farkli davranmaya baslar.
+ *
+ * REDDETMIYOR, cunku mevcut kurallar. 0024 oncesi yazilmis her satir kisitsiz
+ * ve panelden duzenlendiginde bu govdeden gecmek zorunda; burada zorunlu kilmak,
+ * operatorun bir ajani degistirmek icin actigi kurali kaydedememesi demek
+ * olurdu. Zorunluluk PANELDE (yeni kuralda statu secili gelir) ve GORUNURLUKTE
+ * (kisitsiz kural her yuzeyde isaretli); kapinin kendisi `flow-decision.ts`te.
+ */
+const AllowedStatusesRef = AllowedStatusesSchema.nullish().transform((value) => {
+  if (value == null) return null;
+  const cleaned = value.map((name) => name.trim()).filter((name) => name !== "");
+  return cleaned.length === 0 ? null : cleaned;
+});
+
 const RuleBody = z.object({
   projectKey: z.string().trim().min(1).max(32),
   assigneeAccountId: z.string().trim().min(1).max(128),
@@ -95,6 +120,8 @@ const RuleBody = z.object({
   engineerVariantId: VariantRef,
   /** The Jira status map; null → comment-only mode (Maestro never moves the ticket). */
   statusMap: StatusMapRef,
+  /** Hangi statudeki ticketlar islensin; null → statu kisiti yok (bkz. AllowedStatusesRef). */
+  allowedStatuses: AllowedStatusesRef,
 });
 
 /**

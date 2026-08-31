@@ -64,6 +64,15 @@ export default defineConfig({
       "@maestro/config/i18n": fileURLToPath(
         new URL("../../packages/config/src/i18n.ts", import.meta.url),
       ),
+      // Same discipline, different package. @maestro/db's barrel reaches
+      // @prisma/client through client.ts and can never enter a browser bundle;
+      // this subpath is the PURE half — the "is this model selected / is it an
+      // unreachable cloud name" predicates the agent-catalogue screen must
+      // answer with EXACTLY the verdict the server-side audit gives, or the
+      // panel and ./ajan-modelleri.sh disagree in front of the operator.
+      "@maestro/db/variant-model": fileURLToPath(
+        new URL("../../packages/db/src/variant-model-public.ts", import.meta.url),
+      ),
     },
   },
   server: {

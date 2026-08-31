@@ -10,7 +10,11 @@
       // Mirrors the Vite alias in vite.config.ts: import the catalog helper
       // directly so the Node-only env.ts in the @maestro/config barrel never
       // reaches the browser bundle.
-      "@maestro/config/i18n": ["../../packages/config/src/i18n.ts"]
+      "@maestro/config/i18n": ["../../packages/config/src/i18n.ts"],
+      // Same reason, for @maestro/db: the barrel pulls in @prisma/client, this
+      // subpath is the pure model-name predicate surface the variant screens
+      // share with the server-side audit.
+      "@maestro/db/variant-model": ["../../packages/db/src/variant-model-public.ts"]
     }
   },
   "include": [

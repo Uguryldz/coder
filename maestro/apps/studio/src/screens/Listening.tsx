@@ -54,13 +54,19 @@ const WRITE_ROLES = ["admin"] as const;
 
 type FlowType = "analiz" | "duzeltme" | "gelistirme";
 /**
- * Mirrors the BFF's `MATCH_KINDS` and the DB CHECK (migration 0020).
+ * The rule's TETİKLEME TİPİ — mirrors the BFF's `MATCH_KINDS` and the DB CHECK
+ * (migrations 0020, 0023).
+ *
  * `assigned` compares no field: the rule fires because the ticket was handed to
  * the bot, full stop. Its `matchValue` is the fixed literal `*` the server
  * pins, carried only so the unique trigger index keeps one such rule per
  * (project, bot) — it is never shown and never compared.
+ *
+ * `label` is the opt-in etiketi, which used to live on the PROJECT BINDING as a
+ * separate gate in front of these rules. There is now exactly one place a
+ * trigger is defined, which is this dropdown.
  */
-type MatchKind = "status" | "issuetype" | "assigned";
+type MatchKind = "status" | "issuetype" | "assigned" | "label";
 /** The value the BFF stores for an `assigned` rule. See ASSIGNED_MATCH_VALUE. */
 const ASSIGNED_MATCH_VALUE = "*";
 
@@ -90,6 +96,16 @@ interface ListeningRule {
    * comments and never touches the ticket's status.
    */
   readonly statusMap?: StatusMap | null;
+  /**
+   * HANGİ STATÜDEKİ ticket'lar işlensin — her kuralda sorulan statü KAPISI.
+   *
+   * `statusMap` ile karıştırılmamalı: o "ticket'ı NEREYE taşıyayım" der (çıktı),
+   * bu "ticket NEREDEYSE işleyebilirim" der (giriş kapısı).
+   *
+   * null/boş = statü kısıtı yok. Bu, 0024 öncesi yazılmış kuralların hâli ve o
+   * kurallar ÇALIŞIR — ama tabloda ve formda görünür şekilde işaretlenir.
+   */
+  readonly allowedStatuses?: readonly string[] | null;
 }
 
 /** The slice of `GET /variants` this screen needs: id + role, for filtering. */
@@ -245,6 +261,22 @@ export function ListeningScreen(): ReactNode {
   // The draft survives toggling off and on again, so an operator who collapses
   // the section to re-read a hint does not lose what they typed — only what is
   // sent depends on the toggle.
+  /**
+   * İZİN VERİLEN STATÜLER — kuralın statü kapısı.
+   *
+   * `statusOn`/`statusDraft` ile aynı ekranda ama BAŞKA bir şey ve bilerek
+   * ayrı: durum eşlemesi opsiyonel bir çıktıdır, bu ise bir GİRİŞ ŞARTIDIR.
+   * Bu yüzden bir açılır-kapanır bölümün içinde değil, tetikleme tipinin hemen
+   * yanında, her zaman görünür duruyor — operatörün cümlesi "atanmış olsa da
+   * izin verdiğim analiz statüsünde değilse çalışmamalı" ve bu, tetiklemenin
+   * kendisi kadar merkezî bir soru.
+   */
+  const [allowedStatuses, setAllowedStatuses] = useState<readonly string[]>([]);
+  const toggleAllowedStatus = (name: string): void =>
+    setAllowedStatuses((prev) =>
+      prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name],
+    );
+
   const [statusOn, setStatusOn] = useState(false);
   // Whether the disclosure is expanded, tracked separately from `statusOn`: an
   // operator opens the section to READ what it does long before deciding to use
@@ -293,7 +325,14 @@ export function ListeningScreen(): ReactNode {
     queryKey: ["jira-match-values", jiraConnId, projectKey, matchKind],
     // Never for `assigned`: that rule has no value to pick, and the endpoint
     // only understands status|issuetype — asking for a third kind is a 400.
-    enabled: jiraConnId !== null && projectKey.trim() !== "" && matchKind !== "assigned",
+    // Only `status` and `issuetype` have a list Jira can serve. `assigned` has
+    // no value at all, and a LABEL is free-form on the ticket — Jira has no
+    // per-project label endpoint the other two have, so that field stays a
+    // text box rather than an empty dropdown that looks broken.
+    enabled:
+      jiraConnId !== null &&
+      projectKey.trim() !== "" &&
+      (matchKind === "status" || matchKind === "issuetype"),
     retry: false,
     queryFn: ({ signal }) =>
       api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(
@@ -321,7 +360,10 @@ export function ListeningScreen(): ReactNode {
   // way.
   const statusNames = useQuery({
     queryKey: ["jira-match-values", jiraConnId, projectKey, "status"],
-    enabled: statusOn && jiraConnId !== null && projectKey.trim() !== "",
+    // `statusOn` DEĞİL: aynı statü listesini artık statü KAPISI da kullanıyor ve
+    // o kapı her kuralda, açılır-kapanır bir bölümün ardında değil, doğrudan
+    // formda duruyor. Proje seçilir seçilmez okunmalı.
+    enabled: jiraConnId !== null && projectKey.trim() !== "",
     retry: false,
     queryFn: ({ signal }) =>
       api.get<{ ok: boolean; values?: readonly string[] }>(
@@ -348,6 +390,7 @@ export function ListeningScreen(): ReactNode {
   const cancelEdit = (): void => {
     setEditingRuleId(null);
     setMatchValue("");
+    setAllowedStatuses([]);
     setAnalystVariantId("");
     setEngineerVariantId("");
     clearStatusForm();
@@ -362,6 +405,7 @@ export function ListeningScreen(): ReactNode {
       invalidate();
       toast.show("success", t("listening.toast.created"));
       setMatchValue("");
+      setAllowedStatuses([]);
       // The status map is per-rule, not a form default: leaving it filled after
       // a save would quietly attach the previous rule's transitions to the next
       // one an operator adds.
@@ -397,6 +441,10 @@ export function ListeningScreen(): ReactNode {
     setFlowType(rule.flowType);
     setAnalystVariantId(rule.analystVariantId ?? "");
     setEngineerVariantId(rule.engineerVariantId ?? "");
+    // Kısıtsız bir kural BOŞ açılır — formun gösterdiği şey kuralın BUGÜN ne
+    // yaptığı olmalı. Uydurma bir varsayılan seçmek, operatöre hiç vermediği
+    // bir cevabı vermiş gibi gösterirdi.
+    setAllowedStatuses(rule.allowedStatuses ?? []);
     const map = rule.statusMap ?? null;
     // A rule with no map opens with the section CLOSED — the form must show what
     // the rule actually does today (comment only), not invite an edit nobody
@@ -514,6 +562,11 @@ export function ListeningScreen(): ReactNode {
       // and says they will not be written, so the save itself is the operator's
       // confirmation.
       statusMap: buildStatusMap(statusOn, statusDraft, reassignOnNeedInfo, flowType),
+      // Boş liste `null` olarak gidiyor: "hiçbir statüye izin verilmedi" ile
+      // "statü kısıtı yok" tek bir davranışa iner, iki temsil taşımak er ya da
+      // geç ikisinin farklı davranmasıyla biter. Sunucu da aynı şekilde
+      // normalize eder (`AllowedStatusesRef`).
+      allowedStatuses: allowedStatuses.length === 0 ? null : [...allowedStatuses],
     };
     if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
     else create.mutate(body);
@@ -537,7 +590,12 @@ export function ListeningScreen(): ReactNode {
         if (r.matchKind === "assigned") {
           return <b>{t("listening.match.assigned")}</b>;
         }
-        const english = englishAside(r.matchValue);
+        // NO aside for a label. The table behind `englishAside` is the set of
+        // Jira's own STATUS and ISSUE-TYPE names; a label is a free string an
+        // operator invented, so a label that happens to read `hata` would be
+        // annotated `(Bug)` — a confident wrong answer about a field the table
+        // knows nothing about.
+        const english = r.matchKind === "label" ? null : englishAside(r.matchValue);
         return (
           <>
             <span className="screen-note">{t(`listening.match.${r.matchKind}`)}</span>{" "}
@@ -547,6 +605,26 @@ export function ListeningScreen(): ReactNode {
             )}
           </>
         );
+      },
+    },
+    {
+      key: "allowedStatuses",
+      header: t("listening.col.allowed_statuses"),
+      /*
+        Kısıtsız kural, listede GÖRÜNÜR. Bu sütunun asıl işi eşleşenleri
+        göstermek değil, EKSİK olanı göstermek: operatörün "her ticket'ı
+        alıyor" dediği kural, ancak burada kendini ele verir.
+      */
+      cell: (r) => {
+        const allowed = r.allowedStatuses ?? [];
+        if (allowed.length === 0) {
+          return (
+            <span className="screen-note" style={{ color: "#b45309", fontWeight: 600 }}>
+              {t("listening.status_gate.none")}
+            </span>
+          );
+        }
+        return <span className="screen-note">{allowed.join(", ")}</span>;
       },
     },
     {
@@ -833,11 +911,17 @@ export function ListeningScreen(): ReactNode {
                 setMatchValue("");
               }}
               options={[
-                { value: "issuetype", label: t("listening.match.issuetype") },
                 { value: "status", label: t("listening.match.status") },
                 { value: "assigned", label: t("listening.match.assigned") },
+                { value: "label", label: t("listening.match.label") },
+                { value: "issuetype", label: t("listening.match.issuetype") },
               ]}
-              hint={matchKind === "assigned" ? t("listening.match.assigned_hint") : undefined}
+              // Every kind gets a sentence, not just the odd one out. The three
+              // conditioned kinds look interchangeable in a dropdown and are
+              // not — "statü" fires when somebody MOVES the ticket, "iş tipi"
+              // the moment it is created — and choosing wrong is only visible
+              // weeks later as tickets that never arrive.
+              hint={t(`listening.match.hint.${matchKind}`)}
             />
             {/* "Bota atanan her ticket" has no value to give, so the field is
                 absent rather than disabled — a greyed box reads as a form the
@@ -867,10 +951,129 @@ export function ListeningScreen(): ReactNode {
                 label={t("listening.form.matchValue")}
                 value={matchValue}
                 onChange={(e) => setMatchValue(e.target.value)}
-                placeholder={matchKind === "issuetype" ? "Hata" : "Analiz Bekliyor"}
-                hint={t("listening.form.matchValue_hint")}
+                placeholder={
+                  matchKind === "issuetype"
+                    ? "Hata"
+                    : matchKind === "label"
+                      ? "maestro"
+                      : "Analiz Bekliyor"
+                }
+                // A label is not a name Jira can offer a list for, so its hint
+                // says the thing that actually goes wrong with labels
+                // (case, and the fact that it is the ticket's own label field)
+                // rather than the generic "type it exactly" the other two need.
+                hint={t(
+                  matchKind === "label"
+                    ? "listening.form.matchValue_hint_label"
+                    : "listening.form.matchValue_hint",
+                )}
               />
             )}
+            {/*
+              STATÜ KAPISI — her kuralda, tetikleme tipinin hemen yanında.
+
+              Bir açılır-kapanır bölümün içinde DEĞİL ve bu bilinçli: durum
+              eşlemesi opsiyonel bir çıktıdır ve gizlenebilir, bu ise bir GİRİŞ
+              ŞARTIDIR. Operatörün cümlesi "bota atanan her ticket seçsem de o
+              statüde atanıyor olmalı" — yani bu soru tetiklemenin kendisi kadar
+              merkezî, ve seçilmemiş olması ekranda görünmek zorunda.
+
+              Onay kutuları, tek seçimli bir dropdown değil: bir kural birden çok
+              statüye meşru olarak izin verebilir ("Yapılacaklar" ve "Analiz
+              Bekliyor"), ve operatörü aynı akış/ajan ayarlarını iki ayrı kurala
+              kopyalamaya zorlamak o kopyaların zamanla ayrışmasını garanti eder.
+            */}
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div className="screen-note" style={{ marginBottom: 6 }}>
+                <strong>{t("listening.form.allowed_statuses")}</strong>
+              </div>
+              {/*
+                SEÇENEKLER JIRA'DAN, KODDAN DEĞİL.
+
+                `statusOptions`, `/onboarding/jira-match-values?...&kind=status`
+                ucunun o PROJE için canlı döndürdüğü statü adları. Bu ekranda
+                hiçbir statü adı gömülü değil ve olamaz: her kurumun pano
+                sözlüğü kendine ait (bu bankada `ANALİZ`, `TODO`,
+                `AnalysisApproval`), ve koda yazılmış bir liste, ilk farklı
+                Jira'da eşleşmeyen bir kural üretirdi — statüyü yanlış yazmanın
+                sessiz-sonsuz hatası, bu sefer ürünün kendi eliyle.
+
+                Sabit kalan tek şey AKIŞ TİPİ (analiz/duzeltme/gelistirme):
+                o Maestro'nun kendi kavramı, Jira'nın değil.
+              */}
+              {statusOptions.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {statusOptions.map((name) => (
+                    <label key={name} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <input
+                        type="checkbox"
+                        checked={allowedStatuses.includes(name)}
+                        onChange={() => toggleAllowedStatus(name)}
+                      />
+                      <span>{name}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {/*
+                    LİSTE ALINAMADI, VE BU SESSİZ GEÇMEZ.
+
+                    Boş bir kutu listesi göstermek burada en kötü cevap: "bu
+                    projede hiç statü yok" gibi okunur ve operatörü, aslında
+                    bağlantının cevap vermediği bir anda, kuralı statüsüz
+                    kaydetmeye — yani kapıyı açık bırakmaya — götürür. Neden
+                    seçim yapamadığı YAZILIR, ve serbest metin bir kaçış olarak
+                    kalır (kuralı hiç kaydedememek de bir çözüm değil).
+                  */}
+                  <div
+                    className="screen-note"
+                    style={{ color: "#b45309", fontWeight: 600, marginBottom: 6 }}
+                  >
+                    {t(
+                      projectKey.trim() === ""
+                        ? "listening.form.allowed_statuses_pick_project"
+                        : "listening.form.allowed_statuses_unavailable",
+                    )}
+                  </div>
+                  <Input
+                    label=""
+                    value={allowedStatuses.join(", ")}
+                    onChange={(e) =>
+                      setAllowedStatuses(
+                        e.target.value
+                          .split(",")
+                          .map((v) => v.trim())
+                          .filter((v) => v !== ""),
+                      )
+                    }
+                    hint={t("listening.form.allowed_statuses_manual")}
+                  />
+                </>
+              )}
+              <div
+                className="screen-note"
+                style={{
+                  marginTop: 6,
+                  ...(allowedStatuses.length === 0
+                    ? { color: "#b45309", fontWeight: 600 }
+                    : {}),
+                }}
+              >
+                {/*
+                  Boş seçim SESSİZ GEÇMEZ. Kural kaydedilebilir — mevcut
+                  kuralları düzenlenemez hâle getirmemek için — ama ne anlama
+                  geldiği tam olarak yazılır: bota atanan her ticket, panonun
+                  neresinde olursa olsun işlenir. Sessiz bir fail-open, bu
+                  alanın var olma sebebinin ta kendisi olurdu.
+                */}
+                {t(
+                  allowedStatuses.length === 0
+                    ? "listening.form.allowed_statuses_empty_warning"
+                    : "listening.form.allowed_statuses_hint",
+                )}
+              </div>
+            </div>
             <Select
               label={t("listening.form.flow")}
               value={flowType}

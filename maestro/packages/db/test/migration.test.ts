@@ -376,3 +376,68 @@ describe("listening-rule catch-all matchKind (hand-written, 0020)", () => {
     expect(schema).toMatch(/"status" \| "issuetype" \| "assigned"/);
   });
 });
+
+/**
+ * STATÜ KAPISI — her kuralda sorulan, `matchKind`'dan bağımsız statü şartı.
+ *
+ * Bu migration'ın asıl riski SQL'de değil, BACKFILL'de: mevcut kuralların
+ * hangisinin taşınıp hangisinin NULL kalacağı, canlı bir kurulumun sabaha
+ * çalışıp çalışmayacağını belirliyor. Bu yüzden testler backfill'in şeklini,
+ * yıkıcı olmadığını ve tekrar çalıştırılabilirliğini ayrı ayrı ölçer.
+ */
+describe("listening-rule statü kapısı (hand-written, 0024)", () => {
+  const migration = readMigrationNamed("0024_listening_rule_allowed_statuses");
+  const statements = migration
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n");
+
+  it("kolonu NULLABLE ekler — canlı tabloyu yeniden yazmadan", () => {
+    // Varsayılansız nullable bir kolon eklemek Postgres'te yalnızca katalog
+    // güncellemesidir. NOT NULL + DEFAULT olsaydı tablo yeniden yazılırdı ve
+    // daha kötüsü: her mevcut kurala kimsenin seçmediği bir değer verilirdi.
+    expect(statements).toMatch(
+      /ALTER TABLE "ListeningRule"\s+ADD COLUMN IF NOT EXISTS "allowedStatusesJson" JSONB;/,
+    );
+    expect(statements).not.toMatch(/"allowedStatusesJson"[^;]*NOT NULL/);
+  });
+
+  it("YALNIZCA statü kuralarını backfill eder — diğerleri kısıtsız kalır", () => {
+    // (a) `matchKind='status'` kurallarının `matchValue`'su ZATEN operatörün
+    // seçtiği statüdür; taşınmazsa o kurallar DAHA GENİŞ hale gelirdi.
+    // (b) Diğer tipler için uydurulacak bir statü yok; NULL kalır ve kural
+    // çalışmaya devam eder (bkz. `flow-decision.ts` `statusGateOf` → ungated).
+    expect(statements).toMatch(/WHERE "matchKind" = 'status'/);
+    expect(statements).toMatch(/to_jsonb\(ARRAY\["matchValue"\]\)/);
+  });
+
+  it("hiçbir satırı SİLMEZ, hiçbir kolonu DÜŞÜRMEZ — `matchValue` yerinde kalır", () => {
+    expect(migration).toContain("HAND-WRITTEN MIGRATION");
+    expect(statements).not.toMatch(/\bDROP\s+(TABLE|COLUMN)\b/i);
+    expect(statements).not.toMatch(/\b(DELETE FROM|TRUNCATE)\b/i);
+  });
+
+  it("tek bir tabloya dokunur, canlı kurulum başka hiçbir şeyi riske atmaz", () => {
+    const altered = [...statements.matchAll(/ALTER TABLE "(\w+)"/g)].map((m) => m[1]);
+    const updated = [...statements.matchAll(/UPDATE "(\w+)"/g)].map((m) => m[1]);
+    expect([...new Set([...altered, ...updated])]).toEqual(["ListeningRule"]);
+  });
+
+  it("yeniden çalıştırılabilir — 0008-0016 bu kurulumda yarım uygulanmıştı", () => {
+    // `IF NOT EXISTS` kolonu, `IS NULL` şartı ise backfill'i tekrar edilebilir
+    // yapar: operatörün ARADA elle boşalttığı bir statü listesi ikinci turda
+    // yeniden doldurulmaz.
+    expect(statements).toContain("ADD COLUMN IF NOT EXISTS");
+    expect(statements).toContain('AND "allowedStatusesJson" IS NULL');
+  });
+
+  it("boş bir statü listesi YAZMAZ — 'kısıt yok' ile karışmasın diye", () => {
+    // Boş dizi ile NULL tek bir davranışa iner ("statü kısıtı yok"); iki
+    // temsil, er ya da geç birbirinden farklı davranmaya başlar.
+    expect(statements).toMatch(/btrim\("matchValue"\) <> ''/);
+  });
+
+  it("şema kolonu taşır, yani Prisma istemcisi onu tanır", () => {
+    expect(readSchema()).toMatch(/allowedStatusesJson\s+Json\?/);
+  });
+});

@@ -60,9 +60,13 @@ function fakeDb(): { db: SeedDb; params: UpsertCall[]; versions: UpsertCall[] } 
  * it checks). Asserting *these two lists* is not: adding a parameter without a
  * source, or dropping one the mock shows, fails here.
  */
+/**
+ * `trigger.mode` bu listede DEĞİL, mock ekranında olmasına rağmen: 0025'te
+ * kaldırıldı. Tetikleme artık dinleme kuralında tanımlanıyor; parametre ölüydü
+ * ve operatöre okunmayan bir mod seçtiriyordu (bkz. param-defaults.test.ts).
+ */
 const MOCK_PARAM_KEYS: Record<string, string> = {
   "gates.risk_tiers": "gates.riskTiers",
-  "trigger.mode": "trigger.mode",
   "merge.mode": "merge.mode",
   "escalation.ladder": "escalation.ladder",
   "lang.output": "lang.output",

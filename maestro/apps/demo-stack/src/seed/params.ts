@@ -108,13 +108,4 @@ export const DEMO_PARAMS: readonly ParamDefinition[] = [
     descriptionKey: "params.description.workspace_max_age_days",
     defaultValue: 14,
   },
-  {
-    key: "trigger.mode",
-    scope: "project",
-    type: "enum",
-    guarded: false,
-    enumValues: ["auto", "label", "command"],
-    descriptionKey: "params.description.trigger_mode",
-    defaultValue: "auto",
-  },
 ];

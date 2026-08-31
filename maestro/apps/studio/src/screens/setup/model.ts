@@ -79,16 +79,21 @@ export function flowUnavailableReason(
 }
 
 /**
- * Which ticket field the rule matches on. Mirrors the BFF's `MATCH_KINDS` and
- * the DB CHECK (migration 0020).
+ * Which ticket field the rule matches on — the wizard's TETİKLEME TİPİ. Mirrors
+ * the BFF's `MATCH_KINDS` and the DB CHECK (migrations 0020, 0023).
  *
  * `assigned` is the third answer the wizard could not give: "her ticket" — no
  * type, no status, just the fact that a human assigned it to the Maestro bot.
  * It is the trigger most first-time operators actually want, and forcing them
  * to name an issue type instead is how a project ends up listening to a type
  * nobody uses.
+ *
+ * `label` (0023) is the fourth. It used to be a PROJECT-level setting the
+ * wizard asked about separately ("tetikleme etiketi"), which meant one screen
+ * asked what triggers a run and another screen also did, with neither knowing
+ * about the other. Now the question is asked exactly once, here.
  */
-export type MatchKind = "status" | "issuetype" | "assigned";
+export type MatchKind = "status" | "issuetype" | "assigned" | "label";
 
 /**
  * The value an `assigned` rule sends. The BFF pins it to the same literal

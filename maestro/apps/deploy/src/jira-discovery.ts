@@ -1,5 +1,6 @@
 import { type ResolvedDeps, runIntake } from "@maestro/bff";
 import type { TicketKey } from "@maestro/contracts";
+import { assigneeOf, labelsOf, nameOf } from "./work-events.js";
 
 /**
  * Finding tickets by ASKING Jira, instead of waiting to be told.
@@ -64,8 +65,25 @@ export function canSearch(driver: unknown): driver is IssueSearcher {
 export interface DiscoveryRule {
   readonly projectKey: string;
   readonly assigneeAccountId: string;
-  readonly matchKind: "status" | "issuetype" | "assigned";
+  readonly matchKind: "status" | "issuetype" | "assigned" | "label";
   readonly matchValue: string;
+  /**
+   * İZİN VERİLEN STATÜLER — sorguya HER ZAMAN giren kapı (0024).
+   *
+   * `matchKind` ne olursa olsun sorulur. Bunun sorguda olması, kararda
+   * olmasından ayrı bir iş yapar: kapının BFF tarafı (`flow-decision.ts`
+   * `statusGateOf`) yanlış statüdeki bir ticket'ı işlemez, ama o noktada ticket
+   * ÇOKTAN OKUNMUŞTUR. Bu platformun servis hesabı ADMIN olduğu için okuma da
+   * bir maliyet: bağlanmamış statüdeki ticket'ların hiç ÇEKİLMEMESİ gerekir —
+   * `boundProjects` kapısının sorguyu projeye hapsetmesiyle aynı gerekçe, bir
+   * kademe daha içeride.
+   *
+   * `null`/boş = "statü kısıtı yok" (0024 öncesi kurallar): sorguya statü
+   * yan tümcesi eklenmez ve kural bugüne kadar nasıl arıyorsa öyle arar. Bu
+   * bilinçli ve `flow-decision.ts` ile aynı karar — ama sessiz değil: turun
+   * günlüğü bu kuralları ayrıca sayar ve adlandırır.
+   */
+  readonly allowedStatuses?: readonly string[] | null;
   readonly enabled: boolean;
 }
 
@@ -75,6 +93,35 @@ export interface DiscoveryOptions {
   readonly search: IssueSearcher;
   /** The listening rules, re-read each round so a new rule is picked up. */
   readonly rules: () => Promise<readonly DiscoveryRule[]>;
+  /**
+   * The project keys that are BOUND AND ACTIVE — the sweep's outer boundary.
+   *
+   * A listening rule names its own `projectKey` as free text. Nothing stops a
+   * rule (a typo, a project that was later unbound, a row written by hand)
+   * naming a project this deployment was never given. `runIntake` refuses such
+   * a ticket as `unbound`, so no run starts — but by then the SEARCH has
+   * already happened, and that is the part that must not.
+   *
+   * It matters here more than anywhere else in the platform: the service
+   * account a bank runs Maestro as is routinely a Jira ADMIN, which sees every
+   * project in the company. A rule pointing at an unbound project would send a
+   * real query into a real project belonging to a team that has never heard of
+   * Maestro, and pull their tickets back. The refusal one layer later does not
+   * un-read them.
+   *
+   * So two gates, deliberately: this one keeps the QUERY inside the projects an
+   * operator bound, and `runIntake`'s own binding check keeps the RUN inside
+   * them. The first trusts the binding table over what a rule claims; the
+   * second re-asks at the moment of acting. Neither alone is enough — the JQL
+   * gate would be bypassed by any other entry point, and the intake gate lets
+   * the read happen first.
+   *
+   * Optional so a composition root that has no binding source (and every
+   * existing test) is unchanged; absent means "do not filter", which is the
+   * behaviour before this existed. Wired in `apps/deploy/src/bin/bff.ts`, which
+   * has the binding table.
+   */
+  readonly boundProjects?: () => Promise<readonly string[]>;
   /** Ticket keys the platform already knows about — never started twice. */
   readonly known: () => Promise<readonly TicketKey[]>;
   readonly intervalMs: number;
@@ -151,7 +198,12 @@ const DEFAULT_MAX_PER_ROUND = 20;
  * ticket in the project, including ones nobody meant to hand over.
  *
  * `assigned` is the wildcard rule: assignment alone is the trigger, so it adds
- * no third clause. The other two narrow it by status or issue type.
+ * no third clause. The other three narrow it by status, issue type or label.
+ *
+ * Returns `null` for any rule that cannot be turned into a BOUNDED query — no
+ * bot account, or a label rule with no label. The caller skips such a rule
+ * loudly rather than searching: see the account comment below for why an
+ * unbounded query on an admin service account is the dangerous answer.
  */
 export function jqlFor(rule: DiscoveryRule): string | null {
   const quoted = (value: string): string => `"${value.replace(/"/gu, '\\"')}"`;
@@ -194,9 +246,49 @@ export function jqlFor(rule: DiscoveryRule): string | null {
    */
   if (account.length === 0) return null;
 
-  const base = `project = ${quoted(rule.projectKey)} AND assignee in (${account})`;
+  /**
+   * STATÜ YAN TÜMCESİ, TETİKLEME TİPİNDEN BAĞIMSIZ (0024).
+   *
+   * `base`'e ekleniyor, yani `assigned`/`issuetype`/`label` kuralları da statüyle
+   * daralıyor — daha önce yalnızca `matchKind = "status"` kuralında vardı ve o
+   * da bunun ALTERNATİFİYDİ. `status in (…)` çoklu değeri Jira'nın kendi
+   * belgelediği biçim; tek elemanlı liste de aynı yoldan geçer, böylece "bir
+   * statü" ile "iki statü" arasında iki ayrı gramer olmaz.
+   *
+   * Kısıtsız kuralda (`null`/boş) hiç eklenmez: boş bir `status in ()` malformed
+   * JQL'dir ve Jira 400 döner — yani tur sessizce hiçbir şey aramaz, ki bu tam
+   * olarak `jqlFor`'un var olma sebebi olan sessiz-sonsuz hatadır.
+   */
+  const statuses = (rule.allowedStatuses ?? [])
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+  const gate = statuses.length === 0 ? "" : ` AND status in (${statuses.map(quoted).join(", ")})`;
+
+  const base = `project = ${quoted(rule.projectKey)} AND assignee in (${account})${gate}`;
   if (rule.matchKind === "status") return `${base} AND status = ${quoted(rule.matchValue)}`;
   if (rule.matchKind === "issuetype") return `${base} AND issuetype = ${quoted(rule.matchValue)}`;
+  /**
+   * A LABEL rule (0023) — the opt-in label, now a rule kind instead of a
+   * project-wide gate.
+   *
+   * `labels = "x"` is the documented JQL form and it is a MEMBERSHIP test in
+   * Jira, not an equality one: it matches an issue that carries `x` among any
+   * number of labels, which is exactly what `flow-decision.ts` does on the
+   * other side. The two must agree or a ticket the sweep fetches would then be
+   * classified as matching no rule.
+   *
+   * An EMPTY value would produce `labels = ""`, which Jira rejects — and a
+   * rejected query is the silent-forever failure this function exists to
+   * prevent. The write path already refuses an empty `matchValue` (min(1)), but
+   * this is the fail-closed boundary and it does not trust a caller: a rule with
+   * nothing to look for gets no query at all, same as a rule with no bot
+   * account.
+   */
+  if (rule.matchKind === "label") {
+    const label = rule.matchValue.trim();
+    if (label.length === 0) return null;
+    return `${base} AND labels = ${quoted(label)}`;
+  }
   return base;
 }
 
@@ -225,6 +317,56 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
     log("[keşif] tur bitti: açık dinleme kuralı yok, aranacak bir şey yok");
     record({ lastError: null, rulesSearched: 0, lastStarted: 0 });
     return [];
+  }
+
+  /**
+   * BAĞLI OLMAYAN PROJEYE SORGU GİTMEZ — kapsamın dış sınırı.
+   *
+   * Kuralın `projectKey`'i serbest metin; bağlantı tablosu ise operatörün
+   * gerçekten "bu projeyi Maestro'ya verdim" dediği yer. Çeliştiklerinde
+   * bağlantı tablosu kazanır.
+   *
+   * FAIL-CLOSED, İKİ YÖNDE. Bağlı proje listesi OKUNAMAZSA tur, "süz" ile
+   * "süzme" arasında ikincisini seçemez: süzmemek, admin bir servis hesabıyla
+   * bankanın her projesine sorgu göndermek demektir. Bu yüzden okuma hatası
+   * turu DURDURUR — ve sebebi panele de log'a da yazar; sessizce geniş
+   * taramaktansa geçici olarak hiç taramamak doğru cevaptır.
+   *
+   * Kaynak hiç verilmemişse (eski bir bileşim kökü, testler) süzme yapılmaz:
+   * bu, bu kapı var olmadan önceki davranıştır ve `runIntake`'in kendi
+   * bağlantı kontrolü orada da yerindedir.
+   */
+  if (options.boundProjects !== undefined) {
+    let bound: ReadonlySet<string>;
+    try {
+      bound = new Set(await options.boundProjects());
+    } catch (error) {
+      log(
+        `[keşif] bağlı proje listesi okunamadı, tur ATLANDI: ${String(error)} — ` +
+          "süzemediğimiz bir turda arama, bağlanmamış projelere de giderdi.",
+      );
+      record({ lastError: String(error), rulesSearched: 0, lastStarted: 0 });
+      return [];
+    }
+    const inScope = rules.filter((rule) => bound.has(rule.projectKey));
+    const dropped = rules.length - inScope.length;
+    if (dropped > 0) {
+      // Loudly: a rule that never runs because its project is not bound is a
+      // misconfiguration an admin can fix in the panel, and a sweep that
+      // ignored it in silence is how "kuralımı yazdım, hiçbir şey olmuyor"
+      // becomes unanswerable.
+      const names = [...new Set(rules.filter((r) => !bound.has(r.projectKey)).map((r) => r.projectKey))];
+      log(
+        `[keşif] ${dropped} kural atlandı: ${names.join(", ")} projesi bağlı değil (ya da duraklatıldı). ` +
+          "Panelde projeyi bağlayın ya da kuralı silin.",
+      );
+    }
+    rules = inScope;
+    if (rules.length === 0) {
+      log("[keşif] tur bitti: açık kuralların hiçbiri bağlı bir projeye ait değil");
+      record({ lastError: null, rulesSearched: 0, lastStarted: 0 });
+      return [];
+    }
   }
 
   const known = new Set<string>(await options.known().catch(() => []));
@@ -261,17 +403,46 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       continue;
     }
 
-    let keys: string[];
+    let issues: readonly unknown[];
     try {
       const page = await options.search.searchIssues({
         jql,
         maxResults: cap,
-        // The key is all this needs; asking for fields would pull ticket text
-        // through a path that has no business holding it.
-        fields: ["key"],
+        /**
+         * THE FOUR CLASSIFYING FIELDS, ASKED FOR IN THE SEARCH ITSELF.
+         *
+         * This asked for `["key"]` alone, on the reasoning that a key is all
+         * the loop needs. It was not: the loop handed `runIntake` a bare key,
+         * `flow-decision.ts` compared every rule against four nulls, NOTHING
+         * matched, and the ticket the sweep had just found BECAUSE of a status
+         * rule ran under the deployment default instead — losing that rule's
+         * flow and its whole status map, and on an analysis-only binding being
+         * refused outright as `no_application`. Measured on the bank's install:
+         * the sweep worked, the panel reported tickets taken, and the operator
+         * saw "ticket geliyor ama ajan çalışmıyor".
+         *
+         * The webhook path never had this problem because a delivery carries
+         * these fields. Asking the SEARCH for them costs nothing extra — one
+         * query either way, no per-ticket `getTicket` round-trip — and makes
+         * the two entry points describe a ticket IDENTICALLY, which is the only
+         * way all four trigger kinds can behave the same on both.
+         *
+         * Reading them beats inferring them from the query that found the
+         * ticket. The inference is usually right (a `status` rule's hits do
+         * carry that status) and still the wrong instinct: it puts a value Jira
+         * never sent into the decision and into the audit entry that has to
+         * answer "why did this ticket run this flow?" months later, and it goes
+         * quietly wrong the moment a ticket moves between the search and the
+         * intake.
+         *
+         * Still NOT the ticket text: `summary`/`description` stay unrequested,
+         * so this path holds no ticket content — the original comment's real
+         * concern, and it survives intact.
+         */
+        fields: ["status", "issuetype", "assignee", "labels"],
       });
-      keys = page.issues.map((issue) => issue.key).filter((key): key is string => key !== undefined);
-      scanned += keys.length;
+      issues = page.issues;
+      scanned += issues.length;
     } catch (error) {
       // One rule's failure must not stop the others: a project whose
       // permissions changed would otherwise freeze discovery for every project.
@@ -279,23 +450,35 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       continue;
     }
 
-    for (const key of keys) {
+    for (const issue of issues) {
       if (started.length >= cap) break;
+      // An issue with no key is nothing this loop can act on. Jira does not
+      // send such a row; skipping rather than throwing keeps one odd payload
+      // from ending a round that has other tickets in it.
+      const key = issueKeyOf(issue);
+      if (key === null) continue;
       if (known.has(key) || seenThisRound.has(key)) continue;
       seenThisRound.add(key);
 
       /**
-       * `explicit: true` — the rule IS the human decision.
+       * THE TICKET IS DESCRIBED TO INTAKE, not just named.
        *
-       * An operator wrote a listening rule saying "tickets assigned to the bot
-       * in this project, of this type, are ours". Making the ticket ALSO carry
-       * an opt-in label would be asking the same question twice, and the second
-       * asking is the one nobody remembers to answer.
+       * The sweep used to pass a bare ticket key. `runIntake` then re-decided
+       * the flow with every classifying field `null`, so `flow-decision.ts`
+       * matched NO rule and the ticket the sweep had just found BECAUSE of a
+       * rule ran as if that rule did not exist. The fields come from the search
+       * page itself (`classifyingFieldsOf`) — the same document a webhook
+       * delivers, read with the same three readers.
+       *
+       * `explicit: true` is kept, though nothing branches on it since the
+       * project-wide opt-in gate was retired (`jira-intake.ts`): a rule IS the
+       * human decision, and the flag still says so to any future reader.
        */
       const outcome = await runIntake(options.deps, {
         ticket: key as TicketKey,
         actor: "maestro-worker",
         explicit: true,
+        ...classifyingFieldsOf(issue),
       }).catch((error: unknown) => ({ accepted: false as const, reason: String(error) }));
 
       if (outcome.accepted) {
@@ -328,6 +511,58 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   );
   record({ lastError: null, rulesSearched: rules.length - skippedRules, lastStarted: started.length });
   return started;
+}
+
+/**
+ * The issue's key, or `null` when the row does not carry one.
+ *
+ * Read defensively for the same reason the field readers are: this is an
+ * untyped document off the wire, and a row without a key is nothing the loop
+ * can act on. Jira does not send one — but a `null` here costs a skipped row,
+ * while a throw would end a round that still has other tickets in it.
+ */
+function issueKeyOf(issue: unknown): string | null {
+  if (typeof issue !== "object" || issue === null) return null;
+  const key = (issue as { key?: unknown }).key;
+  return typeof key === "string" && key.trim() !== "" ? key : null;
+}
+
+/**
+ * The four classifying fields, READ off the search result.
+ *
+ * The same three readers the webhook path uses (`work-events.ts`), shared on
+ * purpose: a delivery and a search hit are the same Jira `issue` document, and
+ * two hand-rolled grammars for one document is precisely how two entry points
+ * end up classifying the same ticket differently — the failure this change
+ * exists to undo.
+ *
+ * Every field is OMITTED when the payload did not carry it, never filled with a
+ * guess. `IntakeRequest` reads absence as "not known here", which matches no
+ * rule: the fail-closed answer, and the one that keeps the audit entry honest
+ * about what Jira actually said.
+ *
+ * Exported so a test can drive a real Jira `issue` document straight into
+ * `flow-decision.ts` and assert the round trip — the sweep reads the ticket,
+ * and what it read matches the very rule that found it. The bug this replaces
+ * was invisible to every test that only checked the JQL, because the JQL was
+ * already right.
+ */
+export function classifyingFieldsOf(issue: unknown): {
+  status?: string;
+  issueType?: string;
+  assignee?: string;
+  labels?: readonly string[];
+} {
+  const status = nameOf(issue, "status");
+  const issueType = nameOf(issue, "issuetype");
+  const assignee = assigneeOf(issue);
+  const labels = labelsOf(issue);
+  return {
+    ...(status === null ? {} : { status }),
+    ...(issueType === null ? {} : { issueType }),
+    ...(assignee === null ? {} : { assignee }),
+    ...(labels === null ? {} : { labels }),
+  };
 }
 
 /** Stamp the round's outcome onto the status the panel reads. */

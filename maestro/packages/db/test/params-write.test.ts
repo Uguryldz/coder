@@ -192,7 +192,9 @@ describe("demo parameter history (M71 versioning)", () => {
     expect(latest("gates.risk_tiers")).toBe(4);
     expect(latest("escalation.ladder")).toBe(3);
     expect(latest("coverage.ratchet")).toBe(2);
-    expect(latest("trigger.mode", "UGURPAY")).toBe(2);
+    // 0025: `trigger.mode` artık bir parametre değil, dolayısıyla demo geçmişi
+    // de yok — proje kapsamlı hiçbir satır kalmadı.
+    expect(DEMO_PARAM_VERSIONS.some((v) => v.key === "trigger.mode")).toBe(false);
   });
 
   it("numbers versions contiguously above the installer's v1", () => {

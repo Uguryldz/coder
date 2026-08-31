@@ -170,18 +170,20 @@ export function OnboardingSteps({
       {/* 3 — gates + trigger */}
       <h4 className="onb-group">{t("onboard.card.gates")}</h4>
       <div className="scr-grid scr-grid--2">
-        <Select
-          label={t("onboard.field.trigger_mode")}
-          value={draft.triggerMode}
-          onChange={(event) =>
-            onChange({ triggerMode: event.target.value as OnboardingDraft["triggerMode"] })
-          }
-          options={[
-            { value: "opt_in", label: t("onboard.trigger.opt_in") },
-            { value: "automatic", label: t("onboard.trigger.automatic") },
-          ]}
-          hint={t("onboard.field.trigger_hint")}
-        />
+        {/* TETİKLEME MODU BURADAN KALDIRILDI (0023).
+            Bu seçici projeye "opt-in (etiket veya komut)" ya da "otomatik (her
+            ticket)" diyordu, ve intake gerçekten ona bakıyordu: opt-in bir
+            projede etiketi olmayan ticket, dinleme kuralları HİÇ okunmadan
+            reddediliyordu. Yani tetikleme iki ayrı yerde tanımlıydı ve ikisi
+            birbirini bilmiyordu — tarama yolu bu kapıyı atlıyor, webhook yolu
+            atlamıyordu, dolayısıyla aynı ticket girdiği kapıya göre iki farklı
+            cevap alıyordu.
+            Artık tetikleme YALNIZCA dinleme kuralında tanımlıdır (statü ·
+            atanma · etiket · iş tipi). Seçici kaldırıldı çünkü hâlâ dursaydı
+            hiçbir şeyi değiştirmeyen bir kutu olurdu — ve bir ayarın sessizce
+            etkisiz olması, hiç olmamasından beterdir. Taslak `triggerMode`
+            alanını taşımaya devam ediyor ve bağlama kaydına yazılıyor: donuk
+            sözleşmedeki (`JiraBinding.trigger`) kolon NOT NULL. */}
         <Select
           label={t("onboard.field.gate_set")}
           value={draft.gateSet}

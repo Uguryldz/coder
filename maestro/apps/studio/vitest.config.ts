@@ -19,6 +19,11 @@ export default defineConfig({
       "@maestro/config/i18n": fileURLToPath(
         new URL("../../packages/config/src/i18n.ts", import.meta.url),
       ),
+      // Mirrors vite.config.ts — the pure model-name predicates the variant
+      // screens share with the server-side audit, without the Prisma barrel.
+      "@maestro/db/variant-model": fileURLToPath(
+        new URL("../../packages/db/src/variant-model-public.ts", import.meta.url),
+      ),
     },
   },
   test: {

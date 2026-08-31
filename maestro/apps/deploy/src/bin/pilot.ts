@@ -215,11 +215,12 @@ export async function ensureSandboxRootDefault(
   return { ...(persisted ?? {}), sandboxRoot: fallbackRoot };
 }
 
-// `assigned` (migration 0020) belongs here or the seed silently DROPS every
-// "bota atanan her ticket" rule on a pilot restart — the rule would still be in
-// the database and on the Studio screen while the engine behaved as if it did
-// not exist, which is the worst shape a configuration bug can take.
-const MATCH_KINDS = new Set(["status", "issuetype", "assigned"]);
+// `assigned` (migration 0020) and `label` (0023) belong here or the seed
+// silently DROPS every rule of that kind on a pilot restart — the rule would
+// still be in the database and on the Studio screen while the engine behaved as
+// if it did not exist, which is the worst shape a configuration bug can take.
+// This list must be widened in the SAME change as any new `matchKind`.
+const MATCH_KINDS = new Set(["status", "issuetype", "assigned", "label"]);
 const FLOW_TYPES = new Set(["analiz", "duzeltme", "gelistirme"]);
 
 /** Build ALL of the pilot's DB-backed wiring from one client (one URL, one pool). */

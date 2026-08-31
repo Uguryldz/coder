@@ -15,6 +15,10 @@ import { MaybeUnwired } from "./shared/unwired.tsx";
 import { QueryState } from "./shared/QueryState.tsx";
 import { TextArea } from "./shared/TextArea.tsx";
 import { parseKnowledge } from "./variants/knowledge.ts";
+import { ModelField, useConnectionModels } from "./variants/ModelField.tsx";
+import { variantModelHealth } from "./variants/model-source.ts";
+import "./shared/screens.css";
+import "./common/screens.css";
 
 /**
  * Screen: variant — one agent variant in detail (persona, knowledge, versions).
@@ -28,6 +32,24 @@ import { parseKnowledge } from "./variants/knowledge.ts";
  * the persona editor on the persona tab stays read-only and the "publish
  * version" modal is where a change is made. The BFF enforces both the admin gate
  * and the append-only rule regardless of what this UI shows.
+ *
+ * ── MODELİ DEĞİŞTİRMEK NEDEN "YOK" SANILIYORDU ──────────────────────────────
+ * Kural doğruydu, KEŞFEDİLEBİLİR değildi. Operatör "Düzenle"ye basıyor, orada
+ * yalnız platform kutusunu buluyor, ve modeli değiştirmenin bu üründe HİÇ
+ * OLMADIĞINI raporluyordu. Pencerede duran not ("model sürümlüdür, yeni sürüm
+ * yayınlayın") doğru şeyi söylüyor ama yanında basılacak bir şey yoktu:
+ * operatörün pencereyi kapatıp doğru düğmeyi kendi bulması bekleniyordu, ve
+ * bulmadı. Bir kuralı yazmak, onu uygulanabilir kılmakla aynı şey değil.
+ *
+ * Şimdi model değiştirme yolu İKİ yerden başlıyor, ikisi de operatörün doğal
+ * olarak baktığı yerden:
+ *  · Persona sekmesinde modelin YAZDIĞI satırın yanındaki "Değiştir" —
+ *    operatör modeli gördüğü yerde değiştirebiliyor, ki bu en keşfedilebilir
+ *    olanı: aramak için bir pencere açmak gerekmiyor.
+ *  · "Platformu düzenle" penceresindeki ölü notun yerine geçen düğme — çıkmaz
+ *    sokağın TAM KENDİSİNİ onarır: operatörün yanlışlıkla girdiği yer artık
+ *    doğru yere götürüyor.
+ * İkisi de aynı `PublishVersionModal`'ı açar; M83 kuralı hiç gevşemez.
  */
 
 interface VariantVersion {
@@ -166,7 +188,11 @@ export function VariantScreen(): ReactNode {
                 value={data.persona}
                 hint={t("variant.persona_readonly")}
               />
-              <p className="tpl-keyline">{t("variant.model_is", { model: data.model })}</p>
+              <VariantModelLine
+                model={data.model}
+                canChange={isAdmin}
+                onChange={() => setPublishing(true)}
+              />
             </TabPanel>
 
             <TabPanel id="knowledge" active={tab}>
@@ -250,6 +276,13 @@ export function VariantScreen(): ReactNode {
           variantId={data.variantId}
           current={data.platform}
           onClose={() => setEditing(false)}
+          // Tek tıkla doğru pencereye: düzenleme kapanır, sürüm yayınlama
+          // açılır. Operatörün pencereyi kapatıp doğru düğmeyi araması gereken
+          // adım tamamen kalkar.
+          onChangeModel={() => {
+            setEditing(false);
+            setPublishing(true);
+          }}
         />
       )}
       {publishing && data !== undefined && (
@@ -260,6 +293,54 @@ export function VariantScreen(): ReactNode {
         />
       )}
     </Card>
+  );
+}
+
+/**
+ * Persona sekmesindeki "Model: X" satırı — ve modeli DEĞİŞTİRME yolu.
+ *
+ * Bu satır, operatörün modeli gördüğü tek yer; bu yüzden değiştirme
+ * bağlantısının da burada olması gerekiyor. Eskiden yalnız adı yazıyordu ve
+ * yanında hiçbir eylem yoktu: modeli görüp "bunu nasıl değiştiririm" diye
+ * soran operatörün elinde, tıklayacak hiçbir şey olmuyordu.
+ *
+ * Model adı SORUNLUYSA satır bunu da söyler — `variantModelHealth`, sunucudaki
+ * `auditVariantModels` ile aynı iki yargıyı kullanır — çünkü "seçilmedi" ya da
+ * erişilemez bir bulut adı, tam da değiştirmenin ACİL olduğu durumdur ve
+ * operatörün onu fark etmesi için raporu okuması gerekmemeli.
+ */
+function VariantModelLine({
+  model,
+  canChange,
+  onChange,
+}: {
+  readonly model: string;
+  readonly canChange: boolean;
+  readonly onChange: () => void;
+}): ReactNode {
+  const t = useT();
+  const health = variantModelHealth(model);
+
+  return (
+    <div className="scr-row" style={{ marginTop: 10 }}>
+      <span className="tpl-keyline" style={{ margin: 0 }}>
+        {t("variant.model_is", { model })}
+      </span>
+      {health === "unset" && <Badge tone="amber">{t("variants.model.unset_badge")}</Badge>}
+      {health === "cloud" && <Badge tone="red">{t("variants.model.cloud_badge")}</Badge>}
+      {canChange && (
+        <button type="button" className="scr-linkbtn scr-link" onClick={onChange}>
+          {t("variant.model.change")}
+        </button>
+      )}
+      {health !== "ok" && (
+        <span className="screen-note" style={{ flexBasis: "100%", margin: 0 }}>
+          {health === "unset"
+            ? t("variants.model.unset_hint")
+            : t("variants.model.cloud_hint")}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -421,14 +502,30 @@ function VariantGuidance({
   );
 }
 
+/**
+ * Platform overlay'ini yerinde düzenleyen pencere.
+ *
+ * ── BURASI ÇIKMAZ SOKAKTI ───────────────────────────────────────────────────
+ * Operatör modeli değiştirmek için önce BURAYA geliyor — düğmenin adı
+ * "Düzenle" ve düzenlemek istediği şey bir alan. Karşısında yalnız platform
+ * kutusu ve modelin nasıl değiştiğini ANLATAN, ama değiştirmeye götürmeyen bir
+ * not vardı. Not doğruydu; eksik olan, notun sonunda basılacak şeydi. Bu
+ * eksiklik sahada "ajan modeli değiştirme yok" diye raporlandı.
+ *
+ * `onChangeModel` bu pencereyi kapatıp sürüm yayınlama penceresini açar. Kural
+ * hiç gevşemiyor — model hâlâ yalnız yeni bir sürümle değişir (M83) — yalnız
+ * oraya giden yol operatörün gerçekten durduğu yerden başlıyor.
+ */
 function EditPlatformModal({
   variantId,
   current,
   onClose,
+  onChangeModel,
 }: {
   readonly variantId: string;
   readonly current: string;
   readonly onClose: () => void;
+  readonly onChangeModel: () => void;
 }): ReactNode {
   const api = useApi();
   const t = useT();
@@ -482,6 +579,11 @@ function EditPlatformModal({
       />
       <div className="scr-note" style={{ marginTop: 8 }}>
         {t("variant.edit.model_note")}
+        <div style={{ marginTop: 8 }}>
+          <Button size="sm" onClick={onChangeModel}>
+            {t("variant.model.change_go")}
+          </Button>
+        </div>
       </div>
     </Modal>
   );
@@ -506,6 +608,11 @@ function PublishVersionModal({
   // never rewrites the one seeded from (M83).
   const [model, setModel] = useState(current.model);
   const [persona, setPersona] = useState(current.persona);
+  // Bağlantı panelinde tanımlı model adları — açılır liste olarak. Mevcut
+  // değer listede yoksa ayrı bir seçenek olarak korunur ve uyarılır: sessizce
+  // başka bir modele kaydırmak, operatörün bilmeden yayınladığı bir sürüm
+  // değişikliği olurdu.
+  const modelOptions = useConnectionModels();
   const [knowledge, setKnowledge] = useState(current.knowledge.map((k) => k.fileName).join("\n"));
   const [note, setNote] = useState("");
 
@@ -549,10 +656,11 @@ function PublishVersionModal({
         </>
       }
     >
-      <Input
-        label={t("variants.field.model")}
+      <ModelField
         value={model}
-        onChange={(event) => setModel(event.target.value)}
+        onChange={setModel}
+        options={modelOptions}
+        hint={t("variants.field.model_hint")}
         {...(invalid ? { error: t("variants.error.model") } : {})}
       />
       <TextArea

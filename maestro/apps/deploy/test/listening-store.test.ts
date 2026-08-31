@@ -80,6 +80,9 @@ function record(over: Partial<ListeningRuleRecord> = {}): ListeningRuleRecord {
     engineerVariantId: null,
     // No Jira status map — comment-only mode, the pre-0018 behaviour.
     statusMap: null,
+    // Statü kısıtı yok — 0024 öncesi her kuralın hâli. `null`, çünkü depo
+    // "kısıt yok"u TEK biçimde saklar (SQL NULL) ve okurken de öyle döner.
+    allowedStatuses: null,
     ...over,
   };
 }

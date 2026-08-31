@@ -14,6 +14,7 @@
   "dependencies": {
     "@maestro/config": "workspace:*",
     "@maestro/contracts": "workspace:*",
+    "@maestro/db": "workspace:*",
     "@tanstack/react-query": "^5.101.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

@@ -121,7 +121,73 @@ describe("POST /webhooks/jira", () => {
     expect(h.work.comments).toHaveLength(0);
   });
 
-  it("ignores an unlabelled ticket in an opt-in project (M48a)", async () => {
+  /**
+   * M48a'NIN PROJE SEVİYESİNDEKİ OPT-IN ETİKET KAPISI ARTIK YOK (0023).
+   *
+   * Eskiden burada şu vardı: `triggerMode: "opt_in"` bir projede, `maestro`
+   * etiketi taşımayan ticket `not_opted_in` ile reddedilir, dinleme kuralları
+   * HİÇ okunmazdı. Kapı, ölçülen bir sebeple kalktı: tarama yolu
+   * (`jira-discovery.ts`) `explicit: true` geçip onu ATLIYOR, webhook yolu
+   * atlamıyordu — yani operatörün kuralına tam uyan AYNI ticket, tarama turunda
+   * alınıp webhook teslimatında sessizce düşüyordu. Tetikleme iki ayrı yerde
+   * tanımlıydı ve ikisi birbirini bilmiyordu.
+   *
+   * Test SİLİNMEDİ, TERSİNE ÇEVRİLDİ. Bir davranışın kalktığını yalnızca onu
+   * bekleyen testi silerek anlatmak, aynı kapının bir sonraki turda farkında
+   * olunmadan geri gelmesine açık kapı bırakır — bu satır kapının gittiğini
+   * SÖYLEYEN şeydir.
+   */
+  /**
+   * BAĞLI OLMAYAN PROJE, BOTA ATANMIŞ VE STATÜSÜ UYGUN OLSA BİLE İŞLENMEZ.
+   *
+   * Opt-in etiket kapısı 0023'te kalktı; BAĞLANTI kapısı kalkmadı ve kalkmamalı.
+   * İkisi aynı şey değildir: etiket "bu ticket'ı istiyor musun?" diye sorardı,
+   * bağlantı "bu PROJE sana verildi mi?" diye sorar — ve bu kurulumun Jira
+   * servis hesabı rutin olarak ADMIN'dir, yani bağlanmamış bir proje kapsam
+   * dışı bir proje değil, Maestro'yu hiç duymamış bir ekibin ticket'larıdır.
+   *
+   * Bu test, tetiklemeyi tek yere toplarken o kapının yanlışlıkla gevşetilmiş
+   * olmadığını sabitliyor — kuralın eşleşeceği HER ŞEY (bota atanma, statü,
+   * etiket) yerinde olduğu hâlde ticket işlenmemeli. `h.work.comments`
+   * üzerinden de bakılıyor: bağlanmamış bir projeye yorum yazmak, koşu
+   * başlatmaktan daha görünür bir sınır ihlalidir.
+   */
+  it("refuses an unbound project even when the bot is assigned and a rule would match", async () => {
+    const h = await harness({
+      bindings: [],
+      listeningRules: [
+        {
+          ruleId: "lr_status",
+          projectKey: "UGURPAY",
+          assigneeAccountId: "",
+          matchKind: "status",
+          matchValue: "Analiz Bekliyor",
+          flowType: "analiz",
+          priority: 100,
+          enabled: true,
+          analystVariantId: null,
+          engineerVariantId: null,
+          statusMap: null,
+        },
+      ],
+    });
+    const delivery = signed(
+      issueEvent({ ticket: "UGURPAY-7", status: "Analiz Bekliyor", labels: ["maestro"] }),
+    );
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.json()).toEqual({ accepted: false, reason: "unbound" });
+    expect(h.runs.started).toHaveLength(0);
+    expect(h.work.comments).toHaveLength(0);
+  });
+
+  it("no longer refuses an unlabelled ticket: the project-wide opt-in gate is gone (0023)", async () => {
     const h = await harness({
       bindings: [{ ...UGURPAY_BINDING, triggerMode: "opt_in" }],
     });
@@ -134,11 +200,11 @@ describe("POST /webhooks/jira", () => {
       payload: delivery.payload,
     });
 
-    expect(response.json()).toEqual({ accepted: false, reason: "not_opted_in" });
-    expect(h.runs.started).toHaveLength(0);
+    expect(response.json()).toMatchObject({ accepted: true });
+    expect(h.runs.started).toHaveLength(1);
   });
 
-  it("takes a labelled ticket in an opt-in project", async () => {
+  it("takes a labelled ticket just the same — the label is no longer a gate", async () => {
     const h = await harness({
       bindings: [{ ...UGURPAY_BINDING, triggerMode: "opt_in" }],
     });
@@ -152,6 +218,82 @@ describe("POST /webhooks/jira", () => {
     });
 
     expect(response.json()).toMatchObject({ accepted: true });
+  });
+
+  /**
+   * ETİKET ARTIK BİR TETİKLEME TİPİ — ve webhook yolunda gerçekten çalışıyor.
+   *
+   * Kapıyı kaldırmak etiketi işlevsiz bırakmadı, YERİNİ DEĞİŞTİRDİ: etiketle
+   * tetiklemek isteyen operatör bunu kuralda söyler (`matchKind: "label"`), ve
+   * o kural ticket'ın AKIŞINI seçer. Bu iki test o yer değişikliğinin iki
+   * yönünü kilitliyor: etiketi taşıyan ticket kuralın akışını alır, taşımayan
+   * almaz — reddedilmez (kapı yok), kuralın akışını almaz (kural eşleşmez).
+   */
+  it("a label RULE picks the flow for a ticket carrying that label", async () => {
+    const h = await harness({
+      listeningRules: [
+        {
+          ruleId: "lr_label",
+          projectKey: "UGURPAY",
+          // Boş: "kime atandığına bakma". Bu testin konusu etiket eşleşmesi.
+          assigneeAccountId: "",
+          matchKind: "label",
+          matchValue: "maestro",
+          flowType: "duzeltme",
+          priority: 100,
+          enabled: true,
+          analystVariantId: null,
+          engineerVariantId: null,
+          statusMap: null,
+        },
+      ],
+    });
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-7", labels: ["digeri", "maestro"] }));
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    expect(response.json()).toMatchObject({ accepted: true });
+    // Kararın kendisi denetim zincirinde: hangi kural, hangi akış.
+    const started = (await h.auditStore.read()).find((e) => e.action === "RUN_STARTED");
+    expect(started?.meta).toMatchObject({ flow: "duzeltme", flowReason: "rule", flowRuleId: "lr_label" });
+  });
+
+  it("a label rule does not claim a ticket without that label", async () => {
+    const h = await harness({
+      listeningRules: [
+        {
+          ruleId: "lr_label",
+          projectKey: "UGURPAY",
+          assigneeAccountId: "",
+          matchKind: "label",
+          matchValue: "maestro",
+          flowType: "duzeltme",
+          priority: 100,
+          enabled: true,
+          analystVariantId: null,
+          engineerVariantId: null,
+          statusMap: null,
+        },
+      ],
+    });
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-7", labels: ["digeri"] }));
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+
+    // Alınır (kapı yok) ama kuralın akışıyla değil — kural eşleşmedi.
+    expect(response.json()).toMatchObject({ accepted: true });
+    const started = (await h.auditStore.read()).find((e) => e.action === "RUN_STARTED");
+    expect(started?.meta).not.toMatchObject({ flowRuleId: "lr_label" });
   });
 
   it("sends a ticket with no application to the assignment queue (M99 tier 3)", async () => {

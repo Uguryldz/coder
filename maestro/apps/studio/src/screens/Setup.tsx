@@ -291,12 +291,19 @@ export function SetupScreen(): ReactNode {
 
   // The project's real issue types / statuses, so step 3 is a dropdown of the
   // names Jira actually uses rather than a text box that accepts a typo.
-  // Not fetched for `assigned`: that rule has no value to pick, and the
-  // endpoint only understands status|issuetype anyway — asking it for a third
-  // kind would be a 400 on a step the operator has already answered.
+  //
+  // Fetched ONLY for the two kinds the endpoint understands. `assigned` has no
+  // value to pick; a LABEL is a free string an operator invents and Jira serves
+  // no per-project label list, so both fall back to the text box. Sending
+  // either kind to `jira-match-values` would be a 400 on a step the operator
+  // has already answered — an allow-list, not a deny-list, so a fifth kind
+  // added later fails safe into free text instead of into that 400.
   const matchValues = useQuery({
     queryKey: ["jira-match-values", matchConnId, draft.jiraProject, draft.matchKind],
-    enabled: matchConnId !== null && draft.jiraProject !== "" && draft.matchKind !== "assigned",
+    enabled:
+      matchConnId !== null &&
+      draft.jiraProject !== "" &&
+      (draft.matchKind === "status" || draft.matchKind === "issuetype"),
     retry: false,
     queryFn: ({ signal }) =>
       api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(

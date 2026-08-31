@@ -1,4 +1,5 @@
 import {
+  parseAllowedStatuses,
   parseStatusMap,
   type FlowType,
   type ListeningRuleRecord,
@@ -46,6 +47,12 @@ export interface ListeningRuleRow {
    * NULL = comment-only mode.
    */
   statusMapJson?: unknown;
+  /**
+   * İzin verilen statüler, jsonb kolonun tuttuğu haliyle (migration 0024).
+   * `statusMapJson` ile aynı gerekçeyle `unknown`: bu veritabanının sözü, elle
+   * düzenlenmiş olabilir, çıkışta doğrulanır. NULL = statü kısıtı yok.
+   */
+  allowedStatusesJson?: unknown;
 }
 
 /**
@@ -77,8 +84,10 @@ export interface ListeningRuleRow {
  * Two types rather than one cast, because the asymmetry is real and worth
  * naming: what we accept FROM the database is broader than what we send TO it.
  */
-type ListeningRuleWrite = Omit<ListeningRuleRow, "statusMapJson"> & {
+type ListeningRuleWrite = Omit<ListeningRuleRow, "statusMapJson" | "allowedStatusesJson"> & {
   statusMapJson: StatusMap | DbNull;
+  /** `readonly string[]` DEĞİL, mutable: Prisma'nın `InputJsonValue`'su readonly dizileri kabul etmez. */
+  allowedStatusesJson: string[] | DbNull;
 };
 
 export interface ListeningDelegate {
@@ -162,7 +171,24 @@ export class PrismaListeningStore implements ListeningStore {
           "the rule falls back to comment-only mode",
       );
     });
-    return { ...toRecordBase(row), statusMap };
+    /**
+     * Statü kapısı da fail-safe okunuyor, ama bozulmasının YÖNÜ ters ve bu
+     * yüzden uyarı burada isteğe bağlı değil: bozuk bir `statusMapJson` kuralı
+     * yorum moduna DÜŞÜRÜR (daraltıcı), bozuk bir `allowedStatusesJson` ise
+     * statü kapısını KALDIRIR (genişletici). Bir okuma hatası yüzünden kapının
+     * sessizce açılması, kapının var olma sebebinin tam tersidir.
+     */
+    const allowedStatuses = parseAllowedStatuses(
+      row.allowedStatusesJson === DB_NULL ? null : row.allowedStatusesJson,
+      (reason) => {
+        this.onWarn(
+          `[maestro] dinleme kuralı ${row.ruleId}: allowedStatusesJson okunamadı (${reason}) — ` +
+            "kural STATÜ KISITI OLMADAN çalışacak, yani bota atanan her ticket işlenir. " +
+            "Panelde kuralın izin verilen statülerini yeniden seçin.",
+        );
+      },
+    );
+    return { ...toRecordBase(row), statusMap, allowedStatuses };
   }
 }
 
@@ -205,5 +231,13 @@ function toRow(record: ListeningRuleRecord): ListeningRuleWrite {
     // `DB_NULL` and not `null`: see its declaration — Prisma refuses a bare
     // null here, and SQL NULL is the shape the read path and psql both expect.
     statusMapJson: parseStatusMap(record.statusMap ?? null) ?? DB_NULL,
+    // Yokluk ve boş liste tek bir şeye ("statü kısıtı yok") iner ve kolon onu
+    // tek biçimde saklar (SQL NULL) — `statusMapJson`'ın gerekçesinin aynısı.
+    // Yazarken de doğrulanır: doğrulamayı çağırana bırakan bir depo, okuma
+    // yolunun sonsuza dek savunmak zorunda kalacağı bir şekli bir gün saklar.
+    allowedStatusesJson: (() => {
+      const parsed = parseAllowedStatuses(record.allowedStatuses ?? null);
+      return parsed === null ? DB_NULL : [...parsed];
+    })(),
   };
 }

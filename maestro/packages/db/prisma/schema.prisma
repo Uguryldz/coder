@@ -457,6 +457,15 @@ model RepoCard {
 model JiraProjectBinding {
   projectKey       String        @id @db.VarChar(32)
   trigger          TriggerModeE
+  /// RETIRED FROM THE DECISION PATH (0023), kept as data.
+  ///
+  /// This was the project-wide opt-in gate: `runIntake` refused any ticket that
+  /// did not carry this label. It is no longer read by intake — a trigger is
+  /// now defined ONLY on a `ListeningRule`, where `matchKind = "label"` says
+  /// the same thing per rule instead of per project. The column stays because
+  /// the value an operator typed here is the value their new label RULE wants,
+  /// and because `@maestro/contracts` `JiraBinding` (frozen) still carries it.
+  /// Onboarding still WRITES it; nothing READS it to decide anything.
   triggerLabel     String        @default("maestro") @db.VarChar(64)
   defaultsJson     Json // { mode, dataClass }
   state            BindingStateE
@@ -502,22 +511,63 @@ model RoutingRule {
 ///
 /// `matchKind` = "status" matches the ticket's current status NAME (needs the
 /// status to exist on the board); "issuetype" matches the issue type NAME
-/// (works on any project with no board change). Deliberately NOT a foreign key
-/// to any binding, for the same reason `RoutingRule` is not.
+/// (works on any project with no board change); "label" matches one of the
+/// ticket's LABELS (0023 — the opt-in label, moved here from the project
+/// binding so every trigger is defined in one place). Deliberately NOT a
+/// foreign key to any binding, for the same reason `RoutingRule` is not.
 model ListeningRule {
   ruleId            String  @id @db.VarChar(64)
   projectKey        String  @db.VarChar(32)
   /// The account the ticket must be assigned to (the Maestro Bot accountId).
   assigneeAccountId String  @db.VarChar(128)
-  /// "status" | "issuetype" | "assigned" — which ticket field `matchValue` is
-  /// compared to. `assigned` (0020) compares NOTHING: the rule triggers on the
-  /// assignment alone, which is how "bota atanan her ticket" is expressed.
+  /// "status" | "issuetype" | "assigned" | "label" — which ticket field
+  /// `matchValue` is compared to. `assigned` (0020) compares NOTHING: the rule
+  /// triggers on the assignment alone, which is how "bota atanan her ticket" is
+  /// expressed. `label` (0023) is the ONE many-valued field: a ticket has one
+  /// status and one issue type but any number of labels, so it is matched by
+  /// MEMBERSHIP rather than equality (`flow-decision.ts`).
+  ///
+  /// These four ARE the trigger, and they are the only place a trigger is
+  /// defined. `JiraProjectBinding.triggerLabel` used to be a second, project-
+  /// wide opt-in gate in front of them; 0023 retires it from the decision path
+  /// (the column stays for migration, see that migration's comment) because two
+  /// trigger definitions that did not know about each other gave the SAME
+  /// ticket two different answers depending on whether it arrived by webhook or
+  /// by sweep.
   matchKind         String  @db.VarChar(16)
-  /// The status name or issue-type name that triggers this rule. For an
+  /// The status name, issue-type name or LABEL that triggers this rule. For an
   /// `assigned` rule it is the fixed literal `*`, carried only so the unique
   /// trigger index below keeps ONE such rule per (project, bot) — the column
   /// stays NOT NULL because NULLs do not collide in a Postgres unique index.
   matchValue        String  @db.VarChar(128)
+  /// HANGİ STATÜDEKİ ticket işlenebilir — `matchKind`'dan BAĞIMSIZ, HER KURALDA
+  /// ayrıca sorulan kapı (0024).
+  ///
+  /// Bu alan var olmadan önce statü koşulu YALNIZCA `matchKind = "status"`
+  /// seçilmiş kurallarda vardı; `assigned`/`issuetype`/`label` kurallarında
+  /// hiç sorulmuyordu. Sonuç ölçüldü ve tehlikeli: bu platformun Jira servis
+  /// hesabı rutin olarak ADMIN, yani bankadaki HER projede bota atanmış her
+  /// ticket'ı görür. "Bota atanan her ticket" kuralı, ticket panonun neresinde
+  /// olursa olsun — daha yazılmamış, kapatılmış, arşivlenmiş — analize
+  /// alıyordu. Operatörün cümlesi tam olarak bu: "atanmış olsa da izin
+  /// verdiğim analiz statüsünde değilse, o olmadan çalışmamalı".
+  ///
+  /// Statü ADLARININ listesi, jsonb bir dizi: bir kural birden çok statüye izin
+  /// verebilir ("Yapılacaklar" ve "Analiz Bekliyor" ikisi de olur). Ayrı bir
+  /// tabloya değil bir diziye konuyor, çünkü okuyucusu tek: kural satırının
+  /// kendisi, kural okunurken. `statusMapJson` ile aynı gerekçe.
+  ///
+  /// ADLAR, transition id'leri DEĞİL — `statusMapJson`'ın gerekçesinin aynısı:
+  /// id bir projenin workflow'una aittir, ad ise operatörün panoda okuduğu
+  /// şeyin ta kendisidir.
+  ///
+  /// NULL / boş dizi = "statü kısıtı yok". Bu, 0024 ÖNCESİ yazılmış her kuralın
+  /// hâli ve o kurallar aynen çalışmaya devam eder (`flow-decision.ts`) — ama
+  /// SESSİZCE değil: panel de, karar dökümü de, tarama günlüğü de bu kuralın
+  /// statü kapısı olmadığını açıkça söyler. Fail-closed backfill mevcut her
+  /// kuralı durdururdu; sessiz fail-open ise operatörün kapatmak istediği
+  /// deliğin ta kendisi olurdu. Üçüncü yol: çalışır ama GÖRÜNÜR.
+  allowedStatusesJson Json?
   /// "analiz" | "duzeltme" | "gelistirme" — the flow Maestro runs.
   flowType          String  @db.VarChar(16)
   priority          Int     @default(100)

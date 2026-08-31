@@ -3,7 +3,9 @@ import type { ResolvedDeps } from "./deps.js";
 import { badRequest } from "./errors.js";
 import { BFF_MESSAGE_KEYS } from "./messages.js";
 import { workflowIdFor } from "./gateway.js";
-import { flowDecisionFor, type FlowDecision } from "./flow-decision.js";
+import { flowDecisionFor, statusGateOf, type FlowDecision } from "./flow-decision.js";
+import { decisionLogLine, decisionLogMarkdown, type IntakeDecisionFacts } from "./intake-decision-log.js";
+import type { ListeningRuleRecord } from "./listening-store.js";
 
 /**
  * Intake: the decision to put a ticket on the workflow engine, and every
@@ -121,13 +123,26 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     return { accepted: false, reason: "unbound" };
   }
 
-  if (
-    request.explicit !== true &&
-    binding.triggerMode === "opt_in" &&
-    !(request.labels ?? []).includes(deps.config.optInLabel)
-  ) {
-    return { accepted: false, reason: "not_opted_in" };
-  }
+  /**
+   * PROJE SEVİYESİNDEKİ OPT-IN KAPISI YOK (0023).
+   *
+   * Burada bir kontrol VARDI: `triggerMode === "opt_in"` olan bir projede
+   * `optInLabel` etiketini taşımayan ticket `not_opted_in` ile reddediliyordu.
+   * Kaldırılmasının sebebi ölçülmüş bir çelişki: tarama yolu
+   * (`jira-discovery.ts`) `explicit: true` geçtiği için bu kapıyı ATLIYOR,
+   * webhook yolu atlamıyordu — yani AYNI ticket, tarama ile gelirse alınıyor,
+   * webhook ile gelirse etiketi yok diye sessizce düşüyordu. Hangi kapıdan
+   * girdiğine bağlı iki farklı cevap.
+   *
+   * Etiket işlevsiz kalmadı, YERİ DEĞİŞTİ: artık dinleme kuralının dördüncü
+   * tetikleme tipi (`matchKind: "label"`, `flow-decision.ts`). Tetikleme tek
+   * yerde — kuralda — tanımlanır ve o kural ticket'ın AKIŞINI da seçer.
+   *
+   * `IntakeRefusal`'daki `not_opted_in` üyesi ve `config.optInLabel` DURUYOR:
+   * `jira-commands.ts` hâlâ o sebebi ticket'a yazılacak mesaja çeviriyor.
+   * Ulaşılamaz hâle gelmiş bir sebebi tip kümesinden çıkarmak ayrı bir
+   * temizlik; burada yapılan iş kapıyı kaldırmak.
+   */
 
   // M58: both levels stop new work. `all` also stops running work, but that is
   // the workflow's job — here the only question is whether to take the ticket.
@@ -156,7 +171,35 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
   // Decided BEFORE the application check below, because the application check
   // now depends on it: whether "no application" is a refusal is a question
   // about which flow would run.
-  const flowDecision = await decideFlow(deps, request, projectKey);
+  const flow = await decideFlow(deps, request, projectKey);
+  const flowDecision = flow.decision;
+
+  /**
+   * Dökümün, karardan öğrenilen her şeyi taşıyan ortak gövdesi.
+   *
+   * Tek yerde kuruluyor çünkü iki YOLDAN yazılıyor — kabulde ve `no_application`
+   * reddinde — ve iki yolun aynı kararı farklı anlatması, dökümü teşhis aracı
+   * olmaktan çıkarırdı. Yollar yalnızca son iki alanda (`accepted`,
+   * `refusedReason`) ayrılır.
+   */
+  const facts = (verdict: Pick<IntakeDecisionFacts, "accepted" | "refusedReason">): IntakeDecisionFacts => ({
+    ticket: request.ticket,
+    projectKey,
+    source: sourceOf(request),
+    status: request.status ?? null,
+    issueType: request.issueType ?? null,
+    assignee: request.assignee ?? null,
+    // `null` ile `[]` farkı burada da korunuyor — döküm bu ikisini AYRI
+    // cümlelerle anlatıyor ve operatörü ayrı yerlere gönderiyor.
+    labels: request.labels ?? null,
+    decision: flowDecision,
+    rulesConsidered: flow.rulesConsidered,
+    statusBlocked: flow.statusBlocked,
+    ungatedRuleIds: flow.ungatedRuleIds,
+    analystVariantId: flowDecision.analystVariantId ?? null,
+    engineerVariantId: flowDecision.engineerVariantId ?? null,
+    ...verdict,
+  });
 
   const appId = request.appId ?? binding.appId;
   if (appId === null || appId === undefined) {
@@ -174,6 +217,16 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
           ticket: request.ticket,
         }),
       );
+      /**
+       * REDDİN DE DÖKÜMÜ VAR — ve dökümün asıl varlık sebebi bu dal.
+       *
+       * Kabul edilen bir alım arkasında bir koşu satırı, bir denetim kaydı ve
+       * bir Jira yorumu bırakır; operatörün bakabileceği yerler vardır. Burada
+       * hiçbiri yoktur: ticket bir insana havale edilir, koşu AÇILMAZ, denetim
+       * zincirine `RUN_STARTED` düşmez. Yalnızca reddi yazmayan bir döküm,
+       * "ticket'ıma ne oldu?" sorusunun en çok sorulduğu durumda susardı.
+       */
+      writeDecisionLog(deps, facts({ accepted: false, refusedReason: "no_application" }));
       return { accepted: false, reason: "no_application" };
     }
   }
@@ -194,6 +247,27 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     ...(flowDecision.statusMap === undefined || flowDecision.statusMap === null
       ? {}
       : { statusMap: flowDecision.statusMap }),
+    /**
+     * KURALIN SEÇTİĞİ AJANLAR, koşunun başlangıç girdisine çivilenmiş hâlde.
+     *
+     * Bu iki satır olmadan `ListeningRule.analystVariantId` sütunu, panel ve
+     * `flow-decision.ts` boşuna çalışıyordu: karar `flowDecisionFor` ile burası
+     * arasında düşüyor ve her koşu `role='analyst'`in alfabetik olarak İLK
+     * satırına iğneleniyordu. Operatörün cümlesi tam buydu — "ajan tanımlarını
+     * dinleme kurallarınıda bağlamamışsın".
+     *
+     * `flow` ve `statusMap` ile aynı biçimde, KOŞULLU spread ile: seçilmemiş
+     * alan `null` olarak değil, HİÇ geçilmiyor. Yokluk zaten "kurulumun etkin
+     * varyantına düş" demek ve `StartRunInput` bu alanlara `null` kabul etmiyor
+     * — boş bir varyant kimliği ise gateway sözleşmesini ilk model çağrısında,
+     * üç aktivite denemesi ötede bozardı.
+     */
+    ...(flowDecision.analystVariantId === undefined || flowDecision.analystVariantId === null
+      ? {}
+      : { analystVariantId: flowDecision.analystVariantId }),
+    ...(flowDecision.engineerVariantId === undefined || flowDecision.engineerVariantId === null
+      ? {}
+      : { engineerVariantId: flowDecision.engineerVariantId }),
   });
 
   if (outcome.started) {
@@ -236,6 +310,19 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
           flowDecision.statusMap === undefined || flowDecision.statusMap === null
             ? "yorum"
             : JSON.stringify(flowDecision.statusMap),
+        /**
+         * HANGİ AJAN koştu — akışın ve durum eşlemesinin yanında, aynı
+         * satırda, aynı gerekçeyle. Kural sonradan düzenlenmiş olabilir;
+         * "OPS-41'i hangi ajan analiz etti?" sorusunun aylar sonraki tek
+         * cevabı bu denetim satırıdır.
+         *
+         * `"kurulum varsayılanı"` KELİMEYLE yazılıyor, bir null tutulmuyor:
+         * bir SIEM sorgusu null'ı düşürür ve "kural ajan seçmedi" ile "denetim
+         * söylemedi" ayırt edilemez hâle gelirdi. Oysa bu ikisi arasındaki
+         * fark, operatörün "seçtiğim ajan koştu mu?" sorusunun ta kendisi.
+         */
+        analystVariant: flowDecision.analystVariantId ?? "kurulum varsayılanı",
+        engineerVariant: flowDecision.engineerVariantId ?? "kurulum varsayılanı",
       },
     });
 
@@ -265,6 +352,19 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
       .catch(() => undefined);
   }
 
+  /**
+   * KABUL YOLUNUN DÖKÜMÜ — `started` olsun ya da olmasın.
+   *
+   * Yukarıdaki denetim satırı ve Jira yorumu yalnızca YENİ bir koşu açıldığında
+   * yazılır; mevcut bir koşuya KATILAN teslimat ikisini de üretmez. Döküm o
+   * ayrımı yapmıyor, çünkü cevapladığı soru farklı: "bu ticket bu teslimatta
+   * hangi kuralla, hangi akışa, hangi ajana düştü?" — ve bu sorunun cevabı,
+   * koşunun o an açılmış olup olmamasından bağımsız olarak vardır. Yalnızca
+   * `started` için yazsaydı, aynı ticket'a gelen ikinci teslimat dökümde hiç
+   * görünmez ve "kuralı değiştirdim, bir şey değişmedi" şikayeti izsiz kalırdı.
+   */
+  writeDecisionLog(deps, facts({ accepted: true }));
+
   return { accepted: true, workflowId: outcome.workflowId ?? workflowIdFor(request.ticket), started: outcome.started };
 }
 
@@ -284,33 +384,137 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
  *    deliberate operator choice, not a guess, so falling back to it is safer
  *    than refusing the intake or inventing a flow.
  */
-async function decideFlow(
-  deps: ResolvedDeps,
-  request: IntakeRequest,
-  projectKey: string,
-): Promise<FlowDecision> {
-  const fallback = (): FlowDecision =>
-    deps.config.defaultFlow === undefined || deps.config.defaultFlow === null
-      ? { flow: null, reason: "none" }
-      : { flow: deps.config.defaultFlow, reason: "default" };
+async function decideFlow(deps: ResolvedDeps, request: IntakeRequest, projectKey: string): Promise<FlowOutcome> {
+  const fallback = (): FlowOutcome => ({
+    decision:
+      deps.config.defaultFlow === undefined || deps.config.defaultFlow === null
+        ? { flow: null, reason: "none" }
+        : { flow: deps.config.defaultFlow, reason: "default" },
+    // Bir kural OKUNMADIĞINDA sayı 0'dır ve bu, dökümün en teşhis edici
+    // satırı: "kural yok" ile "kural var ama eşleşmedi" birbirinden ancak
+    // burada ayrılır. Store'un olmadığı ya da cevap vermediği hâl de aynı
+    // sayıyı verir — ikisinde de karara giren kural sayısı gerçekten sıfırdır.
+    rulesConsidered: 0,
+    statusBlocked: [],
+    ungatedRuleIds: [],
+  });
 
   if (deps.listening === undefined) return fallback();
 
-  let rules;
+  let rules: readonly ListeningRuleRecord[];
   try {
     rules = await deps.listening.list();
   } catch {
     return fallback();
   }
 
-  return flowDecisionFor(
-    rules,
-    {
-      projectKey,
-      status: request.status ?? null,
-      issueType: request.issueType ?? null,
-      assignee: request.assignee ?? null,
-    },
-    deps.config.defaultFlow,
-  );
+  const ticket = {
+    projectKey,
+    status: request.status ?? null,
+    issueType: request.issueType ?? null,
+    assignee: request.assignee ?? null,
+    /**
+     * ETİKETLER, karara giden yolda.
+     *
+     * Bu satırın yokluğu ölçülebilir bir sessiz-yanlıştı: `matchKind: "label"`
+     * (0023) kuralları burada `undefined` gördükleri için HİÇBİR ticket'ı
+     * eşleştiremiyordu — panelde yazılan, kaydedilen ve doğru görünen bir
+     * kural, tek bir ticket'ta bile ateşlemiyordu.
+     *
+     * `null` ile `[]` farkı korunuyor (`ClassifiableTicket` bu farkı okur):
+     * `[]` "bu ticket'ın etiketi yok", `null` "bu yol etiketleri okumadı".
+     * `IntakeRequest.labels` opsiyonel olduğu için yokluk `null`'a çevriliyor —
+     * webhook dışındaki yollar etiketi gerçekten bilmiyor ve bir kural,
+     * kimsenin okumadığı bir alan üzerinden ateşlememeli.
+     */
+    labels: request.labels ?? null,
+  };
+
+  /**
+   * STATÜ KAPISININ bu ticket'a kural kural ne dediği (0024).
+   *
+   * `flowDecisionFor` yalnızca KAZANANI döndürür; elenenler kararın içinde
+   * görünmez. Oysa operatörün sorusu ("bota atadım, hiçbir şey olmadı")
+   * tam olarak elenenlerle ilgili, ve statü yüzünden elenen bir kural ortada
+   * bir koşu BIRAKMAZ — bakılacak bir satır bile olmaz. Bu yüzden kapı burada
+   * ikinci kez, dökümü yazmak için soruluyor.
+   *
+   * Yalnızca bu projenin ETKİN kuralları: başka bir projenin kuralı bu
+   * ticket'ı zaten hiç eşleştirmez, dolayısıyla "statü yüzünden elendi"
+   * demek yanlış olurdu — elenme sebebi statü değil, proje.
+   */
+  const mine = rules.filter((rule) => rule.enabled && rule.projectKey === projectKey);
+  const statusBlocked: { ruleId: string; allowed: readonly string[] }[] = [];
+  const ungatedRuleIds: string[] = [];
+  for (const rule of mine) {
+    const gate = statusGateOf(rule, ticket.status);
+    if (gate === "ungated") ungatedRuleIds.push(rule.ruleId);
+    // `unknown_status` de kapalı sayılır ve kapalı olarak RAPORLANIR: kapının
+    // fail-closed yönü dökümde de aynı yönde okunmalı, yoksa statüsü hiç
+    // okunmamış bir ticket "kapı sorunu yok" diye görünürdü.
+    else if (gate === "closed" || gate === "unknown_status") {
+      statusBlocked.push({ ruleId: rule.ruleId, allowed: rule.allowedStatuses ?? [] });
+    }
+  }
+
+  return {
+    decision: flowDecisionFor(rules, ticket, deps.config.defaultFlow),
+    // Kaç kural OKUNDU — bu projeninkiler değil, karara giren kümenin tamamı:
+    // "0 kural" cevabı, kuralların hiç okunamadığını söyleyen cevaptır.
+    rulesConsidered: rules.length,
+    statusBlocked,
+    ungatedRuleIds,
+  };
+}
+
+/**
+ * Akış kararı ve KARARIN ETRAFINDAKİ ÖLÇÜMLER.
+ *
+ * `FlowDecision` yalnızca sonucu taşır — hangi akış, hangi kural, neden. Döküm
+ * (`intake-decision-log.ts`) ise sonucun ETRAFINI sorar: kaç kural okundu,
+ * hangileri statü yüzünden elendi, hangilerinde hiç statü kısıtı yok. Bunlar
+ * karara girmez ama kararı AÇIKLAR, ve ikisini tek tipte birleştirmek
+ * `FlowDecision`'ı — koşunun başlangıç girdisine çivilenen sözleşmeyi —
+ * teşhis alanlarıyla şişirirdi.
+ */
+interface FlowOutcome {
+  readonly decision: FlowDecision;
+  readonly rulesConsidered: number;
+  readonly statusBlocked: readonly { readonly ruleId: string; readonly allowed: readonly string[] }[];
+  readonly ungatedRuleIds: readonly string[];
+}
+
+/**
+ * Ticket'ı HANGİ YOLUN getirdiği, dökümün okuyucusu için.
+ *
+ * `IntakeRequest`'te bir `source` alanı yok ve eklenmiyor: her çağrı yerini
+ * güncellemek gerekirdi ve elde zaten aynı soruya cevap veren iki alan var.
+ * `actor` yolu adlandırır (webhook ve tarama sistem aktörleriyle gelir, bir
+ * insan kendi kimliğiyle), `explicit` ise bir insanın adıyla mı istediğini
+ * söyler.
+ */
+function sourceOf(request: IntakeRequest): string {
+  if (request.actor === "maestro-worker") {
+    return request.explicit === true ? "tarama (keşif turu)" : "webhook (Jira teslimatı)";
+  }
+  return request.explicit === true ? `komut/panel (${request.actor})` : `webhook (${request.actor})`;
+}
+
+/**
+ * Kararın dökümünü yazar — ve yazamazsa SESSİZCE PES EDER.
+ *
+ * Fail-soft olması `deps.decisionLog` sözleşmesinin kendi gerekçesi: bir
+ * teşhis satırı uğruna, çalışan bir ticket alımını reddetmek yanlış takas
+ * olurdu. Sink'in kendi hatası zaten `apps/deploy` tarafında yutuluyor; buradaki
+ * `try` onun için değil, seam'i sağlayan HERHANGİ bir uygulamanın atabileceği
+ * hata için — opsiyonel bir bağımlılığın davranışına güvenmek, tam olarak
+ * fail-soft olmamak demektir.
+ */
+function writeDecisionLog(deps: ResolvedDeps, facts: IntakeDecisionFacts): void {
+  if (deps.decisionLog === undefined) return;
+  try {
+    deps.decisionLog(decisionLogLine(facts), decisionLogMarkdown(facts, deps.clock.now()));
+  } catch {
+    // Yutuldu, bilerek: yukarıdaki gerekçe.
+  }
 }

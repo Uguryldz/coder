@@ -39,18 +39,6 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     },
   },
   {
-    // M48a/M102 — how a project's tickets enter the flow. Default is the
-    // opt-in label: a freshly bound project must not start swallowing every
-    // ticket the moment the binding goes active.
-    key: "trigger.mode",
-    scope: "project",
-    type: "enum",
-    guarded: false,
-    enumValues: ["auto", "label", "command"],
-    descriptionKey: "params.description.trigger_mode",
-    defaultValue: "label",
-  },
-  {
     // M88 — reminder ladder; steps, channels and the working-day calendar are
     // all editable from Studio. Default is the plain 24h → 72h → 7d ladder.
     //

@@ -301,10 +301,8 @@ export const TEST_NOTIFY_DRIVERS: readonly NotifyDriverView[] = [
 export const TEST_ROUTING_PROJECTS: readonly RoutingProjectView[] = [
   {
     projectKey: "UGURPAY",
-    trigger: "label",
     apps: ["odeme-api"],
-    noteKey: "routing.note.active_label",
-    noteParams: { label: "maestro" },
+    noteKey: "routing.note.active_by_rule",
   },
 ];
 

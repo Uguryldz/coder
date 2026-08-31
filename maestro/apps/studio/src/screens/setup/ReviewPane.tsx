@@ -38,6 +38,21 @@ export interface ReviewPaneProps {
   readonly intakeAppliesLive?: boolean | undefined;
 }
 
+/**
+ * The rule value as the summary should PRINT it.
+ *
+ * `matchValueLabel` appends Jira's English name (`Görev (Task)`) from a closed
+ * table of Jira's own status and issue-type names. A LABEL is not in that
+ * vocabulary — it is a free string the operator invented — so a label that
+ * happens to read `hata` would be signed off as `hata (Bug)`, a confident wrong
+ * answer on the one screen whose whole job is letting somebody check what they
+ * are about to create.
+ */
+function matchValueOf(draft: { matchKind: string; matchValue: string }): string {
+  const value = draft.matchValue.trim();
+  return draft.matchKind === "label" ? value : matchValueLabel(value);
+}
+
 export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPaneProps): ReactNode {
   const t = useT();
   const defaults = flowDefaults(draft.flowType);
@@ -82,7 +97,7 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
               // The stored value, with the English name in the same aside the
               // rest of the platform uses — so what the operator signs off on
               // reads the same as what the listening table will show.
-              value: matchValueLabel(draft.matchValue.trim()),
+              value: matchValueOf(draft),
               flow: t(`setup.flow.name.${draft.flowType}`),
             })}
       </p>
@@ -155,7 +170,11 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
                 })}
           </p>
           <ul className="setup-review__list">
-            <li>{t(`setup.review.trigger.${defaults.triggerMode}`)}</li>
+            {/* Tetikleme artık burada DEĞİL kuralda: özet, üstteki kural
+                cümlesinin söylediğinin tersini söylememeli. Eski satır
+                ("Maestro kendiliğinden iş almaz…") proje seviyesindeki bir
+                kapıyı anlatıyordu ve o kapı 0023'te kalktı. */}
+            <li>{t("setup.review.trigger.by_rule")}</li>
             <li>{t(`setup.review.gates.${defaults.gateSet}`)}</li>
             <li>{t(`setup.review.merge.${defaults.mergeMode}`)}</li>
             {/* The data class, in the same list as the other three derived
@@ -210,7 +229,7 @@ export function DonePane({ draft, awaitingApproval }: DonePaneProps): ReactNode 
             : t("setup.done.next_open_ticket", {
                 project: draft.jiraProject,
                 kind: t(`setup.tickets.kind.${draft.matchKind}`),
-                value: matchValueLabel(draft.matchValue.trim()),
+                value: matchValueOf(draft),
               })}
         </li>
         <li>{t("setup.done.next_assign")}</li>

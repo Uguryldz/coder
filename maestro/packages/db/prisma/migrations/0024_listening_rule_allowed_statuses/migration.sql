@@ -1,0 +1,109 @@
+-- HAND-WRITTEN MIGRATION.
+--
+-- "STATÜ HER ZAMAN ŞART": bir dinleme kuralına, `matchKind`'dan BAĞIMSIZ,
+-- her zaman sorulan bir STATÜ KAPISI eklenir (`allowedStatusesJson`).
+--
+-- WHY IT EXISTS — ölçülen açık. 0020 ile `assigned`, 0023 ile `label`
+-- tetikleme tipleri geldi ve dört tip ALTERNATİF olarak kurgulandı: operatör
+-- `assigned` seçtiğinde YALNIZCA atanmaya bakılıyor, ticket'ın statüsüne HİÇ
+-- bakılmıyordu. Statü koşulu tek bir yerde vardı — `matchKind = "status"`
+-- seçilmiş kuralda — ve o da diğer üç koşulun ALTERNATİFİYDİ, üstüne
+-- eklenmiyordu.
+--
+-- Bunun neden sessiz-yanlış olduğu bu platforma özgü: Maestro'nun Jira servis
+-- hesabı bir bankada rutin olarak ADMIN'dir. Admin bir hesap, şirketteki HER
+-- projede bota atanmış her ticket'ı görür. "Bota atanan her ticket" kuralı
+-- yazılmış bir projede, biri Maestro'ya rastgele bir ticket atadığında —
+-- ticket panonun neresinde olursa olsun, daha yazılmamış bir taslak, çoktan
+-- kapatılmış bir kayıt, arşivlenmiş bir talep — sistem onu analize alıyordu.
+-- Operatörün kendi cümlesi: "atanmış olsa da izin verdiğim analiz statüsünde
+-- değilse, o olmadan çalışmamalı."
+--
+-- WHAT CHANGES. Kural artık İKİ ayrı soruyu birlikte sorar:
+--   (1) STATÜ KAPISI — `allowedStatusesJson`, her kuralda, her tetikleme
+--       tipinde. Ticket'ın statüsü bu listede yoksa kural EŞLEŞMEZ.
+--   (2) TETİKLEME TİPİ — `matchKind`/`matchValue`, bunun ÜSTÜNE ek daraltma.
+-- Yani: proje bağlı VE bota atanmış VE statü izinli VE tetikleme koşulu.
+--
+-- WHY jsonb AND NOT A VARCHAR. Bir kural birden çok statüye izin verebilmeli:
+-- "Yapılacaklar" ile "Analiz Bekliyor" aynı anda meşru olabilir ve operatörü
+-- aynı kuralı iki kez yazmaya zorlamak, ikisinin akış/ajan/durum-eşlemesi
+-- ayarlarının zamanla ayrışmasına davetiye çıkarır. Ayrı bir tabloya değil bir
+-- diziye konuyor, çünkü tek okuyucusu kural satırının kendisidir — 0018'in
+-- `statusMapJson` için verdiği gerekçenin aynısı.
+--
+-- WHY NAMES AND NOT TRANSITION IDS. Yine 0018'in gerekçesi: bir transition id
+-- tek bir projenin workflow'una aittir, kural başka projeye kopyalandığında
+-- sessizce yanlış şeyi gösterir; ad ise operatörün kendi panosunda okuduğu
+-- dizenin ta kendisidir.
+--
+-- ── BACKFILL: MEVCUT KURALLAR NE OLUR ────────────────────────────────────────
+--
+-- İki grup var ve ikisine farklı davranılır.
+--
+-- (a) `matchKind = 'status'` OLAN KURALLAR — TAŞINIR.
+--     Bu kuralın `matchValue`'su ZATEN bir statü adıdır ve operatörün
+--     "yalnızca bu statüde çalış" dediği yerdir. Yeni alana birebir kopyalanır,
+--     böylece kural yeni sistemde de tam olarak aynı ticket'lara uyar. Kopya,
+--     `matchValue`'yu SİLMEZ: satır hem statü kapısını hem tetikleme tipini
+--     taşır ve ikisi aynı şeyi söyler, dolayısıyla davranış birebir korunur.
+--     Kopyalamamak, bu kuralları statüsüz — yani DAHA GENİŞ — hale getirirdi ki
+--     bu migration'ın tam tersi olurdu.
+--
+-- (b) `assigned` / `issuetype` / `label` KURALLARI — NULL KALIR.
+--     Bu satırlarda operatörün seçtiği bir statü YOK; uydurmak, hiç sorulmamış
+--     bir soruyu operatör adına cevaplamak olurdu.
+--
+--     Boş statünün ne demek olduğu bu migration'ın asıl kararı ve üç seçenek
+--     vardı:
+--       · boş = "hiçbiri" (fail-closed): operatörün niyetine en yakın olan,
+--         ama bankanın BUGÜN çalışan her `issuetype` kuralını, kimse hiçbir şey
+--         değiştirmeden, gece yarısı sessizce durdururdu. Bir güvenlik
+--         iyileştirmesinin bedeli "sabah hiçbir ticket gelmiyor" olamaz.
+--       · boş = "her statü" (sessiz fail-open): bugünkü davranış, ama sessiz —
+--         yani operatörün kapatmak istediği deliğin ta kendisi, üstelik artık
+--         alanı gördüğü için kapalı sandığı bir delik.
+--       · SEÇİLEN: boş = "her statü" AMA GÖRÜNÜR. Kural çalışır; panelde
+--         kuralın satırında uyarı, kural formunda uyarı, karar dökümünde
+--         ("bu kuralda statü kısıtı yok") ve tarama günlüğünde açıkça yazar.
+--         Mevcut kurulum kırılmaz, delik ise sessiz olmaktan çıkar.
+--
+--     Yeni yazılan kurallarda panel statü seçmeyi VARSAYILAN yapar; yani bu
+--     boşluk yalnızca 0024 öncesinden kalan satırlarda görülür ve her biri
+--     ekranda işaretlidir.
+--
+-- ── SAFE ON A LIVE TABLE ─────────────────────────────────────────────────────
+--
+-- Kolon NULLABLE ekleniyor: Postgres'te varsayılansız nullable bir kolon
+-- eklemek tabloyu yeniden yazmaz, yalnızca katalog güncellenir. Ardından gelen
+-- UPDATE yalnızca `matchKind = 'status'` satırlarına dokunur (bu tabloda
+-- onlarca satır). İki ifade de bu dosyanın tek örtük transaction'ında çalışır,
+-- yani kolonun var olup backfill'in yapılmadığı bir pencere YOKTUR.
+--
+-- Hiçbir satır SİLİNMEZ, hiçbir kolon DÜŞÜRÜLMEZ. `matchValue` yerinde kalır.
+--
+-- ── RE-APPLIABLE ─────────────────────────────────────────────────────────────
+--
+-- `IF NOT EXISTS` + backfill'in `WHERE ... IS NULL` şartı: ikinci kez
+-- çalıştırıldığında kolon zaten vardır ve operatörün ARADA elle boşalttığı bir
+-- statü listesi tekrar doldurulmaz. 0008-0016 bu kurulumda tarihsel olarak
+-- yarım uygulandığı için her migration bu şarta uymak zorunda.
+--
+-- ── REVERSIBLE ───────────────────────────────────────────────────────────────
+--
+-- Geri yön tek ifade: `ALTER TABLE "ListeningRule" DROP COLUMN IF EXISTS
+-- "allowedStatusesJson";`. Veri kaybı, yalnızca 0024'ten SONRA yazılmış statü
+-- listeleridir; `matchKind='status'` kurallarının kendi `matchValue`'su
+-- dokunulmadan durduğu için o kurallar geri dönüşte de aynı işi yapar.
+
+ALTER TABLE "ListeningRule"
+  ADD COLUMN IF NOT EXISTS "allowedStatusesJson" JSONB;
+
+-- (a) Statüyle tetikleyen mevcut kurallar: `matchValue` zaten izin verilen
+-- statüdür, tek elemanlı listeye taşınır. `WHERE ... IS NULL` re-appliable
+-- yapar; `<> ''` ise boş bir listeyi ("her statü" demek olurdu) yazmayı önler.
+UPDATE "ListeningRule"
+   SET "allowedStatusesJson" = to_jsonb(ARRAY["matchValue"])
+ WHERE "matchKind" = 'status'
+   AND "allowedStatusesJson" IS NULL
+   AND btrim("matchValue") <> '';

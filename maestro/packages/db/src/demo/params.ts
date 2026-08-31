@@ -124,23 +124,6 @@ const HISTORY: DemoParamVersion[] = [
     at: ist("2026-08-07T10:10:00"),
     value: { allowDecrease: false, minNewLinePct: 85 },
   },
-  // trigger.mode — UGURPAY was opted in by command first, then switched to
-  // automatic once the dry run looked right (M102). Project-scoped, so the
-  // version counter starts again at 1 for this scopeRef.
-  {
-    key: "trigger.mode",
-    scopeRef: "UGURPAY",
-    version: 1,
-    at: ist("2026-08-05T14:00:00"),
-    value: "command",
-  },
-  {
-    key: "trigger.mode",
-    scopeRef: "UGURPAY",
-    version: 2,
-    at: ist("2026-08-07T08:20:00"),
-    value: "auto",
-  },
 ];
 
 /**

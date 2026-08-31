@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./variant-model": "./src/variant-model-public.ts"
   },
   "scripts": {
     "postinstall": "prisma generate --schema prisma/schema.prisma",

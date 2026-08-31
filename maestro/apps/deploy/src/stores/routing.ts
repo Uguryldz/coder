@@ -16,10 +16,16 @@ import { triggerModeOf } from "./bindings.js";
  * routing decision the platform does not make.
  */
 
+/**
+ * `trigger` and `triggerLabel` are NOT listed here (0023) even though the table
+ * still has both columns: this reader stopped consulting them when the
+ * project-wide trigger gate was retired, and a field in this interface is a
+ * claim that something reads it. The Prisma delegate hands over whole rows, so
+ * the columns still arrive — they are simply not part of what this store
+ * promises to answer with.
+ */
 export interface RoutingBindingRow {
   projectKey: string;
-  trigger: string;
-  triggerLabel: string;
   defaultsJson: unknown;
   state: string;
 }
@@ -80,11 +86,12 @@ export class PrismaRoutingReader implements RoutingReader {
       const note = notePhrase(row);
       return {
         projectKey: row.projectKey,
-        // The screen's vocabulary is `auto` | `label` | `command`, which is the
-        // column's own enum — passed through rather than narrowed to the
-        // intake path's two-valued `opt_in`, because an operator reading this
-        // screen needs to know WHICH opt-in gesture their project uses.
-        trigger: TRIGGERS.includes(row.trigger) ? row.trigger : "command",
+        // `trigger` USED TO BE SENT HERE (0023), narrowed through a TRIGGERS
+        // allow-list into the screen's "Tetikleme" column. Both are gone: the
+        // column it read decides nothing any more, so shipping it could only
+        // describe a gate that no longer exists to an operator who would then
+        // act on it (adding a `maestro` label nothing reads). The DB column
+        // stays; this read model no longer speaks for it.
         apps: [...apps].sort(),
         noteKey: note.key,
         // Omitted rather than sent as `undefined`: the wire schema marks it
@@ -115,9 +122,6 @@ export class PrismaRoutingReader implements RoutingReader {
     });
   }
 }
-
-/** `TriggerModeE`. An unrecognised value renders as the most restrictive one. */
-const TRIGGERS: readonly string[] = ["auto", "label", "command"];
 
 /** `{ appId?, mode?, dataClass? }` — a JSON column, so genuinely unknown. */
 function appIdOf(value: unknown): string | null {
@@ -171,13 +175,20 @@ function conditionPhrase(value: unknown): Phrase {
  * a dry-run binding is deliberately watching without acting, and an operator
  * who reads that as "broken" will go looking for a fault, while one who reads
  * it as "active" will wonder why no run started.
+ *
+ * `active` USED TO BRANCH ON THE TRIGGER COLUMN (0023): `auto` said "her ticket
+ * bir iş akışı başlatır", anything else said "\"maestro\" etiketini bekler".
+ * Both sentences are now false, and the second one is the reason an operator
+ * kept adding a label nothing reads: the project-wide trigger gate was retired,
+ * so a bound project takes exactly the tickets its LISTENING RULES match — no
+ * more, no fewer — regardless of what `trigger`/`triggerLabel` still hold. One
+ * honest sentence replaces two confident wrong ones; the state is what this
+ * column can still answer for, and the trigger is answered on the rules screen.
  */
 function notePhrase(row: RoutingBindingRow): Phrase {
   switch (row.state) {
     case "active":
-      return row.trigger === "auto"
-        ? { key: "routing.note.active_auto" }
-        : { key: "routing.note.active_label", params: { label: row.triggerLabel } };
+      return { key: "routing.note.active_by_rule" };
     case "dry_run":
       return { key: "routing.note.dry_run" };
     case "paused":

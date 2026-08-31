@@ -76,6 +76,22 @@ export interface StartRunInput {
    * finish under a rule it did not start under.
    */
   statusMap?: StatusMap | null;
+  /**
+   * Hangi AJANIN koşacağı, kararı veren dinleme kuralı bir ajan seçtiyse.
+   *
+   * Absent, tam olarak bugüne kadarki davranış demek: kurulumun etkin
+   * varyantına düşülür (`activeAnalystVariantId` / `activeEngineerVariantId`).
+   * Bu yüzden alan opsiyonel ve bu yüzden `null` gönderilmez — ajan seçmemiş
+   * bir kural, bu alan hiç yokken nasıl koşuyorsa öyle koşar.
+   *
+   * `flow` ve `statusMap` ile birlikte yolculuk ediyor, çünkü üçü de aynı anda,
+   * aynı kural satırından okunuyor ve koşunun başlangıç girdisine çivileniyor:
+   * bir workflow kuralları kendisi okuyamaz (M44) ve sonradan okusa replay'de
+   * başka bir cevap alırdı.
+   */
+  analystVariantId?: string;
+  /** {@link analystVariantId}'nin mühendislik (kod yazan) tarafı. */
+  engineerVariantId?: string;
 }
 
 export interface SignalWithStartInput extends StartRunInput {

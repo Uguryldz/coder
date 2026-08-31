@@ -13,6 +13,10 @@ import { TextArea } from "./shared/TextArea.tsx";
 import { useEnumLabel } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 import { parseKnowledge } from "./variants/knowledge.ts";
+import { ModelField, useConnectionModels } from "./variants/ModelField.tsx";
+import { variantModelHealth } from "./variants/model-source.ts";
+import "./shared/screens.css";
+import "./common/screens.css";
 
 /**
  * Screen: variants — the agent variant catalogue (7 roles × platform).
@@ -72,6 +76,7 @@ export function VariantsScreen(): ReactNode {
           emptyTitle={t("variants.empty")}
           onRetry={() => void query.refetch()}
         >
+          <ModelHealthBanner variants={query.data?.variants ?? []} />
           <Table
             columns={[
               {
@@ -88,7 +93,7 @@ export function VariantsScreen(): ReactNode {
               {
                 key: "model",
                 header: t("variants.col.model"),
-                cell: (row) => <code>{row.model}</code>,
+                cell: (row) => <ModelCell model={row.model} />,
               },
               {
                 key: "version",
@@ -140,6 +145,78 @@ export function VariantsScreen(): ReactNode {
   );
 }
 
+/**
+ * Listenin üstünde duran özet: kaç ajanın modeli eksik/erişilemez ve NE
+ * YAPILACAĞI.
+ *
+ * Rozetler tek tek satırları işaretliyor; bu satır ise "düzelt yolunu"
+ * gösteriyor — rozet gören operatörün sorması gereken bir sonraki soru "peki
+ * nasıl?" ve cevabın raporun ya da bir kabuk betiğinin içinde olmaması lazım.
+ * Cevap kısa: satıra tıkla, "Yeni sürüm yayınla", modeli yaz (bağlantıdaki
+ * model orada öneri olarak duruyor).
+ *
+ * Hiçbir bulgu yoksa hiçbir şey çizilmez: temiz bir kurulumda operatöre
+ * okuyacak bir uyarı vermek, gerçek bir uyarının fark edilme şansını düşürür.
+ */
+function ModelHealthBanner({
+  variants,
+}: {
+  readonly variants: readonly AgentVariant[];
+}): ReactNode {
+  const t = useT();
+  const flagged = variants.filter((row) => variantModelHealth(row.model) !== "ok");
+  if (flagged.length === 0) return null;
+
+  const cloud = flagged.filter((row) => variantModelHealth(row.model) === "cloud");
+  return (
+    <div
+      className={cloud.length > 0 ? "scr-note scr-note--danger" : "scr-note scr-note--warn"}
+      style={{ margin: "12px 14px" }}
+    >
+      {t("variants.model.banner", {
+        n: String(flagged.length),
+        variants: flagged.map((row) => row.variantId).join(", "),
+      })}{" "}
+      {t("variants.model.banner_fix")}
+    </div>
+  );
+}
+
+/**
+ * Model sütununun bir hücresi — ve model adı SORUNLUYSA bunu söyleyen rozet.
+ *
+ * ── NİYE GEREKLİ ────────────────────────────────────────────────────────────
+ * Sütun eskiden model adını düz `<code>` olarak yazıyordu, hepsini aynı
+ * biçimde. Yani `secilmedi` yazan bir satır — hiç model seçilmemiş bir ajan —
+ * kurumun kendi `qwen2.5-coder-32b-instruct` modelini taşıyan satırdan görsel
+ * olarak AYIRT EDİLEMİYORDU. Aynısı `anthropic/claude-sonnet-4.5` için de
+ * geçerli: internetsiz kurulumda o ajanla başlatılan her koşu ilk model
+ * çağrısında ölür, ama listede sağlıklı bir satır gibi duruyordu. Sorun
+ * `/studio/config-health` raporunda ve `./ajan-modelleri.sh` çıktısında
+ * görünüyordu — yani operatörün ajanlara BAKTIĞI yerde değil, aramayı bilmesi
+ * gereken iki başka yerde.
+ *
+ * Yargı `variantModelHealth` üzerinden `@maestro/db/variant-model`'e gider —
+ * `auditVariantModels`'in okuduğu AYNI iki fonksiyon (`isModelSelected`,
+ * `isCloudModelName`). Kural burada yeniden yazılmadı; yazılsaydı panel ile
+ * rapor birbirinden ayrışabilirdi, ki bu operatöre iki farklı gerçek söylemek
+ * demek olurdu.
+ */
+function ModelCell({ model }: { readonly model: string }): ReactNode {
+  const t = useT();
+  const health = variantModelHealth(model);
+
+  if (health === "ok") return <code>{model}</code>;
+  return (
+    <span className="scr-row" style={{ gap: 6 }}>
+      <code>{model}</code>
+      <Badge tone={health === "cloud" ? "red" : "amber"}>
+        {health === "cloud" ? t("variants.model.cloud_badge") : t("variants.model.unset_badge")}
+      </Badge>
+    </span>
+  );
+}
+
 /** The roles a variant may take (M17/M43), from the frozen contract. */
 const ROLE_OPTIONS = LlmRole.options;
 
@@ -179,6 +256,14 @@ function CreateVariantModal({
    * kendi model sunucusunun servis ettiği adı yazmadan formu geçemez.
    */
   const [model, setModel] = useState("");
+  /**
+   * Bağlantı panelinde tanımlı model adları — açılır listenin seçenekleri.
+   * Alan boş başlamaya devam ediyor ("— model seçin —"): listenin ilk satırını
+   * otomatik seçmek, yukarıdaki "gömülü varsayılan yok" kuralını arka kapıdan
+   * geri getirirdi (admin hiçbir şey seçmeden formu geçebilirdi). Fark şu ki
+   * artık model adını hatırlamak — hatta yazmak — gerekmiyor.
+   */
+  const modelOptions = useConnectionModels();
   const [persona, setPersona] = useState("");
   const [knowledge, setKnowledge] = useState("");
   const [note, setNote] = useState(t("variants.create.first_note"));
@@ -257,10 +342,10 @@ function CreateVariantModal({
         hint={t("variants.field.platform_hint")}
         {...(touched && platformInvalid ? { error: t("variants.error.platform") } : {})}
       />
-      <Input
-        label={t("variants.field.model")}
+      <ModelField
         value={model}
-        onChange={(event) => setModel(event.target.value)}
+        onChange={setModel}
+        options={modelOptions}
         hint={t("variants.field.model_hint")}
         {...(touched && modelInvalid ? { error: t("variants.error.model") } : {})}
       />

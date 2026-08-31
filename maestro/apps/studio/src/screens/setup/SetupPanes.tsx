@@ -352,9 +352,10 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
             onChange({ matchKind: e.target.value as MatchKind, matchValue: "" })
           }
           options={[
-            { value: "issuetype", label: t("setup.tickets.kind.issuetype") },
             { value: "status", label: t("setup.tickets.kind.status") },
             { value: "assigned", label: t("setup.tickets.kind.assigned") },
+            { value: "label", label: t("setup.tickets.kind.label") },
+            { value: "issuetype", label: t("setup.tickets.kind.issuetype") },
           ]}
           hint={t(`setup.tickets.kind_hint.${draft.matchKind}`)}
         />

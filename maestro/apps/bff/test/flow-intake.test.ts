@@ -290,6 +290,70 @@ describe("intake pins the rule's status map into the run input", () => {
   });
 });
 
+/**
+ * KURALIN SEÇTİĞİ AJAN, koşu girdisine kadar.
+ *
+ * Bu blok bir kopukluğu kapatıyor: `ListeningRule.analystVariantId` /
+ * `engineerVariantId` sütunları vardı, panel yazıyordu, BFF okuyordu — ama
+ * karar `flowDecisionFor` ile `signalWithStart` arasında düşüyor ve her koşu
+ * `role='analyst'`in alfabetik olarak İLK satırına iğneleniyordu. Operatörün
+ * cümlesi tam buydu: "ajan tanımlarını dinleme kurallarınıda bağlamamışsın".
+ *
+ * `statusMap` ile aynı yolda ve aynı gerekçeyle taşınıyor: kural kümesi bir
+ * kez, girişte okunur ve cevap koşunun başlangıç girdisine çivilenir.
+ */
+describe("intake pins the rule's AGENT choice into the run input", () => {
+  it("kuralın seçtiği iki ajanı da motora taşır", async () => {
+    const h = await harness({
+      listeningRules: [
+        rule({
+          matchValue: "Hata",
+          analystVariantId: "analyst-kredi",
+          engineerVariantId: "engineer-dotnet",
+        }),
+      ],
+    });
+
+    const started = (await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" })) as
+      | { analystVariantId?: unknown; engineerVariantId?: unknown }
+      | undefined;
+
+    expect(started?.analystVariantId).toBe("analyst-kredi");
+    expect(started?.engineerVariantId).toBe("engineer-dotnet");
+  });
+
+  /**
+   * GERİYE DÖNÜK UYUM. Bankadaki mevcut kuralların hiçbiri ajan seçmemiş
+   * olabilir ve hepsi bugünkü gibi koşmak zorunda: alanın YOKLUĞU, kurulumun
+   * etkin varyantına düşülmesi demek. Açık bir `null` göndermek, aynı şeyi
+   * birinin verdiği bir karar gibi gösterirdi.
+   */
+  it("ajan seçmemiş kuralda alanları HİÇ göndermez", async () => {
+    const h = await harness({ listeningRules: [rule({ matchValue: "Hata" })] });
+
+    const started = (await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" })) as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(started).toBeDefined();
+    expect(Object.hasOwn(started ?? {}, "analystVariantId")).toBe(false);
+    expect(Object.hasOwn(started ?? {}, "engineerVariantId")).toBe(false);
+  });
+
+  it("hiçbir kural eşleşmediğinde ajan gönderilmez", async () => {
+    const h = await harness({
+      listeningRules: [rule({ matchValue: "Hata", analystVariantId: "analyst-kredi" })],
+    });
+
+    const started = (await deliver(h, { ticket: "UGURPAY-9", issueType: "Görev" })) as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(started).toBeDefined();
+    expect(Object.hasOwn(started ?? {}, "analystVariantId")).toBe(false);
+  });
+});
+
 describe("the analysis-only binding — no application, and only analiz may run", () => {
   const rules = [
     rule({ ruleId: "lr_analiz", matchKind: "issuetype", matchValue: "Analiz", flowType: "analiz" }),

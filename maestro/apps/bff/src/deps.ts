@@ -185,7 +185,18 @@ export interface SessionStore {
 export interface JiraBinding {
   projectKey: string;
   active: boolean;
-  /** `auto` = every ticket; `opt_in` = only the `maestro` label or `/ai-start` (M48a). */
+  /**
+   * FROZEN CONTRACT, NO LONGER READ (0023). It used to gate intake: `opt_in`
+   * meant "only a ticket carrying the `maestro` label or a `/ai-start` command",
+   * and `jira-intake.ts` refused everything else before it had even looked at
+   * the listening rules. That gate is gone — a trigger is defined in exactly one
+   * place now, the listening rule (status · assignment · label · issue type).
+   *
+   * The field stays because `JiraProjectBinding.trigger` is a NOT NULL column
+   * with existing rows behind it, and dropping it from the interface would mean
+   * a migration on live bank data to delete something nobody reads. It is
+   * written and never consulted; no new code should branch on it.
+   */
   triggerMode: "auto" | "opt_in";
   /**
    * The bound application. `null` has two readings, disambiguated by the FLOW
@@ -422,8 +433,16 @@ export interface SettingsReader {
 
 export interface RoutingProjectView {
   projectKey: string;
-  /** `auto` | `label` | `command` — how a ticket enters the flow (M48a). */
-  trigger: string;
+  /**
+   * `trigger` WAS HERE (0023) — `auto` | `label` | `command`, rendered as the
+   * routing screen's "Tetikleme" column. It is gone from the wire because it
+   * was gone from the decision: the project-wide trigger gate was retired and
+   * intake now reads only the listening rules, so this field could only ever
+   * tell an operator about a gate that no longer exists. A read model that
+   * ships a stale answer is worse than one that ships none — the operator acts
+   * on it. `JiraProjectBinding.trigger` stays in the schema (NOT NULL, no data
+   * loss); nothing reads it.
+   */
   /**
    * Named `apps` because that is what `Routing.tsx` reads. It was `appIds`,
    * which typechecked all the way through — the screen is untyped against this
@@ -433,7 +452,7 @@ export interface RoutingProjectView {
   apps: readonly string[];
   /**
    * What the binding's state means for tickets arriving now, as a CATALOG KEY
-   * (`routing.note.active_auto`, `routing.note.draft`, …) plus the parameters
+   * (`routing.note.active_by_rule`, `routing.note.draft`, …) plus the parameters
    * the sentence needs.
    *
    * It used to be the finished English sentence. That put "every ticket starts
@@ -443,7 +462,7 @@ export interface RoutingProjectView {
    * `run.status` columns beside it already do.
    */
   noteKey: string;
-  /** Substitutions for `noteKey` — the trigger label, or the unknown state. */
+  /** Substitutions for `noteKey` — currently only the unrecognised state name. */
   noteParams?: Readonly<Record<string, string>>;
 }
 
@@ -668,7 +687,15 @@ export interface BffConfig {
    * when no rule claims the ticket (`flow-decision.ts`).
    */
   defaultFlow?: FlowType | null;
-  /** Label that opts a ticket into Maestro in `opt_in` projects (M48a). */
+  /**
+   * The label that used to opt a ticket into an `opt_in` project (M48a).
+   *
+   * NOTHING ROUTES ON IT ANY MORE (0023): the project-wide opt-in gate was
+   * retired and a trigger is defined only on a listening rule. It survives as
+   * the substitution for the (now unreachable) `intake.not_opted_in` message —
+   * removing it is a separate cleanup, not a display fix. No new code should
+   * read this: a label triggers work by being named in a rule, not here.
+   */
   optInLabel: string;
   /**
    * The accountId the ENGINE acts as (`MAESTRO_BOT_ACCOUNT_ID`), or "" when the
@@ -886,6 +913,20 @@ export interface BffDeps {
    * rules are not editable in this deployment", never "there are no rules".
    */
   listening?: ListeningStore;
+  /**
+   * Bir alım kararının dökümünü alan yer — "hangi kural, hangi akış, hangi
+   * ajan" (`intake-decision-log.ts`).
+   *
+   * Neden bir seam, neden `console.log` değil: bu paket kendi log'unu
+   * seçmiyor (`classifyingFields`'in `onError`'ı da tam olarak bu yüzden
+   * enjekte ediliyor — `ResolvedDeps`'te bir logger YOK ve olmamalı). Karar
+   * dökümü, `apps/deploy` tarafında sürecin gerçek log'una bağlanır.
+   *
+   * Opsiyonel ve fail-soft: dökümü yazamamak bir alımı DÜŞÜRMEZ. Bir teşhis
+   * satırı uğruna, çalışan bir ticket alımını reddetmek — bu dosyanın her
+   * yerinde tekrarlanan gerekçe — yanlış takas olurdu.
+   */
+  decisionLog?: (line: string, markdown: string) => void;
   /**
    * Analysis-guidance store — the "öğren" knowledge library. Optional, same
    * 503-by-name convention as `listening`: absent means the deployment did not

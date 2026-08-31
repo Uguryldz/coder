@@ -74,6 +74,18 @@ export interface OpenedRun {
   readonly appId: string | null;
   readonly mode: SignalWithStartInput["mode"];
   readonly dataClass: SignalWithStartInput["dataClass"];
+  /**
+   * Dinleme kuralının SEÇTİĞİ analist ajanı, seçtiyse; yoksa `null`.
+   *
+   * `null` "kural ajan söylemedi" demek ve `onRunOpened`'ı yazan taraf kurulum
+   * varsayılanına düşer (`activeAnalystVariantId`). Bu alan olmadan kural
+   * ekranındaki ajan seçimi koşuya HİÇ ulaşmıyordu: `appId`/`mode`/`dataClass`
+   * taşınıyor, ajan iğnesi taşınmıyordu, ve satırı yazan taraf her koşuyu
+   * alfabetik olarak ilk analist varyantına bağlıyordu.
+   */
+  readonly analystVariantId: string | null;
+  /** {@link analystVariantId}'nin mühendislik (kod yazan) tarafı. */
+  readonly engineerVariantId: string | null;
 }
 
 export class TemporalRunGateway implements RunGateway {
@@ -103,6 +115,11 @@ export class TemporalRunGateway implements RunGateway {
       appId: input.appId ?? null,
       mode: input.mode,
       dataClass: input.dataClass,
+      // Yokluk `null`a çevrilir, çünkü `OpenedRun` bir OLGU kaydı: alanın hiç
+      // olmaması ile "kural ajan seçmedi" aynı şey ve okuyanın tek bir şekli
+      // sorgulaması gerekir. `appId` de tam olarak böyle taşınıyor.
+      analystVariantId: input.analystVariantId ?? null,
+      engineerVariantId: input.engineerVariantId ?? null,
     });
   }
 

@@ -1,3 +1,4 @@
+import { hasNoStatusGate } from "./listening-store.js";
 import type { FlowType, ListeningRuleRecord, MatchKind, StatusMap } from "./listening-store.js";
 
 /**
@@ -34,6 +35,19 @@ export interface ClassifiableTicket {
    * Maestro Bot was given this ticket" is expressed. `null` is "unassigned".
    */
   assignee: string | null;
+  /**
+   * The ticket's labels, for a `matchKind: "label"` rule.
+   *
+   * `null` and `[]` are DIFFERENT answers and the difference is the same one
+   * `work-events.ts` draws on the delivery side: `[]` says "this ticket has no
+   * labels" (a label rule correctly does not match), `null` says "the caller
+   * could not tell us", which also matches nothing — a rule must never fire on
+   * a field nobody read.
+   *
+   * Optional in the type because three of the four entry points predate it and
+   * an absent field must keep meaning exactly what `null` means.
+   */
+  labels?: readonly string[] | null;
 }
 
 /** Why a ticket ended up on the flow it did — the operator-facing answer. */
@@ -77,6 +91,28 @@ export interface FlowDecision {
    * another's board.
    */
   statusMap?: StatusMap | null;
+  /**
+   * HANGİ AJAN koşacak — kararı veren kuralın iğnelediği analist varyantı.
+   *
+   * `undefined`/`null` "kural bir ajan seçmedi" demek ve KURULUM VARSAYILANINA
+   * düşülür (`activeAnalystVariantId`). Bu bir kapı değil, bir daraltmadır:
+   * ajan seçmemiş bir kural bugüne kadar nasıl koşuyorsa öyle koşmaya devam
+   * eder — aksi hâlde mevcut her kural, sırf bu alan boş diye durdurulmuş
+   * olurdu.
+   *
+   * `statusMap` ile aynı gerekçeyle burada, akışın yanında taşınıyor: kural
+   * kümesi bir kez, girişte okunuyor ve cevap koşunun başlangıç girdisine
+   * ÇİVİLENİYOR. Sonradan sorulsa, öğlen bir kuralı düzenleyen admin sabahki
+   * ticket'ın hangi ajanla koştuğunu değiştirmiş olurdu — ve koşunun kendi
+   * geçmişi bunu açıklayamazdı (M38/M83).
+   *
+   * Kazanan kuraldan alınır — `rule_conflict` dahil — `statusMap` gibi:
+   * "hangi akış" ile "hangi ajan" aynı satırdan gelmezse, ticket bir kuralın
+   * dar akışını başka bir kuralın ajanıyla koşardı.
+   */
+  analystVariantId?: string | null;
+  /** {@link analystVariantId}'nin MÜHENDİSLİK (kod yazan) tarafı. */
+  engineerVariantId?: string | null;
 }
 
 /**
@@ -99,6 +135,53 @@ const NARROWNESS: Readonly<Record<FlowType, number>> = {
   gelistirme: 2,
 };
 
+/**
+ * STATÜ KAPISI — her kuralda, her tetikleme tipinde ayrıca sorulur (0024).
+ *
+ * Dört tetikleme tipi (`status`/`issuetype`/`assigned`/`label`) ALTERNATİFTİ:
+ * operatör `assigned` seçtiğinde ticket'ın statüsüne HİÇ bakılmıyordu. Statü
+ * koşulu tek bir yerde vardı — `matchKind = "status"` — ve o da diğer üçünün
+ * ALTERNATİFİYDİ, üstüne eklenmiyordu.
+ *
+ * Neden bu platformda tehlikeli: Maestro'nun Jira servis hesabı bir bankada
+ * rutin olarak ADMIN'dir ve bota atanmış her ticket'ı HER projede görür. Statü
+ * kapısı olmadan, biri Maestro'ya rastgele bir ticket atadığında — daha
+ * yazılmamış bir taslak, çoktan kapatılmış bir kayıt — sistem onu analize
+ * alıyordu. Operatörün cümlesi: "atanmış olsa da izin verdiğim analiz
+ * statüsünde değilse, o olmadan çalışmamalı."
+ *
+ * Üç cevap verir ve üçü de ayrı:
+ *
+ *   `true`   ticket izin verilen bir statüde — kapı açık.
+ *   `false`  ticket BAŞKA bir statüde — kapı kapalı, kural eşleşmez.
+ *   `true` + `ungated`  kuralda hiç statü kısıtı yok (0024 öncesi satırlar).
+ *
+ * Üçüncüsü bu kapının en önemli kararı ve `hasNoStatusGate` ile tek yerde
+ * tanımlı: kısıtsız kural ÇALIŞIR. Fail-closed backfill, bankanın bugün
+ * çalışan her `issuetype` kuralını kimse hiçbir şey değiştirmeden sessizce
+ * durdururdu — bir güvenlik iyileştirmesinin bedeli "sabah hiçbir ticket
+ * gelmiyor" olamaz. Ama sessiz de değil: `statusGateOf` bu durumu ADLANDIRIR
+ * ve panel, karar dökümü ve tarama günlüğü aynı adı okur.
+ *
+ * BİLİNMEYEN STATÜ (`null`) KAPALI SAYILIR — kapının fail-closed yönü. Bir
+ * kural, kimsenin okumadığı bir alan üzerinden ateşlemez: `matches()`'in
+ * `matchValue` için zaten uyguladığı kuralın aynısı, ama burada bedeli daha
+ * ağır olduğu için ayrıca yazılıyor. Statüsü okunmamış bir ticket'ı kısıtlı
+ * bir kuralla işlemek, tam olarak kapının engellemek için var olduğu şeyi
+ * yapmaktır.
+ */
+export type StatusGate = "open" | "closed" | "ungated" | "unknown_status";
+
+export function statusGateOf(
+  rule: Pick<ListeningRuleRecord, "allowedStatuses">,
+  status: string | null,
+): StatusGate {
+  if (hasNoStatusGate(rule)) return "ungated";
+  if (status === null) return "unknown_status";
+  const wanted = status.trim();
+  return rule.allowedStatuses!.some((name) => name.trim() === wanted) ? "open" : "closed";
+}
+
 /** Whether one rule matches one ticket. */
 function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean {
   if (!rule.enabled) return false;
@@ -111,6 +194,17 @@ function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean
   const wanted = rule.assigneeAccountId.trim();
   if (wanted !== "" && wanted !== (ticket.assignee ?? "").trim()) return false;
 
+  /**
+   * STATÜ KAPISI, TETİKLEME TİPİNDEN ÖNCE VE ONDAN BAĞIMSIZ.
+   *
+   * Buranın `matchKind` kontrollerinin ÜSTÜNDE olması bilinçli: kapı bir
+   * daraltma değil, bir ÖN ŞART. `assigned` kuralı aşağıda `return true` ile
+   * erken çıkar ve kapı altta olsaydı o kural için hiç sorulmazdı — yani tam
+   * olarak operatörün kapatmak istediği delik açık kalırdı.
+   */
+  const gate = statusGateOf(rule, ticket.status);
+  if (gate === "closed" || gate === "unknown_status") return false;
+
   // `assigned` is the whole rule: the assignment check above IS the condition,
   // so there is nothing further to compare. It reaches this line only after
   // passing that check, which is why a rule with an EMPTY `assigneeAccountId`
@@ -118,6 +212,25 @@ function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean
   // "whoever it is assigned to" plus "no further condition" is exactly what
   // such a rule says. `matchValue` is not consulted; see ASSIGNED_MATCH_VALUE.
   if (rule.matchKind === "assigned") return true;
+
+  /**
+   * A LABEL rule is the one MEMBERSHIP test, because labels are the one
+   * many-valued field: a ticket has exactly one status and one issue type but
+   * any number of labels, so "equals" is not a question that can be asked of
+   * them. Comparing `labels.join()` to the value, or only the first label,
+   * would both make a rule that matches a real ticket's real label report no
+   * match — which is precisely the silent failure the project-level opt-in
+   * gate used to produce.
+   *
+   * A caller that did not read the labels (`null`/absent) matches NOTHING, for
+   * the same reason a missing status does below: a rule must not fire on a
+   * field nobody looked at.
+   */
+  if (rule.matchKind === "label") {
+    const labels = ticket.labels;
+    if (labels === null || labels === undefined) return false;
+    return labels.some((label) => label.trim() === rule.matchValue);
+  }
 
   const field = fieldOf(rule.matchKind, ticket);
   // A field the payload did not carry matches NOTHING. Treating a missing
@@ -128,7 +241,8 @@ function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean
 
 /**
  * The ticket field a rule of this kind compares against. Never called for
- * `assigned`, which compares no field — `matches` returns before it gets here.
+ * `assigned` (compares no field) or `label` (compares a LIST) — `matches`
+ * returns before it gets here for both.
  */
 function fieldOf(kind: MatchKind, ticket: ClassifiableTicket): string | null {
   return kind === "status" ? ticket.status : ticket.issueType;
@@ -138,9 +252,9 @@ function fieldOf(kind: MatchKind, ticket: ClassifiableTicket): string | null {
  * How SPECIFIC a rule is — the ordering that keeps a catch-all from shouting
  * down the rule an operator wrote on purpose.
  *
- * Lower is more specific. A `status` or `issuetype` rule names a condition the
- * ticket had to satisfy; an `assigned` rule names none, so it is the answer of
- * last resort among the rules that matched. This is NOT a tie-break — it
+ * Lower is more specific. A `status`, `issuetype` or `label` rule names a
+ * condition the ticket had to satisfy; an `assigned` rule names none, so it is
+ * the answer of last resort among the rules that matched. This is NOT a tie-break — it
  * outranks `priority`, because the two express different things: priority
  * orders rules an admin considers comparable, while specificity says one of
  * them was not really a competitor at all.
@@ -246,6 +360,7 @@ export function flowDecisionFor(
       reason: "rule",
       ruleId: winner.ruleId,
       statusMap: winner.statusMap ?? null,
+      ...agentsOf(winner),
     };
   }
 
@@ -263,5 +378,33 @@ export function flowDecisionFor(
     // combined would drive the ticket to a column no single rule asked for,
     // which is a board move nobody configured and nobody can explain.
     statusMap: narrowest.statusMap ?? null,
+    // Ajanlar da KAZANAN kuraldan, `statusMap` ile aynı gerekçeyle: bir
+    // kuralın akışını başka bir kuralın ajanıyla koşturmak, çakışmayı çözmek
+    // değil, üçüncü bir yapılandırma uydurmaktır.
+    ...agentsOf(narrowest),
+  };
+}
+
+/**
+ * Kazanan kuralın ajan iğneleri, karara iliştirilebilecek hâlde.
+ *
+ * Boş string ile `null` AYNI cevaba indirgenir ("kural ajan seçmedi"), çünkü
+ * panel bir seçimi kaldırdığında satırda hangisinin kaldığı bir depolama
+ * ayrıntısıdır; koşuya boş bir varyant kimliği geçmek ise gateway sözleşmesini
+ * ilk model çağrısında, üç aktivite denemesi ötede bozar — `run-pins.ts`'in
+ * "boşlatma, adlandır" kuralının aynısı, bir adım yukarıda uygulanmış hâli.
+ *
+ * Seçilmemiş alan, `null` olarak DEĞİL, HİÇ yazılmaz: `flow` ve `statusMap`
+ * neden atlanıyorsa o yüzden — yokluk zaten "varsayılana düş" demek, açık bir
+ * `null` ise aynı şeyi birinin verdiği bir karar gibi göstermek olurdu.
+ */
+function agentsOf(
+  rule: ListeningRuleRecord,
+): Pick<FlowDecision, "analystVariantId" | "engineerVariantId"> {
+  const analyst = rule.analystVariantId?.trim() ?? "";
+  const engineer = rule.engineerVariantId?.trim() ?? "";
+  return {
+    ...(analyst === "" ? {} : { analystVariantId: analyst }),
+    ...(engineer === "" ? {} : { engineerVariantId: engineer }),
   };
 }

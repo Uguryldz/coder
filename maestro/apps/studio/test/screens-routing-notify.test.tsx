@@ -10,11 +10,14 @@ function routingBody(whenOnpremMissing: string, gizliOutcome: string) {
     path: "/routing",
     body: {
       projects: [
+        // No `trigger` field and no `routing.note.active_*` label sentence
+        // (0023): the wire stopped carrying the retired project-wide trigger,
+        // so a fixture that still sent one would be testing a shape the BFF
+        // no longer produces.
         {
           projectKey: "UGURPAY",
-          trigger: "auto",
           apps: ["ugurpay-core"],
-          noteKey: "routing.note.active_auto",
+          noteKey: "routing.note.active_by_rule",
         },
       ],
       rules: [

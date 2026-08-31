@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { AuditChain } from "@maestro/audit";
 import {
   buildServer,
@@ -5,6 +7,7 @@ import {
   connectionHealthReader,
   resolveBotIdentity,
   resolveDeps,
+  parseAllowedStatuses,
   EnvSettingsReader,
   UNWIRED_CAPABILITY_LINES,
   type BffDeps,
@@ -29,7 +32,12 @@ import { PrismaConnectionStore } from "../stores/connections.js";
 import { PrismaListeningStore } from "../stores/listening.js";
 import { PrismaGuidanceStore } from "../stores/guidance.js";
 import { PrismaRunContextStore } from "../stores/run-context.js";
-import { activeAnalystVariantId, activeEngineerVariantId, activeTemplateVersion } from "../stores/run-pins.js";
+import {
+  activeAnalystVariantId,
+  activeEngineerVariantId,
+  activeTemplateVersion,
+  pinnedOr,
+} from "../stores/run-pins.js";
 import {
   canSearch,
   discoverOnce,
@@ -54,7 +62,11 @@ import { prepareWorkspace } from "../stores/workspace-prepare.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
 import { statusMoverFor } from "../stores/status-mover.js";
-import { PrismaBindingWriter, PrismaJiraProjectBindings } from "../stores/bindings.js";
+import {
+  LIVE_BINDING_STATES,
+  PrismaBindingWriter,
+  PrismaJiraProjectBindings,
+} from "../stores/bindings.js";
 import { PrismaDocTemplateStore } from "../stores/doc-template.js";
 import { PrismaParamStore } from "../stores/params-store.js";
 import { PrismaRoutingReader } from "../stores/routing.js";
@@ -105,6 +117,24 @@ const VOLATILE_STORES: readonly StoreDurability[] = [];
  * workflow engine answers 200 to a delivery it then drops, and Jira does not
  * redeliver on Maestro's behalf.
  */
+/**
+ * Kuralın seçtiği ajan artık YOKSA yazılan satır.
+ *
+ * Sessizce varsayılana düşmek buradaki tehlikeli seçenek: operatör kural
+ * ekranında hâlâ sildiği ajanın adını görür ve o ajanın koştuğunu sanır.
+ * Satır iki kimliği birden anar, çünkü "hangisi gitti" ile "yerine hangisi
+ * koştu" ayrı sorular ve ikisi de cevapsız kalmamalı.
+ */
+function warnMissingVariant(role: string): (pinnedId: string, used: string) => void {
+  return (pinnedId, used) => {
+    console.warn(
+      `[ajan] Dinleme kuralının seçtiği ${role} ajanı bulunamadı: "${pinnedId}". ` +
+        `Koşu kurulum varsayılanıyla açıldı: "${used}". ` +
+        `Ajan silinmiş ya da yeniden adlandırılmış olabilir — Dinleme Kuralları ekranından kuralı güncelleyin.`,
+    );
+  };
+}
+
 export async function main(): Promise<void> {
   // The database comes first: the dev profile's pg-blob storage driver writes
   // through it, so the platform cannot be composed without it.
@@ -162,9 +192,19 @@ export async function main(): Promise<void> {
       // `activeAnalystVariantId`, rolü açıkça soruyor) ve mühendislik turu da
       // onu okuyordu — yani panelde ayrı bir mühendis ajanı tanımlayan admin,
       // kodu analist ajanının modeliyle yazdırıyordu.
+      //
+      // KURALIN İĞNESİ ÖNCE, KURULUM VARSAYILANI SONRA. Buradaki `pinnedOr`
+      // öncesinde bu satırlar kuralı HİÇ sormuyordu: dinleme kuralında ajan
+      // seçilebiliyor, panel yazıyor, BFF okuyordu — ama karar `flowDecisionFor`
+      // ile koşu arasında düşüyor ve her koşu `role='analyst'`in ALFABETİK
+      // OLARAK İLK satırına iğneleniyordu. Yani "OPS-* ticket'ları kredi
+      // analistiyle koşsun" diyen kural yazılabiliyor, sonuç değişmiyordu.
+      //
+      // Seçmemiş kural aynen eskisi gibi davranır (geriye dönük uyum): ajan
+      // seçimi bir daraltmadır, bir kapı değil.
       const [variantId, engineerVariantId, templateVersion] = await Promise.all([
-        activeAnalystVariantId(db),
-        activeEngineerVariantId(db),
+        pinnedOr(db, run.analystVariantId, () => activeAnalystVariantId(db), warnMissingVariant("analist")),
+        pinnedOr(db, run.engineerVariantId, () => activeEngineerVariantId(db), warnMissingVariant("mühendis")),
         activeTemplateVersion(db),
       ]);
       // The checkout step 3ö reads. Best-effort: an analysis is worse without
@@ -364,6 +404,27 @@ export async function main(): Promise<void> {
     // The listening-rules store (Ayarlar > Dinleme Kuralları): status/issuetype
     // → flow-type rows an admin edits from Studio, backing the real DB table.
     listening: new PrismaListeningStore(db.listeningRule),
+    /**
+     * Alım kararının dökümü: bir satır log'a, tam döküm bir `.md` dosyasına.
+     *
+     * ── NEDEN DOSYA, NEDEN KOŞU GÜNLÜĞÜ DEĞİL ─────────────────────────────
+     * Koşu günlüğü (`JournalEntry`) bir KOŞUYA bağlı, ve bu dökümün cevapladığı
+     * asıl vaka koşunun HİÇ AÇILMADIĞI vaka: kural eşleşmedi, akış tam boru
+     * hattına düştü, ticket `no_application` ile reddedildi. Öyle bir ticket'ın
+     * koşusu yok, dolayısıyla günlüğü de yok — teşhis tam da orada lazım.
+     *
+     * Kanıt paketi (`evidence/` öneki, nesne deposu) de aday değil: bugün o
+     * dosyaları İNDİREN bir uç yok (`Evidence.tsx` bunu kendi başlığında
+     * söylüyor), yani oraya yazılan bir döküm operatörün göremeyeceği bir yere
+     * yazılmış olurdu. Bir teşhis, teşhis edenin ulaşamadığı yerde durmamalı.
+     *
+     * Dosya sistemi, `MAESTRO_DECISION_LOG_DIR` ile: operatör `docker compose
+     * exec` ile okuyabiliyor, `docker cp` ile alabiliyor, ve dizin bir cilde
+     * bağlanmışsa host'tan doğrudan görüyor. Tanımlanmamışsa dosya YAZILMAZ ve
+     * yalnızca log satırı çıkar — sessizce bir yere dosya biriktirmek, disk
+     * dolduran türden bir sürprizdir.
+     */
+    decisionLog: decisionLogSink(env.source["MAESTRO_DECISION_LOG_DIR"]),
     guidance: new PrismaGuidanceStore(db.analysisGuidance),
     connectorSecrets,
     // Studio's read side, live (M7). Ten of the twelve read models answer from
@@ -834,10 +895,49 @@ export async function main(): Promise<void> {
         (await db.listeningRule.findMany({ orderBy: { priority: "asc" } })).map((row) => ({
           projectKey: row.projectKey,
           assigneeAccountId: row.assigneeAccountId,
-          matchKind: row.matchKind as "status" | "issuetype" | "assigned",
+          matchKind: row.matchKind as "status" | "issuetype" | "assigned" | "label",
           matchValue: row.matchValue,
+          // STATÜ KAPISI, sorguya girmek üzere (0024). Kolonu doğrulamadan
+          // geçirmek, elle yazılmış bir jsonb'nin JQL'e sızması demek olurdu;
+          // `parseAllowedStatuses` bozuk değeri `null`'a — yani "kısıt yok"a —
+          // indirir ve `jqlFor` o durumda statü yan tümcesi eklemez.
+          allowedStatuses: parseAllowedStatuses(row.allowedStatusesJson, (reason) =>
+            console.warn(
+              `[maestro] dinleme kuralı ${row.ruleId}: allowedStatusesJson okunamadı ` +
+                `(${reason}) — tarama bu kuralı STATÜ KISITI OLMADAN arayacak.`,
+            ),
+          ),
           enabled: row.enabled,
         })),
+      /**
+       * THE PROJECTS AN OPERATOR ACTUALLY BOUND — the sweep's outer boundary.
+       *
+       * A listening rule names its project as free text; this table is where an
+       * operator SAID "this project is Maestro's". When the two disagree the
+       * table wins, and the query for a rule pointing anywhere else is never
+       * sent. It matters because this platform's Jira service account is
+       * routinely an ADMIN: an unbound project is not merely out of scope, it
+       * is another team's tickets that a stray rule would otherwise read.
+       *
+       * `LIVE_BINDING_STATES` rather than "row exists": a `paused` or `dry_run`
+       * binding is deliberately NOT live, and a paused project must stop being
+       * swept the moment it is paused — the same list `PrismaJiraProjectBindings`
+       * uses for `active`, so the sweep gate and the intake gate cannot drift
+       * into disagreeing about what "bound" means.
+       */
+      boundProjects: async () =>
+        (
+          await db.jiraProjectBinding.findMany({
+            // `LIVE_BINDING_STATES` is `readonly string[]` because the BFF
+            // side may not import Prisma's generated enum (M44). The cast is
+            // at this one boundary rather than by widening the constant: the
+            // list is the SAME list the intake gate uses, and duplicating it
+            // as a Prisma-typed literal here is exactly how the two gates
+            // would drift into disagreeing about what "bound" means.
+            where: { state: { in: LIVE_BINDING_STATES as never } },
+            select: { projectKey: true },
+          })
+        ).map((row) => row.projectKey),
       /**
        * The operator's interval, from `jira.discover_seconds`.
        *
@@ -1059,6 +1159,47 @@ function flowOf(env: DeployEnv): FlowType | null {
     return parsed.success ? parsed.data : null;
   }
   return null;
+}
+
+/**
+ * Alım kararı dökümünü yazan yer.
+ *
+ * Log satırı HER ZAMAN çıkar; `.md` yalnızca bir dizin verildiyse yazılır.
+ * İkisinin ayrı olması bilinçli: satır, operatörün `docker compose logs` ile
+ * ilk baktığı yer ve hiçbir kuruluma bağlı değil; dosya ise arşivlenebilir
+ * ayrıntı ve bir cilt (volume) gerektirir.
+ *
+ * Yazma HATASI YUTULUR ve bir kez bildirilir: dolu bir disk ya da salt-okunur
+ * bir bağlama, ticket alımını düşürecek bir sebep değil — `decisionLog`
+ * sözleşmesinin fail-soft olma gerekçesinin aynısı. Sessiz de değil: sebep
+ * bir kez log'a yazılır, her ticket'ta tekrarlanmaz.
+ */
+export function decisionLogSink(
+  dir: string | undefined,
+  log: (message: string) => void = (message) => {
+    console.log(message);
+  },
+): (line: string, markdown: string) => void {
+  const target = dir?.trim() ?? "";
+  let warned = false;
+
+  return (line, markdown) => {
+    log(line);
+    if (target === "") return;
+
+    // Dosya adı ticket'tan türetiliyor ama ticket metni DEĞİL: yalnızca
+    // güvenli karakterler geçiyor, çünkü bu bir dosya yolu ve ticket anahtarı
+    // dışarıdan gelen bir değer.
+    const safe = line.replace(/^\[karar\] /u, "").split(":")[0]?.replace(/[^A-Za-z0-9_-]/gu, "") ?? "ticket";
+    const file = join(target, `${safe}-${String(Date.now())}.md`);
+    void mkdir(target, { recursive: true })
+      .then(() => writeFile(file, markdown, "utf8"))
+      .catch((error: unknown) => {
+        if (warned) return;
+        warned = true;
+        log(`[karar] döküm dosyası yazılamadı (${target}): ${String(error)} — log satırları sürüyor.`);
+      });
+  };
 }
 
 function notifyChannels(deployment: { selection: { notify: { driver: string; config: unknown } } }): readonly string[] {

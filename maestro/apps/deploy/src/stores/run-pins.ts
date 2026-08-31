@@ -33,6 +33,17 @@ export interface RunPinDb {
       where: { role: "analyst" | "engineer" };
       orderBy: { id: "asc" };
     }): Promise<{ id: string } | null>;
+    /**
+     * Bir varyantın HÂLÂ VAR OLUP OLMADIĞI — `pinnedOr`'un tek sorusu.
+     *
+     * `findFirst` bu işi göremez: o "bu rolde bir varyant ver" diye sorar,
+     * bu ise "bu KİMLİK duruyor mu" diye. İkisini birbirine karıştırmak,
+     * silinmiş bir ajanın yerine sessizce bir başkasını koymak olurdu.
+     */
+    findUnique(args: {
+      where: { id: string };
+      select: { id: true };
+    }): Promise<{ id: string } | null>;
   };
   analysisTemplateVersion: {
     findFirst(args: { orderBy: { version: "desc" } }): Promise<{ version: number } | null>;
@@ -90,4 +101,55 @@ export async function activeEngineerVariantId(db: RunPinDb): Promise<string> {
 export async function activeTemplateVersion(db: RunPinDb): Promise<string> {
   const row = await db.analysisTemplateVersion.findFirst({ orderBy: { version: "desc" } });
   return row === null ? UNVERSIONED_TEMPLATE : String(row.version);
+}
+
+/**
+ * Kuralın İĞNELEDİĞİ ajan, hâlâ duruyorsa; yoksa kurulumun etkin varyantı.
+ *
+ * ── NEDEN BİR DOĞRULAMA ADIMI VAR ───────────────────────────────────────────
+ * Dinleme kuralı bir varyant KİMLİĞİNİ metin olarak taşır; kimliği taşıdığı
+ * satır ile varyantın kendisi arasında yabancı anahtar YOKTUR. Yani panelde
+ * bir ajanı silen ya da yeniden adlandıran admin, o ajanı seçmiş kuralı
+ * geride ölü bir kimlikle bırakır. Doğrulamadan geçirilse, o kimlik koşunun
+ * `variantId` sütununa yazılır ve zincir boyunca taşınır: `variantAwareModelFrom`
+ * onu tabloda bulamaz, bağlantı panelindeki modele düşer ve bir `console.warn`
+ * yazar — koşu ilerler, ama YANLIŞ modelle, ve kural ekranı hâlâ operatörün
+ * seçtiği ajanı gösterir. Yani "seçtiğim ajan koşuyor" sanısı, tam olarak bu
+ * projenin kapatmaya çalıştığı sessiz-yanlış.
+ *
+ * ── NEDEN DURDURMUYOR DA DÜŞÜYOR ────────────────────────────────────────────
+ * Ajan seçimi bir DARALTMA'dır, bir kapı değil: seçilmemiş bir kural bugün
+ * varsayılanla koşuyor ve koşmaya devam etmeli. Silinmiş bir ajan da aynı
+ * yere düşer — ama SESSİZCE değil. Fark `onWarn`: düşüş, sebebini ve iki
+ * kimliği birden söyleyen bir satır bırakır. Koşuyu reddetmek, bir panel
+ * temizliğini bir üretim durması hâline getirirdi.
+ *
+ * Boş/whitespace kimlik "kural seçmedi" ile aynı cevaba iner ve doğrulama
+ * sorgusu HİÇ yapılmaz — yoklukta aranacak bir kimlik yoktur.
+ */
+export async function pinnedOr(
+  db: RunPinDb,
+  pinned: string | null | undefined,
+  fallback: () => Promise<string>,
+  onMissing: (pinnedId: string, used: string) => void = () => {},
+): Promise<string> {
+  const id = pinned?.trim() ?? "";
+  if (id === "") return fallback();
+
+  let exists: { id: string } | null;
+  try {
+    exists = await db.variant.findUnique({ where: { id }, select: { id: true } });
+  } catch {
+    // Sorgu PATLARSA iğneye GÜVENİLİR: bir doğrulama adımının kendisi
+    // erişilemez olduğunda, operatörün açıkça seçtiği ajanı bir veritabanı
+    // aksaklığı yüzünden değiştirmek, doğrulamanın önlemeye çalıştığı hatanın
+    // ta kendisini yapmak olur. `variantAwareModelFrom` aynı ayrımı yapıyor:
+    // hata ≠ yokluk.
+    return id;
+  }
+  if (exists !== null) return id;
+
+  const used = await fallback();
+  onMissing(id, used);
+  return used;
 }

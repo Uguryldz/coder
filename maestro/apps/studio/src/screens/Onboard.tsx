@@ -24,6 +24,22 @@ const EMPTY_DRAFT: OnboardingDraft = {
   repoFullName: "",
   adoRepo: "",
   platform: "",
+  /**
+   * NOT A SETTING — a constant the wire still requires (0023).
+   *
+   * The wizard has no trigger-mode selector any more: a trigger is defined only
+   * on a listening rule (status · assignment · label · issue type), so a box
+   * asking the operator to choose one here would change nothing while looking
+   * like it decides everything. The field survives because the chain below it
+   * has not moved: `DraftBody` still marks `triggerMode` required, and
+   * `bindingFromProposal` maps it into `JiraProjectBinding.trigger`, a NOT NULL
+   * column with live rows behind it. Dropping the send would mean a migration
+   * on bank data to delete a column nobody reads — a bad trade against leaving
+   * one constant here.
+   *
+   * Nothing branches on the value, so `opt_in` is not a policy: it is whatever
+   * satisfies the enum. Do not surface it, and do not read it back.
+   */
   triggerMode: "opt_in",
   gateSet: "risk_tiered",
   mergeMode: "human",

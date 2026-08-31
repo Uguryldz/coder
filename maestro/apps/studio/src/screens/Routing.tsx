@@ -16,7 +16,7 @@ import type {
   RoutingUpdate,
   RoutingView,
 } from "./common/index.ts";
-import { useEnumLabel, usePhrase } from "./common/label.ts";
+import { usePhrase } from "./common/label.ts";
 import { MaybeUnwired } from "./shared/unwired.tsx";
 import { outcomeExplanationKey, outcomeKey, outcomeTone } from "./shared/outcome.ts";
 import { RoutingPolicyEditor } from "./routing/RoutingPolicyEditor.tsx";
@@ -59,7 +59,6 @@ export function RoutingScreen(): ReactNode {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { session } = useAuth();
-  const enumLabel = useEnumLabel();
   const phrase = usePhrase();
   const navigate = useNavigate();
 
@@ -307,14 +306,17 @@ export function RoutingScreen(): ReactNode {
                   header: t("routing.col.project"),
                   cell: (row) => row.projectKey,
                 },
-                {
-                  key: "trigger",
-                  header: t("routing.col.trigger"),
-                  cell: (row) => {
-                    const label = enumLabel("routing.trigger", row.trigger);
-                    return <Badge tone={label.unknown ? "gray" : "blue"}>{label.text}</Badge>;
-                  },
-                },
+                /* "TETİKLEME" SÜTUNU BURADAN KALDIRILDI (0023).
+                   Bu sütun `JiraProjectBinding.trigger` kolonunu okuyup
+                   "etiket" / "komut" / "otomatik" rozeti basıyordu. O kolon
+                   artık HİÇBİR KARARA GİRMİYOR: tetikleme yalnızca dinleme
+                   kuralında tanımlı (statü · atanma · etiket · iş tipi).
+                   Yer kaplamasın diye değil, YANLIŞ SÖYLEDİĞİ için kaldırıldı:
+                   operatör bağlı projesinin yanında "etiket" yazısını görüp
+                   ticket'a `maestro` etiketi ekliyordu, oysa ticket'ı alan şey
+                   kuralın kendi koşulu. Bir ekranın var olmayan bir kapıyı
+                   göstermesi, hiç göstermemesinden kötüdür.
+                   Kolon şemada duruyor (NOT NULL, veri kaybı yok); okunmuyor. */
                 {
                   key: "apps",
                   header: t("routing.col.apps"),

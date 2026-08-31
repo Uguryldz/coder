@@ -1,0 +1,71 @@
+-- HAND-WRITTEN MIGRATION.
+--
+-- "ETİKET ile tetikleme": a listening rule may now trigger on a ticket LABEL.
+-- `matchKind` gains a fourth member, `label`, beside `status`, `issuetype` and
+-- the `assigned` that 0020 added.
+--
+-- WHY IT EXISTS. Tetikleme bugüne kadar İKİ AYRI YERDE tanımlıydı ve ikisi
+-- birbirini bilmiyordu:
+--
+--   (a) `JiraProjectBinding.triggerLabel` — proje seviyesinde, tek bir etiket
+--       ("maestro"), bir opt-in KAPISI olarak. `runIntake` bu etiketi taşımayan
+--       ticket'ı `not_opted_in` diye reddediyordu.
+--   (b) `ListeningRule.matchKind` — kural seviyesinde, statü/iş tipi/atanma.
+--
+-- Bu ikilik ölçülebilir bir yanlışa yol açıyordu: tarama yolu (`jira-discovery`)
+-- `explicit: true` geçtiği için (a)'yı ATLIYOR, webhook yolu ise ATLAMIYOR. Yani
+-- AYNI ticket, tarama ile gelirse alınıyor, webhook ile gelirse etiketi yok diye
+-- sessizce düşüyordu — hangi kapıdan girdiğine bağlı iki farklı cevap.
+--
+-- Karar: tetikleme TEK YERDE, kuralda tanımlanır. Etiket bir KAPI olmaktan çıkıp
+-- kuralın dört tetikleme tipinden biri olur. Proje seviyesindeki opt-in kapısı
+-- `runIntake`'ten kalkar; `triggerLabel` kolonu VERİ KAYBI OLMASIN diye yerinde
+-- bırakılır (aşağıya bakın) ama artık hiçbir karar ona bakmaz.
+--
+-- WHY THE COLUMN STAYS. `JiraProjectBinding.triggerLabel` DROP EDİLMİYOR:
+--   * Operatörün oraya yazdığı etiket, kurala taşınacak DEĞERİN kendisi. Kolonu
+--     düşürmek, göç yolunu kapatmak olur — panelde "eskiden şu etiketi
+--     kullanıyordunuz" diye gösterecek bir şey kalmaz.
+--   * Kolon NOT NULL + DEFAULT 'maestro'; düşürmek `@maestro/contracts`
+--     (`match.ts` JiraBinding) tarafını da kırardı, ki o sözleşme donuk.
+--   * Yazma yolu (onboarding) kolonu yazmaya devam eder, OKUMA yolu (intake)
+--     artık ona bakmaz. Ölü ama zararsız bir kolon, veri kaybından ucuzdur.
+--
+-- WHY A FOURTH matchKind AND NOT A SECOND FLAG. 0020'nin gerekçesinin aynısı:
+-- `matchValue`'ya sokulmuş bir sentinel, satırın "iş tipi eşleştiriyorum"
+-- demesine rağmen etiket eşleştirmesine yol açardı ve her okuyucu aynı özel
+-- durumu tekrar yazmak zorunda kalırdı. Adlandırılmış bir kind ne olduğunu
+-- söyler; alttaki CHECK domaini kapalı tutar.
+--
+-- ETİKET EŞLEŞMESİ ÇOK-DEĞERLİDİR, DİĞER ÜÇÜ DEĞİL. Bir ticket'ın TEK statüsü ve
+-- TEK iş tipi vardır ama BİRDEN ÇOK etiketi olur. Bu yüzden `flow-decision.ts`
+-- `label` için eşitlik değil ÜYELİK kontrolü yapar (`labels.includes(value)`).
+-- Şema tarafında bir fark yaratmaz: kural yine tek bir etiket ADI taşır.
+--
+-- ADDITIVE AND SAFE ON A LIVE TABLE. Hiçbir mevcut satıra dokunulmaz: hepsi
+-- zaten daha geniş domaini sağlıyor, dolayısıyla constraint takası tabloyu
+-- yeniden yazmadan ve backfill olmadan doğrulanır. Postgres'te bir CHECK'i
+-- genişletmenin tek yolu DROP/ADD ikilisidir; doğrulama taraması süresince
+-- ACCESS EXCLUSIVE kilit alır, bu tabloda (onlarca satır) milisaniyelerdir.
+-- Kolonun kısıtsız kaldığı bir pencere YOKTUR, çünkü iki ifade de bu dosyanın
+-- tek örtük transaction'ında çalışır.
+--
+-- MEVCUT KURALLAR NE OLUR: hiçbir şey. Bu migration yalnızca domaini genişletir;
+-- tek bir satır bile güncellenmez. Bugün `issuetype`/`status`/`assigned` olan her
+-- kural yarın da aynı şeyi yapar. Etiket tetiklemesi yalnızca operatörün YENİ
+-- yazdığı (ya da tipini değiştirdiği) kuralda ortaya çıkar.
+--
+-- REVERSIBLE. Geri yön aynı ikili, üç üyeli listeyle — ama önce `label` satırları
+-- başka bir tipe çevrilmeli ya da silinmeli. Genişletilmiş bir domainin dürüst
+-- bedeli budur; rollback sırasında keşfedilmesindense burada yazılıdır.
+--
+-- `IF EXISTS` / yeniden çalıştırılabilir: 0008-0016 bu kurulumda tarihsel olarak
+-- yarım uygulanmıştı, bu yüzden buradaki bir migration yeni constraint'i zaten
+-- taşıyan bir veritabanına karşı tekrar uygulanabilir olmalı.
+
+ALTER TABLE "ListeningRule"
+  DROP CONSTRAINT IF EXISTS "ListeningRule_matchKind_domain";
+
+ALTER TABLE "ListeningRule"
+  ADD CONSTRAINT "ListeningRule_matchKind_domain"
+  CHECK ("matchKind" IN ('status', 'issuetype', 'assigned', 'label'));

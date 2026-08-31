@@ -5,6 +5,7 @@ import {
   activeTemplateVersion,
   DEFAULT_ANALYST_VARIANT,
   DEFAULT_ENGINEER_VARIANT,
+  pinnedOr,
   UNVERSIONED_TEMPLATE,
   type RunPinDb,
 } from "../src/stores/run-pins.js";
@@ -18,11 +19,19 @@ import {
  * activity retries away from the actual mistake.
  */
 
-function db(over: Partial<RunPinDb> = {}): RunPinDb {
+/**
+ * `variant` DERİN birleşiyor, üstüne yazılmıyor: testlerin çoğu yalnızca
+ * `findFirst`i tarif ediyor ve `findUnique`ı hiç ilgilendirmiyor. Sığ bir
+ * spread, o testlerin her birine ilgisiz bir `findUnique` yazdırırdı.
+ */
+function db(over: Partial<{ variant: Partial<RunPinDb["variant"]>; analysisTemplateVersion: RunPinDb["analysisTemplateVersion"] }> = {}): RunPinDb {
   return {
-    variant: { findFirst: () => Promise.resolve(null) },
-    analysisTemplateVersion: { findFirst: () => Promise.resolve(null) },
-    ...over,
+    variant: {
+      findFirst: () => Promise.resolve(null),
+      findUnique: () => Promise.resolve(null),
+      ...over.variant,
+    },
+    analysisTemplateVersion: over.analysisTemplateVersion ?? { findFirst: () => Promise.resolve(null) },
   };
 }
 
@@ -117,5 +126,90 @@ describe("activeTemplateVersion", () => {
     // `assertDocument` compares this against what the analyst stamped and
     // reports the mismatch; "" would make that message say nothing.
     expect(await activeTemplateVersion(db())).toBe(UNVERSIONED_TEMPLATE);
+  });
+});
+
+/**
+ * Dinleme kuralının iğnesi ile kurulum varsayılanı arasındaki seçim.
+ *
+ * Bu blok bir davranışı ÖLÇÜYOR: kural bir ajan seçmediğinde hiçbir şeyin
+ * değişmemesi (geriye dönük uyum) ve seçilen ajan artık yokken düşüşün
+ * GÖRÜNÜR olması. İkisi de sessiz kalırsa, operatör "seçtiğim ajan koşuyor"
+ * sanısıyla baş başa kalır — projenin kapatmaya çalıştığı hatanın ta kendisi.
+ */
+describe("pinnedOr", () => {
+  it("kural bir ajan seçmişse ONU kullanır", async () => {
+    const used = await pinnedOr(
+      db({ variant: { findUnique: () => Promise.resolve({ id: "analyst-kredi" }) } }),
+      "analyst-kredi",
+      () => Promise.resolve(DEFAULT_ANALYST_VARIANT),
+    );
+    expect(used).toBe("analyst-kredi");
+  });
+
+  it("kural ajan seçmemişse varsayılana düşer ve HİÇ sorgu yapmaz", async () => {
+    let asked = 0;
+    const fake = db({
+      variant: {
+        findUnique: () => {
+          asked += 1;
+          return Promise.resolve(null);
+        },
+      },
+    });
+    for (const empty of [null, undefined, "", "   "]) {
+      expect(await pinnedOr(fake, empty, () => Promise.resolve(DEFAULT_ANALYST_VARIANT))).toBe(
+        DEFAULT_ANALYST_VARIANT,
+      );
+    }
+    // Yoklukta aranacak bir kimlik yok; sorgu yapmak boşuna bir gidiş olurdu.
+    expect(asked).toBe(0);
+  });
+
+  it("seçilen ajan SİLİNMİŞSE varsayılana düşer, ama SESSİZCE DEĞİL", async () => {
+    const warnings: Array<[string, string]> = [];
+    const used = await pinnedOr(
+      db({ variant: { findUnique: () => Promise.resolve(null) } }),
+      "analyst-silinmis",
+      () => Promise.resolve(DEFAULT_ANALYST_VARIANT),
+      (pinnedId, fallbackId) => warnings.push([pinnedId, fallbackId]),
+    );
+    expect(used).toBe(DEFAULT_ANALYST_VARIANT);
+    // İki kimlik birden: "hangisi gitti" ve "yerine hangisi koştu" ayrı sorular.
+    expect(warnings).toEqual([["analyst-silinmis", DEFAULT_ANALYST_VARIANT]]);
+  });
+
+  it("doğrulama sorgusu PATLARSA iğneye güvenir — hata ≠ yokluk", async () => {
+    // Bir veritabanı aksaklığı yüzünden operatörün açıkça seçtiği ajanı
+    // değiştirmek, doğrulamanın önlemeye çalıştığı hatanın aynısı olurdu.
+    let fellBack = false;
+    const used = await pinnedOr(
+      db({ variant: { findUnique: () => Promise.reject(new Error("postgres yok")) } }),
+      "engineer-dotnet",
+      () => {
+        fellBack = true;
+        return Promise.resolve(DEFAULT_ENGINEER_VARIANT);
+      },
+    );
+    expect(used).toBe("engineer-dotnet");
+    expect(fellBack).toBe(false);
+  });
+
+  it("kimliği TRIMLEYEREK sorar — panelden gelen boşluk bir ajan silmez", async () => {
+    let asked: unknown;
+    const used = await pinnedOr(
+      db({
+        variant: {
+          findUnique: (args) => {
+            asked = args.where;
+            return Promise.resolve({ id: "engineer-dotnet" });
+          },
+        },
+      }),
+      "  engineer-dotnet  ",
+      () => Promise.resolve(DEFAULT_ENGINEER_VARIANT),
+    );
+    expect(asked).toEqual({ id: "engineer-dotnet" });
+    expect(used).toBe("engineer-dotnet");
   });
 });

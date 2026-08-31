@@ -26,9 +26,24 @@ describe("seeded defaults follow the decision record", () => {
     });
   });
 
-  it("M102 trigger mode offers the contract's modes and opts in by label", () => {
-    expect(def("trigger.mode").enumValues).toEqual([...TriggerMode.options]);
-    expect(def("trigger.mode").defaultValue).toBe("label");
+  /**
+   * 0025 — `trigger.mode` ARTIK BİR PARAMETRE DEĞİL.
+   *
+   * Tetikleme kural bazına taşındı (dinleme kuralında statü/atanma/etiket/iş
+   * tipi). Proje seviyesindeki opt-in etiket kapısı `runIntake`'ten kalktı, ama
+   * bu parametre Parametreler ekranında durmaya devam ediyordu: operatör orada
+   * "etiket" görüyor, bir mod seçiyor ve HİÇBİR KOD onu okumuyordu — banka
+   * operatörünün "hâlâ etiket yazıyor" şikayetinin kaynaklarından biri.
+   *
+   * Bu test parametrenin YOKLUĞUNU iddia eder, çünkü sessizce silinen bir
+   * satırın geri gelmemesinin tek garantisi budur. `TriggerMode` sözleşme tipi
+   * yerinde kalır: `JiraProjectBinding.trigger` kolonu NOT NULL ve onboarding
+   * hâlâ onu yazıyor.
+   */
+  it("0025 trigger mode is no longer a parameter — the trigger lives on the rule", () => {
+    expect(DEFAULT_PARAM_DEFINITIONS.find((d) => d.key === "trigger.mode")).toBeUndefined();
+    // Sözleşme tipi duruyor: binding kolonu hâlâ ona bağlı.
+    expect([...TriggerMode.options]).toEqual(["auto", "label", "command"]);
   });
 
   it("M88 escalation ladder is 24h -> 72h -> 7d, ending in a delegation", () => {

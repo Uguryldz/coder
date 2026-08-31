@@ -19,6 +19,7 @@ export * from "./routing-service.js";
 export * from "./gate-decision.js";
 export * from "./gateway.js";
 export * from "./jira-commands.js";
+export * from "./intake-decision-log.js";
 export * from "./jira-intake.js";
 export * from "./killswitch-service.js";
 export * from "./knowledge-policy.js";

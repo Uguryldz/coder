@@ -11,9 +11,8 @@
  *   1. `discoveryJqlFor` turns the rules into the discovery JQL — instead of the
  *      hard-coded `statusCategory != Done`, it lists exactly the statuses the
  *      rules name (when any `status` rule exists), keeping the bounded-project
- *      guard. `issuetype` rules do not narrow the JQL (Jira filters issue types
- *      awkwardly in JQL and the type is checked per-ticket anyway); they only
- *      classify.
+ *      guard. `issuetype` and `label` rules do not narrow the JQL (the fields
+ *      are checked per-ticket anyway); they only classify.
  *   2. `flowTypeFor` classifies a discovered ticket by matching its status or
  *      issue type against the rules, returning the flow to run (or null → the
  *      default, un-classified behaviour).
@@ -23,13 +22,22 @@
 export type FlowType = "analiz" | "duzeltme" | "gelistirme";
 
 /**
- * Which ticket field a rule matches on. Mirrors the DB CHECK (migration 0020).
+ * Which ticket field a rule matches on. Mirrors the DB CHECK (migrations 0020,
+ * 0023).
  *
  * `assigned` compares no field at all: the rule fires because a human handed
  * the ticket to the bot, which is the trigger the two-member domain could not
  * express. Its `matchValue` is a placeholder the matcher never reads.
+ *
+ * `label` (0023) compares the ticket's LABELS — the one many-valued field, so
+ * it is a membership test, not an equality one. It is here rather than absent
+ * because `MATCH_KINDS` below is a FILTER: a kind missing from this list makes
+ * the launcher silently DROP every rule of that kind on restart, leaving the
+ * rule visible in the database and on the Studio screen while the engine
+ * behaves as if it did not exist. That is the accident migration 0020's own
+ * comment warned about, and it costs one member to avoid.
  */
-export type MatchKind = "status" | "issuetype" | "assigned";
+export type MatchKind = "status" | "issuetype" | "assigned" | "label";
 
 /** One listening rule, as mirrored from the BFF/DB. */
 export interface ListeningRule {
@@ -58,6 +66,13 @@ export interface ClassifiableTicket {
   projectKey: string;
   status: string | null;
   issueType: string | null;
+  /**
+   * The ticket's labels, for a `label` rule (0023). Optional because every
+   * existing caller predates it, and an absent list must keep meaning what
+   * `null` means: "not read here", which matches no label rule. A rule must
+   * never fire on a field nobody looked at.
+   */
+  labels?: readonly string[] | null;
 }
 
 /**
@@ -159,6 +174,16 @@ export class ListeningRulesStore {
       // a ticket that got this far already satisfies it. No field is compared,
       // and `matchValue` is never read.
       if (rule.matchKind === "assigned") return { ...rule };
+      // `label`: the one MEMBERSHIP test — a ticket carries any number of
+      // labels, so "equals" cannot be asked of them. An unread list matches
+      // nothing, exactly as a null status does on the line below.
+      if (rule.matchKind === "label") {
+        const labels = ticket.labels;
+        if (labels !== null && labels !== undefined && labels.some((l) => l.trim() === rule.matchValue)) {
+          return { ...rule };
+        }
+        continue;
+      }
       const field = rule.matchKind === "status" ? ticket.status : ticket.issueType;
       if (field !== null && field === rule.matchValue) return { ...rule };
     }
@@ -187,12 +212,13 @@ function normalizeVariantId(value: string | null | undefined): string | undefine
 }
 
 const FLOW_TYPES: readonly FlowType[] = ["analiz", "duzeltme", "gelistirme"];
-const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype", "assigned"];
+const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype", "assigned", "label"];
 
 /**
- * How specific a rule is — lower is more specific. A rule naming a status or an
- * issue type beats the `assigned` catch-all, which names no condition and is
- * therefore the answer of last resort among the rules that matched.
+ * How specific a rule is — lower is more specific. A rule naming a status, an
+ * issue type or a label beats the `assigned` catch-all, which names no
+ * condition and is therefore the answer of last resort among the rules that
+ * matched.
  */
 function specificityOf(rule: ListeningRule): number {
   return rule.matchKind === "assigned" ? 1 : 0;

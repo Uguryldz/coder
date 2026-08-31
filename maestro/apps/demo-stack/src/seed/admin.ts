@@ -105,9 +105,8 @@ export const DEMO_NOTIFY_DRIVERS: readonly NotifyDriverView[] = [
 export const DEMO_ROUTING_PROJECTS: readonly RoutingProjectView[] = DEMO_BINDINGS.map(
   (binding) => ({
     projectKey: binding.projectKey,
-    trigger: binding.triggerMode === "auto" ? "auto" : "label",
     apps: binding.appId === null ? [] : [binding.appId],
-    ...noteFor(binding.active, binding.triggerMode),
+    ...noteFor(binding.active),
   }),
 );
 
@@ -115,15 +114,15 @@ export const DEMO_ROUTING_PROJECTS: readonly RoutingProjectView[] = DEMO_BINDING
  * The note as a catalog key, mirroring `notePhrase` in the Postgres store —
  * the demo stack must exercise the SAME wire shape the real one produces, or
  * it stops being a rehearsal of the screen.
+ *
+ * It no longer branches on `triggerMode` (0023), because the real store no
+ * longer does: an active binding takes the tickets its listening rules match,
+ * so "her ticket" and "\"maestro\" etiketini bekler" were two ways of being
+ * wrong. Keeping the demo's old branch would have made the rehearsal disagree
+ * with the thing it rehearses.
  */
-function noteFor(
-  active: boolean,
-  triggerMode: "auto" | "opt_in",
-): { noteKey: string; noteParams?: Record<string, string> } {
-  if (!active) return { noteKey: "routing.note.unbound" };
-  return triggerMode === "auto"
-    ? { noteKey: "routing.note.active_auto" }
-    : { noteKey: "routing.note.active_label", noteParams: { label: "maestro" } };
+function noteFor(active: boolean): { noteKey: string } {
+  return { noteKey: active ? "routing.note.active_by_rule" : "routing.note.unbound" };
 }
 
 export const DEMO_ROUTING_RULES: readonly RoutingRuleView[] = [

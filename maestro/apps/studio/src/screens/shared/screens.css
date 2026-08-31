@@ -469,6 +469,14 @@
    chrome, just a pointer, so the badge reads as a link to the fix-it step. */
 .scr-linkbtn { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
 
+/* A `.scr-linkbtn` that must READ as a link rather than as plain text — used
+   where the affordance is the whole point (the "Değiştir" beside a variant's
+   model, the "bunu kullan" beside the connection's model suggestion). Without
+   it the button is indistinguishable from the sentence around it, which is the
+   exact failure those two controls exist to fix. */
+.scr-link { color: var(--blue); text-decoration: underline; }
+.scr-link:hover { text-decoration: none; }
+
 /* Help page guide: the three "what/how/example" blocks per page. */
 .help-guide { display: grid; gap: 12px; }
 .help-guide__h {

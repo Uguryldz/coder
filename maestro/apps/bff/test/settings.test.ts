@@ -201,10 +201,15 @@ describe("GET /routing", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      projects: { projectKey: string; trigger: string; apps: string[] }[];
+      projects: { projectKey: string; apps: string[] }[];
       rules: { ruleId: string; backend: string; outcome: string }[];
     };
-    expect(body.projects[0]).toMatchObject({ projectKey: "UGURPAY", trigger: "label" });
+    expect(body.projects[0]).toMatchObject({ projectKey: "UGURPAY" });
+    // 0023: no `trigger` on the wire any more. The project-wide trigger gate
+    // was retired, so the field could only describe a gate that no longer
+    // exists — asserted as an ABSENCE rather than dropped from the test, since
+    // a re-added field would put "etiket" back on the operator's screen.
+    expect(body.projects[0]).not.toHaveProperty("trigger");
     // One rule per data class, plus the fallback.
     expect(body.rules.map((rule) => rule.ruleId)).toEqual([
       "dataclass:acik",
@@ -233,7 +238,7 @@ describe("GET /routing", () => {
       rules: Record<string, unknown>[];
     };
 
-    for (const field of ["projectKey", "trigger", "apps", "noteKey"]) {
+    for (const field of ["projectKey", "apps", "noteKey"]) {
       expect(body.projects[0]).toHaveProperty(field);
     }
     for (const field of ["ruleId", "conditionKey", "backend", "model", "outcome"]) {

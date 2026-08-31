@@ -77,9 +77,16 @@ export const LIVE_BINDING_STATES: readonly string[] = ["active"];
  * `TriggerModeE` (`auto` | `label` | `command`) as the BFF's two-valued
  * `triggerMode`.
  *
- * `auto` is the only mode that starts a run from any ticket. Both `label` and
- * `command` require somebody to ASK — a label on the issue or an `/ai-start`
- * comment — which is exactly what `opt_in` means to the intake path (M48a).
+ * NO LONGER READ BY INTAKE (0023). It fed the project-wide opt-in label gate,
+ * which was retired: a trigger is now defined only on a listening rule, where
+ * `matchKind = "label"` says the same thing per rule. The mapping stays because
+ * `JiraBinding.triggerMode` is part of the frozen contract and the routing
+ * screen still SHOWS the project's configured mode; nothing branches on it to
+ * decide whether a ticket is taken.
+ *
+ * `auto` is the only mode that started a run from any ticket. Both `label` and
+ * `command` required somebody to ASK — a label on the issue or an `/ai-start`
+ * comment — which is exactly what `opt_in` meant to the intake path (M48a).
  * Anything unrecognised also maps to `opt_in`: a trigger mode this code does
  * not understand must fail towards "wait to be asked", never towards "start
  * runs on everything".

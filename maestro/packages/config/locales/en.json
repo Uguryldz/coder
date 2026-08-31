@@ -526,6 +526,7 @@
   "error.session_expired": "Your session expired. Please sign in again.",
   "error.signal_not_allowed": "This action is not available for this flow.",
   "error.step_not_current": "That step is not the run's current step. Your view may be out of date.",
+  "error.sweep_not_configured": "Ticket discovery does not run in this deployment. One of two reasons: JIRA_DISCOVER_MS is unset in .env, or this deployment's work driver offers no JQL search (search exists only on Jira Cloud; Jira Data Center takes tickets by webhook). The server log names which one.",
   "error.template_name_required": "The template name cannot be empty.",
   "error.template_section_format_invalid": "The section format is not valid.",
   "error.template_section_instruction_required": "Every section needs an AI instruction: a section without one tells the model nothing about what to write.",

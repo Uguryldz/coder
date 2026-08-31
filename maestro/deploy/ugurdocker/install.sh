@@ -655,6 +655,7 @@ echo
 echo "  Panel   : http://<SUNUCU_IP>:${PORT#*:}"
 echo "  Giriş   : admin / <migrate çıktısındaki GEÇİCİ PAROLA> — ilk girişte değişim ZORUNLU"
 echo "  Parola  : kaybolduysa  ./reset-admin.sh admin  yeni geçici parola üretir"
+echo "  Ajanlar : ./ajan-modelleri.sh  erişilemez model kullanan ajan tanımlarını raporlar"
 echo "  Loglar  : docker compose logs -f bff"
 echo "  Durum   : docker compose ps"
 echo "  Yedek   : docker compose exec -T postgres pg_dump -U ${POSTGRES_USER} ${POSTGRES_DB} | gzip > yedek.sql.gz"

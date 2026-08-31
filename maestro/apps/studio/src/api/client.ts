@@ -178,6 +178,27 @@ export class ApiClient {
         | undefined;
       if (body !== undefined && typeof body.error === "string") code = body.error;
       details = body?.details;
+      /**
+       * ONE deliberate exception to "never surface the body as prose".
+       *
+       * `sweep_not_configured` is the only BFF failure whose actionable content
+       * cannot be a code: the server picks between two different absences at
+       * runtime (nobody set `JIRA_DISCOVER_MS`, or the work driver offers no
+       * JQL search because it is Data Center) and only it knows which. A code
+       * per absence would be the cleaner shape, but the deployed servers
+       * already answer this way; carrying the sentence is what makes the
+       * difference visible to the operator TODAY.
+       *
+       * Scoped hard: this one code, `message` only, string only. Everything
+       * else still becomes a catalog key, so the rule the comment above states
+       * still holds everywhere it was written for.
+       */
+      if (code === "sweep_not_configured") {
+        const message = (body as { message?: unknown } | undefined)?.message;
+        if (typeof message === "string" && message !== "") {
+          details = { ...(typeof details === "object" && details !== null ? details : {}), message };
+        }
+      }
     } catch {
       code = "internal_error";
     }

@@ -526,6 +526,7 @@
   "error.session_expired": "Oturumun süresi doldu. Lütfen tekrar giriş yap.",
   "error.signal_not_allowed": "Bu işlem bu akışta kullanılamaz.",
   "error.step_not_current": "Bu adım iş akışının şu anki adımı değil. Ekranın güncel olmayabilir.",
+  "error.sweep_not_configured": "Bu kurulumda ticket taraması çalışmıyor. İki sebepten biri: .env dosyasında JIRA_DISCOVER_MS boş, ya da bu kurulumun iş sürücüsü JQL araması sunmuyor (arama yalnız Jira Cloud'da vardır; Jira Data Center ticket'ları webhook ile alır). Sunucu günlüğü hangisi olduğunu yazar.",
   "error.template_name_required": "Şablon adı boş olamaz.",
   "error.template_section_format_invalid": "Bölüm biçimi geçersiz.",
   "error.template_section_instruction_required": "Her bölümde AI talimatı zorunludur: talimatsız bölüm, modele ne yazacağını söylemez.",

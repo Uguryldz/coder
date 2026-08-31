@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { messageKeyOf } from "../api/errors.ts";
+import { messageKeyOf, sweepReasonOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
@@ -723,7 +723,11 @@ export function ListeningScreen(): ReactNode {
                 )}
                 {sweepNow.isError && (
                   <span style={{ marginLeft: 8, color: "#b91c1c" }}>
-                    {t(messageKeyOf(sweepNow.error))}
+                    {/* The server's own sentence when it has one: only it knows
+                        WHICH absence stopped the sweep (interval unset, or a
+                        driver with no JQL search). Falls back to the catalog
+                        line otherwise. */}
+                    {sweepReasonOf(sweepNow.error) ?? t(messageKeyOf(sweepNow.error))}
                   </span>
                 )}
               </div>

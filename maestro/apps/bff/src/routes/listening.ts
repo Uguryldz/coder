@@ -205,7 +205,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
    * 503 when the deployment runs no sweep (webhook-only), because "nothing
    * happened" and "there is nothing to run" are different answers.
    */
-  app.post("/studio/listening-sweep", { preHandler: writeHandler }, async (_request, reply) => {
+  app.post("/studio/listening-sweep", { preHandler: writeHandler }, async (request, reply) => {
     const run = deps.discoveryRun;
     // `sweepConfigured` is how a composition root that builds deps BEFORE the
     // sweep says "there is nothing to run"; a plain undefined says the same for
@@ -224,13 +224,23 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
        * so at boot and passes the reason here, so the operator is not sent to
        * edit a setting that would change nothing.
        */
-      return reply.code(503).send({
-        error: "sweep_not_configured",
-        message:
-          deps.sweepUnavailableReason?.() ??
-          "Bu kurulumda ticket taraması açık değil. .env dosyasına JIRA_DISCOVER_MS " +
-            "ekleyip (örn. 300000) servisleri yeniden başlatın.",
-      });
+      const message =
+        deps.sweepUnavailableReason?.() ??
+        "Bu kurulumda ticket taraması açık değil. .env dosyasına JIRA_DISCOVER_MS " +
+          "ekleyip (örn. 300000) servisleri yeniden başlatın.";
+      /**
+       * Said in the LOG too, not only in the response.
+       *
+       * The boot banner names this once, at start-up — which the operator who
+       * presses the button hours later is not reading. Whoever is handed the
+       * container log after a "tarama çalışmıyor" report needs the reason at
+       * the moment of the press, next to the 503 the panel showed.
+       */
+      request.log.warn(
+        { reason: message },
+        "listening-sweep refused: this deployment runs no ticket sweep",
+      );
+      return reply.code(503).send({ error: "sweep_not_configured", message });
     }
     try {
       const started = await run();

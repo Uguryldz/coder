@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiClient, ApiError, NetworkError, UnauthenticatedError } from "../src/api/client.ts";
-import { errorMessageKey, knownErrorCodes } from "../src/api/errors.ts";
+import { errorMessageKey, knownErrorCodes, sweepReasonOf } from "../src/api/errors.ts";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -155,6 +155,97 @@ describe("ApiClient", () => {
     const uncovered = [...thrown].filter((code) => !known.has(code)).sort();
 
     expect(uncovered, `BFF codes with no Studio catalog entry: ${uncovered.join(", ")}`).toEqual([]);
+  });
+
+  /**
+   * The codes a route HAND-ROLLS, which the grep above cannot see.
+   *
+   * `sweep_not_configured` reached a bank operator as "Beklenmeyen bir hata
+   * oluştu" while the test above was green: that grep only matches the helpers
+   * in `apps/bff/src/errors.ts`, and `/studio/listening-sweep` answers with a
+   * literal `reply.code(503).send({ error: "..." })` instead. Same failure the
+   * test above was written to stop, reached by the road it does not watch.
+   */
+  it("covers error codes routes send directly via reply.code(...).send(...)", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const bffSrc = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "bff", "src");
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (full.endsWith(".ts")) files.push(full);
+      }
+    };
+    walk(bffSrc);
+    expect(files.length).toBeGreaterThan(20);
+
+    // `reply.code(4xx|5xx).send({ ... error: "code" ... })`, the literal form.
+    const sender = /reply\s*\.code\(\s*(?:4\d\d|5\d\d)\s*\)\s*\.send\(\s*\{([\s\S]{0,400}?)\}\s*\)/g;
+    const sent = new Set<string>();
+    for (const file of files) {
+      for (const match of readFileSync(file, "utf8").matchAll(sender)) {
+        for (const found of (match[1] ?? "").matchAll(/error:\s*"([a-z0-9_]+)"/g)) {
+          if (found[1] !== undefined) sent.add(found[1]);
+        }
+      }
+    }
+    // Guard the guard: the sweep route is the reason this test exists.
+    expect(sent).toContain("sweep_not_configured");
+
+    const known = new Set(knownErrorCodes());
+    const uncovered = [...sent].filter((code) => !known.has(code)).sort();
+    expect(uncovered, `hand-rolled BFF codes with no catalog entry: ${uncovered.join(", ")}`).toEqual([]);
+  });
+
+  /**
+   * The sweep 503 keeps its sentence, and nothing else does.
+   *
+   * The operator complaint this fixes was "ticket tarama çalışmıyor, server
+   * responded with status 503" — a raw status with no reason, because the
+   * client dropped the one field that said whether the interval was unset or
+   * the driver simply cannot search.
+   */
+  describe("sweep_not_configured", () => {
+    it("carries the server's reason through to the screen", async () => {
+      const reason =
+        "Bu kurulumun iş sürücüsü ticket araması sunmuyor, bu yüzden tarama çalışamaz.";
+      const fetchImpl = vi.fn(async () =>
+        jsonResponse(503, { error: "sweep_not_configured", message: reason }),
+      );
+      const client = makeClient(fetchImpl as unknown as typeof fetch);
+
+      const error = await client.post("/studio/listening-sweep", {}).catch((e: unknown) => e);
+
+      expect((error as ApiError).code).toBe("sweep_not_configured");
+      expect((error as ApiError).messageKey).toBe("error.sweep_not_configured");
+      expect(sweepReasonOf(error)).toBe(reason);
+    });
+
+    it("falls back to the catalog key when the server sends no message", async () => {
+      const fetchImpl = vi.fn(async () => jsonResponse(503, { error: "sweep_not_configured" }));
+      const client = makeClient(fetchImpl as unknown as typeof fetch);
+
+      const error = await client.post("/studio/listening-sweep", {}).catch((e: unknown) => e);
+
+      expect(sweepReasonOf(error)).toBeNull();
+      expect((error as ApiError).messageKey).toBe("error.sweep_not_configured");
+    });
+
+    it("does not carry prose for any OTHER code", async () => {
+      const fetchImpl = vi.fn(async () =>
+        jsonResponse(503, { error: "capability_not_wired", message: "leak me" }),
+      );
+      const client = makeClient(fetchImpl as unknown as typeof fetch);
+
+      const error = await client.get("/eval").catch((e: unknown) => e);
+
+      expect(sweepReasonOf(error)).toBeNull();
+      expect(JSON.stringify((error as ApiError).details ?? "")).not.toContain("leak me");
+    });
   });
 
   it("never leaks a server body as prose", async () => {

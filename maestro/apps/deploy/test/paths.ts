@@ -57,6 +57,11 @@ export function bankaResetAdminPath(): string {
   return `${bankaDir()}reset-admin.sh`;
 }
 
+/** `deploy/banka/ajan-modelleri.sh` — the agent-model audit/repair script. */
+export function bankaVariantAuditPath(): string {
+  return `${bankaDir()}ajan-modelleri.sh`;
+}
+
 export function bankaNginxConfPath(): string {
   return `${bankaDir()}studio-nginx.conf`;
 }
@@ -97,6 +102,11 @@ export function ugurdockerGitignorePath(): string {
 
 export function ugurdockerResetAdminPath(): string {
   return `${ugurdockerDir()}reset-admin.sh`;
+}
+
+/** `deploy/ugurdocker/ajan-modelleri.sh` — the audit script's twin. */
+export function ugurdockerVariantAuditPath(): string {
+  return `${ugurdockerDir()}ajan-modelleri.sh`;
 }
 
 export function ugurdockerNginxConfPath(): string {

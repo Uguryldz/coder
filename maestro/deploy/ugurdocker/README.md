@@ -175,7 +175,41 @@ kapatır ve ilk girişte değişimi yine zorunlu kılar. Parola hiçbir yere
 kaydedilmez; not almadıysanız betiği yeniden çalıştırın (her çalıştırma yeni
 parola üretir). `psql` ile elle hash yazmak artık gerekmez ve önerilmez.
 
-### 4.2 Jira bağlantısını ekleyin
+### 4.2 Ajanların modeli: eski kurulumdan kalan bulut adları
+
+Maestro'nun **eski** sürümleri, kurulum sırasında varsayılan ajanları bir
+**bulut** modeliyle (`anthropic/claude-sonnet-4.5`) tohumluyordu. Kurum içi ve
+internetsiz bir kurulumda o ad hiçbir sunucuda **yoktur**: çağrı cevapsız kalır
+ve hata "bağlantı kurulamadı" diye **yanlış yerde** görünür.
+
+Yeni sürümler artık bulut adı tohumlamaz — ajan modeli `secilmedi` ile başlar ve
+seçimi siz yaparsınız. Ama kurulum, **zaten var olan** bir ajan tanımına asla
+dokunmaz (yayınlanmış bir sürümü sessizce yeniden yazmak kabul edilemez).
+Dolayısıyla **güncelleme kurulumundan sonra eski adlar yerinde durur**.
+
+Kurulum bunu artık **söyler**: migrate çıktısında "kurum içi bir kurulumda
+ERİŞİLEMEYECEK" başlıklı bir uyarı bloğu varsa, ilgili ajanlar listelenmiştir.
+
+Denetlemek için (sunucuda, bu klasörde):
+
+```bash
+./ajan-modelleri.sh           # SADECE RAPOR — hiçbir şey değişmez
+./ajan-modelleri.sh --duzelt  # bulunanları "secilmedi" durumuna alır
+```
+
+**Düzeltmenin iki yolu var, ve panel olanı daha iyidir:**
+
+1. **Panelden (önerilen)** — Ajan tanımları → ilgili ajan → *yeni sürüm yayınla*
+   ve **kendi model sunucunuzun servis ettiği** model adını yazın.
+2. **Toplu** — `./ajan-modelleri.sh --duzelt`. Adları silmez; her ajanın
+   **etkin** sürümünü `secilmedi` durumuna alır (eski sürümler değişmez).
+   Ardından yine panelden gerçek model adını vermeniz gerekir.
+
+`secilmedi` bir arıza değil, **dürüst bir durumdur**: sistem bunu adıyla tanır,
+çağrıyı "Ayarlar & bağlantılar" ekranındaki modelle yapar ve bunu loglara
+**görünür** bir satırla yazar.
+
+### 4.3 Jira bağlantısını ekleyin
 
 **Ayarlar & bağlantılar → yeni bağlantı → Jira → jetonu girin → "Test et".**
 
@@ -188,7 +222,7 @@ doldurup yanlış yazarsanız panel iki kimliği karşılaştırıp uyarır.
 > jetonlar her çağrıda yeniden okunur; "Test et" yeşil olduğu anda koşular da
 > o jetonu kullanır.
 
-### 4.3 GitHub bağlantısını ekleyin
+### 4.4 GitHub bağlantısını ekleyin
 
 **Ayarlar & bağlantılar → yeni bağlantı → GitHub → jetonu girin → "Test et".**
 
@@ -198,13 +232,13 @@ birlikte, daha ilk adımda** kapatır; onaylanmış bir analizden sonra ölen ko
 diye bir şey yoktur. Yalnızca analiz hattını kullanacaksanız bu adım isteğe
 bağlıdır.
 
-### 4.4 Kurulum sihirbazını çalıştırın: `/setup`
+### 4.5 Kurulum sihirbazını çalıştırın: `/setup`
 
 Panelde **`http://<SUNUCU_IP>:7000/setup`** — proje, dinleme kuralı ve akış
 seçimlerini buradan yaparsınız. Hangi ticket'ın hangi akışla koşacağı sunucu
 yapılandırmasıyla değil, buradan belirlenir.
 
-### 4.5 Jira webhook'unu kaydedin
+### 4.6 Jira webhook'unu kaydedin
 
 Webhook olmadan Maestro talepleri **anında** görmez. `.env`'deki
 `MAESTRO_SECRET_KV_JIRA__WEBHOOK` değeri ile Jira'daki webhook kaydının
@@ -225,14 +259,14 @@ okusaydık, imza kontrolünün önüne bir veritabanı sorgusu koymuş olurduk:
 adresi bilen herkesin sahte istekle sorgu yaptırabildiği, hız sınırı da olmayan
 bir uç nokta.
 
-### 4.6 Bot hesabı `maestro-admins` grubunda OLMASIN
+### 4.7 Bot hesabı `maestro-admins` grubunda OLMASIN
 
 Korumalı parametreleri değiştirmek **dört-göz kuralına** tabidir: öneren ve
 onaylayan farklı kişiler olmalıdır. Bot hesabı da bu gruptaysa kural **tek
 başına sağlanabilir** hâle gelir — bot önerir, bot onaylar. Kural teknik olarak
 çalışır, denetim kaydı düzgün görünür, ama ikinci göz diye bir şey kalmaz.
 
-### 4.7 Jira'da onay gruplarını eşleyin (`GATE_GROUPS`)
+### 4.8 Jira'da onay gruplarını eşleyin (`GATE_GROUPS`)
 
 Onay kapıları (analiz onayı, teknik onay, test onayı) `/approve` yazan kişinin
 **Jira grup üyeliğiyle** doğrulanır. Eşleme verilmediğinde rol adının kendisi
@@ -269,7 +303,7 @@ yenileyin: `docker compose up -d --force-recreate bff worker`
 | Analiz "elle tamamlayın" diye bitiyor | `LLM_ON_PREM` `true` değil: `gizli` sınıflı işlerde on-prem model yok sayılır. Hata değil, **eksik çıktı**. | `LLM_ON_PREM="true"` |
 | Her dış çağrı `unable to verify the first certificate` | Jira/TFS sertifikası kurum CA'sıyla imzalı. | CA dosyasını `certs/` içine koyun, `.env`'de `NODE_EXTRA_CA_CERTS` satırını açın |
 | `secret not found`, ama `.env`'de değer dolu görünüyor | Sır değişkeninin adı elle yazılmış. Ad referanstan **türetilir**: `kv/jira#webhook` → `MAESTRO_SECRET_KV_JIRA__WEBHOOK` (`#` → **çift** alt çizgi, `-` → `__2D_`). | `.env.example`'daki adları birebir kullanın |
-| Her `/approve` "üye değil" diye reddediliyor | Rol adları (`product-owners`/`tech-leads`/`qa`) Jira'da grup olarak yok ve `GATE_GROUPS` eşlenmemiş — kapı fail-closed'dır. | §4.7 — `GATE_GROUPS`'u kendi Jira gruplarınıza eşleyin |
+| Her `/approve` "üye değil" diye reddediliyor | Rol adları (`product-owners`/`tech-leads`/`qa`) Jira'da grup olarak yok ve `GATE_GROUPS` eşlenmemiş — kapı fail-closed'dır. | §4.8 — `GATE_GROUPS`'u kendi Jira gruplarınıza eşleyin |
 
 ---
 

@@ -215,6 +215,22 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
    * one person it was made for.
    */
   capability_not_wired: "error.capability_not_wired",
+  /**
+   * 503 — "şimdi tara" on an install that runs no sweep.
+   *
+   * Reached a bank operator as "Beklenmeyen bir hata oluştu" for the same
+   * reason `project_already_bound` once did, but by a different road: this
+   * route does not go through `errors.ts`, it hand-rolls
+   * `reply.code(503).send({ error: "sweep_not_configured", message })`. So the
+   * grep-based coverage test below could not see it either, and the ONE
+   * sentence the operator needed — that JQL search is Jira Cloud only and a
+   * Data Center install takes tickets by webhook — was computed by the server
+   * and then dropped on the floor by the client.
+   *
+   * This key is the fallback. The screen prefers the server's `message`, which
+   * names which of the two absences it is; see `sweepReasonOf`.
+   */
+  sweep_not_configured: "error.sweep_not_configured",
 };
 
 export function errorMessageKey(code: string): string {
@@ -230,6 +246,22 @@ export function messageKeyOf(error: unknown): string {
   if (error instanceof ApiError) return error.messageKey;
   if (error instanceof NetworkError) return error.messageKey;
   return "error.unexpected";
+}
+
+/**
+ * The server's own sentence for a sweep that cannot run, or `null`.
+ *
+ * Only `sweep_not_configured` carries one (see the client's `#toError`), and
+ * only that route computes it: the reason is a DEPLOYMENT FACT the browser
+ * cannot derive — whether this install's work driver can search at all. The
+ * screen renders it instead of the generic catalog line so the operator is not
+ * sent to edit `JIRA_DISCOVER_MS` when the real answer is "Data Center takes
+ * tickets by webhook".
+ */
+export function sweepReasonOf(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.code !== "sweep_not_configured") return null;
+  const message = (error.details as { message?: unknown } | null | undefined)?.message;
+  return typeof message === "string" && message !== "" ? message : null;
 }
 
 /**

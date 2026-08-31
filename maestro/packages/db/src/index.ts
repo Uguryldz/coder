@@ -107,6 +107,18 @@ export {
 } from "./variant-defaults.js";
 export type { DefaultVariant } from "./variant-defaults.js";
 
+// Kurulmuş bir DB'deki ajan tanımlarını erişilemez bulut modeli için tarayan
+// (ve istenirse "seçilmedi"ye geri alan) denetim — seed var olanı asla ezmediği
+// için eski kurulumlarda kalan bulut adlarının tek çıkış yolu budur.
+export { auditVariantModels, isCloudModelName } from "./variant-model-audit.js";
+export type {
+  AuditVariantVersionRow,
+  CloudModelFinding,
+  VariantModelAuditDb,
+  VariantModelAuditOptions,
+  VariantModelAuditResult,
+} from "./variant-model-audit.js";
+
 // Demo dataset (insa-plani Dalga 1: the seed *is* the mock's data).
 export { buildDemoDataset, seedDemo } from "./seed-demo.js";
 export { resetRuntimeData, RESET_TABLES } from "./reset.js";

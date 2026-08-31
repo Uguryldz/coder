@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import {
   assertPostgresUrl,
+  auditVariantModels,
   createDb,
   DEFAULT_VARIANT_MODEL,
   firstAdminDbOf,
@@ -174,6 +175,51 @@ export async function main(): Promise<void> {
         ? `[maestro] default agent variants planted (${variants.seeded.join(", ")}) on model ${bootstrapModel}`
         : "[maestro] agent variants already exist, leaving them alone",
     );
+
+    /**
+     * Var olan ajan tanımlarını ERİŞİLEMEZ BULUT MODELİ için tara — ve YALNIZCA
+     * SÖYLE (M38/M83).
+     *
+     * Yukarıdaki seed, var olan bir varyanta bilerek dokunmaz. Bu kural doğru,
+     * ama bir durumda ters çalışır: eski bir sürüm varyantları
+     * `anthropic/claude-sonnet-4.5` ile tohumlamıştı, ve o satırlar internetsiz
+     * bir bankada güncelleme kurulumundan sonra da aynen durur. Yeni imaj
+     * onları düzeltmez — düzeltmemesi söylenmiştir — dolayısıyla operatör
+     * panelde hâlâ bir bulut modeli görür ve "modeller değişmiyor" der.
+     *
+     * Burada ONARMIYORUZ, çünkü onarım bir TAHMİNE dayanırdı: kurumun kendi
+     * sunucusuna o adla bir model koymuş olması mümkündür, ve bilerek yazılmış
+     * bir adı bir kurulum betiğinin sessizce silmesi veri kaybıdır. Ama sessiz
+     * kalmak da kabul edilemez: bugünkü hatanın tamamı, kimsenin bunu
+     * söylememesiydi. Bu yüzden: her kurulumda tara, bulursan ADIYLA yaz ve
+     * onarım komutunu göster; kurulumu ASLA durdurma.
+     *
+     * Denetimin kendi patlaması kurulumu düşürmemeli — bu bir teşhis adımı,
+     * şemanın bir parçası değil. Hata yutulur ama adıyla raporlanır.
+     */
+    try {
+      const audit = await auditVariantModels(db);
+      if (audit.findings.length > 0) {
+        console.warn("[maestro] ─────────────────────────────────────────────────────────────");
+        console.warn(
+          `[maestro] DİKKAT: ${String(audit.findings.length)} ajan tanımı, kurum içi (internetsiz) ` +
+            "bir kurulumda ERİŞİLEMEYECEK bir bulut modeline bağlı:",
+        );
+        for (const finding of audit.findings) {
+          console.warn(`[maestro]   - ${finding.variantId} (v${String(finding.version)}): ${finding.model}`);
+        }
+        console.warn("[maestro] Bunlar eski bir sürümün tohumladığı varsayılanlardır; kurulum onlara");
+        console.warn("[maestro] BİLEREK dokunmaz (yayınlanmış sürüm asla ezilmez).");
+        console.warn("[maestro] Düzeltmenin iki yolu var:");
+        console.warn("[maestro]   1) Panel: Ajan tanımları → ilgili ajan → yeni sürüm yayınla");
+        console.warn("[maestro]   2) Toplu:  ./ajan-modelleri.sh --duzelt");
+        console.warn("[maestro] ─────────────────────────────────────────────────────────────");
+      }
+    } catch (error) {
+      console.warn(
+        `[maestro] ajan modeli denetimi çalıştırılamadı (${String(error)}) — kurulum etkilenmedi`,
+      );
+    }
   } finally {
     // Releasing explicitly rather than relying on disconnect keeps the window
     // short when the client is pooled; `$disconnect` would do it anyway.

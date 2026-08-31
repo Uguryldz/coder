@@ -304,7 +304,44 @@ kapatır ve ilk girişte değişimi yine zorunlu kılar. Parola hiçbir yere
 kaydedilmez; not almadıysanız betiği yeniden çalıştırın (her çalıştırma yeni
 parola üretir). `psql` ile elle hash yazmak artık gerekmez ve önerilmez.
 
-### 5.2 Bot hesabı `maestro-admins` grubunda OLMASIN
+### 5.2 Ajanların modeli: eski kurulumdan kalan bulut adları
+
+Maestro'nun **eski** sürümleri, kurulum sırasında varsayılan ajanları bir
+**bulut** modeliyle (`anthropic/claude-sonnet-4.5`) tohumluyordu. Kurum içi ve
+internetsiz bir kurulumda o ad hiçbir sunucuda **yoktur**: çağrı cevapsız kalır
+ve hata "bağlantı kurulamadı" diye **yanlış yerde** görünür.
+
+Yeni sürümler artık bulut adı tohumlamaz — ajan modeli `secilmedi` ile başlar ve
+seçimi siz yaparsınız. Ama kurulum, **zaten var olan** bir ajan tanımına asla
+dokunmaz (yayınlanmış bir sürümü sessizce yeniden yazmak kabul edilemez).
+Dolayısıyla **güncelleme kurulumundan sonra eski adlar yerinde durur** ve panelde
+görünmeye devam eder.
+
+Kurulum bunu artık **söyler**: migrate çıktısında "kurum içi bir kurulumda
+ERİŞİLEMEYECEK" başlıklı bir uyarı bloğu varsa, ilgili ajanlar listelenmiştir.
+
+Denetlemek için (sunucuda, bu klasörde):
+
+```bash
+./ajan-modelleri.sh           # SADECE RAPOR — hiçbir şey değişmez
+./ajan-modelleri.sh --duzelt  # bulunanları "secilmedi" durumuna alır
+```
+
+**Düzeltmenin iki yolu var, ve panel olanı daha iyidir:**
+
+1. **Panelden (önerilen)** — Ajan tanımları → ilgili ajan → *yeni sürüm yayınla*
+   ve **kendi model sunucunuzun servis ettiği** model adını yazın. Doğru adı
+   yalnızca siz bilirsiniz.
+2. **Toplu** — `./ajan-modelleri.sh --duzelt`. Bu, adları silmez; her ajanın
+   **etkin** sürümünü `secilmedi` durumuna alır (eski sürümler değişmez, çünkü
+   eski bir sürüme sabitlenmiş koşular onu okumaya devam eder). Ardından yine
+   panelden gerçek model adını vermeniz gerekir.
+
+`secilmedi` bir arıza değil, **dürüst bir durumdur**: sistem bunu adıyla tanır,
+çağrıyı "Ayarlar & bağlantılar" ekranındaki modelle yapar ve bunu loglara
+**görünür** bir satırla yazar. Sessizce yanlış bir modele düşmez.
+
+### 5.3 Bot hesabı `maestro-admins` grubunda OLMASIN
 
 Maestro'da korumalı parametreleri değiştirmek **dört-göz kuralına** tabidir:
 öneren ve onaylayan **farklı** kişiler olmalıdır.
@@ -317,7 +354,7 @@ AD tarafında kontrol edin — bot hesabı `maestro-admins` içinde **olmamalıd
 LDAP kullanmıyorsanız, panelde bot için ayrı bir hesap açmayın; bot Jira
 tarafında bir kimliktir, Maestro'da bir yönetici hesabı değildir.
 
-### 5.3 Jira webhook'unu kaydedin
+### 5.4 Jira webhook'unu kaydedin
 
 Webhook olmadan Maestro talepleri **anında** görmez. Kayıt adımları ve imza
 sırrının nasıl üretileceği ayrı belgede:
@@ -335,7 +372,7 @@ kaydının `secret` alanı **aynı** olmalıdır. `POST /webhooks/jira` ucu
 fail-closed'dır: sır tanımlı değilse gövde ayrıştırılmadan reddedilir. "Sırrı
 sonra tanımlarım" diye bir mod yoktur.
 
-### 5.4 Motor kimliğini doğrulayın
+### 5.5 Motor kimliğini doğrulayın
 
 Sistem iki Jira kimliği taşıyabilir:
 
@@ -365,7 +402,7 @@ docker compose up -d --force-recreate bff worker
 > jetonlar her çağrıda yeniden okunur; "Test et" yeşil olduğu anda koşular da o
 > jetonu kullanır. Yukarıdaki komut yalnızca `.env` değiştiğinde gerekir.
 
-### 5.5 Jira'da onay gruplarını eşleyin (`GATE_GROUPS`)
+### 5.6 Jira'da onay gruplarını eşleyin (`GATE_GROUPS`)
 
 Onay kapıları (analiz onayı, teknik onay, test onayı) `/approve` yazan kişinin
 **Jira grup üyeliğiyle** doğrulanır. Eşleme verilmediğinde rol adının kendisi
@@ -395,7 +432,7 @@ loglar temizdir, panel çalışır — ama iş görülmez.
 
 | Belirti | Gerçek sebep | Çözüm |
 |---|---|---|
-| Kural kurdum, **hiçbir talep yakalanmıyor**, log temiz | Motorun kimliği (`MAESTRO_BOT_ACCOUNT_ID`) ile bağlantının kimliği farklı | §5.4 |
+| Kural kurdum, **hiçbir talep yakalanmıyor**, log temiz | Motorun kimliği (`MAESTRO_BOT_ACCOUNT_ID`) ile bağlantının kimliği farklı | §5.5 |
 | Talepler işleniyor ama **yanlış kişinin** talepleri | Keşif `currentUser()` ile çalışıyor ve jeton bir insana ait | Panele **bot hesabının** jetonunu girin |
 | Analiz **"elle tamamlayın"** diye bitiyor | Talep `gizli` sınıfta, on-prem model yok sayılıyor (`LLM_ON_PREM=false`) | `LLM_ON_PREM="true"` + `docker compose up -d --force-recreate` |
 | Panel açılıyor, **her istek 502** | BFF konteyner içinde `127.0.0.1`'e bağlanmış; nginx ulaşamıyor | `.env`'de `BFF_HOST="0.0.0.0"` |
@@ -410,7 +447,7 @@ loglar temizdir, panel çalışır — ama iş görülmez.
 | Model çağrıları **404** | `LLM_BASE_URL` sonunda `/v1` var, sürücü de ekliyor | Sondaki `/v1`'i silin |
 | `unable to verify the first certificate` | Banka kök CA'sı Node'un listesinde yok | `NODE_EXTRA_CA_CERTS` + CA'yı `certs/` içine koyun |
 | Panelde jetonlar bozuk / çözülemiyor | `CONNECTOR_MASTER_KEY` değişti ya da kayboldu | Eski anahtarı geri koyun; yoksa jetonları yeniden girin |
-| Her `/approve` **"üye değil"** diye reddediliyor | Rol adları (`product-owners`/`tech-leads`/`qa`) Jira'da grup olarak yok ve `GATE_GROUPS` eşlenmemiş — kapı fail-closed'dır | §5.5 — `GATE_GROUPS`'u kendi Jira gruplarınıza eşleyin |
+| Her `/approve` **"üye değil"** diye reddediliyor | Rol adları (`product-owners`/`tech-leads`/`qa`) Jira'da grup olarak yok ve `GATE_GROUPS` eşlenmemiş — kapı fail-closed'dır | §5.6 — `GATE_GROUPS`'u kendi Jira gruplarınıza eşleyin |
 
 ---
 

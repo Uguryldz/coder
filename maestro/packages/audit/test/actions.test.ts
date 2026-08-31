@@ -29,11 +29,31 @@ describe("AuditAction → SIEM metadata table", () => {
 
   it("marks exactly the gate decisions as human-only (M32/M101)", () => {
     const humanOnly = AuditAction.options.filter((action) => AUDIT_ACTION_INFO[action].humanOnly);
-    expect(humanOnly).toEqual(["GATE_APPROVE", "GATE_REJECT"]);
+    // Three verdicts, not two: `GATE_RETURN` ("eksik var, bir daha bak") is a
+    // decision a named person takes at a gate, so the AI may no more write one
+    // than it may write an approval.
+    expect(humanOnly).toEqual(["GATE_APPROVE", "GATE_REJECT", "GATE_RETURN"]);
   });
 
   it("states an outcome only where the action itself is a verdict", () => {
     const withOutcome = AuditAction.options.filter((action) => AUDIT_ACTION_INFO[action].outcome);
-    expect(withOutcome).toEqual(["GATE_APPROVE", "GATE_REJECT", "SECURITY_SCAN_PASS", "SECURITY_SCAN_FAIL"]);
+    expect(withOutcome).toEqual([
+      "GATE_APPROVE",
+      "GATE_REJECT",
+      "GATE_RETURN",
+      "SECURITY_SCAN_PASS",
+      "SECURITY_SCAN_FAIL",
+    ]);
+  });
+
+  it("grades a return as a success, not a failure — it is a review turn, not a refusal", () => {
+    // The whole reason `GATE_RETURN` is a third action rather than a flavour of
+    // `GATE_REJECT`: every governance surface that counts by outcome would
+    // otherwise read a healthy review loop as a troubled one, and an auditor
+    // asking "how many times was this rejected" would be handed the routine
+    // turns as refusals.
+    expect(AUDIT_ACTION_INFO.GATE_RETURN.outcome).toBe("success");
+    expect(AUDIT_ACTION_INFO.GATE_REJECT.outcome).toBe("failure");
+    expect(AUDIT_ACTION_INFO.GATE_RETURN.severity).toBeLessThan(AUDIT_ACTION_INFO.GATE_REJECT.severity);
   });
 });

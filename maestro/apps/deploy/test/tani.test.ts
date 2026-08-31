@@ -190,6 +190,7 @@ function ornekRapor(): TaniRaporu {
         { id: "run-1", ticketKey: "ABC-1", step: "2b", status: "gate", updatedAt: "2026-08-30 09:00:00" },
       ],
       temporalAcik: 1,
+      kayipKosular: [],
     },
     jira: {
       denemeler: [

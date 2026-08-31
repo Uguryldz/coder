@@ -120,7 +120,26 @@ export interface MaestroActivities {
    * — which is not necessarily the role that was asked for; see
    * `DirectoryReader.groupForRole`.
    */
-  openGate(ticket: TicketKey, step: StepId, ownerGroup: string): Promise<string>;
+  openGate(
+    ticket: TicketKey,
+    step: StepId,
+    ownerGroup: string,
+    /**
+     * Kapının bu koşuda hangi STATÜLERLE de kapatılabildiği — Jira'ya yazılan
+     * kapı yorumunun doğru olması için.
+     *
+     * Yorum bugüne kadar "ticket'ı başka bir statüye taşımak kapıyı AÇMAZ"
+     * diyordu ve o doğruydu. Artık kuralın `gateApproveStatus` /
+     * `gateReturnStatus` alanları doluysa AÇAR, ve yorumun bunu söylemesi
+     * gerekiyor — yanlış bir talimat, hiç talimat olmamasından kötü.
+     *
+     * OPSİYONEL ve YOKLUĞU eski davranış: verilmezse yorum yalnız `/approve`
+     * yolunu anlatır, ki statü kanalı yapılandırılmamış kurulumda doğru olan
+     * budur. Ekleme replay güvenli: yeni argüman yalnız YENİ zamanlamalarda
+     * görünür, kayıtlı geçmişlerdeki çağrılar olduğu gibi kalır.
+     */
+    gateStatuses?: { approve?: string; return?: string },
+  ): Promise<string>;
   /**
    * Persist a decision — and report whether the DIRECTORY accepted it.
    * `gates.ts` can only check what the payload claims; group membership is a

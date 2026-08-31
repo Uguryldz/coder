@@ -6,6 +6,7 @@ import type { RuleIdentityFacts, StatusMapFacts } from "../config-health.js";
 import { botAccountIdOf, identityDrift } from "../listening-identity.js";
 import { buildConfigFindings, worstSeverity } from "../config-health.js";
 import type { ResolvedDeps } from "../deps.js";
+import { gateStatusesOf } from "../gate-status-reentry.js";
 import { badRequest } from "../errors.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
 import { unwired } from "./unwired.js";
@@ -371,6 +372,24 @@ async function listeningFacts(
         ruleCount: rules.length,
         mappedRuleCount: rules.filter(
           (rule) => rule.statusMap != null && Object.keys(rule.statusMap).length > 0,
+        ).length,
+        /**
+         * Kapı statüleri, KANALIN KENDİ okuyucusundan sayılıyor
+         * (`gateStatusesOf`) — burada elle `statusMap.gateApproveStatus != null`
+         * demek DEĞİL.
+         *
+         * Fark, çakışma: bir alan yapılandırılmış olabilir ve yine de kanal
+         * için ölü olabilir (Maestro'nun kendi taşıdığı bir statüyle aynıysa
+         * düşürülür). Elle sayan bir kod o kuralı "açık" gösterirdi, ki bu
+         * satırın kapatmak için var olduğu sessizliğin ta kendisi. Kanalı
+         * ölçen tek yer, kanalın kendi kararını veren yer olmalı.
+         */
+        gateStatusRuleCount: rules.filter((rule) => {
+          const gates = gateStatusesOf(rule.statusMap);
+          return gates.approve !== null || gates.return !== null;
+        }).length,
+        gateStatusConflictCount: rules.filter(
+          (rule) => gateStatusesOf(rule.statusMap).conflicts.length > 0,
         ).length,
       },
       ruleIdentity: {

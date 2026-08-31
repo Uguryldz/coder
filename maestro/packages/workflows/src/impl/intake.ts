@@ -205,16 +205,29 @@ export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<
   const comments = await readHumanComments(deps, ticket);
   const persona = await analystPersona(deps, run);
 
-  // Port SARILIYOR, çağrı değil: `runRole` `LlmPort`'u kendisi çağırır — ilk tur
-  // ve en fazla iki onarım turu — yani yalnız dış çağrıyı sarmak onarım
-  // turlarındaki 401/403'leri korumasız bırakırdı. Bkz. `guardedLlm`.
-  const result = await runIntakeRole({
-    llm: guardedLlm(deps, run, "intake"),
-    ticket: withComments(snapshot, comments),
-    variantId: run.variantId,
-    dataClass: run.dataClass,
-    ...(persona === undefined ? {} : { persona }),
-  });
+  // İKİ KAT SARMALAMA, ve ikisi de gerekli:
+  //
+  //  - PORT sarılıyor (`guardedLlm`): `runRole` `LlmPort`'u KENDİSİ çağırır —
+  //    ilk tur ve en fazla iki onarım turu — yani yalnız dış çağrıyı sarmak
+  //    onarım turlarındaki 401/403'leri korumasız bırakırdı.
+  //  - ÇAĞRI da sarılıyor (`guardModelCall`): `RoleOutputError` port'tan değil,
+  //    `runRole`'ün KENDİSİNDEN fırlar — üç tur da yetersiz çıktı verdiğinde.
+  //    Sarılmış port o hatayı hiç görmez, çünkü hata port çağrısı DÖNDÜKTEN
+  //    sonra, rol katmanının doğrulamasında doğar. Sarmasaydık düz bir
+  //    exception olarak `thinkActs`'in sınırsız merdivenine düşer ve şemayı
+  //    tutturamayan bir model sonsuza kadar yeniden denenirdi.
+  //
+  // Guard idempotent değil ama olması gerekmiyor: deneme sayısı Temporal'ın
+  // activity attempt'inden okunuyor, iç içe sarmalama sayısından değil.
+  const result = await guardModelCall(deps, run, "intake", () =>
+    runIntakeRole({
+      llm: guardedLlm(deps, run, "intake"),
+      ticket: withComments(snapshot, comments),
+      variantId: run.variantId,
+      dataClass: run.dataClass,
+      ...(persona === undefined ? {} : { persona }),
+    }),
+  );
 
   const resolved = await resolveOutcome(deps, run, "intake", outcomeOfRole(result));
   if (resolved.status === "degraded") {

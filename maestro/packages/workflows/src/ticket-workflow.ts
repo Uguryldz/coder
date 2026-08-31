@@ -18,7 +18,13 @@ import type {
 import { awaitGreenBuild, runEngineeringLoop } from "./engineering-loop.js";
 import { answerModeRequests, assertNotKilled, awaitGate } from "./gate-loop.js";
 import { gatesFor, planFor } from "./gates.js";
-import { countRejection, emptyInbox, initialRunState, rejectionCounts } from "./run-state.js";
+import {
+  countRejection,
+  emptyInbox,
+  initialRunState,
+  rejectionCounts,
+  workflowNow,
+} from "./run-state.js";
 import {
   ciResultSignal,
   clarificationAnsweredSignal,
@@ -102,18 +108,6 @@ const longActs = proxyActivities<MaestroActivities>({
   retry: { maximumAttempts: 1 },
 });
 
-/**
- * The workflow clock, as an ISO string.
- *
- * Inside the Temporal sandbox `Date.now()` is replaced by the SDK with the
- * deterministic workflow time, so this replays identically. It is wrapped here,
- * once, so the rule the rest of this file follows — no ambient time anywhere
- * else — stays mechanically checkable.
- */
-function workflowNow(): string {
-  return new Date(Date.now()).toISOString();
-}
-
 export interface TicketWorkflowInput {
   ticket: TicketKey;
   /**
@@ -189,6 +183,15 @@ export interface TicketStatusMap {
   onReview?: string;
   onRejected?: string;
   onDone?: string;
+  /**
+   * Kapı kararının statüyle verilmesi — OKUMA tarafı. Bu iki alanı workflow
+   * OKUMAZ ve okumaması da tasarım: statüyü Jira'da GÖREN taraf BFF/yoklama,
+   * ve karar buradan değil oradan bir `gateDecision` sinyali olarak gelir.
+   * Burada durmalarının tek sebebi, eşlemenin TEK bir belge olması ve
+   * workflow'un onu değiştirmeden taşıması.
+   */
+  gateApproveStatus?: string;
+  gateReturnStatus?: string;
   reassignOnNeedInfo?: boolean;
 }
 
@@ -217,6 +220,10 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     ...(state.awaitingClarificationSince === null
       ? {}
       : { awaitingClarificationSince: state.awaitingClarificationSince }),
+    // Yalnız bir onay kapısında beklerken dolu. Statüyle verilen kapı kararının
+    // yankı ayıklaması buna dayanıyor — bu damgadan ÖNCEKİ bir statü değişimi
+    // kapının kendi açılışının (`onReview` taşıması) yankısıdır.
+    ...(state.gateOpenedSince === null ? {} : { gateOpenedSince: state.gateOpenedSince }),
   }));
 
   // Handlers only ever PUSH. Nothing here consumes, decides or clears — the
@@ -229,7 +236,31 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   setHandler(modeChangeSignal, (m) => void inbox.modeRequests.push(m));
   setHandler(killSwitchSignal, (k) => void (state.killed = k.level));
 
-  const gate = (at: StepId) => awaitGate(acts, state, inbox, ticket, at);
+  /**
+   * Kapı statüleri, kapı yorumuna yazılmak üzere — koşuya ÇİVİLENMİŞ eşlemeden.
+   *
+   * Bu, okuma tarafının kullandığı değer DEĞİL: karar anında BFF kuralları
+   * yeniden okur ve o an ne yazıyorsa o geçerlidir. Buradaki değer yalnızca
+   * yorumun metni için, ve çivilenmiş olması yeterli — yorum kapı açılırken
+   * bir kez yazılıyor, dolayısıyla o andaki eşleme zaten doğru cevap.
+   *
+   * `undefined` iki farklı sebeple olabilir ve ikisi de aynı yorumu üretir:
+   * yorum-yalnız kip, ya da statü kanalını yapılandırmamış bir eşleme.
+   */
+  const gateStatuses =
+    input.statusMap?.gateApproveStatus === undefined &&
+    input.statusMap?.gateReturnStatus === undefined
+      ? undefined
+      : {
+          ...(input.statusMap?.gateApproveStatus === undefined
+            ? {}
+            : { approve: input.statusMap.gateApproveStatus }),
+          ...(input.statusMap?.gateReturnStatus === undefined
+            ? {}
+            : { return: input.statusMap.gateReturnStatus }),
+        };
+
+  const gate = (at: StepId) => awaitGate(acts, state, inbox, ticket, at, gateStatuses);
   const stopIfKilled = () => assertNotKilled(acts, state, ticket);
 
   /**
@@ -383,7 +414,49 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   for (const at of analysisGates) {
     await goto(at, "insan onayı bekleniyor");
     const verdict = await gate(at);
-    if (verdict.decision === "reject") {
+    /**
+     * ── "eksik var, bir daha bak" ────────────────────────────────────────────
+     *
+     * Operatörün akışının üçüncü kenarı: `analysisapproval → analiz`. Aşağıdaki
+     * `reject` dalıyla İŞ olarak aynı şeyi yapar — analizi yeniden yazdırır ve
+     * aynı koşu olarak devam eder — ve tam olarak üç şeyi YAPMAZ:
+     *
+     *  1. `countRejection` ÇAĞIRMAZ. M54'ün üç-ret kuralı burada bir ceza
+     *     olurdu: geri gönderme rutin bir tur, ve üçüncüsünde koşunun insana
+     *     devredilmesi normal çalışmayı üç turda bir durdururdu.
+     *  2. Devretmez. Bu yolda `handOver` yok; koşu her zaman devam eder.
+     *  3. `onRejected` statüsüne TAŞIMAZ. Ticket'ı incelemeden çıkaran hareketi
+     *     zaten operatörün kendisi yaptı — statü kanalıyla geldiyse ticket
+     *     `gateReturnStatus`'ta, yorum kanalıyla geldiyse operatör nereye
+     *     istediyse orada. Maestro'nun üstüne bir "reddedildi" statüsü yazması,
+     *     operatörün açıkça istemediği şey.
+     *
+     * `goto("3", …)` ile analize dönüş ve `continueRun()` ORTAK: bağlam
+     * (kural, akış, ajan varyantları, statü eşlemesi, resume token, ret
+     * sayaçları) `continueAsNew` girdisinde taşınır, yani "bağlam kaybı yok".
+     */
+    if (verdict.decision === "return_analysis") {
+      await acts.journal(
+        ticket,
+        "gate",
+        "analize geri gönderildi",
+        `${verdict.actorUserId}${verdict.reason === undefined ? "" : ` · ${verdict.reason}`}`,
+      );
+      await goto("3", "geri gönderildi — analiz yeniden yazılıyor");
+      const again = await thinkActs.writeAnalysis(ticket, input.appId);
+      state.analysis = again.analysis;
+      // Ret dalıyla aynı gerekçe: yeniden yazım ticket'ı yeni bir risk
+      // katmanına taşımış olabilir ve eski değer devamı yanlış kapı setine
+      // sokardı.
+      state.risk = again.risk;
+      await acts.publishAnalysis(ticket, state.analysis);
+      return continueRun();
+    }
+    // `return_analysis` yukarıda ele alındı, dolayısıyla burada kalan tek
+    // "onay değil" ret'tir — ama yine eşitlikle değil, ONAY DEĞİL diye
+    // sorulur: 505'teki kardeşiyle aynı gerekçe, dördüncü bir karar sessizce
+    // geçip gitmesin.
+    if (verdict.decision !== "approve") {
       const strike = countRejection(state, at);
       if (strike.exhausted) return handOver(`${at} kapısında ${strike.count} ret (M54)`);
 
@@ -457,7 +530,17 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   for (const at of required.filter((g) => g === "11" || g === "12")) {
     await goto(at, "insan onayı bekleniyor");
     const verdict = await gate(at);
-    if (verdict.decision === "reject") {
+    /**
+     * "Onay DEĞİL" olarak okunuyor, "ret" olarak değil.
+     *
+     * 11/12'de üçüncü karar (`return_analysis`) hiç gelemez — `canCloseGate`
+     * onu yalnız 4/5'te kabul ediyor ve `decideGate` buraya hiç göndermiyor —
+     * ama bu satırın "reddedilmeyen her şey onaydır" demesi, gelecekte dördüncü
+     * bir kararın sessizce MERGE'e dönüşmesi demek olurdu. Bu kapıların
+     * ötesinde geri alınamaz bir birleştirme var; yanlış tarafta hata yapmanın
+     * ucuz yönü, işi geri göndermektir.
+     */
+    if (verdict.decision !== "approve") {
       const strike = countRejection(state, at);
       if (strike.exhausted) return handOver(`${at} kapısında ${strike.count} ret (M54)`);
 

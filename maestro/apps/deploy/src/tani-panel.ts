@@ -81,6 +81,20 @@ export interface AkisKaynagi {
   readonly sonKosular: () => Promise<readonly KosuSatiri[]>;
   /** Temporal'daki açık workflow sayısı. Fırlatabilir; sebebi rapora yazılır. */
   readonly temporalAcik: () => Promise<number>;
+  /**
+   * Veritabanına göre BEKLEYEN (terminal olmayan) koşular — kayıp koşu
+   * kıyasının sol tarafı. Bkz. `AkisBolumu.kayipKosular`.
+   */
+  readonly bekleyenKosular: () => Promise<readonly KosuSatiri[]>;
+  /**
+   * Temporal'da AÇIK execution'ı olan ticket anahtarları — kıyasın sağ tarafı.
+   *
+   * Sayı değil KÜME, çünkü soru "kaç tane" değil "HANGİLERİ": operatörün
+   * ihtiyacı olan şey kayıp koşuların listesidir, bir eksiltme sonucu değil.
+   */
+  readonly acikTicketlar: () => Promise<ReadonlySet<string>>;
+  /** Namespace'in saklama süresi ("24 saat" / "90 gün"); okunamazsa `null`. */
+  readonly saklamaSuresi: () => Promise<string | null>;
 }
 
 export interface PanelTaniOptions {
@@ -175,20 +189,33 @@ async function akisBolumu(kaynak: AkisKaynagi): Promise<AkisBolumu> {
     }
   };
 
-  const [toplam, adimDagilimi, netlestirmeBekleyen, sonKosular] = await Promise.all([
+  const [toplam, adimDagilimi, netlestirmeBekleyen, sonKosular, bekleyen] = await Promise.all([
     guvenli(kaynak.toplam, 0),
     guvenli(kaynak.adimDagilimi, [] as readonly (readonly [string, number])[]),
     guvenli(kaynak.netlestirmeBekleyen, [] as readonly KosuSatiri[]),
     guvenli(kaynak.sonKosular, [] as readonly KosuSatiri[]),
+    guvenli(kaynak.bekleyenKosular, [] as readonly KosuSatiri[]),
   ]);
 
   try {
+    const temporalAcik = await kaynak.temporalAcik();
+    /**
+     * KAYIP KOŞU KIYASI. Temporal okunabildiyse yapılır ve YALNIZ o zaman:
+     * `catch` dalı `null` döner, çünkü "kayıp yok" ile "kıyas yapılamadı" iki
+     * ayrı cevaptır ve ikincisini birincisi gibi göstermek, ölçülmemiş bir şeyi
+     * sağlıklı ilan etmek olurdu.
+     */
+    const acik = await kaynak.acikTicketlar();
+    const kayipKosular = bekleyen.filter((kosu) => !acik.has(kosu.ticketKey));
+    const saklamaSuresi = await guvenli(kaynak.saklamaSuresi, null);
     return {
       toplam,
       adimDagilimi,
       netlestirmeBekleyen,
       sonKosular,
-      temporalAcik: await kaynak.temporalAcik(),
+      temporalAcik,
+      kayipKosular,
+      ...(saklamaSuresi === null ? {} : { saklamaSuresi }),
     };
   } catch (error) {
     // Temporal'ın okunamaması sayfayı düşürmez ve SESSİZ de kalmaz: sebebi
@@ -199,6 +226,7 @@ async function akisBolumu(kaynak: AkisKaynagi): Promise<AkisBolumu> {
       netlestirmeBekleyen,
       sonKosular,
       temporalAcik: null,
+      kayipKosular: null,
       temporalHata: maskele(error instanceof Error ? error.message : String(error)),
     };
   }

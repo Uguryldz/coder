@@ -161,6 +161,67 @@ describe("OpenAiCompatDriver (M16 on-prem lane)", () => {
 
     expect(result.cachePct).toBeNull();
   });
+
+  /**
+   * NULL IS NOT ABSENT, and this reader used to think it was.
+   *
+   * `prompt_tokens_details` was `.optional()` without `.nullable()`, so a server
+   * that sent the key with a `null` value — ordinary JSON for "no value", and
+   * what the bank's on-prem server sends — was rejected as a malformed
+   * response. The failure was as expensive as it was invisible: every intake
+   * call returned a perfectly good answer, this schema threw, Temporal retried
+   * the activity forever, and the operator watched a run sit at "çalışıyor"
+   * with nothing on the ticket but "işleme alındı".
+   *
+   * "OpenAI-compatible" is a family, not a specification. The reader's job is to
+   * take the ANSWER when the answer is there, and a cache statistic used for one
+   * display percentage is not grounds to throw it away.
+   */
+  it("accepts a null details block — a server saying 'no value' is not a malformed response", async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          choices: [{ message: { content: "cevap" } }],
+          usage: { prompt_tokens: 12, completion_tokens: 4, prompt_tokens_details: null },
+        },
+      },
+    ]);
+    const result = await new OpenAiCompatDriver(config(), deps(stub)).complete(call);
+
+    expect(result.text).toBe("cevap");
+    expect(result.tokensIn).toBe(12);
+    expect(result.tokensOut).toBe(4);
+    expect(result.cachePct).toBeNull();
+  });
+
+  it("accepts null token counts, and a missing usage block entirely", async () => {
+    // Counted as 0 rather than refused: a server that does not report usage is
+    // not a reason to discard a good answer. `cachePct` stays null — "nobody
+    // cached anything" is a claim this response does not support.
+    const nulls = stubFetch([
+      {
+        body: {
+          choices: [{ message: { content: "a" } }],
+          usage: { prompt_tokens: null, completion_tokens: null, prompt_tokens_details: { cached_tokens: null } },
+        },
+      },
+    ]);
+    const nullUsage = await new OpenAiCompatDriver(config(), deps(nulls)).complete(call);
+    expect(nullUsage).toMatchObject({ text: "a", tokensIn: 0, tokensOut: 0, cachePct: null });
+
+    const noUsage = stubFetch([{ body: { choices: [{ message: { content: "b" } }] } }]);
+    const absent = await new OpenAiCompatDriver(config(), deps(noUsage)).complete(call);
+    expect(absent).toMatchObject({ text: "b", tokensIn: 0, tokensOut: 0, cachePct: null });
+  });
+
+  it("still refuses a response with no answer in it", async () => {
+    // The leniency above is about statistics, never about the answer: a missing
+    // `choices` array is a failure that must stay loud.
+    const stub = stubFetch([{ body: { usage: { prompt_tokens: 1, completion_tokens: 1 } } }]);
+    await expect(new OpenAiCompatDriver(config(), deps(stub)).complete(call)).rejects.toBeInstanceOf(
+      LlmResponseError,
+    );
+  });
 });
 
 describe("cloud driver skeletons (M16 config + failure path)", () => {

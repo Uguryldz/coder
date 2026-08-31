@@ -164,6 +164,10 @@ function typesOf(value: unknown): readonly string[] {
 const DECISION_ACTIONS: Readonly<Record<string, { severity: string; status: string }>> = {
   GATE_APPROVE: { severity: "info", status: "approved" },
   GATE_REJECT: { severity: "high", status: "rejected" },
+  // "Bir daha bak" — bir ret DEĞİL, bu yüzden `high`/`rejected` değil. Rutin
+  // bir inceleme turunu yönetim ekranında ret gibi göstermek, sağlıklı işleyen
+  // bir akışı sorunlu gösterirdi.
+  GATE_RETURN: { severity: "info", status: "returned" },
   GATE_OPEN: { severity: "medium", status: "open" },
   MODE_CHANGED: { severity: "medium", status: "decided" },
   ASSIGN_APP: { severity: "low", status: "decided" },

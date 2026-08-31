@@ -36,7 +36,7 @@ const HEALTHY: ConfigHealthInput = {
   intake: { mode: "both", pollSeconds: 60, canReadComments: true, source: "param" },
   clarify: { state: "open", source: "connection" },
   variants: { scanned: 4, cloudModelVariants: [] },
-  statusMaps: { ruleCount: 3, mappedRuleCount: 2 },
+  statusMaps: { ruleCount: 3, mappedRuleCount: 2, gateStatusRuleCount: 1, gateStatusConflictCount: 0 },
   ruleIdentity: {
     ruleCount: 3,
     staleRuleCount: 0,
@@ -231,7 +231,7 @@ describe("buildConfigFindings", () => {
     const findings = buildConfigFindings({
       ...HEALTHY,
       deployment: { ...DC, canMoveStatus: false },
-      statusMaps: { ruleCount: 3, mappedRuleCount: 2 },
+      statusMaps: { ruleCount: 3, mappedRuleCount: 2, gateStatusRuleCount: 1, gateStatusConflictCount: 0 },
     });
     expect(row(findings, "status_map").severity).toBe("sorun");
   });
@@ -239,7 +239,7 @@ describe("buildConfigFindings", () => {
   it("comment-only mode is the product default, so it is a note rather than a fault", () => {
     const findings = buildConfigFindings({
       ...HEALTHY,
-      statusMaps: { ruleCount: 3, mappedRuleCount: 0 },
+      statusMaps: { ruleCount: 3, mappedRuleCount: 0, gateStatusRuleCount: 0, gateStatusConflictCount: 0 },
     });
     expect(row(findings, "status_map").severity).toBe("bilgi");
   });
@@ -259,7 +259,10 @@ describe("buildConfigFindings", () => {
       ruleIdentity: null,
     });
 
-    expect(findings).toHaveLength(8);
+    // Dokuz satır: kapı onay yolu (`gate_channel`) sekizincinin yanına eklendi.
+    // Sayı sabitlenmiş kalıyor ve bilerek: yeni bir satırın "bilinmiyor"
+    // demeyi UNUTMASI, tam olarak bu testin yakalamak için var olduğu şey.
+    expect(findings).toHaveLength(9);
     expect(findings.every((finding) => finding.value === "bilinmiyor")).toBe(true);
     expect(findings.some((finding) => finding.severity === "iyi")).toBe(false);
   });

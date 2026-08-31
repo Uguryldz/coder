@@ -311,6 +311,36 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PWD: ${POSTGRES_PASSWORD}
       POSTGRES_SEEDS: postgres
+      # ── SAKLAMA SÜRESİ — ÖLÇÜLMÜŞ VERİ KAYBININ DÜZELTMESİ ────────────────
+      #
+      # ARIZA. Varsayılan 24 saat, ve Temporal bu süreyi bir koşunun geçmişine
+      # uygular. Bu kurulumda 3.5 ile 14 gün arasında, 4. ve 5. KAPIDA insan
+      # onayı bekleyen 12 koşunun execution'ı Temporal'dan düşmüştü:
+      # `tctl workflow describe` "workflow not found" diyor, veritabanı satırı
+      # ise hâlâ "running" gösteriyordu. Yani onay bekleyen iş, kimse hiçbir şey
+      # yapmadan, sessizce kayboldu.
+      #
+      # NEDEN 24 SAAT BU ÜRÜN İÇİN YANLIŞ. Maestro'nun akışı GÜNLER sürüyor ve
+      # bu bir kusur değil tasarım: 2b netleştirme beklemesi ve onay kapıları
+      # SÜRESİZDİR (M61 — otomatik reddetme yok, zaman aşımı yok). Bir analizin
+      # onaylanması için bir ürün sahibinin izin dönüşünü beklemek olağandır.
+      # Saklama süresi, iş akışının kendi ölçeğinin ALTINDA olamaz.
+      #
+      # NEDEN 90 GÜN. 30 gün "çoğu kapı için yeter" demektir ve o "çoğu" tam
+      # olarak kaybedilecek olanı dışarıda bırakır: yıllık izne çıkmış tek
+      # onaycının ticket'ı. 90 gün, bir çeyreklik takvimin tamamını kapsar ve
+      # bu akışta bekleyen hiçbir işin makul olarak aşamayacağı bir süredir.
+      #
+      # ⚠ YER MALİYETİ. Geçmiş Postgres'te durur ve saklama süresiyle ORANTILI
+      #   büyür. Bu kurulumun ölçeğinde (günde onlarca ticket) 90 gün birkaç yüz
+      #   MB mertebesindedir — bir bankanın veritabanı için önemsiz. Günde
+      #   binlerce koşuya çıkan bir kurulumda bu sayı yeniden hesaplanmalıdır.
+      #
+      # ⚠ BU DEĞİŞKEN YALNIZ NAMESPACE İLK YARATILIRKEN OKUNUR. Kurulmuş bir
+      #   sistemde hiçbir şey yapmaz — orada süreyi `install.sh` `tctl namespace
+      #   update` ile düzeltir. İkisi birden var, çünkü biri yeni kurulumu,
+      #   diğeri mevcut kurulumu doğru yapar.
+      DEFAULT_NAMESPACE_RETENTION: ${TEMPORAL_RETENTION:-2160h}
     depends_on:
       postgres:
         condition: service_healthy

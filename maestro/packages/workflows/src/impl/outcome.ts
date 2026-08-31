@@ -19,6 +19,7 @@ import { audit, notifyEvent, record } from "./record.js";
 export const QUOTA_WAIT = "LlmQuotaWait";
 export const LLM_BLOCKED = "LlmBlocked";
 export const LLM_AUTH_REJECTED = "LlmAuthRejected";
+export const LLM_SCHEMA_UNMET = "LlmSchemaUnmet";
 
 /**
  * How many activity attempts an auth-rejected key is given before the run is
@@ -36,6 +37,35 @@ export const LLM_AUTH_REJECTED = "LlmAuthRejected";
 export const AUTH_RETRY_MAX_ATTEMPTS = 30;
 
 /**
+ * Bir modelin şemayı tutturamaması kaç activity denemesi sonra insana devredilir.
+ *
+ * ── NEDEN BU SINIR VAR ──────────────────────────────────────────────────────
+ * `LlmSchemaValidationError` (llm-gateway) modelin cevabı şemayı İKİ turda da
+ * tutturamayınca atılır — `generateStructured` ilk çağrı + bir onarım turu
+ * yapar, sonra fırlatır. Bu düz bir exception'dır, `LlmOutcome` değil, yani
+ * `resolveOutcome`'a hiç uğramaz; Temporal'a düz exception ise YENİDEN
+ * DENENEBİLİR görünür. Düşünme rolleri `thinkActs` proxy'sinde çalışıyor ve
+ * onun bütçesi `maximumAttempts: Number.POSITIVE_INFINITY` — yani şemayı
+ * tutturamayan bir model SONSUZA KADAR yeniden denenirdi ve koşunun satırı
+ * günlerce `running` kalırdı, panelde nedenini söyleyen tek satır olmadan.
+ * `guardModelCall`'un 401/403 için kapattığı deliğin AYNISI, bu kez şema
+ * tarafında.
+ *
+ * ── NEDEN 5, 30 DEĞİL ───────────────────────────────────────────────────────
+ * 401/403'te beklemek mantıklıydı: kota sabaha dolabilir, anahtar
+ * yenilenebilir — sorun kendi kendine İYİLEŞEBİLİR. Şema uyuşmazlığı
+ * iyileşmez: aynı model, aynı prompt, aynı şema. Tek dalgalanma kaynağı
+ * örneklemenin (temperature) rastgeleliği, ve bu tam olarak birkaç denemede
+ * tükenen bir şanstır. gpt-oss gibi küçük/açık modellerde bu sık görülen bir
+ * durumdur; 5 deneme (her biri kendi içinde 2 tur = 10 model çağrısı) şansa
+ * yeterli fırsatı verir, sonrasında beklemek yalnızca gerçeği geciktirir.
+ * Merdiven (1 dk × 2, 1 saat tavan) ile 5. deneme ilk hatadan ~15 dakika
+ * sonraya düşer: operatör modeli/şablonu değiştirmek için makul sürede
+ * çağrılır.
+ */
+export const SCHEMA_RETRY_MAX_ATTEMPTS = 5;
+
+/**
  * The gateway's `LlmAuthError` (401/403), recognised STRUCTURALLY.
  *
  * This package may not import `@maestro/llm-gateway` — M44 keeps every
@@ -47,6 +77,32 @@ export const AUTH_RETRY_MAX_ATTEMPTS = 30;
  */
 function isLlmAuthError(err: unknown): err is Error & { status?: number } {
   return err instanceof Error && err.name === "LlmAuthError";
+}
+
+/**
+ * Modelin yapılandırılmış çıktısı şemayı tutturamadı — YAPISAL tanınıyor.
+ *
+ * İki ayrı katman aynı gerçeği farklı adla fırlatıyor ve ikisi de aynı
+ * muameleyi hak ediyor:
+ *
+ *  - `LlmSchemaValidationError` (`@maestro/llm-gateway`): cevap ŞEKLİ tutmadı
+ *    (JSON yok, alan eksik, tip yanlış) — gateway'in kendi onarım turundan
+ *    sonra.
+ *  - `RoleOutputError` (`@maestro/agent-roles`): şekil tuttu ama İÇERİK
+ *    yetersizdi (kaynaksız bölüm, "eksik ama soru yok" çelişkisi) — rol
+ *    katmanının en fazla iki onarım turundan sonra.
+ *
+ * `isLlmAuthError` ile aynı gerekçeyle isim üzerinden eşleşiyor: bu paket
+ * M44 gereği ne `@maestro/llm-gateway`'i ne de somut bir sürücüyü import
+ * edebilir, ve sınıf ADI zaten Temporal'ın bir exception'ı failure `type`'ına
+ * çevirirken yaptığı sınıflandırmanın aynısı — hata taksonomisinin önlemek
+ * için var olduğu mesaj-metni eşleştirmesi değil.
+ */
+function isSchemaError(err: unknown): err is Error {
+  return (
+    err instanceof Error &&
+    (err.name === "LlmSchemaValidationError" || err.name === "RoleOutputError")
+  );
 }
 
 /**
@@ -65,7 +121,8 @@ function currentAttempt(): number {
 }
 
 /**
- * Run one model call and refuse to let an auth failure retry in silence.
+ * Run one model call and refuse to let an auth OR a schema failure retry in
+ * silence.
  *
  * THE DEFECT THIS CLOSES. `LlmAuthError` is thrown by the driver — it is a
  * real failure, not an `LlmOutcome`, so it never reaches `resolveOutcome` —
@@ -84,8 +141,19 @@ function currentAttempt(): number {
  * machinery — journal + audit + notification), and dies non-retryably with
  * `LLM_AUTH_REJECTED`.
  *
- * Every other error passes through untouched: this guard exists for the one
- * failure class whose retry semantics were wrong, not to re-classify the rest.
+ * THE SECOND DEFECT, same family. A model that cannot satisfy the schema
+ * throws too — `LlmSchemaValidationError` from the gateway after its own
+ * repair round, or `RoleOutputError` from `agent-roles` after its two — and
+ * those exceptions are just as retryable to Temporal, on the same unlimited
+ * ladder. A small open-weight model (gpt-oss and friends) misses a strict
+ * seven-section schema often enough that this is not a theoretical hazard: the
+ * run would retry the same impossible document forever with a `running` row
+ * and no explanation. It is bounded here at `SCHEMA_RETRY_MAX_ATTEMPTS` —
+ * lower than the auth bound, because an auth failure can heal on its own and a
+ * schema mismatch cannot (see the constant).
+ *
+ * Every other error passes through untouched: this guard exists for the two
+ * failure classes whose retry semantics were wrong, not to re-classify the rest.
  */
 export async function guardModelCall<T>(
   deps: ActivityDeps,
@@ -96,6 +164,7 @@ export async function guardModelCall<T>(
   try {
     return await call();
   } catch (err) {
+    if (isSchemaError(err)) return await guardSchemaError(deps, run, what, err);
     if (!isLlmAuthError(err)) throw err;
 
     const attempt = currentAttempt();
@@ -132,6 +201,62 @@ export async function guardModelCall<T>(
       nonRetryable: true,
     });
   }
+}
+
+/**
+ * Şemayı tutturamayan bir modeli sınırlı sayıda yeniden dene, sonra devret.
+ *
+ * `guardModelCall`'un auth dalıyla aynı iskelet, iki bilerek yapılmış farkla:
+ *
+ *  1. **Bütçe daha kısa.** Gerekçe `SCHEMA_RETRY_MAX_ATTEMPTS`'te yazılı: auth
+ *     hatası kendi kendine iyileşebilir, şema uyuşmazlığı iyileşemez.
+ *  2. **Devir mesajı modeli işaret eder, anahtarı değil.** Operatörün yapacağı
+ *     iş "anahtarı düzelt" değil; ya daha güçlü bir model bağlaması ya da
+ *     şablonu sadeleştirmesi gerekiyor. Hangi şemanın tutmadığı ve modelin ne
+ *     dediği mesajda duruyor, çünkü bunu okuyan kişinin elindeki tek ipucu bu.
+ *
+ * Dönüş tipi `Promise<never>`: bu fonksiyon her yolda fırlatır. `guardModelCall`
+ * içinde `return await` ile çağrılıyor, böylece jenerik `T` ile uyuşuyor ama
+ * hiçbir zaman bir değer üretmiyor.
+ */
+async function guardSchemaError(
+  deps: ActivityDeps,
+  run: RunContext,
+  what: string,
+  err: Error,
+): Promise<never> {
+  const attempt = currentAttempt();
+  // Şemanın adı ve modelin eksikleri hatanın mesajında zaten duruyor; panelde
+  // bir satırın taşıyabileceğinden uzun olabildiği için kırpılıyor.
+  const detail = err.message.length > 400 ? `${err.message.slice(0, 400)}…` : err.message;
+
+  if (attempt < SCHEMA_RETRY_MAX_ATTEMPTS) {
+    // Auth dalıyla aynı sebeple attempt'e anahtarlı: bu denemenin yazımlarının
+    // Temporal tarafından tekrarlanması tek satıra çöker, sonraki deneme yine
+    // kendi satırını alır. Bütçe sınırlı olduğu için günlüğü asla su basmaz.
+    await record(deps, run, {
+      kind: "other",
+      title: "model çıktısı şemayı tutturamadı",
+      detail: `${what} · ${detail} · yeniden denenecek (${attempt}/${SCHEMA_RETRY_MAX_ATTEMPTS})`,
+      key: `schema-retry:${what}:${attempt}`,
+    });
+    // Olduğu gibi yeniden fırlatılıyor: bekleme merdiveni proxy'nin, hatanın
+    // adı da Temporal'ın failure kaydının.
+    throw err;
+  }
+
+  await handOver(
+    deps,
+    run,
+    `${what}: model çıktısı ${attempt} denemede de şemayı tutturamadı — ${detail} · ` +
+      `Ayarlar > Modeller'den bu rol için daha güçlü bir model bağlayın ya da şablonu sadeleştirin`,
+    `schema-unmet:${what}`,
+  );
+  throw ApplicationFailure.create({
+    message: `LLM output did not satisfy the schema for ${what} after ${attempt} attempts: ${detail}`,
+    type: LLM_SCHEMA_UNMET,
+    nonRetryable: true,
+  });
 }
 
 export type Resolved<T> =

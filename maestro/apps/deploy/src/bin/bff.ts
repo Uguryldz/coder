@@ -5,7 +5,9 @@ import {
   buildServer,
   compositeHealthReader,
   connectionHealthReader,
+  gateStatusesOf,
   identityDrift,
+  parseStatusMap,
   resolveBotIdentity,
   resolveDeps,
   parseAllowedStatuses,
@@ -48,7 +50,12 @@ import {
 } from "../jira-discovery.js";
 import type { ListeningProbeResult } from "@maestro/bff";
 import { probeListeningRule } from "../listening-probe.js";
-import { canReadComments, canReadTickets, startJiraPoller } from "../jira-poller.js";
+import {
+  canReadComments,
+  canReadStatuses,
+  canReadTickets,
+  startJiraPoller,
+} from "../jira-poller.js";
 import {
   startCommandIntake,
   type CommandIntakeDecision,
@@ -631,6 +638,26 @@ export async function main(): Promise<void> {
               statusMaps: {
                 ruleCount: kurallar.length,
                 mappedRuleCount: kurallar.filter((kural) => kural.statusMapJson != null).length,
+                /**
+                 * KAPI ONAY YOLU — kanalın KENDİ okuyucusundan sayılıyor.
+                 *
+                 * `parseStatusMap` + `gateStatusesOf` zinciri, uçtaki
+                 * `studio-ops.ts`in kullandığının aynısı. Burada elle
+                 * `statusMapJson.gateApproveStatus != null` demek, bir kural
+                 * çakışık olduğu için düşürülmüşken onu "açık" saymak olurdu —
+                 * ve rapor ile ekranın ayrışması, bu satırın kapatmaya geldiği
+                 * sessizliğin ta kendisi.
+                 */
+                ...(() => {
+                  const haritalar = kurallar.map((kural) => parseStatusMap(kural.statusMapJson));
+                  const kapilar = haritalar.map((harita) => gateStatusesOf(harita));
+                  return {
+                    gateStatusRuleCount: kapilar.filter(
+                      (kapi) => kapi.approve !== null || kapi.return !== null,
+                    ).length,
+                    gateStatusConflictCount: kapilar.filter((kapi) => kapi.conflicts.length > 0).length,
+                  };
+                })(),
               },
               ruleIdentity: {
                 ruleCount: kurallar.length,
@@ -665,6 +692,34 @@ export async function main(): Promise<void> {
           // BFF'in kendi geçidi: "açık workflow" tanımının ikinci bir istemcide
           // ayrışmasına kapı bırakmamak için.
           temporalAcik: async () => (await temporal.gateway.list({ onlyRunning: true, limit: 200 })).length,
+          /**
+           * KAYIP KOŞU KIYASININ İKİ TARAFI.
+           *
+           * Veritabanına göre bekleyen her koşunun Temporal'da bir execution'ı
+           * OLMALI. Olmayanı uyandırılamaz ve dışarıdan hiçbir belirtisi yok:
+           * panel satırı "running" der, ticket kapıda durur, `/approve` yazan
+           * operatör hiçbir cevap alamaz.
+           *
+           * Bu kurulumda ölçüldü: 14 "running" satıra karşı Temporal'da 2 açık
+           * execution, ve aradaki 12 koşu 4/5 kapısında bekliyordu. Sebep,
+           * Temporal'ın varsayılan 24 saatlik saklama süresinin bu ürünün
+           * akışından (günler — M61 kapıları SÜRESİZ bekler) kısa olması.
+           */
+          bekleyenKosular: async () =>
+            (
+              await db.workflowRun.findMany({
+                where: { status: { notIn: ["done", "cancelled"] } },
+                orderBy: { updatedAt: "desc" },
+                take: 200,
+              })
+            ).map(kosuSatiri),
+          acikTicketlar: async () =>
+            new Set(
+              (await temporal.gateway.list({ onlyRunning: true, limit: 200 })).map(
+                (kosu) => kosu.ticketKey,
+              ),
+            ),
+          saklamaSuresi: () => temporal.gateway.saklamaSuresi(),
         },
         hostAdi: env.source["HOSTNAME"] ?? "(bilinmiyor)",
         imajSurumu: env.source["MAESTRO_IMAGE_TAG"] ?? "(bilinmiyor)",
@@ -733,6 +788,17 @@ export async function main(): Promise<void> {
    * hâlâ bir iş portu yok, ve kontrol o yüzden gerçek kalıyor.
    */
   const ticketReader = canReadTickets(deployment.ports.work) ? deployment.ports.work : null;
+
+  /**
+   * Ticket'ın STATÜSÜNÜ okuyabilen sürücü — kapı kararının yoklama kanalı.
+   *
+   * `ticketReader`dan AYRI bir kontrol, ve ayrı olması gerekiyor: `getTicket`
+   * `WorkPort`'un kendisinde, `readCurrentStatus` ise sürücüye özgü bir
+   * yetenek (donmuş `TicketSnapshot` statü taşımıyor). İkisi aynı sürücüde
+   * bulunuyor olsa da, biri varken diğerinin olduğunu VARSAYMAK tam olarak
+   * `as unknown as` kastının yaptığı hata olurdu.
+   */
+  const statusReader = canReadStatuses(deployment.ports.work) ? deployment.ports.work : null;
 
   /**
    * Motorun Jira kimliği, HER SORULDUĞUNDA yeniden çözülür.
@@ -829,6 +895,9 @@ export async function main(): Promise<void> {
         // Netleştirme yeniden girişi: ikisi de varsa açık, yoksa o kanal
         // bu kurulumda yok (webhook'u çalışan bir kurulumda zaten gerekmez).
         ...(ticketReader === null ? {} : { tickets: ticketReader }),
+        // Kapı kararının statüyle verilmesi: sürücü statü okuyabiliyorsa
+        // açık, okuyamıyorsa bu kurulumda o kanal YOK ve `/approve` tek yol.
+        ...(statusReader === null ? {} : { statuses: statusReader }),
         botAccountId: resolveEngineIdentity,
         intervalMs,
         // Live runs, re-read each round so a gate opened a second ago is polled

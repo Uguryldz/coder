@@ -497,6 +497,13 @@ async function akisBolumu(db: Db, temporalAdres: string, namespace: string): Pro
   let adimDagilimi: (readonly [string, number])[] = [];
   let netlestirmeBekleyen: KosuSatiri[] = [];
   let sonKosular: KosuSatiri[] = [];
+  /**
+   * KAPIDA/BEKLEMEDE görünen koşular — kayıp koşu kıyasının SOL tarafı.
+   *
+   * Terminal olmayan her koşu: bunların Temporal'da bir execution'ı OLMALI.
+   * Olmayanı "kayıp"tır ve uyandırılamaz — bkz. `AkisBolumu.kayipKosular`.
+   */
+  let bekleyen: KosuSatiri[] = [];
   try {
     toplam = await db.workflowRun.count();
     const gruplar = await db.workflowRun.groupBy({ by: ["step"], _count: { _all: true } });
@@ -513,6 +520,15 @@ async function akisBolumu(db: Db, temporalAdres: string, namespace: string): Pro
       })
     ).map(bicimle);
     sonKosular = (await db.workflowRun.findMany({ orderBy: { updatedAt: "desc" }, take: 40 })).map(bicimle);
+    bekleyen = (
+      await db.workflowRun.findMany({
+        where: { status: { notIn: ["done", "cancelled"] } },
+        orderBy: { updatedAt: "desc" },
+        // Yoklamanın kendi penceresiyle aynı üst sınır: kıyas, sistemin
+        // gerçekten izlediği kümenin üstünde yapılmalı.
+        take: 200,
+      })
+    ).map(bicimle);
   } catch {
     // Tablolar okunamadı — bölüm boş kalır, yapılandırma bulgusu zaten söylüyor.
   }
@@ -524,7 +540,29 @@ async function akisBolumu(db: Db, temporalAdres: string, namespace: string): Pro
     const { gateway, close } = await connectTemporal({ address: temporalAdres, namespace });
     try {
       const acik = await gateway.list({ onlyRunning: true, limit: 200 });
-      return { toplam, adimDagilimi, netlestirmeBekleyen, sonKosular, temporalAcik: acik.length };
+      /**
+       * KIYAS. Temporal'ın açık execution kümesinde OLMAYAN her bekleyen koşu
+       * kayıptır: uyandırılamaz, ve dışarıdan hiçbir belirtisi yok.
+       *
+       * Ticket anahtarıyla eşleştiriliyor, workflow id'siyle değil — geçidin
+       * `list`i zaten `ticketOf` ile anahtarı çıkarıyor ve ikinci bir id
+       * türetme kuralı yazmak, iki kuralın ayrışmasına açık kapı bırakırdı.
+       */
+      const acikTicketlar = new Set(acik.map((kosu) => kosu.ticketKey));
+      const kayipKosular = bekleyen.filter((kosu) => !acikTicketlar.has(kosu.ticketKey));
+      // `null` (süre okunamadı) ile `undefined` (hiç sorulmadı) aynı yere
+      // düşüyor: ikisi de "raporda gösterme" demek, ve iki farklı boşluk
+      // göstermenin okuyucuya söyleyeceği bir şey yok.
+      const saklama = (await gateway.saklamaSuresi().catch(() => null)) ?? undefined;
+      return {
+        toplam,
+        adimDagilimi,
+        netlestirmeBekleyen,
+        sonKosular,
+        temporalAcik: acik.length,
+        kayipKosular,
+        ...(saklama === undefined ? {} : { saklamaSuresi: saklama }),
+      };
     } finally {
       await close();
     }
@@ -535,6 +573,9 @@ async function akisBolumu(db: Db, temporalAdres: string, namespace: string): Pro
       netlestirmeBekleyen,
       sonKosular,
       temporalAcik: null,
+      // Temporal okunamadı: kıyas YAPILAMADI. `[]` yazmak "kayıp yok" demek
+      // olurdu ve o, ölçülmemiş bir şeyi sağlıklı ilan etmektir.
+      kayipKosular: null,
       temporalHata: hataMetni(error),
     };
   }
@@ -660,7 +701,7 @@ async function jiraBolumu(
  * literaline hem gerçek migration klasörüne karşı kilitliyor — sayı ancak
  * üçü birden güncellenirse geçer.
  */
-export const BEKLENEN_MIGRATION = 26;
+export const BEKLENEN_MIGRATION = 27;
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const jiraKapali = argv.includes("--jira-yok");

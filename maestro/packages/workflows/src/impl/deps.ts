@@ -93,7 +93,14 @@ export interface RunContext {
    * is over instead of starting a new one.
    *
    * A union rather than `string`: the column is a Prisma enum, and the store's
-   * own `notIn` filter is written against these three names.
+   * own `notIn` filter is written against these names.
+   *
+   * `gate` and `handover` joined the union when `openGate` started writing the
+   * row (`impl/gate.ts`). They were always legal values of the COLUMN — the
+   * reconciler protects both by name (`stores/reconcile.ts`) and the demo data
+   * has always carried `gate` — but the workflow could not write them, so a run
+   * parked at a human gate stayed `running` in Postgres and Studio listed a
+   * pending approval as work in progress.
    */
   readonly status: RunLifecycle;
   readonly workspacePath: string;
@@ -111,8 +118,17 @@ export interface RunContext {
   readonly resumeToken: string | null;
 }
 
-/** The three states `WorkflowRun.status` can hold. */
-export type RunLifecycle = "running" | "done" | "cancelled";
+/**
+ * The states `WorkflowRun.status` can hold that the WORKFLOW itself writes.
+ *
+ * Deliberately narrower than the contract's `WorkflowRunStatus`: `fail` and
+ * `queued` are absent because nothing in this package may write them. `fail` is
+ * the reconciler's verdict about a run that died (`stores/reconcile.ts`) — a
+ * workflow that could still write is by definition not the thing that failed —
+ * and `queued` belongs to the intake side. Keeping them out means a typo here
+ * is a compile error rather than a row that quietly contradicts the engine.
+ */
+export type RunLifecycle = "running" | "gate" | "handover" | "done" | "cancelled";
 
 export interface RunContextStore {
   get(ticket: TicketKey): Promise<RunContext>;

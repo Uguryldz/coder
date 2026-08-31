@@ -159,6 +159,25 @@ export interface StatusMapFacts {
   readonly ruleCount: number;
   /** Statü eşlemesi DOLU olan kural sayısı. */
   readonly mappedRuleCount: number;
+  /**
+   * KAPI KARARINI STATÜYLE de kabul eden kural sayısı — okuma tarafı.
+   *
+   * `mappedRuleCount` ile aynı satıra sığdırılmadı ve ayrı bir bulgu oldu,
+   * çünkü iki farklı soruyu cevaplıyorlar ve iki farklı şekilde bozuluyorlar:
+   * biri "Maestro panoyu sürüyor mu", diğeri "operatörün panoyu sürmesi
+   * Maestro'ya ulaşıyor mu". Bir kurulumda birincisi açık, ikincisi kapalı
+   * olabilir ve tam olarak öyleydi.
+   */
+  readonly gateStatusRuleCount: number;
+  /**
+   * Kapı statüsü, Maestro'nun KENDİ taşıdığı bir statüyle çakışan kural sayısı.
+   *
+   * Sıfırdan büyük olması bir SORUN: o alan düşürülür (fail-closed) ve
+   * operatör yapılandırdığı kanalın sessizce kapalı olduğunu ancak kapı
+   * çalışmadığında fark ederdi. `gateStatusesOf` düşürmeyi zaten yapıyor; bu
+   * sayı, düşürmenin GÖRÜNÜR olmasıdır.
+   */
+  readonly gateStatusConflictCount: number;
 }
 
 /**
@@ -227,6 +246,7 @@ export function buildConfigFindings(input: ConfigHealthInput): readonly ConfigFi
     ...webhookFindings(input.deployment),
     ...variantFindings(input.variants),
     ...statusMapFindings(input.statusMaps, input.deployment),
+    ...gateChannelFindings(input.statusMaps),
     ...ruleIdentityFindings(input.ruleIdentity),
   ];
   // Kararlı sıralama: önce ağırlık, sonra üretim sırası. `sort` yerinde ve
@@ -515,6 +535,57 @@ function variantFindings(variants: VariantModelFacts | null): ConfigFinding[] {
  * eşleme YAZILMIŞ ve sürücü taşıyamıyorsa o bir çelişkidir, ve sessizce hiç
  * kıpırdamayan ticket'lar olarak görünür.
  */
+/**
+ * KAPI ONAY YOLU — kapıyı kapatmanın hangi yolları bu kurulumda AÇIK.
+ *
+ * `/approve` yorumu her kurulumda açık ve bu satır onu sormaz; sorduğu şey
+ * İKİNCİ kanalın, statü yolunun, durumu. Üç cevap var ve üçü de ayrı:
+ *
+ *   `yalniz-yorum`  hiçbir kuralda kapı statüsü yok — bugüne kadarki davranış
+ *                   ve tamamen meşru bir tercih, bu yüzden `bilgi`.
+ *   `yorum-ve-statu` en az bir kuralda yapılandırılmış ve çakışma yok.
+ *   `cakisik`       yapılandırılmış AMA Maestro'nun kendi taşıdığı bir
+ *                   statüyle aynı — kanal o kural için KAPALI, ve bu bir
+ *                   `sorun`: operatör açık sanıyor.
+ */
+function gateChannelFindings(maps: StatusMapFacts | null): ConfigFinding[] {
+  if (maps === null) return [unreported("gate_channel")];
+  if (maps.gateStatusConflictCount > 0) {
+    return [
+      {
+        id: "gate_channel",
+        severity: "sorun",
+        value: "cakisik",
+        detailKey: "config.detail.gate_channel.conflict",
+        detailParams: { rules: String(maps.gateStatusConflictCount) },
+        fixKey: "config.fix.gate_channel.conflict",
+      },
+    ];
+  }
+  if (maps.gateStatusRuleCount === 0) {
+    return [
+      {
+        id: "gate_channel",
+        severity: "bilgi",
+        value: "yalniz-yorum",
+        detailKey: "config.detail.gate_channel.comment_only",
+        detailParams: { rules: String(maps.ruleCount) },
+        fixKey: "config.fix.gate_channel.comment_only",
+      },
+    ];
+  }
+  return [
+    {
+      id: "gate_channel",
+      severity: "iyi",
+      value: "yorum-ve-statu",
+      detailKey: "config.detail.gate_channel.both",
+      detailParams: { mapped: String(maps.gateStatusRuleCount), rules: String(maps.ruleCount) },
+      fixKey: null,
+    },
+  ];
+}
+
 function statusMapFindings(
   maps: StatusMapFacts | null,
   facts: DeploymentConfigFacts | null,

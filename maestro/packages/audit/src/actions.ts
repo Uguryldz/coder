@@ -31,6 +31,12 @@ export const AUDIT_ACTION_INFO: Record<AuditAction, AuditActionInfo> = {
   GATE_OPEN: { severity: 4, name: "Approval gate opened", category: "gate" },
   GATE_APPROVE: { severity: 5, name: "Approval gate approved", category: "gate", outcome: "success", humanOnly: true },
   GATE_REJECT: { severity: 6, name: "Approval gate rejected", category: "gate", outcome: "failure", humanOnly: true },
+  // Not a `failure`: sending analysis back for another look is an ordinary
+  // review turn, and grading it as a failure would make a healthy flow read as
+  // a troubled one on every governance screen that counts by outcome. Severity
+  // sits between approve (5) and reject (6) for the same reason — it is a real
+  // decision that costs a rewrite, and it is not a refusal.
+  GATE_RETURN: { severity: 5, name: "Approval gate returned for revision", category: "gate", outcome: "success", humanOnly: true },
   CLARIFICATION_ASKED: { severity: 3, name: "Clarification requested", category: "run" },
   CLARIFICATION_ANSWERED: { severity: 3, name: "Clarification answered", category: "run" },
   PII_MASKED: { severity: 4, name: "Personal data masked before egress", category: "security" },

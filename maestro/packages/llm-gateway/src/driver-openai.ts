@@ -6,14 +6,43 @@ import type { DriverCall, DriverDeps, DriverResult, LlmDriver } from "./driver-t
 import { LlmResponseError } from "./errors.js";
 import { postJson } from "./http.js";
 
-/** Chat Completions response — the OpenAI-compatible shape vLLM also serves. */
+/**
+ * Chat Completions response — the OpenAI-compatible shape vLLM also serves.
+ *
+ * ── WHY THE OPTIONAL FIELDS ARE ALSO NULLABLE ───────────────────────────────
+ *
+ * "OpenAI-compatible" is a family, not a specification. A server may omit an
+ * optional field, and it may just as well send it as `null` — both are ordinary
+ * JSON for "no value", and nothing in the ecosystem picks one.
+ *
+ * `prompt_tokens_details` was `.optional()` alone, so a server that sent
+ * `"prompt_tokens_details": null` was REJECTED. Measured on the bank's on-prem
+ * install: every intake call came back correct, this schema threw
+ * `LlmResponseError`, Temporal retried the activity forever, and the run sat at
+ * "çalışıyor" with the ticket showing only "işleme alındı". The model was fine;
+ * the reader was too strict, and the strictness bought nothing — the value is a
+ * cache statistic used for one display percentage.
+ *
+ * So: `.nullish()` on everything the response does not NEED. What this driver
+ * cannot work without stays required — `choices[0].message.content` (the answer
+ * itself) and the two token counts that feed quota accounting. Being lenient
+ * about an answer's absence would trade a loud failure for a silent wrong one.
+ *
+ * `usage` itself is nullish for the same reason: a streaming-oriented or
+ * cut-down server may omit the block entirely, and a missing token count is not
+ * a reason to throw away a good answer. Absent counts read as 0 — see below.
+ */
 const ChatResponse = z.object({
   choices: z.array(z.object({ message: z.object({ content: z.string().nullable() }) })).min(1),
-  usage: z.object({
-    prompt_tokens: z.number().int().nonnegative(),
-    completion_tokens: z.number().int().nonnegative(),
-    prompt_tokens_details: z.object({ cached_tokens: z.number().int().nonnegative() }).optional(),
-  }),
+  usage: z
+    .object({
+      prompt_tokens: z.number().int().nonnegative().nullish(),
+      completion_tokens: z.number().int().nonnegative().nullish(),
+      prompt_tokens_details: z
+        .object({ cached_tokens: z.number().int().nonnegative().nullish() })
+        .nullish(),
+    })
+    .nullish(),
 });
 
 /**
@@ -76,16 +105,26 @@ export class OpenAiCompatDriver implements LlmDriver {
     const text = parsed.data.choices[0]?.message.content ?? "";
     if (text.trim().length === 0) throw new LlmResponseError(this.id, ["first choice carries no content"]);
 
+    /**
+     * Absent counts read as 0, and an absent cache statistic as "unknown".
+     *
+     * A server that does not report usage is not a server that used no tokens,
+     * so 0 is a lie — but it is the lie the quota ledger already tells for every
+     * other driver that cannot count, and inventing a number would be worse.
+     * `cachePct` stays `null` rather than 0: nobody cached anything is a claim,
+     * and this response does not support it.
+     */
     const usage = parsed.data.usage;
-    const cached = usage.prompt_tokens_details?.cached_tokens;
+    const tokensIn = usage?.prompt_tokens ?? 0;
+    const cached = usage?.prompt_tokens_details?.cached_tokens;
     return {
       text,
-      tokensIn: usage.prompt_tokens,
-      tokensOut: usage.completion_tokens,
+      tokensIn,
+      tokensOut: usage?.completion_tokens ?? 0,
       cachePct:
-        cached === undefined || usage.prompt_tokens === 0
+        cached === undefined || cached === null || tokensIn === 0
           ? null
-          : Math.round((cached / usage.prompt_tokens) * 10_000) / 100,
+          : Math.round((cached / tokensIn) * 10_000) / 100,
     };
   }
 }

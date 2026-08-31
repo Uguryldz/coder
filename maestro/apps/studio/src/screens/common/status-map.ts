@@ -23,6 +23,19 @@ export interface StatusMap {
   readonly onReview?: string;
   readonly onRejected?: string;
   readonly onDone?: string;
+  /**
+   * OKUMA tarafı: operatör ticket'ı buraya taşırsa kapı ONAYLANMIŞ sayılır —
+   * `/approve` yorumuyla aynı sonuç. Yukarıdaki beş alanla aynı belgede ama
+   * TERS yönde: onlar "Maestro nereye taşısın", bu "operatörün taşıması ne
+   * demek".
+   */
+  readonly gateApproveStatus?: string;
+  /**
+   * OKUMA tarafı: operatör ticket'ı buraya taşırsa analiz turu YENİDEN çalışır.
+   * Bir RET DEĞİL — ret sayacı artmaz, koşu devredilmez, Jira'ya "reddedildi"
+   * yazılmaz, bağlam korunur.
+   */
+  readonly gateReturnStatus?: string;
   readonly reassignOnNeedInfo?: boolean;
 }
 
@@ -34,6 +47,55 @@ export interface StatusMap {
  */
 export const STATUS_POINTS = ["onStart", "onNeedInfo", "onReview", "onRejected", "onDone"] as const;
 export type StatusPoint = (typeof STATUS_POINTS)[number];
+
+/**
+ * KAPI KARARININ STATÜYLE VERİLMESİ — okuma tarafının iki noktası.
+ *
+ * `STATUS_POINTS`ten AYRI bir liste, ve ayrı olması gerekiyor: o liste
+ * "Maestro ticket'ı nereye taşısın" (yazma), bu ikisi "operatörün taşıması ne
+ * anlama gelsin" (okuma). Aynı diziye koymak, `firesFor` / `deadPointsFor` /
+ * `buildStatusMap` üçlüsünün akışa göre yaptığı elemeyi bunlara da uygulamak
+ * demek olurdu ve o eleme burada YANLIŞ olurdu — bir düzeltme akışında analiz
+ * kapısı yok, ama bir analiz akışında `onReview` "dead" değil.
+ */
+export const GATE_STATUS_POINTS = ["gateApproveStatus", "gateReturnStatus"] as const;
+export type GateStatusPoint = (typeof GATE_STATUS_POINTS)[number];
+
+export type GateStatusDraft = Readonly<Record<GateStatusPoint, string>>;
+
+export const EMPTY_GATE_STATUS_DRAFT: GateStatusDraft = {
+  gateApproveStatus: "",
+  gateReturnStatus: "",
+};
+
+/**
+ * KAPI STATÜSÜ, MAESTRO'NUN KENDİ TAŞIDIĞI BİR STATÜYLE ÇAKIŞIYOR MU.
+ *
+ * İki yön aynı belgede olduğu için çakışabilir: operatör `onRejected: "Analiz"`
+ * yazıp `gateReturnStatus: "Analiz"` de yazarsa, Maestro'nun kendi taşıması
+ * kendi kararı olarak geri okunurdu — kapı kendi kendini kapatırdı.
+ *
+ * Sunucu tarafı bunu zaten yakalıyor ve o alanı DÜŞÜRÜYOR
+ * (`apps/bff/src/gate-status-reentry.ts`, `gateStatusesOf`). Bu fonksiyon o
+ * kararı TEKRARLAMIYOR, ONU ÖNCEDEN GÖSTERİYOR: operatör kaydettikten sonra
+ * "neden çalışmıyor" diye sormak zorunda kalmasın. Kaydı ENGELLEMEZ — sunucu
+ * fail-closed davranıyor ve kullanıcıyı formda kilitlemek, elle SQL'le yazılmış
+ * satırları zaten kapsamayan bir korumayı iki yere kopyalamak olurdu.
+ */
+export function gateStatusConflicts(
+  draft: StatusDraft,
+  gateDraft: GateStatusDraft,
+): readonly { point: GateStatusPoint; clashesWith: StatusPoint }[] {
+  const fold = (value: string): string => value.trim().toLowerCase();
+  const out: { point: GateStatusPoint; clashesWith: StatusPoint }[] = [];
+  for (const point of GATE_STATUS_POINTS) {
+    const value = fold(gateDraft[point]);
+    if (value === "") continue;
+    const clash = STATUS_POINTS.find((written) => fold(draft[written]) === value);
+    if (clash !== undefined) out.push({ point, clashesWith: clash });
+  }
+  return out;
+}
 
 /**
  * The three flows a listening rule can run as. Spelled out here rather than
@@ -132,12 +194,36 @@ export function buildStatusMap(
   draft: StatusDraft,
   reassignOnNeedInfo: boolean,
   flow: StatusFlowType,
+  /**
+   * Kapı statüleri — OKUMA tarafı. Opsiyonel, çünkü bu yardımcıyı çağıran iki
+   * ekrandan biri (kurulum sihirbazı) henüz kapı kanalını sormuyor: sihirbaz
+   * ilk kurulumu ayağa kaldırır, kapı kanalı ise akış oturduktan sonra
+   * ayarlanan bir incelik. Verilmezse alanlar hiç yazılmaz ve kural bugünkü
+   * davranışını korur.
+   */
+  gateDraft?: GateStatusDraft,
 ): StatusMap | null {
   if (!enabled) return null;
   const map: Record<string, string | boolean> = {};
   for (const point of firesFor(flow)) {
     const value = draft[point].trim();
     if (value !== "") map[point] = value;
+  }
+  /**
+   * Kapı statüleri AKIŞA GÖRE ELENMEZ, ve bu `firesFor`la aradaki asıl fark.
+   *
+   * `firesFor` bir noktanın Maestro tarafından ÇALIŞTIRILIP çalıştırılmadığını
+   * söylüyor. Kapı statüsü ise Maestro'nun çalıştırdığı bir şey değil,
+   * operatörün yaptığı bir hareketin anlamı — ve `duzeltme` akışında analiz
+   * kapısı hiç açılmadığı için o kuralda zaten hiçbir kapı kararı okunmaz.
+   * Yani eleme gereksiz; yapılsaydı, akışı sonradan `analiz`e çeviren
+   * operatörün yazdığı değer sessizce kaybolurdu.
+   */
+  if (gateDraft !== undefined) {
+    for (const point of GATE_STATUS_POINTS) {
+      const value = gateDraft[point].trim();
+      if (value !== "") map[point] = value;
+    }
   }
   // `reassignOnNeedInfo` alone is a real configuration: hand the ticket back to
   // its reporter without moving it on the board. It counts as a filled map.

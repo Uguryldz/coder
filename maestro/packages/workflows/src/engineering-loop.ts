@@ -25,8 +25,20 @@ export interface EngineeringLoopDeps {
   readonly longActs: MaestroActivities;
   /** Announce a step transition (and let the kill switch stop the run). */
   readonly goto: (next: StepId, note: string) => Promise<void>;
-  /** Open a human gate and wait for a real decision. */
-  readonly gate: (at: StepId) => Promise<{ decision: "approve" | "reject"; reason?: string }>;
+  /**
+   * Open a human gate and wait for a real decision.
+   *
+   * `return_analysis` is in the union for TYPE completeness only: `canCloseGate`
+   * refuses it at every gate but 4 and 5 (`not_returnable`) and `decideGate`
+   * never sends it there, so it cannot arrive here. It is spelled out rather
+   * than narrowed away so the compiler keeps the callers below honest — the
+   * decision below reads `=== "approve"` rather than `!== "reject"` precisely
+   * because "anything that is not a rejection is an approval" is how a third
+   * verdict would silently become a merge.
+   */
+  readonly gate: (
+    at: StepId,
+  ) => Promise<{ decision: "approve" | "reject" | "return_analysis"; reason?: string }>;
 }
 
 export async function runEngineeringLoop(
@@ -87,7 +99,9 @@ export async function runEngineeringLoop(
     if (required.includes("9")) {
       await goto("9", "QA senaryo onayı");
       const qa = await gate("9");
-      if (qa.decision === "reject") {
+      // Explicitly "not an approval" rather than "a rejection": a verdict this
+      // gate does not understand must send the work back, never let it through.
+      if (qa.decision !== "approve") {
         inbox.changesRequested = qa.reason ?? "";
         continue;
       }

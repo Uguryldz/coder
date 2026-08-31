@@ -11,7 +11,7 @@ import {
   JiraMembershipUnresolvedError,
   JiraResponseError,
 } from "./errors.js";
-import { ISSUE_FIELDS, mapIssueToSnapshot } from "./mapping.js";
+import { ISSUE_FIELDS, mapIssueToSnapshot, userIdOf } from "./mapping.js";
 import { searchDcIssues, type DcSearchPage, type DcSearchRequest } from "./search.js";
 import {
   currentStatusNameOf,
@@ -352,6 +352,108 @@ export class JiraDcWorkPort implements WorkPort {
    */
   async transition(key: TicketKey, transitionId: string): Promise<void> {
     await this.applyTransition(key, transitionId);
+  }
+
+  /**
+   * Ticket'ın STATÜ değişimleri — kim, ne zaman, nereye. En eskiden en yeniye.
+   *
+   * ── Neden `readCurrentStatus` yetmiyor ────────────────────────────────────
+   * Kapı kararı statüyle verilebiliyor, ve `decideGate` GRUP ÜYELİĞİ soruyor
+   * (M32/M35): statü değiştirmek yetkiyi atlamanın yolu değildir. Üyelik ancak
+   * kararı VERENİ adlandırabildiğimizde ölçülebilir. Ticket'ın şu anki statüsü
+   * onu KİMİN oraya taşıdığını söylemez; changelog söyler.
+   *
+   * Webhook'suz kurulumda (dışarı çıkışı olmayan kurumsal ağdaki DC) bu tek
+   * yoldur: teslimat gelmiyorsa aktörü öğrenmenin başka kaynağı yok, ve aktör
+   * olmadan bu kanal kapı kararı taşıyamazdı.
+   *
+   * ── Neden ayrı bir yetenek, `WorkPort` metodu değil ───────────────────────
+   * `listAssigneeChanges` ile aynı gerekçe ve aynı desen: `WorkPort` DONMUŞ, ve
+   * bu okuma workflow'un ihtiyacı değil yoklama döngüsünün ihtiyacı.
+   *
+   * `at` (changelog kaydının kendi zamanı) taşınıyor, çünkü kapı kanalının ZAMAN
+   * katmanı buna dayanıyor: kapı açılmadan ÖNCEKİ bir taşıma, Maestro'nun kendi
+   * `onReview` hareketinin yankısıdır ve karar sayılmamalıdır.
+   */
+  async listStatusChanges(
+    key: TicketKey,
+  ): Promise<Array<{ id: string; actorAccountId: string; toStatus: string | null; at: string }>> {
+    const issueKey = requireTicketKey(key, "key");
+    /**
+     * DC'de changelog AYRI bir uç DEĞİL: REST v2'de issue okumasına
+     * `expand=changelog` ile iliştirilir. Cloud'un `/issue/{key}/changelog`
+     * sayfalanmış ucu burada yok, ve bu farkı adlandırmak gerekiyor — iki
+     * sürücünün aynı isimli metodu iki farklı Jira'ya iki farklı soru soruyor.
+     *
+     * `fields=status`: gövdeyi küçük tutar. Ticket METNİ istenmiyor — bu
+     * döngü hiçbir noktada ticket içeriği tutmaz.
+     */
+    const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}`, {
+      expand: "changelog",
+      fields: "status",
+    });
+    const histories = asRecord(asRecord(raw)?.["changelog"])?.["histories"];
+    if (!Array.isArray(histories)) {
+      throw new JiraResponseError("changelog", ["response carries no changelog histories"]);
+    }
+
+    const out: Array<{ id: string; actorAccountId: string; toStatus: string | null; at: string }> = [];
+    for (const entry of histories) {
+      const rec = asRecord(entry);
+      const id = rec?.["id"];
+      const created = rec?.["created"];
+      // DC'de `accountId` YOK. `userIdOf` `name`/`key`/`emailAddress` sırasını
+      // uygular — yorum komutlarının yazarını çözen mantığın aynısı, çünkü
+      // üyelik kontrolü de o kimlikle yapılıyor.
+      const actor = userIdOf(rec?.["author"]);
+      const items = rec?.["items"];
+      if (typeof id !== "string" && typeof id !== "number") continue;
+      if (actor === null || !Array.isArray(items)) continue;
+      for (const item of items) {
+        const it = asRecord(item);
+        if (it?.["field"] !== "status") continue;
+        const to = it["toString"];
+        out.push({
+          id: String(id),
+          actorAccountId: actor,
+          toStatus: typeof to === "string" && to.trim().length > 0 ? to.trim() : null,
+          at: typeof created === "string" ? created : "",
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Ticket'ın ŞU ANKİ statü ADI — okuma, hareket yok.
+   *
+   * SÜRÜCÜYE ÖZGÜ YETENEK, `WorkPort` metodu DEĞİL: port DONMUŞ ve donmuş
+   * `TicketSnapshot` bir statü alanı taşımıyor. Bu, yalnızca statüyü ekleyerek
+   * o şemayı genişletmemenin bedeli — ve statüyü snapshot'a eklemek, ondan
+   * beslenen her yazıcıya, her doğrulayıcıya ve donmuş sözleşmeye dokunmak
+   * demek olurdu.
+   *
+   * Tek okuyucusu yoklama döngüsünün kapı statüsü kanalı
+   * (`apps/deploy/src/jira-poller.ts`): webhook'un ULAŞMADIĞI kurulumda
+   * operatörün ticket'ı bir statüye taşımasını GÖREBİLMEK için tek yol bu.
+   * Webhook yolunda gerekmiyor — teslimat statüyü zaten taşıyor.
+   *
+   * `null` = "site bir statü adı söylemedi". Bir hata değil ve fırlatmıyor:
+   * çağıran bunu "karar yok" olarak okur, ki bilinmeyen bir statüden karar
+   * üretmemek zaten bu kanalın fail-closed yönü.
+   *
+   * `fields=status`: kararın ihtiyaç duyduğu tek alan. Ticket METNİ (summary /
+   * description) bilerek istenmiyor — bu döngü hiçbir noktada ticket içeriği
+   * tutmaz.
+   */
+  async readCurrentStatus(key: TicketKey): Promise<string | null> {
+    const parsed = TicketKey.safeParse(key);
+    if (!parsed.success) return null;
+    const raw = await this.client.get<unknown>(
+      `${API}/issue/${encodeURIComponent(parsed.data)}`,
+      { fields: "status" },
+    );
+    return currentStatusNameOf(raw);
   }
 
   /**

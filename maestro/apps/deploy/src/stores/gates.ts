@@ -80,14 +80,26 @@ export function sqlGateClaim(sql: {
 }
 
 /**
- * The two audit actions that record a human decision on a gate (M33).
+ * The audit actions that record a human decision on a gate (M33).
  *
- * `GATE_APPROVE`/`GATE_REJECT` are `humanOnly` in `@maestro/audit`'s action
- * table, which is what makes a decision found here a decision a PERSON signed
- * — an AI or a service account cannot produce one of these records at all.
+ * All three are `humanOnly` in `@maestro/audit`'s action table, which is what
+ * makes a decision found here a decision a PERSON signed — an AI or a service
+ * account cannot produce one of these records at all.
+ *
+ * `GATE_RETURN` ("eksik var, bir daha bak") belongs in the evidence package for
+ * the same reason the other two do: it is a decision a named human took at a
+ * named gate, and an audit trail that showed only the approval which eventually
+ * followed would hide every round of review that produced it.
  */
-const DECISION_ACTIONS = ["GATE_APPROVE", "GATE_REJECT"] as const;
+const DECISION_ACTIONS = ["GATE_APPROVE", "GATE_REJECT", "GATE_RETURN"] as const;
 type DecisionAction = (typeof DECISION_ACTIONS)[number];
+
+/** The `GateDecision.decision` each audit action reconstructs to. */
+const DECISION_OF: Readonly<Record<DecisionAction, "approve" | "reject" | "return_analysis">> = {
+  GATE_APPROVE: "approve",
+  GATE_REJECT: "reject",
+  GATE_RETURN: "return_analysis",
+};
 
 /** The `AuditLog` rows a decision is reconstructed from. */
 export interface AuditRow {
@@ -245,7 +257,7 @@ export class PrismaGateStore implements GateStore {
       decisions.push(
         GateDecision.parse({
           step: meta["step"],
-          decision: row.action === "GATE_APPROVE" ? "approve" : "reject",
+          decision: DECISION_OF[row.action as DecisionAction] ?? "reject",
           actorUserId: row.actor,
           actorGroup: meta["actorGroup"],
           sodVerified: meta["sodVerified"] === true,

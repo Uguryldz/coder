@@ -6,6 +6,16 @@ export const AuditAction = z.enum([
   "GATE_OPEN",
   "GATE_APPROVE",
   "GATE_REJECT",
+  /**
+   * Kapıda "eksik var, bir daha bak" — analiz turu yeniden çalıştırıldı.
+   *
+   * `GATE_REJECT`'ten AYRI bir eylem, ve ayrılığı denetim izinin kendisi için
+   * gerekli: bir denetçinin "bu ticket kaç kez REDDEDİLDİ" sorusuna, rutin
+   * geri gönderme turlarını ret sayarak cevap vermek, sayıyı da anlamı da
+   * bozar. Ret akışı durdurur ve M54 sayacına girer; geri gönderme normal bir
+   * inceleme turudur.
+   */
+  "GATE_RETURN",
   "CLARIFICATION_ASKED",
   "CLARIFICATION_ANSWERED",
   "PII_MASKED",

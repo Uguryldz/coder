@@ -106,6 +106,51 @@ export const StatusMapSchema = z
     /** Delivered — e.g. "Tamam". */
     onDone: StatusName.optional(),
     /**
+     * ── OKUMA TARAFI: kapı kararının STATÜYLE verilmesi ──────────────────────
+     *
+     * Yukarıdaki beş alan YAZMA tarafı: "Maestro ticket'ı şu noktada oraya
+     * TAŞISIN". Aşağıdaki ikisi OKUMA tarafı: "operatör ticket'ı oraya
+     * taşıdığında Maestro bunu KARAR saysın". İki yön aynı belgede duruyor
+     * çünkü operatörün gözünde tek bir şey: "bu kuralda kapı hangi
+     * statülerle işler".
+     *
+     * NEDEN MEVCUT ALANLAR YENİDEN KULLANILMADI — değerlendirildi ve reddedildi:
+     *
+     *  · `onReview` KULLANILIYOR ama okuma alanı olarak değil: kapı zaten o
+     *    statüde açılıyor, yani "kapının beklediği yer" ondan okunuyor. Buraya
+     *    ayrı bir alan koymak, aynı gerçeği iki yere yazıp ayrışmalarına izin
+     *    vermek olurdu.
+     *  · `onRejected` KULLANILMADI. O, Maestro'nun ret sonrası ticket'ı
+     *    taşıdığı yer (çıktı). Aynı alanı "operatör buraya taşırsa geri
+     *    gönderme say" diye de okumak, bir DÖNGÜ kurardı: Maestro geri
+     *    gönderme sonrası ticket'ı oraya taşır, o taşıma yeni bir geri gönderme
+     *    olarak okunur. Zaman eşiği bunu bir turluk yakalar ama tasarımın
+     *    kendisi yanlış olurdu.
+     *  · `onDone` KULLANILMADI, ve bu en net olanı: `onDone` "iş BİTTİ"dir ve
+     *    analiz akışında ticket teslim edildikten SONRA yazılır. Kapıdaki
+     *    "onaylandı, ilerle" ile aynı an DEĞİL — analiz onayı akışın sonu
+     *    değil, ortasıdır. İkisini aynı statüye bağlamak, onaylanan analizin
+     *    ticket'ı "Tamam"a düşürmesi demek olurdu.
+     *
+     * İkisi de opsiyonel, ve yokluk `/approve` yolunu HİÇ etkilemez: yorum
+     * kanalı bu alanlardan bağımsız çalışmaya devam eder. Bu alanlar yalnız
+     * İKİNCİ bir kanal AÇAR, birincisini kapatmaz.
+     */
+    /**
+     * Operatör ticket'ı bu statüye taşırsa kapı ONAYLANMIŞ sayılır — e.g.
+     * "Geliştirme". Yani `/approve` yorumuyla aynı sonuç.
+     *
+     * Grup üyeliği kontrolü BU YOLDA DA yapılır (`decideGate`): statüyü
+     * değiştirmek, yetkiyi atlamanın yolu değildir.
+     */
+    gateApproveStatus: StatusName.optional(),
+    /**
+     * Operatör ticket'ı bu statüye taşırsa analiz turu YENİDEN çalışır — e.g.
+     * "Analiz". Bir RET DEĞİL: sayaç artmaz, koşu devredilmez, Jira'ya
+     * "reddedildi" yazılmaz. `GateDecision.decision = "return_analysis"`.
+     */
+    gateReturnStatus: StatusName.optional(),
+    /**
      * Whether asking for information also hands the ticket BACK to its reporter.
      * Separate from `onNeedInfo` on purpose: a board where "waiting on the
      * reporter" is a status and one where it is an assignee are both real, and

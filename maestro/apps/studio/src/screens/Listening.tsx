@@ -11,12 +11,16 @@ import type { BadgeTone, Column } from "../ui/index.ts";
 import type { RoutingView } from "./common/index.ts";
 import { englishAside, matchValueLabel } from "./common/jira-english.ts";
 import {
+  EMPTY_GATE_STATUS_DRAFT,
   EMPTY_STATUS_DRAFT,
+  GATE_STATUS_POINTS,
   STATUS_POINTS,
   buildStatusMap,
   deadStatusEntries,
   firesFor,
+  gateStatusConflicts,
   statusSummary,
+  type GateStatusDraft,
   type StatusDraft,
   type StatusMap,
   type StatusPoint,
@@ -343,6 +347,15 @@ export function ListeningScreen(): ReactNode {
   // it, and closing it must never be read as "turn this off".
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
   const [statusDraft, setStatusDraft] = useState<StatusDraft>(EMPTY_STATUS_DRAFT);
+  /**
+   * KAPI STATÜLERİ — okuma tarafı, `statusDraft`tan AYRI tutuluyor.
+   *
+   * Aynı taslağa katmak kolaydı ve yanlış olurdu: `statusDraft` `firesFor` /
+   * `deadStatusEntries` ile akışa göre eleniyor, ve o eleme kapı statülerinde
+   * anlamsız (bkz. `buildStatusMap`'in notu). İki kavramı tek bir dizide
+   * tutmak, birinin kuralının sessizce diğerine uygulanması demek olurdu.
+   */
+  const [gateStatusDraft, setGateStatusDraft] = useState<GateStatusDraft>(EMPTY_GATE_STATUS_DRAFT);
   const [reassignOnNeedInfo, setReassignOnNeedInfo] = useState(false);
   const setStatusAt = (point: StatusPoint, value: string): void =>
     setStatusDraft((prev) => ({ ...prev, [point]: value }));
@@ -358,6 +371,15 @@ export function ListeningScreen(): ReactNode {
   // a value typed before the operator switched flows. These are the values a
   // save will stop storing, so they get a warning, not silence.
   const deadDraftEntries = deadStatusEntries(statusDraft, flowType);
+  /**
+   * Kapı statüsü, Maestro'nun kendi taşıdığı bir statüyle çakışıyor mu —
+   * KAYDETMEDEN ÖNCE söylenir.
+   *
+   * Sunucu bunu zaten yakalıyor ve o alanı düşürüyor (fail-closed), ama
+   * operatör bunu ancak kapı çalışmadığında fark ederdi. Kaydı ENGELLEMİYOR:
+   * koruma sunucuda, burası yalnız aynadır.
+   */
+  const gateClashes = gateStatusConflicts(statusDraft, gateStatusDraft);
 
   // Editing an existing rule: its id, or null while the form is adding a new
   // one. The BFF's PUT is a full replace, so the form carries EVERY field of
@@ -453,6 +475,7 @@ export function ListeningScreen(): ReactNode {
     setStatusOn(false);
     setStatusPanelOpen(false);
     setStatusDraft(EMPTY_STATUS_DRAFT);
+    setGateStatusDraft(EMPTY_GATE_STATUS_DRAFT);
     setReassignOnNeedInfo(false);
   };
 
@@ -534,6 +557,13 @@ export function ListeningScreen(): ReactNode {
         : (Object.fromEntries(
             STATUS_POINTS.map((point) => [point, map[point] ?? ""]),
           ) as StatusDraft),
+    );
+    setGateStatusDraft(
+      map === null
+        ? EMPTY_GATE_STATUS_DRAFT
+        : (Object.fromEntries(
+            GATE_STATUS_POINTS.map((point) => [point, map[point] ?? ""]),
+          ) as GateStatusDraft),
     );
     setReassignOnNeedInfo(map?.reassignOnNeedInfo === true);
     // Form ekranın dışındaysa oraya git. `requestAnimationFrame`: yukarıdaki
@@ -779,7 +809,7 @@ export function ListeningScreen(): ReactNode {
       // said so on screen — the warning above the save button names the values
       // and says they will not be written, so the save itself is the operator's
       // confirmation.
-      statusMap: buildStatusMap(statusOn, statusDraft, reassignOnNeedInfo, flowType),
+      statusMap: buildStatusMap(statusOn, statusDraft, reassignOnNeedInfo, flowType, gateStatusDraft),
       // Boş liste `null` olarak gidiyor: "hiçbir statüye izin verilmedi" ile
       // "statü kısıtı yok" tek bir davranışa iner, iki temsil taşımak er ya da
       // geç ikisinin farklı davranmasıyla biter. Sunucu da aynı şekilde
@@ -1471,6 +1501,65 @@ export function ListeningScreen(): ReactNode {
                       })}
                     </div>
                   )}
+                  {/*
+                    KAPI KARARININ STATÜYLE VERİLMESİ — yukarıdaki beş alanın
+                    TERS yönü, ve ayrı bir başlık altında olması bilinçli:
+                    yukarısı "Maestro ticket'ı nereye taşısın", burası
+                    "operatörün taşıması ne anlama gelsin". İkisini aynı
+                    listede göstermek, operatörün bir yönde yazdığını diğer
+                    yönde okunuyor sanmasına yol açardı — ve tam olarak o
+                    karışıklık, aşağıdaki çakışma uyarısının var olma sebebi.
+                  */}
+                  <p className="screen-note" style={{ marginTop: 16, fontWeight: 600 }}>
+                    {t("listening.gate_status.title")}
+                  </p>
+                  <p className="screen-note">{t("listening.gate_status.intro")}</p>
+                  <div className="screen-filters" style={{ marginTop: 10 }}>
+                    {GATE_STATUS_POINTS.map((point) =>
+                      statusOptions.length > 0 ? (
+                        <Select
+                          key={point}
+                          label={t(`listening.gate_status.${point}`)}
+                          value={gateStatusDraft[point]}
+                          onChange={(e) =>
+                            setGateStatusDraft((prev) => ({ ...prev, [point]: e.target.value }))
+                          }
+                          options={[
+                            { value: "", label: t("listening.gate_status.skip") },
+                            ...statusOptions.map((v) => ({ value: v, label: v })),
+                          ]}
+                          hint={t(`listening.gate_status.hint.${point}`)}
+                        />
+                      ) : (
+                        <Input
+                          key={point}
+                          label={t(`listening.gate_status.${point}`)}
+                          value={gateStatusDraft[point]}
+                          onChange={(e) =>
+                            setGateStatusDraft((prev) => ({ ...prev, [point]: e.target.value }))
+                          }
+                          hint={t(`listening.gate_status.hint.${point}`)}
+                        />
+                      ),
+                    )}
+                  </div>
+                  {gateClashes.length > 0 && (
+                    <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
+                      {t("listening.gate_status.conflict_warning", {
+                        values: gateClashes
+                          .map(
+                            (c) =>
+                              `${t(`listening.gate_status.${c.point}`)} ↔ ` +
+                              t(`listening.status.${c.clashesWith}`),
+                          )
+                          .join(", "),
+                      })}
+                    </div>
+                  )}
+                  <p className="screen-note" style={{ marginTop: 4 }}>
+                    {t("listening.gate_status.approval_note")}
+                  </p>
+
                   <label
                     className="screen-note"
                     style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}

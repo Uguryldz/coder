@@ -79,6 +79,34 @@ export interface AkisBolumu {
   readonly temporalAcik: number | null;
   /** Temporal okunamadıysa sebebi. */
   readonly temporalHata?: string;
+  /**
+   * VERİTABANINA GÖRE BEKLEYEN AMA TEMPORAL'DA EXECUTION'I OLMAYAN koşular —
+   * "kayıp koşu".
+   *
+   * ── NEDEN BU SAYI VAR: ÖLÇÜLMÜŞ VERİ KAYBI ───────────────────────────────
+   * Bu kurulumda `WorkflowRun` 14 koşuyu "running" gösterirken Temporal'da
+   * yalnız 2 açık execution vardı. Aradaki 12 koşu 4. ve 5. KAPIDA insan onayı
+   * bekliyordu, 3.5 ile 14 gün arası yaşlıydı, ve `tctl workflow describe`
+   * onlara "workflow not found" diyordu. Sebep Temporal'ın varsayılan SAKLAMA
+   * SÜRESİ: 24 saat.
+   *
+   * Bu ürünün akışı GÜNLER sürer ve bu tasarımın kendisidir — netleştirme
+   * beklemesi ve onay kapıları SÜRESİZDİR (M61). Saklama süresi iş akışının
+   * ölçeğinin altında kalınca, onay bekleyen iş kimse hiçbir şey yapmadan
+   * sessizce kayboldu.
+   *
+   * ── NEDEN BU BÖLÜMDE, BİR SAYAÇ OLARAK ───────────────────────────────────
+   * Kayıp koşunun DIŞARIDAN görünen hiçbir belirtisi yok: panel satırı
+   * "running" der, ticket kapıda durur, ve `/approve` yazan operatör hiçbir
+   * cevap alamaz. Bu sayı, o sessizliğin tek sesi.
+   *
+   * `null` = Temporal okunamadı, yani KIYAS YAPILAMADI. "Kayıp yok" DEĞİL —
+   * ikisi ayrı cevaplar ve karıştırılırsa rapor, ölçmediği bir şeyi sağlıklı
+   * ilan etmiş olur.
+   */
+  readonly kayipKosular: readonly KosuSatiri[] | null;
+  /** Namespace'in saklama süresi, okunabildiyse (`24h0m0s` gibi). */
+  readonly saklamaSuresi?: string;
 }
 
 /** 3. bölüm: Jira'ya yapılan tek bir canlı deneme. */
@@ -575,7 +603,39 @@ export function taniHtml(rapor: TaniRaporu): string {
       ? `<p class="bos">Temporal okunamadı${
           rapor.akis.temporalHata === undefined ? "" : `: ${html(rapor.akis.temporalHata)}`
         }</p>`
-      : `<p>Temporal'da <b>${String(rapor.akis.temporalAcik)}</b> açık workflow var.</p>`;
+      : `<p>Temporal'da <b>${String(rapor.akis.temporalAcik)}</b> açık workflow var.` +
+        (rapor.akis.saklamaSuresi === undefined
+          ? ""
+          : ` Saklama süresi: <b>${html(rapor.akis.saklamaSuresi)}</b>.`) +
+        `</p>`;
+
+  /**
+   * KAYIP KOŞULAR — bu raporun en pahalıya patlayabilecek satırı.
+   *
+   * Veritabanı "bekliyor" diyor, Temporal'da execution YOK. Görünen belirtisi
+   * hiç yok: panel satırı "running" der, ticket kapıda durur, `/approve` yazan
+   * operatör hiçbir cevap alamaz. Sebebi neredeyse her zaman SAKLAMA SÜRESİ:
+   * varsayılan 24 saat, bu ürünün akışı ise günlerce sürer (M61 — kapılar
+   * SÜRESİZ bekler).
+   *
+   * `null` "kayıp yok" DEĞİL, "kıyas yapılamadı" demek — Temporal okunamadı.
+   * İkisini aynı yeşil satırla göstermek, ölçülmemiş bir şeyi sağlıklı ilan
+   * etmek olurdu.
+   */
+  const kayip =
+    rapor.akis.kayipKosular === null
+      ? `<p class="bos">Kayıp koşu kıyası yapılamadı (Temporal okunamadı) — "kayıp yok" DEĞİL.</p>`
+      : rapor.akis.kayipKosular.length === 0
+        ? `<p>Bekleyen her koşunun Temporal'da bir execution'ı var.</p>`
+        : `<p class="dikkat"><b>${String(rapor.akis.kayipKosular.length)}</b> koşu veritabanında ` +
+          `bekliyor görünüyor ama Temporal'da execution'ı YOK: bu koşular uyandırılamaz — ` +
+          `/approve yazılsa da, statü taşınsa da hiçbir şey olmaz. En olası sebep Temporal'ın ` +
+          `saklama süresinin (varsayılan 24 saat) bu ürünün akışından kısa olması; kapılar ` +
+          `SÜRESİZ bekler ve bir onay günler sürebilir. Düzeltme: ` +
+          `<span class="mono">docker compose exec temporal tctl --address temporal:7233 ` +
+          `namespace update --retention 2160h</span> — ve kurulum betiği bunu artık kendisi yapar. ` +
+          `Zaten kaybolmuş koşular geri gelmez; ticket'ları yeniden akışa alınmalıdır.</p>` +
+          kosuTablosu(rapor.akis.kayipKosular);
 
   return `<!doctype html>
 <html lang="tr">
@@ -610,6 +670,7 @@ ${digerler.map(bulguHtml).join("")}
 
 <h2>2 · Akış durumu</h2>
 <p>Toplam <b>${String(rapor.akis.toplam)}</b> koşu.</p>
+${kayip}
 ${adimlar}
 <h3>2b'de bekleyen koşular — netleştirme cevabı bekliyor</h3>
 ${

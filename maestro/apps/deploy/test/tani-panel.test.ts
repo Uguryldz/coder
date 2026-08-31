@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConfigFinding } from "@maestro/bff";
+import type { KosuSatiri } from "../src/tani.js";
 import {
   bulgulara,
   logsuzBolum,
@@ -24,6 +25,9 @@ const AKIS: AkisKaynagi = {
   netlestirmeBekleyen: () => Promise.resolve([]),
   sonKosular: () => Promise.resolve([]),
   temporalAcik: () => Promise.resolve(2),
+  bekleyenKosular: () => Promise.resolve([]),
+  acikTicketlar: () => Promise.resolve(new Set<string>()),
+  saklamaSuresi: () => Promise.resolve("90 gün"),
 };
 
 const FINDING: ConfigFinding = {
@@ -168,5 +172,91 @@ describe("panelTaniRaporu", () => {
     );
 
     expect(report.html).not.toContain("parola");
+  });
+});
+
+/**
+ * KAYIP KOŞULAR — ölçülmüş veri kaybının rapordaki sesi.
+ *
+ * Bu kurulumda `WorkflowRun` 14 koşuyu "running" gösterirken Temporal'da yalnız
+ * 2 açık execution vardı; aradaki 12 koşu 4. ve 5. KAPIDA insan onayı bekliyor
+ * ve 3.5-14 gün yaşındaydı. `tctl workflow describe` onlara "workflow not
+ * found" diyordu. Sebep Temporal'ın varsayılan 24 saatlik saklama süresi, ve bu
+ * ürünün akışı GÜNLER sürer (M61: kapılar SÜRESİZ bekler).
+ *
+ * Kaybın dışarıdan hiçbir belirtisi yok: panel "running" der, ticket kapıda
+ * durur, `/approve` yazan operatör cevap alamaz. Bu satır, o sessizliğin tek
+ * sesi.
+ */
+describe("kayıp koşular", () => {
+  const KOSU = (ticketKey: string): KosuSatiri => ({
+    id: `run-${ticketKey}`,
+    ticketKey,
+    step: "4",
+    status: "running",
+    updatedAt: "2026-08-28 09:00:00",
+  });
+
+  it("veritabanında bekleyip Temporal'da olmayan koşuyu ADIYLA sayar", async () => {
+    const report = await panelTaniRaporu(
+      options({
+        akis: {
+          ...AKIS,
+          bekleyenKosular: () => Promise.resolve([KOSU("OPS-42"), KOSU("OPS-80")]),
+          acikTicketlar: () => Promise.resolve(new Set(["OPS-80"])),
+        },
+      }),
+    );
+
+    // Kayıp koşu ADIYLA sayfada — bir sayı değil, operatörün açıp bakacağı
+    // ticket'ın kendisi.
+    expect(report.html).toContain("OPS-42");
+    expect(report.html).toContain("execution'ı YOK");
+    // Ve ne yapacağı: saklama süresini artıran komut.
+    expect(report.html).toContain("namespace update --retention");
+    // Temporal'da olanı kayıp SAYMAZ.
+    expect(report.html).toMatch(/<b>1<\/b> koşu veritabanında/u);
+  });
+
+  it("hepsi Temporal'da varsa kayıp İDDİA ETMEZ", async () => {
+    const report = await panelTaniRaporu(
+      options({
+        akis: {
+          ...AKIS,
+          bekleyenKosular: () => Promise.resolve([KOSU("OPS-80")]),
+          acikTicketlar: () => Promise.resolve(new Set(["OPS-80"])),
+        },
+      }),
+    );
+    expect(report.html).toContain("Bekleyen her koşunun Temporal'da bir execution'ı var");
+    expect(report.html).not.toContain("execution'ı YOK");
+  });
+
+  /**
+   * "Kayıp yok" ile "kıyas yapılamadı" AYRI cevaplar. İkincisini birincisi gibi
+   * göstermek, ölçülmemiş bir şeyi sağlıklı ilan etmek olurdu — bu aracın
+   * kapatmaya geldiği hatanın ta kendisi.
+   */
+  it("Temporal okunamadıysa 'kayıp yok' DEMEZ", async () => {
+    const report = await panelTaniRaporu(
+      options({
+        akis: {
+          ...AKIS,
+          bekleyenKosular: () => Promise.resolve([KOSU("OPS-42")]),
+          acikTicketlar: () => Promise.reject(new Error("temporal yok")),
+        },
+      }),
+    );
+    expect(report.html).toContain("kıyası yapılamadı");
+    expect(report.html).toContain('"kayıp yok" DEĞİL');
+    // "Kayıp yok" cümlesini ASLA kurmaz: ölçülmemiş bir şeyi sağlıklı ilan
+    // etmek, bu aracın kapatmaya geldiği hatanın ta kendisi.
+    expect(report.html).not.toContain("Bekleyen her koşunun Temporal");
+  });
+
+  it("saklama süresini raporlar — kaybın sebebi neredeyse her zaman odur", async () => {
+    const report = await panelTaniRaporu(options({ akis: AKIS }));
+    expect(report.html).toContain("Saklama süresi");
+    expect(report.html).toContain("90 gün");
   });
 });

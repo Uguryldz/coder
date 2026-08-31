@@ -138,6 +138,38 @@ export class TemporalRunGateway implements RunGateway {
     });
   }
 
+  /**
+   * Namespace'in SAKLAMA SÜRESİ, insan okunur biçimde ("24h", "90g").
+   *
+   * ── Neden bu okunuyor: ölçülmüş veri kaybı ────────────────────────────────
+   * Temporal'ın varsayılanı 24 SAAT ve bu süre koşunun geçmişine uygulanır. Bu
+   * kurulumda 4. ve 5. kapıda insan onayı bekleyen 12 koşunun execution'ı
+   * Temporal'dan düşmüştü: `tctl workflow describe` "workflow not found" derken
+   * `WorkflowRun` satırı hâlâ "running" gösteriyordu. Kapıda bekleyen iş, kimse
+   * hiçbir şey yapmadan, sessizce kayboldu.
+   *
+   * Bu ürünün akışı GÜNLER sürer ve bu tasarımın kendisidir — netleştirme
+   * beklemesi ve onay kapıları SÜRESİZDİR (M61). Saklama süresi iş akışının
+   * ölçeğinin altına düştüğünde kayıp kaçınılmaz olur, ve tanı raporu bunu
+   * SÖYLEYEBİLMEK için süreyi bilmek zorunda.
+   *
+   * `null` = süre okunamadı. Bir hata değil ve fırlatmıyor: bu bir teşhis
+   * kolaylığı, ve okunamaması raporun geri kalanını düşürmemeli.
+   */
+  async saklamaSuresi(): Promise<string | null> {
+    const answer = await this.client.connection.workflowService.describeNamespace({
+      namespace: this.client.options.namespace,
+    });
+    const seconds = answer.config?.workflowExecutionRetentionTtl?.seconds;
+    if (seconds === undefined || seconds === null) return null;
+    const total = Number(seconds);
+    if (!Number.isFinite(total) || total <= 0) return null;
+    const hours = Math.round(total / 3600);
+    // Günden kısa süreler saatle, uzunlar günle: "2160h" bir operatöre hiçbir
+    // şey söylemez, "90 gün" ise akışının ölçeğiyle doğrudan kıyaslanabilir.
+    return hours < 48 ? `${String(hours)} saat` : `${String(Math.round(hours / 24))} gün`;
+  }
+
   async list(options: { limit?: number; onlyRunning?: boolean } = {}): Promise<RunSummary[]> {
     const limit = options.limit ?? 50;
     const query =

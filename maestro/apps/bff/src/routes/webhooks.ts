@@ -1,7 +1,9 @@
 import type { TicketKey } from "@maestro/contracts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { SYSTEM_ACTOR } from "../actor.js";
+import { resolveBotIdentity } from "../bot-identity.js";
 import { tryClarifyReentry } from "../clarify-reentry.js";
+import { tryGateStatusDecision } from "../gate-status-reentry.js";
 import type { ResolvedDeps, WorkEvent } from "../deps.js";
 import { badRequest, WebhookRejected } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
@@ -222,6 +224,83 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
 
     if (event.kind !== "issue" || event.ticketKey === undefined) {
       return reply.code(202).send({ accepted: false, reason: "not_intake" });
+    }
+
+    /**
+     * KAPI KARARININ STATÜYLE VERİLMESİ — `/approve` yorumunun yanındaki
+     * ikinci kanal (`gate-status-reentry.ts`).
+     *
+     * Netleştirme yeniden girişiyle aynı yere, aynı gerekçeyle konuyor: bu
+     * teslimat `runIntake`'e de gidecek ve orada "koşu zaten var, katıldım"
+     * cevabı alacak — yani kapı kararı bu satır olmadan sessizce yutulurdu.
+     * `not_intake` erken dönüşünün ARDINDA olması ise farkı: kapı kararı bir
+     * ISSUE olayıdır ve ticket anahtarı olmadan sorulamaz.
+     *
+     * Akış aşağıya DEVAM EDER. Aynı teslimat aynı anda etiket değişikliği de
+     * taşıyor olabilir ve `runIntake` idempotent; kapıyı kapatmış olmak
+     * intake'i atlamak için bir sebep değil.
+     */
+    if (event.status !== undefined) {
+      const botIdentity = await resolveBotIdentity(deps.config.engineBotAccountId, deps.connections);
+      const gateStatus = await tryGateStatusDecision(
+        deps,
+        {
+          ticket: event.ticketKey,
+          status: event.status,
+          // Kimlik katmanı YALNIZ bot hesabı bilindiğinde uygulanabilir.
+          // Bilinmiyorsa katman hiç kurulmaz ve `identity` verilmez —
+          // `clarify-reentry`'nin `bot_account_unconfigured` ile kanalı
+          // tamamen kapatmasından farklı, ve fark gerekçeli: orada tetiğin
+          // KENDİSİ kimliğe dayanıyordu ("ticket bot'a mı atandı"), burada
+          // tetik statü ve yön katmanı kendi başına ayakta.
+          ...(botIdentity === null
+            ? {}
+            : { identity: { actor: event.actor, bot: botIdentity.accountId } }),
+          /**
+           * Bu kanal ONAYI da taşır — çünkü kimi adlandıracağını bilir.
+           * Teslimat `actor`ı taşıyor, `decideGate` onun grup üyeliğini
+           * ölçüyor, ve imza denetim zincirine gerçek kişiyle giriyor.
+           *
+           * `botIdentity === null` olan kurulumda kimlik KATMANI kurulmaz ama
+           * `actor` yine de bilinir ve üyeliğe girer; kaybolan tek şey
+           * "bu olayı bot mu itti" kontrolüdür, ve onu yön + zaman taşır.
+           */
+          canApprove: true,
+          observedAt: deps.clock.now(),
+        },
+        workflowIdFor(event.ticketKey),
+      );
+      if (gateStatus.kind === "decided") {
+        // Nadir ve tam olarak operatörün aradığı olay. `result.ok` ayrıca
+        // yazılıyor: "statü görüldü" ile "kapı gerçekten kapandı" iki ayrı
+        // gerçek, ve aralarındaki fark (üyelik reddi, kapanmış kapı) tam
+        // olarak "taşıdım ama bir şey olmadı" şikâyetinin cevabı.
+        request.log.warn(
+          {
+            webhook: "jira",
+            ticket: gateStatus.ticket,
+            step: gateStatus.step,
+            decision: gateStatus.decision,
+            status: event.status,
+            ok: gateStatus.result.ok,
+            ...(gateStatus.result.ok ? {} : { reason: gateStatus.result.reason }),
+            ...(event.actor === undefined ? {} : { actor: maskAuthor(event.actor) }),
+          },
+          "webhook gate decision from status",
+        );
+      } else if (
+        gateStatus.reason === "status_map_conflict" ||
+        gateStatus.reason === "actor_unknown"
+      ) {
+        // İkisi de operatörün DÜZELTEBİLECEĞİ şeyler: biri çakışan bir
+        // eşleme, diğeri kimin ittiğini söylemeyen bir teslimat. Diğer
+        // atlama sebepleri (sıradan statü hareketi, kapıda değil) her
+        // teslimatta olur ve log'u doldurmamalı.
+        request.log.warn(
+          { webhook: "jira", ticket: event.ticketKey, reason: gateStatus.reason },
+          "webhook gate status channel skipped",
+        );
+      }
     }
 
     const outcome = await runIntake(deps, {

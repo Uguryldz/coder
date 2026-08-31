@@ -18,7 +18,14 @@ import { SIGNALS } from "./signal-names.js";
 
 export interface GateRequest {
   ticket: TicketKey;
-  decision: "approve" | "reject";
+  /**
+   * `return_analysis` ("eksik var, bir daha bak") üçüncü karar. Yolun geri
+   * kalanı — üyelik kontrolü, denetim zinciri, sinyal — onay ve retle
+   * BİREBİR aynı: bu fonksiyonun var olma sebebi, kapıya girmenin ikinci ve
+   * zayıf bir yolunun olmaması. Ayrıştığı tek yer, hangi denetim eyleminin
+   * yazıldığı ve hangi kapılarda kabul edildiği.
+   */
+  decision: "approve" | "reject" | "return_analysis";
   reason?: string;
   /** Audit actor, `user@corp`; also the identity four-eyes compares across gates. */
   actor: string;
@@ -28,11 +35,37 @@ export interface GateRequest {
   at: string;
 }
 
-export type GateFailure = "no_run" | "no_open_gate" | "not_member" | "not_delivered";
+export type GateFailure =
+  | "no_run"
+  | "no_open_gate"
+  | "not_member"
+  | "not_delivered"
+  /**
+   * "Analize geri gönder" bu kapıda geçerli değil — analiz kapıları (4/5)
+   * dışındaki her kapı. Sinyal HİÇ gönderilmez ve denetime hiçbir şey
+   * yazılmaz: workflow tarafındaki `canCloseGate` aynı kararı zaten verecekti
+   * (`not_returnable`), ama orada kapı bir tur boşuna açılıp kapanır ve
+   * denetim zincirine kabul edilmemiş bir imza düşerdi.
+   */
+  | "gate_not_returnable";
 
 export type GateResult =
   | { ok: true; step: StepId; group: string; signatureSeq: number }
   | { ok: false; reason: GateFailure; step?: StepId; group?: string };
+
+/**
+ * The audit action each verdict writes. `return_analysis` has its own
+ * (`GATE_RETURN`, `outcome: success`) rather than borrowing `GATE_REJECT`:
+ * counting routine "look again" turns as refusals would misstate both the
+ * number and its meaning on every governance screen.
+ */
+const AUDIT_ACTION_OF: Readonly<
+  Record<GateRequest["decision"], "GATE_APPROVE" | "GATE_REJECT" | "GATE_RETURN">
+> = {
+  approve: "GATE_APPROVE",
+  reject: "GATE_REJECT",
+  return_analysis: "GATE_RETURN",
+};
 
 function isApprovalGate(step: StepId): boolean {
   return (APPROVAL_GATE_STEPS as readonly StepId[]).includes(step);
@@ -47,6 +80,18 @@ export async function decideGate(deps: ResolvedDeps, request: GateRequest): Prom
   // wait (2b) also reports `gate`, and it is not something to approve.
   if (state.status !== "gate" || !isApprovalGate(state.step)) {
     return { ok: false, reason: "no_open_gate", step: state.step };
+  }
+
+  /**
+   * "Bir daha bak" YALNIZ analiz kapılarında bir cevap.
+   *
+   * 9/11/12'de analiz onaylanmış, kod yazılmış ve PR açılmıştır; oradan analize
+   * dönmek yazılmış işi ıskartaya çıkarmak olurdu. Üyelik kontrolünden ÖNCE,
+   * çünkü bu bir yetki sorusu değil bir anlam sorusu — ve dizin çağrısını
+   * cevabı zaten belli olan bir istek için harcamamak gerekir.
+   */
+  if (request.decision === "return_analysis" && state.step !== "4" && state.step !== "5") {
+    return { ok: false, reason: "gate_not_returnable", step: state.step };
   }
 
   const group = await deps.gates.ownerGroup(state.step, projectKeyOf(request.ticket));
@@ -65,7 +110,7 @@ export async function decideGate(deps: ResolvedDeps, request: GateRequest): Prom
   // last line of defence behind M101's "no gate tool for the AI".
   const event = await deps.audit.append({
     actor: request.actor,
-    action: request.decision === "approve" ? "GATE_APPROVE" : "GATE_REJECT",
+    action: AUDIT_ACTION_OF[request.decision],
     subject: request.ticket,
     at: request.at,
     meta: {

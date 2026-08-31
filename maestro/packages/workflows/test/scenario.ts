@@ -87,6 +87,14 @@ export type GatePolicy =
   /** Rejects on every visit — the M54 counter's test subject. */
   | { kind: "reject_always"; reason: string }
   /**
+   * "Eksik var, bir daha bak" — bir kez, sonra onaylar. Operatörün analiz
+   * döngüsünün üçüncü kenarı, ve `reject_once`tan ölçülebilir biçimde farklı:
+   * ret sayacına girmez ve koşuyu devretmez.
+   */
+  | { kind: "return_once"; reason?: string }
+  /** Her ziyarette geri gönderir — sayacın ARTMADIĞININ test öznesi. */
+  | { kind: "return_always"; reason?: string }
+  /**
    * Two decisions delivered back to back, before the workflow has processed the
    * first. A real Jira user typing `/approve` and then `/reject` produces this,
    * and so does a webhook batch.
@@ -296,6 +304,16 @@ export function makeActivities(
       if (policy.kind === "approve") await scenario.signal(approval(step));
       if (policy.kind === "reject_once" || policy.kind === "reject_always") {
         await scenario.signal({ ...approval(step), decision: "reject", reason: policy.reason });
+      }
+      if (policy.kind === "return_once" || policy.kind === "return_always") {
+        // `reason` OPSİYONEL, ve bu şemanın kendi kuralı: geri gönderme bir
+        // statü taşımasıyla da gelebilir ve bir statü değişiminin yazılı
+        // sebebi yoktur. `reject` ise sebebi ZORUNLU tutar.
+        await scenario.signal({
+          ...approval(step),
+          decision: "return_analysis",
+          ...(policy.reason === undefined ? {} : { reason: policy.reason }),
+        });
       }
       if (policy.kind === "burst") {
         // Deliberately NOT awaited one-by-one with a gap: the point is that both

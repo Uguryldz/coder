@@ -16,6 +16,20 @@ import "./shared/screens.css";
  * only live part is the change itself, which goes out as the `modeChange`
  * signal — the same path Jira's `/mode-change` comment takes.
  *
+ * ── WHAT THE MATRIX DOES NOT DO, SAID OUT LOUD ────────────────────────────
+ * It describes an INTENT, not the running flow. `ticket-workflow.ts` branches
+ * on the mode in exactly one place — `state.mode === "human_only"`, which hands
+ * over and collects evidence only. `full_auto`, `ai_assist` and `human_lead`
+ * run the identical step sequence, so the `human` cells on the `human_lead`
+ * row (code, test design, test run) are not enforced anywhere: a `human_lead`
+ * run codes and tests with the agent exactly like `full_auto`.
+ *
+ * Wiring the matrix to the flow is a real piece of work and is not done here.
+ * What is NOT acceptable in the meantime is the silent promise — an operator
+ * reading this table would reasonably conclude the platform honours it. So the
+ * screen says so itself (`workmode.matrix.note`), rather than leaving the
+ * correction in a comment only developers read.
+ *
  * Changing mode mid-flow rewrites who does the work on a ticket that may
  * already have human approvals on it, so it asks for confirmation first.
  */
@@ -93,6 +107,12 @@ export function WorkmodeScreen(): ReactNode {
   return (
     <div className="screen-stack">
       <Card title={t("workmode.matrix.title")} subtitle={t("workmode.matrix.subtitle")} padded={false}>
+        {/*
+          Tablonun ÜSTÜNDE: uyarıyı okumadan matrisi okuyan biri yanlış bir söz
+          almış olur. Altına konsaydı, tam da yanlış anlaşılması muhtemel olan
+          satırlardan sonra gelirdi.
+        */}
+        <p className="screen-note screen-note--warn">{t("workmode.matrix.note")}</p>
         <Table
           columns={columns}
           rows={MODES.map((value) => ({ mode: value }))}

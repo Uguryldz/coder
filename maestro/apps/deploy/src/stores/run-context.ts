@@ -436,13 +436,29 @@ export class PrismaRunContextStore implements RunContextStore {
 /**
  * The column's string as the contract's union.
  *
- * `get` only ever returns rows the `notIn` filter let through, so in practice
- * this is `running`. Anything else means the filter and this mapper disagree,
- * and calling it `running` is the honest answer: the row IS live by the only
- * definition the store uses.
+ * `get` only ever returns rows the `notIn` filter let through, so every value
+ * reaching here is a LIVE one — but "live" is no longer a single state.
+ * `openGate` writes `gate` while a human is being waited on and `handOver`'s
+ * callers write `handover`, and both are non-terminal, so both come back out
+ * of `get`. Flattening them to `running` (which this did) would make the
+ * workflow's own read contradict what it had just written: `runs.get` would
+ * report `running` for a run parked at a gate, and any future code branching
+ * on that would be silently wrong.
+ *
+ * Anything genuinely unexpected still becomes `running` — the row IS live by
+ * the only definition the store uses, and inventing a state for a value this
+ * package does not know would be worse than the honest floor.
  */
 function toLifecycle(status: string): RunContext["status"] {
-  return status === "done" || status === "cancelled" ? status : "running";
+  switch (status) {
+    case "done":
+    case "cancelled":
+    case "gate":
+    case "handover":
+      return status;
+    default:
+      return "running";
+  }
 }
 
 /**

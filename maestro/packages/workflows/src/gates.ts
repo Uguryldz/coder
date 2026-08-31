@@ -89,7 +89,10 @@ export function planFor(flow: FlowType | null | undefined): FlowPlan {
 
 export type GateRejection =
   | { ok: true }
-  | { ok: false; reason: "wrong_step" | "wrong_group" | "sod_violation" | "not_verified" };
+  | {
+      ok: false;
+      reason: "wrong_step" | "wrong_group" | "sod_violation" | "not_verified" | "not_returnable";
+    };
 
 /**
  * May this decision close this gate?
@@ -130,6 +133,25 @@ export function canCloseGate(
 ): GateRejection {
   if (decision.step !== atStep) return { ok: false, reason: "wrong_step" };
   if (decision.decision === "reject") return { ok: true };
+  /**
+   * "Analize geri gönder" YALNIZ analiz kapılarında (4/5) bir cevaptır.
+   *
+   * 9/11/12'de analiz çoktan onaylanmış, kod yazılmış, PR açılmıştır; oradan
+   * `goto("3")` demek yazılmış işi ıskartaya çıkarmak olurdu. Reddetmek —
+   * kapı AÇIK kalır, kişiye sebebi söylenir — yanlış tarafta hata yapmanın
+   * ucuz olan yönü: onay saymak kodu onaysız geçirirdi, ret saymak kararı
+   * verenin demediği bir şeyi ona söyletirdi.
+   *
+   * Ret gibi buranın da yetki kontrolüne İHTİYACI VAR ve ondan farklı olarak
+   * atlanmıyor: `reject` akışı DURDURUR (yetkisiz biri en fazla işi geciktirir,
+   * bu yüzden `canCloseGate` onu serbest bırakır), geri gönderme ise analizi
+   * YENİDEN YAZDIRIR — yani model harcatır ve ticket'ın içeriğini değiştirir.
+   * O bir "durdurma" değil, iş başlatmadır, dolayısıyla aşağıdaki grup/SoD
+   * kontrollerine düşmeye devam eder.
+   */
+  if (decision.decision === "return_analysis" && atStep !== "4" && atStep !== "5") {
+    return { ok: false, reason: "not_returnable" };
+  }
 
   const role = GATE_OWNER[atStep as (typeof APPROVAL_GATE_STEPS)[number]];
   const owner = openedAgainst ?? role;
@@ -138,7 +160,20 @@ export function canCloseGate(
   }
   if (!decision.sodVerified) return { ok: false, reason: "not_verified" };
 
-  if (!selfApproveAllowed) {
+  /**
+   * Four-eyes (M32/M92) yalnız ONAYA uygulanır, geri göndermeye değil.
+   *
+   * Kuralın söylediği şey "aynı imza iki kapıyı GEÇİREMEZ". 4'ü onaylayan
+   * kişinin 5'te "eksik var, bir daha bak" demesi bu kuralın ihlali değil, tam
+   * tersi: kimse hiçbir şeyi geçirmiyor, iş geri gönderiliyor. Burayı four-eyes'a
+   * tabi tutmak, tek başına çalışan bir inceleyicinin analizi ne onaylayıp ne
+   * geri gönderebildiği bir kilitlenme üretirdi.
+   *
+   * Grup kontrolü (`wrong_group`) ve `sodVerified` YUKARIDA kaldı ve geri
+   * göndermeye de uygulanıyor: karar verecek grubun üyesi olmayan biri analizi
+   * yeniden yazdıramaz.
+   */
+  if (!selfApproveAllowed && decision.decision === "approve") {
     // M32: the analysis gates (4 and 5) must carry two different signatures.
     if (atStep === "5" && previousApprovers.get("4") === decision.actorUserId) {
       return { ok: false, reason: "sod_violation" };

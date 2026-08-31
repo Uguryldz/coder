@@ -18,6 +18,21 @@ import type {
  * — so the queue semantics below are testable without a workflow environment.
  */
 
+/**
+ * The workflow clock, as an ISO string.
+ *
+ * Inside the Temporal sandbox `Date.now()` is replaced by the SDK with the
+ * deterministic workflow time, so this replays identically. It lives HERE, in
+ * the package's one shared no-Temporal-imports module, because two files now
+ * stamp workflow time onto `RunState` — `ticket-workflow.ts` for the
+ * clarification wait and `gate-loop.ts` for the gate — and two copies of "the
+ * one place ambient time is read" is one copy too many for a rule that is only
+ * worth anything while it stays mechanically checkable.
+ */
+export function workflowNow(): string {
+  return new Date(Date.now()).toISOString();
+}
+
 /** How many times the SAME gate may reject before a human takes over (M54). */
 export const MAX_GATE_REJECTIONS = 3;
 
@@ -80,6 +95,17 @@ export interface RunState {
    * ÖNCE düşer, kullanıcının düzeltmesi SONRA — tek ayrım noktası budur.
    */
   awaitingClarificationSince: string | null;
+  /**
+   * Onay kapısının açıldığı an (ISO), koşu o kapıda beklerken. Kapı kapanınca
+   * `null`'a döner.
+   *
+   * `awaitingClarificationSince` ile aynı rolü, aynı gerekçeyle oynar: dışarıya
+   * verilen bir ZAMAN EŞİĞİ. Kapı kararı artık statüyle de verilebiliyor
+   * (`gateApproveStatus` / `gateReturnStatus`), ve ticket'ı incelemeye taşıyan
+   * Maestro'nun kendisi olduğu için (`moveStatus("review", onReview)`) eşiksiz
+   * bir okuma kapının kendi açılışını karar sanardı.
+   */
+  gateOpenedSince: string | null;
 }
 
 export function initialRunState(args: {
@@ -100,6 +126,7 @@ export function initialRunState(args: {
     killed: null,
     intakeOnlyNoted: false,
     awaitingClarificationSince: null,
+    gateOpenedSince: null,
     approvers: new Map(),
     rejections: new Map(
       Object.entries(args.rejectionCounts ?? {}).map(([step, count]) => [step as StepId, count]),

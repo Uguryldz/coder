@@ -1,0 +1,69 @@
+-- HAND-WRITTEN MIGRATION.
+--
+-- KAPI KARARINA ÜÇÜNCÜ BİR CEVAP: `GATE_RETURN` — "eksik var, bir daha bak."
+--
+-- ── WHY IT EXISTS — operatörün akışı ────────────────────────────────────────
+--
+-- Banka operatörünün analiz döngüsü üç statülü:
+--
+--     todo  ⇄  analiz  →  analysisapproval
+--                             │
+--                             └──►  analiz   (insan eksik görürse geri gönderir)
+--
+-- Operatörün kendi cümlesi bu son kenar için net: "insan eksik varsa geri
+-- analize gönderir, BAĞLAM KAYBI YOK." Yani bu bir RET DEĞİL. Bir ceza değil,
+-- "bir daha bak" demek.
+--
+-- Maestro'nun elinde bugüne kadar iki cevap vardı: `GATE_APPROVE` ve
+-- `GATE_REJECT`. Geri göndermeyi `GATE_REJECT` ile yazmak üç şeyi birden
+-- bozardı ve üçü de ölçülebilir:
+--
+--   (1) M54'ün RET SAYACI. `countRejection` üçüncü rette koşuyu insana
+--       DEVREDER. Geri gönderme rutin bir inceleme turu; üç turda bir koşuyu
+--       durdurmak, normal çalışmayı arıza saymak olurdu.
+--   (2) DENETİM SAYIMI. Bir denetçinin "bu ticket kaç kez reddedildi" sorusuna,
+--       rutin turları ret sayarak cevap vermek hem sayıyı hem anlamı bozar.
+--   (3) YÖNETİM EKRANI. `read-governance.ts` `GATE_REJECT`i
+--       `severity: high, status: rejected` diye gösterir. Sağlıklı işleyen bir
+--       akış, ekranda sorunlu görünürdü.
+--
+-- Yeni değer `outcome: "success"`, `severity: 5` (onayla aynı, retten düşük):
+-- bir karardır, bir başarısızlık değildir.
+--
+-- ── WHAT CHANGES ────────────────────────────────────────────────────────────
+--
+-- `AuditActionE` enum'una TEK bir değer eklenir. Başka hiçbir şey: tablo yok,
+-- kolon yok, constraint yok, veri yok.
+--
+-- ── SAFE ON A LIVE TABLE ────────────────────────────────────────────────────
+--
+-- `ALTER TYPE ... ADD VALUE` Postgres'te tabloyu yeniden yazmaz ve mevcut
+-- satırlara dokunmaz — yalnız enum'un etiket listesine bir eleman ekler.
+-- `AuditLog` bir HASH ZİNCİRİ (M33) ve bu migration zinciri OKUMAZ, YAZMAZ ve
+-- DOĞRULAMAZ: hiçbir satır değişmediği için hiçbir hash geçersizleşmez.
+--
+-- Eski sürüm kod yeni değeri hiç görmez (yazan yeni sürümdür), yeni sürüm kod
+-- eski satırları aynen okur. Yani dağıtım sırası serbest.
+--
+-- ── RE-APPLIABLE ────────────────────────────────────────────────────────────
+--
+-- `IF NOT EXISTS`: ikinci kez uygulandığında sessizce hiçbir şey yapmaz.
+-- 0008-0016 bu kurulumda tarihsel olarak yarım uygulandığı için her migration
+-- bu şarta uymak zorunda.
+--
+-- ── NOT IN A TRANSACTION BLOCK (bilinçli) ───────────────────────────────────
+--
+-- Postgres 12+ `ALTER TYPE ... ADD VALUE`u bir transaction içinde çalıştırmaya
+-- izin verir, AMA aynı transaction içinde o yeni değeri KULLANMAYA izin vermez.
+-- Bu dosya değeri kullanmıyor (tek ifade), dolayısıyla Prisma'nın örtük
+-- transaction'ı sorun çıkarmaz.
+--
+-- ── REVERSIBLE? HAYIR, ve bu bilinçli ───────────────────────────────────────
+--
+-- Postgres bir enum değerini DÜŞÜREMEZ. Geri dönüş, enum'u yeniden yaratıp
+-- kolonu döndürmek olurdu ve `GATE_RETURN` yazılmış satırlar varsa o dönüş
+-- DENETİM KAYDI SİLMEK demektir — hash zincirli bir denetim izinde yapılabilecek
+-- en kötü şey. Geriye dönüş yolu, değeri KULLANMAYI bırakmaktır; yazılmış
+-- satırlar yerinde kalır ve okunmaya devam eder.
+
+ALTER TYPE "AuditActionE" ADD VALUE IF NOT EXISTS 'GATE_RETURN';

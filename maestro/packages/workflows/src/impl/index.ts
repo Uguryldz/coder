@@ -88,7 +88,8 @@ export function createActivities(deps: ActivityDeps): MaestroActivities {
     publishAnalysis: (ticket, doc) => analysis.publishAnalysis(deps, ticket, doc),
     fanOutChildren: (ticket, doc) => analysis.fanOutChildren(deps, ticket, doc),
 
-    openGate: (ticket, step, ownerGroup) => gate.openGate(deps, ticket, step, ownerGroup),
+    openGate: (ticket, step, ownerGroup, gateStatuses) =>
+      gate.openGate(deps, ticket, step, ownerGroup, gateStatuses),
     recordGateDecision: (ticket, decision) => gate.recordGateDecision(deps, ticket, decision),
     isMasterApprover: (userId) => gate.isMasterApprover(deps, userId),
     escalateGate: (ticket, step, waitingHours) => gate.escalateGate(deps, ticket, step, waitingHours),

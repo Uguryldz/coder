@@ -18,6 +18,7 @@ export * from "./errors.js";
 export * from "./notify-service.js";
 export * from "./routing-service.js";
 export * from "./gate-decision.js";
+export * from "./gate-status-reentry.js";
 export * from "./gateway.js";
 export * from "./jira-commands.js";
 export * from "./intake-decision-log.js";

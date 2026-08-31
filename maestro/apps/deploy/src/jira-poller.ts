@@ -1,5 +1,13 @@
 import { parseCommandFromComment, type CloudCommentCommand } from "@maestro/adapter-jira";
-import { handleCommand, projectKeyOf, SIGNALS, SYSTEM_ACTOR, workflowIdFor, type ResolvedDeps } from "@maestro/bff";
+import {
+  handleCommand,
+  projectKeyOf,
+  SIGNALS,
+  SYSTEM_ACTOR,
+  tryGateStatusDecision,
+  workflowIdFor,
+  type ResolvedDeps,
+} from "@maestro/bff";
 import { ClarificationAnswerSignal, type TicketKey } from "@maestro/contracts";
 
 /**
@@ -77,6 +85,51 @@ export function canReadTickets(driver: unknown): driver is TicketReader {
   );
 }
 
+/**
+ * Ticket'ın ŞU ANKİ statü ADINI okuyabilen sürücü — kapı kararının webhook'suz
+ * kanalı.
+ *
+ * Neden `getTicket` yetmiyor: donmuş `TicketSnapshot` bir statü alanı taşımıyor
+ * (`packages/contracts/src/ticket.ts`), ve o şemayı yalnız bunun için
+ * genişletmek ondan beslenen her yazıcıya ve doğrulayıcıya dokunmak demekti.
+ * Her iki Jira sürücüsü `readCurrentStatus`u ayrı bir yetenek olarak sunuyor —
+ * `transitionToStatus`'un zaten yaptığı `fields=status` okumasının aynısı.
+ *
+ * `null` dönmesi "site statü söylemedi" demek ve karar üretmez: bilinmeyen bir
+ * statüden kapı kararı çıkarmamak bu kanalın fail-closed yönü.
+ */
+export interface TicketStatusReader {
+  readCurrentStatus(key: TicketKey): Promise<string | null>;
+  /**
+   * Statü değişimleri — KİM, ne zaman, nereye. Kapı kararının bu kanalda
+   * yetkiyle verilebilmesinin tek yolu.
+   *
+   * `decideGate` GRUP ÜYELİĞİ soruyor (M32/M35), ve üyelik ancak kararı VERENİ
+   * adlandırabildiğimizde ölçülebilir. Ticket'ın şu anki statüsü onu kimin
+   * oraya taşıdığını söylemez; changelog söyler. Bu okuyucu olmadan yoklama
+   * kanalı imzasız kalırdı ve hiçbir kapı kararı taşıyamazdı.
+   */
+  listStatusChanges(
+    key: TicketKey,
+  ): Promise<ReadonlyArray<{ actorAccountId: string; toStatus: string | null; at: string }>>;
+}
+
+/**
+ * Bir sürücü statü değişimlerini okuyabiliyor mu? `canReadTickets` ile aynı
+ * desen — ve İKİ yöntemi birden soruyor, çünkü kanal ikisine de muhtaç:
+ * `readCurrentStatus` "ticket şu an nerede", `listStatusChanges` "oraya kim
+ * taşıdı". Birinin varlığından diğerini VARSAYMAK, tam olarak `as unknown as`
+ * kastının yaptığı hata olurdu.
+ */
+export function canReadStatuses(driver: unknown): driver is TicketStatusReader {
+  return (
+    typeof driver === "object" &&
+    driver !== null &&
+    typeof (driver as { readCurrentStatus?: unknown }).readCurrentStatus === "function" &&
+    typeof (driver as { listStatusChanges?: unknown }).listStatusChanges === "function"
+  );
+}
+
 export interface PollerOptions {
   readonly deps: ResolvedDeps;
   /** The driver that can read a comment thread; see {@link CommentReader}. */
@@ -92,6 +145,13 @@ export interface PollerOptions {
    * hiç yapmamak doğru.
    */
   readonly tickets?: TicketReader;
+  /**
+   * Ticket'ın statüsünü okuyan sürücü — KAPI KARARININ statüyle verilmesi
+   * (`gate-status-reentry.ts`). Verilmezse bu kanal bu kurulumda YOKTUR ve
+   * `/approve` yorumu tek yol olarak kalır; okuyucusu olmayan bir sürücüde
+   * sessizce yanlış yapmaktansa hiç yapmamak doğru — `tickets` ile aynı duruş.
+   */
+  readonly statuses?: TicketStatusReader;
   /**
    * Motorun çalıştığı hesabı ÇÖZEN işlev. `null` dönerse yeniden giriş bu turda
    * kapalı: karşılaştırılacak bir kimlik yoksa "bot'a atandı" ölçülemez.
@@ -170,6 +230,15 @@ interface RoundTally {
   failed: number;
   /** 2b'de bekleyip bot'a geri atandığı görülen ve uyandırılan koşular. */
   clarifyWakes: number;
+  /** Statü değişiminden okunup KAPATILAN kapılar (onay ya da geri gönderme). */
+  gateDecisions: number;
+  /**
+   * Statü kararı görüldü ama kapı kapanmadı — üyelik reddi, arada kapanmış
+   * kapı, teslim edilemeyen sinyal. `gateDecisions`ten AYRI sayılıyor: bu tam
+   * olarak "taşıdım ama bir şey olmadı" şikâyetinin sayacı, ve sıfırla
+   * karıştırılmamalı.
+   */
+  gateRefused: number;
 }
 
 function emptyTally(): RoundTally {
@@ -182,6 +251,8 @@ function emptyTally(): RoundTally {
     editRefused: 0,
     failed: 0,
     clarifyWakes: 0,
+    gateDecisions: 0,
+    gateRefused: 0,
   };
 }
 
@@ -236,6 +307,15 @@ export function startJiraPoller(options: PollerOptions): { stop: () => void } {
          * koşuyu bir yorum hatası yüzünden kaybetmek en pahalı sessizlik olur.
          */
         await clarifyReentry(options, ticket, wokeUp, log, tally);
+        /**
+         * Kapı kararının statüyle verilmesi — netleştirme yeniden girişinden
+         * AYRI tutuluyor ve onun hatasına takılmıyor, aynı gerekçeyle: bir
+         * ticket'ın 2b okumasının patlaması, o ticket'ın kapı statüsünün de
+         * okunamayacağı anlamına gelmez, ve kapıda haftalarca bekleyen bir
+         * koşuyu başka bir kanalın hatası yüzünden kaybetmek en pahalı
+         * sessizlik olur.
+         */
+        await gateStatusRound(options, ticket, log, tally);
       } catch (error) {
         // One ticket's failure must not stop the others: a comment on a ticket
         // whose project was unbound mid-run would otherwise freeze every gate.
@@ -266,6 +346,8 @@ export function startJiraPoller(options: PollerOptions): { stop: () => void } {
         (tally.malformed > 0 ? `, ${tally.malformed} hatalı komut` : "") +
         (tally.editRefused > 0 ? `, ${tally.editRefused} düzenlenmiş yorum reddedildi` : "") +
         (tally.clarifyWakes > 0 ? `, ${tally.clarifyWakes} netleştirme cevaplandı` : "") +
+        (tally.gateDecisions > 0 ? `, ${tally.gateDecisions} kapı statüyle kapandı` : "") +
+        (tally.gateRefused > 0 ? `, ${tally.gateRefused} statü kararı kabul edilmedi` : "") +
         (tally.failed > 0 ? `, ${tally.failed} ticket okunamadı` : ""),
     );
   };
@@ -470,6 +552,186 @@ async function clarifyReentry(
     .catch((error: unknown) => {
       log(`[yoklama] ${ticket}: netleştirme denetim kaydı yazılamadı — ${describeError(error)}`);
     });
+}
+
+/**
+ * KAPI KARARININ STATÜDEN OKUNMASI — webhook'suz kurulumun tek kanalı.
+ *
+ * ── Neden yoklamada da bir kanal gerekiyor ────────────────────────────────
+ * Webhook yolu (`apps/bff/src/routes/webhooks.ts`) bunu teslimat geldiğinde
+ * yapıyor. Ama bu döngünün var olma sebebi tam olarak webhook'un ULAŞMADIĞI
+ * kurulum: dışarı çıkışı olmayan kurumsal ağdaki Data Center. Orada operatörün
+ * ticket'ı bir statüye taşıması hiçbir şey yapmazdı ve `/approve` tek yol
+ * olarak kalırdı — ki bu görev tam olarak onu değiştirmek için var.
+ *
+ * ── EK MALİYET: KAPIDA BEKLEYEN TICKET BAŞINA BİR `fields=status` OKUMASI ──
+ * Ve yalnız orada. Sıra bilinçli: önce koşu durumu MOTORDAN sorulur (ağ
+ * çağrısı değil, aynı süreçte bir Temporal sorgusu), ve kapı açık değilse Jira
+ * hiç aranmaz. Kapıda bekleyen koşu sayısı, açık koşuların küçük bir alt
+ * kümesi — çoğu tur sıfır ek çağrıdır.
+ *
+ * `clarifyReentry` aynı sırayı izliyor ve aynı sebeple.
+ *
+ * ── YANKI KORUMASININ BU KANALDAKİ HÂLİ ───────────────────────────────────
+ * Üç katmandan İKİSİ burada da tam güçte, biri eksik ve eksikliği taşınıyor:
+ *
+ *  · **Zaman** (`gateOpenedSince`) — `tryGateStatusDecision` içinde. Maestro
+ *    kapıya girerken ticket'ı `onReview`e KENDİSİ taşıyor; o taşıma damganın
+ *    GERİSİNDE kalır. Bu kanalın en kritik katmanı, çünkü kimlik yok.
+ *  · **Yön** — statü, kuralın `gateApproveStatus`/`gateReturnStatus`
+ *    alanlarından biri olmalı, ve o alanlar Maestro'nun kendi taşıdığı beş
+ *    noktayla ÇAKIŞAMAZ (çakışırsa düşer). Yani bu kanalı açabilecek tek şey,
+ *    Maestro'nun kendiliğinden asla üretmeyeceği bir statü.
+ *  · **Kimlik** — YOK. Bir ticket okuması onu kimin taşıdığını söylemez.
+ *    `clarify-reentry.ts`'in yoklama tarafı aynı ödünü verdi, aynı gerekçeyle.
+ *
+ * ── VE KİMLİĞİN EKSİKLİĞİNİN İKİNCİ BİR BEDELİ VAR: ÜYELİK ────────────────
+ * `decideGate` GRUP ÜYELİĞİ sorar (M32/M35) — statü değiştirmek yetkiyi
+ * atlamanın yolu değildir. Bu kanalda karar vereni adlandıramadığımız için
+ * üyelik de ölçülemez, ve ölçülemeyen bir yetkiyle kapı açmak, kapının var
+ * olma sebebini ortadan kaldırır.
+ *
+ * Seçilen davranış: bu kanal YALNIZ "analize geri gönder" kararını taşır,
+ * ONAYI TAŞIMAZ. Gerekçe asimetriktir ve bilerek öyle:
+ *
+ *   · ONAY işi İLERLETİR — analizin kabul edildiğini söyler ve akışı bir
+ *     sonraki aşamaya geçirir. İmzasız bir onay, SoD'nin (M32) tam olarak
+ *     engellemek için var olduğu şeydir. Bu kanalda onay YOK; operatör
+ *     `/approve` yazar, ve `decideGate` onun Jira hesabını üyelikle ölçer.
+ *   · GERİ GÖNDERME işi İLERLETMEZ — analizi yeniden yazdırır ve kapıyı
+ *     yeniden açar. En kötü ihtimalle yetkisiz biri bir analiz turu daha
+ *     harcatır; kimse hiçbir şeyi onaylamış olmaz. `canCloseGate`in `reject`i
+ *     yetki kontrolünden muaf tutmasının gerekçesinin aynısı, bir kademe
+ *     yumuşağı.
+ *
+ * Bu kısıtlama SESSİZ DEĞİL: onay statüsü yapılandırılmış ama bu kanalda
+ * taşınamıyorsa, tur günlüğüne kendi satırı düşer — operatör "onay statüsüne
+ * taşıdım, hiçbir şey olmadı" dediğinde cevabı log'da bulur.
+ *
+ * Hiçbir yolda FIRLATMAZ: kapı kanalı bir yan iş, ve bir tur onun yüzünden
+ * yarıda kalmamalı.
+ */
+async function gateStatusRound(
+  options: PollerOptions,
+  ticket: TicketKey,
+  log: (m: string) => void,
+  tally: RoundTally,
+): Promise<void> {
+  const reader = options.statuses;
+  if (reader === undefined) return;
+  /**
+   * Bot kimliği olmadan KİMLİK katmanı kurulamaz, ve bu kanalda o katman
+   * vazgeçilebilir değil: Maestro'nun kendi `onReview` taşıması changelog'a
+   * bot adıyla düşer, ve onu ayıklayamazsak kapı kendi açılışıyla kendini
+   * kapatır. Netleştirme kanalının `botAccountId` boşken kapanmasıyla aynı
+   * duruş, aynı gerekçe.
+   */
+  const bot = (await options.botAccountId?.().catch(() => null))?.trim() ?? "";
+  if (bot === "") return;
+
+  // Önce motor: kapı açık değilse Jira hiç aranmaz. `gateOpenedSince` kapının
+  // açık olmasının KENDİSİ — `gate-loop.ts` onu açılışta atıyor, kapanışta
+  // siliyor — yani `status === "gate"`ten daha keskin: 2b beklemesi de kendini
+  // `gate` diye raporlar ve o onaylanacak bir şey değildir.
+  let state;
+  try {
+    state = await options.deps.runs.queryRunState(workflowIdFor(ticket));
+  } catch {
+    return;
+  }
+  if (state === null || state.gateOpenedSince === undefined) return;
+
+  /**
+   * SON STATÜ TAŞIMASI — ve onu kimin yaptığı.
+   *
+   * `readCurrentStatus` değil `listStatusChanges` okunuyor, ve fark bu kanalın
+   * ayakta durmasını sağlayan şey: "ticket şu an X'te" bir karar DEĞİL, çünkü
+   * kimin taşıdığını söylemez ve `decideGate` üyeliği ancak bir kişiye
+   * sorabilir. Changelog'un son statü kaydı üç sorunun da cevabı: nereye, kim,
+   * ne zaman.
+   *
+   * Boş changelog: ticket hiç taşınmamış — kapıda bekleyen bir koşu için bu
+   * "operatör henüz bir şey yapmadı" demek, bir hata değil.
+   */
+  let last: { actorAccountId: string; toStatus: string | null; at: string } | undefined;
+  try {
+    const changes = await reader.listStatusChanges(ticket);
+    last = changes.at(-1);
+  } catch (error) {
+    // Sayılıyor ve adlandırılıyor: bu kanalın sessizce ölmesi, "taşıdım ama
+    // Maestro görmedi" şikâyetinin izsiz kalması demek.
+    log(`[yoklama] ${ticket}: kapı statüsü okunamadı — ${describeError(error)}`);
+    return;
+  }
+  if (last === undefined || last.toStatus === null || last.toStatus.trim() === "") return;
+  const status = last.toStatus;
+
+  /**
+   * ZAMAN katmanı bu kanalda changelog KAYDININ zamanıyla ölçülüyor, turun
+   * saatiyle değil — ve bu fark kritik.
+   *
+   * Yoklama 60 saniyede bir çalışıyor, yani "şimdi" her zaman hareketten
+   * SONRADIR. Turun saatini kullansaydık, kapı açılmadan önce yapılmış bir
+   * taşıma bile eşiği geçerdi: Maestro'nun kendi `onReview` hareketi bir
+   * sonraki turda "operatör kararı" olarak okunurdu. Kaydın kendi zamanı,
+   * webhook yolunun teslimat zamanının bu kanaldaki karşılığı.
+   *
+   * Ayrıştırılamayan bir damga (site boş `created` gönderdi) fail-closed:
+   * ölçülemeyen bir eşikle karar üretmek, eşiğin var olma sebebini ortadan
+   * kaldırır.
+   */
+  const movedAt = Date.parse(last.at);
+  if (!Number.isFinite(movedAt)) return;
+
+  const outcome = await tryGateStatusDecision(
+    options.deps,
+    {
+      ticket,
+      status,
+      /**
+       * KİMLİK katmanı bu kanalda da TAM — changelog aktörü taşıyor.
+       *
+       * `clarify-reentry.ts`'in yoklama tarafı bu katmanı veremiyordu (bir
+       * ticket okuması onu kimin değiştirdiğini söylemez) ve ödünü yön +
+       * zamana yıkmıştı. Burada öyle bir ödün YOK ve olmamalı: kapı kararı
+       * üyelik gerektiriyor, üyelik bir kişiye sorulur, ve kişiyi uydurmak
+       * SoD'yi (M32) delmek olurdu.
+       */
+      identity: { actor: last.actorAccountId, bot },
+      // Ve kimlik tam olduğu için bu kanal ONAYI da taşır.
+      canApprove: true,
+      observedAt: new Date(movedAt),
+    },
+    workflowIdFor(ticket),
+  );
+  if (outcome.kind !== "decided") {
+    if (outcome.reason === "status_map_conflict") {
+      log(
+        `[yoklama] ${ticket}: kapı statüsü eşlemesi çakışık — ` +
+          "kapı statüsü Maestro'nun kendi taşıdığı bir statüyle aynı, kanal kapalı",
+      );
+    }
+    return;
+  }
+
+  const verdict = outcome.decision === "approve" ? "onaylandı" : "analize geri gönderildi";
+  if (outcome.result.ok) {
+    tally.gateDecisions += 1;
+    // Nadir ve tam olarak operatörün aradığı olay — kendi satırını hak ediyor.
+    // Aktör MASKELİ: DC'de bir hesap adı e-posta OLABİLİR (`userIdOf`
+    // `emailAddress`'e düşer) ve bankanın log toplayıcısında e-posta kişisel
+    // veridir. Denetim zincirinde ham hâliyle duruyor, orası maskelenmez.
+    log(
+      `[yoklama] ${ticket}: kapı ${outcome.step} — statü '${status.trim()}' ile ${verdict} ` +
+        `(${maskAuthor(last.actorAccountId)})`,
+    );
+    return;
+  }
+  tally.gateRefused += 1;
+  log(
+    `[yoklama] ${ticket}: kapı ${outcome.step} — statü '${status.trim()}' kararı kabul edilmedi ` +
+      `(${outcome.result.reason})`,
+  );
 }
 
 /**

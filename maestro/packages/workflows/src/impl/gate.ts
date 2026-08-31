@@ -18,6 +18,27 @@ const HOUR_MS = 60 * 60 * 1000;
 const MASTER_APPROVER_GROUP = "maestro-admins";
 
 /**
+ * Which audit action each verdict writes.
+ *
+ * `return_analysis` gets its OWN action rather than borrowing `GATE_REJECT`,
+ * and that is the whole point of it being a third verdict: an auditor counting
+ * "how many times was this rejected" must not be handed the ordinary review
+ * turns as refusals. See the note on `GATE_RETURN` in `contracts/audit.ts`.
+ */
+const AUDIT_OF: Readonly<Record<GateDecision["decision"], "GATE_APPROVE" | "GATE_REJECT" | "GATE_RETURN">> = {
+  approve: "GATE_APPROVE",
+  reject: "GATE_REJECT",
+  return_analysis: "GATE_RETURN",
+};
+
+/** The verdict as the ticket's own journal line says it, in the operator's words. */
+const VERDICT_WORD: Readonly<Record<GateDecision["decision"], string>> = {
+  approve: "onay",
+  reject: "ret",
+  return_analysis: "analize geri gönderildi",
+};
+
+/**
  * Is this user a master admin? A live directory lookup (hence an activity):
  * true when they are a member of {@link MASTER_APPROVER_GROUP}. Used only to
  * waive the cross-gate four-eyes rule for a single master admin.
@@ -39,6 +60,7 @@ export async function openGate(
   ticket: TicketKey,
   step: StepId,
   ownerGroup: string,
+  gateStatuses?: { approve?: string; return?: string },
 ): Promise<string> {
   const run = await deps.runs.get(ticket);
   const at = deps.now().toISOString();
@@ -50,6 +72,33 @@ export async function openGate(
   // Idempotent: a retry re-reads the existing record, so `openedAt` — the
   // anchor the whole escalation ladder is measured from — never moves.
   await deps.gates.open(run.runId, step, group, at);
+  /**
+   * KOŞUNUN SATIRI DA KAPIDA BEKLEDİĞİNİ SÖYLEMELİ.
+   *
+   * `state.status = "gate"` yalnızca workflow'un BELLEĞİNDE duruyordu
+   * (`gate-loop.ts`), ve `journal()` satıra yalnız `step`'i yazıyor
+   * (bkz. aşağıdaki `stepOfTitle`). `WorkflowRun.status`'u yazan tek yer
+   * `delivery.ts`'in kapanıştaki `done`'ıydı — yani kapıda bekleyen her koşu
+   * veritabanında `running` kalıyordu. Dev'de 13 koşunun 11'i böyleydi.
+   *
+   * Neden önemli: panel motora sorabildiği sürece doğru cevabı alıyor, ama
+   * Temporal geçmişi retention'da düştüğünde (ya da motor cevap veremediğinde)
+   * geriye yalnız satır kalıyor ve satır "çalışıyor" diyor. Bekleyen bir insan
+   * onayı, kimsenin bakması gerekmeyen işlerin arasına gömülüyor.
+   *
+   * Neden BURADA, `awaitGate` içinde değil: `awaitGate` workflow tarafında ve
+   * orada `deps` yok — satır yazmak bir activity işi. `openGate` zaten kapı
+   * açılırken tam bir kez çalışan activity, ve idempotent (`gates.open` ve
+   * `once` ile). Buraya koymak workflow'un komut dizisini de değiştirmiyor,
+   * yani replay güvenli.
+   *
+   * `reconciledState` (bff/routes/studio-runs.ts) BOZULMUYOR: o yalnızca satır
+   * TERMİNAL olduğunda motorun cevabını eziyor. `gate` terminal değil, dolayısıyla
+   * canlı motor cevabı üstün kalmaya devam ediyor. `reconcile.ts` de `gate`'i
+   * `RECONCILE_PROTECTED` sayıyor — yani bu satırı hiçbir uzlaştırma turu
+   * `running`'e geri düşürmez. İki taraf da bu değeri BEKLİYORDU; yazan yoktu.
+   */
+  await deps.runs.patch(ticket, { status: "gate" });
   await audit(deps, run, { action: "GATE_OPEN", meta: { step, ownerGroup: group }, key: `open:${step}` });
   await record(deps, run, {
     kind: "gate",
@@ -57,8 +106,35 @@ export async function openGate(
     detail: group,
     key: `open:${step}`,
   });
+  /**
+   * KAPI YORUMU — VE NEDEN İKİ SÜRÜMÜ VAR.
+   *
+   * Eski metin şunu diyordu ve DOĞRUYDU: "ticket'ı başka bir statüye taşımak
+   * kapıyı açmaz." Artık kuralın kapı statüleri doluysa AÇIYOR, ve o cümle
+   * yanlış bir talimata dönüştü — yanlış talimat, hiç talimat olmamasından
+   * kötüdür, çünkü operatör onu okuyup denemekten vazgeçer.
+   *
+   * İki anahtar, tek bir "koşullu cümle" değil: hangi statülerin işlediği bu
+   * koşuya özgü ve mesaj kataloğu (M104) parametreleri interpole ediyor, bir
+   * cümleyi şartlı olarak yutamıyor. Statü kanalı yapılandırılmamış kurulumda
+   * eski metin AYNEN geçerli ve aynen yazılıyor.
+   */
+  const approveStatus = gateStatuses?.approve?.trim() ?? "";
+  const returnStatus = gateStatuses?.return?.trim() ?? "";
+  const comment =
+    approveStatus === "" && returnStatus === ""
+      ? deps.translate(run.locale, "jira.gate_open", { gate: step, group })
+      : deps.translate(run.locale, "jira.gate_open_with_status", {
+          gate: step,
+          group,
+          // Yapılandırılmamış tarafın yerine "—" değil, o tarafın olmadığını
+          // SÖYLEYEN bir ifade: boş bir tırnak, operatörün "buraya bir statü
+          // yazmam mı gerekiyordu" diye düşünmesine yol açar.
+          approve: approveStatus === "" ? deps.translate(run.locale, "jira.gate_status_none") : approveStatus,
+          returnTo: returnStatus === "" ? deps.translate(run.locale, "jira.gate_status_none") : returnStatus,
+        });
   await deps.idempotency.once(`${run.runId}:gate-comment:${step}`, () =>
-    deps.work.addComment(ticket, deps.translate(run.locale, "jira.gate_open", { gate: step, group })),
+    deps.work.addComment(ticket, comment),
   );
   await notifyEvent(deps, run, {
     event: "gate_open",
@@ -111,17 +187,30 @@ export async function recordGateDecision(
   }
 
   await audit(deps, run, {
-    action: decision.decision === "approve" ? "GATE_APPROVE" : "GATE_REJECT",
+    action: AUDIT_OF[decision.decision],
     // M32/M101: an approval is only ever recorded against a human actor.
     actor: decision.actorUserId,
     meta: { step: decision.step, signatureSeq: decision.signatureSeq, reason: decision.reason ?? null },
     key: `decision:${decision.step}:${decision.signatureSeq}`,
   });
   await deps.gates.close(run.runId, decision.step, decision.at);
+  /**
+   * `openGate`'in yazdığı `gate` durumunun KARŞILIĞI: kapı kapandı, koşu yine
+   * çalışıyor. Bu satır olmasaydı `openGate`'in düzeltmesi kendi hatasını
+   * üretirdi — onaylanmış ve devam eden bir koşu sonsuza dek "onay bekliyor"
+   * görünürdü, ki bu düzeltmeye çalıştığımız yanlışın aynadaki hâli.
+   *
+   * `gate` terminal olmadığı için `runs.get` bu koşuyu bulmaya devam ediyor
+   * (bkz. `run-context.ts`'teki `TERMINAL_STATUSES`), yani buraya kadar
+   * gelebiliyoruz. Yazım kabul edilen karardan SONRA: reddedilen bir karar
+   * (üyelik doğrulanamadı) kapıyı açık bırakır, dolayısıyla durum da `gate`
+   * kalmalı.
+   */
+  await deps.runs.patch(ticket, { status: "running" });
   await record(deps, run, {
     kind: "gate",
     actor: "human",
-    title: `kapı ${decision.step}: ${decision.decision === "approve" ? "onay" : "ret"}`,
+    title: `kapı ${decision.step}: ${VERDICT_WORD[decision.decision]}`,
     detail: decision.reason ?? "",
     key: `decision:${decision.step}:${decision.signatureSeq}`,
   });

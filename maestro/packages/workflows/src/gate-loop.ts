@@ -2,7 +2,7 @@ import { condition, ApplicationFailure } from "@temporalio/workflow";
 import type { GateDecision, StepId, TicketKey } from "@maestro/contracts";
 import type { MaestroActivities } from "./activities.js";
 import { canCloseGate, GATE_OWNER } from "./gates.js";
-import type { Inbox, RunState } from "./run-state.js";
+import { workflowNow, type Inbox, type RunState } from "./run-state.js";
 
 /**
  * The three things that interrupt a step sequence: a human gate, the kill
@@ -30,6 +30,18 @@ export async function awaitGate(
   inbox: Inbox,
   ticket: TicketKey,
   at: StepId,
+  /**
+   * Bu koşuda kapının hangi STATÜLERLE de kapatılabildiği — yalnız Jira'ya
+   * yazılan kapı yorumunun doğru olması için taşınıyor.
+   *
+   * Kararın KENDİSİ buradan gelmiyor ve gelmemeli: statüyü Jira'da gören taraf
+   * BFF/yoklama, ve karar oradan bir `gateDecision` sinyali olarak ulaşıyor.
+   * Workflow bu değerleri yalnız AKTARIR, hiç okumaz — okusaydı, kural
+   * düzenlendiğinde kapıda bekleyen koşunun eski değeri kullanması gerekirdi
+   * ve bu tam olarak okuma tarafının istemediği şey (bkz.
+   * `gate-status-reentry.ts`'in "kurallar yeniden okunuyor" notu).
+   */
+  gateStatuses?: { approve?: string; return?: string },
 ): Promise<GateDecision> {
   const owner = GATE_OWNER[at as keyof typeof GATE_OWNER] ?? "tech-leads";
   state.status = "gate";
@@ -38,7 +50,22 @@ export async function awaitGate(
   // `canCloseGate`'s `wrong_step` check, not by whether it arrived early.
   // The group the gate is really open against — the directory's name for the
   // role, which is what an approver's claim will carry.
-  const openedAgainst = await acts.openGate(ticket, at, owner);
+  const openedAgainst = await acts.openGate(ticket, at, owner, gateStatuses);
+
+  /**
+   * Kapının AÇILDIĞI an — `openGate`'ten SONRA damgalanır.
+   *
+   * Sıra kritik ve netleştirme damgasıyla birebir aynı gerekçeye dayanıyor:
+   * kapıya girilirken Maestro ticket'ı `onReview` statüsüne KENDİSİ taşıyor
+   * (`ticket-workflow.ts`, gate setine girerken bir kez) ve `openGate` Jira'ya
+   * kapı yorumunu yazıyor. İkisi de Jira'da bir değişim üretir. Kapı kararı
+   * artık statüden de okunabildiği için (`gateApproveStatus` /
+   * `gateReturnStatus`), bu damga olmasa o kendi hareketlerinin yankısı bir
+   * insan kararı sanılabilirdi.
+   *
+   * `workflowNow()` Temporal'in deterministik saati — replay güvenli.
+   */
+  state.gateOpenedSince = workflowNow();
 
   let waited = 0;
   for (;;) {
@@ -72,6 +99,10 @@ export async function awaitGate(
       }
       if (closed.decision === "approve") state.approvers.set(at, closed.actorUserId);
       state.status = "running";
+      // Kapı kapandı: eşik kalkar, böylece bu andan sonraki bir statü değişimi
+      // artık bu kapının kararı olarak okunamaz. `awaitingClarificationSince`
+      // beklemenin sonunda nasıl temizleniyorsa aynı sebeple.
+      state.gateOpenedSince = null;
       return closed;
     }
     waited += 1;

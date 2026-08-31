@@ -70,10 +70,39 @@ export const GATES_BY_RISK: Record<RiskTier, readonly StepId[]> = {
   kritik: ["4", "5", "9", "11", "12"],
 };
 
+/**
+ * ÜÇ KARAR, İKİ DEĞİL — ve üçüncüsü bir ret DEĞİL.
+ *
+ * `approve` ve `reject` M51'den beri var. `return_analysis` (banka akışı) o
+ * ikisinin arasına giren ÜÇÜNCÜ bir cevap: "eksik var, bir daha bak."
+ *
+ * Neden `reject`'in bir alt hâli değil de ayrı bir karar — ölçülen fark:
+ *
+ *  · `reject` M54 ret SAYACINI artırır (`countRejection`) ve üçüncüsünde koşuyu
+ *    insana DEVREDER (`handOver`). Operatörün akışında `analysisapproval →
+ *    analiz` dönüşü rutin bir tur: üç kez "bir daha bak" diyen bir inceleyici
+ *    süreci işletiyordur, bozmuyordur. Sayaca yazmak, normal çalışmayı üç turda
+ *    bir devreye sokardı.
+ *  · `reject` denetim zincirine `GATE_REJECT` yazar ve Jira'ya "reddedildi"
+ *    der. Geri gönderme bir ceza değil; ticket'ın üstünde "reddedildi" yazması
+ *    operatörün istediğinin tersini söyler.
+ *  · Statü eşlemesinde de ayrı yer tutar: `onRejected` ile
+ *    `gateReturnStatus` aynı statü OLABİLİR, ama aynı olmak ZORUNDA değildir
+ *    ve bunu operatör seçer.
+ *
+ * Ortak olan da bilerek ortak: geri gönderme de analizi YENİDEN YAZDIRIR ve
+ * `continueAsNew` ile aynı koşu olarak sürer, yani bağlam (kural, ajan
+ * varyantı, statü eşlemesi, ret sayaçları, resume token) korunur. Farkı ne
+ * sayılır, ne devredilir, ne "ret" diye adlandırılır.
+ *
+ * `reason` yalnız `reject` için ZORUNLU. Geri gönderme bir statü taşımasıyla da
+ * gelebiliyor (aşağıdaki `gateReturnStatus` yolu) ve bir statü değişiminin
+ * yazılı sebebi yoktur; sebep istemek, o kanalı kullanılamaz kılardı.
+ */
 export const GateDecision = z
   .object({
     step: StepId,
-    decision: z.enum(["approve", "reject"]),
+    decision: z.enum(["approve", "reject", "return_analysis"]),
     actorUserId: NonEmpty,
     actorGroup: NonEmpty,
     sodVerified: z.boolean(),
@@ -161,5 +190,21 @@ export const WorkflowRunState = z.object({
    * `askClarification` yorumunun kendi yankısını "cevap" saymaya yeterdi.
    */
   awaitingClarificationSince: IsoDateTime.optional(),
+  /**
+   * Onay kapısının AÇILDIĞI an — koşu bir onay kapısında (4/5/9/11/12)
+   * beklerken dolu, başka her adımda yok.
+   *
+   * `awaitingClarificationSince` ile TAM OLARAK aynı işi, kapının bir adım
+   * ötesinde yapar: statüyle verilen kapı kararının (aşağıya bakın) zaman
+   * katmanı budur. Maestro kapıya girerken `moveStatus("review", onReview)`
+   * çağırıyor — yani ticket'ı KENDİSİ taşıyor — ve o taşımanın Jira'daki
+   * yankısı, eşik olmasa "operatör statüyü değiştirdi" diye okunurdu. Kapı
+   * kendi açılışıyla kendini kapatırdı.
+   *
+   * Damga `moveStatus("review", …)`'dan SONRA atılır, tıpkı netleştirme
+   * damgasının `askClarification`'dan sonra atılması gibi, ve aynı sebeple:
+   * Maestro'nun kendi hazırlık hareketleri eşiğin GERİSİNDE kalmalı.
+   */
+  gateOpenedSince: IsoDateTime.optional(),
 });
 export type WorkflowRunState = z.infer<typeof WorkflowRunState>;

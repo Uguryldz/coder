@@ -72,7 +72,14 @@ describe("initial migration", () => {
       expect(created, `no CREATE TYPE for ${parsed.name}`).toBeDefined();
       for (const value of parsed.values) {
         const inCreate = created?.includes(`'${value}'`) ?? false;
-        const added = allSql.includes(`ALTER TYPE "${parsed.name}" ADD VALUE '${value}'`);
+        // `IF NOT EXISTS` OPSİYONEL olarak kabul ediliyor, ve aslında bu
+        // depoda beklenen yazım: 0008-0016 tarihsel olarak yarım uygulandığı
+        // için her migration re-appliable olmak zorunda. Deseni zorunlu
+        // kılmayan bir eşleşme, iki yazımı da geçerli sayar.
+        const added = new RegExp(
+          `ALTER TYPE "${parsed.name}" ADD VALUE (?:IF NOT EXISTS )?'${value}'`,
+          "u",
+        ).test(allSql);
         expect(inCreate || added, `${parsed.name}.${value} never reaches the database`).toBe(true);
       }
     }

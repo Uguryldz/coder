@@ -378,6 +378,65 @@ export class JiraCloudWorkPort implements WorkPort {
     return out;
   }
 
+  /**
+   * Ticket'ın STATÜ değişimleri — kim, ne zaman, nereye. En eskiden en yeniye.
+   *
+   * ── Neden `readCurrentStatus` yetmiyor ────────────────────────────────────
+   * Kapı kararı statüyle verilebiliyor, ve `decideGate` GRUP ÜYELİĞİ soruyor
+   * (M32/M35): statü değiştirmek yetkiyi atlamanın yolu değildir. Üyelik ancak
+   * kararı VERENİ adlandırabildiğimizde ölçülebilir. Ticket'ın şu anki statüsü
+   * onu KİMİN oraya taşıdığını söylemez; changelog söyler.
+   *
+   * Webhook'suz kurulumda (dışarı çıkışı olmayan kurumsal ağdaki DC) bu tek
+   * yoldur: teslimat gelmiyorsa aktörü öğrenmenin başka kaynağı yok, ve aktör
+   * olmadan bu kanal kapı kararı taşıyamazdı.
+   *
+   * ── Neden ayrı bir yetenek, `WorkPort` metodu değil ───────────────────────
+   * `listAssigneeChanges` ile aynı gerekçe ve aynı desen: `WorkPort` DONMUŞ, ve
+   * bu okuma workflow'un ihtiyacı değil yoklama döngüsünün ihtiyacı.
+   *
+   * `at` (changelog kaydının kendi zamanı) taşınıyor, çünkü kapı kanalının ZAMAN
+   * katmanı buna dayanıyor: kapı açılmadan ÖNCEKİ bir taşıma, Maestro'nun kendi
+   * `onReview` hareketinin yankısıdır ve karar sayılmamalıdır.
+   */
+  async listStatusChanges(
+    key: TicketKey,
+  ): Promise<Array<{ id: string; actorAccountId: string; toStatus: string | null; at: string }>> {
+    const issueKey = requireTicketKey(key, "key");
+    const raw = await this.client.get<unknown>(
+      `${API}/issue/${encodeURIComponent(issueKey)}/changelog`,
+      {},
+    );
+    const values = asRecord(raw)?.["values"];
+    if (!Array.isArray(values)) throw new JiraResponseError("changelog", ["response carries no values array"]);
+
+    const out: Array<{ id: string; actorAccountId: string; toStatus: string | null; at: string }> = [];
+    for (const entry of values) {
+      const rec = asRecord(entry);
+      const id = rec?.["id"];
+      const created = rec?.["created"];
+      const actor = asRecord(rec?.["author"])?.["accountId"];
+      const items = rec?.["items"];
+      if (typeof id !== "string" && typeof id !== "number") continue;
+      if (typeof actor !== "string" || !Array.isArray(items)) continue;
+      for (const item of items) {
+        const it = asRecord(item);
+        if (it?.["field"] !== "status") continue;
+        // `toString` — Jira changelog'unda hedef statünün ADI. `to` ise statü
+        // ID'sidir ve bir projenin iş akışına aittir; kural adlarla yazıldığı
+        // için okunacak olan addır.
+        const to = it["toString"];
+        out.push({
+          id: String(id),
+          actorAccountId: actor,
+          toStatus: typeof to === "string" && to.trim().length > 0 ? to.trim() : null,
+          at: typeof created === "string" ? created : "",
+        });
+      }
+    }
+    return out;
+  }
+
   /** Poller payload → command, or null. Never throws on unknown commands. */
   async parseCommand(rawBody: unknown): Promise<CommandEnvelope | null> {
     return this.parseCommandDetailed(rawBody).envelope;
@@ -600,6 +659,38 @@ export class JiraCloudWorkPort implements WorkPort {
    */
   async transition(key: TicketKey, transitionId: string): Promise<void> {
     await this.applyTransition(key, transitionId);
+  }
+
+  /**
+   * Ticket'ın ŞU ANKİ statü ADI — okuma, hareket yok.
+   *
+   * SÜRÜCÜYE ÖZGÜ YETENEK, `WorkPort` metodu DEĞİL: port DONMUŞ ve donmuş
+   * `TicketSnapshot` bir statü alanı taşımıyor. Bu, yalnızca statüyü ekleyerek
+   * o şemayı genişletmemenin bedeli — ve statüyü snapshot'a eklemek, ondan
+   * beslenen her yazıcıya, her doğrulayıcıya ve donmuş sözleşmeye dokunmak
+   * demek olurdu.
+   *
+   * Tek okuyucusu yoklama döngüsünün kapı statüsü kanalı
+   * (`apps/deploy/src/jira-poller.ts`): webhook'un ULAŞMADIĞI kurulumda
+   * operatörün ticket'ı bir statüye taşımasını GÖREBİLMEK için tek yol bu.
+   * Webhook yolunda gerekmiyor — teslimat statüyü zaten taşıyor.
+   *
+   * `null` = "site bir statü adı söylemedi". Bir hata değil ve fırlatmıyor:
+   * çağıran bunu "karar yok" olarak okur, ki bilinmeyen bir statüden karar
+   * üretmemek zaten bu kanalın fail-closed yönü.
+   *
+   * `fields=status`: kararın ihtiyaç duyduğu tek alan. Ticket METNİ (summary /
+   * description) bilerek istenmiyor — bu döngü hiçbir noktada ticket içeriği
+   * tutmaz.
+   */
+  async readCurrentStatus(key: TicketKey): Promise<string | null> {
+    const parsed = TicketKey.safeParse(key);
+    if (!parsed.success) return null;
+    const raw = await this.client.get<unknown>(
+      `${API}/issue/${encodeURIComponent(parsed.data)}`,
+      { fields: "status" },
+    );
+    return currentStatusNameOf(raw);
   }
 
   /**

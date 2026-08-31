@@ -485,7 +485,7 @@ MIG_SAYI=$(docker run --rm --entrypoint sh "${MAESTRO_NODE_IMAGE}" \
 # İmaj bundan azını taşıyorsa eski bir koddan build edilmiştir: şema eksik
 # kurulur ve eksik bir sütuna yazan kod hata vermeden çalışır — değer hiç
 # veritabanına ulaşmaz.
-MIG_BEKLENEN=26
+MIG_BEKLENEN=27
 if [[ "${MIG_SAYI}" -ge "${MIG_BEKLENEN}" ]]; then
   ok "  Migration dosyası: ${MIG_SAYI} adet (asgari ${MIG_BEKLENEN})."
 else
@@ -616,6 +616,41 @@ ok "Şema kuruldu."
 # Güncelleme kurulumunda (hesap zaten varken) böyle bir satır çıkmaz.
 warn "İLK KURULUMSA: yukarıdaki 'GEÇİCİ PAROLA' satırını ŞİMDİ not edin — bir daha gösterilmez."
 warn "  Not almadıysanız/kaybettiyseniz yenisi:  ./reset-admin.sh admin"
+
+# ── 11b) Temporal saklama süresi ─────────────────────────────────────────────
+#
+# ÖLÇÜLMÜŞ VERİ KAYBININ DÜZELTMESİ. Temporal'ın varsayılan saklama süresi 24
+# SAAT, ve bu süre bir koşunun geçmişine uygulanır. Bu kurulumda 3.5 ile 14 gün
+# arasında, 4. ve 5. KAPIDA insan onayı bekleyen 12 koşunun execution'ı
+# Temporal'dan düşmüştü: `tctl workflow describe` "workflow not found" derken
+# veritabanı satırı hâlâ "running" gösteriyordu. Onay bekleyen iş, kimse hiçbir
+# şey yapmadan, sessizce kayboldu.
+#
+# Maestro'nun akışı GÜNLER sürer ve bu tasarımın kendisidir: netleştirme
+# beklemesi ve onay kapıları SÜRESİZDİR (M61). Saklama süresi, iş akışının
+# ölçeğinin altında olamaz.
+#
+# NEDEN BURADA DA, compose'da da. `DEFAULT_NAMESPACE_RETENTION` yalnız namespace
+# İLK YARATILIRKEN okunur — kurulmuş bir sistemde hiçbir şey yapmaz. Bu adım ise
+# mevcut namespace'i düzeltir. Biri yeni kurulumu, diğeri güncellemeyi doğru
+# yapıyor, ve ikisi de olmadan kurulumlardan biri sessizce eski değerde kalırdı.
+#
+# HATA DURUMU UYARIDIR, ÖLÜM DEĞİL. Kurulumun geri kalanı çalışır ve bu ayar
+# panelden ya da elle de düzeltilebilir; süre yanlış diye bankayı kurulumsuz
+# bırakmak orantısız olurdu. Ama SESSİZ de değil: satır ekranda kalır.
+RETENTION_ISTENEN="${TEMPORAL_RETENTION:-2160h}"
+info "Temporal saklama süresi ayarlanıyor (${RETENTION_ISTENEN})…"
+tmp_ns="${TEMPORAL_NAMESPACE:-default}"
+if docker compose exec -T temporal tctl --address temporal:7233 --namespace "${tmp_ns}" \
+     namespace update --retention "${RETENTION_ISTENEN}" >/dev/null 2>&1; then
+  ok "  Saklama süresi: ${RETENTION_ISTENEN} (namespace: ${tmp_ns})."
+else
+  warn "  Saklama süresi AYARLANAMADI. Varsayılan 24 saat ise, kapıda GÜNLERCE"
+  warn "  bekleyen bir koşunun geçmişi silinir ve koşu uyandırılamaz hâle gelir."
+  warn "  Elle:  docker compose exec temporal tctl --address temporal:7233 \\"
+  warn "           --namespace ${tmp_ns} namespace update --retention ${RETENTION_ISTENEN}"
+  warn "  Doğrulama:  docker compose exec temporal tctl --address temporal:7233 namespace describe"
+fi
 
 info "Uygulama başlatılıyor…"
 docker compose up -d

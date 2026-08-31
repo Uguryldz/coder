@@ -125,6 +125,12 @@ enum AuditActionE {
   GATE_OPEN
   GATE_APPROVE
   GATE_REJECT
+  /// Kapıda "eksik var, bir daha bak" — analiz turu yeniden çalıştırıldı
+  /// (migration 0026). `GATE_REJECT`ten AYRI, ve ayrılığı denetim izinin
+  /// kendisi için gerekli: ret akışı DURDURUR ve M54 sayacına girer, geri
+  /// gönderme ise rutin bir inceleme turudur. İkisini aynı değerle yazmak
+  /// "bu ticket kaç kez reddedildi" sorusunun cevabını bozardı.
+  GATE_RETURN
   CLARIFICATION_ASKED
   CLARIFICATION_ANSWERED
   PII_MASKED
@@ -591,6 +597,19 @@ model ListeningRule {
   /// transition ids — ids are per-workflow and meaningless the moment a rule is
   /// copied to another project, whereas a name the operator typed is the same
   /// thing they read on the board.
+  ///
+  /// İKİ YÖN, TEK BELGE. Yukarıdaki beş nokta YAZMA tarafı ("Maestro ticket'ı
+  /// şu anda oraya taşısın"). Aynı belge, `gateApproveStatus` /
+  /// `gateReturnStatus` ile OKUMA tarafını da taşır: "operatör ticket'ı oraya
+  /// taşıdığında Maestro bunu KAPI KARARI saysın" — `/approve` yorumunun
+  /// yanındaki ikinci kanal (`apps/bff/src/gate-status-reentry.ts`). Bu iki
+  /// alanın MIGRATION GEREKTİRMEDEN eklenebilmesi, yukarıdaki "Json, not
+  /// columns" kararının ödediği şeyin ta kendisi.
+  ///
+  /// İki yön aynı belgede olduğu için ÇAKIŞABİLİR: `onRejected` ile
+  /// `gateReturnStatus` aynı statüyü gösterirse, Maestro'nun kendi taşıması
+  /// kendi kararı olarak geri okunurdu. Okuma tarafı bunu tespit eder, o alanı
+  /// DÜŞÜRÜR (fail-closed) ve çakışmayı panelde ADLANDIRIR — sessizce değil.
   statusMapJson     Json?
 
   /// One rule per (project, assignee, match target): a given trigger maps to

@@ -11,6 +11,7 @@ import {
   MATCH_KINDS,
   StatusMapSchema,
 } from "../listening-store.js";
+import { realignRules } from "../listening-identity.js";
 import { seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, conflict, notFound } from "../errors.js";
@@ -440,6 +441,101 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
       return reply
         .code(200)
         .send({ created: outcome.created, skipped: outcome.skipped, rules: outcome.rules });
+    },
+  );
+
+  /**
+   * KURALLARDAKİ BOT HESABINI BAĞLANTIDAKİYLE HİZALA.
+   *
+   * ── HANGİ ARIZAYI KAPATIYOR ─────────────────────────────────────────────
+   * Bir dinleme kuralı bot hesabının bir KOPYASINI taşır (`assigneeAccountId`),
+   * çünkü tarama o değeri doğrudan JQL'e yapıştırır. Kopya, bağlantının
+   * öğrendiği kimlik DEĞİŞTİĞİNDE ayrışır — ve bir kez ayrıştı: Data Center
+   * yoklaması kullanıcı adı (`name`, "ugyildiz") yerine iç tutamağı (`key`,
+   * "jirauser13506") okuyordu, o değer kurallara tohumlandı, ve JQL `assignee`yi
+   * kullanıcı adıyla çözdüğü için her tarama boş döndü. Jira buna hata değil
+   * 200 + boş sayfa cevabı verdiği için hiçbir yerde görünmüyordu.
+   *
+   * `connection-service.ts` düzeltildi ve bağlantı testi `config.botAccountId`i
+   * doğru değere çekiyor. Ama mevcut kurallar kendi kopyalarını taşıyor: kod
+   * düzelse de bu satırlar düzelmez, ve düzelmezse tarama düzelmiş bir
+   * bağlantının yanında hâlâ hiçbir şey bulmaz. Onlarca kuralı elle düzenlemek
+   * ise bir çözüm değil.
+   *
+   * ── NEDEN BİR DÜĞME, NEDEN OTOMATİK DEĞİL ───────────────────────────────
+   * Sessiz otomatik yazma YOK, ve bu bilinçli. Bir kuralın hangi ticket'ları
+   * aldığı bu kurulumun en görünür davranışı; operatör bakmıyorken onu
+   * değiştirmek, düzeltmeye çalıştığımız sessiz-yanlışın ters yönde tekrarı
+   * olurdu. Bir SQL migration'ı da yazamazdı: doğru değer hesaplanamaz (tek
+   * kaynağı Jira'nın `/myself` cevabı, yani bir ağ çağrısı) ve `jirauser`
+   * deseni bir tahmindir — bazı DC kurulumlarında `key` gerçekten kullanıcı
+   * adına eşittir.
+   *
+   * Bu yüzden hizalama operatörün BASTIĞI bir iştir, ve bastığında ne olduğunu
+   * GÖRÜR: cevap kaç kuralın hangi kimlikten hangisine taşındığını sayar,
+   * denetim kaydı da aynısını yazar.
+   *
+   * ── NEYE DAYANIR ────────────────────────────────────────────────────────
+   * `jirauser` desenine DEĞİL: kaynak, bağlantı testinin Jira'dan canlı olarak
+   * öğrendiği `config.botAccountId`. Desen yalnız `/studio/config-health`
+   * satırında bir uyarı metni seçer, hiçbir yazmayı yönlendirmez. Böylece
+   * desene uymayan bozuk bir kimlik de düzelir, desene uyan doğru bir kullanıcı
+   * adı da yanlışlıkla bozulmaz.
+   *
+   * İDEMPOTENT: zaten doğru olan kurala dokunulmaz, ikinci basış `changed: []`
+   * döner. Yetki `WRITE_ROLES` — kural yazabilen kişinin işi — ve bakım kilidi
+   * altında `assertWritable` ile durur, çünkü bu gerçek bir yazma.
+   */
+  app.post(
+    "/studio/listening-rules/realign-bot",
+    { preHandler: writeHandler },
+    async (request, reply) => {
+      await assertWritable(deps);
+      const { store } = listeningDeps(deps);
+      if (deps.connections === undefined) unwired("connections");
+
+      const outcome = await realignRules(store, deps.connections);
+      if (!outcome.ok) {
+        /**
+         * İki adlandırılmış ret, ikisi de operatörün DÜZELTEBİLECEĞİ durumlar:
+         *
+         *  · `bot_account_unknown` — hiçbir Jira bağlantısı test edilmemiş, yani
+         *    yazılacak bir gerçek yok. Yapılacak şey bağlantı testini çalıştırmak.
+         *  · `duplicate_listening_rule` — hizalanan kural, aynı tetikleyiciyi
+         *    zaten yeni kimlikle taşıyan bir kuralla çakıştı (operatör hem eski
+         *    hem yeni kimlikle kural yazmış). Çakışan kuralın id'si söylenir.
+         */
+        throw conflict(outcome.reason, {
+          ...(outcome.reason === "duplicate_listening_rule" ? { ruleId: outcome.ruleId } : {}),
+        });
+      }
+
+      // Denetim yalnız GERÇEKTEN bir şey değiştiyse: hiçbir kuralı taşımayan bir
+      // basış, denetim izinde bir yapılandırma değişikliği gibi görünmemeli.
+      if (outcome.changed.length > 0) {
+        await deps.audit.append({
+          actor: sessionActor(sessionOf(request)),
+          action: "PARAM_CHANGED",
+          subject: `listening-rule:realign`,
+          at: deps.clock.now(),
+          meta: {
+            surface: "listening",
+            verb: "bot_realigned",
+            // Kimlikler denetime GİRER ve bu doğru: bir Jira hesap kimliği sır
+            // değil (bkz. connections.ts'in aynı kararı), ve "hangi değerden
+            // hangisine" olmadan kayıt sorulan soruyu cevaplamıyor.
+            accountIdNow: outcome.accountId,
+            ruleCount: outcome.changed.length,
+            accountIdsWas: [...new Set(outcome.changed.map((c) => c.from))].join(", "),
+          },
+        });
+      }
+
+      return reply.code(200).send({
+        accountId: outcome.accountId,
+        changed: outcome.changed,
+        untouched: outcome.untouched,
+      });
     },
   );
 

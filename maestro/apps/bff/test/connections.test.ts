@@ -1,7 +1,9 @@
 import type { LightMyRequestResponse } from "fastify";
 import { describe, expect, it } from "vitest";
 import { CONNECTION_NOTE_MAX, noteWithParams } from "../src/connection-note.js";
+import { userIdOf } from "@maestro/adapter-jira";
 import type { ConnectorFetch } from "../src/connection-service.js";
+import { probeFor } from "../src/connection-service.js";
 import { auth, harness, type Harness, type HarnessOptions } from "./helpers.js";
 
 /**
@@ -1225,5 +1227,102 @@ describe("noteWithParams", () => {
     const note = noteWithParams("connections.test.dns", { host: "x".repeat(200) });
     expect(note).toBe("connections.test.dns");
     expect(note.length).toBeLessThanOrEqual(CONNECTION_NOTE_MAX);
+  });
+});
+
+/**
+ * DATA CENTER'IN İKİ KİMLİĞİ — ve bu iki katmanın ayrışmasının yasaklanması.
+ *
+ * ── ÖLÇÜLEN ARIZA ───────────────────────────────────────────────────────────
+ * Data Center `/myself` cevabında bir kullanıcıyı İKİ ayrı alanla adlandırır:
+ *
+ *   { "name": "ugyildiz", "key": "jirauser13506", "displayName": "Uğur Yıldız" }
+ *
+ * `name` operatörün yazdığı ve gördüğü kullanıcı adıdır. `key` ise modern bir
+ * DC'de `jirauser<sayı>` biçiminde üretilen bir İÇ tutamaktır — kullanıcı adı
+ * değiştirilse bile sabit kalsın diye vardır ve hiçbir ekranda görünmez.
+ *
+ * Yoklama `key`i önce okuyordu. O değer bir dinleme kuralının
+ * `assigneeAccountId` alanına tohumlanıyor (`listening-seed.ts:296`), tarama da
+ * onu doğrudan JQL'e yapıştırıyor: `assignee in (jirauser13506)`.
+ *
+ * JQL `assignee`yi KULLANICI ADIYLA çözer. İç tutamakla yazılan sorgu hiçbir
+ * şeyle eşleşmez — ve Jira buna hata değil, 200 + BOŞ sayfa cevabı verir. Yani
+ * atanmış ticket'larla dolu bir projede her tur "0 sonuç" diyordu ve hiçbir
+ * ekran nedenini söylemiyordu. Bankanın kurulumunda ölçüldü; operatör bizden
+ * önce fark etti ("benim jira user jirauser13506 gibi geliyor ama kullanıcı
+ * adı ugyildiz").
+ *
+ * ── NEDEN İKİ KATMAN BİRDEN ÇİVİLENİYOR ─────────────────────────────────────
+ * Bir DC kullanıcısı sistemde İKİ ayrı yerde kimliğe çevriliyor:
+ *
+ *   1. `connection-service.ts:probeFor("jira_dc").accountId` — bağlantı testi
+ *      `/myself`i okuduğunda, yani kimliğin ilk öğrenildiği an.
+ *   2. `packages/adapter-jira/src/mapping.ts:userIdOf` — bir webhook zarfı ya
+ *      da bir arama sonucu bir kullanıcı NESNESİ taşıdığında.
+ *
+ * (2) her zaman `name` önce okuyordu, (1) ise `key`. İkisi farklı cevap
+ * ürettiği sürece, bağlantı testinden tohumlanan bir kural, adaptörden okunan
+ * bir ticket'la ASLA eşleşemezdi — ve bu ayrışma her iki tarafın da kendi
+ * içinde tutarlı görünmesiyle gizleniyordu.
+ *
+ * Bu yüzden aşağıdaki test tek bir değeri değil, İKİ KATMANIN EŞİTLİĞİNİ
+ * ölçüyor: aynı gövde ikisine de verilir ve cevapların aynı olması istenir.
+ * Biri değişirse — hangisi olursa olsun — test kırılır. Tek katmanı çivilemek
+ * yeterli olmazdı: bugünkü hata tam olarak "her ikisi de kendi başına makul,
+ * ama birbirinden farklı" hâliydi.
+ */
+describe("Jira Data Center: `/myself` hangi alanı kimlik sayar", () => {
+  /** Gerçek bir DC `/myself` gövdesi — bankanın kurulumundan alınan şekliyle. */
+  const DC_MYSELF = {
+    name: "ugyildiz",
+    key: "jirauser13506",
+    displayName: "Uğur Yıldız",
+    emailAddress: "ugur.yildiz@ugurbank.local",
+  } as const;
+
+  const probe = probeFor("jira_dc");
+
+  it("kullanıcı adını (`name`) alır, iç tutamağı (`key`) değil", () => {
+    // `key` gövdede VAR ve dolu: testin anlamı tam olarak, dolu bir `key`in
+    // yanında bile `name`in kazanması.
+    expect(probe?.accountId?.(DC_MYSELF)).toBe("ugyildiz");
+    expect(probe?.accountId?.(DC_MYSELF)).not.toBe("jirauser13506");
+  });
+
+  /**
+   * ASIL ÇİVİ. İki katmanın cevabı AYNI olmalı — biri `name`, diğeri `key`
+   * okumaya dönerse burası kırılır.
+   */
+  it("yoklamanın öğrendiği kimlik ile adaptörün ürettiği kimlik AYNIdır", () => {
+    expect(probe?.accountId?.(DC_MYSELF)).toBe(userIdOf(DC_MYSELF));
+  });
+
+  /**
+   * `key` hâlâ bir yedek — ve olması gerekiyor.
+   *
+   * Eski bir DC ya da bir kullanıcı dizini vekili `name` alanını boş
+   * bırakabilir. O durumda `key` ile devam etmek, kimliksiz kalmaktan iyidir:
+   * bazı DC kurulumlarında `key` gerçekten kullanıcı adına eşittir. İki katman
+   * burada da aynı sırayı izliyor, o yüzden eşitlik yedek yolda da geçerli.
+   */
+  it("`name` yoksa `key`e düşer — ve iki katman orada da aynı cevabı verir", () => {
+    const noName = { key: "jirauser13506", displayName: "Uğur Yıldız" };
+    expect(probe?.accountId?.(noName)).toBe("jirauser13506");
+    expect(probe?.accountId?.(noName)).toBe(userIdOf(noName));
+  });
+
+  /**
+   * Görünen ad bir kimlik DEĞİLDİR ve yoklamadan asla çıkmaz.
+   *
+   * `userIdOf` daha geniş bir yelpazeye düşüyor (`emailAddress`, `displayName`)
+   * çünkü bir webhook zarfında elde kalan tek şey o olabilir. Yoklama ise
+   * yazılacak bir kimlik ÜRETİYOR: "Uğur Yıldız" gibi boşluklu bir görünen adı
+   * `assignee in (...)` içine yazmak, sessizce eşleşmeyen bir sorgu daha
+   * demektir. Bu yüzden yoklama `undefined` döner ve bağlantı testi depodaki
+   * değeri ELLEMEZ — mevcut davranış, `accountId` yokken düzeltme yapılmaması.
+   */
+  it("yalnız görünen ad varken kimlik ÜRETMEZ", () => {
+    expect(probe?.accountId?.({ displayName: "Uğur Yıldız" })).toBeUndefined();
   });
 });

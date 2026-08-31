@@ -44,6 +44,7 @@ function options(overrides: Partial<Parameters<typeof panelTaniRaporu>[0]> = {})
         clarify: null,
         variants: null,
         statusMaps: null,
+        ruleIdentity: null,
       }),
     akis: AKIS,
     hostAdi: "banka-01",

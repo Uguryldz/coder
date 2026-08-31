@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -364,6 +364,16 @@ export function ListeningScreen(): ReactNode {
   // the rule being edited — a half-filled edit would silently blank the rest.
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
+  /**
+   * Formun kendisi — "Düzenle"nin operatörü GÖTÜRDÜĞÜ yer.
+   *
+   * Kural tablosu formun ALTINDA duruyor, ve bir düzine kuralı olan bir
+   * kurulumda "Düzenle" ekranın dışında kalan bir formu doldururdu: operatör
+   * hiçbir şey olmamış gibi görür, ikinci kez basar, sonra kuralın
+   * düzenlenemediğini bildirir. Alanlar dolmuştu — görünmüyorlardı.
+   */
+  const formRef = useRef<HTMLDivElement | null>(null);
+
   // The agent-variant catalogue, for the two per-role dropdowns. A platform
   // without the variants surface (503) simply leaves both lists empty and the
   // selects offer only "default agent" — the rule still saves.
@@ -526,6 +536,21 @@ export function ListeningScreen(): ReactNode {
           ) as StatusDraft),
     );
     setReassignOnNeedInfo(map?.reassignOnNeedInfo === true);
+    // Form ekranın dışındaysa oraya git. `requestAnimationFrame`: yukarıdaki
+    // `setState`lerin boyadığı formu kaydırıyoruz, bu satır çalışırken henüz
+    // eski hâliyle duran kutuyu değil.
+    //
+    // Varlığı KONTROL EDİLİYOR, ve bu bir test hilesi değil: kaydırma bir
+    // kolaylık, düzenlemenin kendisi değil. Onu sunmayan bir ortamda (jsdom,
+    // eski bir tarayıcı, kaydırmayı kapatan bir erişilebilirlik ayarı) fırlayan
+    // bir hata, kuralın alanları çoktan dolmuşken düzenlemenin tamamını
+    // bozardı — yani bir konfor özelliği, asıl işi düşürürdü.
+    requestAnimationFrame(() => {
+      const form = formRef.current;
+      if (typeof form?.scrollIntoView === "function") {
+        form.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
   };
 
   // One-click defaults: the BFF reads the project's Jira issue types and seeds
@@ -577,6 +602,46 @@ export function ListeningScreen(): ReactNode {
     seed.mutate(key);
   };
 
+  /**
+   * BOT HESABINI HİZALA — bankada saatler yakan sessiz-yanlışın düzeltmesi.
+   *
+   * Bir kural, bot hesabının bir KOPYASINI taşır (`assigneeAccountId`), çünkü
+   * tarama o değeri doğrudan JQL'e yapıştırır. Kopya ayrışabilir, ve bir kez
+   * ayrıştı: Jira Data Center `/myself` cevabında kullanıcıyı iki alanla
+   * adlandırır — `name` ("ugyildiz", kullanıcı adı) ve `key` ("jirauser13506",
+   * iç tutamak) — ve bağlantı yoklaması `key`i okuyordu. JQL `assignee`yi
+   * KULLANICI ADIYLA çözdüğü için o kimlikle yapılan arama hiçbir şey bulmuyor,
+   * üstelik Jira buna hata değil BOŞ sonuç döndüğü için her tur sessizce "0
+   * sonuç" diyordu.
+   *
+   * Yoklama düzeltildi ve bağlantı testi doğru değeri öğreniyor — ama MEVCUT
+   * kurallar kendi kopyalarını taşıyor. Bu düğme onları bağlantının bildiği
+   * kimliğe taşır. Otomatik DEĞİL ve bilerek: bir kuralın hangi ticket'ları
+   * aldığı bu kurulumun en görünür davranışı, ve onu operatör bakmıyorken
+   * değiştirmek düzeltmeye çalıştığımız sessizliğin ters yönde tekrarı olurdu.
+   */
+  const realign = useMutation({
+    mutationFn: () =>
+      api.post<{
+        accountId: string;
+        changed: readonly { ruleId: string; projectKey: string; from: string }[];
+        untouched: number;
+      }>("/studio/listening-rules/realign-bot", {}),
+    onSuccess: ({ accountId, changed }) => {
+      invalidate();
+      // Kaç kuralın hangi kimliğe taşındığı SÖYLENİR. Sessiz bir düzeltme, hiç
+      // olmamış gibi okunur — ve operatör az önce neyin değiştiğini bilmeden
+      // ekrandan ayrılır.
+      toast.show(
+        changed.length === 0 ? "success" : "success",
+        changed.length === 0
+          ? t("listening.realign.none")
+          : t("listening.realign.done", { count: String(changed.length), account: accountId }),
+      );
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
   const remove = useMutation({
     mutationFn: (ruleId: string) =>
       api.delete<{ ok?: boolean }>(`/studio/listening-rules/${ruleId}`),
@@ -598,6 +663,37 @@ export function ListeningScreen(): ReactNode {
     query.isSuccess && routing.isSuccess
       ? boundProjects.filter((key) => !rules.some((rule) => rule.projectKey === key))
       : [];
+
+  /**
+   * KURALLARIN BOT HESABI, bağlantının bildiğiyle karşılaştırıldığında.
+   *
+   * İki ayrı işaret, ve ikisi de gerekli:
+   *
+   *  · AYRIŞMA (`staleRules`) — kural, bağlantı testinin Jira'dan canlı olarak
+   *    öğrendiği kimlikten BAŞKA bir değer taşıyor. Bir tahmin değil bir
+   *    karşılaştırma, ve düzeltmesi kesin.
+   *  · DESEN (`internalKeyRules`) — kimlik `jirauser<sayı>` biçiminde, yani
+   *    Jira Data Center'ın İÇ tutamağı. Bu işaret kıyastan BAĞIMSIZ olmak
+   *    zorunda, çünkü bankadaki gerçek durum tam olarak buydu: yoklama da,
+   *    kurallar da aynı yanlış değeri taşıyordu — ayrışma YOKTU, arıza vardı.
+   *
+   * Sunucu aynı iki işareti `/studio/config-health`te de gösteriyor (Sistem
+   * Sağlığı ekranı). Burada tekrar edilmesi bilinçli: düzeltmenin YAPILDIĞI
+   * ekran, arızayı da söyleyen ekran olmalı — operatörü iki ekran arasında
+   * gezdirmek, uyarının okunmaması demektir.
+   *
+   * Yalnız sorgular CEVAPLADIKTAN sonra: yüklenmekte olan bir liste bir
+   * ayrışma kanıtı değildir.
+   */
+  const DC_INTERNAL_KEY = /^jirauser\d+$/i;
+  const staleRules =
+    query.isSuccess && jiraConns.isSuccess && botAccountId
+      ? rules.filter((rule) => rule.assigneeAccountId.trim() !== botAccountId.trim())
+      : [];
+  const internalKeyRules =
+    query.isSuccess ? rules.filter((rule) => DC_INTERNAL_KEY.test(rule.assigneeAccountId.trim())) : [];
+  const identityWarning =
+    staleRules.length > 0 ? "stale" : internalKeyRules.length > 0 ? "internal" : null;
 
   /**
    * DENEME SONUCU ve onun ÜRETİLDİĞİ TASLAK, birlikte tutulur.
@@ -959,6 +1055,40 @@ export function ListeningScreen(): ReactNode {
           could not read Jira's issue-type list during approval and failed soft.
           Named warning + the way out (test the connection, re-seed, or write a
           rule by hand), instead of a green setup that quietly does nothing. */}
+      {/*
+        BOT HESABI AYRIŞMASI — taramanın sessizce hiçbir şey bulmamasının sebebi.
+
+        Bu bant, "0 sonuç" ile "yanlış kimlikle soruldu" arasındaki farkı
+        söyleyen tek yer. Jira eşleşmeyen bir kimliğe hata değil BOŞ sonuç
+        döndürdüğü için, o fark başka hiçbir yerde görünmüyordu.
+
+        Düğme yalnız `canWrite`e: uyarıyı okumak kural okuyabilen herkesin
+        hakkı, kuralları taşımak ise bir yazma.
+      */}
+      {identityWarning !== null && (
+        <Card>
+          <div className="scr-note scr-note--warn">
+            {identityWarning === "stale"
+              ? t("listening.identity.stale", {
+                  count: String(staleRules.length),
+                  account: botAccountId ?? "",
+                })
+              : t("listening.identity.internal", { count: String(internalKeyRules.length) })}
+          </div>
+          {canWrite && (
+            <div className="screen-actions">
+              <Button
+                variant="primary"
+                busy={realign.isPending}
+                onClick={() => realign.mutate()}
+              >
+                {t("listening.identity.realign")}
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
       {unlistenedProjects.length > 0 && (
         <Card>
           <div className="scr-note scr-note--warn">
@@ -982,10 +1112,25 @@ export function ListeningScreen(): ReactNode {
       )}
 
       {canWrite && (
+        <div ref={formRef}>
         <Card
           title={editingRuleId === null ? t("listening.form.title") : t("listening.form.title_edit")}
           subtitle={t("listening.form.sub")}
         >
+          {/*
+            DÜZENLENEN KURAL, ADIYLA. Form yukarıda, tablo aşağıda: başlıktaki
+            "Kuralı düzenle" tek başına HANGİ kuralı söylemiyor, ve yanlış kuralı
+            düzenlediğini kaydettikten sonra fark etmek bu ekranın en pahalı
+            hatası olurdu.
+          */}
+          {editingRuleId !== null && (
+            <div className="scr-note" style={{ marginBottom: 10 }}>
+              {t("listening.form.editing_which", {
+                project: projectKey,
+                trigger: matchKind === "assigned" ? t("listening.match.assigned") : matchValue,
+              })}
+            </div>
+          )}
           <div className="screen-filters">
             {boundProjects.length > 0 ? (
               <Select
@@ -1380,6 +1525,7 @@ export function ListeningScreen(): ReactNode {
             />
           )}
         </Card>
+        </div>
       )}
 
       <Card padded={false}>

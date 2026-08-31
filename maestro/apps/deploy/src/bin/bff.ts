@@ -5,6 +5,7 @@ import {
   buildServer,
   compositeHealthReader,
   connectionHealthReader,
+  identityDrift,
   resolveBotIdentity,
   resolveDeps,
   parseAllowedStatuses,
@@ -584,15 +585,62 @@ export async function main(): Promise<void> {
               cloudModelVariants: denetim.findings.map((finding) => finding.variantId),
             };
           })(),
-          statusMaps: await (async () => {
+          /**
+           * Statü eşlemesi VE kuralların bot kimliği — TEK okumadan iki gerçek.
+           *
+           * Kimlik satırının raporda da olması şart: rapor, panele erişemeyen
+           * ya da bir destek ticket'ına dosya ekleyen operatörün elindeki tek
+           * teşhis. "Kurallar bağlantının bildiği bot hesabından başka bir
+           * kimlik taşıyor" cümlesi, bu kurulumun taramasının neden sessizce
+           * hiçbir şey bulmadığının cevabı — ve raporda eksik olsaydı, ekranda
+           * söylenen şeyi rapor söylemiyor olurdu.
+           */
+          ...(await (async () => {
             const kurallar = await db.listeningRule.findMany({
-              select: { statusMapJson: true },
+              select: { statusMapJson: true, assigneeAccountId: true },
             });
+            // Bağlantıların öğrendiği bot kimliği — `botAccountIdOf`un okuduğu
+            // alanın aynısı, burada Prisma satırından. Okunamazsa `null`, ve o
+            // "ayrışık" DEĞİL "kıyaslanamadı" demek.
+            const botHesabi = await (async () => {
+              try {
+                const baglantilar = await db.connection.findMany({
+                  where: { enabled: true, kind: { in: ["jira_cloud", "jira_dc"] } },
+                  select: { configJson: true },
+                  orderBy: { id: "asc" },
+                });
+                for (const baglanti of baglantilar) {
+                  const config = baglanti.configJson as Record<string, unknown> | null;
+                  const ogrenilen = config?.["botAccountId"];
+                  if (typeof ogrenilen === "string" && ogrenilen.trim() !== "") {
+                    return ogrenilen.trim();
+                  }
+                }
+              } catch {
+                // Okunamadı: bilinmezlik, ayrışma değil.
+              }
+              return null;
+            })();
+
+            const sapma = identityDrift(
+              kurallar.map((kural) => ({ assigneeAccountId: kural.assigneeAccountId })),
+              botHesabi,
+            );
+
             return {
-              ruleCount: kurallar.length,
-              mappedRuleCount: kurallar.filter((kural) => kural.statusMapJson != null).length,
+              statusMaps: {
+                ruleCount: kurallar.length,
+                mappedRuleCount: kurallar.filter((kural) => kural.statusMapJson != null).length,
+              },
+              ruleIdentity: {
+                ruleCount: kurallar.length,
+                staleRuleCount: sapma.staleRuleCount,
+                staleAccountCount: sapma.staleAccountIds.length,
+                internalKeyRuleCount: sapma.internalKeyRuleCount,
+                connectionKnown: sapma.connectionAccountId !== null,
+              },
             };
-          })(),
+          })()),
         }),
         akis: {
           toplam: () => db.workflowRun.count(),

@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { auditCsvFileName, auditEventsToCsv, filterAuditEvents } from "../audit-filter.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
-import type { StatusMapFacts } from "../config-health.js";
+import type { RuleIdentityFacts, StatusMapFacts } from "../config-health.js";
+import { botAccountIdOf, identityDrift } from "../listening-identity.js";
 import { buildConfigFindings, worstSeverity } from "../config-health.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest } from "../errors.js";
@@ -123,12 +124,18 @@ export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps):
       settled(deps.clarifyReentryStatus),
       settled(deps.variantModelAudit),
     ]);
+    // Kurallar BİR KEZ okunur, iki satırı birden besler. `statusMapFacts` ile
+    // ayrı ayrı okumak aynı listeyi iki kez getirir ve — daha kötüsü — iki
+    // satırın farklı anlarda okunmuş iki farklı kural kümesini anlatmasına izin
+    // verirdi.
+    const listening = await listeningFacts(deps);
     const findings = buildConfigFindings({
       deployment: deps.deploymentConfig?.() ?? null,
       intake: deps.commandIntakeStatus?.() ?? null,
       clarify,
       variants,
-      statusMaps: await statusMapFacts(deps),
+      statusMaps: listening?.statusMaps ?? null,
+      ruleIdentity: listening?.ruleIdentity ?? null,
     });
     return reply.code(200).send({ state: worstSeverity(findings), findings });
   });
@@ -328,22 +335,51 @@ async function settled<T>(read: (() => Promise<T>) | undefined): Promise<T | nul
 }
 
 /**
- * Dinleme kurallarının statü eşlemesi tarafı — kaç kural var, kaçında eşleme
- * dolu.
+ * Dinleme kurallarından çıkan İKİ gerçek, TEK okumayla: statü eşlemesi tarafı
+ * (kaç kural var, kaçında eşleme dolu) ve bot kimliği tarafı (kuralların
+ * taşıdığı kimlik, bağlantının bildiğiyle uyuşuyor mu).
  *
  * Kuralların kendisinden sayılıyor, ayrı bir sayaçtan değil: bir sayaç
  * kurallarla ayrışabilir ve ekran "eşleme var" derken hiçbir ticket kıpırdamaz.
  * Depo kablolanmamışsa null — 503 değil, çünkü bu ekranın tek bir satırı.
  */
-async function statusMapFacts(deps: ResolvedDeps): Promise<StatusMapFacts | null> {
+async function listeningFacts(
+  deps: ResolvedDeps,
+): Promise<{ statusMaps: StatusMapFacts; ruleIdentity: RuleIdentityFacts } | null> {
   if (deps.listening === undefined) return null;
   try {
     const rules = await deps.listening.list();
+
+    /**
+     * Bağlantıların öğrendiği bot kimliği — kural kimliğinin kıyaslanacağı
+     * gerçek. Bağlantı deposu kablolanmamış ya da okunamıyorsa `null`, ve bu
+     * "kimlikler ayrışık" DEĞİL "kıyaslanamadı" demek: `identityDrift` o
+     * durumda hiçbir fark İDDİA ETMEZ, yalnız `jirauser` desenini sayar.
+     */
+    const botAccountId =
+      deps.connections === undefined
+        ? null
+        : await deps.connections
+            .list()
+            .then((connections) => botAccountIdOf(connections))
+            .catch(() => null);
+
+    const drift = identityDrift(rules, botAccountId);
+
     return {
-      ruleCount: rules.length,
-      mappedRuleCount: rules.filter(
-        (rule) => rule.statusMap != null && Object.keys(rule.statusMap).length > 0,
-      ).length,
+      statusMaps: {
+        ruleCount: rules.length,
+        mappedRuleCount: rules.filter(
+          (rule) => rule.statusMap != null && Object.keys(rule.statusMap).length > 0,
+        ).length,
+      },
+      ruleIdentity: {
+        ruleCount: rules.length,
+        staleRuleCount: drift.staleRuleCount,
+        staleAccountCount: drift.staleAccountIds.length,
+        internalKeyRuleCount: drift.internalKeyRuleCount,
+        connectionKnown: drift.connectionAccountId !== null,
+      },
     };
   } catch {
     return null;

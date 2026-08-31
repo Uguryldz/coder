@@ -37,6 +37,13 @@ const HEALTHY: ConfigHealthInput = {
   clarify: { state: "open", source: "connection" },
   variants: { scanned: 4, cloudModelVariants: [] },
   statusMaps: { ruleCount: 3, mappedRuleCount: 2 },
+  ruleIdentity: {
+    ruleCount: 3,
+    staleRuleCount: 0,
+    staleAccountCount: 0,
+    internalKeyRuleCount: 0,
+    connectionKnown: true,
+  },
 };
 
 function row(findings: readonly ConfigFinding[], id: string): ConfigFinding {
@@ -249,11 +256,132 @@ describe("buildConfigFindings", () => {
       clarify: null,
       variants: null,
       statusMaps: null,
+      ruleIdentity: null,
     });
 
-    expect(findings).toHaveLength(7);
+    expect(findings).toHaveLength(8);
     expect(findings.every((finding) => finding.value === "bilinmiyor")).toBe(true);
     expect(findings.some((finding) => finding.severity === "iyi")).toBe(false);
+  });
+
+  /**
+   * KURALLARIN BOT HESABI — bankada saatler yakan sessiz-yanlışın panele çıkan
+   * hâli.
+   *
+   * DC `/myself` bir kullanıcıyı iki alanla adlandırır: `name` ("ugyildiz",
+   * kullanıcı adı) ve `key` ("jirauser13506", iç tutamak). Yoklama `key`i
+   * okuyordu, o değer kurallara tohumlandı, ve JQL `assignee`yi kullanıcı
+   * adıyla çözdüğü için her tarama boş döndü — Jira eşleşmeyen bir kimliğe hata
+   * değil 200 + boş sayfa cevabı verdiği için hiçbir ekranda görünmüyordu.
+   * Sahada doğrulandı: atama kullanıcı adıyla sorulunca ticket'lar geldi.
+   */
+  describe("kuralların bot hesabı", () => {
+    it("kural bağlantıdan BAŞKA bir kimlik taşıyorsa SORUN — tarama sessizce boş döner", () => {
+      const findings = buildConfigFindings({
+        ...HEALTHY,
+        ruleIdentity: {
+          ruleCount: 4,
+          staleRuleCount: 3,
+          staleAccountCount: 1,
+          internalKeyRuleCount: 3,
+          connectionKnown: true,
+        },
+      });
+      const identity = row(findings, "rule_identity");
+      expect(identity.severity).toBe("sorun");
+      expect(identity.value).toBe("ayrisik");
+      expect(identity.detailParams).toEqual({ stale: "3", rules: "4", accounts: "1" });
+      // Çözümü olan bir satır, çözümünü de söyler.
+      expect(identity.fixKey).not.toBeNull();
+    });
+
+    /**
+     * DESEN, KIYASTAN AYRI. Bağlantı hiç test edilmemiş olabilir — ya da o da
+     * aynı yanlış değeri taşıyor olabilir, ki bu bankadaki gerçek durumdu: iki
+     * katman da `key`i okuduğu için ayrışma YOKTU, arıza yine de vardı.
+     *
+     * `uyari`, `sorun` değil: desen bir tahmin, ve bazı DC kurulumlarında `key`
+     * gerçekten kullanıcı adına eşittir. Yanılabilen bir işareti kırmızıya
+     * boyamak, operatöre kırmızıyı yok saymayı öğretir.
+     */
+    it("bağlantı da aynı iç kimliği taşısa bile deseni UYARI olarak söyler", () => {
+      const findings = buildConfigFindings({
+        ...HEALTHY,
+        ruleIdentity: {
+          ruleCount: 4,
+          // Ayrışma yok: bağlantı ile kurallar HEMFİKİR — ve ikisi de yanlış.
+          staleRuleCount: 0,
+          staleAccountCount: 0,
+          internalKeyRuleCount: 4,
+          connectionKnown: true,
+        },
+      });
+      const identity = row(findings, "rule_identity");
+      expect(identity.severity).toBe("uyari");
+      expect(identity.value).toBe("ic-kimlik");
+      expect(identity.detailParams).toEqual({ affected: "4", rules: "4" });
+    });
+
+    it("bağlantı test edilmemişse 'uyumlu' DEMEZ — yapılmamış bir kıyası bildirmek olurdu", () => {
+      const findings = buildConfigFindings({
+        ...HEALTHY,
+        ruleIdentity: {
+          ruleCount: 2,
+          staleRuleCount: 0,
+          staleAccountCount: 0,
+          internalKeyRuleCount: 0,
+          connectionKnown: false,
+        },
+      });
+      const identity = row(findings, "rule_identity");
+      expect(identity.value).toBe("kiyaslanamadi");
+      expect(identity.severity).toBe("bilgi");
+    });
+
+    it("kimlikler uyuşuyorsa yeşil, ve yanında düzeltilecek bir şey yazmaz", () => {
+      const identity = row(buildConfigFindings(HEALTHY), "rule_identity");
+      expect(identity.severity).toBe("iyi");
+      expect(identity.value).toBe("uyumlu");
+      expect(identity.fixKey).toBeNull();
+    });
+
+    it("hiç kural yokken ayrışma İDDİA ETMEZ", () => {
+      const identity = row(
+        buildConfigFindings({
+          ...HEALTHY,
+          ruleIdentity: {
+            ruleCount: 0,
+            staleRuleCount: 0,
+            staleAccountCount: 0,
+            internalKeyRuleCount: 0,
+            connectionKnown: true,
+          },
+        }),
+        "rule_identity",
+      );
+      expect(identity.value).toBe("kural-yok");
+      expect(identity.severity).toBe("bilgi");
+    });
+
+    /**
+     * SIR SIZDIRMAMA. Bu dosyanın başındaki sözleşme: bu yanıttan hiçbir DEĞER
+     * çıkmaz, yalnız sayılar ve kapalı durumlar. Kimliğin kendisi — sır olmasa
+     * bile — bu yanıtın sözleşmesine ait değil.
+     */
+    it("kimliklerin KENDİSİNİ yanıta koymaz, yalnız sayar", () => {
+      const findings = buildConfigFindings({
+        ...HEALTHY,
+        ruleIdentity: {
+          ruleCount: 4,
+          staleRuleCount: 3,
+          staleAccountCount: 1,
+          internalKeyRuleCount: 3,
+          connectionKnown: true,
+        },
+      });
+      expect(JSON.stringify(findings)).not.toContain("jirauser13506");
+      expect(JSON.stringify(findings)).not.toContain("ugyildiz");
+    });
   });
 
   it("puts problems first and green rows last", () => {

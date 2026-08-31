@@ -322,8 +322,30 @@ export function probeFor(kind: ConnectionKind): Probe | null {
         path: "/rest/api/2/myself",
         header: (token) => ({ authorization: `Bearer ${token}` }),
         identity: (body) => field(body, "displayName") ?? field(body, "name"),
-        // DC identifies a user by `key`/`name`, not the Cloud accountId shape.
-        accountId: (body) => field(body, "key") ?? field(body, "name"),
+        /**
+         * `name` FIRST, and `key` only as the fallback — the order matters.
+         *
+         * Data Center answers `/myself` with both: `name` is the username an
+         * operator types and sees (`ugyildiz`), `key` is an internal handle
+         * that on a modern DC looks like `jirauser13506`. Reading `key` first
+         * captured the internal handle, and that value goes straight into a
+         * listening rule's `assigneeAccountId` — which the sweep pastes into
+         * `assignee in (…)`.
+         *
+         * JQL resolves `assignee` by USERNAME. `assignee in (jirauser13506)`
+         * matches nothing, and Jira answers 200 with an empty page rather than
+         * an error, so every round reported "0 sonuç" against a project full of
+         * assigned tickets and nothing anywhere said why. Measured on the bank's
+         * install; the operator spotted it before we did ("benim jira user
+         * jirauser13506 gibi geliyor ama kullanıcı adı ugyildiz").
+         *
+         * `mapping.ts:userIdOf` — the OTHER place a DC user becomes an id, used
+         * when a webhook or a search result names one — has always read `name`
+         * first. The two disagreed, so a rule pre-filled from the connection
+         * test could never match a ticket read through the adapter. Same order
+         * now, and `test/connections.test.ts` pins it against `userIdOf`.
+         */
+        accountId: (body) => field(body, "name") ?? field(body, "key"),
       };
     case "github":
       return {

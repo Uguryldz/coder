@@ -161,12 +161,48 @@ export interface StatusMapFacts {
   readonly mappedRuleCount: number;
 }
 
+/**
+ * Dinleme kurallarının taşıdığı BOT KİMLİĞİ, bağlantının bildiğiyle
+ * karşılaştırıldığında.
+ *
+ * Kural, bot hesabının bir KOPYASINI taşır (`assigneeAccountId`) çünkü tarama o
+ * değeri doğrudan JQL'e yapıştırır. Kopya ayrışabilir, ve bir kez ayrıştı: DC
+ * yoklaması kullanıcı adı (`name`, "ugyildiz") yerine iç tutamağı (`key`,
+ * "jirauser13506") okuyordu. JQL `assignee`yi kullanıcı adıyla çözdüğü için her
+ * tarama boş döndü — ve Jira buna hata değil 200 + boş sayfa cevabı verdiği
+ * için hiçbir ekran nedenini söylemiyordu. Bu satır tam olarak o sessizliği
+ * kapatıyor: kimse bir düğmeye basmasa bile arıza EKRANDA yazar.
+ *
+ * Sayılar taşınır, kimliklerin KENDİSİ değil. Bir Jira hesap kimliği sır
+ * sayılmaz, ama bu yanıtın sözleşmesi kapalı değerler ve sayılardır
+ * (dosyanın başındaki sır sızdırmama maddesi); operatörün hangi değerin yanlış
+ * olduğunu görmesi gereken yer, düzeltmenin yapıldığı Dinleme kuralları
+ * ekranıdır.
+ */
+export interface RuleIdentityFacts {
+  /** Toplam kural sayısı — sıfırsa sorulacak bir şey yok. */
+  readonly ruleCount: number;
+  /** Bağlantının bildiği kimliği taşımayan kural sayısı. */
+  readonly staleRuleCount: number;
+  /** Kaç ayrı eskimiş kimlik var (bir mi, birkaç mı). */
+  readonly staleAccountCount: number;
+  /**
+   * DC iç tutamağı desenine (`jirauser<sayı>`) benzeyen kimlik taşıyan kural
+   * sayısı — bağlantıyla kıyastan BAĞIMSIZ. Bağlantı hiç test edilmemişse ya da
+   * o da aynı yanlış değeri taşıyorsa, desen tek kalan işarettir.
+   */
+  readonly internalKeyRuleCount: number;
+  /** Bağlantı testi bir kimlik öğrenmiş mi — kıyas mümkün mü. */
+  readonly connectionKnown: boolean;
+}
+
 export interface ConfigHealthInput {
   readonly deployment: DeploymentConfigFacts | null;
   readonly intake: CommandIntakeFacts | null;
   readonly clarify: ClarifyReentryState | null;
   readonly variants: VariantModelFacts | null;
   readonly statusMaps: StatusMapFacts | null;
+  readonly ruleIdentity: RuleIdentityFacts | null;
 }
 
 /** Ağırlık sırası — `sorun` en üstte. */
@@ -191,6 +227,7 @@ export function buildConfigFindings(input: ConfigHealthInput): readonly ConfigFi
     ...webhookFindings(input.deployment),
     ...variantFindings(input.variants),
     ...statusMapFindings(input.statusMaps, input.deployment),
+    ...ruleIdentityFindings(input.ruleIdentity),
   ];
   // Kararlı sıralama: önce ağırlık, sonra üretim sırası. `sort` yerinde ve
   // kararlı olduğu için eşit ağırlıklı satırlar yukarıdaki mantıksal sırayı
@@ -514,6 +551,123 @@ function statusMapFindings(
       value: "acik",
       detailKey: "config.detail.status_map.mapped",
       detailParams: { mapped: String(maps.mappedRuleCount), rules: String(maps.ruleCount) },
+      fixKey: null,
+    },
+  ];
+}
+
+/**
+ * KURALLARIN BOT KİMLİĞİ — bu ekranın en pahalıya patlamış satırı.
+ *
+ * ── ÖLÇÜLEN ARIZA ───────────────────────────────────────────────────────────
+ * Data Center `/myself` cevabında bir kullanıcıyı iki alanla adlandırır: `name`
+ * ("ugyildiz", operatörün gördüğü kullanıcı adı) ve `key` ("jirauser13506", iç
+ * tutamak). Bağlantı yoklaması `key`i okuyordu, o değer dinleme kurallarının
+ * `assigneeAccountId` alanına tohumlandı, ve tarama onu doğrudan JQL'e
+ * yapıştırıyor. JQL `assignee`yi KULLANICI ADIYLA çözer — iç tutamakla yazılan
+ * sorgu hiçbir şeyle eşleşmez, ve Jira buna hata değil 200 + BOŞ sayfa cevabı
+ * verir.
+ *
+ * Yani atanmış ticket'larla dolu bir projede her tur "0 sonuç" diyordu, her
+ * ekran yeşildi, ve hiçbir yerde nedeni yazmıyordu. Bu satırın var olma sebebi
+ * tam olarak bu: aynı arıza başka bir kurulumda tekrar ederse, kimse bir
+ * düğmeye basmadan EKRANDA yazsın.
+ *
+ * ── İKİ AYRI İŞARET, İKİ AYRI AĞIRLIK ───────────────────────────────────────
+ * 1. FARK (`staleRuleCount`) — kurallar bağlantının bildiği kimlikten BAŞKA bir
+ *    değer taşıyor. Bu bir tahmin değil bir karşılaştırma: bağlantı testi
+ *    Jira'dan canlı olarak öğrendi, kural başka bir şey diyor. `sorun`, çünkü
+ *    tarama bu hâlde sessizce hiçbir ticket bulmuyor.
+ * 2. DESEN (`internalKeyRuleCount`) — kurallardaki kimlik `jirauser<sayı>`
+ *    biçiminde. `uyari`, `sorun` değil: desen bir TAHMİN, ve bazı DC
+ *    kurulumlarında `key` gerçekten kullanıcı adına eşittir — orada
+ *    düzeltilecek bir şey yok. Yanılabilen bir işareti kırmızıya boyamak,
+ *    operatöre kırmızıyı yok saymayı öğretir; bu ekranın verebileceği en pahalı
+ *    kayıp odur.
+ *
+ * Farkın önceliği var: ikisi birden doğruysa fark gösterilir, çünkü o kesin
+ * olan ve düzeltmesi de aynı düğme.
+ *
+ * ── NEDEN BAĞLANTI BİLİNMEDEN DE BİR SATIR VAR ──────────────────────────────
+ * Bağlantı hiç test edilmemişse kıyas yapılamaz — ama desen hâlâ okunabilir, ve
+ * o durumda desen TEK kalan işarettir. "Bilmiyoruz" diye susmak, arızanın en
+ * olası hâlinde ekranı sessiz bırakırdı.
+ */
+function ruleIdentityFindings(facts: RuleIdentityFacts | null): ConfigFinding[] {
+  if (facts === null) return [unreported("rule_identity")];
+
+  // Hiç kural yok: ayrışacak bir kopya da yok. `status_map` satırının kural
+  // sayısını zaten söylediği yerde ikinci bir "kural yok" satırı gürültüdür.
+  if (facts.ruleCount === 0) {
+    return [
+      {
+        id: "rule_identity",
+        severity: "bilgi",
+        value: "kural-yok",
+        detailKey: "config.detail.rule_identity.no_rules",
+        fixKey: null,
+      },
+    ];
+  }
+
+  if (facts.staleRuleCount > 0) {
+    return [
+      {
+        id: "rule_identity",
+        severity: "sorun",
+        value: "ayrisik",
+        detailKey: "config.detail.rule_identity.stale",
+        detailParams: {
+          stale: String(facts.staleRuleCount),
+          rules: String(facts.ruleCount),
+          accounts: String(facts.staleAccountCount),
+        },
+        fixKey: "config.fix.rule_identity.stale",
+      },
+    ];
+  }
+
+  if (facts.internalKeyRuleCount > 0) {
+    return [
+      {
+        id: "rule_identity",
+        severity: "uyari",
+        value: "ic-kimlik",
+        detailKey: "config.detail.rule_identity.internal_key",
+        detailParams: {
+          affected: String(facts.internalKeyRuleCount),
+          rules: String(facts.ruleCount),
+        },
+        fixKey: "config.fix.rule_identity.internal_key",
+      },
+    ];
+  }
+
+  /**
+   * Kıyas yapılamadı ve desen de temiz. Yeşil DEĞİL: bağlantı test edilmemişken
+   * "kimlikler uyumlu" demek, yapılmamış bir karşılaştırmanın sonucunu
+   * bildirmek olurdu.
+   */
+  if (!facts.connectionKnown) {
+    return [
+      {
+        id: "rule_identity",
+        severity: "bilgi",
+        value: "kiyaslanamadi",
+        detailKey: "config.detail.rule_identity.no_connection",
+        detailParams: { rules: String(facts.ruleCount) },
+        fixKey: "config.fix.rule_identity.no_connection",
+      },
+    ];
+  }
+
+  return [
+    {
+      id: "rule_identity",
+      severity: "iyi",
+      value: "uyumlu",
+      detailKey: "config.detail.rule_identity.aligned",
+      detailParams: { rules: String(facts.ruleCount) },
       fixKey: null,
     },
   ];

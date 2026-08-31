@@ -67,6 +67,11 @@ export function bankaTaniPath(): string {
   return `${bankaDir()}tani.sh`;
 }
 
+/** `deploy/banka/tarama-kontrol.sh` — the "no tickets arriving" sweep triage. */
+export function bankaSweepCheckPath(): string {
+  return `${bankaDir()}tarama-kontrol.sh`;
+}
+
 export function bankaNginxConfPath(): string {
   return `${bankaDir()}studio-nginx.conf`;
 }
@@ -117,6 +122,11 @@ export function ugurdockerVariantAuditPath(): string {
 /** `deploy/ugurdocker/tani.sh` — the diagnostic script's twin. */
 export function ugurdockerTaniPath(): string {
   return `${ugurdockerDir()}tani.sh`;
+}
+
+/** `deploy/ugurdocker/tarama-kontrol.sh` — the sweep triage's twin. */
+export function ugurdockerSweepCheckPath(): string {
+  return `${ugurdockerDir()}tarama-kontrol.sh`;
 }
 
 export function ugurdockerNginxConfPath(): string {

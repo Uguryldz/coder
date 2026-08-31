@@ -106,6 +106,19 @@ if [ "${SORUN}" -eq 0 ]; then
   echo
   echo "Şunu Jira'da aratın — sonuç boşsa sorun Jira tarafındadır:"
   "${PSQL[@]}" "SELECT '  project = \"'||\"projectKey\"||'\" AND assignee in ('||\"assigneeAccountId\"||')'||CASE WHEN \"matchKind\"='issuetype' THEN ' AND issuetype = \"'||\"matchValue\"||'\"' WHEN \"matchKind\"='status' THEN ' AND status = \"'||\"matchValue\"||'\"' ELSE '' END FROM \"ListeningRule\" WHERE enabled ORDER BY priority LIMIT 3;" 2>/dev/null
+  echo
+  echo "Karşılaştırma için: bir kural 0 sonuç döndüğünde tarama, aynı projede"
+  echo "AÇIK ticket'ları alanlarıyla log'a yazar. Son teşhis listesi:"
+  TESHIS="$(docker compose logs bff --since 6h --no-log-prefix 2>/dev/null | grep -F 'keşif]' | grep -F 'teşhis' | tail -20 || true)"
+  if [ -n "${TESHIS}" ]; then
+    printf '%s\n' "${TESHIS}" | sed 's/^/      /'
+    echo
+    echo "     Kuraldaki tip/statü/atanan/etiket bu satırlarla BİREBİR aynı mı?"
+    echo "     Örn. kural issuetype=\"Görev\" ama listede tip=\"Task\" ise eşleşme olmaz."
+  else
+    echo "      (teşhis satırı yok — ya her kural sonuç buluyor ya da imaj"
+    echo "      1.0.18'den eski. Eskiyse imajı yükseltip bir tur bekleyin.)"
+  fi
 else
   echo "${SORUN} sorun bulundu — yukarıdaki ✗ satırlarını sırayla çözün."
 fi

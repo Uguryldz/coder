@@ -532,3 +532,145 @@ describe("POST /studio/listening-sweep", () => {
     expect(res.statusCode).toBe(401);
   });
 });
+
+/**
+ * "KURALI TEST ET" — kaydetmeden önce kuralı Jira'ya sormak.
+ *
+ * Operatörün istediği: "kontrol ekranı ver, loga gerek yok, dinlemede filtre
+ * ayarlamak için". Bugüne kadar yeni bir kuralın doğru olup olmadığını
+ * öğrenmenin tek yolu onu KAYDEDİP bir tur beklemek ve konteyner log'unu
+ * okumaktı — sunucuda kabuk gerektiren bir iş, yani kural yazma yetkisi verilen
+ * kişi kendi işini doğrulayamıyordu.
+ *
+ * Bu testler ucun üç sözleşmesini çiviliyor: OKUR-YAZMAZ (kural kaydetmez),
+ * yetkisi kural yazmakla aynı, ve prova yapılamıyorsa bunu adıyla söyler.
+ */
+describe("POST /studio/listening-rules/test", () => {
+  const DRAFT = {
+    projectKey: "OPS",
+    assigneeAccountId: "712020:bot",
+    matchKind: "issuetype",
+    matchValue: "Görev",
+  } as const;
+
+  const OK = {
+    ok: true as const,
+    jql: 'project = "OPS" AND assignee in (712020:bot) AND issuetype = "Görev"',
+    matched: [],
+    projectSample: [
+      {
+        key: "OPS-12",
+        status: "ANALİZ",
+        issueType: "Task",
+        assignee: "maestro-bot",
+        labels: ["maestro"],
+        alreadyKnown: false,
+      },
+    ],
+    sampleJql: 'project = "OPS" AND statusCategory != Done ORDER BY created DESC',
+  };
+
+  it("kuralı dener ve ürettiği JQL ile sonucu döndürür", async () => {
+    const h = await harness({ deps: { listeningProbe: () => Promise.resolve(OK) } });
+    const token = await admin(h);
+
+    const res = await post(h, "/studio/listening-rules/test", token, DRAFT);
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<typeof OK>();
+    expect(body.jql).toContain('issuetype = "Görev"');
+    // Eşleşme yokken projedeki açık ticket'lar — ekranın asıl değeri.
+    expect(body.projectSample[0]?.issueType).toBe("Task");
+  });
+
+  /** BU BİR PROVA: hiçbir kural kaydedilmez. */
+  it("kural KAYDETMEZ — deneme sonrası tablo hâlâ boş", async () => {
+    const h = await harness({ deps: { listeningProbe: () => Promise.resolve(OK) } });
+    const token = await admin(h);
+
+    await post(h, "/studio/listening-rules/test", token, DRAFT);
+
+    const list = get(h, "/studio/listening-rules", token);
+    expect((await list).json<{ rules: unknown[] }>().rules).toEqual([]);
+  });
+
+  /**
+   * Gösterdiği şey bir projenin ticket alanları; bunu görmeye hakkı olan kişi
+   * kuralı yazabilen kişidir.
+   */
+  it("kural yazamayan bir kullanıcı deneyemez", async () => {
+    const h = await harness({ deps: { listeningProbe: () => Promise.resolve(OK) } });
+    const token = await viewer(h);
+
+    expect((await post(h, "/studio/listening-rules/test", token, DRAFT)).statusCode).toBe(403);
+  });
+
+  /**
+   * Sessiz boş sonuç YOK. Arama sunmayan bir sürücüde "0 eşleşme" göstermek,
+   * bu ekranın var olma sebebi olan sessiz-yanlışın aynısı olurdu.
+   */
+  it("prova yapılamayan kurulumda 503-by-name döner", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    const res = await post(h, "/studio/listening-rules/test", token, DRAFT);
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe("probe_not_available");
+  });
+
+  /**
+   * Adlandırılmış başarısızlık 200'dür: `unbound_project`, operatörün
+   * düzeltebileceği bir cevap — sunucunun arızası değil — ve bir HTTP hata kodu
+   * panelde ekranın kendisi yerine genel bir hata kutusu gösterirdi.
+   */
+  it("bağlanmamış proje adlandırılmış bir cevaptır, hata kodu değil", async () => {
+    const h = await harness({
+      deps: {
+        listeningProbe: () => Promise.resolve({ ok: false as const, reason: "unbound_project" }),
+      },
+    });
+    const token = await admin(h);
+
+    const res = await post(h, "/studio/listening-rules/test", token, DRAFT);
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ ok: boolean; reason: string }>()).toEqual({
+      ok: false,
+      reason: "unbound_project",
+    });
+  });
+
+  it("eksik gövdeyi 400 ile reddeder", async () => {
+    const h = await harness({ deps: { listeningProbe: () => Promise.resolve(OK) } });
+    const token = await admin(h);
+
+    const res = await post(h, "/studio/listening-rules/test", token, { projectKey: "OPS" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  /**
+   * `assigned` kuralında `matchValue` sunucunun sabitlediği literal olur —
+   * KAYIT yolundaki `storedRule` ile aynı normalizasyon. İkisi ayrışsaydı
+   * denenen kural ile kaydedilen kural farklı JQL üretirdi, ki bu ekranın
+   * önlemek için var olduğu şey tam olarak budur.
+   */
+  it("`assigned` kuralını kayıt yoluyla AYNI şekilde normalize eder", async () => {
+    let seen: { matchValue?: string } = {};
+    const h = await harness({
+      deps: {
+        listeningProbe: (draft: { matchValue: string }) => {
+          seen = draft;
+          return Promise.resolve(OK);
+        },
+      },
+    });
+    const token = await admin(h);
+
+    await post(h, "/studio/listening-rules/test", token, {
+      ...DRAFT,
+      matchKind: "assigned",
+      matchValue: "ne olursa",
+    });
+
+    expect(seen.matchValue).toBe("*");
+  });
+});

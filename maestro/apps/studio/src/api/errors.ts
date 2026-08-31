@@ -231,6 +231,12 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
    * names which of the two absences it is; see `sweepReasonOf`.
    */
   sweep_not_configured: "error.sweep_not_configured",
+  /**
+   * "Kuralı test et", arama sunmayan bir sürücüde. Ayrı bir kod, çünkü ayrı bir
+   * cümle: tarama kapalı olabilir ama sürücü hâlâ arayabilir, ve o iki hâl
+   * operatörü iki farklı yere gönderir.
+   */
+  probe_not_available: "error.probe_not_available",
 };
 
 export function errorMessageKey(code: string): string {

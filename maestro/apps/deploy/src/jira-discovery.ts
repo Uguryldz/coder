@@ -293,6 +293,44 @@ export function jqlFor(rule: DiscoveryRule): string | null {
 }
 
 /**
+ * TEŞHİS SORGUSU — kural 0 döndüğünde "peki projede NE var?".
+ *
+ * Kuralın JQL'i log'a yazılıyor (1.0.17), ama operatör o sorguyu Jira'nın
+ * GERÇEKTE ne taşıdığıyla karşılaştıramıyor: "kuralım `issuetype = Görev`
+ * diyor" ile "Jira'da hepsi `Task` yazıyor" arasındaki farkı görmek için
+ * ikinci yarıya da bakması gerek. Dört olası sebep var — tip adı farklı,
+ * statü tutmuyor, ticket bota atanmamış, etiket yok — ve dördü de bu tek
+ * listede tek bakışta ayırt edilir.
+ *
+ * Sorgu DARALTILMIŞ kalır: `project = "X" AND statusCategory != Done`. Admin
+ * bir servis hesabıyla koşan bir kurulumda tüm bankayı taramak kabul
+ * edilemez, o yüzden sınır kuralın kendi projesi — ki bu proje `boundProjects`
+ * kapısından çoktan geçmiştir.
+ *
+ * Alanlar kuralın sorgusuyla BİREBİR AYNI (`status,issuetype,assignee,labels`):
+ * `summary`/`description` istenmez, yani bu yol da hiç ticket METNİ taşımaz.
+ * Log'a düşen her şey — proje anahtarı, tip/statü adı, atanan, etiket —
+ * panelin zaten gösterdiği yapılandırmanın aynısıdır.
+ */
+const DIAGNOSTIC_SAMPLE = 5;
+
+export function diagnosticJqlFor(projectKey: string): string {
+  return `project = "${projectKey.replace(/"/gu, '\\"')}" AND statusCategory != Done ORDER BY created DESC`;
+}
+
+/** Bir teşhis satırı: `OTYT-12  tip="Task"  statü="To Do"  atanan=(yok)  etiket=[]`. */
+function diagnosticLineOf(issue: unknown): string {
+  const key = issueKeyOf(issue) ?? "(anahtarsız)";
+  const fields = classifyingFieldsOf(issue);
+  const labels = fields.labels ?? [];
+  return (
+    `         ${key.padEnd(10)} tip=${JSON.stringify(fields.issueType ?? "")} ` +
+    `statü=${JSON.stringify(fields.status ?? "")} ` +
+    `atanan=${fields.assignee ?? "(yok)"} etiket=[${labels.join(", ")}]`
+  );
+}
+
+/**
  * One discovery round: ask Jira what it has, start what is new.
  *
  * Returns the keys it started, so a caller (and the tests) can see the round's
@@ -381,6 +419,14 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   let skippedRules = 0;
   /** Tickets a rule matched that already carry a run — the sweep's usual case. */
   let alreadyKnown = 0;
+  /**
+   * Teşhis sorgusu atılmış projeler — TUR BAŞINA PROJE BAŞINA EN FAZLA BİR KEZ.
+   *
+   * Aynı projede beş kural varsa beşi de 0 dönebilir; beş kez sormak Jira'ya
+   * gereksiz beş çağrı ve log'a birbirinin aynısı beş blok demek. İlk 0 dönen
+   * kural cevabı zaten getirir, kalanların hepsi aynı listeye bakar.
+   */
+  const diagnosed = new Set<string>();
 
   for (const rule of rules) {
     if (started.length >= cap) break;
@@ -464,6 +510,18 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
        * description.
        */
       log(`[keşif] ${rule.projectKey}/${rule.matchKind}: ${issues.length} sonuç · JQL: ${jql}`);
+      /**
+       * SIFIR SONUÇ → BİR KEZ, PROJEDE NE OLDUĞUNU SOR.
+       *
+       * Yalnız burada: dolu dönen bir kuralın teşhise ihtiyacı yok, ve her
+       * turda atılan bir sorgu olmamalı. Hatası YUTULUR — teşhis bir kolaylık,
+       * turun kendisi değil; izin yetmediği ya da JQL'i Jira'nın beğenmediği
+       * bir kurulumda tarama aynen devam etmeli.
+       */
+      if (issues.length === 0 && !diagnosed.has(rule.projectKey)) {
+        diagnosed.add(rule.projectKey);
+        await runDiagnostic(options.search, rule.projectKey, log);
+      }
     } catch (error) {
       // One rule's failure must not stop the others: a project whose
       // permissions changed would otherwise freeze discovery for every project.
@@ -545,6 +603,45 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   );
   record({ lastError: null, rulesSearched: rules.length - skippedRules, lastStarted: started.length });
   return started;
+}
+
+/**
+ * Kural boş döndü — projede açık ne var, alanlarıyla.
+ *
+ * Asla throw etmez. Bu satırların tek işi operatörün kuralını Jira'nın
+ * gerçeğiyle yan yana koyabilmesi; teşhisin başarısız olması taramanın
+ * başarısız olması değildir.
+ */
+async function runDiagnostic(
+  search: IssueSearcher,
+  projectKey: string,
+  log: (message: string) => void,
+): Promise<void> {
+  try {
+    const probe = diagnosticJqlFor(projectKey);
+    const page = await search.searchIssues({
+      jql: probe,
+      maxResults: DIAGNOSTIC_SAMPLE,
+      // Kuralın istediği dört alanın AYNISI — ticket metni yok.
+      fields: ["status", "issuetype", "assignee", "labels"],
+    });
+    const issues = page.issues;
+    if (issues.length === 0) {
+      log(
+        `[keşif] ${projectKey} teşhis — projede hiç açık ticket yok · JQL: ${probe}` +
+          " (proje anahtarı yanlış olabilir ya da tüm ticket'lar kapalı)",
+      );
+      return;
+    }
+    log(`[keşif] ${projectKey} teşhis — projede açık ticket var, ilk ${issues.length}:`);
+    for (const issue of issues) log(diagnosticLineOf(issue));
+    log(
+      `[keşif] ${projectKey} teşhis — kuralınızdaki tip/statü/atanan/etiket değerleri ` +
+        "yukarıdakilerle BİREBİR aynı mı? Değilse eşleşme olmaz.",
+    );
+  } catch (error) {
+    log(`[keşif] ${projectKey} teşhis sorgusu yapılamadı: ${String(error)}`);
+  }
 }
 
 /**

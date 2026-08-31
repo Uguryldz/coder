@@ -125,6 +125,27 @@ const RuleBody = z.object({
 });
 
 /**
+ * DENEME GÖVDESİ — kural taslağının yalnız ARAMAYI ilgilendiren yarısı.
+ *
+ * `RuleBody`'nin alt kümesi, ve kasıtlı olarak: bir prova `flowType`,
+ * `priority` ya da ajan varyantlarını sormaz — bunların hiçbiri JQL'e girmez,
+ * ve istemek, henüz akışını seçmemiş bir operatörün kuralını deneyememesi
+ * demek olurdu. Alan adları ve kısıtlar `RuleBody` ile BİREBİR aynı: deneme,
+ * kaydedilecek olandan farklı bir şeyi kabul ederse "test ettiğim kural" ile
+ * "kaydettiğim kural" ayrışır, ki bu ekranın önlemek için var olduğu şey tam
+ * olarak budur.
+ */
+const TestBody = z
+  .object({
+    projectKey: z.string().trim().min(1).max(32),
+    assigneeAccountId: z.string().trim().min(1).max(128),
+    matchKind: z.enum(MATCH_KINDS as unknown as [string, ...string[]]),
+    matchValue: z.string().trim().min(1).max(128),
+    allowedStatuses: AllowedStatusesRef,
+  })
+  .strict();
+
+/**
  * The rule as it is STORED, from the rule as it was sent.
  *
  * One normalisation, and it exists for the unique index rather than for taste.
@@ -285,6 +306,65 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
         status: deps.discoveryStatus?.() ?? null,
       });
     }
+  });
+
+  /**
+   * KURALI TEST ET — kaydetmeden önce Jira'ya sor, ne getirdiğini göster.
+   *
+   * Operatörün sözleriyle istendi: "kontrol ekranı ver, loga gerek yok,
+   * dinlemede filtre ayarlamak için". Bugüne kadar yeni bir kuralın doğru olup
+   * olmadığını öğrenmenin tek yolu onu KAYDEDİP bir tur beklemek ve konteyner
+   * log'unu okumaktı — sunucuda kabuk gerektiren bir iş, yani kural yazma
+   * yetkisi verilen kişi kendi işini doğrulayamıyordu.
+   *
+   * BU BİR PROVA: hiçbir şey yazmaz, hiçbir koşu başlatmaz, kural kaydetmez.
+   * O yüzden `assertWritable` YOK — bakım kilidi altındaki bir kurulumda
+   * "neden ticket gelmiyor" sorusunu sormak yasaklanmamalı; kilit YAZMAYI
+   * durdurur, teşhisi değil.
+   *
+   * Yetki yine de WRITE_ROLES: gösterdiği şey bir projenin ticket alanları, ve
+   * bunu görmeye hakkı olan kişi kuralı yazabilen kişidir.
+   *
+   * `POST`, çünkü gövdede bir kural taslağı taşır — okuma olması onu GET
+   * yapmaz; bir JQL'i ve statü listesini query string'e dizmek hem kırılgan hem
+   * de sunucu log'una yapılandırma sızdırmanın yolu olurdu.
+   */
+  app.post("/studio/listening-rules/test", { preHandler: writeHandler }, async (request, reply) => {
+    const probe = deps.listeningProbe;
+    if (probe === undefined) {
+      /**
+       * Sessiz boş sonuç YOK. Arama sunmayan bir sürücüde (Azure DevOps) ya da
+       * tarama hiç kurulmamışsa "0 eşleşme" göstermek, bu ekranın var olma
+       * sebebi olan sessiz-yanlışın aynısı olurdu: operatör kuralını suçlar,
+       * oysa sorulan hiçbir soru yoktur.
+       */
+      const message =
+        deps.sweepUnavailableReason?.() ??
+        "Bu kurulumun Jira sürücüsü JQL araması sunmuyor, kural denenemez.";
+      return reply.code(503).send({ error: "probe_not_available", message });
+    }
+
+    const body = TestBody.safeParse(request.body);
+    if (!body.success) throw badRequest("invalid_listening_rule");
+
+    const draft = storedRule(body.data);
+    const result = await probe({
+      projectKey: draft.projectKey,
+      assigneeAccountId: draft.assigneeAccountId,
+      matchKind: draft.matchKind as "status" | "issuetype" | "assigned" | "label",
+      matchValue: draft.matchValue,
+      allowedStatuses: draft.allowedStatuses,
+    });
+
+    /**
+     * Başarısız bir deneme de 200'dür, gövdesinde ADLANDIRILMIŞ sebebiyle.
+     *
+     * "Proje bağlı değil" ya da "kuralda bot hesabı yok" operatörün DÜZELTEBİLECEĞİ
+     * bir cevap, sunucunun bir arızası değil — ve bir HTTP hata kodu, panelde
+     * ekranın kendisi yerine genel bir hata kutusu gösterirdi. Sebep serbest
+     * metin değil ki panel kendi katalogundan çevirebilsin.
+     */
+    return reply.code(200).send(result);
   });
 
   /** Create a rule. A duplicate trigger (unique index) becomes a 409. */

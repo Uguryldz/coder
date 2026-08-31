@@ -3,6 +3,7 @@ import { flowDecisionFor } from "../../bff/src/flow-decision.js";
 import {
   canSearch,
   classifyingFieldsOf,
+  diagnosticJqlFor,
   discoverOnce,
   jqlFor,
   startJiraDiscovery,
@@ -186,7 +187,20 @@ describe("discoverOnce", () => {
     boundProjects?: readonly string[];
     /** A binding source that FAILS, for the fail-closed test. */
     boundProjectsThrows?: boolean;
-  }): Promise<{ started: readonly string[]; asked: readonly string[] }> {
+  }): Promise<{
+    started: readonly string[];
+    /**
+     * KURAL sorguları — teşhis sorgusu hariç.
+     *
+     * Bir kural 0 döndüğünde tur, aynı projede bir TEŞHİS sorgusu daha atar
+     * ("kural eşleşmedi, peki projede ne var?"). O ayrı bir soru, ve "kural
+     * başına bir sorgu" sayan testlerin ölçtüğü şey değil. `askedAll` ikisini
+     * birden tutar, çünkü "bağlanmamış projeye HİÇBİR sorgu gitmedi" testinin
+     * ölçmesi gereken şey tam da hepsidir.
+     */
+    asked: readonly string[];
+    askedAll: readonly string[];
+  }> {
     const { search, asked } = fakeSearch(options.found);
     const started: string[] = [];
     const deps = {
@@ -210,7 +224,11 @@ describe("discoverOnce", () => {
           : { boundProjects: () => Promise.resolve(options.boundProjects!) }),
       log: () => undefined,
     });
-    return { started: result, asked };
+    return {
+      started: result,
+      asked: asked.filter((jql) => !jql.includes("statusCategory")),
+      askedAll: asked,
+    };
   }
 
   /**
@@ -229,7 +247,7 @@ describe("discoverOnce", () => {
    * proje değil, Maestro'yu hiç duymamış bir ekibin ticket'larıdır.
    */
   it("never queries a project the operator did not bind, even for a valid rule", async () => {
-    const { asked, started } = await run({
+    const { asked, askedAll, started } = await run({
       rules: [RULE, { ...RULE, projectKey: "GIZLI" }],
       found: {},
       boundProjects: ["OPS"],
@@ -237,7 +255,10 @@ describe("discoverOnce", () => {
 
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain('project = "OPS"');
-    expect(asked.join(" ")).not.toContain("GIZLI");
+    // HER sorgu, teşhis sorgusu dahil: bağlanmamış bir projenin adı bu turda
+    // Jira'ya giden hiçbir sorguda geçmemeli. Teşhis sorgusu ancak bağlı bir
+    // projenin kuralı 0 döndüğünde ve YALNIZ o projeye atılır.
+    expect(askedAll.join(" ")).not.toContain("GIZLI");
     expect(started).toHaveLength(0);
   });
 
@@ -498,7 +519,8 @@ describe("discoverOnce", () => {
       log: () => undefined,
     });
 
-    expect(asked).toHaveLength(2);
+    // Teşhis sorgusu hariç: kural başına bir sorgu sayılıyor.
+    expect(asked.filter((jql) => !jql.includes("statusCategory"))).toHaveLength(2);
   });
 
   /**
@@ -663,5 +685,183 @@ describe("canSearch", () => {
   it("rejects nothing at all rather than throwing on it", () => {
     expect(canSearch(null)).toBe(false);
     expect(canSearch(undefined)).toBe(false);
+  });
+});
+
+/**
+ * SIFIR SONUÇ DÖNDÜĞÜNDE PROJEDE NE VAR — teşhis sorgusu.
+ *
+ * Kuralın JQL'i log'da (1.0.17), ama operatör onu Jira'nın gerçeğiyle
+ * karşılaştıramıyordu: "kuralım issuetype = Görev diyor" ile "Jira'da hepsi
+ * Task yazıyor" arasındaki farkı görebilmek için ikinci yarı da lazım. Bu
+ * testler o ikinci yarının üç sınırını çiviliyor: ne zaman sorulduğu, kaç kez
+ * sorulduğu ve — en önemlisi — hangi alanların İSTENMEDİĞİ.
+ */
+describe("keşif teşhis sorgusu", () => {
+  /** Kuralın sorgusuna boş, teşhis sorgusuna örnek ticket'lar dönen bir arama. */
+  function searchWithProjectTickets(issues: readonly unknown[]): {
+    search: { searchIssues: (r: { jql: string; fields?: string[] }) => Promise<{ issues: Array<{ key?: string }> }> };
+    asked: Array<{ jql: string; fields?: string[] }>;
+  } {
+    const asked: Array<{ jql: string; fields?: string[] }> = [];
+    return {
+      asked,
+      search: {
+        searchIssues: (request) => {
+          asked.push(request);
+          if (request.jql.includes("statusCategory")) {
+            return Promise.resolve({ issues: issues as Array<{ key?: string }> });
+          }
+          return Promise.resolve({ issues: [] });
+        },
+      },
+    };
+  }
+
+  const TICKET = {
+    key: "OPS-12",
+    fields: {
+      status: { name: "ANALİZ" },
+      issuetype: { name: "Task" },
+      assignee: { accountId: "maestro-bot" },
+      labels: ["maestro"],
+    },
+  };
+
+  it("kural 0 dönünce projedeki açık ticket'ları alanlarıyla yazar", async () => {
+    const logged: string[] = [];
+    const { search } = searchWithProjectTickets([TICKET]);
+
+    await discoverOnce({
+      deps: {} as never,
+      search,
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve([]),
+      intervalMs: 0,
+      log: (message) => logged.push(message),
+    });
+
+    const line = logged.find((message) => message.includes("OPS-12"));
+    expect(line).toBeDefined();
+    // Dört sebebin dördü de tek satırda: tip adı, statü, atanan, etiket.
+    expect(line).toContain('tip="Task"');
+    expect(line).toContain('statü="ANALİZ"');
+    expect(line).toContain("atanan=maestro-bot");
+    expect(line).toContain("etiket=[maestro]");
+  });
+
+  /**
+   * TİCKET METNİ YOK. `fields` kuralın kendi sorgusuyla birebir aynı olmalı —
+   * bir teşhis kolaylığı, bu yolun bugüne kadar hiç ticket içeriği taşımamış
+   * olmasını bozacak yer değil.
+   */
+  it("özet/açıklama İSTEMEZ — kuralın istediği dört alanın aynısı", async () => {
+    const { search, asked } = searchWithProjectTickets([TICKET]);
+
+    await discoverOnce({
+      deps: {} as never,
+      search,
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve([]),
+      intervalMs: 0,
+      log: () => undefined,
+    });
+
+    const probe = asked.find((request) => request.jql.includes("statusCategory"));
+    expect(probe?.fields).toEqual(["status", "issuetype", "assignee", "labels"]);
+  });
+
+  /**
+   * Sorgu projeye HAPSEDİLİR. Bu platformun servis hesabı çoğu bankada Jira
+   * ADMIN'idir; sınırsız bir teşhis sorgusu, Maestro'yu hiç duymamış ekiplerin
+   * ticket'larını çeker — `boundProjects` kapısının önlediği şeyin aynısı.
+   */
+  it("sorguyu kuralın projesine hapseder, kapalı ticket'ları dışarıda bırakır", () => {
+    expect(diagnosticJqlFor("OTYT")).toContain('project = "OTYT"');
+    expect(diagnosticJqlFor("OTYT")).toContain("statusCategory != Done");
+    // Kaçış: proje anahtarı serbest metin, tırnak kapatıp JQL'e ekleme yapılamaz.
+    expect(diagnosticJqlFor('A" OR x')).toContain('project = "A\\" OR x"');
+  });
+
+  /**
+   * TUR BAŞINA PROJE BAŞINA BİR KEZ. Aynı projede beş kural varsa beşi de 0
+   * dönebilir; beş kez sormak Jira'ya beş gereksiz çağrı ve log'a birbirinin
+   * kopyası beş blok demek.
+   */
+  it("aynı projede birden çok kural 0 dönse de yalnız bir kez sorar", async () => {
+    const { search, asked } = searchWithProjectTickets([TICKET]);
+
+    await discoverOnce({
+      deps: {} as never,
+      search,
+      rules: () =>
+        Promise.resolve([RULE, { ...RULE, matchValue: "Hata" }, { ...RULE, matchKind: "status" as const }]),
+      known: () => Promise.resolve([]),
+      intervalMs: 0,
+      log: () => undefined,
+    });
+
+    const probes = asked.filter((request) => request.jql.includes("statusCategory"));
+    expect(probes).toHaveLength(1);
+  });
+
+  it("sonuç bulan bir kural için teşhis sorgusu ATMAZ", async () => {
+    const asked: string[] = [];
+    await discoverOnce({
+      deps: {} as never,
+      search: {
+        searchIssues: (request: { jql: string }) => {
+          asked.push(request.jql);
+          return Promise.resolve({ issues: [{ key: "OPS-1" }] });
+        },
+      },
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve(["OPS-1"] as never),
+      intervalMs: 0,
+      log: () => undefined,
+    });
+
+    expect(asked.filter((jql) => jql.includes("statusCategory"))).toHaveLength(0);
+  });
+
+  /**
+   * Teşhis bir kolaylık, turun kendisi değil. İzni yetmeyen bir kurulumda
+   * hatası yutulur ve tur normal biter — aksi hâlde teşhisin kendisi, teşhis
+   * etmeye çalıştığı sessiz arızayı üretirdi.
+   */
+  it("teşhis sorgusu patlarsa turu düşürmez", async () => {
+    const logged: string[] = [];
+    await discoverOnce({
+      deps: {} as never,
+      search: {
+        searchIssues: (request: { jql: string }) => {
+          if (request.jql.includes("statusCategory")) return Promise.reject(new Error("403"));
+          return Promise.resolve({ issues: [] });
+        },
+      },
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve([]),
+      intervalMs: 0,
+      log: (message) => logged.push(message),
+    });
+
+    expect(logged.some((line) => line.includes("tur bitti"))).toBe(true);
+    expect(logged.some((line) => line.includes("teşhis sorgusu yapılamadı"))).toBe(true);
+  });
+
+  it("projede hiç açık ticket yoksa bunu ayrıca söyler", async () => {
+    const logged: string[] = [];
+    const { search } = searchWithProjectTickets([]);
+
+    await discoverOnce({
+      deps: {} as never,
+      search,
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve([]),
+      intervalMs: 0,
+      log: (message) => logged.push(message),
+    });
+
+    expect(logged.some((line) => line.includes("hiç açık ticket yok"))).toBe(true);
   });
 });

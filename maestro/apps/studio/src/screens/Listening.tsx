@@ -108,6 +108,66 @@ interface ListeningRule {
   readonly allowedStatuses?: readonly string[] | null;
 }
 
+/**
+ * DENEME TASLAĞI — kural taslağının yalnız ARAMAYI ilgilendiren yarısı.
+ *
+ * `POST /studio/listening-rules/test`in gövdesi. Akış, öncelik ve ajan
+ * varyantları yok, çünkü hiçbiri JQL'e girmez; istemek, henüz akışını seçmemiş
+ * bir operatörün kuralını deneyememesi demek olurdu.
+ */
+interface ProbeDraft {
+  readonly projectKey: string;
+  readonly assigneeAccountId: string;
+  readonly matchKind: MatchKind;
+  readonly matchValue: string;
+  readonly allowedStatuses: readonly string[] | null;
+}
+
+/** Denemede görülen tek ticket — kuralın sorduğu dört alan, ticket metni YOK. */
+interface ProbeTicket {
+  readonly key: string;
+  readonly status: string | null;
+  readonly issueType: string | null;
+  readonly assignee: string | null;
+  readonly labels: readonly string[];
+  /**
+   * Bu ticket'ın zaten bir koşusu var. Ölçüldü: 14 ticket bulan bir turda
+   * "0 alındı" gören operatör taramayı bozuk sandı — oysa on dördünün de koşusu
+   * vardı. Eşleşenin yanında bunu söylemek o yanılgının tek çaresi.
+   */
+  readonly alreadyKnown: boolean;
+}
+
+type ProbeResult =
+  | {
+      readonly ok: true;
+      readonly jql: string;
+      readonly matched: readonly ProbeTicket[];
+      /** Eşleşme YOKKEN projedeki açık ticket'lar — karşılaştırma listesi. */
+      readonly projectSample: readonly ProbeTicket[];
+      readonly sampleJql: string | null;
+    }
+  | { readonly ok: false; readonly reason: string; readonly detail?: string };
+
+/**
+ * İki taslak AYNI aramayı mı üretir?
+ *
+ * Alan alan, çünkü tek şey karşılaştırılıyor: bu deneme sonucu hâlâ formdaki
+ * kuralı anlatıyor mu. `allowedStatuses` sırasız bir küme gibi davranır —
+ * kutuları farklı sırada işaretlemek aynı JQL'i üretir ve operatörü sahte bir
+ * "değişti" uyarısıyla yeniden teste zorlamak, uyarıyı inanılmaz kılardı.
+ */
+function sameDraft(a: ProbeDraft, b: ProbeDraft): boolean {
+  const set = (list: readonly string[] | null): string => [...(list ?? [])].sort().join("\u0000");
+  return (
+    a.projectKey === b.projectKey &&
+    a.assigneeAccountId === b.assigneeAccountId &&
+    a.matchKind === b.matchKind &&
+    a.matchValue === b.matchValue &&
+    set(a.allowedStatuses) === set(b.allowedStatuses)
+  );
+}
+
 /** The slice of `GET /variants` this screen needs: id + role, for filtering. */
 interface VariantOption {
   readonly variantId: string;
@@ -389,6 +449,7 @@ export function ListeningScreen(): ReactNode {
   /** Leave edit mode and hand the form back to "add a new rule". */
   const cancelEdit = (): void => {
     setEditingRuleId(null);
+    setProbe(null);
     setMatchValue("");
     setAllowedStatuses([]);
     setAnalystVariantId("");
@@ -406,6 +467,10 @@ export function ListeningScreen(): ReactNode {
       toast.show("success", t("listening.toast.created"));
       setMatchValue("");
       setAllowedStatuses([]);
+      // Kaydedilen kuralın denemesi de ekrandan kalkar: form artık BAŞKA bir
+      // kuralı (bir sonraki eklenecek olanı) gösteriyor, yanındaki tablo ise
+      // kaydedilmiş olanı gösterirdi.
+      setProbe(null);
       // The status map is per-rule, not a form default: leaving it filled after
       // a save would quietly attach the previous rule's transitions to the next
       // one an operator adds.
@@ -432,6 +497,8 @@ export function ListeningScreen(): ReactNode {
 
   /** Load an existing rule into the form — the round trip out of the table. */
   const onEdit = (rule: ListeningRule): void => {
+    // Başka bir kural forma yüklenirken önceki denemenin tablosu düşer.
+    setProbe(null);
     setEditingRuleId(rule.ruleId);
     setProjectKey(rule.projectKey);
     setAssigneeTouched(true); // never let the bot-id pre-fill overwrite the rule's own
@@ -531,6 +598,61 @@ export function ListeningScreen(): ReactNode {
     query.isSuccess && routing.isSuccess
       ? boundProjects.filter((key) => !rules.some((rule) => rule.projectKey === key))
       : [];
+
+  /**
+   * DENEME SONUCU ve onun ÜRETİLDİĞİ TASLAK, birlikte tutulur.
+   *
+   * Taslağın saklanması süs değil, bu ekranın sözleşmesi: operatör test ettikten
+   * sonra formda bir alanı değiştirirse, ekranda duran tablo artık formdaki
+   * kuralı ANLATMIYOR demektir. Sessizce farklı bir kuralı kaydetmek — panelde
+   * doğru görünen, sahada başka çalışan — bu ekranın önlemek için var olduğu
+   * şeyin ta kendisi, o yüzden taslak yanında durur ve karşılaştırılır.
+   */
+  const [probe, setProbe] = useState<{
+    readonly draft: ProbeDraft;
+    readonly result: ProbeResult;
+  } | null>(null);
+
+  /** Formun ŞU ANKİ arama-taslağı — denemenin ve kaydın ortak yarısı. */
+  const currentDraft = (): ProbeDraft => ({
+    projectKey: projectKey.trim(),
+    assigneeAccountId: assigneeAccountId.trim(),
+    matchKind,
+    matchValue: matchKind === "assigned" ? ASSIGNED_MATCH_VALUE : matchValue.trim(),
+    allowedStatuses: allowedStatuses.length === 0 ? null : [...allowedStatuses],
+  });
+
+  /**
+   * Deneme sonucu hâlâ formdaki kuralı mı anlatıyor?
+   *
+   * Yalnız ARAMAYI etkileyen alanlar karşılaştırılır. Akışı ya da ajan
+   * varyantını değiştirmek JQL'i değiştirmez, ve orada da uyarı çıkarmak
+   * operatörü anlamsız bir yeniden-teste zorlardı — uyarının inanılır kalması,
+   * yalnız gerçekten değişince çıkmasına bağlı.
+   */
+  const probeStale =
+    probe !== null && !sameDraft(probe.draft, currentDraft());
+
+  const test = useMutation({
+    mutationFn: (draft: ProbeDraft) =>
+      api.post<ProbeResult>("/studio/listening-rules/test", draft),
+    onSuccess: (result, draft) => setProbe({ draft, result }),
+    onError: (error) => {
+      // Deneme başarısızsa ESKİ sonuç ekranda kalmamalı: bir önceki kuralın
+      // tablosunu yeni kuralın cevabı sanmak, hiç cevap görmemekten kötüdür.
+      setProbe(null);
+      toast.show("error", t(messageKeyOf(error)));
+    },
+  });
+
+  const onTest = (): void => {
+    const draft = currentDraft();
+    if (draft.projectKey === "" || draft.assigneeAccountId === "" || draft.matchValue === "") {
+      toast.show("error", t("listening.form.incomplete"));
+      return;
+    }
+    test.mutate(draft);
+  };
 
   const onSubmit = (): void => {
     // An `assigned` rule has no value to check for — the assignee IS the whole
@@ -1223,7 +1345,17 @@ export function ListeningScreen(): ReactNode {
             </div>
           </details>
 
+          {/*
+            DENE → GÖR → DÜZELT → KAYDET, tek form.
+            "Test et" ile "Kural ekle" yan yana ve AYNI alanları okuyor: test
+            edilen ile kaydedilen arasında ikinci bir form olsaydı, operatör
+            denediği değerleri bir kez daha yazmak zorunda kalır ve iki kopyanın
+            ayrışması an meselesi olurdu.
+          */}
           <div className="screen-actions">
+            <Button busy={test.isPending} onClick={onTest}>
+              {t("listening.probe.run")}
+            </Button>
             <Button
               variant="primary"
               busy={create.isPending || update.isPending}
@@ -1237,6 +1369,16 @@ export function ListeningScreen(): ReactNode {
               </Button>
             )}
           </div>
+
+          {probe !== null && (
+            <ProbePanel
+              t={t}
+              result={probe.result}
+              stale={probeStale}
+              onRetest={onTest}
+              busy={test.isPending}
+            />
+          )}
         </Card>
       )}
 
@@ -1267,4 +1409,206 @@ export function ListeningScreen(): ReactNode {
 function shortAccount(accountId: string): string {
   if (accountId.length <= 14) return accountId;
   return `${accountId.slice(0, 12)}…`;
+}
+
+/**
+ * DENEME SONUCU — kuralın ürettiği JQL, eşleşenler, ve eşleşme yoksa
+ * karşılaştırma listesi.
+ *
+ * Bu bileşenin asıl işi ikinci tablo. Bir kuralın 0 sonuç döndüğünü söylemek
+ * yarım cevaptır: operatörün dört farklı sebebi vardır (tip adı farklı, statü
+ * tutmuyor, ticket bota atanmamış, etiket yok) ve dördü de aynı "0" gibi
+ * görünür. Projedeki AÇIK ticket'ları aynı sütunlarla yan yana koymak, dördünü
+ * de tek bakışta ayırt ettirir — "kuralım Görev diyor ama Jira'da hepsi Task
+ * yazıyor" cümlesi ancak iki tablo yan yanayken kurulabilir.
+ */
+function ProbePanel({
+  t,
+  result,
+  stale,
+  onRetest,
+  busy,
+}: {
+  readonly t: ReturnType<typeof useT>;
+  readonly result: ProbeResult;
+  readonly stale: boolean;
+  readonly onRetest: () => void;
+  readonly busy: boolean;
+}): ReactNode {
+  if (!result.ok) {
+    /**
+     * Adlandırılmış sebep, katalogdan çevrilir. `unbound_project` ile
+     * `no_bot_account` operatörü iki AYRI ekrana gönderir; tek bir "deneme
+     * başarısız" cümlesi yarısını yanlış yere yollardı.
+     */
+    const known = ["unbound_project", "no_bot_account", "no_label", "bindings_unreadable", "search_failed", "probe_not_available"];
+    return (
+      <div className="scr-note scr-note--warn" style={{ marginTop: 16 }}>
+        <b>{t("listening.probe.failed")}</b>{" "}
+        {known.includes(result.reason)
+          ? t(`listening.probe.reason.${result.reason}`)
+          : result.reason}
+        {result.detail !== undefined && result.detail !== "" && (
+          <div className="screen-mono" style={{ marginTop: 6, wordBreak: "break-all" }}>
+            {result.detail}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const empty = result.matched.length === 0;
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/*
+        TEST EDİLEN DEĞERLER DEĞİŞTİ.
+        Formu test ettikten sonra düzenlemek serbest — ama aşağıdaki tablo o
+        anda başka bir kuralı anlatıyor demektir. Sessizce durması, "panelde
+        doğru görünen, sahada başka çalışan" hatasının tam da bu ekranda
+        yeniden üretilmesi olurdu.
+      */}
+      {stale && (
+        <div className="scr-note scr-note--warn" style={{ marginBottom: 12 }}>
+          <b>{t("listening.probe.stale")}</b>{" "}
+          <Button size="sm" busy={busy} onClick={onRetest}>
+            {t("listening.probe.retest")}
+          </Button>
+        </div>
+      )}
+
+      <div className="screen-note">{t("listening.probe.jql_label")}</div>
+      <JqlBox t={t} jql={result.jql} />
+
+      {empty ? (
+        <>
+          {/*
+            Sıfır sonuç bir YASAK değil, bir uyarı: bugün eşleşen ticket
+            olmayabilir, yarın olur. Kuralı kaydetmek serbest kalır.
+          */}
+          <div className="scr-note scr-note--warn" style={{ marginTop: 12 }}>
+            <b>{t("listening.probe.no_match")}</b> {t("listening.probe.no_match_hint")}
+          </div>
+          {result.projectSample.length > 0 && (
+            <>
+              <div className="screen-note" style={{ marginTop: 12 }}>
+                {t("listening.probe.compare", { count: String(result.projectSample.length) })}
+              </div>
+              <ProbeTable t={t} rows={result.projectSample} />
+            </>
+          )}
+          {result.projectSample.length === 0 && result.sampleJql !== null && (
+            <div className="screen-note" style={{ marginTop: 12 }}>
+              {t("listening.probe.project_empty")}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="screen-note" style={{ marginTop: 12 }}>
+            {t("listening.probe.matched", { count: String(result.matched.length) })}
+          </div>
+          <ProbeTable t={t} rows={result.matched} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Üretilen JQL, KOPYALANABİLİR halde.
+ *
+ * Operatör aynı sorguyu Jira'nın kendi arama kutusunda da denesin diye: panelin
+ * "0 sonuç" demesi ile Jira'nın "0 sonuç" demesi aynı şeyi kanıtlamaz — biri
+ * kuralı, diğeri servis hesabının o projedeki iznini de sınar.
+ *
+ * Salt-okunur bir `textarea`: seçilebilir, kopyalanabilir, ve panoya erişimi
+ * olmayan bir tarayıcıda (HTTP üzerinden açılmış bir kurulum, ki bankada olur)
+ * elle seçmek hâlâ çalışır. Kopyalama başarısız olursa metin kaybolmaz.
+ */
+function JqlBox({ t, jql }: { readonly t: ReturnType<typeof useT>; readonly jql: string }): ReactNode {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 4 }}>
+      <textarea
+        readOnly
+        className="screen-mono"
+        value={jql}
+        rows={2}
+        style={{ flex: 1, resize: "vertical", padding: 8 }}
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <Button
+        size="sm"
+        onClick={() => {
+          void navigator.clipboard
+            ?.writeText(jql)
+            .then(() => setCopied(true))
+            .catch(() => setCopied(false));
+        }}
+      >
+        {copied ? t("listening.probe.copied") : t("listening.probe.copy")}
+      </Button>
+    </div>
+  );
+}
+
+/** Bir ticket listesi — kuralın karşılaştırdığı DÖRT alan, ticket metni yok. */
+function ProbeTable({
+  t,
+  rows,
+}: {
+  readonly t: ReturnType<typeof useT>;
+  readonly rows: readonly ProbeTicket[];
+}): ReactNode {
+  const columns: readonly Column<ProbeTicket>[] = [
+    {
+      key: "key",
+      header: t("listening.probe.col.key"),
+      cell: (r) => (
+        <>
+          <b className="screen-mono">{r.key}</b>
+          {/*
+            "Bu zaten alınmış." Eşleşen ama koşusu olan bir ticket, taramanın
+            hatası değil işidir — ve bunu söylememek bugün bir operatörü, işini
+            yeni yapmış bir sorguda hata aramaya gönderdi.
+          */}
+          {r.alreadyKnown && (
+            <span style={{ marginLeft: 6 }}>
+              <Badge tone="gray">{t("listening.probe.already_known")}</Badge>
+            </span>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "issueType",
+      header: t("listening.probe.col.type"),
+      cell: (r) => <span className="screen-mono">{r.issueType ?? "—"}</span>,
+    },
+    {
+      key: "status",
+      header: t("listening.probe.col.status"),
+      cell: (r) => <span className="screen-mono">{r.status ?? "—"}</span>,
+    },
+    {
+      key: "assignee",
+      header: t("listening.probe.col.assignee"),
+      // Atanmamış bir ticket, bir kuralın 0 dönmesinin en sık sebebi — ve
+      // boş bir hücre bunu söylemez, o yüzden adı konur.
+      cell: (r) => <span>{r.assignee ?? t("listening.probe.unassigned")}</span>,
+    },
+    {
+      key: "labels",
+      header: t("listening.probe.col.labels"),
+      cell: (r) => <span className="screen-mono">{r.labels.length === 0 ? "—" : r.labels.join(", ")}</span>,
+    },
+  ];
+  return (
+    <Table
+      columns={columns}
+      rows={rows}
+      rowKey={(r) => r.key}
+      emptyLabel={t("listening.probe.no_match")}
+    />
+  );
 }

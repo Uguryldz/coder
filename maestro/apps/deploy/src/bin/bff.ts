@@ -45,6 +45,8 @@ import {
   startJiraDiscovery,
   type IssueSearcher,
 } from "../jira-discovery.js";
+import type { ListeningProbeResult } from "@maestro/bff";
+import { probeListeningRule } from "../listening-probe.js";
 import { canReadComments, canReadTickets, startJiraPoller } from "../jira-poller.js";
 import {
   startCommandIntake,
@@ -494,6 +496,22 @@ export async function main(): Promise<void> {
         : discoveryRun(),
     sweepConfigured: () => discoveryRun !== undefined,
     /**
+     * "Kuralı test et" — dinleme ekranının provası.
+     *
+     * `discoveryRun` gibi bir TUTUCU üzerinden okunur: `deps` burada kuruluyor,
+     * sürücü aşağıda. Ayrı bir tutucu, çünkü bu ikisi AYNI ŞEY DEĞİL —
+     * `JIRA_DISCOVER_MS=0` ile taramayı kapatmış bir kurulumda tur koşmaz ama
+     * sürücü hâlâ arayabilir, ve "neden bu ticket gelmiyor" sorusunu sormak
+     * taramanın açık olmasına bağlanmamalı. Yokluğunda uç 503-by-name döner.
+     */
+    listeningProbe: (draft) =>
+      listeningProbe === undefined
+        ? Promise.resolve({
+            ok: false as const,
+            reason: "probe_not_available",
+          })
+        : listeningProbe(draft),
+    /**
      * Which absence it is. The driver check happens further down (it needs the
      * work port), so this reads the holder at call time like the runner does.
      */
@@ -827,6 +845,24 @@ export async function main(): Promise<void> {
   /** Set when the sweep is impossible for a reason other than "not asked for". */
   let sweepReason: string | undefined;
   /**
+   * "Kuralı test et" provası — TARAMADAN AYRI kurulur.
+   *
+   * Kasıtlı olarak `discoveryRun` ile aynı koşula bağlı değil. Taramayı
+   * `JIRA_DISCOVER_MS=0` ile kapatmış (ya da webhook'la çalışan) bir kurulumda
+   * tur koşmaz, ama sürücü hâlâ JQL arayabilir — ve "yazdığım kural neyle
+   * eşleşiyor" sorusu tam da o kurulumlarda soruluyor. Tek şartı sürücünün
+   * arama sunması.
+   */
+  let listeningProbe:
+    | ((draft: {
+        readonly projectKey: string;
+        readonly assigneeAccountId: string;
+        readonly matchKind: "status" | "issuetype" | "assigned" | "label";
+        readonly matchValue: string;
+        readonly allowedStatuses?: readonly string[] | null;
+      }) => Promise<ListeningProbeResult>)
+    | undefined;
+  /**
    * The driver's searcher, or nothing.
    *
    * This used to be `ports.work as unknown as IssueSearcher` — a cast
@@ -842,6 +878,39 @@ export async function main(): Promise<void> {
    */
   const workPort: unknown = deployment.ports.work;
   const searcher: IssueSearcher | null = canSearch(workPort) ? workPort : null;
+
+  /**
+   * BAĞLI VE CANLI PROJELER — hem turun hem provanın dış sınırı, TEK kaynaktan.
+   *
+   * İkisi ayrı yazılsaydı er ya da geç "bağlı" kelimesinin iki farklı anlamına
+   * kayarlardı: `paused` bir bağlantı turda dışarıda kalıp denemede içeride
+   * olurdu ve panel, sahada hiç aranmayacak bir kuralı yeşil gösterirdi.
+   */
+  const liveBoundProjects = async (): Promise<readonly string[]> =>
+    (
+      await db.jiraProjectBinding.findMany({
+        where: { state: { in: LIVE_BINDING_STATES as never } },
+        select: { projectKey: true },
+      })
+    ).map((row) => row.projectKey);
+
+  /** Koşusu olan ticket anahtarları — turda "başlatma", denemede "işaretle". */
+  const knownTickets = async (): Promise<readonly TicketKey[]> =>
+    (await db.workflowRun.findMany({ select: { ticketKey: true }, take: 500 })).map(
+      (row) => row.ticketKey as TicketKey,
+    );
+
+  /**
+   * Prova, sürücü arayabiliyorsa kurulur — tarama açık olsun ya da olmasın.
+   * Gerekçesi `listeningProbe` bildiriminde.
+   */
+  if (searcher !== null) {
+    listeningProbe = async (draft) =>
+      probeListeningRule(
+        { search: searcher, boundProjects: liveBoundProjects, known: knownTickets },
+        draft,
+      );
+  }
 
   /**
    * The sweep interval, and WHERE it came from.
@@ -925,19 +994,7 @@ export async function main(): Promise<void> {
        * uses for `active`, so the sweep gate and the intake gate cannot drift
        * into disagreeing about what "bound" means.
        */
-      boundProjects: async () =>
-        (
-          await db.jiraProjectBinding.findMany({
-            // `LIVE_BINDING_STATES` is `readonly string[]` because the BFF
-            // side may not import Prisma's generated enum (M44). The cast is
-            // at this one boundary rather than by widening the constant: the
-            // list is the SAME list the intake gate uses, and duplicating it
-            // as a Prisma-typed literal here is exactly how the two gates
-            // would drift into disagreeing about what "bound" means.
-            where: { state: { in: LIVE_BINDING_STATES as never } },
-            select: { projectKey: true },
-          })
-        ).map((row) => row.projectKey),
+      boundProjects: liveBoundProjects,
       /**
        * The operator's interval, from `jira.discover_seconds`.
        *
@@ -959,10 +1016,7 @@ export async function main(): Promise<void> {
       // Every ticket that already has a row, in ANY state: a finished run must
       // not be started again by the next sweep, and a failed one is a decision
       // for a person, not something to retry on a timer.
-      known: async () =>
-        (await db.workflowRun.findMany({ select: { ticketKey: true }, take: 500 })).map(
-          (row) => row.ticketKey as TicketKey,
-        ),
+      known: knownTickets,
     };
     startJiraDiscovery(discoveryOptions);
     // The panel's button runs ONE round with the same options; it does not

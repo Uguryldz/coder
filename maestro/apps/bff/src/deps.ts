@@ -750,6 +750,81 @@ export type DiscoveryStatusReader = () => {
 export type DiscoveryRunner = () => Promise<readonly string[]>;
 
 /**
+ * KURALI DENE — bir kural TASLAĞINI Jira'ya sorup ne getirdiğini göstermek.
+ *
+ * `DiscoveryRunner` bir TUR koşar: kayıtlı kuralları arar ve bulduklarını
+ * BAŞLATIR. Bu onun provası — hiçbir şey yazmaz, hiçbir koşu başlatmaz, kural
+ * kaydetmez. Operatör kuralı KAYDETMEDEN önce filtresini ayarlayabilsin diye
+ * var: bugüne kadar yeni bir kuralın doğru olup olmadığını öğrenmenin tek yolu
+ * onu kaydedip bir tur beklemek ve konteyner log'unu okumaktı — yani kural
+ * yazma yetkisi olan kişi kendi işini doğrulayamıyordu.
+ *
+ * Kompozisyon kökünde uygulanır (`apps/deploy`), çünkü JQL üretimi
+ * (`jqlFor`) ve arama yapabilen sürücü orada; bu paket `apps/deploy`'u import
+ * edemez (bağımlılık ters yönde). Böylece PANELDEKİ deneme ile TURUN kendisi
+ * aynı `jqlFor`'u kullanır — farklı bir JQL üreten bir "test" butonu, test
+ * ettiğini iddia ettiği şeyden başkasını test ederdi.
+ *
+ * Yokluğunda uç 503-by-name döner: arama sunmayan bir sürücüde (Azure DevOps)
+ * ya da tarama hiç kurulmamışsa sessizce boş sonuç göstermek, bu ekranın var
+ * olma sebebi olan sessiz-yanlışın aynısı olurdu.
+ */
+export type ListeningProbe = (draft: {
+  readonly projectKey: string;
+  readonly assigneeAccountId: string;
+  readonly matchKind: "status" | "issuetype" | "assigned" | "label";
+  readonly matchValue: string;
+  readonly allowedStatuses?: readonly string[] | null;
+}) => Promise<ListeningProbeResult>;
+
+/** Bir denemede görülen tek ticket — kuralın sorduğu DÖRT ALAN, metin YOK. */
+export type ProbeTicket = {
+  readonly key: string;
+  readonly status: string | null;
+  readonly issueType: string | null;
+  readonly assignee: string | null;
+  readonly labels: readonly string[];
+  /**
+   * Bu ticket'ın ZATEN bir koşusu var mı.
+   *
+   * Ölçüldü: operatör 14 ticket bulan bir turda "0 alındı" görüp taramayı bozuk
+   * sandı — oysa on dördünün de koşusu vardı ve tarama tam olarak işini
+   * yapıyordu. Eşleşen bir ticket'ın yanında bunu söylemek, o yanılgının tek
+   * çaresi.
+   */
+  readonly alreadyKnown: boolean;
+};
+
+export type ListeningProbeResult =
+  | {
+      readonly ok: true;
+      /** Kuralın ürettiği JQL — operatör Jira'da da deneyebilsin diye aynen. */
+      readonly jql: string;
+      readonly matched: readonly ProbeTicket[];
+      /**
+       * EŞLEŞME YOKKEN projede AÇIK olan ticket'lar — ekranın asıl değeri.
+       *
+       * Operatör "kuralım Görev diyor ama hepsi Task yazıyor" ya da "hiçbiri
+       * bota atanmamış" diyebilsin diye aynı sütunlarla. Eşleşme varken boş:
+       * karşılaştırmaya gerek yok.
+       */
+      readonly projectSample: readonly ProbeTicket[];
+      /** Karşılaştırma listesini üreten daraltılmış sorgu. */
+      readonly sampleJql: string | null;
+    }
+  | {
+      readonly ok: false;
+      /**
+       * Neden denenemedi — ADLANDIRILMIŞ sebep, serbest metin değil. Panel
+       * bunu kendi katalogundan çevirir; `unbound_project` ile `no_bot_account`
+       * operatörü iki ayrı ekrana gönderir.
+       */
+      readonly reason: string;
+      /** Jira'nın kendi hata metni, varsa (sebep `search_failed` ise). */
+      readonly detail?: string;
+    };
+
+/**
  * How ticket COMMANDS (`/approve`, `/reject <sebep>`) reach this deployment,
  * as the composition root can actually observe it.
  *
@@ -804,6 +879,11 @@ export interface BffDeps {
   discoveryStatus?: DiscoveryStatusReader;
   /** See {@link DiscoveryRunner}; absent on a webhook-only install. */
   discoveryRun?: DiscoveryRunner;
+  /**
+   * See {@link ListeningProbe} — "kuralı test et", the rules screen's dry run.
+   * Absent where the work driver cannot search; the route says so by name.
+   */
+  listeningProbe?: ListeningProbe;
   /**
    * Whether a sweep is wired, asked at call time.
    *

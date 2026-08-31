@@ -379,6 +379,8 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   let scanned = 0;
   /** Rules that could not be turned into a bounded query — see `jqlFor`. */
   let skippedRules = 0;
+  /** Tickets a rule matched that already carry a run — the sweep's usual case. */
+  let alreadyKnown = 0;
 
   for (const rule of rules) {
     if (started.length >= cap) break;
@@ -443,6 +445,25 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       });
       issues = page.issues;
       scanned += issues.length;
+      /**
+       * THE QUERY, AND WHAT IT FOUND — one line per rule, per round.
+       *
+       * The round summary ("6 kural arandı, 0 ticket alındı") says a rule found
+       * nothing; it never says WHAT the rule looked for, and those are
+       * different facts with different fixes. An operator whose issue-type rule
+       * returns nothing has four candidates — the ticket is not assigned to the
+       * bot, the type name does not match Jira's spelling, the status gate
+       * excludes it, the project key is wrong — and the query answers all four
+       * at a glance, because Jira answered it without complaint.
+       *
+       * Logged at INFO rather than DEBUG: this is the sweep's only observable
+       * output on an install with no webhook, where the sweep is the only door
+       * a ticket has. A JQL string holds a project key, an account id and a
+       * status name — configuration the panel already shows, never ticket
+       * content, which is why `fields` deliberately excludes summary and
+       * description.
+       */
+      log(`[keşif] ${rule.projectKey}/${rule.matchKind}: ${issues.length} sonuç · JQL: ${jql}`);
     } catch (error) {
       // One rule's failure must not stop the others: a project whose
       // permissions changed would otherwise freeze discovery for every project.
@@ -457,7 +478,15 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       // from ending a round that has other tickets in it.
       const key = issueKeyOf(issue);
       if (key === null) continue;
-      if (known.has(key) || seenThisRound.has(key)) continue;
+      if (known.has(key) || seenThisRound.has(key)) {
+        // Counted, not silent. A round that finds fourteen tickets and starts
+        // none reads as a broken sweep; "fourteen already have a run" reads as
+        // a working one. The two are indistinguishable in the summary line, and
+        // that ambiguity is what sent an operator looking for a bug in the
+        // query that had just done its job.
+        alreadyKnown += 1;
+        continue;
+      }
       seenThisRound.add(key);
 
       /**
@@ -504,6 +533,11 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   log(
     `[keşif] tur bitti: ${rules.length - skippedRules} kural arandı, ${started.length} ticket alındı` +
       `${scanned === 0 ? "" : `, ${scanned} eşleşme görüldü`}` +
+      // "0 alındı" ile "0 alındı ama 14'ünün zaten koşusu var" aynı satırda
+      // görünüyordu, ve ikisi bambaşka: biri bozuk bir sorgu, diğeri çalışan
+      // bir tarama. Bu belirsizlik bir operatörü, işini yeni yapmış bir
+      // sorguda hata aramaya gönderdi.
+      `${alreadyKnown === 0 ? "" : `, ${alreadyKnown}'inin koşusu zaten var`}` +
       // Counted in the summary too, not only in the per-rule line above: an
       // operator scanning one line per round must see that some rules were
       // never searched at all.

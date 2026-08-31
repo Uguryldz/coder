@@ -13,7 +13,12 @@ import { buildAgentRunner } from "./agent-runner.js";
 import { jiraCloudConfig, jiraConfig } from "./driver-config.js";
 import { loadDeployEnv, type DeployEnv } from "./env.js";
 import { objectLockConfig } from "./object-lock.js";
-import { assertOneJiraInstance, JIRA_CLOUD_DRIVER, workDriverFor } from "./profile.js";
+import {
+  assertOneJiraInstance,
+  JIRA_CLOUD_DRIVER,
+  NOT_CONFIGURED_DRIVER,
+  workDriverFor,
+} from "./profile.js";
 import { buildRegistry } from "./registry.js";
 import { buildSecretPort } from "./secrets.js";
 import { notConfiguredWorkPort } from "./stores/unavailable-ports.js";
@@ -392,6 +397,60 @@ export function logWiring(env: DeployEnv, deployment: Deployment): void {
   console.info(
     `[maestro] profile=${env.profile} node_env=${env.base.NODE_ENV}\n` +
       `[maestro] ports:\n${rows}`,
+  );
+  const note = workWiringNote(env, deployment.selection.work.driver);
+  if (note !== null) console.warn(note);
+}
+
+/**
+ * WHICH Jira, and WHY that one — the sentence the table above cannot carry.
+ *
+ * The table prints a driver id and nothing else, and an operator reading
+ * `work → jira-cloud` on an install they know is Data Center has no way to
+ * learn from it WHERE that answer came from. There is exactly one input
+ * (`workDriverFor` reads the two URL variables and nothing else), so naming the
+ * variable that decided turns a puzzling id into a one-line fix: the address
+ * went into the wrong variable.
+ *
+ * That is not a hypothetical. `WORK_DRIVER` used to be a second switch that
+ * could disagree with the URLs, and its removal means the URL is now the whole
+ * answer — so a driver id that surprises the operator is ALWAYS a statement
+ * about which variable is filled, and saying so is the entire diagnosis.
+ *
+ * `not-configured` gets the loudest treatment because it is the one row that
+ * reads as a working install and is not one: the stack boots green, the panel
+ * serves, connections test fine — and the first webhook, the first comment and
+ * the first transition all refuse. That gap is stated here rather than
+ * discovered by the ticket that hit it.
+ *
+ * NO VALUE IS PRINTED, only variable NAMES: a Jira base URL can carry userinfo,
+ * and a boot banner is exactly the artefact that reaches a log aggregator.
+ */
+export function workWiringNote(env: DeployEnv, driver: string): string | null {
+  if (driver === NOT_CONFIGURED_DRIVER) {
+    return (
+      "[maestro] UYARI: work portu YAPILANDIRILMADI — ne JIRA_BASE_URL ne de " +
+      "JIRA_CLOUD_BASE_URL dolu. Yığın açılır ve panel çalışır (kurulumu panelden " +
+      "yapabilesiniz diye), AMA Jira'ya her erişim adıyla reddedilir: webhook " +
+      "doğrulanamaz, ticket okunamaz, yorum/etiket/atama/geçiş yazılamaz — yani hiçbir " +
+      "ticket işlenemez. Açmak için .env'de YALNIZCA BİRİNİ doldurup servisleri yeniden " +
+      "başlatın: Jira Data Center → JIRA_BASE_URL, Jira Cloud → JIRA_CLOUD_BASE_URL " +
+      "(+ MAESTRO_BOT_EMAIL). Panelden kurduğunuz Jira BAĞLANTISI bunun yerine GEÇMEZ: " +
+      "bağlantı sihirbazın okuma çağrıları içindir, iş portu bu iki değişkenden kurulur."
+    );
+  }
+  // Which variable decided, so a driver id that surprises the operator names
+  // its own cause. Recomputed rather than threaded through: `workDriverFor` is
+  // pure and reads the same `env.source` the composition root read.
+  const chosen = workDriverFor(env.source);
+  if (chosen.problem !== null) return null;
+  const variable = driver === JIRA_CLOUD_DRIVER ? "JIRA_CLOUD_BASE_URL" : "JIRA_BASE_URL";
+  const flavour = driver === JIRA_CLOUD_DRIVER ? "Jira Cloud" : "Jira Data Center";
+  return (
+    `[maestro] work sürücüsü ${flavour} (${driver}) — çünkü ${variable} dolu. ` +
+    "Sürücüyü seçen başka bir değişken YOKTUR (WORK_DRIVER kaldırıldı). Bu kurulum " +
+    `${flavour} kullanmıyorsa adres YANLIŞ değişkene yazılmış demektir: doğru olanı ` +
+    `doldurup ${variable} satırını SİLİN (ikisi birden dolu olursa açılış reddedilir).`
   );
 }
 

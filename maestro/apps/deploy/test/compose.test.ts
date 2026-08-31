@@ -2,7 +2,7 @@ import { createJiraCloudWorkPort } from "@maestro/adapter-jira";
 import { MaestroPublishPort } from "@maestro/publish";
 import { createPgBlobStorage, ObjectLockNotConfiguredError } from "@maestro/storage";
 import { describe, expect, it } from "vitest";
-import { bootPlatform } from "../src/boot.js";
+import { bootPlatform, workWiringNote } from "../src/boot.js";
 import { assertAllPortsPresent, CompositionError, describeWiring, workerSelection } from "../src/compose.js";
 import { adoConfig, storageConfig } from "../src/driver-config.js";
 import { loadDeployEnv, vaultMounts } from "../src/env.js";
@@ -539,5 +539,56 @@ describe("assertAllPortsPresent", () => {
       WORKER_PORT_KEYS.map((key) => [key === "secret" ? "secrets" : key, {}]),
     ) as never;
     expect(() => assertAllPortsPresent(bundle, {} as never)).not.toThrow();
+  });
+});
+
+/**
+ * The sentence the port→driver table cannot carry.
+ *
+ * The table prints `work → jira-cloud` and nothing else, and that one word is
+ * what a Data Center site reads as "the Cloud driver is running" without ever
+ * learning WHY the composition root chose it. Since `WORK_DRIVER` was removed
+ * the URL variables are the whole answer, so naming the variable that decided
+ * turns a surprising driver id into a one-line fix.
+ */
+describe("workWiringNote", () => {
+  it("names the variable that chose the Cloud driver", async () => {
+    const env = await loadDeployEnv({
+      ...envWithout(DEV_ENV, "JIRA_BASE_URL"),
+      JIRA_CLOUD_BASE_URL: "https://bank.atlassian.invalid",
+      MAESTRO_BOT_EMAIL: "bot@bank.invalid",
+    });
+    const note = workWiringNote(env, "jira-cloud");
+    expect(note).toContain("JIRA_CLOUD_BASE_URL");
+    expect(note).toContain("Jira Cloud");
+    // The actionable half: a DC site is told the address is in the wrong box.
+    expect(note).toMatch(/YANLIŞ değişkene/);
+  });
+
+  it("names the variable that chose the Data Center driver", async () => {
+    const env = await loadDeployEnv({ ...DEV_ENV });
+    const note = workWiringNote(env, "jira-dc");
+    expect(note).toContain("JIRA_BASE_URL");
+    expect(note).toContain("Jira Data Center");
+  });
+
+  it("states the CONSEQUENCE when no Jira was named at all", async () => {
+    const env = await loadDeployEnv(envWithout(DEV_ENV, "JIRA_BASE_URL"));
+    const note = workWiringNote(env, "not-configured");
+    // Both variables, because the operator has to pick one.
+    expect(note).toContain("JIRA_BASE_URL");
+    expect(note).toContain("JIRA_CLOUD_BASE_URL");
+    // The trap this line exists for: a green panel with a dead work port, and
+    // a panel connection that does NOT stand in for the missing variable.
+    expect(note).toMatch(/BAĞLANTISI bunun yerine GEÇMEZ/);
+  });
+
+  it("prints no URL — a Jira base URL can carry userinfo", async () => {
+    const env = await loadDeployEnv({
+      ...envWithout(DEV_ENV, "JIRA_BASE_URL"),
+      JIRA_CLOUD_BASE_URL: "https://bank.atlassian.invalid",
+      MAESTRO_BOT_EMAIL: "bot@bank.invalid",
+    });
+    expect(workWiringNote(env, "jira-cloud")).not.toContain("atlassian.invalid");
   });
 });

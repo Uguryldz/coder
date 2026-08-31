@@ -727,6 +727,28 @@ export async function main(): Promise<void> {
         "tarama kapalı. JQL araması yalnız Jira Cloud sürücüsünde vardır; " +
         "Jira Data Center kurulumları ticket'ları webhook ile alır.",
     );
+  } else if (searcher !== null) {
+    /**
+     * The third case, and the one that was SILENT.
+     *
+     * The driver CAN sweep and nobody asked it to: `JIRA_DISCOVER_MS` is empty
+     * or zero. Until this line existed the boot log said nothing at all about
+     * the sweep in this state — no "açık" line, no "İSTENDİ ama olmuyor" line
+     * — so the operator who then pressed "Şimdi tara" got a 503 whose reason
+     * appeared nowhere in the log they had already collected. Two absences that
+     * need two different fixes (`JIRA_DISCOVER_MS` versus a Cloud connection)
+     * produced the same evidence: nothing.
+     *
+     * A notice rather than a warning: a webhook-driven install is a legitimate,
+     * common configuration and this is not a fault. It is here so the log can
+     * ANSWER the question the panel's 503 raises.
+     */
+    console.info(
+      "[maestro] ticket taraması KAPALI — JIRA_DISCOVER_MS boş ya da 0. Bu sürücü arama " +
+        "sunuyor, yani tarama açılabilir: .env'e JIRA_DISCOVER_MS=300000 (5 dk) ekleyip " +
+        "servisleri yeniden başlatın. Webhook'u çalışan bir kurulumda gerekmez — " +
+        "ticket'lar webhook ile gelir ve panelin 'Şimdi tara' düğmesi 503 döner.",
+    );
   }
 
   const app = await buildServer(deps);

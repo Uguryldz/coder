@@ -16,5 +16,6 @@ export * from "./dc-comment-command.js";
 export * from "./errors.js";
 export * from "./mapping.js";
 export * from "./register.js";
+export * from "./transitions.js";
 export * from "./webhook.js";
 export * from "./work-port.js";

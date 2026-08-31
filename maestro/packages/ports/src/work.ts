@@ -32,9 +32,16 @@ export interface WorkPort {
   /** Group membership check backing gate authorization (M32/M51). */
   verifyMembership(userId: string, group: string): Promise<boolean>;
   /**
-   * Optional: workflow transition. The DC driver does NOT implement this
-   * (M102 — no workflow permissions; progress is shown via labels/comments)
-   * and throws CapabilityNotSupportedError. Kept for future Cloud driver.
+   * Workflow transition BY ID. Both Jira drivers implement it for real (Cloud
+   * since M44, Data Center since M111 — the DC refusal was M102's "no workflow
+   * permission is requested", and it stopped being true the day operators
+   * configured a status map). A driver that genuinely cannot transition still
+   * throws CapabilityNotSupportedError.
+   *
+   * A transition id belongs to ONE project's workflow and means nothing on
+   * another, so a caller that knows only WHERE it wants the ticket reaches for
+   * the concrete driver's `transitionToStatus` instead — the frozen port
+   * cannot express its result-returning signature.
    */
   transition(key: TicketKey, transitionId: string): Promise<void>;
 }

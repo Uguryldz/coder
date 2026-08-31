@@ -16,7 +16,9 @@ export {
   LLM_BLOCKED,
   QUOTA_WAIT,
   guardModelCall,
+  guardedLlm,
   handOver,
+  outcomeOfRole,
   quotaWait,
   resolveOutcome,
 } from "./outcome.js";
@@ -32,7 +34,39 @@ export {
   type DocTarget,
 } from "./analysis-docs.js";
 export { scannerErrorResult } from "./scan.js";
-export { MIN_SUGGESTION_CONFIDENCE, pickRule, ruleApplies } from "./intake.js";
+/**
+ * Studio'daki "Persona" alanını akışa taşıyan yardımcılar.
+ *
+ * Artık BAĞLI: `analystPersona` intake'in (`intake.ts` — `runIntake`,
+ * `matchApplication`) ve analizin (`analysis.ts` — `writeAnalysis`) prompt
+ * kurduğu üç yerde çağrılıyor. `engineerPersona`/`withPersona` hazır duruyor
+ * ama mühendislik turunda HENÜZ çağrılmıyor: o tur bir prompt kurmuyor, bir
+ * `BootstrapContext` kuruyor (`@maestro/execution`), ve o sözleşmede personanın
+ * konabileceği bir alan yok — bkz. `engineering.ts`'teki `turnContext`.
+ */
+export {
+  PERSONA_NOTE_TITLE,
+  analystPersona,
+  engineerPersona,
+  withPersona,
+  type PersonaWarn,
+} from "./persona.js";
+/**
+ * Ticket'ın insan yorumlarını intake bağlamına taşıyan yardımcılar. Sürücüden
+ * okuma `CommentReader` seam'i üzerinden (bkz. `deps.ts`).
+ */
+export {
+  COMMENT_BLOCK_TITLE,
+  MAX_COMMENTS,
+  MAX_COMMENT_TEXT,
+  commentAuthorId,
+  commentText,
+  humanCommentsOf,
+  readHumanComments,
+  withComments,
+  type HumanComment,
+} from "./comments.js";
+export { MIN_SUGGESTION_CONFIDENCE, WAITING_LABEL, pickRule, ruleApplies } from "./intake.js";
 
 /**
  * The activity set, bound to one set of collaborators.

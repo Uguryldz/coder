@@ -1,16 +1,26 @@
 import { TicketKey, type CommandEnvelope, type TicketSnapshot } from "@maestro/contracts";
-import { CapabilityNotSupportedError, type WorkPort } from "@maestro/ports";
+import { type WorkPort } from "@maestro/ports";
 import { adfToWikiMarkup, toAdfDocument } from "./adf.js";
 import { JiraDcClient, type FetchLike, type TokenProvider } from "./client.js";
 import type { JiraDcConfig } from "./config.js";
 import { parseDcCommandFromComment, type DcCommentCommand } from "./dc-comment-command.js";
 import {
   JiraArgumentError,
+  JiraForbiddenError,
   JiraLinkFailedError,
   JiraMembershipUnresolvedError,
   JiraResponseError,
 } from "./errors.js";
 import { ISSUE_FIELDS, mapIssueToSnapshot } from "./mapping.js";
+import {
+  currentStatusNameOf,
+  foldStatusName,
+  parseAvailableTransitions,
+  requireTransitionId,
+  selectTransitionByStatusName,
+  type AvailableTransition,
+  type TransitionOutcome,
+} from "./transitions.js";
 import {
   commandFromWebhook,
   JIRA_SIGNATURE_HEADER,
@@ -33,9 +43,21 @@ const API = "/rest/api/2";
 const MAX_GROUP_PAGES = 40;
 
 /**
- * WorkPort driver for Jira Data Center (M46). Stays inside the permission set
- * agreed in M102 — Browse, Add Comment, Edit Issue (labels), Assign,
- * Create/Link Issue — and deliberately owns no workflow transition.
+ * WorkPort driver for Jira Data Center (M46). Permission set: Browse, Add
+ * Comment, Edit Issue (labels), Assign, Create/Link Issue — ve M111'den beri
+ * Transition Issues.
+ *
+ * M102'de DC sürücüsü kasten hiçbir iş akışı geçişi sahiplenmiyordu ("no
+ * workflow permission is requested") ve ilerleme bir ETİKETLE gösteriliyordu.
+ * O karar, operatör panelde bir statü haritası kurduğu anda geçersiz kaldı:
+ * harita `onStart` / `onNeedInfo` / `onReview` / `onRejected` / `onDone` için
+ * statü ADLARI söylüyor ve bunları uygulayacak tek yer bu sürücü.
+ *
+ * İzin sorusu yeteneğin VARLIĞIYLA karıştırılmıyor. Yetenek her zaman mevcut —
+ * `apps/deploy/src/stores/status-mover.ts` sürücüyü YAPISAL olarak yokluyor,
+ * metot yoksa harita sessizce hiçbir şey yapmaz. Servis hesabına "Transition
+ * Issues" izni verilmemişse Jira 403 döner ve bu bir çökme değil, gerekçeli bir
+ * sonuçtur: `{moved:false, reason:"forbidden"}`. Akış uyarır ve devam eder.
  */
 export class JiraDcWorkPort implements WorkPort {
   readonly driver = "jira-dc";
@@ -252,9 +274,129 @@ export class JiraDcWorkPort implements WorkPort {
     verifyWebhookSignature(rawBody, header, await this.webhookSecret());
   }
 
-  /** Not supported on DC (M102): no workflow permission is requested. */
-  async transition(_key: TicketKey, _transitionId: string): Promise<void> {
-    throw new CapabilityNotSupportedError("WorkPort", "transition");
+  /**
+   * Bir issue'nun MEVCUT statüsünden çıkan geçişler, her biri hedef statüsünün
+   * kategorisiyle birlikte.
+   *
+   * SÜRÜCÜYE ÖZGÜ YETENEK, bir `WorkPort` metodu değil — `listComments` ile
+   * aynı şekil. Bu bir OKUMA: `GET /rest/api/2/issue/{key}/transitions`.
+   * `expand=transitions.fields` İSTENMEZ; varsayılan gövde zaten
+   * `to.statusCategory` taşır (Context7 ile doğrulandı, DC REST v11003
+   * "api-group-issue"), seçim için gereken de yalnızca o.
+   */
+  async readAvailableTransitions(key: TicketKey): Promise<AvailableTransition[]> {
+    const issueKey = requireTicketKey(key, "key");
+    const raw = await this.client.get<unknown>(
+      `${API}/issue/${encodeURIComponent(issueKey)}/transitions`,
+    );
+    return parseAvailableTransitions(raw);
+  }
+
+  /**
+   * Geçişi id ile uygula: `POST /rest/api/2/issue/{key}/transitions` gövdesi
+   * `{ transition: { id } }`, başarıda 204 No Content — Cloud'un v3 ucuyla
+   * birebir aynı istek/yanıt şekli (Context7, DC REST v11003).
+   */
+  private async applyTransition(key: TicketKey, transitionId: string): Promise<void> {
+    const issueKey = requireTicketKey(key, "key");
+    const id = requireTransitionId(transitionId);
+    await this.client.post<void>(`${API}/issue/${encodeURIComponent(issueKey)}/transitions`, {
+      transition: { id },
+    });
+  }
+
+  /**
+   * Donmuş portun `transition`ı — M102'deki yetenek reddi değil, artık gerçek
+   * hareket. `applyTransition`ın port adı altındaki ince devri.
+   *
+   * ID ile taşıma DÜŞÜK seviyeli giriştir: bir geçiş id'si iş akışına özgü bir
+   * numaradır (bir projedeki 11/21/31 başka projede hiçbir şey ifade etmez), o
+   * yüzden yalnızca NEREYE gitmek istediğini bilen bir çağıran
+   * `transitionToStatus`a uzanmalı. Bu metot, elinde düz bir `WorkPort`
+   * referansı olan çağıranın da hareket edebilmesi için var; Cloud'daki
+   * kardeşiyle aynı gerekçe.
+   */
+  async transition(key: TicketKey, transitionId: string): Promise<void> {
+    await this.applyTransition(key, transitionId);
+  }
+
+  /**
+   * Issue'yu ADINA göre bir statüye taşı ve fırlatmak yerine NE OLDUĞUNU
+   * raporla — "uyar ama devam et" politikası olan iş akışı adımının girişi.
+   * DC'nin statü haritasını (`apps/deploy/src/stores/status-mover.ts`) gerçekten
+   * çalıştıran metot budur.
+   *
+   * SÜRÜCÜYE ÖZGÜ YETENEK, bir `WorkPort` metodu değil: `WorkPort` DONMUŞ
+   * (packages/ports) ve bu metot `void` değil bir SONUÇ döner — donmuş imzanın
+   * ifade edemeyeceği bir şey. Cloud sürücüsündeki eşiyle aynı sözleşme.
+   *
+   * Neden ada göre, id'ye göre değil: bir geçiş id'si onu üreten tek iş akışının
+   * dışında anlamsızdır; sabit yazılmış bir id, proje başka bir iş akışı
+   * kullandığı anda yanlış ticket'ı (ya da hiçbir şeyi) sessizce taşır. Çağıran
+   * gitmek istediği HEDEFİ adlandırır, bu metot Jira'ya oraya hangi kenarın
+   * götürdüğünü sorar.
+   *
+   * Sözleşme TAMDIR — ASLA fırlatmaz, her sonuç bir gerekçedir:
+   *
+   *   - `{moved:true}`                     — eşleşen geçiş uygulandı.
+   *   - `{moved:false, reason:"already"}`  — issue ZATEN o statüde, hiç POST
+   *     atılmaz. Adım yeniden çalıştırılabilir (workflow replay, elle tekrar) ve
+   *     zaten yapılmış bir hareketi yeniden POSTlamak en iyi ihtimalle 400'dür;
+   *     çağrıyı idempotent kılan bu kısa devredir.
+   *   - `{moved:false, reason:"no_transition"}` — iş akışı, issue'nun durduğu
+   *     yerden o statüye giden bir kenar sunmuyor. Hata değil: sitede o sütun
+   *     olmayabilir ya da hareket oradan yasak olabilir.
+   *   - `{moved:false, reason:"forbidden"}` — Jira 403 dedi. Servis hesabı
+   *     issue'yu görebiliyor ama taşıyamıyor; OPERATÖR bunu Jira'da servis
+   *     hesabına "Transition Issues" (Issue'ları Geçir) izni vererek düzeltir,
+   *     Maestro'da değil. Analiz yine de teslim edilmeye değer, bu yüzden
+   *     çağıran uyarır ve yoluna devam eder.
+   *   - `{moved:false, reason:"read_failed" | "transition_failed"}` — geri
+   *     kalan her şey (5xx, 404, bozuk gövde), HANGİ çağrının düştüğüne göre
+   *     ayrılmış: seçenekleri hiç öğrenemedik mi, yoksa seçtiğimizi
+   *     uygulayamadık mı.
+   */
+  async transitionToStatus(key: TicketKey, statusName: string): Promise<TransitionOutcome> {
+    // Anahtar ve statü adı en başta doğrulanır ve fırlatılmaz, gerekçe olarak
+    // raporlanır: fırlatmaması gereken bir çağıran, aksi hâlde argüman
+    // korumalarından yine de bir istisna yerdi.
+    const parsed = TicketKey.safeParse(key);
+    if (!parsed.success) return { moved: false, reason: "bad_key" };
+    const issueKey = parsed.data;
+    const wanted = statusName.trim();
+    if (wanted.length === 0) return { moved: false, reason: "bad_status_name" };
+
+    // Önce MEVCUT statü okunur; böylece zaten oradaki bir issue bir GET'e mal
+    // olur ve hiç yazma yapılmaz. `fields=status`, tüm issue'yu ağ üzerinden
+    // sürüklemek yerine kararın ihtiyaç duyduğu tek alanla sınırlar.
+    let current: string | null;
+    let transitions: AvailableTransition[];
+    try {
+      const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}`, {
+        fields: "status",
+      });
+      current = currentStatusNameOf(raw);
+      if (current !== null && foldStatusName(current) === foldStatusName(wanted)) {
+        return { moved: false, reason: "already" };
+      }
+      transitions = await this.readAvailableTransitions(issueKey);
+    } catch {
+      return { moved: false, reason: "read_failed" };
+    }
+
+    const target = selectTransitionByStatusName(transitions, wanted);
+    if (target === null) return { moved: false, reason: "no_transition" };
+
+    try {
+      await this.applyTransition(issueKey, target.id);
+    } catch (error) {
+      // 403 kendi başına ayrılıyor, çünkü operatörün Maestro'da değil JİRA'da
+      // düzelttiği tek başarısızlık o: servis hesabına "Transition Issues"
+      // izni ver. Günlükte kendi gerekçesini hak ediyor.
+      if (error instanceof JiraForbiddenError) return { moved: false, reason: "forbidden" };
+      return { moved: false, reason: "transition_failed" };
+    }
+    return { moved: true };
   }
 }
 

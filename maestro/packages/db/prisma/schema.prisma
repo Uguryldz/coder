@@ -215,8 +215,12 @@ model WorkflowRun {
   /// ---------------------------------------------------------------------
   /// Locale — text, because contracts' Locale is the validator (M104).
   locale           String  @default("tr") @db.VarChar(8)
-  /// Prompt-variant the run is pinned to (M38).
+  /// Prompt-variant the run is pinned to (M38). ANALYST/intake tarafı.
   variantId        String  @default("") @db.VarChar(64)
+  /// Mühendislik turunun ajanı (migration 0022). "" = ayrı bir mühendis ajanı
+  /// yok (ya da run bu sütundan önce açıldı) → okuyucu `variantId`'ye düşer,
+  /// yani göç öncesi davranışın aynısı. Bkz. migration 0022'nin gerekçesi.
+  engineerVariantId String @default("") @db.VarChar(64)
   /// Analysis template pinned at run start (M83).
   templateVersion  String  @default("") @db.VarChar(64)
   workspacePath    String  @default("")

@@ -2373,6 +2373,7 @@
   "variants.field.knowledge": "Knowledge files",
   "variants.field.knowledge_hint": "One file name per line (e.g. bddk-uyum.md).",
   "variants.field.model": "Model",
+  "variants.field.model_hint": "The id your model server actually serves — the same one the connection in \"Settings & connections\" tested green (e.g. qwen2.5-coder-32b-instruct).",
   "variants.field.note": "Version note",
   "variants.field.persona": "Persona text",
   "variants.field.persona_hint": "The agent's prompt overlay. Changed by publishing a new version; the old version stays untouched (M83).",

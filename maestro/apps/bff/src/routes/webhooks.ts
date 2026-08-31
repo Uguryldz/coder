@@ -1,6 +1,7 @@
 import type { TicketKey } from "@maestro/contracts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { SYSTEM_ACTOR } from "../actor.js";
+import { tryClarifyReentry } from "../clarify-reentry.js";
 import type { ResolvedDeps, WorkEvent } from "../deps.js";
 import { badRequest, WebhookRejected } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
@@ -164,6 +165,59 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
         "webhook invalid command",
       );
       return reply.code(202).send(refusal);
+    }
+
+    /**
+     * 2b'de bekleyen bir koşuya YENİDEN GİRİŞ — `runIntake`'ten ÖNCE.
+     *
+     * Kullanıcı ticket'ı düzeltip Maestro'ya geri attığında koşuyu uyandıran
+     * tek yol bu. Sıra bilerek burada: aşağıdaki `runIntake`, 2b'de bekleyen
+     * bir koşu için yalnızca mevcut yürütmeye KATILIR (`started: false`) ve
+     * hiçbir sinyal taşımaz, yani kontrol ondan sonra yapılsaydı düzeltme
+     * olayı sessizce yutulmuş olurdu. Yankı ayıklamasının üç katmanı ve
+     * "neden statü değil atama" gerekçesi `clarify-reentry.ts` başında.
+     *
+     * Yeniden giriş, intake'in YERİNE geçmez: sinyal gitse de akış aşağıya
+     * devam eder, çünkü aynı teslimat aynı zamanda etiket/statü değişikliği
+     * de taşıyor olabilir ve `runIntake` idempotent (koşu varsa katılır).
+     */
+    const reentry = await tryClarifyReentry(deps, event, deps.clock.now());
+    if (reentry.kind === "signalled") {
+      // Bir koşunun sonsuz beklemeden çıktığı an — nadir ve tam olarak
+      // operatörün aradığı olay, o yüzden kendi satırını hak ediyor. Kimlik
+      // maskeli: DC'de bir hesap adı e-posta OLABİLİR (`userIdOf`
+      // `emailAddress`'e düşer) ve bankanın log toplayıcısında e-posta
+      // kişisel veridir.
+      request.log.warn(
+        {
+          webhook: "jira",
+          ticket: reentry.ticket,
+          workflowId: reentry.workflowId,
+          ...(event.actor === undefined ? {} : { actor: maskAuthor(event.actor) }),
+        },
+        "webhook clarification re-entry signalled",
+      );
+      await deps.audit.append({
+        actor: SYSTEM_ACTOR,
+        action: "CLARIFICATION_ANSWERED",
+        subject: reentry.ticket,
+        at: deps.clock.now(),
+        meta: {
+          source: "jira_reassign",
+          workflowId: reentry.workflowId,
+          // Ham hâliyle: denetim zinciri kim cevapladı sorusunun tam
+          // cevabını taşımak zorunda, maskeleme log'un işi.
+          ...(event.actor === undefined ? {} : { answeredBy: event.actor }),
+        },
+      });
+    } else if (reentry.kind === "no_run") {
+      // 2b'de görünen bir koşuya sinyal teslim edilemedi — sorgu ile teslimat
+      // arasında kapanmış. Bir hata değil, ama sessiz kalırsa "düzelttim,
+      // hiçbir şey olmadı" şikâyetinin izi hiç kalmaz.
+      request.log.warn(
+        { webhook: "jira", ticket: event.ticketKey, reason: "no_run" },
+        "webhook clarification re-entry could not be delivered",
+      );
     }
 
     if (event.kind !== "issue" || event.ticketKey === undefined) {

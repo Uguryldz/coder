@@ -36,10 +36,16 @@ export function issueEvent(options: {
   status?: string;
   /** Assignee accountId, as `ListeningRule.assigneeAccountId` stores it. */
   assignee?: string;
+  /**
+   * Değişikliği YAPAN hesap — Jira'nın her issue olayında gönderdiği `user`
+   * alanı. Netleştirme yeniden girişinin yankı koruması bunu okuyor.
+   */
+  actor?: string;
 }): Record<string, unknown> {
   return {
     webhookEvent: options.event ?? "jira:issue_created",
     timestamp: Date.parse("2026-08-09T06:00:00.000Z"),
+    ...(options.actor === undefined ? {} : { user: { accountId: options.actor } }),
     issue: {
       key: options.ticket,
       fields: {

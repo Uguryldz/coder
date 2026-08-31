@@ -1,4 +1,28 @@
-import { JiraArgumentError, JiraResponseError } from "../errors.js";
+import {
+  foldStatusName,
+  parseAvailableTransitions,
+  requireTransitionId,
+  selectTransitionByStatusName,
+  type AvailableTransition,
+} from "../transitions.js";
+
+/**
+ * Sürücüden bağımsız olan her şey — `AvailableTransition`, geçiş listesinin
+ * ayrıştırılması, ada göre seçim, Türkçe i-katlaması ve geçiş id doğrulaması —
+ * `../transitions.ts` içine taşındı ve Data Center sürücüsüyle PAYLAŞILIYOR
+ * (M111: DC panelde statü haritası kuruldu, bkz. work-port.ts'teki
+ * `transitionToStatus`). Buradan aynı adlarla yeniden dışa aktarılıyorlar, ki
+ * bu modülün mevcut yüzeyi — içe aktaranlar, `src/index.ts` ve testler — bir
+ * harf bile değişmesin. Aşağıda KALANLAR Cloud akışlarına özgü olanlar: İADE
+ * (To-Do), İNCELEMEDE (In Progress) ve Done kategori seçicileri.
+ */
+export {
+  foldStatusName,
+  parseAvailableTransitions,
+  requireTransitionId,
+  selectTransitionByStatusName,
+  type AvailableTransition,
+};
 
 /**
  * WRITING a Jira transition to hand an unfit ticket back to its reporter (İADE).
@@ -54,63 +78,6 @@ export const IN_PROGRESS_CATEGORY_NAME = "In Progress";
  * name FIRST and then falls back to the In-Progress category.
  */
 export const DEFAULT_REVIEW_STATUS_NAME = "İNCELEMEDE";
-
-/** One transition available from an issue's current status, with its destination. */
-export interface AvailableTransition {
-  id: string;
-  name: string;
-  /** Destination status id. */
-  toStatusId: string;
-  /** Destination status name (localised, e.g. "Yapılacaklar"). */
-  toStatusName: string;
-  /** Destination status-category KEY (`new` | `indeterminate` | `done`). */
-  toCategoryKey: string;
-  /** Destination status-category NAME (`To Do` | `In Progress` | `Done`). */
-  toCategoryName: string;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function nonEmptyString(value: unknown): string | null {
-  if (typeof value === "string" && value.trim().length > 0) return value.trim();
-  if (typeof value === "number") return String(value);
-  return null;
-}
-
-/**
- * Normalize `GET /issue/{key}/transitions` into the available transitions WITH
- * each destination status's category, so a caller can pick a target by category
- * rather than by a brittle localised name. A payload that carries no
- * `transitions` array fails loudly — a silent empty list would read as "this
- * issue can go nowhere", hiding a real API/permission problem.
- */
-export function parseAvailableTransitions(raw: unknown): AvailableTransition[] {
-  const body = record(raw);
-  const transitions = body?.["transitions"];
-  if (!Array.isArray(transitions)) {
-    throw new JiraResponseError("issue transitions", ["response carries no transitions array"]);
-  }
-  const out: AvailableTransition[] = [];
-  for (const entry of transitions) {
-    const transition = record(entry);
-    if (!transition) continue;
-    const id = nonEmptyString(transition["id"]);
-    const name = nonEmptyString(transition["name"]);
-    const to = record(transition["to"]);
-    const toStatusId = to ? nonEmptyString(to["id"]) : null;
-    if (id === null || name === null || to === null || toStatusId === null) continue;
-    const toStatusName = nonEmptyString(to["name"]) ?? "";
-    const category = record(to["statusCategory"]);
-    const toCategoryKey = (category ? nonEmptyString(category["key"]) : null) ?? "";
-    const toCategoryName = (category ? nonEmptyString(category["name"]) : null) ?? "";
-    out.push({ id, name, toStatusId, toStatusName, toCategoryKey, toCategoryName });
-  }
-  return out;
-}
 
 /**
  * Choose the transition that hands the ticket back to the backlog — the one
@@ -207,72 +174,4 @@ function isInProgressCategory(transition: AvailableTransition): boolean {
     transition.toCategoryKey.toLowerCase() === IN_PROGRESS_CATEGORY_KEY ||
     transition.toCategoryName.trim().toLowerCase() === IN_PROGRESS_CATEGORY_NAME.toLowerCase()
   );
-}
-
-/** Guard a transition id before it is POSTed. */
-export function requireTransitionId(value: string): string {
-  const id = value.trim();
-  if (id.length === 0) throw new JiraArgumentError("transitionId", "empty");
-  return id;
-}
-
-/**
- * Fold Turkish's four-way i (i · ı · İ · I) onto ONE letter before comparing
- * status names.
- *
- * The live OPS workflow shouts its review column — the recorded transitions
- * carry `to.name === "İNCELEMEDE"` while a caller (and Studio's config) writes
- * it "İncelemede". Plain `toLowerCase()` leaves "İ" as "i̇" (i + combining dot),
- * so the two never match; `toLocaleLowerCase("tr")` is no better on its own,
- * because it maps "I" onto "ı" and so splits dotless from dotted instead. Either
- * way a status the site really offers would read as "no such transition" and the
- * ticket would silently stay put.
- *
- * So the i-family is folded EXPLICITLY, then lowercased, then NFC-normalised so
- * a decomposed "İ" (I + U+0307) compares equal to the precomposed one — a real
- * difference between what a human types and what Jira stores. The result never
- * depends on the host's locale, which is what makes it safe on a server whose
- * ICU default is not Turkish. Same idiom as `fold()` in @maestro/agent-roles;
- * duplicated rather than depended on, since this package deliberately carries no
- * dependency on the role package.
- */
-const I_FOLD: Record<string, string> = { İ: "i", I: "i", ı: "i", i: "i" };
-
-export function foldStatusName(value: string): string {
-  return value
-    .normalize("NFC")
-    .replace(/[İIıi]/gu, (c) => I_FOLD[c] ?? c)
-    .toLowerCase()
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
-/**
- * Find the transition that lands the issue in `statusName`, in two ordered
- * passes — the DESTINATION status name first, the transition's own name second.
- *
- * The order is not cosmetic. On the live OPS workflow the two genuinely differ:
- * transition id 31 is named "In Review" but moves the issue to the status
- * "İNCELEMEDE", and id 21 is named "Devam Ediyor" moving to "Devam Ediyor". A
- * caller says where it wants the ticket to END UP, so the destination is the
- * honest key; matching the transition name is only the courtesy fallback for a
- * site whose button is named after the target it does not literally name.
- *
- * Returns `null` when neither pass matches — "this workflow offers no such
- * move", which the caller reports rather than throws (the policy is warn and
- * continue, not fail the run).
- */
-export function selectTransitionByStatusName(
-  transitions: readonly AvailableTransition[],
-  statusName: string,
-): AvailableTransition | null {
-  const wanted = foldStatusName(statusName);
-  if (wanted.length === 0) return null;
-  for (const transition of transitions) {
-    if (foldStatusName(transition.toStatusName) === wanted) return transition;
-  }
-  for (const transition of transitions) {
-    if (foldStatusName(transition.name) === wanted) return transition;
-  }
-  return null;
 }

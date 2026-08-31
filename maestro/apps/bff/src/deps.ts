@@ -506,6 +506,19 @@ export interface WorkEvent {
    * that account.
    */
   assignee?: string;
+  /**
+   * Değişikliği YAPAN hesap — `assignee` ile karıştırılmamalı: biri ticket'ın
+   * kime düştüğünü, bu ise onu kimin ittiğini söyler.
+   *
+   * Tek bir iş için taşınıyor: netleştirme yeniden girişinde yankı ayıklaması
+   * (`routes/webhooks.ts`). Maestro'nun kendi durum taşıması / yeniden ataması
+   * da Jira'dan aynı biçimde geri gelir, ve `actor` bot'un kendisiyse o olay
+   * bir cevap değil kendi sesidir.
+   *
+   * Yokluğu "bot değildi" demek DEĞİLDİR — teslimatın kimseyi adlandırmadığı
+   * anlamına gelir; yankı koruması bu durumda tetiklememeyi seçer.
+   */
+  actor?: string;
 }
 
 export interface WorkEventReader {

@@ -1,0 +1,40 @@
+-- HAND-WRITTEN MIGRATION.
+--
+-- "Mühendis ajanı da seçilebilsin": a run now pins TWO agents, not one.
+-- `WorkflowRun` gains `engineerVariantId` beside the `variantId` it has carried
+-- since M38.
+--
+-- WHY IT EXISTS. `variantId` was planted at run start by `activeAnalystVariantId`
+-- — it asks for `role = 'analyst'` explicitly, and the comment on it says so —
+-- and then EVERY step read that one column: intake, analysis, the dev/test
+-- reviewers, and the engineering turn itself. So a deployment whose admin
+-- defined a separate `engineer-*` agent in "Ajan tanımları" (its own model, its
+-- own persona) had that agent applied to nothing at all. The engineering turn
+-- ran on the ANALYST's variant, i.e. on the analyst's model, silently.
+--
+-- The pilot has never had this bug: `apps/pilot/src/run.ts` resolves
+-- `analystVariantId` AND `engineerVariantId` per run and binds a model to each.
+-- The Temporal path — which is what the bank actually runs (`bff.js` +
+-- `worker.js`, not the pilot) — had only half of it. `ListeningRule` has
+-- carried an `engineerVariantId` column since 0015 for exactly this purpose,
+-- and the worker path never read it either. This column is where that answer
+-- finally lands on the RUN.
+--
+-- WHY A SECOND COLUMN AND NOT A JOIN TO ListeningRule. Same reason `variantId`
+-- is a column rather than a lookup: a run is PINNED at the moment it opens
+-- (M38/M83). Publishing a new agent version, or an operator re-pointing a
+-- listening rule mid-ticket, must not change the agent under a ticket that is
+-- already being worked. A join would re-resolve on every activity, so the
+-- engineering turn could run on a different agent than the one the run opened
+-- with — and nothing in the journal would say why.
+--
+-- WHY NOT NULL WITH A '' DEFAULT, like `variantId`. Same discipline as the rest
+-- of the run-context block (see the schema's note): a nullable column pushes an
+-- "is it null?" check into every reader and one of them forgets. Empty string is
+-- the value the READER refuses loudly, and it means one specific thing here:
+-- "this run was opened before the engineer pin existed, or the deployment has no
+-- engineer agent" — in which case the reader falls back to `variantId`, which is
+-- exactly the pre-migration behaviour. So every row already in the table keeps
+-- running precisely as it did, with no backfill.
+ALTER TABLE "WorkflowRun"
+  ADD COLUMN "engineerVariantId" VARCHAR(64) NOT NULL DEFAULT '';

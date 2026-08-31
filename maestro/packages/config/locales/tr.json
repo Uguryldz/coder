@@ -2373,6 +2373,7 @@
   "variants.field.knowledge": "Knowledge dosyaları",
   "variants.field.knowledge_hint": "Her satıra bir dosya adı (örn. bddk-uyum.md).",
   "variants.field.model": "Model",
+  "variants.field.model_hint": "Model sunucunuzun servis ettiği ad — panelde \"Ayarlar & bağlantılar\" ekranındaki bağlantının test ettiği adla aynı olmalı (örn. qwen2.5-coder-32b-instruct).",
   "variants.field.note": "Sürüm notu",
   "variants.field.persona": "Persona metni",
   "variants.field.persona_hint": "Ajanın prompt overlay'i. Yeni sürüm yayınlanınca değiştirilir; eski sürüm dokunulmaz kalır (M83).",

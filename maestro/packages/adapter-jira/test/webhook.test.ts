@@ -78,6 +78,55 @@ describe("webhook event classification", () => {
     });
   });
 
+  /**
+   * Olayı YAPAN kişi — bugüne kadar hiç okunmayan `user` alanı.
+   *
+   * Netleştirmeye yeniden giriş bunu okuyor: kullanıcının düzeltmesi ile
+   * Maestro'nun kendi hareketinin yankısı ancak bununla ayrılıyor. Kimlik
+   * sırası atanan kişiyi okuyan yolla AYNI (`accountId` → `name` → `key` →
+   * `emailAddress`), çünkü ikisi yan yana karşılaştırılıyor; farklı alanlardan
+   * okunsalardı aynı kişi iki farklı dizeye dönüşür ve karşılaştırma sessizce
+   * hep yanlış çıkardı.
+   */
+  it("reads the actor off a Cloud issue event (accountId)", () => {
+    expect(
+      parseWebhookEvent({
+        webhookEvent: "jira:issue_updated",
+        issue: { key: "UGURPAY-1" },
+        user: { accountId: "5b10a2844c20165700ede21g", displayName: "Mert Demir" },
+      }),
+    ).toMatchObject({ kind: "issue", actor: "5b10a2844c20165700ede21g" });
+  });
+
+  it("reads the actor off a Data Center issue event (name)", () => {
+    expect(
+      parseWebhookEvent({
+        webhookEvent: "jira:issue_updated",
+        issue: { key: "UGURPAY-1" },
+        user: { name: "mert.demir", key: "JIRAUSER10321", displayName: "Mert Demir" },
+      }),
+    ).toMatchObject({ kind: "issue", actor: "mert.demir" });
+  });
+
+  it("answers null rather than a display name when there is no stable identity", () => {
+    // `displayName` bilerek kabul edilmiyor: görünen ad kararlı bir kimlik
+    // değil, iki kişide aynı olabilir, ve bir yankı korumasının dayanağı
+    // olamaz. `null` "bot değil" demek değil — "söylenmedi" demek.
+    expect(
+      parseWebhookEvent({
+        webhookEvent: "jira:issue_updated",
+        issue: { key: "UGURPAY-1" },
+        user: { displayName: "Mert Demir" },
+      }),
+    ).toMatchObject({ kind: "issue", actor: null });
+  });
+
+  it("answers null for an issue event that names nobody", () => {
+    expect(
+      parseWebhookEvent({ webhookEvent: "jira:issue_updated", issue: { key: "UGURPAY-1" } }),
+    ).toMatchObject({ kind: "issue", actor: null });
+  });
+
   it("passes unrelated events through as 'other' (single global webhook — M102)", () => {
     expect(parseWebhookEvent({ webhookEvent: "jira:worklog_updated" })).toEqual({
       kind: "other",

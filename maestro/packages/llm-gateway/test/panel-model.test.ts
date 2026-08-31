@@ -105,6 +105,77 @@ function panelModel(overrides: Partial<ResolvedModel> = {}): ResolvedModel {
   };
 }
 
+describe("the resolver is told WHICH AGENT is calling", () => {
+  /**
+   * Panelde ajan tanımı yapan operatörün şikayeti: "modeller değişmiyor".
+   * Sebebi buradaydı: `ModelResolver` ARGÜMANSIZDI, yani çözücü hangi ajanın
+   * konuştuğunu SORAMIYORDU ve her çağrı kurulumun tek modeline bağlanıyordu.
+   * Ajan başına model, ancak `variantId` bu seviyeye ULAŞIRSA mümkün — gateway
+   * onunla bir şey yapmaz, sadece soruyu iletir (cevabı kompozisyon kökündeki
+   * çözücü verir, `apps/deploy/src/stores/variant-model.ts`).
+   */
+  it("generateObject, isteğin variantId'sini çözücüye geçirir", async () => {
+    const stub = stubFetch([{ body: ANSWER }]);
+    const seen: (string | undefined)[] = [];
+    const gateway = createLlmGateway(
+      config(),
+      gatewayDeps(stub, fakeClock(), {
+        resolveModel: (variantId) => {
+          seen.push(variantId);
+          return Promise.resolve(panelModel());
+        },
+        log: () => {},
+      }),
+    );
+
+    await gateway.generateObject(request(), Schema);
+
+    expect(seen).toEqual(["v1"]);
+  });
+
+  it("iki farklı ajan, çözücüye iki farklı kimlik olarak ulaşır", async () => {
+    const stub = stubFetch([{ body: ANSWER }, { body: ANSWER }]);
+    const seen: (string | undefined)[] = [];
+    const gateway = createLlmGateway(
+      config(),
+      gatewayDeps(stub, fakeClock(), {
+        resolveModel: (variantId) => {
+          seen.push(variantId);
+          // Ajanın modeli: çözücünün gerçekte yaptığı iş de bu.
+          return Promise.resolve(panelModel({ model: `model-of-${variantId ?? "yok"}` }));
+        },
+        log: () => {},
+      }),
+    );
+
+    await gateway.generateObject({ ...request(), variantId: "analyst-kredi" }, Schema);
+    await gateway.generateObject({ ...request(), variantId: "engineer-kredi" }, Schema);
+
+    expect(seen).toEqual(["analyst-kredi", "engineer-kredi"]);
+    // Ve seçim gerçekten TELE ulaşır: iki çağrı iki farklı modele gider.
+    expect((stub.calls[0]?.body as { model: string }).model).toBe("model-of-analyst-kredi");
+    expect((stub.calls[1]?.body as { model: string }).model).toBe("model-of-engineer-kredi");
+  });
+
+  it("argümansız yazılmış eski bir çözücü aynen çalışır", async () => {
+    // Argüman OPSİYONEL: mevcut her çözücü — bu dosyadaki diğer testler dahil —
+    // tipe uyar ve davranışı zerre değişmez.
+    const stub = stubFetch([{ body: ANSWER }]);
+    const gateway = createLlmGateway(
+      config(),
+      gatewayDeps(stub, fakeClock(), {
+        resolveModel: () => Promise.resolve(panelModel()),
+        log: () => {},
+      }),
+    );
+
+    const out = await gateway.generateObject(request(), Schema);
+
+    expect(out.status).toBe("ok");
+    expect((stub.calls[0]?.body as { model: string }).model).toBe("gpt-oss-120b");
+  });
+});
+
 describe("a model configured in the panel", () => {
   it("is the endpoint and the model the call actually uses", async () => {
     const stub = stubFetch([{ body: ANSWER }]);

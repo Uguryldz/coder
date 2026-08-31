@@ -146,5 +146,20 @@ export const WorkflowRunState = z.object({
   risk: RiskTier.optional(),
   startedAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  /**
+   * Netleştirme sorusunun sorulduğu an — koşu 2b'de beklerken dolu, başka her
+   * adımda yok.
+   *
+   * NEDEN BURADA: Jira'dan gelen bir olayın "bu kullanıcının cevabı mı, yoksa
+   * Maestro'nun kendi hareketinin yankısı mı?" sorusunu cevaplayabilmesi için
+   * bir ZAMAN EŞİĞİ gerekiyor. Workflow 2b'ye girerken `moveStatus("need_info")`
+   * çağırıyor ve `reassignOnNeedInfo` açıksa ticket'ı reporter'a atıyor; bu iki
+   * hareket Jira'da webhook üretiyor. Eşik olmadan koşu kendi çıkardığı sesle
+   * uyanır — soruyu soran, soruyu cevaplamış olur.
+   *
+   * Soru SORULDUKTAN sonra damgalanıyor, önce değil: sorudan önceki damga,
+   * `askClarification` yorumunun kendi yankısını "cevap" saymaya yeterdi.
+   */
+  awaitingClarificationSince: IsoDateTime.optional(),
 });
 export type WorkflowRunState = z.infer<typeof WorkflowRunState>;

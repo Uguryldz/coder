@@ -193,3 +193,65 @@ describe("the analysis-only run — no application bound", () => {
     ]);
   });
 });
+
+/**
+ * Studio'nun "Ajan tanımları" ekranındaki Persona alanı, `VariantVersion.
+ * configJson.persona` içinde duruyor, `/variants` ile geri okunuyordu — ve
+ * akışa HİÇ ulaşmıyordu. Admin ajanın nasıl davranacağını yazıyor, model onu
+ * hiç görmüyordu. Bu blok, analiz adımında artık gördüğünü ölçüyor.
+ */
+describe("analiz adımı Studio'da tanımlı personayı görüyor", () => {
+  const doc = analysisDoc("orta");
+  const ok = () => ({ status: "ok" as const, value: doc, log: LOG });
+
+  it("persona `input`'un İLK alanı — rol talimatı, uygulanacağı verinin önünde", async () => {
+    const fakes = makeFakes({
+      persona: { v1: "Bankacılık jargonuna hakim, ölçülü bir analistsin." },
+      generateObject: () => ok(),
+    });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    const call = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc");
+    const input = call?.input as Record<string, unknown>;
+    expect(input["persona"]).toBe("Bankacılık jargonuna hakim, ölçülü bir analistsin.");
+    expect(Object.keys(input)[0]).toBe("persona");
+  });
+
+  it("persona ANALİST varyantından okunur (mühendisinkinden değil)", async () => {
+    const fakes = makeFakes({
+      context: { variantId: "analist-7", engineerVariantId: "muhendis-9" },
+      persona: { "analist-7": "analist personası", "muhendis-9": "mühendis personası" },
+      generateObject: () => ok(),
+    });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    const input = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc")?.input as Record<
+      string,
+      unknown
+    >;
+    expect(input["persona"]).toBe("analist personası");
+  });
+
+  it("persona yazılmamışsa alan HİÇ gitmez — modele adı boş bir ajan tarif edilmez", async () => {
+    const fakes = makeFakes({ persona: { v1: "   " }, generateObject: () => ok() });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    const input = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc")?.input as object;
+    expect("persona" in input).toBe(false);
+  });
+
+  it("seam bağlı değilse bugünkü davranış aynen — persona alanı yok", async () => {
+    const fakes = makeFakes({ generateObject: () => ok() });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    const input = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc")?.input as object;
+    expect("persona" in input).toBe(false);
+  });
+
+  it("persona okuması patlarsa ANALİZ DÜŞMEZ — persona bir üst katman, koşulu değil", async () => {
+    const fakes = makeFakes({
+      persona: { v1: new Error("postgres unreachable") },
+      generateObject: () => ok(),
+    });
+    const result = await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    expect(result.risk).toBe(doc.riskTier);
+    const input = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc")?.input as object;
+    expect("persona" in input).toBe(false);
+  });
+});

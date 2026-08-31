@@ -102,6 +102,8 @@ export type {
 export {
   DEFAULT_VARIANT_MODEL,
   DEFAULT_VARIANTS,
+  isModelSelected,
+  MODEL_NOT_SELECTED,
 } from "./variant-defaults.js";
 export type { DefaultVariant } from "./variant-defaults.js";
 

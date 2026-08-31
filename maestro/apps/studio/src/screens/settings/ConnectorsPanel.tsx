@@ -12,7 +12,6 @@ import type { BadgeTone, Column } from "../../ui/index.ts";
 import type {
   ConnectionTestResponse,
   ManagedConnection,
-  ManagedConnectionAuthKind,
   ManagedConnectionInput,
   ManagedConnectionKind,
 } from "../common/index.ts";

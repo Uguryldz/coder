@@ -1,6 +1,6 @@
 import { parseCommandFromComment, type CloudCommentCommand } from "@maestro/adapter-jira";
-import { handleCommand, projectKeyOf, type ResolvedDeps } from "@maestro/bff";
-import type { TicketKey } from "@maestro/contracts";
+import { handleCommand, projectKeyOf, SIGNALS, SYSTEM_ACTOR, workflowIdFor, type ResolvedDeps } from "@maestro/bff";
+import { ClarificationAnswerSignal, type TicketKey } from "@maestro/contracts";
 
 /**
  * Reading Jira commands by polling, because the webhook cannot always reach us.
@@ -50,6 +50,33 @@ export interface CommentReader {
   parseCommandFromComment?(ticketKey: string, comment: unknown): CloudCommentCommand;
 }
 
+/**
+ * Ticket'ın ŞU ANKİ hâlini okuyabilen sürücü — netleştirme yeniden girişinin
+ * webhook'suz kanalı.
+ *
+ * Neden `WorkPort`'un tamamı değil de bu tek yöntem: yoklama döngüsü Jira'nın
+ * ne kadarına dokunduğunu söylemek zorunda, ve `CommentReader` ile aynı
+ * gerekçe burada da geçerli (test edilebilirlik + dürüst bir yüzey).
+ *
+ * Neden atama GEÇMİŞİ değil de mevcut atanan: Data Center sürücüsünde
+ * `listAssigneeChanges` YOK (Cloud'da var — `cloud/work-port.ts`). Kullanıcının
+ * kurulumu tamamen on-prem DC, yani geçmişe dayanan bir tasarım o kurulumda
+ * hiç çalışmazdı. Mevcut atanan her iki üründe de okunabiliyor ve sorunun
+ * cevabı için yeterli: "ticket şu an bot'ta mı?".
+ */
+export interface TicketReader {
+  getTicket(key: TicketKey): Promise<{ assignee: string | null }>;
+}
+
+/** Bir sürücü ticket okuyabiliyor mu? `canReadComments` ile aynı desen. */
+export function canReadTickets(driver: unknown): driver is TicketReader {
+  return (
+    typeof driver === "object" &&
+    driver !== null &&
+    typeof (driver as { getTicket?: unknown }).getTicket === "function"
+  );
+}
+
 export interface PollerOptions {
   readonly deps: ResolvedDeps;
   /** The driver that can read a comment thread; see {@link CommentReader}. */
@@ -58,6 +85,19 @@ export interface PollerOptions {
   readonly openTickets: () => Promise<readonly TicketKey[]>;
   readonly intervalMs: number;
   readonly log?: (message: string) => void;
+  /**
+   * Ticket'ın mevcut atananını okuyan sürücü. Verilmezse netleştirme yeniden
+   * girişi bu kurulumda YOKTUR — webhook'u çalışan bir kurulumda zaten
+   * gerekmez, ve okuyucusu olmayan bir sürücüde sessizce yanlış yapmaktansa
+   * hiç yapmamak doğru.
+   */
+  readonly tickets?: TicketReader;
+  /**
+   * Motorun çalıştığı hesap (`MAESTRO_BOT_ACCOUNT_ID`). Boş/verilmemişse
+   * yeniden giriş kapalı: karşılaştırılacak bir kimlik yoksa "bot'a atandı"
+   * ölçülemez.
+   */
+  readonly botAccountId?: string;
 }
 
 /**
@@ -123,6 +163,8 @@ interface RoundTally {
   editRefused: number;
   /** Tickets whose read threw — Jira unreachable, 401/403, an unknown shape. */
   failed: number;
+  /** 2b'de bekleyip bot'a geri atandığı görülen ve uyandırılan koşular. */
+  clarifyWakes: number;
 }
 
 function emptyTally(): RoundTally {
@@ -134,6 +176,7 @@ function emptyTally(): RoundTally {
     malformed: 0,
     editRefused: 0,
     failed: 0,
+    clarifyWakes: 0,
   };
 }
 
@@ -149,6 +192,16 @@ const MAX_NAMED_FAILURES = 3;
 
 export function startJiraPoller(options: PollerOptions): { stop: () => void } {
   const seen: Seen = new Set();
+  /**
+   * Bu süreçte zaten uyandırılmış koşular.
+   *
+   * Sinyal idempotent DEĞİL diye değil (workflow `inbox.clarified`'ı bir kez
+   * kaldırıyor, ikinci sinyal zararsız) — tur başına bir `getTicket` çağrısını
+   * boşuna tekrarlamamak ve log'u aynı satırla doldurmamak için. Süreç-yerel:
+   * yeniden başlatma pencereyi yeniden okur, ve o durumda en kötü ihtimal
+   * kapanmış bir koşuya giden ve `no_run` dönen bir sinyaldir.
+   */
+  const wokeUp = new Set<string>();
   const log = options.log ?? ((message: string) => console.log(message));
   let stopped = false;
 
@@ -169,6 +222,15 @@ export function startJiraPoller(options: PollerOptions): { stop: () => void } {
       if (stopped) return;
       try {
         await pollTicket(options.deps, options.comments, ticket, seen, log, tally);
+        /**
+         * Netleştirmeye yeniden giriş — webhook'suz kurulumun tek kanalı.
+         *
+         * Yorum okumasından AYRI tutuluyor ve onun hatasına takılmıyor: bir
+         * ticket'ın yorum akışının okunamaması, o ticket'ın atanmasının da
+         * okunamayacağı anlamına gelmez, ve 2b'de sonsuza dek bekleyen bir
+         * koşuyu bir yorum hatası yüzünden kaybetmek en pahalı sessizlik olur.
+         */
+        await clarifyReentry(options, ticket, wokeUp, log, tally);
       } catch (error) {
         // One ticket's failure must not stop the others: a comment on a ticket
         // whose project was unbound mid-run would otherwise freeze every gate.
@@ -198,6 +260,7 @@ export function startJiraPoller(options: PollerOptions): { stop: () => void } {
         (tally.duplicates > 0 ? `, ${tally.duplicates} zaten görülmüş` : "") +
         (tally.malformed > 0 ? `, ${tally.malformed} hatalı komut` : "") +
         (tally.editRefused > 0 ? `, ${tally.editRefused} düzenlenmiş yorum reddedildi` : "") +
+        (tally.clarifyWakes > 0 ? `, ${tally.clarifyWakes} netleştirme cevaplandı` : "") +
         (tally.failed > 0 ? `, ${tally.failed} ticket okunamadı` : ""),
     );
   };
@@ -295,6 +358,112 @@ async function pollTicket(
         describeOutcome(outcome),
     );
   }
+}
+
+/**
+ * 2b'de bekleyen bir koşuyu, ticket bot'a geri atanmışsa uyandır.
+ *
+ * ── Neden yoklamada da bir kanal gerekiyor ────────────────────────────────
+ * Webhook yolu (`apps/bff/src/routes/webhooks.ts`) bu işi teslimat geldiğinde
+ * yapıyor. Ama bu döngünün var olma sebebi tam olarak webhook'un ULAŞMADIĞI
+ * kurulum: dışarı çıkışı olmayan bir kurumsal ağdaki Data Center. Orada
+ * netleştirme cevabının hiçbir yolu olmazdı — koşu sonsuza dek 2b'de kalırdı.
+ *
+ * ── Yankı önlemenin bu kanaldaki hâli ─────────────────────────────────────
+ * Webhook'ta üç katman var (kimlik / yön / zaman). Burada `actor` YOK: bir
+ * ticket okuması onu kimin değiştirdiğini söylemez, yalnız şu anki hâlini
+ * verir. Kalan iki katman bu kanalı yine de güvenli kılıyor:
+ *
+ *  · **Yön** — Maestro kendini hiçbir yerde bot'a ATAMIYOR. `reassignOnNeedInfo`
+ *    ticket'ı reporter'a atar, yani bot'tan UZAĞA. Dolayısıyla "ticket şu an
+ *    bot'ta" durumunu üretebilecek tek şey bir insanın hareketidir; eksik olan
+ *    kimlik katmanının işini burada yönün kendisi görüyor.
+ *  · **Zaman** — `awaitingClarificationSince`, sorunun sorulduğu andan önceki
+ *    bir durumu cevap saymayı engelliyor. Bu, `reassignOnNeedInfo` KAPALI olan
+ *    kurulumun tek koruması: orada ticket soru sorulurken de bot'ta kalır, ve
+ *    zaman eşiği olmasa döngü daha ilk turunda kendi sorusunu cevaplardı.
+ *
+ * Hiçbir yolda fırlatmaz: yeniden giriş bir yan iş, ve bir tur onun yüzünden
+ * yarıda kalmamalı. Tek istisna çağıranın kendi try/catch'i.
+ */
+async function clarifyReentry(
+  options: PollerOptions,
+  ticket: TicketKey,
+  wokeUp: Set<string>,
+  log: (m: string) => void,
+  tally: RoundTally,
+): Promise<void> {
+  const reader = options.tickets;
+  const bot = options.botAccountId?.trim() ?? "";
+  // Okuyucusu ya da karşılaştıracak kimliği olmayan kurulumda bu kanal yok.
+  if (reader === undefined || bot === "" || wokeUp.has(ticket)) return;
+
+  let state;
+  try {
+    state = await options.deps.runs.queryRunState(workflowIdFor(ticket));
+  } catch {
+    // Motor cevap vermedi. Bir sonraki tur yeniden sorar — bu döngünün
+    // tamamı zaten tekrar eden bir sorudur.
+    return;
+  }
+  if (state === null || state.step !== "2b") return;
+
+  // ── zaman katmanı ────────────────────────────────────────────────────────
+  const since = state.awaitingClarificationSince;
+  if (since === undefined) return;
+  const threshold = Date.parse(since);
+  if (!Number.isFinite(threshold)) return;
+  const now = options.deps.clock.now();
+  if (now.getTime() < threshold) return;
+
+  // ── yön katmanı ──────────────────────────────────────────────────────────
+  let assignee: string | null;
+  try {
+    assignee = (await reader.getTicket(ticket)).assignee;
+  } catch (error) {
+    // Ticket okunamadı. Sayılıyor ve bir kez adlandırılıyor: bu kanalın
+    // sessizce ölmesi, "düzelttim ama Maestro uyanmadı" şikâyetinin izsiz
+    // kalması demek.
+    log(`[yoklama] ${ticket}: netleştirme için ticket okunamadı — ${describeError(error)}`);
+    return;
+  }
+  if (assignee === null || assignee.trim().toLowerCase() !== bot.toLowerCase()) return;
+
+  const at = now.toISOString();
+  const delivered = await options.deps.runs.signal(
+    workflowIdFor(ticket),
+    SIGNALS.clarificationAnswered,
+    ClarificationAnswerSignal.parse({
+      ticketKey: ticket,
+      // Kim cevapladığını bu kanal BİLMİYOR (bir ticket okuması onu kimin
+      // değiştirdiğini söylemez). Uydurulmuş bir isim yerine kanalın adı
+      // yazılıyor: denetim zinciri "Jira'da yoklamayla görüldü" demeli,
+      // olmayan bir kişiyi adlandırmamalı.
+      answeredBy: "jira-poller",
+      text: "Ticket Jira'da Maestro'ya geri atandı (yoklama).",
+      at,
+    }),
+  );
+  if (delivered !== "delivered") return;
+
+  wokeUp.add(ticket);
+  tally.clarifyWakes += 1;
+  // Nadir ve tam olarak operatörün aradığı olay — kendi satırını hak ediyor.
+  log(`[yoklama] ${ticket}: netleştirme cevaplandı (ticket Maestro'ya geri atandı)`);
+
+  await options.deps.audit
+    .append({
+      actor: SYSTEM_ACTOR,
+      action: "CLARIFICATION_ANSWERED",
+      subject: ticket,
+      at: now,
+      meta: { source: "jira_poller", assignee },
+    })
+    // Denetim yazımı başarısız olsa bile koşu uyandı; bunu geri alamayız ve
+    // turu de durdurmamalı.
+    .catch((error: unknown) => {
+      log(`[yoklama] ${ticket}: netleştirme denetim kaydı yazılamadı — ${describeError(error)}`);
+    });
 }
 
 /**

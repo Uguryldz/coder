@@ -539,3 +539,274 @@ describe("silent webhook outcomes leave a server-side trace (denetim B5)", () =>
     void h;
   });
 });
+
+/**
+ * The clarify RE-ENTRY gap (step 2b), pinned.
+ *
+ * `askClarification` (packages/workflows/src/impl/intake.ts) posts the question
+ * as a Jira comment, labels the ticket `maestro-bekliyor` and the workflow then
+ * waits — unbounded — on `clarificationAnswered`. That signal has exactly two
+ * senders in the whole tree: Studio's `POST /runs/:ticket/signals/…` and the
+ * test scenario's own fake activity. NOTHING on the Jira side sends it.
+ *
+ * The two tests below are the two ways a reporter would actually answer, and
+ * both are dead ends today. They are written as characterization tests — they
+ * assert what the platform DOES, not what it should — so the day the gap is
+ * closed they fail loudly and name their own replacement.
+ */
+/**
+ * Jira'dan netleştirmeye yeniden giriş.
+ *
+ * Kapatılan boşluk: koşu 2b'de `condition(() => inbox.clarified)` ile süresiz
+ * bekliyordu ve o koşulu Jira tarafından açan HİÇBİR ŞEY yoktu — kullanıcı
+ * ticket'ı düzeltip geri atıyor, olay `runIntake`'e düşüyor, mevcut yürütmeye
+ * sinyalsiz katılıyor ve koşu sonsuza dek park kalıyordu.
+ *
+ * Tetik ATAMA: ticket bot'a geri döndüğünde uyanır. Yankı korumasının üç
+ * katmanı (kimlik / yön / zaman) aşağıda ayrı ayrı sınanıyor — hiçbiri tek
+ * başına yeterli değil, üçü birden geçmeden sinyal gitmez.
+ */
+describe("clarify re-entry from Jira (step 2b)", () => {
+  const BOT = "maestro-bot";
+  /** Soru sorulduğu an. TestClock 09:00'da duruyor, yani teslimat bundan sonra. */
+  const ASKED_AT = "2026-08-09T08:30:00.000Z";
+
+  const botHarness = () =>
+    harness({
+      deps: { config: { actorDomain: "ugurbank.local", engineBotAccountId: BOT } },
+    });
+
+  const deliver = async (h: Awaited<ReturnType<typeof harness>>, payload: unknown) => {
+    const delivery = signed(payload);
+    return h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+  };
+
+  const clarifySignals = (h: Awaited<ReturnType<typeof harness>>) =>
+    h.runs.signals.filter((s) => s.name === "clarificationAnswered");
+
+  it("wakes the run when the reporter fixes the ticket and reassigns it to the bot", async () => {
+    const h = await botHarness();
+    h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
+
+    const response = await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        // Düzeltildi ve Maestro'ya geri atandı — birincil tetik bu.
+        assignee: BOT,
+        actor: "mert.demir",
+      }),
+    );
+
+    expect(response.statusCode).toBe(202);
+    const signals = clarifySignals(h);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      workflowId: "maestro-UGURPAY-3",
+      arg: { ticketKey: "UGURPAY-3", answeredBy: "mert.demir" },
+    });
+
+    // Cevap denetim zincirine de düşüyor, kaynağıyla birlikte: Studio'dan
+    // gelen cevapla Jira'dan gelen cevap sonradan ayırt edilebilmeli.
+    const events = await h.auditStore.read();
+    const answered = events.filter((event) => event.action === "CLARIFICATION_ANSWERED");
+    expect(answered).toHaveLength(1);
+    expect(answered[0]?.meta).toMatchObject({ source: "jira_reassign", answeredBy: "mert.demir" });
+  });
+
+  it("still runs intake on the same delivery — the re-entry does not replace it", async () => {
+    const h = await botHarness();
+    h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
+
+    const response = await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: BOT,
+        actor: "mert.demir",
+      }),
+    );
+
+    // Sinyal gitti VE intake yolu işledi: aynı teslimat aynı zamanda etiket
+    // ya da statü değişikliği taşıyor olabilir, ve `runIntake` idempotent.
+    expect(clarifySignals(h)).toHaveLength(1);
+    expect(response.json()).toMatchObject({ accepted: true, started: false });
+  });
+
+  // ── yankı önleme: katman 1 · kimlik ────────────────────────────────────────
+
+  it("ignores the echo of Maestro's own change (actor is the bot)", async () => {
+    const h = await botHarness();
+    h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
+
+    // Tam olarak tehlikeli senaryo: ticket bot'ta, damga geçilmiş, ama olayı
+    // iten bot'un kendisi. Maestro kendi sorusunu kendisi cevaplamamalı.
+    await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: BOT,
+        actor: BOT,
+      }),
+    );
+
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+
+  it("ignores a delivery that names nobody — an unknown actor is not proof of a human", async () => {
+    const h = await botHarness();
+    h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
+
+    await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: BOT,
+        // `user` yok — Jira kimin ittiğini söylemedi.
+      }),
+    );
+
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+
+  // ── yankı önleme: katman 2 · yön ───────────────────────────────────────────
+
+  it("does not wake the run while the ticket still sits with the reporter", async () => {
+    const h = await botHarness();
+    h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
+
+    // `reassignOnNeedInfo` ticket'ı reporter'a attı; reporter yazmaya devam
+    // ediyor ama henüz geri vermedi. Bu "cevabım hazır" değil.
+    await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: "mert.demir",
+        actor: "mert.demir",
+      }),
+    );
+
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+
+  // ── yankı önleme: katman 3 · zaman ─────────────────────────────────────────
+
+  it("ignores an event received before the question was asked", async () => {
+    const h = await botHarness();
+    // Soru saat 10:00'da soruldu; TestClock 09:00'da — teslimat sorudan ÖNCE.
+    // Bu, `moveStatus("need_info")` ve yeniden atamanın yankısının düştüğü
+    // pencere: koruma olmasa koşu vaktinden önce uyanırdı.
+    h.runs.openGate("UGURPAY-3", "2b", {
+      awaitingClarificationSince: "2026-08-09T10:00:00.000Z",
+    });
+
+    await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: BOT,
+        actor: "mert.demir",
+      }),
+    );
+
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+
+  it("ignores a 2b run that carries no question timestamp at all", async () => {
+    const h = await botHarness();
+    // Eski bir sürüm ya da soru henüz sorulmadı: damga yoksa yankıyı cevaptan
+    // ayırmanın yolu yok, ve o durumda tetiklememek doğru cevap.
+    h.runs.openGate("UGURPAY-3", "2b");
+
+    await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: BOT,
+        actor: "mert.demir",
+      }),
+    );
+
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+
+  // ── kapsam dışı durumlar ───────────────────────────────────────────────────
+
+  it("does not wake a run that is not waiting for clarification", async () => {
+    const h = await botHarness();
+    // Koşu 4. kapıda — bir onay bekliyor, netleştirme değil.
+    h.runs.openGate("UGURPAY-3", "4", { awaitingClarificationSince: ASKED_AT });
+
+    await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: BOT,
+        actor: "mert.demir",
+      }),
+    );
+
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+
+  it("does nothing when the deployment configured no bot account", async () => {
+    // `MAESTRO_BOT_ACCOUNT_ID` boş: kimlik ve yön katmanları ölçülemez, ve
+    // ölçülemeyen bir korumayla ilerlemek korumasız ilerlemektir.
+    const h = await harness();
+    h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
+
+    await deliver(
+      h,
+      issueEvent({
+        ticket: "UGURPAY-3",
+        event: "jira:issue_updated",
+        labels: ["maestro"],
+        assignee: BOT,
+        actor: "mert.demir",
+      }),
+    );
+
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+
+  it("a reporter's plain answer comment still sends no signal — the trigger is assignment", async () => {
+    const h = await botHarness();
+    h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
+
+    // Bilerek kapsam dışı: bir yorum ticket'ı bot'a geri vermiyor, ve yorum
+    // yolu komut grameriyle paylaşılıyor. Cevabın yolu ticket'ı düzeltip
+    // Maestro'ya geri atmak.
+    const response = await deliver(
+      h,
+      commentEvent({
+        ticket: "UGURPAY-3",
+        author: "mert.demir",
+        body: "Ortam prod, kabul kriteri: 3 sn altı yanıt süresi.",
+      }),
+    );
+
+    expect(response.json()).toEqual({ accepted: false, reason: "not_intake" });
+    expect(clarifySignals(h)).toHaveLength(0);
+  });
+});

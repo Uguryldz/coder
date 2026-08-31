@@ -56,6 +56,14 @@ export function runRecordOf(run: DemoRun, now: Date): RunRecord {
     // demo a fair rehearsal of production, where they can disagree and the
     // route has to decide between them.
     status: run.status,
+    /**
+     * Koşunun GERÇEKTEN geldiği adım — `runStateOf` aşağıda motorun görüşü için
+     * aynı `run.step`'i kullanıyor, yani iki kayıt tek bir `DemoRun`'dan
+     * türediği için birbiriyle uyuşuyor. Sabit bir değer yazmak (ör. hep "0")
+     * demoyu, her satırın "Adım" sütununda aynı şeyi gösterdiği bir tabloya
+     * çevirirdi: ekranın anlatmaya çalıştığı şeyin tam tersi.
+     */
+    step: run.step,
     parentTicketKey: run.parentTicketKey,
     childTicketKeys: run.childTicketKeys,
     reporter: run.reporter,

@@ -1,5 +1,4 @@
 import { TicketSnapshot } from "@maestro/contracts";
-import { CapabilityNotSupportedError } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
 import {
   doc,
@@ -312,9 +311,185 @@ describe("JiraDcWorkPort", () => {
     await expect(jira.parseCommand(edited)).resolves.toBeNull();
   });
 
-  it("does not implement workflow transitions (M102)", async () => {
-    await expect(port(stubFetch([])).transition("UGURPAY-501", "31")).rejects.toBeInstanceOf(
-      CapabilityNotSupportedError,
+  // ------------------------------------------------ statü geçişleri (M111)
+  //
+  // Banka Jira Data Center'da, tamamen kapalı ağda. Panelde kurulan statü
+  // haritası (onStart=analiz, onNeedInfo=todo, onReview=analysisapproval,
+  // onRejected=analiz, onDone=development) M102'ye kadar HİÇBİR ŞEY yapmıyordu:
+  // `status-mover.ts` sürücüde `transitionToStatus` arıyordu, o metot yalnızca
+  // Cloud'da vardı, DC'ninki `transition()` bile fırlatıyordu. Aşağıdakiler o
+  // yeteneğin DC'de gerçekten var olduğunu ve Cloud'la AYNI sözleşmeyi
+  // taşıdığını tutuyor.
+
+  /** `fields=status` okuması — "zaten orada mı?" kısa devresinin okuduğu şey. */
+  function statusBody(name: string): unknown {
+    return {
+      fields: {
+        status: {
+          self: "https://jira.internal.bank/rest/api/2/status/10100",
+          id: "10100",
+          name,
+          statusCategory: { id: 2, key: "new", name: "To Do" },
+        },
+      },
+    };
+  }
+
+  it("moves the issue to a status BY NAME over REST v2 (M111)", async () => {
+    const stub = stubFetch([
+      { body: statusBody("TODO") },
+      { body: fixture("issue-transitions") },
+      { status: 204 },
+    ]);
+
+    const result = await port(stub).transitionToStatus("UGURPAY-501", "ANALİZ");
+
+    expect(result).toEqual({ moved: true });
+    // v2, değil v3 — DC'de /rest/api/3 diye bir şey yok.
+    expect(stub.calls[0]!.url).toContain("/rest/api/2/issue/UGURPAY-501?fields=status");
+    expect(stub.calls[1]!.url).toBe("https://jira.internal.bank/rest/api/2/issue/UGURPAY-501/transitions");
+    expect(stub.calls[1]!.method).toBe("GET");
+    expect(stub.calls[2]!.method).toBe("POST");
+    expect(stub.calls[2]!.url).toBe("https://jira.internal.bank/rest/api/2/issue/UGURPAY-501/transitions");
+    // DC'nin POST gövdesi Cloud'unkiyle birebir aynı (Context7 → DC REST v11003).
+    expect(stub.calls[2]!.body).toEqual({ transition: { id: "11" } });
+  });
+
+  it("falls back to the transition's OWN name when no destination matches", async () => {
+    const stub = stubFetch([
+      { body: statusBody("TODO") },
+      { body: fixture("issue-transitions") },
+      { status: 204 },
+    ]);
+
+    // Hiçbir hedef statü "İncelemeye Gönder" değil — ama 31 id'li geçişin ADI o.
+    const result = await port(stub).transitionToStatus("UGURPAY-501", "İncelemeye Gönder");
+
+    expect(result).toEqual({ moved: true });
+    expect(stub.calls[2]!.body).toEqual({ transition: { id: "31" } });
+  });
+
+  it("matches the status name through Turkish's four-way i", async () => {
+    // Panelde operatör "analiz" yazıyor, Jira "ANALİZ" saklıyor. Düz
+    // toLowerCase() bu ikisini asla eşleştiremez; `foldStatusName` eşleştirir.
+    for (const spelling of ["analiz", "ANALIZ", "Analİz", "analız"]) {
+      const stub = stubFetch([
+        { body: statusBody("TODO") },
+        { body: fixture("issue-transitions") },
+        { status: 204 },
+      ]);
+      const result = await port(stub).transitionToStatus("UGURPAY-501", spelling);
+      expect(result, `yazım: ${spelling}`).toEqual({ moved: true });
+      expect(stub.calls[2]!.body).toEqual({ transition: { id: "11" } });
+    }
+  });
+
+  it("sends NO write when the issue is already in the wanted status (idempotent)", async () => {
+    const stub = stubFetch([{ body: statusBody("ANALİZ") }]);
+
+    const result = await port(stub).transitionToStatus("UGURPAY-501", "analiz");
+
+    expect(result).toEqual({ moved: false, reason: "already" });
+    // Tek GET, sıfır POST. Bir workflow replay'i bu adımı yeniden çalıştırır ve
+    // zaten yapılmış bir hareketi yeniden POSTlamak en iyi ihtimalle 400'dür.
+    expect(stub.calls).toHaveLength(1);
+    expect(stub.calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("reports no_transition when the workflow offers no edge to that status", async () => {
+    const stub = stubFetch([{ body: statusBody("TODO") }, { body: fixture("issue-transitions") }]);
+
+    const result = await port(stub).transitionToStatus("UGURPAY-501", "Buzdolabında");
+
+    expect(result).toEqual({ moved: false, reason: "no_transition" });
+    expect(stub.calls).toHaveLength(2); // oku, oku — yazma yok
+  });
+
+  /**
+   * İzin sorusunun tamamı bu testte. Servis hesabına "Transition Issues" izni
+   * verilmemişse Jira 403 döner; sürücü ÇÖKMEZ, gerekçe döner, akış uyarır ve
+   * devam eder — analiz yine de teslim edilmeye değer.
+   */
+  it("reports forbidden (not a crash) when the service account may not transition", async () => {
+    const stub = stubFetch([
+      { body: statusBody("TODO") },
+      { body: fixture("issue-transitions") },
+      { status: 403, body: { errorMessages: ["You do not have permission to transition this issue"] } },
+    ]);
+
+    const result = await port(stub).transitionToStatus("UGURPAY-501", "ANALİZ");
+
+    expect(result).toEqual({ moved: false, reason: "forbidden" });
+  });
+
+  it("splits read failures from write failures, and never throws", async () => {
+    const failed = stubFetch([
+      { body: statusBody("TODO") },
+      { body: fixture("issue-transitions") },
+      { status: 500, body: { errorMessages: ["boom"] } },
+    ]);
+    await expect(port(failed).transitionToStatus("UGURPAY-501", "ANALİZ")).resolves.toEqual({
+      moved: false,
+      reason: "transition_failed",
+    });
+
+    const unread = stubFetch([{ status: 500, body: { errorMessages: ["boom"] } }]);
+    await expect(port(unread).transitionToStatus("UGURPAY-501", "ANALİZ")).resolves.toEqual({
+      moved: false,
+      reason: "read_failed",
+    });
+
+    // Geçiş listesi okunamadığında da read_failed — hangi çağrının düştüğü
+    // günlükte ayrı dursun diye.
+    const noList = stubFetch([{ body: statusBody("TODO") }, { body: { nope: true } }]);
+    await expect(port(noList).transitionToStatus("UGURPAY-501", "ANALİZ")).resolves.toEqual({
+      moved: false,
+      reason: "read_failed",
+    });
+
+    // Argüman korumaları da fırlatmaz, gerekçe döner — ve hiç istek atmaz.
+    const untouched = stubFetch([]);
+    await expect(port(untouched).transitionToStatus("not-a-key", "ANALİZ")).resolves.toEqual({
+      moved: false,
+      reason: "bad_key",
+    });
+    await expect(port(untouched).transitionToStatus("UGURPAY-501", "   ")).resolves.toEqual({
+      moved: false,
+      reason: "bad_status_name",
+    });
+    expect(untouched.calls).toHaveLength(0);
+  });
+
+  it("reads the available transitions with their destination categories", async () => {
+    const stub = stubFetch([{ body: fixture("issue-transitions") }]);
+
+    const transitions = await port(stub).readAvailableTransitions("UGURPAY-501");
+
+    expect(transitions).toHaveLength(3);
+    expect(transitions[0]).toEqual({
+      id: "11",
+      name: "Analize Al",
+      toStatusId: "10101",
+      toStatusName: "ANALİZ",
+      toCategoryKey: "indeterminate",
+      toCategoryName: "In Progress",
+    });
+    // `expand=transitions.fields` İSTENMEZ — varsayılan gövde zaten kategoriyi taşır.
+    expect(stub.calls[0]!.url).toBe("https://jira.internal.bank/rest/api/2/issue/UGURPAY-501/transitions");
+  });
+
+  it("implements the frozen port's transition() by id for real (was M102's refusal)", async () => {
+    const stub = stubFetch([{ status: 204 }]);
+
+    await expect(port(stub).transition("UGURPAY-501", "31")).resolves.toBeUndefined();
+
+    expect(stub.calls[0]!.method).toBe("POST");
+    expect(stub.calls[0]!.url).toBe("https://jira.internal.bank/rest/api/2/issue/UGURPAY-501/transitions");
+    expect(stub.calls[0]!.body).toEqual({ transition: { id: "31" } });
+
+    // Boş bir id POSTlanmaz.
+    await expect(port(stubFetch([])).transition("UGURPAY-501", "  ")).rejects.toBeInstanceOf(
+      JiraArgumentError,
     );
   });
 });

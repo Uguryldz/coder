@@ -11,7 +11,9 @@
  * The MODEL is a bootstrap default only: `seedDefaultVariants` reads the
  * bootstrap `PILOT_MODEL` env and plants it as version 1's model, and from then
  * on the DB is authoritative — the admin re-versions it from Studio and env is
- * never read again at flow time. The persona is a short, honest default; the
+ * never read again at flow time. Env vermeyen bir kurulumda (banka) o model
+ * artık bir bulut adı DEĞİL, `MODEL_NOT_SELECTED` işaret değeridir — aşağıya
+ * bakın. The persona is a short, honest default; the
  * real per-role prompt still lives in `packages/agent-roles` and is merged at
  * run time (M38), so this is a starting overlay, not the whole prompt.
  */
@@ -29,15 +31,52 @@ export interface DefaultVariant {
 }
 
 /**
- * The bootstrap model, read from `PILOT_MODEL` with a sane default.
+ * Model adı SEÇİLMEDİĞİNDE version 1'e yazılan İŞARET DEĞERİ — asla dialanmaz.
  *
- * `anthropic/claude-sonnet-4.5` rather than the pilot prop's cheap
- * `openai/gpt-4o-mini`: a fresh BANK install should start on a capable default
- * an admin can downgrade, not the throwaway the local pilot demo uses. Passed
- * in as an arg (not read here) so the seed stays a pure function the offline
- * test drives deterministically.
+ * ── NEDEN BULUT ADI DEĞİL ───────────────────────────────────────────────────
+ * Burada eskiden `anthropic/claude-sonnet-4.5` yazıyordu. Banka kurulumu
+ * TAMAMEN kurum içi ve internetsiz: o ad hiçbir zaman cevap veremez. Yine de
+ * seed onu version 1'e yazıyordu, bu yüzden panelde ajanını tanımlayan
+ * operatör "modeller değişmiyor" diyordu — aslında değişiyordu, ama altta
+ * erişilemeyen bir buluta bağlı bir varsayılan duruyordu ve hata "bağlantı
+ * kurulamadı" diye, yanlış yerde görünüyordu.
+ *
+ * ── NEDEN BOŞ STRING DE DEĞİL ───────────────────────────────────────────────
+ * `""` de kabul edilemez: `VariantVersion.model` boş kalırsa `activeModel`
+ * onu "yayınlanmış model yok" ile aynı sepete atar ve çağrı sessizce bağlantı
+ * panelindeki modele düşer. İkisi AYNI ŞEY DEĞİL: biri "operatör henüz
+ * seçmedi", diğeri "böyle bir varyant yok". Adı olan bir işaret değeri, ikisini
+ * ayırt edilebilir ve LOGLANABİLİR yapar.
+ *
+ * ── NE OLUYOR ───────────────────────────────────────────────────────────────
+ * Bu değeri taşıyan bir varyanta düşen çağrı MODEL SEÇMEZ; adıyla reddedilir
+ * ya da (variant-model.ts'teki kurala göre) bağlantı paneline düşerken bunu
+ * GÖRÜNÜR bir uyarı satırıyla yapar. Sessizce yanlış bir modele düşmek — bu
+ * dosyanın kapattığı hatanın ta kendisi — hiçbir yolda mümkün değil.
+ *
+ * `.invalid` yerine düz bir ad: bu bir URL değil, bir model kimliği; sağlayıcıya
+ * gitse bile "model not found" der ve operatör aradığı kelimeyi görür.
  */
-export const DEFAULT_VARIANT_MODEL = "anthropic/claude-sonnet-4.5";
+export const MODEL_NOT_SELECTED = "secilmedi";
+
+/**
+ * Kurulum sırasında version 1'e yazılacak bootstrap model.
+ *
+ * `PILOT_MODEL` env verilmişse o; verilmemişse — bankada durum bu, compose
+ * `PILOT_MODEL` tanımlamıyor — `MODEL_NOT_SELECTED`. Yani kurulum bir model
+ * UYDURMAZ; operatörü Studio'daki "Ajan tanımları" ekranından seçmeye zorlar,
+ * ve seçilene kadar durum her yerde adıyla okunur.
+ *
+ * Arg olarak geçilir (burada okunmaz) ki seed saf bir fonksiyon kalsın ve
+ * çevrimdışı test onu deterministik sürsün.
+ */
+export const DEFAULT_VARIANT_MODEL = MODEL_NOT_SELECTED;
+
+/** Bir model adı gerçek bir seçim mi, yoksa "henüz seçilmedi" mi? */
+export function isModelSelected(model: string | null | undefined): boolean {
+  const trimmed = model?.trim() ?? "";
+  return trimmed !== "" && trimmed !== MODEL_NOT_SELECTED;
+}
 
 /** The two thinking roles a fresh install ships a variant for. */
 export const DEFAULT_VARIANTS: readonly DefaultVariant[] = [

@@ -44,6 +44,9 @@ function row(over: Partial<RunRow> = {}): RunRow {
     dataClass: "dahili",
     locale: "tr",
     variantId: "v1",
+    // Ayrı mühendis ajanı iğnelenmemiş satır: sütunun şema varsayılanı. Bu
+    // hâlin anlamı "analistin ajanını kullan" (bkz. `engineerVariantOf`).
+    engineerVariantId: "",
     templateVersion: "analysis@1.0.0",
     workspacePath: "/w/pay-101",
     workspacePresent: true,

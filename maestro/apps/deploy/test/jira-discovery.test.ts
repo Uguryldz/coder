@@ -44,17 +44,6 @@ function fakeSearch(pages: Record<string, string[]>): {
   };
 }
 
-/** Records every ticket intake was asked to start. */
-function fakeIntake(): { deps: never; started: string[] } {
-  const started: string[] = [];
-  return {
-    started,
-    // `runIntake` is imported by the module under test; the seam here is the
-    // deps object it threads through, which the fake below stands in for.
-    deps: { intake: started } as never,
-  };
-}
-
 describe("jqlFor", () => {
   /**
    * Project AND assignee, always. That pair is what "Maestro was given this

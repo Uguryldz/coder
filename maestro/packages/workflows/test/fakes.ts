@@ -51,8 +51,14 @@ export interface Recorded {
   children: Array<{ summary: string; description: string }>;
   turns: AgentTurnRequest[];
   scans: string[];
-  /** `input` rides along so a test can assert WHAT a prompt was composed from. */
-  llm: Array<{ role: string; schemaName: string; input: unknown }>;
+  /**
+   * `input` rides along so a test can assert WHAT a prompt was composed from,
+   * and `variantId` so a test can assert WHICH AGENT asked. The second one was
+   * missing, which is part of why nothing caught the engineering half running
+   * on the analyst's agent: the fake recorded every call and threw away the one
+   * field that says whose call it was.
+   */
+  llm: Array<{ role: string; variantId: string; schemaName: string; input: unknown }>;
 }
 
 export interface Fakes {
@@ -76,6 +82,21 @@ export interface FakeOptions {
   members?: (group: string) => string[];
   /** Makes `assign` reject, for the fail-soft delivery path. */
   assignFails?: boolean;
+  /**
+   * Studio'da tanımlı ajan personaları: varyant kimliği → metin (ya da bir
+   * `Error`, okumanın patladığı hâl için). Verilmezse `deps.persona` HİÇ
+   * bağlanmaz — yani bu paketin bugünkü, persona'sız davranışı.
+   */
+  persona?: Record<string, string | Error | undefined>;
+  /**
+   * Ticket'ın yorum akışı, sürücünün HAM şekliyle (`CommentReader.listComments`
+   * `unknown[]` döner — iki Jira lehçesi iki farklı şekil taşır). Verilmezse
+   * `deps.comments` HİÇ bağlanmaz: intake yalnız snapshot'ı görür, yani bu seam
+   * eklenmeden önceki davranış.
+   */
+  comments?: unknown[] | Error;
+  /** Maestro'nun kendi yorumlarını eleyen kimlik; verilmezse eleme yapılmaz. */
+  botUserId?: string;
   /**
    * Omit the `DocAttacher` seam entirely — a Data Center deployment, where the
    * documents are generated and stored but cannot go onto the ticket.
@@ -221,7 +242,12 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     },
     llm: {
       generateObject: (req, schema) => {
-        recorded.llm.push({ role: req.role, schemaName: req.schemaName, input: req.input });
+        recorded.llm.push({
+          role: req.role,
+          variantId: req.variantId,
+          schemaName: req.schemaName,
+          input: req.input,
+        });
         const outcome = options.generateObject?.(req.schemaName);
         if (outcome === undefined) throw new Error(`fake llm: no answer for ${req.schemaName}`);
         if (outcome.status !== "ok") return Promise.resolve(outcome);
@@ -323,6 +349,36 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
               recorded.moved.push({ ticket, statusName });
               return Promise.resolve(options.statusMove?.(statusName) ?? { moved: true });
             },
+          },
+        }),
+    // Studio'da tanımlı ajan personası. Varsayılan: bağlı DEĞİL — yani mevcut
+    // her test bugünkü davranışı görmeye devam eder (rol promptu, overlay yok).
+    // `persona` seçeneği verildiğinde varyant → metin eşlemesi olur; bir varyant
+    // için `Error` verilirse okuma o varyantta patlar (erişilemez Postgres).
+    ...(options.persona === undefined
+      ? {}
+      : {
+          persona: {
+            activePersona: (variantId) => {
+              const answer = options.persona?.[variantId];
+              if (answer instanceof Error) return Promise.reject(answer);
+              return Promise.resolve(answer ?? null);
+            },
+          },
+        }),
+    // Ticket'ın yorum akışı. Varsayılan: bağlı DEĞİL — mevcut her test intake'i
+    // yorumsuz, yani bugünkü davranışıyla görür. `comments` verildiğinde sürücü
+    // o ham listeyi döner; bir `Error` verilirse okuma patlar (Jira 5xx), ve
+    // akışın bunu YUTUP yorumsuz devam etmesi gerekir.
+    ...(options.comments === undefined
+      ? {}
+      : {
+          comments: {
+            listComments: () =>
+              options.comments instanceof Error
+                ? Promise.reject(options.comments)
+                : Promise.resolve(options.comments ?? []),
+            ...(options.botUserId === undefined ? {} : { botUserId: options.botUserId }),
           },
         }),
     // Catalog lookups are echoed so a missing key is visible in an assertion

@@ -70,6 +70,16 @@ export interface RunState {
   approvers: Map<StepId, string>;
   /** Rejections per gate, carried across continuations (M54). */
   rejections: Map<StepId, number>;
+  /**
+   * Netleştirme sorusu sorulduktan sonraki an (ISO), koşu 2b'de beklerken.
+   * Bekleme bitince `null`'a döner.
+   *
+   * Bu alan koşunun kendi verisi DEĞİL, dışarıya verilen bir eşik: Jira'dan
+   * gelen bir olayın soruyu izleyip izlemediğini BFF ancak bununla ölçebilir.
+   * Sorunun kendi yankısı (durum taşıma, yeniden atama, yorum) bu damgadan
+   * ÖNCE düşer, kullanıcının düzeltmesi SONRA — tek ayrım noktası budur.
+   */
+  awaitingClarificationSince: string | null;
 }
 
 export function initialRunState(args: {
@@ -89,6 +99,7 @@ export function initialRunState(args: {
     updatedAt: args.startedAt,
     killed: null,
     intakeOnlyNoted: false,
+    awaitingClarificationSince: null,
     approvers: new Map(),
     rejections: new Map(
       Object.entries(args.rejectionCounts ?? {}).map(([step, count]) => [step as StepId, count]),

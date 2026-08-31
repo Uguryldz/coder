@@ -65,7 +65,22 @@ export type JiraWebhookEvent =
       edited: boolean;
       issue: unknown;
     }
-  | { kind: "issue"; event: string; ticketKey: TicketKey; issue: unknown }
+  | {
+      kind: "issue";
+      event: string;
+      ticketKey: TicketKey;
+      issue: unknown;
+      /**
+       * Değişikliği YAPAN kişi (`user` alanı), ticket'ın kime atandığı değil.
+       *
+       * Jira her issue olayında bunu gönderiyor ve bugüne kadar hiç okunmadı.
+       * Yeniden giriş yolu (netleştirme cevabı) için gerekli: Maestro'nun kendi
+       * hareketiyle üretilen olay ile kullanıcının düzeltmesi ancak bununla
+       * ayrılıyor. `null`, olayın kimi adlandırdığını söylemediği anlamına
+       * gelir — "bot değil" değil; çağıran bunu bir onay olarak kullanmamalı.
+       */
+      actor: string | null;
+    }
   | { kind: "other"; event: string };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -105,10 +120,42 @@ export function parseWebhookEvent(payload: unknown): JiraWebhookEvent {
   }
 
   if (issueKey?.success && event.startsWith("jira:issue_")) {
-    return { kind: "issue", event, ticketKey: issueKey.data, issue: envelope["issue"] };
+    return {
+      kind: "issue",
+      event,
+      ticketKey: issueKey.data,
+      issue: envelope["issue"],
+      // Atanan kişiyi okuyan yolla AYNI kimlik grameri — gerekçesi
+      // `actorIdOf` başında.
+      actor: actorIdOf(envelope["user"]),
+    };
   }
 
   return { kind: "other", event };
+}
+
+/**
+ * Olayı YAPAN kişinin kimliği, atanan kişiyi okuyan yolla AYNI sırayla.
+ *
+ * Neden `userIdOf` değil: o fonksiyon Data Center için yazıldı ve `accountId`
+ * alanını hiç okumaz — Jira Cloud'da bir kullanıcı nesnesinin taşıdığı TEK
+ * kararlı kimlik odur. Yeniden giriş kontrolü "olayı yapan == bot" ve
+ * "atanan == bot" karşılaştırmalarını yan yana yapıyor; iki taraf farklı
+ * alanlardan okunursa aynı kişi iki farklı dizeye dönüşür ve karşılaştırma
+ * sessizce hep yanlış çıkar. Sıralama `apps/deploy/src/work-events.ts`
+ * içindeki `assigneeOf` ile birebir aynı tutulmuştur.
+ *
+ * `displayName` bilerek DIŞARIDA: görünen ad kararlı bir kimlik değil, iki
+ * kişide aynı olabilir; bir yankı korumasının dayanağı olamaz.
+ */
+function actorIdOf(user: unknown): string | null {
+  const candidate = record(user);
+  if (candidate === null) return null;
+  for (const key of ["accountId", "name", "key", "emailAddress"]) {
+    const value = candidate[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return null;
 }
 
 /**

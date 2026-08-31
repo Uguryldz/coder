@@ -10,6 +10,7 @@ import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { guardModelCall, resolveOutcome } from "./outcome.js";
+import { analystPersona } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
 /**
@@ -193,6 +194,11 @@ export async function writeAnalysis(
 ): Promise<{ analysis: AnalysisDoc; risk: RiskTier }> {
   const run = await deps.runs.get(ticket);
   const snapshot = await deps.work.getTicket(ticket);
+  // Studio'nun "Ajan tanımları" ekranında bu analist ajanı için yazılmış
+  // persona, varsa. `input`'un İLK alanı olarak gidiyor: rol talimatı,
+  // uygulanacağı verinin önünde okunmalı — pilot da personayı analiz bağlamının
+  // ilk bilgi notu yapıyor.
+  const persona = await analystPersona(deps, run);
   // The auth guard is what keeps a rejected model key from retrying this
   // activity in silence for days (see `guardModelCall`).
   const outcome = await guardModelCall(deps, run, "analysis", () =>
@@ -203,6 +209,7 @@ export async function writeAnalysis(
         dataClass: run.dataClass,
         schemaName: "analysis-doc",
         input: {
+          ...(persona === undefined ? {} : { persona }),
           // `appId` is the ONLY repo-derived fact in this prompt — everything
           // else (locale, template pin, the ticket's own text) holds without a
           // repository. An analysis-only run omits it rather than sending a

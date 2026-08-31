@@ -55,6 +55,7 @@ export interface RunRow {
   dataClass: string;
   locale: string;
   variantId: string;
+  engineerVariantId: string;
   templateVersion: string;
   workspacePath: string;
   workspacePresent: boolean;
@@ -97,6 +98,7 @@ export interface RunUpdate {
   risk?: NonNullable<RunContext["risk"]>;
   locale?: string;
   variantId?: string;
+  engineerVariantId?: string;
   templateVersion?: string;
   workspacePath?: string;
   workspacePresent?: boolean;
@@ -146,6 +148,14 @@ export interface RunCreate {
   startedAt: Date;
   locale?: string;
   variantId?: string;
+  /**
+   * Optional here where `variantId` is effectively required, and that asymmetry
+   * is deliberate: the column defaults to `""`, and `""` has a DEFINED meaning
+   * for this one ("no separate engineer agent → use the analyst's", see
+   * `engineerVariantOf`). An empty `variantId` has no such meaning — it is a
+   * wiring bug — which is why `assertPinned` refuses that one and not this one.
+   */
+  engineerVariantId?: string;
   templateVersion?: string;
   workspacePath?: string;
   workspacePresent?: boolean;
@@ -219,6 +229,12 @@ export interface NewRun {
    * than a run that was opened without saying which agent it runs.
    */
   readonly variantId: string;
+  /**
+   * The ENGINEER agent this run is pinned to (migration 0022), when the
+   * deployment has one. Optional and defaulting to `""` — see `RunCreate`'s
+   * note for why an empty one is a real answer here and not for `variantId`.
+   */
+  readonly engineerVariantId?: string;
   readonly templateVersion: string;
   /**
    * The checkout step 3ö reads (M100), when there is one.
@@ -358,6 +374,12 @@ export class PrismaRunContextStore implements RunContextStore {
           startedAt: input.startedAt,
           variantId: input.variantId,
           templateVersion: input.templateVersion,
+          // Omitted rather than written as `""` when absent, so a run opened by
+          // a caller that predates the engineer pin writes the exact row it
+          // always wrote and the column keeps its schema default.
+          ...(input.engineerVariantId === undefined || input.engineerVariantId.trim() === ""
+            ? {}
+            : { engineerVariantId: input.engineerVariantId }),
           ...(input.locale === undefined ? {} : { locale: input.locale }),
           ...(input.workspacePath === undefined
             ? {}
@@ -454,6 +476,14 @@ export function toRunUpdate(changes: Partial<RunContext>): RunUpdate {
   if (changes.variantId !== undefined && changes.variantId.trim() !== "") {
     data.variantId = changes.variantId;
   }
+  // Same rule for the engineer pin, for the same reason. It is the only pin
+  // whose EMPTY value is meaningful ("no separate engineer agent"), but that
+  // meaning belongs to a run being OPENED — a partial update that carries an
+  // empty one is a caller changing other fields, not a caller un-pinning a
+  // live run's engineer mid-flight.
+  if (changes.engineerVariantId !== undefined && changes.engineerVariantId.trim() !== "") {
+    data.engineerVariantId = changes.engineerVariantId;
+  }
   if (changes.templateVersion !== undefined && changes.templateVersion.trim() !== "") {
     data.templateVersion = changes.templateVersion;
   }
@@ -488,6 +518,7 @@ function toRunContext(row: RunRow, app: ApplicationRow | null): RunContext {
     mode: row.mode as RunContext["mode"],
     locale: row.locale as RunContext["locale"],
     variantId: row.variantId,
+    engineerVariantId: row.engineerVariantId,
     templateVersion: row.templateVersion,
     workspacePath: row.workspacePath,
     workspacePresent: row.workspacePresent,

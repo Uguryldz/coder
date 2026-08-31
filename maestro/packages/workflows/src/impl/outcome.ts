@@ -1,4 +1,5 @@
-import type { LlmOutcome } from "@maestro/ports";
+import type { RoleResult } from "@maestro/agent-roles";
+import type { LlmOutcome, LlmPort } from "@maestro/ports";
 import { activityInfo } from "@temporalio/activity";
 import { ApplicationFailure } from "@temporalio/common";
 import type { ActivityDeps, RunContext } from "./deps.js";
@@ -241,4 +242,71 @@ export async function handOver(
     to: await deps.directory.membersOf("tech-leads"),
     key: `handover:${key}`,
   });
+}
+
+/**
+ * `deps.llm`'in `guardModelCall` ile SARILMIŞ hâli.
+ *
+ * ── NEDEN GEREKLİ ───────────────────────────────────────────────────────────
+ * `guardModelCall` bir çağrıyı sarar. `@maestro/agent-roles`'ün `runRole`'ü ise
+ * `LlmPort`'u KENDİSİ çağırır — hem ilk turda hem de en fazla iki onarım
+ * turunda. Yani `guardModelCall(… () => runIntake({llm: deps.llm, …}))` yazmak
+ * yalnızca DIŞ çağrıyı korurdu ve onarım turlarındaki 401/403'ler korumasız
+ * kalırdı: tam da `guardModelCall`'un kapattığı sessiz sonsuz yeniden deneme
+ * deliği, bu kez rol katmanının içinde.
+ *
+ * Bunun yerine PORT sarılıyor: `runRole` içinde kaç çağrı olursa olsun her biri
+ * aynı korumadan geçer. Guard'ın kendisi idempotent değil ama olmasına gerek
+ * yok — attempt sayısı Temporal'ın activity attempt'inden okunuyor, tur
+ * sayısından değil, yani bir activity denemesindeki üç rol turu üç ayrı
+ * "yeniden denenecek" satırı değil, aynı attempt numarasını taşıyan tek bir
+ * kayıt üretir (`record`'un `key`'i attempt'e bağlı).
+ *
+ * `agentSession` de sarılıyor: bu paket onu rol katmanından çağırmıyor, ama
+ * yarısı korumalı bir port ileride sessizce yanlış olurdu.
+ */
+export function guardedLlm(deps: ActivityDeps, run: RunContext, what: string): LlmPort {
+  const llm = deps.llm;
+  return {
+    generateObject: (req, schema) => guardModelCall(deps, run, what, () => llm.generateObject(req, schema)),
+    agentSession: (opts) => guardModelCall(deps, run, what, () => llm.agentSession(opts)),
+  };
+}
+
+/**
+ * Bir `agent-roles` `RoleResult`'ını `resolveOutcome`'ın anladığı `LlmOutcome`'a
+ * çevirir.
+ *
+ * ── NEDEN ÇEVİRİ, YENİ BİR DAL DEĞİL ────────────────────────────────────────
+ * İki tip aynı dört ucu anlatıyor (M18/M55/M97) ve bu tesadüf değil: `RoleResult`
+ * `LlmOutcome`'ın üç ok-olmayan hâlini bilerek OLDUĞU GİBİ yeniden yayıyor.
+ * Çeviri, `resolveOutcome`'ın kota bekleme / ai-assist'e düşme / insana devir
+ * davranışını TEK bir yerde tutar — rol katmanı için ikinci bir kopya yazmak,
+ * M97'nin degraded yolunu iki farklı yerde bakımı yapılacak hâle sokardı.
+ *
+ * `log` alanı: `LlmOutcome.ok` bir çağrı kaydı taşır, `RoleResult.ok` ise bir
+ * kayıt LİSTESİ (onarım turları da çağrıdır). `resolveOutcome` yalnızca `value`
+ * okuduğu için SON kayıt yeterli — ama liste boş olamaz, çünkü `ok` bir cevabın
+ * geldiği anlamına gelir; yine de tip güvenliği için boş hâl elde ediliyor.
+ */
+export function outcomeOfRole<T>(result: RoleResult<T>): LlmOutcome<T> {
+  switch (result.status) {
+    case "ok": {
+      const log = result.logs[result.logs.length - 1];
+      if (log === undefined) {
+        // Ulaşılamaz: `ok` bir modelin cevap verdiği anlamına gelir, yani en az
+        // bir kayıt vardır. Yine de sessizce uydurulmuş bir kayıt üretmektense
+        // yüksek sesle patlamak doğru — sahte bir maliyet satırı M55'in kota
+        // muhasebesini ve kanıt paketini bozar.
+        throw new Error("agent-roles returned ok with no call log; the accounting would be wrong");
+      }
+      return { status: "ok", value: result.value, log };
+    }
+    case "queued":
+      return { status: "queued", resumeAt: result.resumeAt, reason: result.reason };
+    case "degraded":
+      return { status: "degraded", messageKey: result.messageKey, dataClass: result.dataClass };
+    case "blocked":
+      return { status: "blocked", messageKey: result.messageKey, dataClass: result.dataClass };
+  }
 }

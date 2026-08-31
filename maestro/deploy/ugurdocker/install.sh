@@ -460,9 +460,10 @@ fi
 
 MIG_SAYI=$(docker run --rm --entrypoint sh "${MAESTRO_NODE_IMAGE}" \
   -c "ls /app/packages/db/prisma/migrations 2>/dev/null | grep -c '^[0-9]'" 2>/dev/null || echo 0)
-# Bu paketin beklediği asgari migration KLASÖRÜ sayısı. Son migration 0021'dir
-# (0021_connection_model_registry — panelden model tanımlamanın şeması) ama
-# klasör sayısı 22'dir: iki klasör 0011 önekini paylaşır
+# Bu paketin beklediği asgari migration KLASÖRÜ sayısı. Son migration 0022'dir
+# (0022_workflow_run_engineer_variant — koşuya MÜHENDİS ajanını da iğneleyen
+# sütun; onsuz kodu yazan tur analiz ajanının modeliyle koşar) ama
+# klasör sayısı 23'tür: iki klasör 0011 önekini paylaşır
 # (0011_failed_run_is_terminal, 0011_listening_rules). Sayıyı en yüksek öneke
 # bakarak tahmin etmek bu yüzden yanlış olur.
 #
@@ -475,7 +476,7 @@ MIG_SAYI=$(docker run --rm --entrypoint sh "${MAESTRO_NODE_IMAGE}" \
 # İmaj bundan azını taşıyorsa eski bir koddan build edilmiştir: şema eksik
 # kurulur ve eksik bir sütuna yazan kod hata vermeden çalışır — değer hiç
 # veritabanına ulaşmaz.
-MIG_BEKLENEN=22
+MIG_BEKLENEN=23
 if [[ "${MIG_SAYI}" -ge "${MIG_BEKLENEN}" ]]; then
   ok "  Migration dosyası: ${MIG_SAYI} adet (asgari ${MIG_BEKLENEN})."
 else

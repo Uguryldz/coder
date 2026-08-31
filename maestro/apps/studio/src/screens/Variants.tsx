@@ -168,7 +168,17 @@ function CreateVariantModal({
   const [variantId, setVariantId] = useState("");
   const [role, setRole] = useState<LlmRoleType>("analyst");
   const [platform, setPlatform] = useState("web");
-  const [model, setModel] = useState("claude-opus-5");
+  /**
+   * Model alanı BOŞ başlar — gömülü bir varsayılan YOK.
+   *
+   * Burada eskiden `"claude-opus-5"` yazıyordu. Kurum içi, internetsiz bir
+   * kurulumda o ad hiçbir sunucuda yok: admin formu açıp modeli değiştirmeden
+   * kaydettiğinde, hiç dialanamayacak bir model adıyla bir ajan tanımlanmış
+   * oluyordu — ve hata çok sonra, ilk çağrıda, "sağlayıcı cevap vermedi" diye
+   * görünüyordu. Boş başlamak alanı ZORUNLU kılar (`modelInvalid`), yani admin
+   * kendi model sunucusunun servis ettiği adı yazmadan formu geçemez.
+   */
+  const [model, setModel] = useState("");
   const [persona, setPersona] = useState("");
   const [knowledge, setKnowledge] = useState("");
   const [note, setNote] = useState(t("variants.create.first_note"));
@@ -251,6 +261,7 @@ function CreateVariantModal({
         label={t("variants.field.model")}
         value={model}
         onChange={(event) => setModel(event.target.value)}
+        hint={t("variants.field.model_hint")}
         {...(touched && modelInvalid ? { error: t("variants.error.model") } : {})}
       />
       <TextArea

@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@maestro/agent-roles": "workspace:*",
     "@maestro/audit": "workspace:*",
     "@maestro/contracts": "workspace:*",
     "@maestro/execution": "workspace:*",

@@ -205,11 +205,17 @@ describe("composition root: dev profile", () => {
    * silently becomes `undefined` and every mapped run degrades to comment-only
    * mode — the exact behaviour operators configured the map to get away from.
    */
-  it("gives the worker a status mover only when the work driver can transition", async () => {
-    // Data Center: no transition-by-name capability, so no seam. M102 — the
-    // driver has no workflow permissions there, and progress is a label.
+  it("gives the worker a status mover on BOTH Jira drivers", async () => {
+    // Data Center used to be the exception: M102 asked for no workflow
+    // permission, so the driver had no `transitionToStatus` and the seam came
+    // back `undefined` — every status map an operator configured on a DC site
+    // silently did nothing. M111 gave DC the capability, so it gets a mover
+    // too; whether the service account is ALLOWED to transition is Jira's
+    // answer, per call (`reason:"forbidden"`), not a boot-time verdict.
     const dc = await boot({ ...DEV_ENV });
-    expect(statusMoverFor(dc.deployment.ports.work)).toBeUndefined();
+    const dcMover = statusMoverFor(dc.deployment.ports.work);
+    expect(dcMover).toBeDefined();
+    expect(typeof dcMover?.move).toBe("function");
 
     const cloud = createJiraCloudWorkPort({
       baseUrl: "https://jira.invalid",

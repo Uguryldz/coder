@@ -6,6 +6,7 @@ import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
+import { commentReaderFor } from "../stores/comment-reader.js";
 import { docAttacherFor } from "../stores/doc-attacher.js";
 import { statusMoverFor } from "../stores/status-mover.js";
 import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
@@ -14,6 +15,7 @@ import { healthPortOf, startWorkerLiveness } from "../worker-liveness.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
 import { llmCallRecorder } from "../stores/llm-call-log.js";
 import { connectionModelFrom } from "../stores/connection-model.js";
+import { variantAwareModelFrom, variantModelReaderFrom } from "../stores/variant-model.js";
 import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
@@ -91,7 +93,17 @@ export async function main(): Promise<void> {
       // Both processes resolve it through this one factory so the endpoint an
       // admin tests green in the panel is the one the run dials — the split
       // `connectionSecrets` closed for the token, closed here for the address.
-      resolveModel: connectionModelFrom(db),
+      //
+      // ...ve ADRESİN üstünde bir katman daha: çağıran AJANIN modeli. Bağlantı
+      // satırı kurulum gerçeğini (adres/anahtar/on-prem/TLS) verir, Studio'daki
+      // "Ajan tanımları" ekranı ise o ajanın hangi modeli konuşacağını. Bu satır
+      // olmadan `run.variantId` yalnızca bir etiketti: panelde ajan başına model
+      // seçen admin, hepsinin tek modelle koştuğunu görüyordu. Bkz.
+      // `stores/variant-model.ts` — düşüşlerin neden sessiz olmadığı orada.
+      resolveModel: variantAwareModelFrom({
+        base: connectionModelFrom(db),
+        variants: variantModelReaderFrom(db),
+      }),
       // The handshake, from the same panel rows again: a connection whose
       // admin flagged "TLS doğrulamasını atla" is dialled without certificate
       // verification by every adapter — the run performs the exact handshake
@@ -115,11 +127,22 @@ export async function main(): Promise<void> {
      * capability. See `stores/status-mover.ts` for why the check is structural.
      */
     const statusMover = statusMoverFor(deployment.ports.work);
+    /**
+     * Ticket'ın yorum akışı, intake'in görebilmesi için. Bu olmadan intake
+     * yalnız `getTicket` snapshot'ını görür — yani reporter'ın netleştirme
+     * sorusuna yazdığı CEVABI görmez, çünkü cevap bir yorumdur. Re-entry
+     * köprüsü koşuyu uyandırınca aynı ince ticket'ı okuyup aynı soruyu tekrar
+     * sorar: sonsuz iade döngüsü. `undefined` yorum API'si olmayan bir sürücüde
+     * (bugün yok — her iki Jira sürücüsü de taşıyor). Yapısal tespitin gerekçesi
+     * `stores/comment-reader.ts` içinde.
+     */
+    const comments = commentReaderFor(deployment.ports.work, env.source["MAESTRO_BOT_ACCOUNT_ID"]);
     const workerCore: CoreDeps = {
       ...core,
       execution: execution.runner,
       ...(docAttacher === undefined ? {} : { docAttacher }),
       ...(statusMover === undefined ? {} : { statusMover }),
+      ...(comments === undefined ? {} : { comments }),
     };
 
     if (MISSING_CORE_DEPS.length > 0) {

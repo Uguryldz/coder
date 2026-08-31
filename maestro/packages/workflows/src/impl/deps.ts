@@ -56,8 +56,26 @@ export interface RunContext {
   readonly dataClass: DataClass;
   readonly mode: WorkMode;
   readonly locale: Locale;
-  /** Prompt-variant this run is pinned to (M38). */
+  /** Prompt-variant this run is pinned to (M38) — the ANALYST/intake agent. */
   readonly variantId: string;
+  /**
+   * The agent the ENGINEERING turn runs on, pinned at start beside `variantId`
+   * (migration 0022).
+   *
+   * Empty string means "this deployment has no separate engineer agent, or this
+   * run predates the pin" — and every reader must then use `variantId`, which
+   * is exactly what every step did before this field existed. Use
+   * `engineerVariantOf(run)` rather than reading it raw, so that fallback lives
+   * in ONE place instead of at each of the four engineering call sites.
+   *
+   * Why it exists: `variantId` is planted by `activeAnalystVariantId`, which
+   * asks for `role = 'analyst'` explicitly. Every later step read that one
+   * value — the code-writing turn included — so an admin who defined a separate
+   * engineer agent in "Ajan tanımları" (its own model, its own persona) had it
+   * applied to nothing, silently. The pilot has resolved both agents since Faz 3;
+   * the Temporal path, which is what a bank install actually runs, had half.
+   */
+  readonly engineerVariantId: string;
   /** Analysis template pinned at run start (M83). */
   readonly templateVersion: string;
   /**
@@ -227,6 +245,88 @@ export interface StatusMover {
   move(ticket: TicketKey, statusName: string): Promise<{ moved: boolean; reason?: string }>;
 }
 
+/**
+ * Ticket'ın YORUM AKIŞINI okumak — netleştirme döngüsünü kıran şey.
+ *
+ * ── HANGİ BOŞLUĞU KAPATIYOR ─────────────────────────────────────────────────
+ * Intake bugün yalnız `getTicket` snapshot'ını görüyor: özet, açıklama, tip.
+ * Reporter'ın netleştirme sorusuna yazdığı CEVAP ise bir YORUM olarak duruyor,
+ * snapshot'ta değil. Yani re-entry köprüsü koşuyu uyandırdığında intake yine
+ * aynı ince ticket'ı okuyor, yine "eksik" diyor, yine aynı soruyu soruyor —
+ * cevap yazılmış olmasına rağmen. Sonsuz iade döngüsü, ve reporter'ın gördüğü
+ * tek şey botun kendi sorusunu tekrar etmesi.
+ *
+ * ── NEDEN AYRI BİR SEAM, `WorkPort` METODU DEĞİL ────────────────────────────
+ * `WorkPort` DONMUŞ, ve `listComments` zaten bilinçli olarak dışında: port
+ * akışın İHTİYACI olanı taşır, bir yorum dizisini okumak da o değildi (motor
+ * sinyalle uyandırılır, bakmaz). Yetenek somut Jira sürücülerinde duruyor —
+ * DC'de `listComments` (poller için eklendi), Cloud'da aynı ad. `DocAttacher`
+ * ve `StatusMover` ile birebir aynı şekil ve aynı gerekçe: bu paket ihtiyaç
+ * duyduğu ŞEKLİ bildirir, kompozisyon kökü onu karşılayan sürücüyü verir.
+ *
+ * ── HAM `unknown[]` DÖNMESİ BİLEREK ─────────────────────────────────────────
+ * İki sürücü aynı şeyi iki farklı LEHÇEDE söylüyor: Cloud (REST v3) gövdeyi ADF
+ * belgesi olarak, yazarı `accountId` ile verir; Data Center (REST v2) gövdeyi
+ * düz wiki-markup STRING, yazarı `name`/`key`/`emailAddress` ile. Burada bir
+ * ortak tip dayatmak, iki lehçeden birini sürücü dışında yeniden çözmek olurdu.
+ * Ayıklama `comments.ts` içinde, iki lehçeyi de tanıyan tek bir yerde yapılıyor.
+ *
+ * ── OPSİYONEL ───────────────────────────────────────────────────────────────
+ * Bağlı değilse intake bugünkü gibi yalnız snapshot'ı görür — yani bu satır
+ * eklenmeden önceki davranış, aynen. Okuma PATLARSA da akış düşmez: yorumsuz
+ * devam eder (bkz. `readHumanComments`).
+ */
+export interface CommentReader {
+  /** Ticket'ın yorum kaynakları, sürücünün ham şekliyle. */
+  listComments(ticket: TicketKey): Promise<unknown[]>;
+  /**
+   * Maestro'nun KENDİ yazdığı yorumları elemek için bot hesabının kimliği;
+   * bilinmiyorsa `undefined`.
+   *
+   * Bilinmemesi kabul edilebilir bir cevap: o zaman bot yorumları elenmez ve
+   * intake kendi sorduğu soruyu da bağlamda görür. Bu, hiç yorum görmemekten
+   * iyidir — soru zaten ticket'ta duruyor — ama ideal değil, ve `undefined`
+   * olduğunda `comments.ts` bunu açıkça bir uyarı satırıyla söyler.
+   */
+  readonly botUserId?: string;
+}
+
+/**
+ * The PERSONA an admin typed into Studio's "Ajan tanımları" ekranı, per agent.
+ *
+ * ── HANGİ BOŞLUĞU KAPATIYOR ─────────────────────────────────────────────────
+ * `VariantVersion.configJson.persona` alanı Studio'da yazılıyor, veritabanına
+ * yazılıyor, `/variants` ile geri okunuyor — ve akışa HİÇ ulaşmıyordu. Bu
+ * paketin tamamında "persona" kelimesi geçmiyordu: pilot personayı okuyup
+ * analize ilk bilgi notu olarak veriyordu (`apps/pilot/src/run.ts`), Temporal
+ * yolu ise — bankanın gerçekten çalıştırdığı yol — hiç okumuyordu. Yani admin
+ * ajanının nasıl davranacağını yazıyor, model onu hiç görmüyordu.
+ *
+ * ── NEDEN AYRI BİR SEAM, `ParamReader`'a EKLENMİŞ BİR METOT DEĞİL ───────────
+ * `DocAttacher`/`StatusMover` ile aynı gerekçe: bu paket hiçbir sürücüyü ve
+ * `@maestro/db`'yi adlandırmaz (M44). İhtiyaç duyduğu ŞEKLİ bildirir, kompozisyon
+ * kökü (`apps/deploy`) onu karşılayan bir şey verir — `PrismaVariantModelReader`
+ * zaten `activePersona`'yı yapısal olarak karşılıyor. Testleri çevrimdışı tutan
+ * da bu.
+ *
+ * ── NEDEN OPSİYONEL ─────────────────────────────────────────────────────────
+ * Bağlanmamışsa her rol, kurumun `packages/agent-roles`'daki varsayılan
+ * promptuyla çalışır — yani bugünkü davranış, aynen. Persona bir ÜST KATMANDIR
+ * (overlay), rolün promptunun yerine geçmez.
+ */
+export interface PersonaReader {
+  /**
+   * `variantId`'nin yayınlanmış (en yeni) sürümündeki persona metni; yoksa
+   * `null`. `null` gerçek bir cevaptır: "bu ajan için persona yazılmamış" —
+   * çağıran overlay eklemez ve akış aynen devam eder.
+   *
+   * Bu metot ATMAMALIDIR. Bir persona okuması, analizi ya da kod turunu
+   * düşürmeye değecek bir şey değil: uygulaması (`personaReaderFrom`) okuma
+   * hatasını yutar ve `null` döner, ama bunu GÖRÜNÜR bir uyarı satırıyla yapar.
+   */
+  activePersona(variantId: string): Promise<string | null>;
+}
+
 export interface ActivityDeps {
   readonly runs: RunContextStore;
   readonly gates: GateStore;
@@ -263,8 +363,37 @@ export interface ActivityDeps {
    * the journal says the move was skipped for want of the capability.
    */
   readonly statusMover?: StatusMover;
+  /**
+   * Studio'da tanımlanan ajan personası (yukarıdaki `PersonaReader`). Absent =
+   * her rol kurumun `agent-roles` varsayılan promptuyla çalışır, bugünkü
+   * davranışın aynısı.
+   */
+  readonly persona?: PersonaReader;
+  /**
+   * Ticket'ın yorum akışı (yukarıdaki `CommentReader`). Absent = intake yalnız
+   * snapshot'ı görür, bugünkü davranış — ve netleştirme cevapları görünmez.
+   */
+  readonly comments?: CommentReader;
   readonly translate: Translate;
   readonly now: () => Date;
+}
+
+/**
+ * Which agent the ENGINEERING half of a run speaks as.
+ *
+ * One function rather than an inline `?:` at each engineering call site, and
+ * that is the whole point: the fallback ("no engineer pin → the analyst's
+ * variant") is the pre-migration behaviour, and a fallback copied into four
+ * places is a fallback that will one day disagree with itself. A run opened
+ * before migration 0022 carries `""` here and reads exactly as it always did.
+ *
+ * The ANALYSIS half keeps using `run.variantId` directly — it is the analyst's
+ * pin by construction (`activeAnalystVariantId`), and routing it through a
+ * helper would suggest a choice that is not being made.
+ */
+export function engineerVariantOf(run: RunContext): string {
+  const engineer = run.engineerVariantId.trim();
+  return engineer === "" ? run.variantId : engineer;
 }
 
 /** Actor recorded on everything the worker writes (M33 actor conventions). */

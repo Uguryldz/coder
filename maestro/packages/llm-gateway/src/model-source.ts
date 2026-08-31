@@ -124,8 +124,9 @@ export interface ResolvedModel {
 export const NO_ENDPOINT_CONFIGURED = "https://model-not-configured.invalid";
 
 /**
- * Resolves the panel's active model, or `null` when the panel has none —
- * the static config then decides, see `ResolvedModel`'s note on `null`.
+ * Resolves the model this call should dial, or `null` when nothing above the
+ * static config has an answer — the `.env` layer then decides, see
+ * `ResolvedModel`'s note on `null`.
  *
  * Called on EVERY request on purpose — there is no cache. A model changed in
  * the panel is live on the next call, and the alternative is the class of bug
@@ -133,8 +134,22 @@ export const NO_ENDPOINT_CONFIGURED = "https://model-not-configured.invalid";
  * whether they fixed the wrong thing or the platform simply did not notice.
  * The read is one indexed query on a table with a handful of rows, on a path
  * that is already about to make a network call to an inference server.
+ *
+ * ── `variantId` NEDEN VAR ───────────────────────────────────────────────────
+ * Panelde ajan tanımı yapan operatörün şikayeti: "model değişmiyor, varsayılan
+ * ajan seçilmiyor". Sebebi buradaydı. Çözücü ARGÜMANSIZDI, yani hangi ajanın
+ * konuştuğunu SORAMIYORDU; her çağrı bağlantı panelindeki TEK modele
+ * bağlanıyordu ve `Ajan tanımları` ekranında her varyant için seçilen model,
+ * yalnızca pilotta okunan ölü bir alan olarak kalıyordu.
+ *
+ * Bu yüzden çağrının varyantı, çözücüye AKTARILIR. Argüman OPSİYONELDİR ve
+ * bunun iki gerekçesi var: (1) argümansız yazılmış her mevcut çözücü — bütün
+ * testler dahil — tipe hâlâ uyar, davranışı zerre değişmez; (2) `agentSession`
+ * gibi varyantı `"*"` olabilen çağrılarda "bu çağrının bir varyantı yok" hâli
+ * temsil edilebilir kalır. Varyantı olan çözücü onu okur, olmayan görmezden
+ * gelir; ikisi de aynı imzayı karşılar.
  */
-export type ModelResolver = () => Promise<ResolvedModel | null>;
+export type ModelResolver = (variantId?: string) => Promise<ResolvedModel | null>;
 
 /** The marker a not-configured refusal carries, mirroring `unavailable-ports`. */
 export const NOT_CONFIGURED_MARKER = "MAESTRO_NOT_CONFIGURED";

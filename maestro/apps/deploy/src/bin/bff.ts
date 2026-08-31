@@ -13,6 +13,7 @@ import { FlowType, type TicketKey } from "@maestro/contracts";
 import type { SecretPort } from "@maestro/ports";
 import { bootPlatform } from "../boot.js";
 import { connectionModelFrom } from "../stores/connection-model.js";
+import { variantAwareModelFrom, variantModelReaderFrom } from "../stores/variant-model.js";
 import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { listenAddress, type DeployEnv } from "../env.js";
@@ -23,7 +24,7 @@ import { PrismaConnectionStore } from "../stores/connections.js";
 import { PrismaListeningStore } from "../stores/listening.js";
 import { PrismaGuidanceStore } from "../stores/guidance.js";
 import { PrismaRunContextStore } from "../stores/run-context.js";
-import { activeAnalystVariantId, activeTemplateVersion } from "../stores/run-pins.js";
+import { activeAnalystVariantId, activeEngineerVariantId, activeTemplateVersion } from "../stores/run-pins.js";
 import {
   canSearch,
   discoverOnce,
@@ -31,7 +32,7 @@ import {
   startJiraDiscovery,
   type IssueSearcher,
 } from "../jira-discovery.js";
-import { canReadComments, startJiraPoller } from "../jira-poller.js";
+import { canReadComments, canReadTickets, startJiraPoller } from "../jira-poller.js";
 import {
   startCommandIntake,
   type CommandIntakeDecision,
@@ -109,7 +110,14 @@ export async function main(): Promise<void> {
     // Both processes resolve it through this one factory so the endpoint an
     // admin tests green in the panel is the one the run dials — the split
     // `connectionSecrets` closed for the token, closed here for the address.
-    resolveModel: connectionModelFrom(db),
+    //
+    // Ajan katmanı worker ile AYNI şekilde bağlanır. İki süreç modeli farklı
+    // çözerse, adminin panelde denediği ajan run'ın konuştuğu ajan olmaz —
+    // `connectionModelFrom`'un tek fabrika olma gerekçesinin aynısı.
+    resolveModel: variantAwareModelFrom({
+      base: connectionModelFrom(db),
+      variants: variantModelReaderFrom(db),
+    }),
     // The handshake, from the same panel rows again: a connection whose
     // admin flagged "TLS doğrulamasını atla" is dialled without certificate
     // verification by every adapter, matching the probe that tested it green.
@@ -138,8 +146,14 @@ export async function main(): Promise<void> {
       // Pinned at the start, read once: publishing a new agent version or a new
       // analysis template must not change the rules under a ticket that is
       // already being analysed (M38/M83).
-      const [variantId, templateVersion] = await Promise.all([
+      // Üç iğne, tek turda. `engineerVariantId` bu listeye migration 0022 ile
+      // katıldı: `variantId` yalnızca ANALİST'in iğnesiydi (bkz.
+      // `activeAnalystVariantId`, rolü açıkça soruyor) ve mühendislik turu da
+      // onu okuyordu — yani panelde ayrı bir mühendis ajanı tanımlayan admin,
+      // kodu analist ajanının modeliyle yazdırıyordu.
+      const [variantId, engineerVariantId, templateVersion] = await Promise.all([
         activeAnalystVariantId(db),
+        activeEngineerVariantId(db),
         activeTemplateVersion(db),
       ]);
       // The checkout step 3ö reads. Best-effort: an analysis is worse without
@@ -155,6 +169,7 @@ export async function main(): Promise<void> {
         dataClass: run.dataClass,
         startedAt: new Date(),
         variantId,
+        engineerVariantId,
         templateVersion,
         ...(workspacePath === null ? {} : { workspacePath }),
       });
@@ -452,6 +467,16 @@ export async function main(): Promise<void> {
    * `resolveCommandIntake` for the precedence and why it is that way round.
    */
   const commentReader = canReadComments(deployment.ports.work) ? deployment.ports.work : null;
+  /**
+   * Ticket'ın mevcut atananını okuyabilen sürücü — netleştirmeye yeniden
+   * girişin webhook'suz kanalı (`clarifyReentry`).
+   *
+   * `canReadComments` ile aynı desen ve aynı gerekçe: bir yapısal kontrol,
+   * `as unknown as` ile bir kast değil. `getTicket` `WorkPort`'un kendisinde
+   * var, yani her iki Jira sürücüsü de bunu karşılıyor — ama Azure DevOps'un
+   * hâlâ bir iş portu yok, ve kontrol o yüzden gerçek kalıyor.
+   */
+  const ticketReader = canReadTickets(deployment.ports.work) ? deployment.ports.work : null;
 
   /**
    * The BANNER, printed before the first round.
@@ -510,6 +535,12 @@ export async function main(): Promise<void> {
         // by name rather than cast — see `canReadComments`. Non-null by
         // construction: `startPoller` is only called when the flag above is true.
         comments: commentReader as NonNullable<typeof commentReader>,
+        // Netleştirme yeniden girişi: ikisi de varsa açık, yoksa o kanal
+        // bu kurulumda yok (webhook'u çalışan bir kurulumda zaten gerekmez).
+        ...(ticketReader === null ? {} : { tickets: ticketReader }),
+        ...(env.source["MAESTRO_BOT_ACCOUNT_ID"] === undefined
+          ? {}
+          : { botAccountId: env.source["MAESTRO_BOT_ACCOUNT_ID"] }),
         intervalMs,
         // Live runs, re-read each round so a gate opened a second ago is polled
         // without waiting for a restart.

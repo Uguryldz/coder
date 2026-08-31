@@ -4,6 +4,7 @@ import { buildLivingSummary } from "@maestro/memory";
 import { z } from "zod";
 import type { EngineeringResult, ReviewResult, TestRunResult } from "../activities.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
+import { engineerVariantOf } from "./deps.js";
 import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
 
@@ -107,7 +108,14 @@ export async function runEngineering(
   const outcome = await deps.execution.runTurn({
     context: await turnContext(deps, run, task),
     dataClass: run.dataClass,
-    variantId: run.variantId,
+    // The MÜHENDİS agent, not the analyst's. Every call in this file is on the
+    // engineering half of the run — the code-writing turn, both reviewers, the
+    // test design and the test digest — and until migration 0022 they all read
+    // `run.variantId`, which `activeAnalystVariantId` had planted. An admin who
+    // gave the engineer its own model in "Ajan tanımları" got the analyst's
+    // model here, with nothing anywhere saying so. `engineerVariantOf` falls
+    // back to `run.variantId` for a run opened before the pin existed.
+    variantId: engineerVariantOf(run),
     // The token the WORKFLOW holds wins: it is the only copy that survives a
     // redeploy, and the store's copy may be a retry's stale read.
     ...(resumeToken === null ? {} : { resumeToken }),
@@ -148,7 +156,7 @@ async function review(
   const run = await deps.runs.get(ticket);
   const outcome = await guardModelCall(deps, run, role, () =>
     deps.llm.generateObject(
-      { role, variantId: run.variantId, dataClass: run.dataClass, schemaName, input: { ticket } },
+      { role, variantId: engineerVariantOf(run), dataClass: run.dataClass, schemaName, input: { ticket } },
       ReviewVerdict,
     ),
   );
@@ -190,7 +198,7 @@ export async function designTests(
     deps.llm.generateObject(
       {
         role: "test_designer",
-        variantId: run.variantId,
+        variantId: engineerVariantOf(run),
         dataClass: run.dataClass,
         schemaName: "test-design",
         input: { ticket },
@@ -224,7 +232,7 @@ export async function runTests(
   const outcome = await deps.execution.runTurn({
     context: await turnContext(deps, run, deps.translate(run.locale, "agent.test_task", { ticket })),
     dataClass: run.dataClass,
-    variantId: run.variantId,
+    variantId: engineerVariantOf(run),
     ...(run.resumeToken === null ? {} : { resumeToken: run.resumeToken }),
     verification: run.verification,
   });
@@ -237,7 +245,7 @@ export async function runTests(
     deps.llm.generateObject(
       {
         role: "test_engineer",
-        variantId: run.variantId,
+        variantId: engineerVariantOf(run),
         dataClass: run.dataClass,
         schemaName: "test-run",
         input: { output: report.commands.map((c) => `${c.name}: ${c.stdoutTail}`).join("\n") },

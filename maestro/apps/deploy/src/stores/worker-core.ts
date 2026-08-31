@@ -6,6 +6,7 @@ import type { CoreDeps } from "@maestro/workflows";
 import type { PublishRunDeps } from "../boot.js";
 import { buildCoreStores, type CoreStoreOptions } from "./core.js";
 import { PrismaPublishState } from "./publish-state.js";
+import { variantModelReaderFrom } from "./variant-model.js";
 import type { SqlExecutor } from "./sql.js";
 
 /**
@@ -86,6 +87,20 @@ export function buildWorkerCore(db: Db, options: WorkerCoreOptions): WorkerCore 
       clock: { now: (): string => now().toISOString() },
     },
     execution: options.execution,
+    /**
+     * Studio'nun "Persona" alanını akışa bağlayan taraf.
+     *
+     * Metin `VariantVersion.configJson.persona` içinde duruyordu ve akışa hiç
+     * ulaşmıyordu: bu paketin (`@maestro/workflows`) tamamında "persona"
+     * kelimesi geçmiyordu. Pilot onu okuyup analize ilk bilgi notu olarak
+     * veriyordu; banka pilotu değil worker'ı çalıştırıyor. Yani admin ajanın
+     * nasıl davranacağını yazıyor, model onu hiç görmüyordu.
+     *
+     * `PrismaVariantModelReader` `PersonaReader`'ı yapısal olarak zaten
+     * karşılıyor (`activePersona(variantId)`) — ayrı bir sınıf yazmak, aynı
+     * sorguyu iki yerde tutmak olurdu.
+     */
+    persona: variantModelReaderFrom(db),
     translate: t,
     now,
   };

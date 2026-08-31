@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   activeAnalystVariantId,
+  activeEngineerVariantId,
   activeTemplateVersion,
   DEFAULT_ANALYST_VARIANT,
+  DEFAULT_ENGINEER_VARIANT,
   UNVERSIONED_TEMPLATE,
   type RunPinDb,
 } from "../src/stores/run-pins.js";
@@ -52,6 +54,54 @@ describe("activeAnalystVariantId", () => {
       }),
     );
     expect(asked).toEqual({ role: "analyst" });
+  });
+});
+
+describe("activeEngineerVariantId", () => {
+  it("uses the engineer variant the deployment has", async () => {
+    const id = await activeEngineerVariantId(
+      db({ variant: { findFirst: () => Promise.resolve({ id: "engineer-dotnet" }) } }),
+    );
+    expect(id).toBe("engineer-dotnet");
+  });
+
+  it("falls back to a named variant rather than an empty string", async () => {
+    expect(await activeEngineerVariantId(db())).toBe(DEFAULT_ENGINEER_VARIANT);
+    expect(DEFAULT_ENGINEER_VARIANT.length).toBeGreaterThan(0);
+  });
+
+  it("asks for the ENGINEER role — the whole point of the second pin", async () => {
+    // Bu satır olmadan mühendislik turu analistin ajanıyla koşuyordu: pin tekti
+    // ve onu `activeAnalystVariantId` `role: 'analyst'` diye planlıyordu.
+    let asked: unknown;
+    await activeEngineerVariantId(
+      db({
+        variant: {
+          findFirst: (args) => {
+            asked = args.where;
+            return Promise.resolve({ id: "engineer-dotnet" });
+          },
+        },
+      }),
+    );
+    expect(asked).toEqual({ role: "engineer" });
+  });
+
+  it("mühendis ve analist iğneleri BİRBİRİNDEN FARKLI rolleri sorar", async () => {
+    // Aynı sahte veritabanına iki soru: ikisi de aynı rolü sorsaydı, iki ajanlı
+    // bir kurulum tek ajanla koşardı — göç 0022 öncesinin tam olarak hâli.
+    const roles: unknown[] = [];
+    const shared = db({
+      variant: {
+        findFirst: (args) => {
+          roles.push(args.where);
+          return Promise.resolve(null);
+        },
+      },
+    });
+    await activeAnalystVariantId(shared);
+    await activeEngineerVariantId(shared);
+    expect(roles).toEqual([{ role: "analyst" }, { role: "engineer" }]);
   });
 });
 

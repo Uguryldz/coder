@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_VARIANTS,
   DEFAULT_VARIANT_MODEL,
+  isModelSelected,
+  MODEL_NOT_SELECTED,
   seedDefaultVariants,
   type SeedVariantsDb,
 } from "../src/index.js";
@@ -85,6 +87,40 @@ describe("seedDefaultVariants (M38)", () => {
     const { db, versions } = fakeDb();
     await seedDefaultVariants(db);
     expect(versions.every((v) => v.model === DEFAULT_VARIANT_MODEL)).toBe(true);
+  });
+
+  it("varsayılan model ERİŞİLEBİLİR BİR BULUT ADI DEĞİL, 'seçilmedi' işaretidir", async () => {
+    // Burada eskiden `anthropic/claude-sonnet-4.5` vardı. Banka kurulumu
+    // tamamen kurum içi ve internetsiz: o ad hiçbir zaman cevap veremez, ama
+    // seed onu version 1'e yazıyordu. Panelde ajanını tanımlayan operatör
+    // "modeller değişmiyor" diyordu; altta erişilemeyen bir buluta bağlı bir
+    // varsayılan duruyordu ve hata yanlış yerde, "bağlantı kurulamadı" diye
+    // görünüyordu. `PILOT_MODEL` verilmeyen bir kurulum artık bir model
+    // UYDURMAZ; operatörü Studio'dan seçmeye zorlar.
+    expect(DEFAULT_VARIANT_MODEL).toBe(MODEL_NOT_SELECTED);
+    expect(isModelSelected(DEFAULT_VARIANT_MODEL)).toBe(false);
+    expect(DEFAULT_VARIANT_MODEL).not.toContain("anthropic");
+    expect(DEFAULT_VARIANT_MODEL).not.toContain("claude");
+    expect(DEFAULT_VARIANT_MODEL).not.toContain("openai");
+    expect(DEFAULT_VARIANT_MODEL).not.toContain("/");
+  });
+
+  it("isModelSelected: boş da, işaret değeri de 'seçilmiş' sayılmaz", async () => {
+    // İkisi ayrı hâller ama ikisi de "bu ajanı dialama" demek. Boş string'i
+    // "seçilmiş" saymak, çağrıyı adsız bir modelle sağlayıcıya göndermek olurdu.
+    expect(isModelSelected("qwen2.5-coder-32b")).toBe(true);
+    expect(isModelSelected(MODEL_NOT_SELECTED)).toBe(false);
+    expect(isModelSelected("  ")).toBe(false);
+    expect(isModelSelected("")).toBe(false);
+    expect(isModelSelected(null)).toBe(false);
+    expect(isModelSelected(undefined)).toBe(false);
+  });
+
+  it("PILOT_MODEL verilmişse işaret değeri KULLANILMAZ", async () => {
+    // Env'in varyanta dokunduğu tek yer burası; verildiğinde kazanır.
+    const { db, versions } = fakeDb();
+    await seedDefaultVariants(db, { model: "qwen2.5-coder-32b-instruct" });
+    expect(versions.every((v) => v.model === "qwen2.5-coder-32b-instruct")).toBe(true);
   });
 
   it("is idempotent and non-clobbering: an existing variant is left alone", async () => {

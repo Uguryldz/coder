@@ -193,7 +193,7 @@ export class LlmGateway implements LlmPort {
     const req = GenerateObjectRequestSchema.parse(request);
     // BEFORE the policy: the confidential rule is decided against the endpoint
     // this call will really dial, not against whatever was true at boot.
-    const active = await this.#activeModel();
+    const active = await this.#activeModel(req.variantId);
     const decision = this.policy.resolve(req.role, req.variantId, req.dataClass);
     if (decision.kind !== "allow") return haltedFrom(decision);
     // Masking happens BEFORE a seat is taken: a missing masker is a wiring bug,
@@ -255,7 +255,7 @@ export class LlmGateway implements LlmPort {
     // Re-resolved per turn, exactly like the policy is: a model changed in the
     // panel mid-session must be seen here, and the pin check below is what
     // decides whether the session may continue on it.
-    await this.#activeModel();
+    await this.#activeModel(variantId);
     const decision = this.policy.resolve(role, variantId, dataClass);
     if (decision.kind !== "allow") return haltedFrom(decision);
     const pin: SessionPin = { driver: decision.driver, model: decision.model, dataClass, masked: decision.masked };
@@ -304,7 +304,16 @@ export class LlmGateway implements LlmPort {
    *
    * Called at the TOP of every port method, before the policy is consulted, so
    * that the routing decision and the request that follows describe the same
-   * server. The precedence is ROW → ENV → REFUSAL, and each layer is a
+   * server.
+   *
+   * `variantId` — bu çağrının AJANI — çözücüye olduğu gibi geçirilir. Gateway
+   * onunla bir şey YAPMAZ; hangi ajanın hangi modeli çalıştırdığı bir kurulum
+   * gerçeğidir ve bu paketin bileceği bir şey değildir (burada `@maestro/db`
+   * yok, olmamalı da). Gateway'in tek sorumluluğu soruyu SORMAK; cevabı
+   * kompozisyon kökündeki çözücü verir (`apps/deploy/src/stores/variant-model.ts`).
+   * Argümanı geçirmemek, ajan seçiminin gateway'e hiç ulaşamaması demekti.
+   *
+   * The precedence is ROW → ENV → REFUSAL, and each layer is a
    * different situation:
    *
    *   - resolver with a row → that row wins for this call.
@@ -321,8 +330,8 @@ export class LlmGateway implements LlmPort {
    *     use, and the reason the process does not demand a model at startup:
    *     the panel is how one gets added.
    */
-  async #activeModel(): Promise<ResolvedModel | null> {
-    const active = this.deps.resolveModel === undefined ? null : await this.deps.resolveModel();
+  async #activeModel(variantId?: string): Promise<ResolvedModel | null> {
+    const active = this.deps.resolveModel === undefined ? null : await this.deps.resolveModel(variantId);
     if (active === null) {
       if (!this.#staticEndpointConfigured) throw new ModelNotConfiguredError();
       // Announced only when a panel layer exists to lose: absent a resolver

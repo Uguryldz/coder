@@ -999,6 +999,9 @@ importers:
 
   packages/workflows:
     dependencies:
+      '@maestro/agent-roles':
+        specifier: workspace:*
+        version: link:../agent-roles
       '@maestro/audit':
         specifier: workspace:*
         version: link:../audit

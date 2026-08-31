@@ -15,9 +15,30 @@ import type { Deficiency, Validation } from "./validate.js";
  * value: it may only name what is missing and ask about it.
  */
 
+/**
+ * The admin's persona note, prepended to the role prompt (Studio "Ajan
+ * tanımları").
+ *
+ * ── WHY IT LEADS, AND WHY IT IS NOT FENCED ─────────────────────────────────
+ * It leads for the same reason the analyst's persona is the FIRST knowledge
+ * note in the pilot: a role instruction has to be read before the rules it
+ * qualifies. And it is NOT wrapped in the data fence, because unlike a ticket
+ * description it is not attacker-reachable text — it is written by an admin in
+ * the Studio settings screen, i.e. it IS an instruction, from someone who
+ * already has authority over the run. Fencing it would tell the model to treat
+ * its own configuration as untrusted content and ignore it.
+ *
+ * ── WHY IT CANNOT LOOSEN THE THRESHOLD ─────────────────────────────────────
+ * The persona is an OVERLAY, never a replacement: the KURALLAR block —
+ * `intake.kurallar`'s return threshold, the no-invention rule, the injection
+ * defence — is emitted after it, unchanged, on every call. A persona that says
+ * "return anything imperfect" is contradicted by rules the model reads later
+ * and by `validateIntake`, which the persona cannot reach at all.
+ */
 export function buildIntakePrompt(
   ticket: TicketSnapshot,
   texts: PromptTexts = DEFAULT_PROMPT_TEXTS,
+  persona?: string,
 ): string {
   const ticketLines = [
     `${ticket.key} · ${ticket.issueType} · ${ticket.projectKey}`,
@@ -28,8 +49,12 @@ export function buildIntakePrompt(
     `Etiketler: ${ticket.labels.join(", ") || "-"}`,
   ].join("\n");
 
+  const overlay = (persona ?? "").trim();
   return [
     text(texts, "intake.sistem"),
+    // The admin's persona, when there is one: an addition on top of the role's
+    // own system line, never a replacement for it.
+    ...(overlay === "" ? [] : [block(text(texts, "ortak.baslik.persona"), overlay)]),
     block(
       text(texts, "ortak.baslik.kurallar"),
       bullets(
@@ -88,6 +113,14 @@ export interface IntakeArgs {
   variantId: string;
   dataClass: DataClass;
   texts?: PromptTexts;
+  /**
+   * The persona an admin typed into Studio for THIS run's analyst agent, or
+   * absent. Absent is the pre-existing behaviour: the role runs on the
+   * organisation's default prompt, which is what every deployment without a
+   * persona has always done. See `buildIntakePrompt` for why it cannot loosen
+   * the return threshold.
+   */
+  persona?: string;
 }
 
 export function runIntake(args: IntakeArgs): Promise<RoleResult<IntakeOutput>> {
@@ -99,7 +132,7 @@ export function runIntake(args: IntakeArgs): Promise<RoleResult<IntakeOutput>> {
     dataClass: args.dataClass,
     schemaName: "IntakeOutput",
     schema: IntakeOutput,
-    prompt: buildIntakePrompt(args.ticket, texts),
+    prompt: buildIntakePrompt(args.ticket, texts, args.persona),
     check: (value) => validateIntake(value, texts),
     texts,
   });

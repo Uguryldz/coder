@@ -132,6 +132,10 @@ export class FakeWorkEventReader implements WorkEventReader {
       const status = nameOf(event.issue, "status");
       const issueType = nameOf(event.issue, "issuetype");
       const assignee = assigneeOf(event.issue);
+      // Değişikliği yapan kişi — gerçek okuyucu (`apps/deploy/src/work-events.ts`)
+      // ile aynı şekilde taşınıyor, çünkü netleştirme yeniden girişinin yankı
+      // koruması buna dayanıyor.
+      const actor = event.actor;
       return {
         kind: "issue",
         ticketKey: event.ticketKey,
@@ -139,6 +143,7 @@ export class FakeWorkEventReader implements WorkEventReader {
         ...(status === null ? {} : { status }),
         ...(issueType === null ? {} : { issueType }),
         ...(assignee === null ? {} : { assignee }),
+        ...(actor === null ? {} : { actor }),
       };
     }
     if (event.kind === "comment") return { kind: "comment", ticketKey: event.ticketKey };
@@ -268,8 +273,20 @@ export class FakeRunGateway implements RunGateway {
     return Promise.resolve({ workflowId, started: !existed });
   }
 
-  /** Put a run at an open gate so a decision has something to close. */
-  openGate(ticket: TicketKey, step: WorkflowRunState["step"]): void {
+  /**
+   * Put a run at an open gate so a decision has something to close.
+   *
+   * `awaitingClarificationSince` yalnız 2b için anlamlı ve bilerek ÇAĞIRAN
+   * tarafından veriliyor: netleştirme yeniden girişinin zaman katmanı tam da
+   * bu damganın varlığına ve değerine bakıyor, dolayısıyla bir testin onu
+   * seçebilmesi (yok / soru öncesi / soru sonrası) korumanın kendisini test
+   * edebilmenin tek yolu.
+   */
+  openGate(
+    ticket: TicketKey,
+    step: WorkflowRunState["step"],
+    options: { awaitingClarificationSince?: string } = {},
+  ): void {
     const workflowId = `maestro-${ticket}`;
     this.states.set(workflowId, {
       runId: `run-${ticket}`,
@@ -278,6 +295,9 @@ export class FakeRunGateway implements RunGateway {
       status: "gate",
       startedAt: "2026-08-09T09:00:00.000Z",
       updatedAt: "2026-08-09T09:00:00.000Z",
+      ...(options.awaitingClarificationSince === undefined
+        ? {}
+        : { awaitingClarificationSince: options.awaitingClarificationSince }),
     });
   }
 

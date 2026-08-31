@@ -48,6 +48,11 @@ export function runContext(over: Partial<RunContext> = {}): RunContext {
     mode: "full_auto",
     locale: "tr",
     variantId: "v1",
+    // Ayrı bir mühendis ajanı iğnelenmemiş run — 0022 öncesi açılmış her satırın
+    // ve ayrı mühendis ajanı olmayan her kurulumun hâli. `engineerVariantOf`
+    // bunu `variantId`'ye düşürür, yani mevcut testler aynı ajanı görmeye devam
+    // eder. Mühendis iğnesini SINAYAN test onu `over` ile açıkça verir.
+    engineerVariantId: "",
     templateVersion: "analysis@1.0.0",
     workspacePath: "/w/pay-101",
     workspacePresent: true,

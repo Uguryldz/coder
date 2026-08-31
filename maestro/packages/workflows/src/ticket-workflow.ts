@@ -211,6 +211,12 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     risk: state.risk,
     startedAt: state.startedAt,
     updatedAt: state.updatedAt,
+    // Yalnız 2b'de beklerken dolu. BFF'in yankı ayıklaması buna dayanıyor:
+    // bu damgadan ÖNCEKİ bir Jira olayı sorunun kendi yankısıdır, sonraki
+    // olay kullanıcının cevabı olabilir.
+    ...(state.awaitingClarificationSince === null
+      ? {}
+      : { awaitingClarificationSince: state.awaitingClarificationSince }),
   }));
 
   // Handlers only ever PUSH. Nothing here consumes, decides or clears — the
@@ -308,8 +314,24 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     // ticket lands in their queue as well as in their column.
     await moveStatus("need_info", input.statusMap?.onNeedInfo);
     await acts.askClarification(ticket, intake.question ?? "");
+    /**
+     * Beklemenin başladığı an — soru SORULDUKTAN sonra damgalanır.
+     *
+     * Sıra kritik: `moveStatus("need_info")` ve `askClarification` Jira'da
+     * webhook üretir (durum değişti, ticket reporter'a atandı, yorum geldi).
+     * Damga bunlardan sonra atıldığı için o yankılar eşiğin GERİSİNDE kalır ve
+     * yeniden giriş yolu (`apps/bff/src/routes/webhooks.ts`) onları cevap
+     * saymaz. Damgayı `condition`'dan önce koymak da şart: sinyal ilk poll'dan
+     * evvel gelirse bile query dolu bir eşik göstermelidir.
+     *
+     * `workflowNow()` deterministik (Temporal'in kendi saati), replay güvenli.
+     */
+    state.awaitingClarificationSince = workflowNow();
     // Unbounded on purpose (M61): no auto-reject, no timeout into a decision.
     await condition(() => inbox.clarified);
+    // Bekleme bitti: eşik kalkar, böylece 2b'den sonraki bir Jira olayı artık
+    // "netleştirme cevabı" olarak okunamaz.
+    state.awaitingClarificationSince = null;
     state.status = "running";
   }
 

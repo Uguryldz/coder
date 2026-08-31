@@ -15,6 +15,14 @@
 /** The variant every run falls back to when no rule names one. */
 export const DEFAULT_ANALYST_VARIANT = "analyst-default";
 
+/**
+ * Mühendislik turunun düştüğü varsayılan ajan — `seedDefaultVariants`'in
+ * plantladığı `engineer-default` ile aynı kimlik, ve pilotun `PILOT_ENGINEER_VARIANT`
+ * ile aynı kimlik. Üç yerin aynı adı söylemesi tesadüf değil: farklı olsalardı,
+ * aynı kurulumda pilot ile worker iki farklı ajanı çalıştırırdı.
+ */
+export const DEFAULT_ENGINEER_VARIANT = "engineer-default";
+
 /** The template version a deployment with no published template pins to. */
 export const UNVERSIONED_TEMPLATE = "unversioned";
 
@@ -22,7 +30,7 @@ export const UNVERSIONED_TEMPLATE = "unversioned";
 export interface RunPinDb {
   variant: {
     findFirst(args: {
-      where: { role: "analyst" };
+      where: { role: "analyst" | "engineer" };
       orderBy: { id: "asc" };
     }): Promise<{ id: string } | null>;
   };
@@ -46,6 +54,28 @@ export interface RunPinDb {
 export async function activeAnalystVariantId(db: RunPinDb): Promise<string> {
   const row = await db.variant.findFirst({ where: { role: "analyst" }, orderBy: { id: "asc" } });
   return row?.id ?? DEFAULT_ANALYST_VARIANT;
+}
+
+/**
+ * The ENGINEER variant this run will use — the missing half of the pin.
+ *
+ * `activeAnalystVariantId` above asks for `role = 'analyst'` explicitly, and
+ * that was the ONLY variant a run pinned. Every later step then read that one
+ * column, the engineering turn included, so a deployment whose admin had
+ * defined a separate `engineer-*` agent in "Ajan tanımları" — its own model,
+ * its own persona — ran the code-writing turn on the ANALYST's agent and said
+ * nothing about it. The pilot has resolved both since Faz 3
+ * (`apps/pilot/src/run.ts`, `engineerVariantId`); the Temporal path — which is
+ * what the bank runs — had half of it.
+ *
+ * Same "name it rather than blank it" rule as its neighbour, and the same
+ * reason: an empty variant reaches the gateway as a contract violation on the
+ * first model call, three activity retries deep, where it reads as a model
+ * problem rather than as a run opened without saying which agent writes the code.
+ */
+export async function activeEngineerVariantId(db: RunPinDb): Promise<string> {
+  const row = await db.variant.findFirst({ where: { role: "engineer" }, orderBy: { id: "asc" } });
+  return row?.id ?? DEFAULT_ENGINEER_VARIANT;
 }
 
 /**

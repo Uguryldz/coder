@@ -32,6 +32,10 @@ export function jiraWorkEventReader(): WorkEventReader {
       const status = nameOf(event.issue, "status");
       const issueType = nameOf(event.issue, "issuetype");
       const assignee = assigneeOf(event.issue);
+      // Değişikliği YAPAN kişi. Yalnız issue olaylarında var ve tek bir iş
+      // için taşınıyor: netleştirme yeniden girişinde Maestro'nun kendi
+      // hareketinin yankısını ayıklamak (`apps/bff/src/routes/webhooks.ts`).
+      const actor = event.kind === "issue" ? event.actor : null;
       return {
         kind: event.kind,
         ticketKey: event.ticketKey,
@@ -39,6 +43,7 @@ export function jiraWorkEventReader(): WorkEventReader {
         ...(status === null ? {} : { status }),
         ...(issueType === null ? {} : { issueType }),
         ...(assignee === null ? {} : { assignee }),
+        ...(actor === null ? {} : { actor }),
       };
     },
   };

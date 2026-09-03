@@ -150,6 +150,13 @@ export async function runTicket(
         // before the status map existed expects — and what those scenarios
         // still assert by finding `scenario.moves` empty.
         ...(scenario.options.statusMap === undefined ? {} : { statusMap: scenario.options.statusMap }),
+        // Yokluk "kural seçim yapmadı" demek ve risk katmanına düşülür; boş
+        // dizi ise "hiç kapı açma". İkisi ayrı olduğu için koşullu spread —
+        // `?? []` yazmak, seçim yapmamış her senaryonun kapılarını kapatırdı.
+        ...(scenario.options.gateSteps === undefined
+          ? {}
+          : { gateSteps: [...scenario.options.gateSteps] }),
+        ...(scenario.options.gateOwnerless === true ? { gateOwnerless: true } : {}),
       },
     ],
   });

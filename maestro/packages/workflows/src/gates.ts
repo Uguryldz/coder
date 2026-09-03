@@ -41,9 +41,62 @@ export function isApprovalGate(step: StepId): boolean {
   return (APPROVAL_GATE_STEPS as readonly StepId[]).includes(step);
 }
 
-/** The gate set this run must pass, in flow order (M51). */
-export function gatesFor(risk: RiskTier): readonly StepId[] {
-  return GATES_BY_RISK[risk];
+/**
+ * The gate set this run must pass, in flow order (M51) — and, since the gate
+ * sequence became a RULE setting, the place that decides which answer wins.
+ *
+ * ── İKİ KAYNAK, TEK CEVAP ───────────────────────────────────────────────────
+ *  1. `selected` — dinleme kuralının seçtiği dizi, koşu başlarken girdiye
+ *     ÇİVİLENMİŞ hâlde (`statusMap`in gerekçesinin aynısı: kural sonradan
+ *     düzenlenirse kapıda bekleyen koşu kendi başladığı diziyle biter, ve
+ *     replay aynı cevabı verir).
+ *  2. `selected` yoksa `GATES_BY_RISK[risk]` — bugüne kadarki tek cevap.
+ *
+ * `undefined`/`null` ile BOŞ DİZİ arasındaki fark burada işe yarıyor ve
+ * karıştırılırsa geriye dönük uyum kırılır: yokluk "seçim yapılmadı, risk
+ * katmanına düş", boş dizi "onay kapısı istemiyorum" demek. `?? ` ile değil
+ * açık bir `=== undefined || === null` ile sorulmasının sebebi bu — `[]` bir
+ * falsy değer değil ama bir okuyucunun gözünde öyle görünür.
+ *
+ * SIRA BURADA VERİLİR, operatörün seçim sırasında değil: cevap her zaman akış
+ * sırasına (4 → 5 → 9 → 11 → 12) göre süzülür. Panelde kutuları ters sırada
+ * işaretlemek, kapıların ters sırada açılması demek olamaz.
+ */
+export function gatesFor(
+  risk: RiskTier,
+  selected?: readonly StepId[] | null,
+): readonly StepId[] {
+  if (selected === undefined || selected === null) return GATES_BY_RISK[risk];
+  const chosen = new Set(selected);
+  return APPROVAL_GATE_STEPS.filter((step) => chosen.has(step));
+}
+
+/**
+ * Bu kapı KİMİN adına açılıyor — ya da SAHİPSİZ mi.
+ *
+ * ── Sahipsiz kapı neden var ─────────────────────────────────────────────────
+ * `GATE_OWNER` bir kapıyı her zaman bir GRUBUN adına açıyordu. Onay grubu
+ * eşlenmemiş bir kurulumda (operatörün kurulumu: onay yetkisi Jira'nın izin
+ * şemasında, Maestro'da ikinci bir grup katmanı YOK) bu isim bir kurgudan
+ * ibaret: kapı `tech-leads` adına açılıyor, ortada `tech-leads` diye bir dizin
+ * grubu yok, ve `canCloseGate` her kararı `wrong_group` ile düşürebiliyordu —
+ * ta ki `openGate` dizinin verdiği adı geri döndürüp o karşılaştırmayı
+ * kurtarana kadar. Yani kapı zaten sahipsizdi; sadece bunu SÖYLEMİYORDU.
+ *
+ * ── Sahipsiz kapı NE DEĞİL ──────────────────────────────────────────────────
+ * Bir bypass değil. Kapı yine AÇILIR, yine bir İNSAN kapatır, aktör kimliği
+ * yine denetime yazılır ve SoD imza sırası (M32) yine uygulanır — dördü de
+ * `canCloseGate`te, grup kontrolünden BAĞIMSIZ dallarda. Düşen tek kontrol
+ * "hangi grup", ve onu düşüren şey bu fonksiyon değil, o grubun kurulumda
+ * OLMAMASI. Bunu açıkça söylemek, `membershipCheck: "unconfigured"`in denetim
+ * zincirinde yaptığının kapı açılışındaki karşılığı.
+ *
+ * `null` = sahipsiz. `openGate` bunu görünce dizine hiç sormaz ve kapı bir
+ * grup adı taşımadan açılır.
+ */
+export function ownerOf(step: StepId, ownerless: boolean): string | null {
+  if (ownerless) return null;
+  return GATE_OWNER[step as (typeof APPROVAL_GATE_STEPS)[number]] ?? "tech-leads";
 }
 
 /**
@@ -128,8 +181,12 @@ export function canCloseGate(
    * came back `wrong_group` from inside the workflow — before the activity that
    * checks the directory ever ran. Defaults to the role, so a deployment whose
    * groups already carry these names is unaffected.
+   *
+   * `null` AYRI BİR CEVAP ve `undefined` ile karıştırılmamalı: kapı SAHİPSİZ
+   * açıldı — kural onay grubu istemedi (`ownerOf`). O durumda karşılaştırılacak
+   * bir grup yoktur ve grup kontrolü hiç yapılmaz; atlanan TEK kontrol odur.
    */
-  openedAgainst?: string,
+  openedAgainst?: string | null,
 ): GateRejection {
   if (decision.step !== atStep) return { ok: false, reason: "wrong_step" };
   if (decision.decision === "reject") return { ok: true };
@@ -153,10 +210,24 @@ export function canCloseGate(
     return { ok: false, reason: "not_returnable" };
   }
 
-  const role = GATE_OWNER[atStep as (typeof APPROVAL_GATE_STEPS)[number]];
-  const owner = openedAgainst ?? role;
-  if (owner !== undefined && decision.actorGroup !== owner) {
-    return { ok: false, reason: "wrong_group" };
+  /**
+   * SAHİPSİZ KAPI: karşılaştıracak bir grup YOK, o yüzden karşılaştırma da yok.
+   *
+   * `openedAgainst === null` yalnız kuralın "bu kapının sahibi olmasın" dediği
+   * durumda gelir (`ownerOf`). `undefined` ile karıştırılmamalı ve bu yüzden
+   * ayrı sorulur: `undefined` "çağıran açılış grubunu vermedi, rol adına düş"
+   * demek — eski çağıranların ve bugüne kadarki her koşunun hâli.
+   *
+   * Düşen tek kontrol bu. `wrong_step` yukarıda, `sodVerified` ve four-eyes
+   * aşağıda, ve üçü de sahipsiz kapıda AYNEN uygulanır: kapıyı yine bir insan
+   * kapatır, kimliği yine denetime yazılır, aynı imza yine iki kapıyı geçiremez.
+   */
+  if (openedAgainst !== null) {
+    const role = GATE_OWNER[atStep as (typeof APPROVAL_GATE_STEPS)[number]];
+    const owner = openedAgainst ?? role;
+    if (owner !== undefined && decision.actorGroup !== owner) {
+      return { ok: false, reason: "wrong_group" };
+    }
   }
   /**
    * `sodVerified` YALNIZ üyelik gerçekten ölçüldüğünde `true` olur.

@@ -611,6 +611,32 @@ model ListeningRule {
   /// kendi kararı olarak geri okunurdu. Okuma tarafı bunu tespit eder, o alanı
   /// DÜŞÜRÜR (fail-closed) ve çakışmayı panelde ADLANDIRIR — sessizce değil.
   statusMapJson     Json?
+  /// HANGİ ONAY KAPILARI açılsın, ve kapı bir GRUBUN adına mı açılsın (0027).
+  ///
+  /// `{ "steps": ["4","5"], "ownerless": true }` — iki ayrı soru, tek belge,
+  /// çünkü operatörün gözünde tek bir bölüm: "bu kuralda onaylar nasıl işler".
+  ///
+  /// NULL = "bu kural kapı dizisi SEÇMEDİ" ve kural bugüne kadar nasıl
+  /// koşuyorsa öyle koşar: `gates.risk_tiers` parametresine, o da yoksa
+  /// `GATES_BY_RISK` sabitine düşer. 0027 öncesi yazılmış HER SATIR bu haldedir
+  /// ve backfill YOKTUR — operatörün hiç vermediği bir kararı onun vermiş gibi
+  /// göstermemek için (bkz. migration 0027).
+  ///
+  /// `{"steps": []}` NULL DEĞİLDİR ve aynı şey değildir: "onay kapısı
+  /// İSTEMİYORUM" demektir, hiçbir kapı açılmaz. `statusMapJson`'ın boş nesneyi
+  /// NULL'a indirgemesinin TERSİ bir karar, ve bilerek: orada iki temsil tek
+  /// davranışa iniyordu, burada iki temsil iki ayrı davranış.
+  ///
+  /// `ownerless: true` kapıyı KALDIRMAZ. Kapı açılır, bir İNSAN kapatır,
+  /// kimliği denetim zincirine adıyla yazılır ve SoD imza sırası (M32) aynen
+  /// uygulanır; düşen tek kontrol "hangi grup"tur. Onay yetkisi Jira'nın izin
+  /// şemasında duran kurulumlar için — Jira'nın geri veremeyeceği şeyler
+  /// (imza sırası, aktör kimliği, denetim zinciri) Maestro'da kalır.
+  ///
+  /// Json, kolon değil: 0018'in `statusMapJson` gerekçesinin aynısı. Kapı
+  /// dizisi bir ürün kararı ve daha önce oynadı (M51, M92); her yeni soru için
+  /// bir kolon, her yeni soruyu canlı tabloya karşı bir migration yapardı.
+  gateStepsJson     Json?
 
   /// One rule per (project, assignee, match target): a given trigger maps to
   /// exactly one flow, so a second rule for the same trigger is a mistake, not

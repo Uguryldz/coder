@@ -1,5 +1,5 @@
 import { hasNoStatusGate } from "./listening-store.js";
-import type { FlowType, ListeningRuleRecord, MatchKind, StatusMap } from "./listening-store.js";
+import type { FlowType, GateSteps, ListeningRuleRecord, MatchKind, StatusMap } from "./listening-store.js";
 
 /**
  * Per-ticket flow selection: which of Maestro's flows a single ticket runs.
@@ -113,6 +113,23 @@ export interface FlowDecision {
   analystVariantId?: string | null;
   /** {@link analystVariantId}'nin MÜHENDİSLİK (kod yazan) tarafı. */
   engineerVariantId?: string | null;
+  /**
+   * HANGİ ONAYLAR beklenecek — kararı veren kuralın seçtiği kapı dizisi.
+   *
+   * `statusMap` ve ajan iğneleriyle aynı gerekçeyle burada: kural kümesi bir
+   * kez, girişte okunur ve cevap koşunun başlangıç girdisine ÇİVİLENİR. Sonra
+   * sorulsaydı, öğle arası bir kuralı düzenleyen admin sabah KAPIDA BEKLEYEN
+   * bir koşunun kaç kapı daha göreceğini değiştirmiş olurdu — ve koşunun kendi
+   * geçmişi bunu açıklayamazdı.
+   *
+   * `undefined`/`null` = kural seçim yapmadı, varsayılana düşülür. `{steps: []}`
+   * bundan FARKLI: onay kapısı istenmedi. Bu ayrım uçtan uca korunur.
+   *
+   * Kazanan kuraldan — `rule_conflict` dahil, `statusMap` gibi: bir kuralın
+   * akışını başka bir kuralın kapı dizisiyle koşturmak, çakışmayı çözmek değil
+   * üçüncü bir yapılandırma uydurmaktır.
+   */
+  gateSteps?: GateSteps | null;
 }
 
 /**
@@ -360,6 +377,7 @@ export function flowDecisionFor(
       reason: "rule",
       ruleId: winner.ruleId,
       statusMap: winner.statusMap ?? null,
+      gateSteps: winner.gateSteps ?? null,
       ...agentsOf(winner),
     };
   }
@@ -378,6 +396,8 @@ export function flowDecisionFor(
     // combined would drive the ticket to a column no single rule asked for,
     // which is a board move nobody configured and nobody can explain.
     statusMap: narrowest.statusMap ?? null,
+    // Kapı dizisi de KAZANAN kuraldan, `statusMap` ile aynı gerekçeyle.
+    gateSteps: narrowest.gateSteps ?? null,
     // Ajanlar da KAZANAN kuraldan, `statusMap` ile aynı gerekçeyle: bir
     // kuralın akışını başka bir kuralın ajanıyla koşturmak, çakışmayı çözmek
     // değil, üçüncü bir yapılandırma uydurmaktır.

@@ -208,7 +208,16 @@ export interface MaestroActivities {
   openGate(
     ticket: TicketKey,
     step: StepId,
-    ownerGroup: string,
+    /**
+     * Kapının açılacağı rol — ya da `null`, "bu kapının SAHİBİ YOK".
+     *
+     * `null` yalnız dinleme kuralı onay grubu istemediğinde gelir
+     * (`gates.ts` `ownerOf`, `TicketWorkflowInput.gateOwnerless`). Aktivite o
+     * durumda dizine hiç sormaz ve `null` döner; workflow'daki `canCloseGate`
+     * grup karşılaştırmasını yalnız o `null` yüzünden atlar — kapı yine açılır,
+     * yine bir insan kapatır, kimliği yine denetime yazılır.
+     */
+    ownerGroup: string | null,
     /**
      * Kapının bu koşuda hangi STATÜLERLE de kapatılabildiği — Jira'ya yazılan
      * kapı yorumunun doğru olması için.
@@ -224,7 +233,7 @@ export interface MaestroActivities {
      * görünür, kayıtlı geçmişlerdeki çağrılar olduğu gibi kalır.
      */
     gateStatuses?: { approve?: string; return?: string },
-  ): Promise<string>;
+  ): Promise<string | null>;
   /**
    * Persist a decision — and report whether the DIRECTORY accepted it.
    * `gates.ts` can only check what the payload claims; group membership is a

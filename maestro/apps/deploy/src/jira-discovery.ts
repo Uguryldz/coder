@@ -231,6 +231,24 @@ export interface DiscoveryStatus {
   readonly rulesSearched: number;
   /** The last round's failure, if it had one. */
   readonly lastError: string | null;
+  /**
+   * HAVUZDA KALAN İŞ — turun tur başı sınırına takılıp bırakmak zorunda
+   * kaldığı ticket sayısı, `null` ise "havuz boşaldı".
+   *
+   * ── Neden bu alan var ────────────────────────────────────────────────────
+   * Operatörün modeli: "robotun statü havuzu olur ve orada kendine atanmış her
+   * şeyi BİTENE KADAR devam eder". Tur başına sabit bir sınır (20) o modelin
+   * tersini üretiyordu ve HİÇBİR YERDE GÖRÜNMÜYORDU: log "20 ticket alındı"
+   * diyordu, geride 30 iş kaldığını söylemiyordu. Operatör bunu "atlıyor" diye
+   * okur, ve haklıdır — sistemin ona söylemediği bir şey oluyordur.
+   *
+   * `0` ile `null` AYNI ŞEY DEĞİL: `0` "sınıra takıldık ama kalan da yoktu"
+   * (tam 20 iş vardı), `null` "sınıra hiç takılmadık". İkisi de havuzun boş
+   * olduğunu söyler, ama birincisi bir sonraki turda tekrar bakmak için bir
+   * sebep — sayı bir TAHMİN, çünkü sınıra takılan tur kalanları saymayı
+   * bitirememiştir.
+   */
+  readonly poolRemaining: number | null;
 }
 
 const status: { current: DiscoveryStatus } = {
@@ -241,6 +259,7 @@ const status: { current: DiscoveryStatus } = {
     lastStarted: 0,
     rulesSearched: 0,
     lastError: null,
+    poolRemaining: null,
   },
 };
 
@@ -501,9 +520,50 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
    * kural cevabı zaten getirir, kalanların hepsi aynı listeye bakar.
    */
   const diagnosed = new Set<string>();
+  /**
+   * HAVUZDA BIRAKILAN İŞ — tur başı sınırına takıldığı için alınamayan,
+   * alınabilir olduğu GÖRÜLEN ticket sayısı.
+   *
+   * Yalnız GERÇEKTEN alınabilir olanlar sayılır: koşusu olan, bu turda başka
+   * bir kuralla görülmüş, ya da anahtarsız bir satır kalan sayılmaz — onlar
+   * sınır kalksa da alınmayacaktı, ve sayıya katmak operatöre olmayan bir
+   * birikimi gösterirdi.
+   *
+   * TAHMİNDİR ve öyle olduğu söylenir: sınıra takılan tur kalan KURALLARI hiç
+   * aramaz, dolayısıyla sayı yalnız o ana kadar GÖRÜLENİ kapsar. Gerçek
+   * birikim bundan büyük olabilir — bu yüzden log satırı "en az" der.
+   */
+  let leftInPool = 0;
+  /** Sınıra gerçekten takıldık mı — `leftInPool === 0` ile karıştırılmamalı. */
+  let hitCap = false;
+  /**
+   * TUR BAŞI SINIRININ SAYDIĞI ŞEY — ve neden `started` DEĞİL.
+   *
+   * Sınır `started.length` üzerinden ölçülüyordu, yani yalnız KABUL EDİLEN
+   * ticket'lar sayılıyordu. Ölçülen sonuç: bağlı olmayan bir projede (ya da
+   * kill-switch açıkken, ya da uygulaması olmayan bir akışta) her ticket
+   * reddediliyor, `started` hiç artmıyor ve sınır HİÇ DEVREYE GİRMİYORDU. Yüz
+   * ticket'lık bir havuz, her turda yüz kez `runIntake` çağrısı demekti — ve
+   * `runIntake` bir denetim satırı yazan, sayaç artıran, karar dökümü üreten
+   * bir iş. Sınırın var olma sebebi tam olarak buydu ve sınır o durumda YOKTU.
+   *
+   * `examined` İNCELENEN her ticket'ı sayar: kabul edilen de, reddedilen de.
+   * Atlananlar (koşusu olan, bu turda görülmüş) sayılmaz — onlar için hiçbir
+   * iş yapılmadı, yalnız bir karşılaştırma.
+   *
+   * Bu, "20 ticket alındı" cümlesini değiştirmiyor: `started` hâlâ alınanı
+   * sayıyor ve log onu yazıyor. Değişen, sınırın neyi FRENLEDİĞİ.
+   */
+  let examined = 0;
 
   for (const rule of rules) {
-    if (started.length >= cap) break;
+    if (examined >= cap) {
+      // Kalan kuralları HİÇ ARAMADIK. Bunu bir kalan olarak saymıyoruz (kaç
+      // ticket olduğunu bilmiyoruz), ama sınıra takıldığımızı işaretliyoruz:
+      // çağıran turu tekrarlayacak ve bu kurallar o turda aranacak.
+      hitCap = true;
+      break;
+    }
 
     /**
      * A rule that cannot be turned into a BOUNDED query is skipped, loudly.
@@ -529,7 +589,28 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
     try {
       const page = await options.search.searchIssues({
         jql,
-        maxResults: cap,
+        /**
+         * SINIRDAN BİR FAZLA — havuzda kalan olup olmadığını ÖLÇMENİN tek yolu.
+         *
+         * Eskiden `cap` isteniyordu, ve o rakam iki soruyu birden cevaplıyor
+         * sanılıyordu: "kaçını alabilirim" ve "kaç tane var". İkincisini
+         * cevaplamıyordu. `maxResults: 20` gönderen bir tur, havuzda 20 iş de
+         * olsa 200 iş de olsa AYNI 20 satırı alır — yani "havuzda kalan var
+         * mı" sorusunun cevabını Jira'ya hiç sormamış olur. Operatörün
+         * "durmaz atlamaz" beklentisinin ölçülemez olmasının teknik sebebi
+         * tam olarak buydu.
+         *
+         * Bir fazlası, o soruyu sormanın en ucuz hâli: sayfa `cap`ten uzunsa
+         * havuzda daha var, kısaysa yok. Fazladan gelen satır ALINMAZ —
+         * aşağıdaki `started.length >= cap` kontrolü onu keser — yalnız
+         * SAYILIR. Yani tur başı sınırı gevşemiyor, yalnız görülebiliyor.
+         *
+         * Sayfalama (`startAt`) yerine bu: sayfalama gerçek birikimin tamamını
+         * verirdi, ama admin yetkili bir hesapla her turda havuzun tamamını
+         * gezmek demekti. Bir fazlası "daha var mı" sorusuna yeter, ve "en az
+         * N" cümlesi zaten bunun dürüst ifadesi.
+         */
+        maxResults: cap + 1,
         /**
          * THE FOUR CLASSIFYING FIELDS, ASKED FOR IN THE SEARCH ITSELF.
          *
@@ -604,7 +685,16 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
     }
 
     for (const issue of issues) {
-      if (started.length >= cap) break;
+      if (examined >= cap) {
+        hitCap = true;
+        // Bu sayfada kalan HER satır bir kalan ADAYI. Alınabilir olup
+        // olmadığını burada ölçemiyoruz (koşusu var mı, anahtarı var mı) —
+        // ölçüyoruz da: aşağıdaki iki eleme aynen uygulanıyor, çünkü
+        // operatöre gösterilecek sayının anlamlı olması gerekiyor.
+        const key = issueKeyOf(issue);
+        if (key !== null && !known.has(key) && !seenThisRound.has(key)) leftInPool += 1;
+        continue;
+      }
       // An issue with no key is nothing this loop can act on. Jira does not
       // send such a row; skipping rather than throwing keeps one odd payload
       // from ending a round that has other tickets in it.
@@ -652,6 +742,11 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
        * project-wide opt-in gate was retired (`jira-intake.ts`): a rule IS the
        * human decision, and the flag still says so to any future reader.
        */
+      // İncelemeye BAŞLIYORUZ — `runIntake` çağrısından hemen önce, çünkü
+      // sınırın frenlediği iş bu çağrının kendisi (denetim satırı, sayaç,
+      // karar dökümü, ve kabul edilirse bir koşu).
+      examined += 1;
+
       const outcome = await runIntake(options.deps, {
         ticket: key as TicketKey,
         actor: "maestro-worker",
@@ -690,9 +785,31 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       // Counted in the summary too, not only in the per-rule line above: an
       // operator scanning one line per round must see that some rules were
       // never searched at all.
-      `${skippedRules === 0 ? "" : `, ${skippedRules} kural bot hesabı olmadığı için atlandı`}`,
+      `${skippedRules === 0 ? "" : `, ${skippedRules} kural bot hesabı olmadığı için atlandı`}` +
+      /**
+       * HAVUZDA KALAN — operatörün "durmaz atlamaz" beklentisinin ölçüldüğü
+       * satır.
+       *
+       * Bu satır olmadan sınıra takılan bir tur, sınıra takılmayan bir turdan
+       * AYIRT EDİLEMİYORDU: log "20 ticket alındı" diyor, geride 30 iş
+       * kaldığını söylemiyordu. Operatör bunu "sistem atlıyor" diye okur.
+       *
+       * "en az" YAZILIYOR ve bu bir çekingenlik değil bir doğruluk: sınıra
+       * takılan tur kalan KURALLARI hiç aramamıştır, dolayısıyla gerçek
+       * birikim bu sayıdan büyük olabilir. Kesin bir sayı vermek, kesin
+       * olmayan bir şeyi kesinmiş gibi söylemek olurdu.
+       */
+      `${hitCap ? `, tur sınırına (${cap}) takıldı — havuzda en az ${leftInPool} iş kaldı, hemen yeni tur yapılacak` : ""}`,
   );
-  record({ lastError: null, rulesSearched: rules.length - skippedRules, lastStarted: started.length });
+  record({
+    lastError: null,
+    rulesSearched: rules.length - skippedRules,
+    lastStarted: started.length,
+    // `null` = "sınıra hiç takılmadık, havuz boşaldı". Sınıra takıldıysak
+    // sayı verilir — `0` bile, çünkü `0` da "tekrar bak" demek: takılan tur
+    // kalan kuralları aramamıştır.
+    ...(hitCap ? { poolRemaining: leftInPool } : {}),
+  });
   return started;
 }
 
@@ -788,10 +905,18 @@ export function classifyingFieldsOf(issue: unknown): {
 }
 
 /** Stamp the round's outcome onto the status the panel reads. */
-function record(round: Pick<DiscoveryStatus, "lastError" | "rulesSearched" | "lastStarted">): void {
+function record(
+  round: Pick<DiscoveryStatus, "lastError" | "rulesSearched" | "lastStarted"> &
+    Partial<Pick<DiscoveryStatus, "poolRemaining">>,
+): void {
   status.current = {
     ...status.current,
     ...round,
+    // HER TUR BU ALANI YENİDEN YAZAR — `...round` alanı taşımasa bile.
+    // Yoksa bir önceki turun "30 iş kaldı" cevabı, kalanı olmayan bir turdan
+    // sonra ekranda durmaya devam eder ve operatör var olmayan bir birikimi
+    // kovalardı. Yokluk = "kalan yok", çünkü kalanı olan her tur onu SÖYLER.
+    poolRemaining: round.poolRemaining ?? null,
     lastRunAt: new Date().toISOString(),
   };
 }
@@ -808,12 +933,101 @@ function record(round: Pick<DiscoveryStatus, "lastError" | "rulesSearched" | "la
 export function startJiraDiscovery(options: DiscoveryOptions): { stop: () => void } {
   status.current = { ...status.current, enabled: true, intervalMs: options.intervalMs };
   let stopped = false;
+  const log = options.log ?? ((message: string): void => console.log(message));
+  /**
+   * ── HAVUZ BOŞALANA KADAR — ve GÜVENLE ────────────────────────────────────
+   *
+   * Operatörün modeli: "robotun statü havuzu olur ve orada kendine atanmış her
+   * şeyi BİTENE KADAR devam eder: reddeder ya da işi yapar, bir sonraki adıma
+   * ilerletir". Tur başına sabit 20 sınırı bunun tersini üretiyordu: 50 iş
+   * varsa 20'si alınıyor, kalan 30'u BİR SONRAKİ turu (varsayılan 300 sn)
+   * bekliyordu. 50 iş ≈ 15 dakika, ve operatör bunu "atlıyor" diye okuyordu.
+   *
+   * Çözüm sınırı KALDIRMAK DEĞİL — tur başı sınırı Jira'yı ve bu süreci
+   * koruyan şey, ve `runIntake` her ticket için model çağrısı zincirini
+   * başlatıyor. Çözüm, sınıra takılan turu HEMEN TEKRARLAMAK: havuz boşalana
+   * kadar arka arkaya turlar, aradaki 300 sn beklemeden.
+   *
+   * ── VE NEDEN SINIRSIZ DEĞİL ──────────────────────────────────────────────
+   * Bu platformun Jira servis hesabı rutin olarak ADMIN. Kontrolsüz bir döngü,
+   * yanlış yazılmış tek bir kuralla (ya da bir anda binlerce ticket'ı bota
+   * atayan bir toplu işlemle) bankadaki her projeyi analize sokabilir. İki
+   * fren birden var ve ikisi de ölçülebilir:
+   *
+   *   · `MAX_DRAIN_ROUNDS` — bir boşaltmada en fazla kaç tur.
+   *   · `MAX_DRAIN_MS`     — bir boşaltmanın en fazla ne kadar sürebileceği.
+   *
+   * Hangisi önce dolarsa boşaltma DURUR, kalan iş bir sonraki normal tura
+   * bırakılır ve bu AÇIKÇA loglanır. "Durdu ve söylemedi" ile "durdu ve
+   * söyledi" arasındaki fark, operatörün sabah ne göreceğidir.
+   *
+   * `stopped` her turdan sonra yeniden sorulur: kapatma sinyali bir
+   * boşaltmanın ortasında da geçerlidir.
+   */
+  const MAX_DRAIN_ROUNDS = 10;
+  const MAX_DRAIN_MS = 5 * 60 * 1_000;
+
   const tick = async (): Promise<void> => {
     if (stopped) return;
-    await discoverOnce(options).catch((error: unknown) => {
-      (options.log ?? console.log)(`[keşif] tur başarısız: ${String(error)}`);
-      return [];
-    });
+    const until = Date.now() + MAX_DRAIN_MS;
+    for (let round = 1; round <= MAX_DRAIN_ROUNDS; round += 1) {
+      const taken = await discoverOnce(options).catch((error: unknown) => {
+        log(`[keşif] tur başarısız: ${String(error)}`);
+        return [];
+      });
+      if (stopped) return;
+      /**
+       * ── ÜÇÜNCÜ FREN: İLERLEME OLMAYAN TUR TEKRARLANMAZ ────────────────────
+       *
+       * Tur sınırı İNCELENEN ticket'ı sayıyor, alınanı değil (bkz. `examined`),
+       * ve bu doğru — ama tek başına yeni bir tehlike açardı: bağlanmamış bir
+       * projede (ya da kill-switch açıkken) HER ticket reddedilir, sınır her
+       * turda dolar, ve boşaltma döngüsü hiçbir şey ilerletmeden on tur döner.
+       * Her turda aynı ticket'lara aynı cevabı verirdi.
+       *
+       * Bir tur HİÇ ticket ALMADIYSA boşaltmanın devam etmesinin bir anlamı
+       * yok: havuz ya gerçekten alınamaz işlerle dolu (operatörün çözmesi
+       * gereken bir yapılandırma), ya da alınacak bir şey kalmamış. İkisinde
+       * de doğru cevap normal aralığı beklemek.
+       *
+       * `poolRemaining` yine de bildirilmiş durumda kalır, yani panel ve log
+       * birikimi söylemeye devam eder — susmuyoruz, yalnız döngüyü sürmüyoruz.
+       */
+      if (taken.length === 0) {
+        if (status.current.poolRemaining !== null) {
+          log(
+            "[keşif] havuzda iş görünüyor ama bu turda hiçbiri alınamadı — " +
+              "boşaltma sürdürülmüyor, bir sonraki normal turda tekrar bakılacak. " +
+              "Alınmama sebepleri yukarıdaki satırlarda ('alınmadı: ...').",
+          );
+        }
+        return;
+      }
+      // `poolRemaining === null` = "sınıra takılmadık, havuz boşaldı". Tek
+      // çıkış koşulu bu; sayının kendisi bir tahmin olduğu için ona göre karar
+      // verilmiyor, yalnız VARLIĞINA göre.
+      const remaining = status.current.poolRemaining;
+      if (remaining === null) {
+        if (round > 1) log(`[keşif] havuz boşaldı — ${round} tur sürdü`);
+        return;
+      }
+      if (round === MAX_DRAIN_ROUNDS) {
+        log(
+          `[keşif] havuz boşaltma ${MAX_DRAIN_ROUNDS} turda tamamlanmadı — havuzda en az ` +
+            `${remaining} iş kaldı, bir sonraki normal turda devam edilecek. ` +
+            "Bu bir hata değil, bilerek konmuş bir üst sınır: kontrolsüz bir döngü " +
+            "admin yetkili bir hesapla çalışırken tehlikelidir.",
+        );
+        return;
+      }
+      if (Date.now() >= until) {
+        log(
+          `[keşif] havuz boşaltma 5 dakikalık üst sınıra ulaştı — havuzda en az ${remaining} ` +
+            "iş kaldı, bir sonraki normal turda devam edilecek.",
+        );
+        return;
+      }
+    }
   };
   /**
    * Rescheduled after every round rather than a fixed `setInterval`, because

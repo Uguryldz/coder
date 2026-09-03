@@ -83,6 +83,16 @@ function record(over: Partial<ListeningRuleRecord> = {}): ListeningRuleRecord {
     // Statü kısıtı yok — 0024 öncesi her kuralın hâli. `null`, çünkü depo
     // "kısıt yok"u TEK biçimde saklar (SQL NULL) ve okurken de öyle döner.
     allowedStatuses: null,
+    /**
+     * `null` = "bu kural kapı dizisi SEÇMEDİ" ve kapılar risk seviyesine göre
+     * açılır — 0027 öncesi yazılmış her satırın hâli ve varsayılan.
+     *
+     * `statusMap: null` gibi AÇIKÇA yazılıyor, atlanmıyor: depo bu soruyu
+     * sormuş ve cevabı okumuştur; alanın hiç olmaması "okunmadı" gibi görünür
+     * ve `{steps: []}` ("kapı istemiyorum") ile karışması ancak bu açıklıkla
+     * önlenir.
+     */
+    gateSteps: null,
     ...over,
   };
 }
@@ -106,6 +116,7 @@ function toRow(from: ListeningRuleRecord): ListeningRuleRow {
     analystVariantId: from.analystVariantId ?? null,
     engineerVariantId: from.engineerVariantId ?? null,
     statusMapJson: null,
+    gateStepsJson: null,
   };
 }
 
@@ -265,5 +276,69 @@ describe("PrismaListeningStore", () => {
     expect(await store.remove("lr_1")).toBe(true);
     expect(await store.remove("lr_1")).toBe(false);
     expect(await store.get("lr_1")).toBeNull();
+  });
+});
+
+/**
+ * ── KAPI SEÇİMİ: DEPODAN GEÇİP AYNI ŞEKİLDE GERİ GELİYOR MU ─────────────────
+ *
+ * `statusMapJson` ve `allowedStatusesJson`ın kardeşi, ama BİR FARKLA ve bu fark
+ * bu bloğun asıl konusu: onlarda yokluk ile boş TEK bir şeye iniyordu ve tek
+ * biçimde (SQL NULL) saklanıyordu. Burada inmiyor — `{steps: []}` operatörün
+ * verdiği bir cevap ("onay bekleme") ve saklanması gerekir. İndirseydik,
+ * operatörün panelde kapattığı kapılar kaydet tuşuna basar basmaz geri açılırdı.
+ */
+describe("PrismaListeningStore — kapı seçimi", () => {
+  it("kapı seçimini olduğu gibi taşır — seçim, sahiplik ve sıra", async () => {
+    const { delegate } = fakeDelegate();
+    const store = new PrismaListeningStore(delegate);
+    await store.put(record({ gateSteps: { steps: ["4", "5"], ownerless: true } }));
+    expect((await store.get("lr_1"))?.gateSteps).toEqual({
+      steps: ["4", "5"],
+      ownerless: true,
+    });
+  });
+
+  it("BOŞ SEÇİM saklanır — `null`'a indirilMEZ", async () => {
+    // Bu testin tek işi, `allowedStatuses`in tersi bir normalizasyonun
+    // gerçekten uygulandığını kanıtlamak. Kırılırsa, operatörün kapattığı
+    // kapılar sessizce geri açılıyor demektir.
+    const { delegate } = fakeDelegate();
+    const store = new PrismaListeningStore(delegate);
+    await store.put(record({ gateSteps: { steps: [] } }));
+    expect((await store.get("lr_1"))?.gateSteps).toEqual({ steps: [] });
+  });
+
+  it("seçim yoksa `null` döner ve kolona SQL NULL yazılır", async () => {
+    const { delegate, rows } = fakeDelegate();
+    await new PrismaListeningStore(delegate).put(record({ gateSteps: null }));
+    expect((await new PrismaListeningStore(delegate).get("lr_1"))?.gateSteps).toBeNull();
+    // Kolonda JSON `null` değil, sürücünün kendi NULL'u: `statusMapJson`'ın
+    // gerekçesinin aynısı — psql'den bakan operatör için `IS NULL` dürüst kalır.
+    expect(rows.get("lr_1")?.gateStepsJson).not.toEqual({ steps: [] });
+  });
+
+  it("BOZUK bir kapı seçimi kuralı DÜŞÜRMEZ, varsayılana döndürür ve UYARIR", async () => {
+    /**
+     * Bozulmanın yönü üç kolonda üç ayrı yön ve bu bilerek:
+     *   `statusMapJson`       bozulunca DARALIR  (yorum moduna düşer)
+     *   `allowedStatusesJson` bozulunca GENİŞLER (statü kapısı kalkar)
+     *   `gateStepsJson`       bozulunca VARSAYILANA döner (daha ÇOK onay)
+     *
+     * Üçüncüsü fail-closed: elle düzenlenmiş bozuk bir JSON kimseyi onaysız
+     * geçiremez. Uyarı yine de zorunlu — sessizce daha çok onay beklemek,
+     * operatörün "kapıları kapattım ama hâlâ soruyor" diye arayacağı şeydir.
+     */
+    const warnings: string[] = [];
+    const { delegate, rows } = fakeDelegate();
+    rows.set("lr_1", { ...toRow(record()), gateStepsJson: { steps: "hepsi" } });
+    const store = new PrismaListeningStore(delegate, (message) => warnings.push(message));
+    const read = await store.get("lr_1");
+    expect(read?.gateSteps).toBeNull();
+    // Kuralın GERİ KALANI sağlam geldi: bir bozuk kolon kuralı düşürmez.
+    expect(read?.flowType).toBe("duzeltme");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("gateStepsJson");
+    expect(warnings[0]).toContain("RİSK SEVİYESİNE");
   });
 });

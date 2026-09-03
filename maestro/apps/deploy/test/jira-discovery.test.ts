@@ -5,6 +5,7 @@ import {
   classifyingFieldsOf,
   diagnosticJqlFor,
   discoverOnce,
+  discoveryStatus,
   jqlFor,
   startJiraDiscovery,
   type DiscoveryRule,
@@ -909,5 +910,272 @@ describe("keşif teşhis sorgusu", () => {
     });
 
     expect(logged.some((line) => line.includes("hiç açık ticket yok"))).toBe(true);
+  });
+});
+
+/**
+ * ── HAVUZ: "BİTENE KADAR ÇALIŞIR, DURMAZ ATLAMAZ" ───────────────────────────
+ *
+ * Operatörün modeli, kendi cümlesiyle: "robotun statü havuzu olur ve orada
+ * kendine atanmış her şeyi bitene kadar devam eder".
+ *
+ * Ölçülen eski davranış bunun tersiydi: tur başına sabit 20 sınırı vardı,
+ * havuzda 50 iş varsa 20'si alınıyor ve kalan 30'u bir sonraki turu (varsayılan
+ * 300 sn) bekliyordu — ve HİÇBİR YERDE YAZMIYORDU. Log "20 ticket alındı"
+ * diyordu; geride 30 iş kaldığını söylemiyordu. Operatör bunu "atlıyor" diye
+ * okur, ve haklıdır: sistemin ona söylemediği bir şey oluyordur.
+ *
+ * Aşağısı üç şeyi ölçüyor: kalanın SAYILDIĞINI, SÖYLENDİĞİNİ, ve boşalan bir
+ * havuzda hiçbir şey söylenmediğini (sahte bir birikim uyarısı, hiç uyarı
+ * olmamasından kötüdür).
+ */
+describe("havuz — tur sınırına takılan tur kalanı SÖYLER", () => {
+  /** `n` ticket'lık bir arama sayfası döndüren sahte arama. */
+  function poolOf(count: number): { search: never } {
+    const issues = Array.from({ length: count }, (_unused, index) => ({
+      key: `OPS-${index + 1}`,
+      fields: { status: { name: "analiz" }, assignee: { accountId: "bot" }, labels: [] },
+    }));
+    return {
+      search: {
+        searchIssues: (request: { maxResults?: number }) =>
+          Promise.resolve({ issues: issues.slice(0, request.maxResults ?? issues.length) }),
+      } as never,
+    };
+  }
+
+  async function round(count: number, cap: number): Promise<readonly string[]> {
+    const logs: string[] = [];
+    await discoverOnce({
+      deps: {
+        bindings: { resolve: () => Promise.resolve(null) },
+        counters: { droppedKillSwitch: 0 },
+      } as never,
+      search: poolOf(count).search,
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve([]),
+      intervalMs: 0,
+      maxPerRound: cap,
+      log: (message: string) => void logs.push(message),
+    });
+    return logs;
+  }
+
+  it("sınıra takılan tur, havuzda kalan işi SÖYLER ve durumu yazar", async () => {
+    /**
+     * Havuzda 5 iş, tur sınırı 2. Jira'ya `maxResults: 3` (sınır + 1) gider,
+     * 2'si alınır ve 1'i geride kalır.
+     *
+     * SAYININ "1" ÇIKMASI TESTİN KONUSU, bir eksikliği değil: sayı bir ALT
+     * SINIR ve log satırı bunu "en az" diyerek söylüyor. Sınırdan bir fazlasını
+     * istemek, "havuzda daha var mı" sorusuna admin yetkili bir hesapla her
+     * turda havuzun tamamını gezmeden cevap vermenin yolu. Gerçek birikimi
+     * bulmanın yolu sayfalama olurdu ve bedeli buna değmez — çünkü bu sayının
+     * asıl işi bir MİKTAR bildirmek değil, "tekrar bak" demek.
+     */
+    const logs = await round(5, 2);
+    const summary = logs.find((line) => line.includes("tur bitti"));
+    expect(summary).toBeDefined();
+    expect(summary).toContain("tur sınırına (2) takıldı");
+    expect(summary).toContain("havuzda en az 1 iş kaldı");
+    expect(summary).toContain("hemen yeni tur yapılacak");
+    // Ve panel de görüyor — log satırı tek başına yetmez, operatörün panelde
+    // bakacağı yer burası.
+    expect(discoveryStatus().poolRemaining).toBe(1);
+  });
+
+  it("havuz boşaldığında kalan BİLDİRİLMEZ — sahte bir birikim gösterilmez", async () => {
+    // Havuzda 2 iş, tur sınırı 5: sınıra hiç takılmadık.
+    const logs = await round(2, 5);
+    const summary = logs.find((line) => line.includes("tur bitti"));
+    expect(summary).toBeDefined();
+    expect(summary).not.toContain("havuzda");
+    expect(discoveryStatus().poolRemaining).toBeNull();
+  });
+
+  it("bir önceki turun kalanı, boşalan bir turdan sonra ekranda KALMAZ", async () => {
+    // Bu, `record`un `poolRemaining`i her turda yeniden yazmasının ölçümü:
+    // önce dolu bir tur, sonra boşalan bir tur. İkincisinden sonra panel
+    // birinciyi göstermeye devam ederse operatör olmayan bir birikimi
+    // kovalar.
+    await round(5, 2);
+    expect(discoveryStatus().poolRemaining).toBe(1);
+    await round(2, 5);
+    expect(discoveryStatus().poolRemaining).toBeNull();
+  });
+
+  it("koşusu OLAN ticket'lar kalan sayılmaz — birikim gerçek olmalı", async () => {
+    /**
+     * Sınırın ötesinde kalan satırların hepsi "kalan iş" DEĞİL: koşusu zaten
+     * olanlar, sınır kalksa da alınmayacaktı. Onları saymak, operatöre hiç var
+     * olmamış bir birikim göstermek olurdu — "14 ticket bulundu, 0 alındı"
+     * satırının bir operatörü çalışan bir sorguda hata aramaya göndermesiyle
+     * aynı hata, ters yönde.
+     *
+     * Kurgu: havuzda 5 satır, sınır 2, yani `maxResults: 3` ile ilk üçü
+     * geliyor. İlk ikisinin (OPS-1, OPS-2) KOŞUSU VAR — atlanıyorlar ve sınıra
+     * SAYILMIYORLAR, çünkü alınmadılar. Üçüncüsü alınıyor. Sınıra hiç
+     * takılmadığımız için kalan da bildirilmiyor: geride bırakılan bir iş yok,
+     * yalnız zaten koşan iki iş var.
+     */
+    const logs: string[] = [];
+    await discoverOnce({
+      deps: {
+        bindings: { resolve: () => Promise.resolve(null) },
+        counters: { droppedKillSwitch: 0 },
+      } as never,
+      search: poolOf(5).search,
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve(["OPS-1", "OPS-2"] as never),
+      intervalMs: 0,
+      maxPerRound: 2,
+      log: (message: string) => void logs.push(message),
+    });
+    const summary = logs.find((line) => line.includes("tur bitti"));
+    expect(summary).toContain("2'inin koşusu zaten var");
+    expect(summary).not.toContain("havuzda");
+    expect(discoveryStatus().poolRemaining).toBeNull();
+  });
+});
+
+/**
+ * ── BOŞALTMA DÖNGÜSÜ — "durmaz" ile "kontrolsüz" arasındaki çizgi ───────────
+ *
+ * `startJiraDiscovery` sınıra takılan bir turu HEMEN tekrarlar, 300 sn'lik
+ * normal aralığı beklemeden: operatörün "havuzda iş kaldığı sürece durmaz"
+ * beklentisi bu. Aşağısı üç freni ölçüyor, çünkü bu platformun Jira servis
+ * hesabı rutin olarak ADMIN ve frensiz bir döngü tek bir yanlış kuralla
+ * bankadaki her projeyi analize sokabilir.
+ */
+describe("boşaltma döngüsü — durmaz, ama kontrolsüz de değil", () => {
+  /** `rounds` turluk bir kuyruk: her tur ne bulacak ve neyi alacak. */
+  function stubbedRounds(pages: readonly (readonly string[])[]): {
+    search: never;
+    calls: () => number;
+  } {
+    let call = 0;
+    return {
+      calls: () => call,
+      search: {
+        searchIssues: () => {
+          const page = pages[Math.min(call, pages.length - 1)] ?? [];
+          call += 1;
+          return Promise.resolve({
+            issues: page.map((key) => ({
+              key,
+              fields: { status: { name: "analiz" }, assignee: { accountId: "bot" }, labels: [] },
+            })),
+          });
+        },
+      } as never,
+    };
+  }
+
+  /**
+   * `runIntake`i KABUL EDEN sahte bağımlılıklar.
+   *
+   * `bindings.resolve` bir bağlantı döndürünce ticket kabul ediliyor ve
+   * boşaltma döngüsünün "ilerleme var mı" freni geçiliyor — reddedilen bir
+   * havuzda döngü zaten ilk turdan sonra duruyor (bunun kendi testi aşağıda).
+   */
+  function acceptingDeps(started: string[]): never {
+    return {
+      bindings: {
+        resolve: () =>
+          Promise.resolve({ active: true, mode: "full_auto", dataClass: "dahili", appId: "pay" }),
+      },
+      counters: { droppedKillSwitch: 0, droppedUnbound: 0 },
+      killSwitch: { get: () => Promise.resolve({ level: "off" }) },
+      runs: {
+        signalWithStart: (input: { ticket: string }) => {
+          started.push(input.ticket);
+          return Promise.resolve({ workflowId: `wf-${input.ticket}`, started: true });
+        },
+      },
+      audit: { append: () => Promise.resolve({ seq: 1 }) },
+      clock: { now: () => new Date().toISOString() },
+      work: { addComment: () => Promise.resolve() },
+      config: {},
+      messages: { t: (_locale: string, key: string) => key },
+      params: { values: () => Promise.resolve([]) },
+      // Kural `analiz` akışını veriyor: uygulaması olmayan bir kurulumda
+      // kabul edilen tek akış bu, ve operatörünki de bu.
+      listening: {
+        list: () =>
+          Promise.resolve([
+            {
+              ruleId: "r1",
+              projectKey: "OPS",
+              assigneeAccountId: "712020:bot",
+              matchKind: "assigned",
+              matchValue: "*",
+              flowType: "analiz",
+              priority: 100,
+              enabled: true,
+            },
+          ]),
+      },
+    } as never;
+  }
+
+  it("sınıra takılan tur HEMEN tekrarlanır — havuz boşalana kadar", async () => {
+    const started: string[] = [];
+    const logs: string[] = [];
+    // İlk tur 3 satır görür (sınır 2 → sınıra takılır), ikinci tur 1 satır.
+    const stub = stubbedRounds([["OPS-1", "OPS-2", "OPS-3"], ["OPS-4"]]);
+    const handle = startJiraDiscovery({
+      deps: acceptingDeps(started),
+      search: stub.search,
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve([]),
+      intervalMs: 3_600_000,
+      maxPerRound: 2,
+      log: (message: string) => void logs.push(message),
+    });
+    // Boşaltma turları arka arkaya, aralık BEKLENMEDEN. Mikro görevlerin
+    // akması için birkaç tur bekleniyor — zamanlayıcı değil, `await` zinciri.
+    for (let wait = 0; wait < 50 && stub.calls() < 2; wait += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    handle.stop();
+    // İkinci tur 3.600 saniyelik aralık BEKLENMEDEN yapıldı: boşaltma çalıştı.
+    expect(stub.calls()).toBeGreaterThanOrEqual(2);
+    expect(logs.some((line) => line.includes("tur sınırına (2) takıldı"))).toBe(true);
+    // Ve boşalma AÇIKÇA söylendi: "kaç tur sürdü" satırı, operatörün
+    // "havuz bitti mi" sorusunun tek cevabı.
+    expect(logs.some((line) => line.includes("havuz boşaldı — 2 tur sürdü"))).toBe(true);
+    // Dört ticket de alındı: sınır işi ERTELEDİ, ATLAMADI.
+    expect(started).toEqual(["OPS-1", "OPS-2", "OPS-4"]);
+  });
+
+  it("HİÇ ticket ALINAMAYAN tur boşaltmayı sürdürmez — sonsuz tur yok", async () => {
+    /**
+     * Bağlanmamış bir projede her ticket reddedilir. Tur sınırı İNCELENEN
+     * ticket'ı saydığı için (bkz. `examined`) sınır yine dolar ve "havuzda iş
+     * var" der — ama hiçbir şey ilerlemez. Boşaltma bu durumda DURMALI, yoksa
+     * on tur boyunca aynı ticket'lara aynı cevabı verirdi.
+     */
+    const logs: string[] = [];
+    const stub = stubbedRounds([["OPS-1", "OPS-2", "OPS-3"]]);
+    const handle = startJiraDiscovery({
+      deps: {
+        bindings: { resolve: () => Promise.resolve(null) },
+        counters: { droppedKillSwitch: 0, droppedUnbound: 0 },
+      } as never,
+      search: stub.search,
+      rules: () => Promise.resolve([RULE]),
+      known: () => Promise.resolve([]),
+      intervalMs: 3_600_000,
+      maxPerRound: 2,
+      log: (message: string) => void logs.push(message),
+    });
+    for (let wait = 0; wait < 40; wait += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    handle.stop();
+    // TEK tur: ilerleme olmadığı için boşaltma sürdürülmedi.
+    expect(stub.calls()).toBe(1);
+    // Ve SUSMADI — operatör birikimi ve sebebini görüyor.
+    expect(logs.some((line) => line.includes("hiçbiri alınamadı"))).toBe(true);
   });
 });

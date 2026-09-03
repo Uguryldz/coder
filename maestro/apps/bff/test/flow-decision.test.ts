@@ -44,14 +44,37 @@ describe("flowDecisionFor — two tickets, one project, different flows", () => 
 
   it("routes a 'Hata' ticket to the engineering fix flow", () => {
     const decision = flowDecisionFor(rules, ticket({ issueType: "Hata" }), null);
-    // `statusMap: null` is comment-only mode — these rules map no columns, so
-    // the decision says so explicitly rather than leaving the field absent.
-    expect(decision).toEqual({ flow: "duzeltme", reason: "rule", ruleId: "lr_bug", statusMap: null });
+    /**
+     * `statusMap: null` is comment-only mode — these rules map no columns, so
+     * the decision says so explicitly rather than leaving the field absent.
+     *
+     * `gateSteps: null` AYNI DURUŞ, aynı gerekçe: kural kapı dizisi SEÇMEDİ,
+     * dolayısıyla kapılar risk seviyesine göre açılacak. Alanı hiç yazmamak
+     * ile `null` yazmak arasındaki fark, karar nesnesinin bu soruyu SORMUŞ
+     * olup olmadığıdır — ve sormuş olmalı, çünkü kararı veren kural okundu.
+     *
+     * `toEqual` bilerek: kararın TAM şekli sabitleniyor. Yeni bir alan sessizce
+     * eklendiğinde bu test kırılır, ve kırılması gerekir — bu nesne koşunun
+     * başlangıç girdisine çivileniyor, yani şekli bir sözleşme.
+     */
+    expect(decision).toEqual({
+      flow: "duzeltme",
+      reason: "rule",
+      ruleId: "lr_bug",
+      statusMap: null,
+      gateSteps: null,
+    });
   });
 
   it("routes an 'Analiz' ticket in the SAME project to the analysis flow", () => {
     const decision = flowDecisionFor(rules, ticket({ issueType: "Analiz" }), null);
-    expect(decision).toEqual({ flow: "analiz", reason: "rule", ruleId: "lr_analysis", statusMap: null });
+    expect(decision).toEqual({
+      flow: "analiz",
+      reason: "rule",
+      ruleId: "lr_analysis",
+      statusMap: null,
+      gateSteps: null,
+    });
   });
 
   it("gives the two tickets genuinely different flows", () => {

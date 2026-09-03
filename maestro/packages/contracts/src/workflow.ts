@@ -71,6 +71,62 @@ export const GATES_BY_RISK: Record<RiskTier, readonly StepId[]> = {
 };
 
 /**
+ * KAPI DİZİSİ ARTIK BİR KURAL AYARI — ve bu, onun SÖZLÜĞÜ.
+ *
+ * ── Neden burada, `GATES_BY_RISK`in yanında ─────────────────────────────────
+ * `GATES_BY_RISK` "risk katmanı → kapı dizisi" diyen tek cevaptı. Operatörün
+ * kurulumunda o cevap yanlış çıktı: akış `analiz`, yani kapı 12 (PR onayı) HİÇ
+ * açılmıyor, kapı 4 yalnız orta/kritik riskte açılıyor, geriye tek kapı (5)
+ * kalıyor — ve o kapının hangi grubun adına açıldığı, onay yetkisi zaten
+ * Jira'nın izin şemasından geçen bir kurulumda ikinci bir kontrol katmanı.
+ *
+ * Kapıyı KALDIRMAK doğru cevap değil: SoD imza sırası (M32), aktör kimliği ve
+ * denetim zinciri Maestro'da kalmalı — Jira'nın izin şeması bunları geri
+ * veremez. Doğru cevap, DİZİYİ operatöre sormak.
+ *
+ * ── Sözlüğün buraya konmasının sebebi ───────────────────────────────────────
+ * Aynı listeyi üç yer okuyor: panel (seçim listesi), BFF (doğrulama), workflow
+ * (hangi kapılar açılacak). Üç kopya, er ya da geç üç farklı liste demek. Bir
+ * kopya, ve o kopya `APPROVAL_GATE_STEPS` ile aynı dosyada duruyor ki
+ * birbirinden ayrışmaları derleme hatası olsun (`satisfies`).
+ *
+ * ── Kod adı DEĞİL, ANLAM ────────────────────────────────────────────────────
+ * `titleKey` bir i18n anahtarı (M104): panel operatöre "kapı 4" değil "Ürün
+ * sahibi onayı" gösterir. Adım numarası bir uygulama ayrıntısı ve operatörün
+ * ekranında işi yok.
+ */
+export const SELECTABLE_GATES = [
+  { step: "4", titleKey: "gates.meaning.4" },
+  { step: "5", titleKey: "gates.meaning.5" },
+  { step: "9", titleKey: "gates.meaning.9" },
+  { step: "11", titleKey: "gates.meaning.11" },
+  { step: "12", titleKey: "gates.meaning.12" },
+] as const satisfies readonly { step: (typeof APPROVAL_GATE_STEPS)[number]; titleKey: string }[];
+
+/**
+ * Bir kuralın seçtiği kapı dizisi — ya da "seçim yok".
+ *
+ * BOŞ DİZİ İLE YOKLUK AYNI ŞEY DEĞİL, ve bu ayrım bu şemanın tek zor kararı:
+ *
+ *  · YOKLUK (`null`/absent) = "bu kural kapı dizisi seçmedi". Kural bugüne
+ *    kadar nasıl koşuyorsa öyle koşar: global varsayılana, oradan da
+ *    `GATES_BY_RISK`e düşer. GERİYE DÖNÜK UYUMUN TAMAMI bu daldır — bu alan
+ *    var olmadan yazılmış her satır burada.
+ *  · BOŞ DİZİ (`[]`) = "bu kuralda onay kapısı İSTEMİYORUM". Operatörün
+ *    akışında meşru bir cevap: analiz onayı Jira'da `analysisapproval →
+ *    development` statü hareketiyle veriliyor ve Maestro'nun ayrıca bir kapı
+ *    açması gereksiz. `statusMap`in boş nesneyi `null`'a indirgemesinin TERSİ
+ *    bir karar, ve bilerek: orada iki temsil tek davranışa iniyordu, burada
+ *    iki temsil İKİ AYRI davranış.
+ *
+ * Sıra DEĞİL küme: workflow kapıları akış sırasına göre açar (`gatesFor`), yani
+ * operatörün kutuları hangi sırayla işaretlediği hiçbir şeyi değiştirmez.
+ * Yinelenenler ayıklanır — aynı kapıyı iki kez açmak diye bir şey yok.
+ */
+export const GateStepSelection = z.array(z.enum(APPROVAL_GATE_STEPS));
+export type GateStepSelection = z.infer<typeof GateStepSelection>;
+
+/**
  * ÜÇ KARAR, İKİ DEĞİL — ve üçüncüsü bir ret DEĞİL.
  *
  * `approve` ve `reject` M51'den beri var. `return_analysis` (banka akışı) o

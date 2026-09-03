@@ -2,6 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+/**
+ * KAPI SÖZLÜĞÜ SÖZLEŞMEDEN, EKRANDAN DEĞİL.
+ *
+ * Aynı listeyi üç yer okuyor: bu panel, BFF'in doğrulaması, ve workflow'un
+ * kapı döngüsü. Üç kopya, er ya da geç üç farklı liste demek — ve buradaki
+ * kopya sessizce ayrışan olurdu, çünkü ekranın yanlış bir kapı göstermesi
+ * hiçbir testi kırmaz. `titleKey` bir i18n anahtarı (M104): operatör kod adı
+ * değil ANLAM görür.
+ */
+import { SELECTABLE_GATES } from "@maestro/contracts";
 import { messageKeyOf, sweepReasonOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
@@ -111,6 +121,14 @@ interface ListeningRule {
    * kurallar ÇALIŞIR — ama tabloda ve formda görünür şekilde işaretlenir.
    */
   readonly allowedStatuses?: readonly string[] | null;
+  /**
+   * HANGİ ONAYLAR BEKLENSİN — kuralın kapı seçimi.
+   *
+   * `null`/absent = "seçim yok", kapılar risk seviyesine göre açılır (bugüne
+   * kadarki davranış, ve bu alan var olmadan yazılmış her kural). `{steps: []}`
+   * bundan FARKLI ve karıştırılmamalı: "hiç kapı istemiyorum".
+   */
+  readonly gateSteps?: { readonly steps: readonly string[]; readonly ownerless?: boolean } | null;
 }
 
 /**
@@ -342,6 +360,29 @@ export function ListeningScreen(): ReactNode {
       prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name],
     );
 
+  /**
+   * ONAY KAPILARI — "bu kuralda hangi onaylar beklensin".
+   *
+   * İKİ DURUM, İKİ AYRI STATE, ve birleştirmek yanlış olurdu:
+   *
+   *   `gatesCustom = false` → "seçim yok". Kapılar risk seviyesine göre açılır
+   *                           ve `gateSteps` telde `null` gider. Bu, bu alanı
+   *                           hiç görmemiş her kuralın hâli.
+   *   `gatesCustom = true`  → operatör seçti. Seçimi BOŞ da olabilir ("hiç kapı
+   *                           istemiyorum") ve o telde `{steps: []}` gider.
+   *
+   * Tek bir diziyle (boş = varsayılan) anlatılamazdı: o zaman "hiç kapı
+   * istemiyorum" ile "seçim yapmadım" aynı şeye inerdi, ve operatörün kapattığı
+   * kapılar kaydettiği anda geri açılırdı.
+   */
+  const [gatesCustom, setGatesCustom] = useState(false);
+  const [gateStepsSel, setGateStepsSel] = useState<readonly string[]>([]);
+  const [gateOwnerless, setGateOwnerless] = useState(false);
+  const toggleGateStep = (step: string): void =>
+    setGateStepsSel((prev) =>
+      prev.includes(step) ? prev.filter((s) => s !== step) : [...prev, step],
+    );
+
   const [statusOn, setStatusOn] = useState(false);
   // Whether the disclosure is expanded, tracked separately from `statusOn`: an
   // operator opens the section to READ what it does long before deciding to use
@@ -485,6 +526,13 @@ export function ListeningScreen(): ReactNode {
   };
 
   /** The status-map half of the form, back to "this rule only comments". */
+  /** Kapı seçimini "seçim yok"a (bugünkü varsayılan davranışa) döndürür. */
+  const clearGateForm = (): void => {
+    setGatesCustom(false);
+    setGateStepsSel([]);
+    setGateOwnerless(false);
+  };
+
   const clearStatusForm = (): void => {
     setStatusOn(false);
     setStatusPanelOpen(false);
@@ -502,6 +550,7 @@ export function ListeningScreen(): ReactNode {
     setAnalystVariantId("");
     setEngineerVariantId("");
     clearStatusForm();
+    clearGateForm();
   };
 
   type RuleBody = Omit<ListeningRule, "ruleId" | "priority" | "enabled">;
@@ -522,6 +571,9 @@ export function ListeningScreen(): ReactNode {
       // a save would quietly attach the previous rule's transitions to the next
       // one an operator adds.
       clearStatusForm();
+      // Kapı seçimi de kural başına: kaydettikten sonra formda kalması, bir
+      // sonraki kurala önceki kuralın onaylarını sessizce iliştirirdi.
+      clearGateForm();
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
@@ -559,6 +611,13 @@ export function ListeningScreen(): ReactNode {
     // yaptığı olmalı. Uydurma bir varsayılan seçmek, operatöre hiç vermediği
     // bir cevabı vermiş gibi gösterirdi.
     setAllowedStatuses(rule.allowedStatuses ?? []);
+    // Seçim yoksa form "risk seviyesine göre" açılır — kuralın BUGÜN ne
+    // yaptığını göstermek zorunda. Uydurma bir seçim doldurmak, operatöre hiç
+    // vermediği bir cevabı vermiş gibi gösterirdi.
+    const gates = rule.gateSteps ?? null;
+    setGatesCustom(gates !== null);
+    setGateStepsSel(gates?.steps ?? []);
+    setGateOwnerless(gates?.ownerless === true);
     const map = rule.statusMap ?? null;
     // A rule with no map opens with the section CLOSED — the form must show what
     // the rule actually does today (comment only), not invite an edit nobody
@@ -829,6 +888,21 @@ export function ListeningScreen(): ReactNode {
       // geç ikisinin farklı davranmasıyla biter. Sunucu da aynı şekilde
       // normalize eder (`AllowedStatusesRef`).
       allowedStatuses: allowedStatuses.length === 0 ? null : [...allowedStatuses],
+      /**
+       * Kapı seçimi — ve `allowedStatuses`in TERSİ bir normalizasyon.
+       *
+       * Orada boş liste `null`'a iniyordu çünkü "hiçbir statüye izin
+       * verilmedi" ile "statü kısıtı yok" tek bir davranışa iniyordu. Burada
+       * inmiyor: `gatesCustom` kapalıysa `null` ("risk seviyesine göre"),
+       * açıksa seçim OLDUĞU GİBİ gider — boş dizi dahil, çünkü boş dizi
+       * operatörün verdiği bir cevap ("onay bekleme").
+       */
+      gateSteps: gatesCustom
+        ? {
+            steps: [...gateStepsSel],
+            ...(gateOwnerless ? { ownerless: true } : {}),
+          }
+        : null,
     };
     if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
     else create.mutate(body);
@@ -942,6 +1016,41 @@ export function ListeningScreen(): ReactNode {
                 })}
               </span>
             )}
+          </span>
+        );
+      },
+    },
+    {
+      key: "gateSteps",
+      header: t("listening.gates.column"),
+      /**
+       * KAPI SEÇİMİ TABLODA DA GÖRÜNÜR.
+       *
+       * Formda görünüp tabloda görünmeyen bir ayar, ancak her kuralı tek tek
+       * açarak okunabilir — ve operatörün bugün yaşadığı sorun tam olarak
+       * "hangi kural hangi onayı bekliyor" sorusunun cevabının hiçbir yerde
+       * olmamasıydı.
+       *
+       * Kod adı yine yok: kapı ANLAMLARI, kısaltılmış hâlde.
+       */
+      cell: (r) => {
+        const gates = r.gateSteps ?? null;
+        if (gates === null) {
+          return <span className="screen-note">{t("listening.gates.default")}</span>;
+        }
+        if (gates.steps.length === 0) {
+          // Uyarı rengi DEĞİL: bu meşru bir yapılandırma, bir eksiklik değil.
+          // Ama açıkça yazılıyor — "boş hücre" ile "onay beklenmiyor" arasında
+          // fark var ve o fark operatörün okuması gereken şey.
+          return <span className="screen-note">{t("listening.gates.none_selected")}</span>;
+        }
+        const names = SELECTABLE_GATES.filter((gate) => gates.steps.includes(gate.step)).map(
+          (gate) => t(gate.titleKey),
+        );
+        return (
+          <span className="screen-note">
+            {names.join(" · ")}
+            {gates.ownerless === true ? ` · ${t("listening.gates.ownerless")}` : ""}
           </span>
         );
       },
@@ -1384,6 +1493,117 @@ export function ListeningScreen(): ReactNode {
                     : "listening.form.allowed_statuses_hint",
                 )}
               </div>
+            </div>
+            {/*
+              ── ONAY KAPILARI ────────────────────────────────────────────────
+
+              KOD ADI DEĞİL, ANLAM. Operatör "kapı 4" görmüyor; "Analiz onayı —
+              ürün sahibi" görüyor. Adım numarası bir uygulama ayrıntısı ve bu
+              ekranda işi yok — operatörün sorusu "hangi onaylar gerekli",
+              "hangi adım kimlikleri" değil.
+
+              Her zaman GÖRÜNÜR, açılır-kapanır bir bölümün içinde değil, ve
+              durum eşlemesinin YANINDA değil ÜSTÜNDE: operatörün bugün
+              yaşadığı sorunlardan biri, hiç bilmediği bir kapının hiç
+              açılmamasıydı. Bir ekranın söylemediği şey, olmayan bir şey gibi
+              davranır.
+            */}
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div className="screen-note" style={{ marginBottom: 6 }}>
+                <strong>{t("listening.gates.title")}</strong>
+              </div>
+              <div className="screen-note" style={{ marginBottom: 8 }}>
+                {t("listening.gates.explain")}
+              </div>
+              {/*
+                İKİ SEÇENEK, RADYO — bir onay kutusu değil.
+
+                "Seçim yok" ile "hiçbirini seçmedim" bir onay kutusuyla
+                anlatılamaz: kutu kapalıyken hangisi olduğu belirsiz kalırdı.
+                İki radyo, iki cümle, ve ikisi de AÇIKÇA yazıyor.
+              */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="radio"
+                    name="gates-mode"
+                    checked={!gatesCustom}
+                    onChange={() => setGatesCustom(false)}
+                  />
+                  <span>{t("listening.gates.default")}</span>
+                </label>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="radio"
+                    name="gates-mode"
+                    checked={gatesCustom}
+                    onChange={() => setGatesCustom(true)}
+                  />
+                  <span>{t("listening.gates.custom")}</span>
+                </label>
+              </div>
+              {gatesCustom ? (
+                <div style={{ marginTop: 8, paddingLeft: 20 }}>
+                  {SELECTABLE_GATES.map((gate) => {
+                    /*
+                      MÜHENDİSLİK KAPILARI, ANALİZ AKIŞINDA SEÇİLSE DE AÇILMAZ.
+
+                      Seçimi ENGELLEMİYORUZ (operatör akışı sonradan
+                      değiştirebilir ve seçimi kaybetmemeli), ama SÖYLÜYORUZ.
+                      Sessiz bir "seçtim ama olmadı", bu ekranın önlemek için
+                      var olduğu şeyin ta kendisi.
+                    */
+                    const dead = flowType === "analiz" && gate.step !== "4" && gate.step !== "5";
+                    return (
+                      <div key={gate.step} style={{ marginBottom: 8 }}>
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={gateStepsSel.includes(gate.step)}
+                            onChange={() => toggleGateStep(gate.step)}
+                          />
+                          <span style={dead ? { color: "#78716c" } : {}}>{t(gate.titleKey)}</span>
+                        </label>
+                        <div className="screen-note" style={{ marginLeft: 24 }}>
+                          {t(`${gate.titleKey}.hint`)}
+                        </div>
+                        {dead && gateStepsSel.includes(gate.step) ? (
+                          <div
+                            className="screen-note"
+                            style={{ marginLeft: 24, color: "#b45309", fontWeight: 600 }}
+                          >
+                            {t("listening.gates.engineering_only")}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {gateStepsSel.length === 0 ? (
+                    <div
+                      className="screen-note"
+                      style={{ color: "#b45309", fontWeight: 600, marginBottom: 8 }}
+                    >
+                      {/*
+                        Boş seçim SESSİZ GEÇMEZ — ve bir hata da değil.
+                        Operatörün akışında meşru bir cevap (onay Jira'da statü
+                        taşıyarak veriliyor), ama ne anlama geldiği yazılmalı.
+                      */}
+                      {t("listening.gates.none_selected")}
+                    </div>
+                  ) : null}
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={gateOwnerless}
+                      onChange={() => setGateOwnerless((prev) => !prev)}
+                    />
+                    <span>{t("listening.gates.ownerless")}</span>
+                  </label>
+                  <div className="screen-note" style={{ marginLeft: 24 }}>
+                    {t("listening.gates.ownerless_explain")}
+                  </div>
+                </div>
+              ) : null}
             </div>
             <Select
               label={t("listening.form.flow")}

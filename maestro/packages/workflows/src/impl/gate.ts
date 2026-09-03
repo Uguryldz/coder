@@ -54,21 +54,45 @@ export async function isMasterApprover(deps: ActivityDeps, userId: string): Prom
  * approve, and a gate closes only when a person's decision arrives.
  */
 
+/**
+ * SAHİPSİZ KAPININ `Gate.ownerGroup` SÜTUNUNA YAZDIĞI ŞEY.
+ *
+ * Sütun NOT NULL (`schema.prisma`) ve öyle KALMALI: onu nullable yapmak, onu
+ * okuyan her yeri (`escalateGate`'in `membersOf`u, denetim satırı, panel) bir
+ * null dalıyla doldurmak demekti — sahipsiz kapı için değil, HER kapı için
+ * ödenen bir bedel. Bunun yerine sütun bir CÜMLE tutuyor.
+ *
+ * Değer bir grup ADI gibi görünmemeli, çünkü değil: `membersOf("(sahipsiz)")`
+ * hiç kimse döndürür ve dönmesi gereken de budur — bildirilecek bir grup yok.
+ * Parantezli hâli, bir dizin grubunun asla taşıyamayacağı bir biçim.
+ */
+export const OWNERLESS_GATE_GROUP = "(sahipsiz)";
+
 /** Step 4/5/9/11/12 opening: the record, the trail, the ticket, the audience. */
 export async function openGate(
   deps: ActivityDeps,
   ticket: TicketKey,
   step: StepId,
-  ownerGroup: string,
+  /**
+   * Kapının açılacağı ROL — ya da `null`, "bu kapının sahibi yok".
+   *
+   * `null` yalnız kuralın onay grubu istemediği koşularda gelir
+   * (`gates.ts` `ownerOf`). Dizine HİÇ sorulmaz: olmayan bir rolü gruba
+   * çevirmeye çalışmak 404'ten başka bir şey üretmez, ve o 404 bugüne kadar
+   * kapıların hiç kapanmamasının sebebiydi.
+   */
+  ownerGroup: string | null,
   gateStatuses?: { approve?: string; return?: string },
-): Promise<string> {
+): Promise<string | null> {
   const run = await deps.runs.get(ticket);
   const at = deps.now().toISOString();
   // The workflow passes a ROLE; the gate record must carry the group that
   // exists in the directory, because that is what `verifyMembership` is asked
   // about later. See `DirectoryReader.groupForRole` for what happened when the
   // two were allowed to differ.
-  const group = await deps.directory.groupForRole(ownerGroup);
+  //
+  // Sahipsiz kapıda çevrilecek bir rol yok, dolayısıyla dizin çağrısı da yok.
+  const group = ownerGroup === null ? OWNERLESS_GATE_GROUP : await deps.directory.groupForRole(ownerGroup);
   // Idempotent: a retry re-reads the existing record, so `openedAt` — the
   // anchor the whole escalation ladder is measured from — never moves.
   await deps.gates.open(run.runId, step, group, at);
@@ -121,12 +145,19 @@ export async function openGate(
    */
   const approveStatus = gateStatuses?.approve?.trim() ?? "";
   const returnStatus = gateStatuses?.return?.trim() ?? "";
+  /**
+   * Sahipsiz kapıda yorumun "onay grubu" satırı bir grup adı değil, bir CÜMLE
+   * olmalı: "(sahipsiz) grubunun onayı bekleniyor" diye okuyan operatör,
+   * bulamayacağı bir grubu aramaya çıkar. M104 gereği metin katalogda.
+   */
+  const groupText =
+    group === OWNERLESS_GATE_GROUP ? deps.translate(run.locale, "jira.gate_group_none") : group;
   const comment =
     approveStatus === "" && returnStatus === ""
-      ? deps.translate(run.locale, "jira.gate_open", { gate: step, group })
+      ? deps.translate(run.locale, "jira.gate_open", { gate: step, group: groupText })
       : deps.translate(run.locale, "jira.gate_open_with_status", {
           gate: step,
-          group,
+          group: groupText,
           // Yapılandırılmamış tarafın yerine "—" değil, o tarafın olmadığını
           // SÖYLEYEN bir ifade: boş bir tırnak, operatörün "buraya bir statü
           // yazmam mı gerekiyordu" diye düşünmesine yol açar.
@@ -139,15 +170,22 @@ export async function openGate(
   await notifyEvent(deps, run, {
     event: "gate_open",
     messageKey: "notify.gate_open",
-    params: { ticket, gate: step, group },
-    to: await deps.directory.membersOf(group),
+    params: { ticket, gate: step, group: groupText },
+    // Sahipsiz kapıda dizine sorulacak bir grup yok; bildirilecek kimse de yok
+    // ve bunu boş bir listeyle söylemek, olmayan bir gruba sormaktan dürüst.
+    to: group === OWNERLESS_GATE_GROUP ? [] : await deps.directory.membersOf(group),
     key: `open:${step}`,
   });
   // Returned so the WORKFLOW knows the group it opened against. `canCloseGate`
   // runs inside the workflow and cannot call the directory itself; without this
   // it compared the claim to the ROLE and refused every real approval as
   // `wrong_group` — the OPS-34 failure, one layer above `recordGateDecision`.
-  return group;
+  //
+  // Sahipsiz kapı `null` döner ve `canCloseGate` grup karşılaştırmasını o
+  // `null` yüzünden atlar. Sentinel'i geri vermek de olurdu ve YANLIŞ olurdu:
+  // o zaman workflow "grup `(sahipsiz)` olmalı" diye karşılaştırır ve hiçbir
+  // karar geçmezdi.
+  return group === OWNERLESS_GATE_GROUP ? null : group;
 }
 
 /**
@@ -168,10 +206,26 @@ export async function recordGateDecision(
 ): Promise<GateVerdict> {
   const run = await deps.runs.get(ticket);
   const role = GATE_OWNER[decision.step as keyof typeof GATE_OWNER];
-  // Resolved through the directory for the same reason `openGate` resolves it:
-  // the claim on the signal names the group the BFF verified against, and that
-  // is a directory group, not a role.
-  const expected = role === undefined ? undefined : await deps.directory.groupForRole(role);
+  /**
+   * SAHİPSİZ AÇILMIŞ KAPININ KARARI, KAPININ KENDİ KAYDINA GÖRE YARGILANIR.
+   *
+   * Bu satır olmadan sahipsiz kapı bir adım ötede ölürdü: workflow grup
+   * karşılaştırmasını atlıyor, ama BU aktivite kendi başına `GATE_OWNER`
+   * rolünü dizine çevirip karşılaştırıyordu. Eşlenmiş bir grubu olan bir
+   * kurulumda karar `product-owners`ı beklerken `jira-users-x` ile gelir ve
+   * `üyelik doğrulanamadı` yer — yani operatörün sahipsiz seçtiği kapı,
+   * kapanmayan kapı olurdu.
+   *
+   * Kapının SAHİPSİZ açıldığını söyleyen tek doğru kaynak kapı KAYDIdır
+   * (`gates.get`), koşunun girdisi değil: bu aktivite girdiyi görmez, ve
+   * kaydı okumak zaten yapılan bir şey. Kayıt sahipsiz diyorsa
+   * karşılaştıracak bir grup yoktur.
+   */
+  const opened = await deps.gates.get(run.runId, decision.step);
+  const expected =
+    opened?.ownerGroup === OWNERLESS_GATE_GROUP || role === undefined
+      ? undefined
+      : await deps.directory.groupForRole(role);
   /**
    * ÜYELİĞİN İKİNCİ ÖLÇÜMÜ — ama ölçülecek bir grup varsa.
    *
@@ -186,9 +240,23 @@ export async function recordGateDecision(
    * yalnız dizin eşlemesi gerçekten yokken yazıyor. Kararın kimliği
    * (`actorUserId`), denetim zinciri (`signatureSeq`) ve grup karşılaştırması
    * (`expected`) her iki dalda da aynen uygulanıyor.
+   *
+   * ── İKİNCİ MUAFİYET: SAHİPSİZ KAPI ────────────────────────────────────────
+   * Kapı kaydı `(sahipsiz)` diyorsa üyelik sorusu yine anlamsız, ama sebebi
+   * farklı: `unconfigured` "kurulumda grup YOK" demek, sahipsiz kapı ise "bu
+   * kuralda grup İSTENMEDİ" demek. İkisi ayrı ayrı sorulur çünkü ayrı ayrı
+   * doğru olabilir — grubu olan bir kurulumda tek bir kuralın kapısı sahipsiz
+   * seçilebilir, ve o kapıda `verifyMembership` var olan ama ilgisiz bir gruba
+   * üyelik sorup kararı düşürürdü.
+   *
+   * Kaybedilen şey yine YALNIZ "hangi grup". Kararı veren insanın kimliği
+   * (`actorUserId`) denetim zincirine adıyla yazılır, `signatureSeq` hash
+   * zincirindeki yerini verir, SoD imza sırası (M32) workflow tarafında aynen
+   * uygulanır. Jira'nın izin şeması geri veremeyeceği için Maestro'da KALAN
+   * şeyler bunlar, ve hiçbiri bu dalda düşmüyor.
    */
   const member =
-    decision.membershipCheck === "unconfigured"
+    decision.membershipCheck === "unconfigured" || opened?.ownerGroup === OWNERLESS_GATE_GROUP
       ? true
       : await deps.work.verifyMembership(decision.actorUserId, decision.actorGroup);
   if (!member || (expected !== undefined && decision.actorGroup !== expected)) {
@@ -257,8 +325,18 @@ export async function escalateGate(
 
   const ladder = await deps.params.escalationLadder(run.runId);
   const now = new Date(Date.parse(gate.openedAt) + waitingHours * HOUR_MS).toISOString();
-  const owners = await deps.directory.membersOf(gate.ownerGroup);
-  const deputies = await deps.directory.membersOf(`${gate.ownerGroup}-deputy`);
+  /**
+   * Sahipsiz kapıda dizine hiç sorulmaz.
+   *
+   * `membersOf("(sahipsiz)")` zaten boş dönerdi ve aşağıdaki `unaddressed`
+   * dalı bunu doğru ele alırdı — yani DAVRANIŞ aynı. Sorulmamasının sebebi
+   * başka: her hatırlatıcı turunda dizine olmayan iki grup için iki soru
+   * sormak, sahada 404 loglarıyla dolu bir dizin bırakır ve operatör gerçek
+   * bir eşleme hatasını o gürültünün içinde göremez.
+   */
+  const ownerless = gate.ownerGroup === OWNERLESS_GATE_GROUP;
+  const owners = ownerless ? [] : await deps.directory.membersOf(gate.ownerGroup);
+  const deputies = ownerless ? [] : await deps.directory.membersOf(`${gate.ownerGroup}-deputy`);
 
   const plan = planEscalation(ladder, {
     openedAt: gate.openedAt,
@@ -294,7 +372,12 @@ export async function escalateGate(
     const detail = `${gate.ownerGroup}: ${plan.unaddressed.map((s) => s.stepId).join(", ")}`;
     await record(deps, run, {
       kind: "gate",
-      title: `kapı ${step} hatırlatıcısı gönderilemedi — grupta kimse yok`,
+      // Sahipsiz kapıda "grupta kimse yok" YANLIŞ bir teşhis olurdu: eksik bir
+      // grup değil, olması istenmeyen bir grup. Operatör bunu bir hata sanıp
+      // düzeltmeye çalışmamalı.
+      title: ownerless
+        ? `kapı ${step} hatırlatıcısı gönderilmedi — kapı sahipsiz, bildirilecek grup yok`
+        : `kapı ${step} hatırlatıcısı gönderilemedi — grupta kimse yok`,
       detail,
       key: `unaddressed:${step}:${plan.unaddressed.map((s) => s.stepId).join("-")}`,
     });

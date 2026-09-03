@@ -486,7 +486,7 @@ MIG_SAYI=$(docker run --rm --entrypoint sh "${MAESTRO_NODE_IMAGE}" \
 # İmaj bundan azını taşıyorsa eski bir koddan build edilmiştir: şema eksik
 # kurulur ve eksik bir sütuna yazan kod hata vermeden çalışır — değer hiç
 # veritabanına ulaşmaz.
-MIG_BEKLENEN=27
+MIG_BEKLENEN=28
 if [[ "${MIG_SAYI}" -ge "${MIG_BEKLENEN}" ]]; then
   ok "  Migration dosyası: ${MIG_SAYI} adet (asgari ${MIG_BEKLENEN})."
 else

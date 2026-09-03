@@ -1,5 +1,6 @@
 import {
   parseAllowedStatuses,
+  parseGateSteps,
   parseStatusMap,
   type FlowType,
   type ListeningRuleRecord,
@@ -53,6 +54,12 @@ export interface ListeningRuleRow {
    * düzenlenmiş olabilir, çıkışta doğrulanır. NULL = statü kısıtı yok.
    */
   allowedStatusesJson?: unknown;
+  /**
+   * Kapı seçimi, jsonb kolonun tuttuğu haliyle (migration 0027). `unknown`,
+   * kardeşlerinin gerekçesiyle: bu veritabanının sözü, elle düzenlenmiş
+   * olabilir, çıkışta doğrulanır. NULL = "seçim yok" (varsayılana düşülür).
+   */
+  gateStepsJson?: unknown;
 }
 
 /**
@@ -84,10 +91,19 @@ export interface ListeningRuleRow {
  * Two types rather than one cast, because the asymmetry is real and worth
  * naming: what we accept FROM the database is broader than what we send TO it.
  */
-type ListeningRuleWrite = Omit<ListeningRuleRow, "statusMapJson" | "allowedStatusesJson"> & {
+type ListeningRuleWrite = Omit<
+  ListeningRuleRow,
+  "statusMapJson" | "allowedStatusesJson" | "gateStepsJson"
+> & {
   statusMapJson: StatusMap | DbNull;
   /** `readonly string[]` DEĞİL, mutable: Prisma'nın `InputJsonValue`'su readonly dizileri kabul etmez. */
   allowedStatusesJson: string[] | DbNull;
+  /**
+   * `GateSteps` DEĞİL, açılmış hâli: `steps` alanı `readonly` olduğu için
+   * Prisma'nın `InputJsonValue`'suna geçmez — `allowedStatusesJson`'ın
+   * gerekçesinin aynısı, bir seviye içeride.
+   */
+  gateStepsJson: { steps: string[]; ownerless?: boolean } | DbNull;
 };
 
 export interface ListeningDelegate {
@@ -188,11 +204,32 @@ export class PrismaListeningStore implements ListeningStore {
         );
       },
     );
-    return { ...toRecordBase(row), statusMap, allowedStatuses };
+    /**
+     * Kapı seçimi de fail-safe okunuyor, ve bozulmasının YÖNÜ üçüncü bir yön:
+     * `statusMapJson` bozulunca DARALIYOR (yorum modu),
+     * `allowedStatusesJson` bozulunca GENİŞLİYOR (statü kapısı kalkar),
+     * bu ise bozulunca VARSAYILANA dönüyor — yani muhtemelen DAHA ÇOK onay
+     * beklenir, asla daha az. Bozuk bir satırın kimseyi onaysız geçirmemesi
+     * gerekir. Uyarı yine de zorunlu: sessizce daha çok onay beklemek,
+     * operatörün "kapıları kapattım ama hâlâ soruyor" diye arayacağı şeydir.
+     */
+    const gateSteps = parseGateSteps(
+      row.gateStepsJson === DB_NULL ? null : row.gateStepsJson,
+      (reason) => {
+        this.onWarn(
+          `[maestro] dinleme kuralı ${row.ruleId}: gateStepsJson okunamadı (${reason}) — ` +
+            "kural onay kapılarını RİSK SEVİYESİNE göre açacak (varsayılan). " +
+            "Panelde kuralın onay kapılarını yeniden seçin.",
+        );
+      },
+    );
+    return { ...toRecordBase(row), statusMap, allowedStatuses, gateSteps };
   }
 }
 
-function toRecordBase(row: ListeningRuleRow): Omit<ListeningRuleRecord, "statusMap"> {
+function toRecordBase(
+  row: ListeningRuleRow,
+): Omit<ListeningRuleRecord, "statusMap" | "gateSteps"> {
   return {
     ruleId: row.ruleId,
     projectKey: row.projectKey,
@@ -238,6 +275,21 @@ function toRow(record: ListeningRuleRecord): ListeningRuleWrite {
     allowedStatusesJson: (() => {
       const parsed = parseAllowedStatuses(record.allowedStatuses ?? null);
       return parsed === null ? DB_NULL : [...parsed];
+    })(),
+    /**
+     * YOKLUK VE BOŞ DİZİ BURADA AYRIŞIR — kardeşlerinden farklı olan tek yer.
+     *
+     * `allowedStatusesJson`ta ve `statusMapJson`da boş, yokla aynı şeye
+     * iniyordu ve tek biçimde (SQL NULL) saklanıyordu. Burada inmiyor:
+     * `{steps: []}` "onay kapısı istemiyorum", NULL ise "seçim yok, varsayılana
+     * düş". İkisini aynı NULL'a indirmek, operatörün kapattığı kapıları geri
+     * açardı — ve o kapılar açıldığında hiçbir yüzey nedenini söyleyemezdi.
+     */
+    gateStepsJson: (() => {
+      const parsed = parseGateSteps(record.gateSteps ?? null);
+      return parsed === null
+        ? DB_NULL
+        : { steps: [...parsed.steps], ...(parsed.ownerless === true ? { ownerless: true } : {}) };
     })(),
   };
 }

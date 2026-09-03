@@ -1,7 +1,7 @@
 import { condition, ApplicationFailure } from "@temporalio/workflow";
 import type { GateDecision, StepId, TicketKey } from "@maestro/contracts";
 import type { MaestroActivities } from "./activities.js";
-import { canCloseGate, GATE_OWNER } from "./gates.js";
+import { canCloseGate, ownerOf } from "./gates.js";
 import { workflowNow, type Inbox, type RunState } from "./run-state.js";
 
 /**
@@ -42,14 +42,43 @@ export async function awaitGate(
    * `gate-status-reentry.ts`'in "kurallar yeniden okunuyor" notu).
    */
   gateStatuses?: { approve?: string; return?: string },
+  /**
+   * Kapı SAHİPSİZ mi açılsın — kuralın "onay grubu yok" cevabı, koşuya
+   * çivilenmiş hâlde (`TicketWorkflowInput.gateOwnerless`).
+   *
+   * Varsayılan `false`, yani bugüne kadarki her koşu ve kayıtlı her geçmiş
+   * eski dalda kalır: kapı `GATE_OWNER` rolü adına açılır.
+   */
+  ownerless = false,
 ): Promise<GateDecision> {
-  const owner = GATE_OWNER[at as keyof typeof GATE_OWNER] ?? "tech-leads";
+  const owner = ownerOf(at, ownerless);
   state.status = "gate";
   // The queue is NOT cleared: a decision already waiting was sent by a human
   // looking at this ticket, and whether it belongs to this gate is settled by
   // `canCloseGate`'s `wrong_step` check, not by whether it arrived early.
   // The group the gate is really open against — the directory's name for the
   // role, which is what an approver's claim will carry.
+  /**
+   * SAHİPSİZ KAPI DA AÇILIR — aktivite AYNEN çağrılır, yalnız rol `null`.
+   *
+   * ── Neden aktiviteyi atlamıyoruz ──────────────────────────────────────────
+   * İlk (ve yanlış) refleks, sahipsiz kapıda `openGate`'i hiç çağırmamaktı.
+   * Ölçünce ne kaybedildiği görülüyor: `openGate` yalnız dizine sormuyor —
+   * kapı kaydını açıyor (eskalasyon merdiveninin çıpası), koşu satırını
+   * `gate` yapıyor (paneldeki "onay bekliyor"), denetime `GATE_OPEN` yazıyor,
+   * ve TICKET'A "nasıl onaylarım" yorumunu düşüyor. Sahipsiz kapıda bunların
+   * hepsi daha da GEREKLİ, çünkü operatöre haber veren bir grup bildirimi de
+   * yok. Atlamak, kapıyı sessiz bırakmak olurdu.
+   *
+   * Değişen tek şey argüman: rol yerine `null`, ve aktivite dizine sormadan
+   * kapıyı sahipsiz açıyor (`impl/gate.ts`). Cevabı da `null` gelir, ve
+   * `canCloseGate` grup karşılaştırmasını o `null` yüzünden atlar — başka
+   * hiçbir kontrolü değil.
+   *
+   * REPLAY GÜVENLİ: aktivite TİPİ (`openGate`) ve SIRASI değişmiyor, yalnız
+   * yeni zamanlamaların payload'ı. Kayıtlı geçmişlerde `gateOwnerless` alanı
+   * hiç yok → `false` → `owner` eski değerinde kalır.
+   */
   const openedAgainst = await acts.openGate(ticket, at, owner, gateStatuses);
 
   /**
@@ -70,7 +99,12 @@ export async function awaitGate(
     "gate",
     `kapı ${at} açıldı — insan onayı bekleniyor`,
     [
-      `onay grubu: ${openedAgainst}`,
+      // Sahipsiz kapıda "onay grubu: null" yazmak, olmayan bir şeyi bir değer
+      // gibi göstermek olurdu. Operatörün okuması gereken cümle, kapının bir
+      // gruba değil KENDİSİNE açık olduğu.
+      openedAgainst === null
+        ? "onay grubu: yok — kapı sahipsiz açıldı, kararı ticket'a erişebilen yetkili verir"
+        : `onay grubu: ${openedAgainst}`,
       `onay için: ticket'a "/approve" yazın${
         gateStatuses?.approve === undefined ? "" : ` ya da ticket'ı "${gateStatuses.approve}" durumuna taşıyın`
       }`,

@@ -18,6 +18,7 @@
  */
 
 import { z } from "zod";
+import { APPROVAL_GATE_STEPS } from "@maestro/contracts";
 
 /** The three flows Maestro can run a ticket through. Mirrors the DB CHECK. */
 export type FlowType = "analiz" | "duzeltme" | "gelistirme";
@@ -260,6 +261,97 @@ export function parseStatusMap(
   return Object.keys(parsed.data).length === 0 ? null : parsed.data;
 }
 
+/**
+ * ONAY KAPILARI — "bu kuralda hangi onaylar beklensin", ve "kapı bir grubun
+ * adına mı açılsın".
+ *
+ * ── `statusMap` ile karıştırılmamalı ────────────────────────────────────────
+ * Üç ayrı soru, üç ayrı belge, ve panelde üç ayrı bölüm:
+ *   `allowedStatuses` — ticket NEREDEYSE işleyebilirim (giriş kapısı)
+ *   `statusMap`       — ticket'ı NEREYE taşıyayım / hangi statü karar sayılsın
+ *   `gateSteps`       — hangi onayları BEKLEYEYİM
+ *
+ * ── BOŞ DİZİ İLE YOKLUK AYNI ŞEY DEĞİL ──────────────────────────────────────
+ * Bu şemanın tek zor kararı, ve `StatusMapSchema`nın verdiği kararın TERSİ:
+ *
+ *   yok / `null`     → "kural kapı dizisi SEÇMEDİ". Varsayılana düşülür
+ *                      (`gates.risk_tiers` parametresi, o da yoksa
+ *                      `GATES_BY_RISK`). 0027 öncesi yazılmış her satır ve
+ *                      geriye dönük uyumun TAMAMI bu daldır.
+ *   `steps: []`      → "onay kapısı İSTEMİYORUM". Hiçbir kapı açılmaz.
+ *
+ * `statusMap`te boş nesne `null`'a indirgeniyordu çünkü orada iki temsil TEK
+ * bir davranışa iniyordu ("ticket'ı hiç taşıma"). Burada iki temsil İKİ AYRI
+ * davranış: "varsayılan neyse o" ile "hiçbiri" aynı şey değil, ve operatörün
+ * akışında ikincisi meşru bir cevap — onay Jira'da statü taşıyarak veriliyor.
+ *
+ * ── `ownerless` neden AYNI belgede, ama AYRI bir soru ───────────────────────
+ * Operatörün gözünde tek bölüm ("onaylar nasıl işler"), ama iki bağımsız
+ * cevap: diziyi daraltıp grubu isteyen de, tam diziyi isteyip grubu olmayan da
+ * meşru kurulumlar. Bu yüzden `steps` boş olduğunda `ownerless` anlamsız değil,
+ * sadece etkisiz — ve o durumda da saklanır, çünkü operatör kapı ekleyince
+ * cevabını yeniden vermek zorunda kalmamalı.
+ */
+export const GateStepsSchema = z
+  .object({
+    /**
+     * Hangi kapılar. Adım kimlikleri (`4`/`5`/`9`/`11`/`12`), operatöre asla
+     * bu haliyle gösterilmez — panel `gates.meaning.*` katalog anahtarlarını
+     * yazar (M104). Kimliklerin burada olmasının sebebi, workflow tarafındaki
+     * `StepId` ile AYNI sözlük olmaları: iki ayrı sözlük, er ya da geç
+     * birbirinden ayrışır.
+     */
+    steps: z.array(z.enum(APPROVAL_GATE_STEPS)),
+    /**
+     * Kapı bir onay grubunun adına AÇILMASIN mı. Yokluk = `false` = bugünkü
+     * davranış, yani 0027 öncesi her kural ve bu kutuyu hiç görmemiş her
+     * operatör eski dalda kalır.
+     */
+    ownerless: z.boolean().optional(),
+  })
+  .strict();
+
+/** Bir kuralın kapı seçimi. `null` = seçim yok, varsayılana düşülür. */
+export type GateSteps = z.infer<typeof GateStepsSchema>;
+
+/**
+ * Bir `gateStepsJson` kolon değerini okur, FAIL-SAFE.
+ *
+ * ── Bozulmanın YÖNÜ, ve neden bu yön ────────────────────────────────────────
+ * `parseStatusMap` bozulunca DARALIYOR (yorum moduna düşer, ticket
+ * taşınmaz); `parseAllowedStatuses` bozulunca GENİŞLİYOR (statü kapısı
+ * kalkar) ve bu yüzden orada uyarı zorunlu.
+ *
+ * Burada bozulma FAIL-CLOSED: `null`, yani "seçim yok", yani risk katmanının
+ * varsayılan dizisi — operatörün seçtiğinden DAHA ÇOK onay beklenmesi
+ * ihtimali var, daha AZ onay beklenmesi ihtimali yok. Bozuk bir satırın
+ * kimseyi onaysız geçirmemesi gerekir, ve `[]` (hiç kapı) ile karışması tam
+ * olarak o olurdu.
+ *
+ * `onInvalid` yine de raporlanır: sessizce daha çok onay beklemek, operatörün
+ * "kapıları kapattım ama hâlâ soruyor" diye günlerce arayacağı bir şeydir.
+ */
+export function parseGateSteps(
+  value: unknown,
+  onInvalid?: (reason: string) => void,
+): GateSteps | null {
+  if (value === null || value === undefined) return null;
+  const parsed = GateStepsSchema.safeParse(value);
+  if (!parsed.success) {
+    onInvalid?.(parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; "));
+    return null;
+  }
+  // Yinelenenler ayıklanır ve akış sırasına sokulur: aynı kapıyı iki kez açmak
+  // diye bir şey yok, ve operatörün kutuları hangi sırayla işaretlediği
+  // saklanan belgeyi değiştirmemeli — iki özdeş seçim iki farklı JSON olarak
+  // saklanırsa, "kural değişti mi" sorusunu hiçbir yüzey doğru cevaplayamaz.
+  const steps = APPROVAL_GATE_STEPS.filter((step) => parsed.data.steps.includes(step));
+  return {
+    steps,
+    ...(parsed.data.ownerless === true ? { ownerless: true } : {}),
+  };
+}
+
 /** One listening rule as stored. */
 export interface ListeningRuleRecord {
   ruleId: string;
@@ -302,6 +394,13 @@ export interface ListeningRuleRecord {
    * Non-null opts this rule into transition mode for the points it names.
    */
   statusMap?: StatusMap | null;
+  /**
+   * Bu kuralda hangi onay kapıları açılsın (0027). `null`/absent = "seçim yok",
+   * yani varsayılana düşülür — 0027 öncesi yazılmış her satırın hâli ve geriye
+   * dönük uyumun tamamı. `{ steps: [] }` bundan FARKLI: "onay kapısı
+   * istemiyorum". Bkz. `GateStepsSchema`.
+   */
+  gateSteps?: GateSteps | null;
 }
 
 /**

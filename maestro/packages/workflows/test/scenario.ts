@@ -121,6 +121,17 @@ export interface ScenarioOptions {
    */
   statusMap?: TicketStatusMap;
   /**
+   * Kuralın seçtiği kapı dizisi. YOKLUK "seçim yok" demek ve risk katmanına
+   * düşülür — bu dosyadaki her senaryonun ve kayıtlı her geçmişin hâli, ve
+   * `scenario.opened` o senaryolarda hâlâ eski cevabı kanıtlıyor.
+   *
+   * BOŞ DİZİ ayrı bir cevap ("hiç kapı açma") ve `undefined` ile
+   * karıştırılmamalı — bu yüzden koşullu spread ile geçiliyor.
+   */
+  gateSteps?: readonly StepId[];
+  /** Kapılar sahipsiz mi açılsın (kural onay grubu istemedi). */
+  gateOwnerless?: boolean;
+  /**
    * What the driver answers for a given move. Defaults to a clean `moved:true`.
    * A scenario returns `{moved:false, reason:"forbidden"}` to exercise the
    * warn-but-continue policy — the run must finish anyway.
@@ -167,6 +178,8 @@ export interface ScenarioOptions {
 /** Records what the workflow asked for, and drives it through its stubs. */
 export class Scenario {
   readonly opened: StepId[] = [];
+  /** Her kapı açılışında `openGate`e geçen rol — `null` = sahipsiz. */
+  readonly openedAgainst: (string | null)[] = [];
   /**
    * Every board move the workflow ASKED for, in order.
    *
@@ -301,6 +314,10 @@ export function makeActivities(
     // directory whose groups carry the role names, which is the no-mapping case.
     openGate: async (_ticket, step, ownerGroup) => {
       scenario.opened.push(step);
+      // Kapının HANGİ ROLLE açıldığı — `null` ise sahipsiz. Kaydediliyor,
+      // çünkü "kapı sahipsiz açıldı" iddiası ancak bu argümanla ölçülebilir:
+      // `opened` yalnız hangi kapının açıldığını söyler.
+      scenario.openedAgainst.push(ownerGroup);
       const policy = scenario.policy(step);
       if (policy.kind === "approve") await scenario.signal(approval(step));
       if (policy.kind === "reject_once" || policy.kind === "reject_always") {

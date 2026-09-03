@@ -3,6 +3,7 @@ import type { ResolvedDeps } from "./deps.js";
 import { badRequest } from "./errors.js";
 import { BFF_MESSAGE_KEYS } from "./messages.js";
 import { workflowIdFor } from "./gateway.js";
+import { resolveGateSteps } from "./gate-defaults.js";
 import { flowDecisionFor, statusGateOf, type FlowDecision } from "./flow-decision.js";
 import { decisionLogLine, decisionLogMarkdown, type IntakeDecisionFacts } from "./intake-decision-log.js";
 import type { ListeningRuleRecord } from "./listening-store.js";
@@ -231,6 +232,20 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     }
   }
 
+  /**
+   * KAPI DİZİSİ, ÜÇ KATMANIN CEVABI OLARAK — kural → parametre → sabit.
+   *
+   * `flowDecision.gateSteps` yalnız BİRİNCİ katman (kuralın seçimi). İkinci
+   * katman (`gates.risk_tiers` parametresi, artık gerçekten okunuyor) burada
+   * devreye giriyor, ve `null` cevabı üçüncü katmana — workflow'un
+   * `GATES_BY_RISK`i — düşülmesi demek. Bkz. `gate-defaults.ts`.
+   *
+   * `"orta"` alım anındaki varsayılan risk ve bilerek: gerçek katmanı analiz
+   * belirler (adım 3) ve bu noktada henüz YOKTUR. `initialRunState` de aynı
+   * varsayımla başlıyor, yani iki taraf aynı şeyi söylüyor.
+   */
+  const gateSteps = await resolveGateSteps(deps, flowDecision.gateSteps, "orta");
+
   const outcome = await deps.runs.signalWithStart({
     ticket: request.ticket,
     // Omitted rather than sent as null for an analysis-only start: absence is
@@ -247,6 +262,20 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     ...(flowDecision.statusMap === undefined || flowDecision.statusMap === null
       ? {}
       : { statusMap: flowDecision.statusMap }),
+    /**
+     * KAPI DİZİSİ — ve neden `statusMap` gibi "boşsa hiç gönderme" DEĞİL.
+     *
+     * Kardeşlerinde yokluk zaten doğru varsayılanı anlatıyordu, o yüzden boş
+     * bir değeri göndermemek doğruydu. Burada yokluk "risk seviyesine göre aç"
+     * demek ve BOŞ DİZİ onun tam tersi — "hiçbirini açma". İkisini aynı
+     * "gönderme" dalına koymak, operatörün kapattığı kapıları koşu başlarken
+     * geri açardı, ve panel kapalı gösterirken kapılar açılırdı.
+     *
+     * `null` yine de gönderilmez: o gerçekten "seçim yok" demek ve absent ile
+     * aynı şey — birini gönderip diğerini göndermemek, aynı anlama iki farklı
+     * yol açmak olurdu.
+     */
+    ...(gateSteps === null ? {} : { gateSteps }),
     /**
      * KURALIN SEÇTİĞİ AJANLAR, koşunun başlangıç girdisine çivilenmiş hâlde.
      *
@@ -310,6 +339,37 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
           flowDecision.statusMap === undefined || flowDecision.statusMap === null
             ? "yorum"
             : JSON.stringify(flowDecision.statusMap),
+        /**
+         * HANGİ ONAYLAR bekleniyordu — akışın ve durum eşlemesinin yanında,
+         * aynı gerekçeyle. "OPS-41'de neden PO onayı sorulmadı?" sorusunun
+         * aylar sonraki tek cevabı bu satır: kural o zamandan beri düzenlenmiş
+         * olabilir.
+         *
+         * Üç durum, ÜÇ AYRI KELİMEYLE — bir null tutulmuyor, çünkü SIEM
+         * sorgusu onu düşürür ve üçü ayırt edilemez hâle gelir:
+         *   "risk seviyesine göre" → kural seçim yapmadı
+         *   "kapı yok"             → kural açıkça hiçbir kapı istemedi
+         *   "4,5"                  → tam olarak bunlar
+         */
+        gateSteps:
+          gateSteps === null
+            ? "risk seviyesine göre"
+            : gateSteps.steps.length === 0
+              ? "kapı yok"
+              : gateSteps.steps.join(","),
+        gateOwner: gateSteps?.ownerless === true ? "sahipsiz" : "grup adına",
+        /**
+         * Cevap NEREDEN geldi — üç katmanın hangisinden. `gateSteps` neyin
+         * seçildiğini söyler, bu satır KİMİN seçtiğini: kural mı, global
+         * parametre mi, yoksa ürünün varsayılanı mı. "Ben kuralda seçmedim
+         * ama kapılar değişti" sorusunun tek cevabı bu ayrım.
+         */
+        gateStepsSource:
+          flowDecision.gateSteps !== undefined && flowDecision.gateSteps !== null
+            ? "kural"
+            : gateSteps === null
+              ? "ürün varsayılanı (risk seviyesi)"
+              : "global parametre (gates.risk_tiers)",
         /**
          * HANGİ AJAN koştu — akışın ve durum eşlemesinin yanında, aynı
          * satırda, aynı gerekçeyle. Kural sonradan düzenlenmiş olabilir;

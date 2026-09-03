@@ -8,6 +8,7 @@ import {
   ASSIGNED_MATCH_VALUE,
   AllowedStatusesSchema,
   FLOW_TYPES,
+  GateStepsSchema,
   MATCH_KINDS,
   StatusMapSchema,
 } from "../listening-store.js";
@@ -102,6 +103,23 @@ const AllowedStatusesRef = AllowedStatusesSchema.nullish().transform((value) => 
   return cleaned.length === 0 ? null : cleaned;
 });
 
+/**
+ * ONAY KAPILARI — yokluk ile boş dizi AYRI, ve `StatusMapRef` ile `AllowedStatusesRef`
+ * gibi normalize EDİLMEZ.
+ *
+ * O ikisi boşu `null`'a indiriyordu çünkü orada iki temsil tek davranışa
+ * iniyordu. Burada inmiyor: `null` "seçim yok, varsayılana düş" (0027 öncesi
+ * her kural), `{steps: []}` ise "onay kapısı istemiyorum". Bir `transform`
+ * yazıp boş diziyi `null`'a çevirmek, operatörün panelde kapattığı kapıları
+ * kaydet tuşuna basar basmaz geri açardı — ve hiçbir yüzey nedenini
+ * söyleyemezdi.
+ *
+ * `nullish()` ile absent de `null`'a iner, çünkü İKİSİ aynı şeydir: alanı hiç
+ * göndermemiş bir istemci ile açıkça `null` göndermiş bir istemci, ikisi de
+ * "seçim yok" diyor.
+ */
+const GateStepsRef = GateStepsSchema.nullish().transform((value) => value ?? null);
+
 const RuleBody = z.object({
   projectKey: z.string().trim().min(1).max(32),
   assigneeAccountId: z.string().trim().min(1).max(128),
@@ -123,6 +141,8 @@ const RuleBody = z.object({
   statusMap: StatusMapRef,
   /** Hangi statudeki ticketlar islensin; null → statu kisiti yok (bkz. AllowedStatusesRef). */
   allowedStatuses: AllowedStatusesRef,
+  /** Hangi onaylar beklensin; null → risk seviyesine gore (bkz. GateStepsRef). */
+  gateSteps: GateStepsRef,
 });
 
 /**
@@ -199,6 +219,10 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
             lastStarted: 0,
             rulesSearched: 0,
             lastError: null,
+            // Tarama HİÇ bağlı değilken havuzda kalan da yok: `null` burada
+            // "bilinmiyor" değil, "sorulacak bir tarama yok" demek — ve panel
+            // ikisini de aynı şekilde okur (kalan gösterme).
+            poolRemaining: null,
           }
         : read(),
     );

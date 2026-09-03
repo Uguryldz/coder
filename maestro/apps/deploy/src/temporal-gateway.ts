@@ -300,6 +300,25 @@ export class TemporalRunGateway implements RunGateway {
         ...(input.statusMap === undefined || input.statusMap === null
           ? {}
           : { statusMap: input.statusMap }),
+        /**
+         * KAPI DİZİSİ — ve `flow`/`statusMap`ten AYRILAN tek nokta.
+         *
+         * Onlarda yokluk zaten doğru varsayılanı anlatıyordu. Burada yokluk
+         * "risk seviyesine göre aç" demek ve BOŞ DİZİ tam tersi ("hiçbirini
+         * açma"), dolayısıyla boş dizi gönderilMEK zorunda: atlanırsa
+         * operatörün kapattığı kapılar koşu başlarken geri açılır.
+         *
+         * `ownerless` AYRI bir alan olarak açılıyor, `gateSteps` belgesinin
+         * içinde değil: workflow tarafındaki iki soru gerçekten ayrı iki
+         * karar (`gatesFor` diziyi okur, `awaitGate` sahipliği) ve girdinin
+         * şekli o ayrımı yansıtmalı. Yalnız `true` iken yazılıyor — `false`
+         * yazmak, kayıtlı geçmişlerde HİÇ olmayan bir alanı yeni koşularda
+         * varmış gibi göstermek olurdu ve ikisi arasındaki fark okunamazdı.
+         */
+        ...(input.gateSteps === undefined || input.gateSteps === null
+          ? {}
+          : { gateSteps: [...input.gateSteps.steps] }),
+        ...(input.gateSteps?.ownerless === true ? { gateOwnerless: true } : {}),
       },
     ];
     const signal = input.signal;

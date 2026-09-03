@@ -26,7 +26,23 @@ import type { ParamDefinition } from "@maestro/contracts";
  */
 export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
   {
-    // M51 — risk-tiered gate sets; the analysis picks the tier, PO may raise it.
+    /**
+     * M51 — risk-tiered gate sets; the analysis picks the tier, PO may raise it.
+     *
+     * ── 0027: BU AYAR ARTIK GERÇEKTEN OKUNUYOR ──────────────────────────────
+     * Uzun süre ÖLÜYDÜ: değerleri `GATES_BY_RISK` sabitiyle birebir aynıydı,
+     * panelde görünüyordu, 4-göz korumalıydı, sürümleniyordu — ve hiçbir kod
+     * onu okumuyordu. Operatör düzenlediğinde hiçbir şey değişmiyordu.
+     *
+     * `apps/bff/src/gate-defaults.ts` onu okuyor ve üç katmanlı cevabın
+     * ORTASINA koyuyor: kuralın kendi `gateSteps` seçimi bunu EZER, bu da
+     * `GATES_BY_RISK`i ezer — ama yalnız ürünün varsayılanından FARKLIYSA.
+     * Dokunulmamış bir parametre koşuya hiç yazılmaz, böylece varsayılan
+     * ilerlediğinde (M92 gibi) dokunulmamış kurulumlar ilerlemeyi alır.
+     *
+     * Buradaki değer `GATES_BY_RISK` ile AYNI KALMALI ve `test/seed.test.ts`
+     * bunu zaten doğruluyor: "dokunulmamış" tespiti o eşitliğe dayanıyor.
+     */
     key: "gates.risk_tiers",
     scope: "global",
     type: "json",

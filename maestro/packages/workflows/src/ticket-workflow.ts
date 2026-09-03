@@ -192,6 +192,40 @@ export interface TicketWorkflowInput {
    * of them to hand to the activity.
    */
   statusMap?: TicketStatusMap | null;
+  /**
+   * HANGİ ONAY KAPILARI AÇILACAK — dinleme kuralının seçtiği dizi, koşuya
+   * ÇİVİLENMİŞ hâlde.
+   *
+   * ── Neden girdide, `statusMap` ile aynı üç sebep ──────────────────────────
+   *  · `packages/workflows` veritabanı okuyamaz (M44), kural buradan
+   *    sorulamaz.
+   *  · Bir AKTİVİTEDEN sorulabilirdi, ama o zaman koşu BAŞLADIĞINDAN BAŞKA bir
+   *    kuralla bitebilirdi: öğle arasında kuralı düzenleyen bir admin, sabah
+   *    kapıda bekleyen koşunun kaç kapı daha göreceğini değiştirmiş olurdu ve
+   *    koşunun kendi geçmişi bunu açıklayamazdı.
+   *  · Girdiden türeyen bir karar SONSUZA DEK aynı replay'i verir. Determinizm
+   *    burada çivileniyor, ve ölçümü `workflow-gate-steps.test.ts`te.
+   *
+   * ── ÜÇ DEĞER, ÜÇ ANLAM ────────────────────────────────────────────────────
+   *  · YOK/`undefined`  — kural bir dizi seçmedi. `GATES_BY_RISK[risk]`, yani
+   *    bugüne kadarki davranış. KAYITLI HER GEÇMİŞ BU DALDA: alan yoktu,
+   *    dolayısıyla `undefined` gelir ve eski koşu eski cevabı alır.
+   *  · `[]`             — kural "onay kapısı istemiyorum" dedi. Meşru bir
+   *    cevap: onay Jira statüsüyle veriliyor.
+   *  · dolu dizi        — tam olarak o kapılar, akış sırasında.
+   */
+  gateSteps?: readonly StepId[] | null;
+  /**
+   * Kapılar SAHİPSİZ mi açılsın — kural bir onay grubu istemediyse `true`.
+   *
+   * `gateSteps` "hangi kapılar", bu "kimin adına". İkisi ayrı, çünkü ayrı
+   * sorular: kapı dizisini daraltmak isteyip grup kontrolünü isteyen bir
+   * kurulum da, tam diziyi isteyip grubu olmayan bir kurulum da meşru.
+   *
+   * Absent/`false` = bugünkü davranış (kapı `GATE_OWNER` rolü adına açılır).
+   * Kayıtlı her geçmiş bu daldadır.
+   */
+  gateOwnerless?: boolean;
 }
 
 /**
@@ -283,7 +317,14 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
             : { return: input.statusMap.gateReturnStatus }),
         };
 
-  const gate = (at: StepId) => awaitGate(acts, state, inbox, ticket, at, gateStatuses);
+  /**
+   * Kapının sahipsiz açılıp açılmayacağı — girdiden, tam olarak `gateStatuses`
+   * gibi: koşu başlarken çivilenir ve replay'de aynı cevabı verir. Absent =
+   * `false`, yani kayıtlı her geçmiş ve bugüne kadarki her koşu eski dalda.
+   */
+  const gateOwnerless = input.gateOwnerless === true;
+  const gate = (at: StepId) =>
+    awaitGate(acts, state, inbox, ticket, at, gateStatuses, gateOwnerless);
   const stopIfKilled = () => assertNotKilled(acts, state, ticket);
 
   /**
@@ -465,7 +506,9 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   }
 
   // ── 4-5 · analysis gates, with the rejection loop ────────────────────────
-  const required = gatesFor(state.risk);
+  // Kuralın seçtiği dizi varsa o, yoksa risk katmanı — karar `gatesFor`ta ve
+  // yalnız GİRDİDEN türüyor, yani replay'de aynı cevabı verir.
+  const required = gatesFor(state.risk, input.gateSteps);
   const plan = planFor(input.flow);
   const analysisGates = plan.analysisGate ? required.filter((g) => g === "4" || g === "5") : [];
   // Once, on the way INTO the gate set, not once per gate: `onReview` says

@@ -766,6 +766,20 @@ export type DiscoveryStatusReader = () => {
   readonly lastStarted: number;
   readonly rulesSearched: number;
   readonly lastError: string | null;
+  /**
+   * HAVUZDA KALAN İŞ — son tur, tur başı sınırına takılıp geride kaç iş
+   * bıraktı. `null` = takılmadı, havuz boşaldı.
+   *
+   * Operatörün modeli "havuzda iş kaldığı sürece durmaz"; bu alan o modelin
+   * PANELDEKİ ölçümü. Sayının kendisi bir alt sınır: sınıra takılan tur kalan
+   * kuralları hiç aramamıştır, dolayısıyla gerçek birikim daha büyük olabilir.
+   *
+   * Opsiyonel, çünkü bu alanı tanımayan bir okuyucu (eski bir `apps/deploy`
+   * imajı, ya da bir test sahtesi) hâlâ geçerli bir cevap veriyor — ve o
+   * cevabın anlamı doğru olan: kalan bildirilmedi, yani gösterilecek bir
+   * birikim yok.
+   */
+  readonly poolRemaining?: number | null;
 };
 
 /**

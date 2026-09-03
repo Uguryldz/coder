@@ -5,7 +5,7 @@ import type {
   WorkMode,
   WorkflowRunState,
 } from "@maestro/contracts";
-import type { StatusMap } from "./listening-store.js";
+import type { GateSteps, StatusMap } from "./listening-store.js";
 
 /**
  * The workflow engine as the BFF sees it. Temporal lives behind this interface
@@ -76,6 +76,20 @@ export interface StartRunInput {
    * finish under a rule it did not start under.
    */
   statusMap?: StatusMap | null;
+  /**
+   * HANGİ ONAY KAPILARI açılsın — kararı veren dinleme kuralının seçtiği dizi,
+   * koşunun başlangıç girdisine çivileniyor.
+   *
+   * `statusMap` ile aynı üç sebep: workflow kuralları okuyamaz (M44), sonradan
+   * okusa kapıda bekleyen koşu başka bir kuralla biterdi, ve girdiden türeyen
+   * bir karar replay'de sonsuza dek aynı cevabı verir.
+   *
+   * Absent/`null` = "kural seçim yapmadı", varsayılana düşülür — bugüne kadarki
+   * davranış. `{steps: []}` bundan FARKLI ve bu yüzden `flow`/`analystVariantId`
+   * gibi "boşsa hiç gönderme" normalizasyonuna TABİ DEĞİL: boş dizi bir seçim,
+   * ve gönderilmezse operatörün kapattığı kapılar geri açılır.
+   */
+  gateSteps?: GateSteps | null;
   /**
    * Hangi AJANIN koşacağı, kararı veren dinleme kuralı bir ajan seçtiyse.
    *

@@ -1,0 +1,110 @@
+-- HAND-WRITTEN MIGRATION.
+--
+-- KAPI DİZİSİ KURAL BAZINA TAŞINIR: bir dinleme kuralı artık "bu akışta hangi
+-- onaylar beklensin" ve "kapı bir onay grubunun adına mı açılsın" sorularının
+-- cevabını taşır (`gateStepsJson`).
+--
+-- ── WHY IT EXISTS — ölçülen açık ─────────────────────────────────────────────
+--
+-- Kapı dizisinin tek kaynağı `GATES_BY_RISK` sabitiydi
+-- (`packages/contracts/src/workflow.ts`): risk katmanı → kapı kümesi, ürünle
+-- birlikte derlenmiş, operatörün göremediği bir karar. Bunun operatörün
+-- kurulumunda ne ürettiği ölçüldü:
+--
+--   · Akış `analiz` (`planFor`: `engineering: false`), yani kapı 12 (PR onayı)
+--     HİÇ açılmıyor — açılacak bir PR yok.
+--   · Kapı 9 ve 11 de aynı sebeple hiç açılmıyor.
+--   · Kapı 4 yalnız `orta`/`kritik` riskte açılıyor, yani analizin verdiği
+--     risk seviyesine göre bazen var bazen yok.
+--   · Geriye HER koşuda açılan tek kapı kalıyor: 5.
+--
+-- O tek kapı `tech-leads` GRUBUNUN adına açılıyordu, ve bu kurulumda öyle bir
+-- dizin grubu YOK: onay yetkisi Jira'nın izin şemasında duruyor ("bir ticket'ı
+-- `analysisapproval`'dan `development`'a taşıyabiliyorsan onaylayabilirsin").
+-- Maestro'nun ikinci bir grup katmanı kurması, o katmanın boş olduğu bir sahada
+-- yalnızca kapıların kapanmamasını üretti.
+--
+-- İKİNCİ AÇIK — ÖLÜ AYAR. `gates.risk_tiers` parametresi (`params-defaults.ts`)
+-- `GATES_BY_RISK` ile birebir aynı değerleri taşıyor ve HİÇBİR KOD OKUMUYORDU.
+-- Operatör panelden düzenlediğinde hiçbir şey değişmiyordu. Bu migration'ın
+-- kardeşi olan kod değişikliği onu GERÇEKTEN OKUNUR hâle getiriyor: kuralda
+-- seçim yoksa global varsayılan olarak devreye giriyor.
+--
+-- ── WHAT CHANGES ────────────────────────────────────────────────────────────
+--
+-- Kapı dizisi artık ÜÇ katmanlı bir cevap:
+--   (1) kuralın `gateStepsJson.steps` seçimi — varsa o,
+--   (2) yoksa `gates.risk_tiers` parametresi (artık okunuyor),
+--   (3) o da yoksa `GATES_BY_RISK` — bugüne kadarki tek cevap.
+-- Cevap koşu BAŞLARKEN girdiye çivilenir (`statusMap` ile aynı gerekçe:
+-- kapıda bekleyen bir koşu, öğle arası düzenlenen bir kuralla bitmemeli ve
+-- replay sonsuza dek aynı cevabı vermeli).
+--
+-- `gateStepsJson.ownerless` ise ayrı bir soru: kapı AÇILIR ama bir grubun adına
+-- değil. Kaybedilen tek kontrol "hangi grup"tur — kapıyı yine bir İNSAN
+-- kapatır, kimliği denetim zincirine adıyla yazılır, ve SoD imza sırası (M32,
+-- "aynı kişi 4 ile 5'i imzalayamaz") aynen uygulanır. Bunlar Jira'nın izin
+-- şemasının geri veremeyeceği şeyler, dolayısıyla Maestro'da KALIYORLAR.
+--
+-- ── WHY jsonb AND NOT COLUMNS ───────────────────────────────────────────────
+--
+-- 0018'in (`statusMapJson`) gerekçesinin aynısı, ve o gerekçe bu tabloda bir
+-- kez ödenmiş bir bedelin faizini zaten ödedi: kapı statüleri
+-- (`gateApproveStatus`/`gateReturnStatus`) hiç migration gerektirmeden o
+-- belgeye eklenebildi. Kapı dizisi de bir ürün kararı ve daha önce oynadı
+-- (M51 üç katman, M92 opsiyonel 9/11 ayrımı); her yeni soru için bir kolon,
+-- her yeni soruyu canlı tabloya karşı bir migration yapardı.
+--
+-- AYRI BİR KOLON, `statusMapJson`'a EKLENMİŞ ALAN DEĞİL — ve bu bilerek.
+-- `statusMapJson` operatörün gözünde tek bir soru ("bu kuralda statüler nasıl
+-- işler") ve okuma/yazma iki yönü de statü ADLARI taşıyor. Kapı dizisi başka
+-- bir soru ("hangi onaylar gerekli"), başka bir sözlük (adım kimlikleri) ve
+-- başka bir tüketici (`gatesFor`, workflow tarafı). İkisini aynı belgeye
+-- sıkıştırmak, `StatusMapSchema`'nın `.strict()`ini gevşetmek ve panelin iki
+-- ayrı bölümünü tek bir JSON'a bağlamak demekti.
+--
+-- ── BACKFILL: YOK, VE BU BİR KARAR ──────────────────────────────────────────
+--
+-- Hiçbir satıra hiçbir şey yazılmaz. Kolon NULL kalır ve NULL'un anlamı
+-- "bu kural kapı dizisi seçmedi" — yani kural bugüne kadar nasıl koşuyorsa
+-- aynen öyle koşmaya devam eder (risk katmanına düşer). GERİYE DÖNÜK UYUMUN
+-- TAMAMI bu daldır.
+--
+-- Mevcut kuralların `GATES_BY_RISK` değerleriyle DOLDURULMASI düşünüldü ve
+-- REDDEDİLDİ: o zaman operatörün hiç vermediği bir karar, onun verdiği bir
+-- karar gibi panelde görünürdü — ve daha kötüsü, ürünle gelen varsayılan
+-- ilerlediğinde (M92 gibi) bu satırlar dondurulmuş eski varsayılanla kalırdı.
+--
+-- BOŞ DİZİ İLE NULL AYNI ŞEY DEĞİL ve okuma tarafı ikisini ayırır:
+--   NULL / kolon yok  → "seçim yok", varsayılana düş.
+--   {"steps": []}     → "onay kapısı İSTEMİYORUM", hiçbir kapı açılmaz.
+-- İkincisi operatörün akışında meşru bir cevap: onay Jira'da statü taşıyarak
+-- veriliyor ve Maestro'nun ayrıca bir kapı açması gereksiz. `statusMapJson`'ın
+-- boş nesneyi NULL'a indirgemesinin TERSİ bir karar — orada iki temsil tek
+-- davranışa iniyordu, burada iki temsil İKİ AYRI davranış.
+--
+-- ── SAFE ON A LIVE TABLE ────────────────────────────────────────────────────
+--
+-- Tek ifade, nullable ve varsayılansız bir kolon ekliyor: Postgres bunu
+-- tabloyu yeniden yazmadan, yalnız katalogda yapar. Backfill YOK, dolayısıyla
+-- yazılan satır da yok. Hiçbir kolon düşürülmüyor, hiçbir CHECK eklenmiyor —
+-- belgenin şekli okuma yolunda Zod ile doğrulanıyor ve bozuk bir değer
+-- FAIL-SAFE olarak "seçim yok"a düşüyor (`parseGateSteps`).
+--
+-- ── RE-APPLIABLE ────────────────────────────────────────────────────────────
+--
+-- `IF NOT EXISTS`. İkinci kez çalıştırıldığında kolon zaten vardır ve yazılacak
+-- bir şey olmadığı için operatörün arada yaptığı hiçbir düzenleme ezilmez.
+-- 0008-0016 bu kurulumda tarihsel olarak yarım uygulandığı için her migration
+-- bu şarta uymak zorunda.
+--
+-- ── REVERSIBLE ──────────────────────────────────────────────────────────────
+--
+-- `ALTER TABLE "ListeningRule" DROP COLUMN IF EXISTS "gateStepsJson";`
+-- Kaybedilen tek şey 0027'den sonra yapılmış kapı seçimleridir; kolon
+-- düştüğünde her kural risk katmanı varsayılanına döner, yani DAHA ÇOK onay
+-- bekler. Geri dönüşün fail-closed yönde olması bilerek: bir rollback'in
+-- kimseyi onaysız geçirmemesi gerekir.
+
+ALTER TABLE "ListeningRule"
+  ADD COLUMN IF NOT EXISTS "gateStepsJson" JSONB;

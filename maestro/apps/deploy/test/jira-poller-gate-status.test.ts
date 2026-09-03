@@ -280,4 +280,31 @@ describe("poller gate-status channel", () => {
     // durdurmamalı.
     expect(summaryOf(result.lines)).not.toBe("");
   });
+
+  /**
+   * SAHADAN GELEN ŞİKÂYETİN KENDİSİ: "geri gönderdim, hiçbir şey olmadı."
+   *
+   * `gateApproveStatus`/`gateReturnStatus` 1.0.20'de geldi, yani YÜKSELTİLEN
+   * her kurulumda ikisi de boş başlıyor ve kanal kapalı doğuyor. Kapalı olması
+   * doğru (fail-closed), SESSİZ olması değildi: operatör ticket'ı taşıyor,
+   * `decideFromStatus` soracak bir ad bulamıyor, tur `no_gate_statuses` ile
+   * sessizce çıkıyor, ve log "yoklama çalışıyor, kimse bir şey yapmadı" diyen
+   * turla HARF HARF aynı görünüyordu. Operatörün elinde ayırt edecek hiçbir şey
+   * yoktu — ve panelde doldurulacak iki alan olduğunu bilmesinin yolu da.
+   */
+  it("kapı statüleri hiç yapılandırılmamışsa SESSİZ kalmaz — çaresiyle birlikte yazar", async () => {
+    const result = await round({ gateApproveStatus: "", gateReturnStatus: "" });
+    // Karar üretilmedi: kanal kapalı ve kapalı kalmalı.
+    expect(result.signals).toHaveLength(0);
+    const summary = summaryOf(result.lines);
+    expect(summary).toContain("1 kapı statü kanalı kapalı");
+    // Sayı tek başına yetmez: operatöre NE YAPACAĞINI söylemeli.
+    expect(summary).toContain("/approve");
+  });
+
+  /** Yapılandırılmış bir kuralda bu sayaç susmalı — yoksa her tur bağırırdı. */
+  it("kapı statüleri doluyken bu satır HİÇ çıkmaz", async () => {
+    const result = await round();
+    expect(summaryOf(result.lines)).not.toContain("kapı statü kanalı kapalı");
+  });
 });

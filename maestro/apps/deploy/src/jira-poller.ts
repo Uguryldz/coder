@@ -239,6 +239,21 @@ interface RoundTally {
    * karıştırılmamalı.
    */
   gateRefused: number;
+  /**
+   * KAPIDA BEKLEYEN ama statü kanalı bu projede HİÇ YAPILANDIRILMAMIŞ koşular.
+   *
+   * `gateRefused`ten ayrı sayılıyor ve ayrı olması bu sayacın tüm sebebi: orası
+   * "karar görüldü, kapı kapanmadı", burası "karar HİÇ SORULMADI". Operatör
+   * ticket'ı analize geri taşıyıp hiçbir şey olmadığını gördüğünde iki durumun
+   * çaresi taban tabana zıt — biri yetki/zamanlama, diğeri panelde iki alanın
+   * boş bırakılmış olması — ve ikisi de sıfır sayılırsa log ikisini de
+   * "yoklama çalışıyor, kimse bir şey yapmadı" diye gösterir.
+   *
+   * `gateApproveStatus`/`gateReturnStatus` 1.0.20'de GELDİ, yani yükseltilen
+   * her kurulumda bu alanlar BOŞ başlıyor ve kanal sessizce kapalı. Sessizliğin
+   * bedelini 0024 zaten ödedi: çalışmayan değil, GÖRÜNMEYEN kusur pahalıdır.
+   */
+  gateUnconfigured: number;
 }
 
 function emptyTally(): RoundTally {
@@ -253,6 +268,7 @@ function emptyTally(): RoundTally {
     clarifyWakes: 0,
     gateDecisions: 0,
     gateRefused: 0,
+    gateUnconfigured: 0,
   };
 }
 
@@ -348,6 +364,17 @@ export function startJiraPoller(options: PollerOptions): { stop: () => void } {
         (tally.clarifyWakes > 0 ? `, ${tally.clarifyWakes} netleştirme cevaplandı` : "") +
         (tally.gateDecisions > 0 ? `, ${tally.gateDecisions} kapı statüyle kapandı` : "") +
         (tally.gateRefused > 0 ? `, ${tally.gateRefused} statü kararı kabul edilmedi` : "") +
+        /**
+         * Kapıda bekleyen bir koşu VAR ve statü kanalı kapalı — operatörün
+         * "geri gönderdim, hiçbir şey olmadı" sorusunun cevabı bu satır.
+         * ÇARESİYLE birlikte yazılıyor: sayı tek başına operatöre panelde
+         * hangi iki alanı dolduracağını söylemez.
+         */
+        (tally.gateUnconfigured > 0
+          ? `, ${tally.gateUnconfigured} kapı statü kanalı kapalı ` +
+            "(Dinleme kuralında 'kapı onay/geri gönderme statüsü' boş — " +
+            "doldurana kadar kapı yalnız /approve ve /reject yorumlarıyla kapanır)"
+          : "") +
         (tally.failed > 0 ? `, ${tally.failed} ticket okunamadı` : ""),
     );
   };
@@ -705,6 +732,16 @@ async function gateStatusRound(
     workflowIdFor(ticket),
   );
   if (outcome.kind !== "decided") {
+    /**
+     * Kanal bu projede HİÇ yapılandırılmamış. Ticket kapıda bekliyor, operatör
+     * onu taşımış olabilir, ve `decideFromStatus` soracak bir statü adı
+     * bulamadığı için sessizce çıkıyordu. Sayaç bu sessizliği kırar.
+     *
+     * Tur BAŞINA değil TICKET başına sayılıyor: aynı turda kapıda bekleyen üç
+     * ticket varsa üçü de aynı boş eşlemeden etkileniyor, ve "3 koşu bu yüzden
+     * bekliyor" cümlesi "1 kural eksik"ten daha çok şey söyler.
+     */
+    if (outcome.reason === "no_gate_statuses") tally.gateUnconfigured += 1;
     if (outcome.reason === "status_map_conflict") {
       log(
         `[yoklama] ${ticket}: kapı statüsü eşlemesi çakışık — ` +

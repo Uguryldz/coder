@@ -1,5 +1,6 @@
 import {
   JournalActor,
+  StepId,
   TicketKey,
   type WorkflowRunState,
   type WorkflowRunStatus,
@@ -242,10 +243,30 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
     // The same reconciliation the list applies, for the same reason and so the
     // two can never disagree: a row the list shows as `fail` must not turn back
     // into `running` the moment a reviewer clicks it.
-    const state = reconciledState(record, await queryStateOrNull(deps, request, ticket));
+    const live = await queryStateOrNull(deps, request, ticket);
+    const state = reconciledState(record, live) ?? recordState(record);
     const app_ = record.appId === null ? null : await deps.read.apps.get(record.appId);
 
-    return reply.code(200).send({ run: record, state, application: app_ });
+    // WHERE the state came from, said out loud, because the screen renders a
+    // different SENTENCE for each and had no way to tell them apart. `state:
+    // null` used to mean two unrelated things — "this ticket never started"
+    // and "the engine no longer remembers this run" — and Studio rendered the
+    // first sentence for both. An operator whose run was parked at gate 5 read
+    // "iş akışı henüz başlamadı" and concluded the platform had dropped their
+    // ticket; the run was alive in the catalog and its gate was waiting for
+    // them. Temporal retention was 24h and thirteen of fourteen live runs had
+    // aged out, so this was the common case, not the corner.
+    //
+    //   "engine"  — the engine answered; freshest possible.
+    //   "record"  — the engine did not, and this is the catalog's last word.
+    //               Real progress, possibly stale, NOT a run that never began.
+    //   "none"    — neither source has a position to report.
+    return reply.code(200).send({
+      run: record,
+      state,
+      stateSource: live !== null ? "engine" : state !== null ? "record" : "none",
+      application: app_,
+    });
   });
 
   /**
@@ -358,20 +379,34 @@ function totalsOf(
 }
 
 /**
- * The run id the journal and the evidence package are keyed by. Resolved from
- * the live execution rather than derived from the ticket: a ticket that was
- * retried has more than one run id in its history, and guessing would serve
- * one run's journal under another's name.
+ * The run id the journal and the evidence package are keyed by. Read from the
+ * CATALOG, never guessed and never asked of the engine.
+ *
+ * It used to come from `queryRunState`, on the reasoning that a retried ticket
+ * has more than one run id in its history and only the live execution knows
+ * which one is current. The reasoning was right about retries and wrong about
+ * the source: Temporal is a workflow engine, not an archive, and an execution
+ * that ages out of retention takes the run id with it. Every route below —
+ * journal, summary, evidence, cost — then answered 404 `no_run` for a ticket
+ * whose rows were sitting in Postgres untouched, and Studio rendered "veri
+ * alınamadı" over a database that had the answer. Measured on the live board:
+ * retention was 24h, thirteen of fourteen `running` runs had no execution
+ * left, and OPS-81's thirteen journal entries were unreachable.
+ *
+ * The catalog answers the same question and outlives the engine. `get`
+ * already returns the ticket's MOST RECENT run (`orderBy: updatedAt desc,
+ * take: 1`), which is the same "which one is current" the engine was being
+ * asked for — so a retried ticket still serves the latest run's journal, and
+ * a forgotten one still serves at all. `JournalEntry.runId` is a foreign key
+ * to `WorkflowRun.id`, so this id is by construction the one those rows carry.
  */
 async function runIdOf(deps: ResolvedDeps, ticket: string): Promise<string> {
-  // Unreadable is NOT the same as absent, but here both end the request: the
-  // journal and the evidence package are keyed by run id, and serving them
-  // under a guessed id would attribute one run's history to another. A 404
-  // says "no run id to work from", which is true either way — and unlike a
-  // 500, it is a sentence the screen already knows how to render.
-  const state = await deps.runs.queryRunState(workflowIdFor(ticket)).catch(() => null);
-  if (state === null) throw notFound("no_run", { ticket });
-  return state.runId;
+  // A 404 here means the PLATFORM has no run for this ticket — a claim the
+  // catalog can actually make, unlike the engine, whose silence only ever
+  // meant "not in my memory right now".
+  const record = await deps.read.runs.get(ticket);
+  if (record === null) throw notFound("no_run", { ticket });
+  return record.runId;
 }
 
 /**
@@ -445,6 +480,44 @@ export function reconciledState(
   // Terminal record over a live engine answer: keep the engine's step, runId
   // and clocks — they are real — and correct only the verdict.
   return { ...state, status: record.status };
+}
+
+/**
+ * The catalog's own account of where a run stands — used only when the engine
+ * has no answer at all.
+ *
+ * The engine is the better source while it HAS the execution, which is why
+ * this is a fallback and not the primary. But "Temporal cannot answer" is not
+ * "nothing happened": the workflow writes `step` and `status` to the run row on
+ * every transition, so a run whose execution has aged out of retention still
+ * has its last position sitting in Postgres. Rendering nothing there told an
+ * operator their ticket had never started, when in fact it was parked at gate
+ * 5 waiting for their own approval.
+ *
+ * Only fields the ROW actually holds are used. `step`, `status` and both
+ * clocks are real columns; `runId` is the row's primary key. Nothing here is
+ * invented — the whole point of the previous behaviour was refusing to make up
+ * a step, and that refusal is kept: what changes is that the row's real step is
+ * no longer thrown away with it.
+ *
+ * `null` when the row has no status to speak from — the same "no guess"
+ * `reconciledState` makes for the same reason.
+ */
+export function recordState(record: RunRecord): WorkflowRunState | null {
+  if (record.status === null) return null;
+  const step = StepId.safeParse(record.step);
+  // A step the contract does not recognise is a row this function cannot
+  // honestly narrate. Better no position than a made-up one.
+  if (!step.success) return null;
+  return {
+    runId: record.runId,
+    ticketKey: record.ticketKey,
+    step: step.data,
+    status: record.status,
+    ...(record.risk === undefined ? {} : { risk: record.risk }),
+    startedAt: record.startedAt,
+    updatedAt: record.updatedAt,
+  };
 }
 
 async function queryStateOrNull(

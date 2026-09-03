@@ -266,6 +266,33 @@ export async function escalateGate(
       key: `escalate:${step}:${plan.due.map((s) => s.stepId).join("-")}`,
     });
   }
+  // Nobody to remind. This used to be fatal — `planEscalation` threw, the
+  // activity exhausted its retries, and the WORKFLOW died over an empty
+  // approver group, taking a gate that was correctly waiting for a human with
+  // it. Now it is written down instead, in the two places a human looks: the
+  // ticket journal, and the ticket itself. An unreminded gate still waits; an
+  // unreminded gate NOBODY KNOWS ABOUT waits forever.
+  if (plan.unaddressed.length > 0) {
+    const detail = `${gate.ownerGroup}: ${plan.unaddressed.map((s) => s.stepId).join(", ")}`;
+    await record(deps, run, {
+      kind: "gate",
+      title: `kapı ${step} hatırlatıcısı gönderilemedi — grupta kimse yok`,
+      detail,
+      key: `unaddressed:${step}:${plan.unaddressed.map((s) => s.stepId).join("-")}`,
+    });
+    // On the ticket too: the journal is where the platform remembers, but Jira
+    // is where the humans are (M61), and this is precisely the case where no
+    // human was told anything by any other route.
+    await deps.idempotency.once(`${run.runId}:gate-unaddressed:${step}`, () =>
+      deps.work.addComment(
+        ticket,
+        deps.translate(run.locale, "jira.gate_unaddressed", {
+          gate: step,
+          group: gate.ownerGroup,
+        }),
+      ),
+    );
+  }
   // A delegation moves the gate to the deputy; it never closes it (M88).
   for (const delegation of plan.delegations) {
     await record(deps, run, {

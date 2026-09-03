@@ -256,6 +256,20 @@ export function useRuns(
 export interface RunDetail {
   readonly run: RunRecordWire;
   readonly state: WorkflowRunState | null;
+  /**
+   * Which source the `state` above came from — the difference between two
+   * sentences the screen must never confuse.
+   *
+   *   `"engine"` — Temporal answered. The state is live.
+   *   `"record"` — Temporal did not, and this is the catalog's last word: real
+   *                progress, possibly stale. The run DID start.
+   *   `"none"`   — neither source has a position. Only here does "bu ticket'ın
+   *                iş akışı henüz başlamadı" tell the truth.
+   *
+   * Absent on a BFF that predates the field, which reads as `"engine"` — the
+   * old behaviour, where any state present was the engine's.
+   */
+  readonly stateSource?: "engine" | "record" | "none";
   readonly application: ApplicationRecord | null;
 }
 

@@ -123,6 +123,38 @@ describe("escalateGate (M88)", () => {
     expect(fakes.recorded.notifications.filter((n) => n.event !== "gate_open")).toEqual([]);
   });
 
+  /**
+   * Found live: `product-owners` and `tech-leads` had no members, thirteen
+   * gates were open against them, and the 24-hour reminder KILLED every run it
+   * touched. `planEscalation` threw on a step with no recipient, `escalateGate`
+   * is a Temporal activity, so the throw retried, exhausted, and failed the
+   * workflow — OPS-81 died at gate 5 with its analysis published and a human
+   * still expected to approve it. The reminder destroyed the gate it existed to
+   * protect.
+   */
+  it("survives an approver group with nobody in it, and says so", async () => {
+    const fakes = makeFakes({ members: () => [] });
+    await openGate(fakes.deps, "PAY-101", "5", "tech-leads");
+
+    // The activity RETURNS. This is the whole fix: a throw here failed the run.
+    await expect(escalateGate(fakes.deps, "PAY-101", "5", 24)).resolves.not.toThrow();
+
+    // Nothing was sent, because there was nobody to send to — and no address
+    // was invented to make the send succeed.
+    expect(fakes.recorded.notifications.filter((n) => n.event !== "gate_open")).toEqual([]);
+
+    // But the silence is on the record, in both places a human looks.
+    const entry = fakes.journalStore.entries.find((e) => e.title.includes("grupta kimse yok"));
+    expect(entry).toBeDefined();
+    expect(entry?.detail).toContain("tech-leads");
+    expect(fakes.recorded.comments.some((c) => c.ticket === "PAY-101")).toBe(true);
+
+    // And the gate is still OPEN: an unreminded gate keeps waiting for its
+    // human. Closing it would decide the gate by timeout, which is the one
+    // outcome an approval gate must never produce on its own.
+    expect((await fakes.gateStore.get("run-pay-101-0001", "5"))?.closedAt).toBeNull();
+  });
+
   it("measures from the gate's own anchor, not from the activity's clock", async () => {
     // The activity's `now` is fixed at 09:00; a 30-hour wait must still be
     // 30 hours, because it is the WORKFLOW that counted them.

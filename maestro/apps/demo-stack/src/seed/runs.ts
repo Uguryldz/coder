@@ -43,6 +43,12 @@ export function stampBefore(now: Date, hours: number): string {
 export function runRecordOf(run: DemoRun, now: Date): RunRecord {
   return {
     ticketKey: run.ticketKey,
+    // `demoRunId`, the SAME function the engine state below uses (line ~91).
+    // The catalog record and the engine state must name one run: the journal,
+    // the evidence package and the cost rows are all keyed by this id, and a
+    // record that disagreed with the state would serve one run's history under
+    // another's name — the exact confusion `runIdOf` reads this field to avoid.
+    runId: demoRunId(run.ticketKey),
     title: run.title,
     appId: run.appId,
     mode: run.mode,

@@ -8,7 +8,7 @@ import {
 } from "@maestro/contracts";
 import { z } from "zod";
 import { BusinessCalendar, addWorkingMinutes, workingMinutesBetween } from "./calendar.js";
-import { NotifyConfigError, NotifyRecipientError } from "./errors.js";
+import { NotifyConfigError } from "./errors.js";
 
 /**
  * Escalation ladder (M88) — FULLY parametric: the steps, their delays, their
@@ -147,6 +147,16 @@ export interface EscalationPlan extends EscalationDecision {
   notifications: Notification[];
   /** Due steps whose action is "delegate": the caller must reassign. */
   delegations: ResolvedStep[];
+  /**
+   * Due steps that resolved to no recipient — nobody to remind.
+   *
+   * Reported rather than thrown, because the caller is a Temporal activity and
+   * a throw here failed the whole run over an empty approver group (see
+   * `planEscalation`). These steps produced NO notification; the caller is
+   * expected to record that fact where a human will read it, because an
+   * unreminded gate that nobody knows is unreminded waits forever in silence.
+   */
+  unaddressed: ResolvedStep[];
 }
 
 /**
@@ -162,9 +172,26 @@ function messageKeyOf(step: ResolvedStep): string {
 
 /**
  * Turns the decision into notifications. Message text stays in the catalog
- * (M104): a step contributes a KEY, never a sentence. A step that resolves to
- * no recipient throws — a notification addressed to nobody is exactly the
- * silent death this ladder exists to prevent.
+ * (M104): a step contributes a KEY, never a sentence.
+ *
+ * A step that resolves to NO RECIPIENT is reported, not thrown. It used to
+ * throw, on the reasoning that a notification addressed to nobody is the
+ * silent death this ladder exists to prevent — right about the danger, wrong
+ * about the remedy. `escalateGate` is a Temporal activity, so the throw
+ * retried, exhausted, and failed the WORKFLOW: an empty approver group stopped
+ * being "nobody was reminded" and became "the run is dead". Measured on the
+ * live board: `product-owners` and `tech-leads` had no members, thirteen gates
+ * were open against them, and OPS-81 — parked at gate 5 with its analysis
+ * published and waiting on a human — was killed by its own 24-hour reminder.
+ * The gate the ladder was protecting is exactly what it destroyed.
+ *
+ * The empty steps come back in `unaddressed` instead, so the caller can record
+ * "nobody holds this gate" where an operator will see it. That is the same
+ * division of labour `DirectoryReader.membersOf` already documents: an empty
+ * group is a real, reportable state, and the notifier decides what to do about
+ * it. Deciding to kill the run was never one of the sensible options — an
+ * unreminded gate keeps waiting for its human, while a failed workflow needs
+ * one to notice it died.
  *
  * Every notification is parsed against the frozen contract HERE, so a bad
  * ladder or a bad `now` fails in the planner, where the parameter can be fixed,
@@ -172,10 +199,14 @@ function messageKeyOf(step: ResolvedStep): string {
  */
 export function planEscalation(ladder: EscalationLadder, ctx: EscalationContext): EscalationPlan {
   const decision = escalationDueAt(ladder, ctx);
-  const notifications = decision.due.map((step) => {
+  const unaddressed: ResolvedStep[] = [];
+  const notifications = decision.due.flatMap((step) => {
     const to = [...(step.to ?? ctx.recipients(step))];
     if (to.length === 0) {
-      throw new NotifyRecipientError(step.channel, step.stepId, "escalation step resolved to no recipient");
+      // No throw, and no invented address either — the step is set aside and
+      // named, so the caller can say who was NOT reminded and why.
+      unaddressed.push(step);
+      return [];
     }
     const parsed = Notification.safeParse({
       event: step.event,
@@ -192,12 +223,13 @@ export function planEscalation(ladder: EscalationLadder, ctx: EscalationContext)
         .join("; ");
       throw new NotifyConfigError(`escalation step "${step.stepId}" produced an invalid notification: ${issues}`);
     }
-    return parsed.data;
+    return [parsed.data];
   });
 
   return {
     ...decision,
     notifications,
+    unaddressed,
     delegations: decision.due.filter((step) => step.action === "delegate"),
   };
 }

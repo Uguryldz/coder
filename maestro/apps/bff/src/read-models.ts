@@ -55,6 +55,24 @@ export interface PageRequest {
  */
 export interface RunRecord {
   readonly ticketKey: TicketKey;
+  /**
+   * `WorkflowRun.id` — the run id the journal, the step events and the
+   * evidence package are all keyed by.
+   *
+   * It travels on the record because the alternative was asking the ENGINE for
+   * it, and the engine forgets. `runIdOf` used to resolve it with
+   * `queryRunState`, so a run whose Temporal execution had aged out of
+   * retention answered 404 `no_run` for its journal, its summary, its evidence
+   * and its cost — four "veri alınamadı" panels over a database that still
+   * held every row. Measured on the live board: thirteen of fourteen `running`
+   * runs had no execution left, and one of them had thirteen journal entries
+   * sitting in Postgres that Studio could not reach.
+   *
+   * The catalog row is the right source: `JournalEntry.runId` is a FOREIGN KEY
+   * to this column, so a record read from the catalog can always name the rows
+   * that point at it — with no second system to outlive.
+   */
+  readonly runId: string;
   readonly title: string;
   readonly appId: AppId | null;
   readonly mode: WorkMode;

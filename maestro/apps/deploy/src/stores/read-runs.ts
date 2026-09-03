@@ -354,6 +354,11 @@ export function toRunRecord(
 ): RunRecord {
   return {
     ticketKey: row.ticketKey,
+    // The row's own primary key, straight through. This is what the journal,
+    // the step events and the evidence package are keyed by, and reading it
+    // here is what stops those four routes from having to ask Temporal for a
+    // run id it may no longer remember.
+    runId: row.id,
     // The ticket key, not a summary this store does not have. A blank title
     // would render as an unnamed row; the key at least names the ticket, and
     // is what the caller clicks through on.

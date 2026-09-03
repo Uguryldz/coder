@@ -87,6 +87,24 @@
   font-family: var(--mono);
 }
 
+/*
+ * A note the reader must NOT skim past.
+ *
+ * `.screen-note` is deliberately quiet — muted, small, the colour of a
+ * footnote — which is right for "where this data came from" and wrong for
+ * "the engine has lost this run and it will not advance on its own". That
+ * second sentence went out in footnote grey and an operator read the screen
+ * as "nothing is happening here". Same size, same rhythm, amber and boxed:
+ * still a note, but one that stops the eye.
+ */
+.screen-note--warn {
+  padding: 9px 11px;
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
 /* Mirrors .issue — an attention row that is also a link target. */
 .screen-issue {
   display: flex;

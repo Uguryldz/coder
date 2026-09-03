@@ -44,6 +44,11 @@ export const APP: ApplicationRecord = {
 
 export const RUN: RunRecord = {
   ticketKey: TICKET,
+  // The SAME id the harness keys this run's journal, evidence and cost rows
+  // by (`RUN_ID` above). The record is what `runIdOf` now reads to find them,
+  // so a record naming a different run would serve one run's history under
+  // another's name — which is the whole reason the id travels on the record.
+  runId: RUN_ID,
   title: "Kredi limiti — API + web UI",
   appId: "ugurpay",
   mode: "full_auto",

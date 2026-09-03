@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { NotifyRecipientError } from "../src/errors.js";
 import { EscalationLadder, escalationDueAt, planEscalation, resolveSteps } from "../src/escalation.js";
 
 const OPENED = "2026-08-03T09:00:00+03:00"; // Monday 09:00 Istanbul
@@ -163,7 +162,30 @@ describe("escalation plan (M88 + M104)", () => {
     expect(plan.notifications.at(-1)?.messageKey).toBe("notify.delegated");
   });
 
-  it("refuses a step that resolves to nobody", () => {
-    expect(() => planEscalation(LADDER, { ...ctx, recipients: () => [] })).toThrow(NotifyRecipientError);
+  /**
+   * The step that resolves to nobody is REPORTED, not thrown.
+   *
+   * It used to throw, and that throw killed runs: `escalateGate` is a Temporal
+   * activity, so it retried, exhausted, and failed the workflow — an empty
+   * approver group turned "nobody was reminded" into "the run is dead", taking
+   * a gate that was correctly waiting for a human with it. Thirteen gates were
+   * open against two empty groups on the live board when this was measured.
+   */
+  it("reports a step that resolves to nobody instead of throwing", () => {
+    const plan = planEscalation(LADDER, { ...ctx, recipients: () => [] });
+    // No address invented, and no notification sent to one.
+    expect(plan.notifications).toEqual([]);
+    // But the step is NAMED, so the caller can record who was not reminded.
+    expect(plan.unaddressed.map((step) => step.stepId)).toEqual(
+      plan.due.map((step) => step.stepId),
+    );
+    expect(plan.unaddressed.length).toBeGreaterThan(0);
+  });
+
+  /** A ladder with recipients still leaves `unaddressed` empty. */
+  it("reports nothing unaddressed when every due step has a recipient", () => {
+    const plan = planEscalation(LADDER, { ...ctx, now: plus(168) });
+    expect(plan.unaddressed).toEqual([]);
+    expect(plan.notifications.length).toBeGreaterThan(0);
   });
 });

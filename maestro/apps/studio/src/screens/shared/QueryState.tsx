@@ -69,13 +69,26 @@ export function QueryState({
  * The state shown where the mock has a panel but the BFF has no endpoint yet.
  * It says "not available", not "nothing happened" — a screen that renders an
  * inviting empty list for data it never asked for is lying about the system.
+ *
+ * `titleKey` overrides the default heading, and exists because the default was
+ * doing damage. "Bu bölüm henüz yayında değil" is the right sentence for a
+ * panel with no data source, and the WRONG one for a panel whose data simply
+ * lives somewhere else — an operator who met it on four tabs of a run detail
+ * read it as "the product is unfinished" and stopped trusting the run in front
+ * of them. A panel that knows where its content actually is should say so.
  */
-export function NotAvailable({ detailKey }: { readonly detailKey?: string }): ReactNode {
+export function NotAvailable({
+  detailKey,
+  titleKey,
+}: {
+  readonly detailKey?: string;
+  readonly titleKey?: string;
+}): ReactNode {
   const t = useT();
   return (
     <EmptyState
       icon="🚧"
-      title={t("state.unavailable.title")}
+      title={t(titleKey ?? "state.unavailable.title")}
       description={detailKey === undefined ? t("state.unavailable.hint") : t(detailKey)}
     />
   );

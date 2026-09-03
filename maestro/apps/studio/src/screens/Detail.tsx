@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useParams } from "react-router";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Card, TabPanel, Tabs } from "../ui/index.ts";
+import { AnalysisTab } from "./detail/AnalysisTab.tsx";
 import { JournalTab } from "./detail/JournalTab.tsx";
 import { RunSidebar } from "./detail/RunSidebar.tsx";
 import { StepList } from "./detail/StepList.tsx";
@@ -57,28 +58,37 @@ export function DetailScreen(): ReactNode {
             />
             <div style={{ padding: 14 }}>
               <TabPanel id="steps" active={tab}>
-                {/* No state means no position in the flow; marking step 0 as
-                    "now" would claim the run had started. */}
+                {/* Still no position means no position: marking step 0 as
+                    "now" would claim the run had started. But "the engine has
+                    forgotten this run" is NOT that, and used to render the
+                    same sentence — see `stateSource`. */}
                 {detail.state === null ? (
                   <NotAvailable detailKey="detail.steps.not_started" />
                 ) : (
-                  <StepList run={detail.state} />
+                  <>
+                    {detail.stateSource === "record" && (
+                      <p className="screen-note screen-note--warn">
+                        {t("detail.steps.from_record")}
+                      </p>
+                    )}
+                    <StepList run={detail.state} />
+                  </>
                 )}
               </TabPanel>
               <TabPanel id="journal" active={tab}>
                 <JournalTab ticket={ticket} />
               </TabPanel>
               <TabPanel id="analysis" active={tab}>
-                <NotAvailable detailKey="detail.analysis.unavailable" />
+                <AnalysisTab ticket={ticket} />
               </TabPanel>
               <TabPanel id="diff" active={tab}>
-                <NotAvailable detailKey="detail.diff.unavailable" />
+                <NotAvailable titleKey="detail.diff.elsewhere.title" detailKey="detail.diff.elsewhere" />
               </TabPanel>
               <TabPanel id="tests" active={tab}>
-                <NotAvailable detailKey="detail.tests.unavailable" />
+                <NotAvailable titleKey="detail.tests.elsewhere.title" detailKey="detail.tests.elsewhere" />
               </TabPanel>
               <TabPanel id="cost" active={tab}>
-                <NotAvailable detailKey="detail.cost.unavailable" />
+                <NotAvailable titleKey="detail.cost.elsewhere.title" detailKey="detail.cost.elsewhere" />
               </TabPanel>
             </div>
           </Card>

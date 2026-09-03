@@ -27,7 +27,7 @@ const AKIS: AkisKaynagi = {
   temporalAcik: () => Promise.resolve(2),
   bekleyenKosular: () => Promise.resolve([]),
   acikTicketlar: () => Promise.resolve(new Set<string>()),
-  saklamaSuresi: () => Promise.resolve("90 gün"),
+  saklamaSaniye: () => Promise.resolve(90 * 86_400),
 };
 
 const FINDING: ConfigFinding = {
@@ -49,6 +49,7 @@ function options(overrides: Partial<Parameters<typeof panelTaniRaporu>[0]> = {})
         variants: null,
         statusMaps: null,
         ruleIdentity: null,
+    gateGroups: null,
       }),
     akis: AKIS,
     hostAdi: "banka-01",
@@ -258,5 +259,22 @@ describe("kayıp koşular", () => {
     const report = await panelTaniRaporu(options({ akis: AKIS }));
     expect(report.html).toContain("Saklama süresi");
     expect(report.html).toContain("90 gün");
+    // Yeterli süre SESSİZ: her raporda uyarı basmak uyarıyı değersizleştirir.
+    expect(report.html).not.toContain("bu ürünün akışı için <b>KISA</b>");
+  });
+
+  /**
+   * Süre YETMİYORSA rapor bunu söylemek zorunda. Ölçülen arıza tam buydu:
+   * namespace 24 saatteydi, 12 koşu kapıda kayboldu, ve hiçbir ekran
+   * "bu süre kısa" demiyordu — süre yazılıyordu ama kıyaslanmıyordu.
+   */
+  it("saklama süresi akışın altındaysa UYARIR", async () => {
+    const report = await panelTaniRaporu(
+      options({ akis: { ...AKIS, saklamaSaniye: () => Promise.resolve(86_400) } }),
+    );
+    expect(report.html).toContain("24 saat");
+    expect(report.html).toContain("bu ürünün akışı için <b>KISA</b>");
+    // Ve ne yapılacağını: yeni imaj bunu kendisi ayarlıyor.
+    expect(report.html).toContain("her worker açılışında kendisi");
   });
 });

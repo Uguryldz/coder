@@ -222,6 +222,20 @@ export interface ConfigHealthInput {
   readonly variants: VariantModelFacts | null;
   readonly statusMaps: StatusMapFacts | null;
   readonly ruleIdentity: RuleIdentityFacts | null;
+  /** Kapı onaylarının dizin grubu eşlemesi; okunamadıysa `null`. */
+  readonly gateGroups: GateGroupFacts | null;
+}
+
+/**
+ * Kapı kararlarının ÜYELİK eşlemesi hakkında bilinenler.
+ *
+ * Tek alan, çünkü tek soru var: bu kurulumda `GATE_GROUPS`/`GATE_GROUP_DEFAULT`
+ * ile eşlenmiş bir dizin grubu VAR MI. Grup adlarının kendisi buraya
+ * taşınmıyor — bir dizin grubunun adı bu ekranda işe yaramaz ve bir kurumun iç
+ * grup adlarını yapılandırma ekranına dökmek gereksiz bir sızıntı olurdu.
+ */
+export interface GateGroupFacts {
+  readonly configured: boolean;
 }
 
 /** Ağırlık sırası — `sorun` en üstte. */
@@ -247,6 +261,7 @@ export function buildConfigFindings(input: ConfigHealthInput): readonly ConfigFi
     ...variantFindings(input.variants),
     ...statusMapFindings(input.statusMaps, input.deployment),
     ...gateChannelFindings(input.statusMaps),
+    ...gateGroupFindings(input.gateGroups),
     ...ruleIdentityFindings(input.ruleIdentity),
   ];
   // Kararlı sıralama: önce ağırlık, sonra üretim sırası. `sort` yerinde ve
@@ -548,6 +563,46 @@ function variantFindings(variants: VariantModelFacts | null): ConfigFinding[] {
  *                   statüyle aynı — kanal o kural için KAPALI, ve bu bir
  *                   `sorun`: operatör açık sanıyor.
  */
+/**
+ * KAPI ONAY GRUBU — ve neden bu satır KIRMIZI DEĞİL.
+ *
+ * Eşlenmiş bir grup varsa üyelik ölçülür ve üye olmayan reddedilir; bu satır
+ * o durumu `iyi` ile geçer.
+ *
+ * Eşleme yoksa satır `bilgi` — bir hata değil, bir KURULUM TERCİHİ. Bazı
+ * kurumlarda onay grubu diye bir şey yoktur ve kararlar Jira statüsüyle
+ * verilir; orada yetkiyi Jira'nın kendi izin şeması korur (o statüye taşıma
+ * hakkı) ve görevler ayrımı da ayaktadır — analizi Maestro yazar, onaylayan
+ * insandır ve kimliği denetime adıyla geçer.
+ *
+ * "Eksik yapılandırma, düzeltin" tonu BİLEREK yok. Bunu bilerek yapan bir
+ * operatöre her açılışta kırmızı bir satır göstermek, o operatöre uyarıları
+ * okumamayı öğretir — ve bu ekranın en pahalıya patlayacak kaybı tam olarak
+ * budur. Söylenen şey nötr ve doğru: grup tanımlı değil, kararlar geçiyor,
+ * denetime "üyelik doğrulanmadı" olarak yazılıyor.
+ */
+function gateGroupFindings(facts: GateGroupFacts | null): ConfigFinding[] {
+  if (facts === null) return [unreported("gate_groups")];
+  const finding: ConfigFinding = facts.configured
+    ? {
+        id: "gate_groups",
+        severity: "iyi",
+        value: "eslenmis",
+        detailKey: "config.detail.gate_groups.configured",
+        fixKey: null,
+      }
+    : {
+        id: "gate_groups",
+        severity: "bilgi",
+        value: "eslenmemis",
+        detailKey: "config.detail.gate_groups.unconfigured",
+        // `fixKey` YOK: düzeltilecek bir şey yok. Bir "çözüm" satırı, bilerek
+        // yapılmış bir tercihi bir arıza gibi gösterirdi.
+        fixKey: null,
+      };
+  return [finding];
+}
+
 function gateChannelFindings(maps: StatusMapFacts | null): ConfigFinding[] {
   if (maps === null) return [unreported("gate_channel")];
   if (maps.gateStatusConflictCount > 0) {

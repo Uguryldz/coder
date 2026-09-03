@@ -107,6 +107,16 @@ export interface AkisBolumu {
   readonly kayipKosular: readonly KosuSatiri[] | null;
   /** Namespace'in saklama süresi, okunabildiyse (`24h0m0s` gibi). */
   readonly saklamaSuresi?: string;
+  /**
+   * Aynı sürenin SANİYESİ — raporun "bu süre yeterli mi" diyebilmesi için.
+   *
+   * Metin ("90 gün") bir insana yeter ama bir KIYASA yetmez, ve bu raporun
+   * işi tam olarak kıyas yapmak: kapılar SÜRESİZ bekler (M61), dolayısıyla
+   * akışın ölçeğinin altındaki her süre bir kayıp vaadidir. Sayı olmadan
+   * rapor süreyi yazar ama "bu az" diyemez — ki bugünkü arızanın tamamı
+   * kimsenin bunu söylememesiydi.
+   */
+  readonly saklamaSaniye?: number;
 }
 
 /** 3. bölüm: Jira'ya yapılan tek bir canlı deneme. */
@@ -498,6 +508,34 @@ function bulguHtml(bulgu: Bulgu): string {
   );
 }
 
+/**
+ * Saklama süresi bu ürünün akışına YETİYOR MU — ve yetmiyorsa ne olacağı.
+ *
+ * ── EŞİK NEDEN 7 GÜN ───────────────────────────────────────────────────────
+ * Ürünün istediği 90 gün, ama bu satırın işi "ideal değil" demek değil, KAYIP
+ * OLACAĞINI haber vermek. Ölçülmüş kayıplar 3.5 ile 14 gün arası yaşta
+ * koşulardı; bir onaycının hafta sonu + bir gün izni tek başına bir haftayı
+ * doldurur. 7 günün ALTINDAKİ her süre, bu akışta kaybın kesin olduğu
+ * bölgedir — 30 günü sarıya boyayıp operatörü her raporda uyarmak ise
+ * uyarıyı değersizleştirirdi.
+ *
+ * `undefined` (süre okunamadı) sessizdir: okunamayan bir şey hakkında ne
+ * "iyi" ne "kötü" denebilir, ve Temporal'ın okunamadığı zaten yukarıda yazıyor.
+ */
+export const SAKLAMA_ASGARI_SANIYE = 7 * 86_400;
+
+function saklamaUyarisi(saniye: number | undefined): string {
+  if (saniye === undefined || saniye >= SAKLAMA_ASGARI_SANIYE) return "";
+  return (
+    `<p class="dikkat">Saklama süresi bu ürünün akışı için <b>KISA</b>. Onay kapıları ` +
+    `SÜRESİZ bekler (M61) ve bir onay günler sürebilir; bu sürenin sonunda bekleyen ` +
+    `koşunun geçmişi Temporal'dan silinir ve koşu bir daha uyandırılamaz — panelde ` +
+    `"running" görünmeye devam ederek. Yeni imaj bunu her worker açılışında kendisi ` +
+    `${"2160h"} (90 gün) olarak ayarlar; bu satır görünüyorsa ya imaj eski ya da ayar ` +
+    `yapılamadı (worker log'unda "saklama süresi AYARLANAMADI" satırına bakın).</p>`
+  );
+}
+
 function kosuTablosu(satirlar: readonly KosuSatiri[]): string {
   if (satirlar.length === 0) return `<p class="bos">Kayıt yok.</p>`;
   const govde = satirlar
@@ -607,7 +645,8 @@ export function taniHtml(rapor: TaniRaporu): string {
         (rapor.akis.saklamaSuresi === undefined
           ? ""
           : ` Saklama süresi: <b>${html(rapor.akis.saklamaSuresi)}</b>.`) +
-        `</p>`;
+        `</p>` +
+        saklamaUyarisi(rapor.akis.saklamaSaniye);
 
   /**
    * KAYIP KOŞULAR — bu raporun en pahalıya patlayabilecek satırı.

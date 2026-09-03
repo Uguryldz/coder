@@ -173,6 +173,7 @@ describe("analize geri gönderme (kapı 4/5)", () => {
                 actorUserId: "ayse.kaya@bank",
                 actorGroup: "tech-leads",
                 sodVerified: true,
+                membershipCheck: "verified",
                 signatureSeq: 1,
                 source: "jira",
                 at: "2026-08-09T10:00:00+03:00",

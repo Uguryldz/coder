@@ -243,13 +243,47 @@ export interface BindingWriter {
 
 // ── gate ownership (M71) ──────────────────────────────────────────────────────
 
+/**
+ * Bir kapının SAHİPLİĞİ — üç ayrı cevap, çünkü üçü üç ayrı davranış.
+ *
+ * `ownerGroup`'un tek `string | null`'ı bunları birbirine karıştırıyordu ve
+ * karışıklık sahada bir kilitlenme üretti: `GATE_GROUPS` tanımlamamış bir
+ * kurulumda rol adı bir grup adıymış gibi dizine soruluyor, Jira 404 diyor ve
+ * her kapı kararı sessizce düşüyordu.
+ */
+export type GateOwner =
+  /** Bu adım bir onay kapısı değil — karar REDDEDİLİR, asla geçirilmez. */
+  | { kind: "not_a_gate" }
+  /** Kapı bir dizin grubuna eşlenmiş — üyelik SORULUR, üye olmayan reddedilir. */
+  | { kind: "group"; group: string }
+  /**
+   * Kapı var ama bu kurulumda eşlenmiş bir grup YOK.
+   *
+   * Sorulacak bir grup olmadığı için üyelik sorulmaz ve karar geçer; denetime
+   * `membershipCheck: "unconfigured"` yazılır. Bir muafiyet değil, bir kurulum
+   * gerçeğinin dürüstçe kaydedilmesi — bkz. `GateDecision.membershipCheck`.
+   * `role` yine de taşınır: kararın hangi rol adına verildiği denetimde ve
+   * kapı kaydında görünmeye devam etmeli.
+   */
+  | { kind: "unconfigured"; role: string };
+
 export interface GateDirectory {
   /**
    * The AD/Jira group that owns this gate for this project. `null` means the
    * step is not an approval gate here — a decision on it is refused, never
    * waved through.
+   *
+   * Kapı eşlenmemişse de `null` döner; bu iki durumu AYIRMASI gereken çağıran
+   * `ownerOf`u kullanmalı. Bu metot, grup adını bilmesi yeten okuyucular için
+   * duruyor.
    */
   ownerGroup(step: StepId, projectKey: string): Promise<string | null>;
+  /**
+   * Aynı soru, ayrımı KAYBETMEDEN. Uygulaması olmayan bir dizin için isteğe
+   * bağlı: yoksa çağıran `ownerGroup`a düşer ve bugünkü katı davranışı görür —
+   * yani bu alanı eklemek hiçbir kurulumun davranışını kendiliğinden gevşetmez.
+   */
+  ownerOf?(step: StepId, projectKey: string): Promise<GateOwner>;
 }
 
 // ── operational parameters (M71) ──────────────────────────────────────────────

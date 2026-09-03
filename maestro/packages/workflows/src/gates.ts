@@ -158,7 +158,21 @@ export function canCloseGate(
   if (owner !== undefined && decision.actorGroup !== owner) {
     return { ok: false, reason: "wrong_group" };
   }
-  if (!decision.sodVerified) return { ok: false, reason: "not_verified" };
+  /**
+   * `sodVerified` YALNIZ üyelik gerçekten ölçüldüğünde `true` olur.
+   *
+   * `unconfigured` — bu kurulumda eşlenmiş bir dizin grubu yok — o yüzden
+   * `false` gelir, ve burada reddedilseydi düzeltme hiçbir işe yaramazdı.
+   * Bayrağı `true` yazıp geçmek de yanlış olurdu: doğrulanmamış bir şeyi
+   * doğrulanmış diye kaydetmek, denetim zincirine yalan yazmaktır. Bu yüzden
+   * bayrak DÜRÜST kalıyor ve ayrım `membershipCheck` üzerinden yapılıyor.
+   *
+   * Diğer her kontrol (`wrong_step`, `wrong_group`, four-eyes) bu dalda da
+   * aynen uygulanıyor — atlanan tek şey ölçülecek grubun olmadığı ölçüm.
+   */
+  if (!decision.sodVerified && decision.membershipCheck !== "unconfigured") {
+    return { ok: false, reason: "not_verified" };
+  }
 
   /**
    * Four-eyes (M32/M92) yalnız ONAYA uygulanır, geri göndermeye değil.

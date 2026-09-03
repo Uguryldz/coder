@@ -130,10 +130,31 @@ export class JiraLinkFailedError extends Error {
 export class JiraMembershipUnresolvedError extends Error {
   constructor(
     readonly group: string,
-    readonly reason: "incomplete_page_bean" | "too_many_pages" | "contradictory_page",
+    /**
+     * `no_such_group`: Jira böyle bir grup TANIMIYOR (404).
+     *
+     * Diğerlerinden ayrı adlandırılıyor çünkü ayrı bir arıza: onlar "cevabı
+     * çözemedim" der, bu "sorduğun grup yok" der. Ayrım olmadan yanlış
+     * yapılandırılmış bir `GATE_GROUPS` ile Jira'nın hıçkırığı aynı belirsiz
+     * mesajı üretiyordu, ve operatör hangisiyle uğraştığını bilemiyordu —
+     * ölçülen arızada tam olarak bu oldu: grup adı yanlıştı, ekranda yalnız
+     * "üyelik doğrulanamadı" yazıyordu.
+     */
+    readonly reason:
+      | "incomplete_page_bean"
+      | "too_many_pages"
+      | "contradictory_page"
+      | "no_such_group",
     detail: string,
   ) {
-    super(`Jira group "${group}" membership could not be resolved (${reason}): ${detail}`);
+    super(
+      reason === "no_such_group"
+        ? `Jira'da "${group}" adında bir grup YOK (${detail}). ` +
+          `GATE_GROUPS eşlemesi bu adı gösteriyor; ya ad yanlış yazılmış ya da grup silinmiş. ` +
+          `Grup adını Jira'daki adıyla düzeltin, ya da bu kurulumda onay grubu ` +
+          `kullanmıyorsanız GATE_GROUPS/GATE_GROUP_DEFAULT değerlerini tamamen boş bırakın.`
+        : `Jira group "${group}" membership could not be resolved (${reason}): ${detail}`,
+    );
     this.name = "JiraMembershipUnresolvedError";
   }
 }

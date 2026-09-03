@@ -4,7 +4,7 @@ import { auditCsvFileName, auditEventsToCsv, filterAuditEvents } from "../audit-
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { RuleIdentityFacts, StatusMapFacts } from "../config-health.js";
 import { botAccountIdOf, identityDrift } from "../listening-identity.js";
-import { buildConfigFindings, worstSeverity } from "../config-health.js";
+import { buildConfigFindings, worstSeverity, type GateGroupFacts } from "../config-health.js";
 import type { ResolvedDeps } from "../deps.js";
 import { gateStatusesOf } from "../gate-status-reentry.js";
 import { badRequest } from "../errors.js";
@@ -137,6 +137,7 @@ export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps):
       variants,
       statusMaps: listening?.statusMaps ?? null,
       ruleIdentity: listening?.ruleIdentity ?? null,
+      gateGroups: await gateGroupFacts(deps),
     });
     return reply.code(200).send({ state: worstSeverity(findings), findings });
   });
@@ -344,6 +345,31 @@ async function settled<T>(read: (() => Promise<T>) | undefined): Promise<T | nul
  * kurallarla ayrışabilir ve ekran "eşleme var" derken hiçbir ticket kıpırdamaz.
  * Depo kablolanmamışsa null — 503 değil, çünkü bu ekranın tek bir satırı.
  */
+/**
+ * Kapı onaylarının bir dizin grubuna EŞLENİP eşlenmediği.
+ *
+ * Dizinin kendisine soruluyor, ortam değişkeni okunarak değil: `GATE_GROUPS`'u
+ * yorumlayan tek yer `EnvGateDirectory`, ve ekranın onun verdiği cevaptan
+ * başka bir şey göstermesi — burada ikinci bir ayrıştırıcı yazmak — iki
+ * kuralın ayrışmasına açık kapı bırakırdı. Ölçüm gerçek bir onay kapısı
+ * adımıyla ("4") yapılıyor, çünkü sorulan şey tam olarak o adımların
+ * eşlemesidir.
+ *
+ * `ownerOf`u olmayan bir dizin `null` döner — "bilinmiyor", "eşlenmemiş"
+ * değil. Ölçülmemiş bir şeyi bir duruma saymak, bu ekranın kapattığı hata
+ * sınıfının ta kendisi.
+ */
+async function gateGroupFacts(deps: ResolvedDeps): Promise<GateGroupFacts | null> {
+  if (deps.gates.ownerOf === undefined) return null;
+  try {
+    const owner = await deps.gates.ownerOf("4", "");
+    if (owner.kind === "not_a_gate") return null;
+    return { configured: owner.kind === "group" };
+  } catch {
+    return null;
+  }
+}
+
 async function listeningFacts(
   deps: ResolvedDeps,
 ): Promise<{ statusMaps: StatusMapFacts; ruleIdentity: RuleIdentityFacts } | null> {

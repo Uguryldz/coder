@@ -337,9 +337,13 @@ services:
       #   binlerce koşuya çıkan bir kurulumda bu sayı yeniden hesaplanmalıdır.
       #
       # ⚠ BU DEĞİŞKEN YALNIZ NAMESPACE İLK YARATILIRKEN OKUNUR. Kurulmuş bir
-      #   sistemde hiçbir şey yapmaz — orada süreyi `install.sh` `tctl namespace
-      #   update` ile düzeltir. İkisi birden var, çünkü biri yeni kurulumu,
-      #   diğeri mevcut kurulumu doğru yapar.
+      #   sistemde hiçbir şey yapmaz. Mevcut namespace'i İMAJIN KENDİSİ
+      #   düzeltiyor: worker her açılışında süreyi okur, kısaysa buradaki
+      #   `TEMPORAL_RETENTION` değerine yükseltir — idempotent (zaten yeterliyse
+      #   yazmaz), fail-soft (yapamazsa uyarır, worker yine kuyruğu yoklar) ve
+      #   yalnız YUKARI doğru (kurumun bilerek uzattığı süreyi geri çekmez).
+      #   Bkz. apps/deploy/src/temporal-retention.ts. Operatörün bunun için
+      #   sunucuda bir betik çalıştırmasına GEREK YOK.
       DEFAULT_NAMESPACE_RETENTION: ${TEMPORAL_RETENTION:-2160h}
     depends_on:
       postgres:

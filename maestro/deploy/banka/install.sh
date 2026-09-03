@@ -630,23 +630,33 @@ warn "  Not almadıysanız/kaybettiyseniz yenisi:  ./reset-admin.sh admin"
 # beklemesi ve onay kapıları SÜRESİZDİR (M61). Saklama süresi, iş akışının
 # ölçeğinin altında olamaz.
 #
-# NEDEN BURADA DA, compose'da da. `DEFAULT_NAMESPACE_RETENTION` yalnız namespace
-# İLK YARATILIRKEN okunur — kurulmuş bir sistemde hiçbir şey yapmaz. Bu adım ise
-# mevcut namespace'i düzeltir. Biri yeni kurulumu, diğeri güncellemeyi doğru
-# yapıyor, ve ikisi de olmadan kurulumlardan biri sessizce eski değerde kalırdı.
+# ⚠ BU ADIM ARTIK ŞART DEĞİL — İMAJ BUNU KENDİ YAPIYOR.
+# Worker her açılışında namespace'in saklama süresini okur ve kısaysa
+# `TEMPORAL_RETENTION` değerine yükseltir (apps/deploy/src/temporal-retention.ts,
+# `worker.ts` içinden çağrılıyor). Yani operatörün bu betiği çalıştırmasına
+# gerek yok: imajı çekip `docker compose up` demek yetiyor.
 #
-# HATA DURUMU UYARIDIR, ÖLÜM DEĞİL. Kurulumun geri kalanı çalışır ve bu ayar
-# panelden ya da elle de düzeltilebilir; süre yanlış diye bankayı kurulumsuz
-# bırakmak orantısız olurdu. Ama SESSİZ de değil: satır ekranda kalır.
+# O HÂLDE NEDEN DURUYOR. İkinci savunma ve ELLE MÜDAHALE yolu olarak:
+# (a) worker'ın Temporal'a yazma yetkisi olmayan bir kurulumda burası
+#     operatörün elindeki tek düğme,
+# (b) worker daha hiç kalkmadan süreyi doğru yapar — kurulumun ilk
+#     dakikalarında açılan bir koşu bile tam süreyle korunur.
+# Üçü de aynı değeri (`TEMPORAL_RETENTION`, varsayılan 2160h) okur; ilki
+# yeni namespace'i, bu ikisi mevcut namespace'i doğru yapar.
+#
+# HATA DURUMU UYARIDIR, ÖLÜM DEĞİL — ve artık gerçekten zararsız: bu adım
+# başarısız olsa da worker açılışta aynı ayarı yapmayı yeniden dener.
 RETENTION_ISTENEN="${TEMPORAL_RETENTION:-2160h}"
-info "Temporal saklama süresi ayarlanıyor (${RETENTION_ISTENEN})…"
+info "Temporal saklama süresi ayarlanıyor (${RETENTION_ISTENEN}) — imaj da bunu açılışta kendi yapar…"
 tmp_ns="${TEMPORAL_NAMESPACE:-default}"
 if docker compose exec -T temporal tctl --address temporal:7233 --namespace "${tmp_ns}" \
      namespace update --retention "${RETENTION_ISTENEN}" >/dev/null 2>&1; then
   ok "  Saklama süresi: ${RETENTION_ISTENEN} (namespace: ${tmp_ns})."
 else
-  warn "  Saklama süresi AYARLANAMADI. Varsayılan 24 saat ise, kapıda GÜNLERCE"
-  warn "  bekleyen bir koşunun geçmişi silinir ve koşu uyandırılamaz hâle gelir."
+  warn "  Saklama süresi bu adımda AYARLANAMADI — worker açılışında yeniden denenecek"
+  warn "  (imaj bunu kendi yapıyor). İkisi de başarısız olursa, varsayılan 24 saatte"
+  warn "  kapıda GÜNLERCE bekleyen bir koşunun geçmişi silinir ve koşu uyandırılamaz."
+  warn "  Doğrulama: docker compose logs worker | grep -i \"saklama süresi\""
   warn "  Elle:  docker compose exec temporal tctl --address temporal:7233 \\"
   warn "           --namespace ${tmp_ns} namespace update --retention ${RETENTION_ISTENEN}"
   warn "  Doğrulama:  docker compose exec temporal tctl --address temporal:7233 namespace describe"

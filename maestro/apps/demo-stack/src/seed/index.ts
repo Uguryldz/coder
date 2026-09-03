@@ -163,6 +163,8 @@ async function recordApprovals(
       actorUserId: actorOf(owner.username),
       actorGroup: owner.group,
       sodVerified: true,
+      // Demo yığını eşlenmiş gruplu bir kurulumu anlatır: üyelik ölçüldü.
+      membershipCheck: "verified" as const,
       signatureSeq: event.seq,
       source: "studio",
       at: stamp,

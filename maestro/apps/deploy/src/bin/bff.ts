@@ -311,6 +311,14 @@ export async function main(): Promise<void> {
    */
   const deploymentConfig: { current?: DeploymentConfigFacts } = {};
 
+  /**
+   * Tek örnek, çünkü İKİ okuyucu var: kapı kararlarının kendisi (`deps.gates`)
+   * ve teşhis satırı ("kapı onay grubu eşlenmiş mi"). İkinci bir örnek kurmak,
+   * ekranın kararların gerçekte kullandığından başka bir eşlemeyi anlatmasına
+   * izin verirdi — ve bir teşhis ekranının yapabileceği en kötü şey budur.
+   */
+  const gateDirectory = new EnvGateDirectory(env);
+
   const deps: BffDeps = {
     work: deployment.ports.work,
     workEvents: jiraWorkEventReader(),
@@ -342,7 +350,7 @@ export async function main(): Promise<void> {
     // Role → directory group. `StaticGateDirectory` answers with the
     // workflow's ROLE names, which a real Jira site does not have: a decision
     // then fails with "group does not exist" (fail-closed, but unusable).
-    gates: new EnvGateDirectory(env),
+    gates: gateDirectory,
     // Postgres-backed, where it used to be an EMPTY `InMemoryParamStore`.
     // With no definitions at all, every operational setting the installer had
     // seeded into `Param`/`ParamVersion` was invisible: the params screen
@@ -585,6 +593,20 @@ export async function main(): Promise<void> {
         config: async () => ({
           deployment: deploymentConfig.current ?? null,
           intake: commandIntake.current?.status() ?? null,
+          /**
+           * Kapı onaylarının bir dizin grubuna eşlenip eşlenmediği — dizinin
+           * KENDİSİNE sorulan (ortam değişkeni burada yeniden ayrıştırılmıyor,
+           * `EnvGateDirectory` tek yorumlayıcı). Raporda da olmalı: panele
+           * erişemeyen operatörün elindeki tek teşhis bu dosya.
+           */
+          gateGroups: await (async () => {
+            try {
+              const owner = await gateDirectory.ownerOf("4", "");
+              return owner.kind === "not_a_gate" ? null : { configured: owner.kind === "group" };
+            } catch {
+              return null;
+            }
+          })(),
           clarify: await clarifyReentryStatus(),
           variants: await (async () => {
             const denetim = await auditVariantModels(db);
@@ -720,7 +742,7 @@ export async function main(): Promise<void> {
                 (kosu) => kosu.ticketKey,
               ),
             ),
-          saklamaSuresi: () => temporal.gateway.saklamaSuresi(),
+          saklamaSaniye: () => temporal.gateway.saklamaSaniye(),
         },
         hostAdi: env.source["HOSTNAME"] ?? "(bilinmiyor)",
         imajSurumu: env.source["MAESTRO_IMAGE_TAG"] ?? "(bilinmiyor)",

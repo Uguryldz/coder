@@ -10,6 +10,7 @@ const decision = (over: Partial<GateDecision> = {}): GateDecision =>
     actorUserId: "mert@bank",
     actorGroup: "tech-leads",
     sodVerified: true,
+  membershipCheck: "verified",
     signatureSeq: 3,
     source: "jira",
     at: "2026-08-09T12:00:00+03:00",
@@ -60,6 +61,44 @@ describe("recordGateDecision", () => {
     const verdict = await recordGateDecision(fakes.deps, "PAY-101", decision());
     expect(verdict.accepted).toBe(false);
     expect((await fakes.gateStore.get("run-pay-101-0001", "5"))?.closedAt ?? null).toBeNull();
+  });
+
+  /**
+   * EŞLENMİŞ GRUP OLMAYAN KURULUM — dizine sorulacak bir şey yok.
+   *
+   * `verifyMembership: false` burada "dizin bu kişiyi tanımıyor" demek; ve
+   * tanımaması normal, çünkü sorulan grup adı gerçek bir dizin grubu değil.
+   * Bu dalda yeniden sorsaydık BFF'in bilerek geçirdiği kararı worker
+   * reddederdi — düzeltme tam olarak düzeltmeye çalıştığı yerde çalışmazdı.
+   */
+  it("üyelik ölçülecek grup yoksa kararı reddetmez", async () => {
+    const fakes = makeFakes({ verifyMembership: false });
+    const verdict = await recordGateDecision(
+      fakes.deps,
+      "PAY-101",
+      decision({ sodVerified: false, membershipCheck: "unconfigured" }),
+    );
+    // Asıl iddia bu: karar KABUL EDİLDİ. Reddedilseydi BFF'in geçirdiği karar
+    // worker'da düşer, kapı sonsuza dek açık kalırdı — ölçülen arıza buydu.
+    expect(verdict.accepted).toBe(true);
+  });
+
+  /**
+   * Muafiyetin SINIRI: atlanan tek şey üyelik ölçümü. Yanlış gruba imzalanmış
+   * bir karar bu dalda da reddedilir, yani bu bir bypass'a dönüşmüyor.
+   */
+  it("eşlenmemiş kurulumda bile yanlış grup reddedilir", async () => {
+    const fakes = makeFakes({ verifyMembership: false });
+    const verdict = await recordGateDecision(
+      fakes.deps,
+      "PAY-101",
+      decision({
+        actorGroup: "product-owners",
+        sodVerified: false,
+        membershipCheck: "unconfigured",
+      }),
+    );
+    expect(verdict.accepted).toBe(false);
   });
 
   it("refuses a group that does not own the gate, even if the person exists", async () => {

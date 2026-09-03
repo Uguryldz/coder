@@ -153,6 +153,13 @@ interface RunOptions {
   /** Karar veren onay grubunun üyesi mi — `decideGate`in sorduğu şey. */
   readonly member?: boolean;
   readonly rulesThrow?: boolean;
+  /**
+   * Kapının dizin sahipliği. Varsayılan: eşlenmiş bir grup (bugünkü katı
+   * davranış). `"unconfigured"` = `GATE_GROUPS` hiç eşlenmemiş kurulum.
+   */
+  readonly owner?: "group" | "unconfigured";
+  /** `verifyMembership` FIRLATIR — grup eşlenmiş ama Jira böyle bir grup tanımıyor. */
+  readonly membershipThrows?: Error;
 }
 
 interface RunResult {
@@ -194,8 +201,21 @@ async function run(options: RunOptions = {}): Promise<RunResult> {
           ? Promise.reject(new Error("depo okunamadı"))
           : Promise.resolve(options.rules ?? [rule({ gateApproveStatus: "Geliştirme", gateReturnStatus: "Analiz" })]),
     },
-    gates: { ownerGroup: () => Promise.resolve("product-owners") },
-    work: { verifyMembership: () => Promise.resolve(options.member ?? true) },
+    gates: {
+      ownerGroup: () => Promise.resolve("product-owners"),
+      ownerOf: () =>
+        Promise.resolve(
+          options.owner === "unconfigured"
+            ? { kind: "unconfigured", role: "product-owners" }
+            : { kind: "group", group: "product-owners" },
+        ),
+    },
+    work: {
+      verifyMembership: () =>
+        options.membershipThrows !== undefined
+          ? Promise.reject(options.membershipThrows)
+          : Promise.resolve(options.member ?? true),
+    },
     audit: {
       append: (event: Record<string, unknown>) => {
         audits.push(event);
@@ -382,5 +402,99 @@ describe("tryGateStatusDecision — yankı koruması", () => {
       identity: { actor: "ayse.kaya", bot: BOT },
     });
     expect(result.outcome).toMatchObject({ kind: "skipped", reason: "no_gate_statuses" });
+  });
+});
+
+/**
+ * ONAY GRUBU TANIMLI OLMAYAN KURULUM — ölçülmüş kilitlenmenin düzeltmesi.
+ *
+ * ── Arıza ─────────────────────────────────────────────────────────────────
+ * `GATE_GROUPS`/`GATE_GROUP_DEFAULT` boşken rol adı (`product-owners`) bir
+ * dizin grubu adıymış gibi Jira'ya soruluyordu. Jira böyle bir grup tanımadığı
+ * için 404 dönüyor, karar sessizce düşüyor, ve operatör statüyü taşıdıktan
+ * sonra hiçbir şey olmuyordu — ekranda tek bir sebep satırı bile yoktu.
+ *
+ * ── Bu kurulumda yetkiyi ne koruyor ───────────────────────────────────────
+ * Grup üyeliği tek koruma değil. Kararın kanalı Jira'nın kendisi ve bir
+ * ticket'ı o statüye taşıyabilmek zaten Jira'nın izin şemasından geçmeyi
+ * gerektiriyor. Görevler ayrımı (M32) da ayakta: analizi Maestro yazar,
+ * ONAYLAYAN İNSANDIR ve kimliği denetime adıyla geçer. Kaybedilen tek şey
+ * "hangi grup" sorusunun cevabı — ve cevabın olmadığı yerde onu uydurmamak,
+ * uydurup her kararı 404'e düşürmekten iyidir.
+ */
+describe("tryGateStatusDecision — onay grubu tanımlı olmayan kurulum", () => {
+  it("grup eşlenmemişse statü kararı GEÇER", async () => {
+    const result = await run({
+      status: "Geliştirme",
+      identity: { actor: "ayse.kaya", bot: BOT },
+      owner: "unconfigured",
+      // Üye DEĞİL — ama sorulmayacak: sorulacak bir grup yok.
+      member: false,
+    });
+    expect(result.outcome).toMatchObject({ kind: "decided", decision: "approve" });
+    expect(result.signals).toHaveLength(1);
+  });
+
+  it("denetime ÜYELİK DOĞRULANMADI olarak yazılır — sessizce geçmez", async () => {
+    const result = await run({
+      status: "Geliştirme",
+      identity: { actor: "ayse.kaya", bot: BOT },
+      owner: "unconfigured",
+    });
+    // Denetçinin göreceği kayıt: kim, hangi kanal, üyelik ölçülmedi.
+    expect(result.audits[0]).toMatchObject({
+      actor: "ayse.kaya",
+      action: "GATE_APPROVE",
+      subject: TICKET,
+      meta: { source: "jira", membershipCheck: "unconfigured" },
+    });
+  });
+
+  it("kararın imzası da doğrulanmamış olduğunu taşır — worker aynı 404'e düşmesin", async () => {
+    const result = await run({
+      status: "Geliştirme",
+      identity: { actor: "ayse.kaya", bot: BOT },
+      owner: "unconfigured",
+    });
+    expect(result.signals[0]?.arg).toMatchObject({
+      membershipCheck: "unconfigured",
+      // DÜRÜST BAYRAK: doğrulanmamış bir şeyi doğrulanmış diye yazmıyoruz.
+      sodVerified: false,
+      // Kimlik her durumda kayıtlı — kaybedilen yalnız grup sorusu.
+      actorUserId: "ayse.kaya",
+    });
+  });
+
+  it("GRUP EŞLENMİŞSE bugünkü katı davranış aynen sürer: üye olmayan REDDEDİLİR", async () => {
+    const result = await run({
+      status: "Geliştirme",
+      identity: { actor: "yabanci", bot: BOT },
+      owner: "group",
+      member: false,
+    });
+    expect(result.outcome).toMatchObject({
+      kind: "decided",
+      result: { ok: false, reason: "not_member" },
+    });
+    expect(result.signals).toHaveLength(0);
+    expect(result.audits).toHaveLength(0);
+  });
+
+  /**
+   * Grup EŞLENMİŞ ama Jira böyle bir grup tanımıyor: bu bir muafiyet sebebi
+   * DEĞİL, bir yanlış yapılandırma. Karar reddedilir — ve sürücü artık ham bir
+   * 404 yerine "böyle bir grup yok" diyen bir hata fırlatır, ki operatör
+   * yetki reddiyle yazım hatasını ayırt edebilsin.
+   */
+  it("grup eşlenmiş ama Jira tanımıyorsa karar GEÇMEZ", async () => {
+    const patlama = new Error('Jira\'da "product-owners" adında bir grup YOK (Jira 404)');
+    await expect(
+      run({
+        status: "Geliştirme",
+        identity: { actor: "ayse.kaya", bot: BOT },
+        owner: "group",
+        membershipThrows: patlama,
+      }),
+    ).rejects.toThrow("adında bir grup YOK");
   });
 });

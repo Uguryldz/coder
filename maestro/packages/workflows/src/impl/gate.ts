@@ -172,7 +172,25 @@ export async function recordGateDecision(
   // the claim on the signal names the group the BFF verified against, and that
   // is a directory group, not a role.
   const expected = role === undefined ? undefined : await deps.directory.groupForRole(role);
-  const member = await deps.work.verifyMembership(decision.actorUserId, decision.actorGroup);
+  /**
+   * ÜYELİĞİN İKİNCİ ÖLÇÜMÜ — ama ölçülecek bir grup varsa.
+   *
+   * `unconfigured`, BFF'in "bu kurulumda eşlenmiş bir dizin grubu YOK" demesi
+   * (bkz. `GateDecision.membershipCheck`). Burada yine sorsaydık olmayan bir
+   * gruba yeniden üyelik sorar, aynı 404'ü yer ve BFF'in bilerek geçirdiği
+   * kararı reddederdik — yani düzeltme tam olarak düzeltmeye çalıştığı yerde
+   * çalışmazdı.
+   *
+   * Bir bypass DEĞİL: bayrak sinyalin içinde taşınıyor ve `GateDecision`
+   * şemasından geçiyor; onu üretebilen tek yer `decideGate` ve orası bayrağı
+   * yalnız dizin eşlemesi gerçekten yokken yazıyor. Kararın kimliği
+   * (`actorUserId`), denetim zinciri (`signatureSeq`) ve grup karşılaştırması
+   * (`expected`) her iki dalda da aynen uygulanıyor.
+   */
+  const member =
+    decision.membershipCheck === "unconfigured"
+      ? true
+      : await deps.work.verifyMembership(decision.actorUserId, decision.actorGroup);
   if (!member || (expected !== undefined && decision.actorGroup !== expected)) {
     await record(deps, run, {
       kind: "gate",

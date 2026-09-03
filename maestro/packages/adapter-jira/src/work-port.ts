@@ -9,6 +9,7 @@ import {
   JiraForbiddenError,
   JiraLinkFailedError,
   JiraMembershipUnresolvedError,
+  JiraNotFoundError,
   JiraResponseError,
 } from "./errors.js";
 import { ISSUE_FIELDS, mapIssueToSnapshot, userIdOf } from "./mapping.js";
@@ -187,12 +188,27 @@ export class JiraDcWorkPort implements WorkPort {
 
     let startAt = 0;
     for (let page = 0; page < MAX_GROUP_PAGES; page += 1) {
-      const res = await this.client.get<unknown>(`${API}/group/member`, {
-        groupname: group,
-        includeInactiveUsers: false,
-        startAt,
-        maxResults: this.config.groupPageSize,
-      });
+      const res = await this.client
+        .get<unknown>(`${API}/group/member`, {
+          groupname: group,
+          includeInactiveUsers: false,
+          startAt,
+          maxResults: this.config.groupPageSize,
+        })
+        .catch((error: unknown) => {
+          /**
+           * 404 = "böyle bir grup yok", bir ağ arızası değil.
+           *
+           * Ham 404 yukarıya çıktığında ekranda yalnız "üyelik doğrulanamadı"
+           * yazıyordu ve operatör bunu bir yetki reddi sanıyordu; oysa arıza
+           * `GATE_GROUPS` eşlemesindeydi. Adıyla söylemek, bu satırın tek işi.
+           * Hâlâ FIRLIYOR — sessiz bir "üye değil"e çevirmek fail-open olurdu.
+           */
+          if (error instanceof JiraNotFoundError) {
+            throw new JiraMembershipUnresolvedError(group, "no_such_group", "Jira 404");
+          }
+          throw error;
+        });
       const body = asRecord(res);
       const values = Array.isArray(body?.["values"]) ? body["values"] : [];
       for (const member of values) {

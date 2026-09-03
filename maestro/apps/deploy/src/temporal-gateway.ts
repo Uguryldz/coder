@@ -15,6 +15,7 @@ import {
   WorkflowNotFoundError,
 } from "@temporalio/client";
 import { MAESTRO_TASK_QUEUE } from "@maestro/workflows";
+import { insanOkunur } from "./temporal-retention.js";
 
 /**
  * The BFF's `RunGateway`, backed by a real Temporal client.
@@ -157,6 +158,19 @@ export class TemporalRunGateway implements RunGateway {
    * kolaylığı, ve okunamaması raporun geri kalanını düşürmemeli.
    */
   async saklamaSuresi(): Promise<string | null> {
+    const saniye = await this.saklamaSaniye();
+    return saniye === null ? null : insanOkunur(saniye);
+  }
+
+  /**
+   * Aynı sürenin HAM SANİYESİ.
+   *
+   * `saklamaSuresi` metni bir insana yeter, bir KIYASA yetmez: tanı raporu
+   * "bu süre bu akış için kısa" diyebilmek için sayıya ihtiyaç duyuyor (bkz.
+   * `tani.ts` → `saklamaUyarisi`). İkisi aynı RPC'yi çağırır ve metin bu
+   * sayıdan türetilir, yani rapordaki süre ile uyarı asla ayrışamaz.
+   */
+  async saklamaSaniye(): Promise<number | null> {
     const answer = await this.client.connection.workflowService.describeNamespace({
       namespace: this.client.options.namespace,
     });
@@ -164,10 +178,7 @@ export class TemporalRunGateway implements RunGateway {
     if (seconds === undefined || seconds === null) return null;
     const total = Number(seconds);
     if (!Number.isFinite(total) || total <= 0) return null;
-    const hours = Math.round(total / 3600);
-    // Günden kısa süreler saatle, uzunlar günle: "2160h" bir operatöre hiçbir
-    // şey söylemez, "90 gün" ise akışının ölçeğiyle doğrudan kıyaslanabilir.
-    return hours < 48 ? `${String(hours)} saat` : `${String(Math.round(hours / 24))} gün`;
+    return total;
   }
 
   async list(options: { limit?: number; onlyRunning?: boolean } = {}): Promise<RunSummary[]> {
@@ -377,7 +388,19 @@ export async function connectTemporal(options: {
   taskQueue?: string;
   /** Forwarded to the gateway; see `TemporalGatewayOptions.onRunOpened`. */
   onRunOpened?: (run: OpenedRun) => Promise<void>;
-}): Promise<{ gateway: TemporalRunGateway; close: () => Promise<void> }> {
+}): Promise<{
+  gateway: TemporalRunGateway;
+  /**
+   * Ham bağlantı — `workflowService` üzerinden namespace YÖNETİMİ için.
+   *
+   * Gateway koşuları yönetir, namespace'in kendisini değil; saklama süresini
+   * ayarlamak (`temporal-retention.ts`) onun sorumluluğu değil. Açılan
+   * bağlantıyı burada geri vermek, o iş için İKİNCİ bir gRPC bağlantısı
+   * açmaktan hem ucuz hem dürüst.
+   */
+  connection: Connection;
+  close: () => Promise<void>;
+}> {
   const connection = await Connection.connect({ address: options.address });
   const client = new Client({ connection, namespace: options.namespace ?? "default" });
   const gateway = new TemporalRunGateway({
@@ -385,5 +408,5 @@ export async function connectTemporal(options: {
     ...(options.taskQueue === undefined ? {} : { taskQueue: options.taskQueue }),
     ...(options.onRunOpened === undefined ? {} : { onRunOpened: options.onRunOpened }),
   });
-  return { gateway, close: () => connection.close() };
+  return { gateway, connection, close: () => connection.close() };
 }

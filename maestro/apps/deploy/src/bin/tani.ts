@@ -11,6 +11,7 @@ import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { PrismaConnectionStore } from "../stores/connections.js";
 import { prismaSqlExecutor } from "../stores/sql.js";
 import { connectTemporal } from "../temporal-gateway.js";
+import { insanOkunur } from "../temporal-retention.js";
 import {
   logAyikla,
   maskeleSatir,
@@ -553,7 +554,11 @@ async function akisBolumu(db: Db, temporalAdres: string, namespace: string): Pro
       // `null` (süre okunamadı) ile `undefined` (hiç sorulmadı) aynı yere
       // düşüyor: ikisi de "raporda gösterme" demek, ve iki farklı boşluk
       // göstermenin okuyucuya söyleyeceği bir şey yok.
-      const saklama = (await gateway.saklamaSuresi().catch(() => null)) ?? undefined;
+      // Tek RPC, iki alan: metin operatöre, saniye raporun "bu süre kısa"
+      // kıyasına (`tani.ts` → `saklamaUyarisi`). İkisi de aynı okumadan
+      // türediği için ekrandaki süre ile uyarı ayrışamaz.
+      const saklamaSaniye = (await gateway.saklamaSaniye().catch(() => null)) ?? undefined;
+      const saklama = saklamaSaniye === undefined ? undefined : insanOkunur(saklamaSaniye);
       return {
         toplam,
         adimDagilimi,
@@ -562,6 +567,7 @@ async function akisBolumu(db: Db, temporalAdres: string, namespace: string): Pro
         temporalAcik: acik.length,
         kayipKosular,
         ...(saklama === undefined ? {} : { saklamaSuresi: saklama }),
+        ...(saklamaSaniye === undefined ? {} : { saklamaSaniye }),
       };
     } finally {
       await close();

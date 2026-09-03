@@ -17,6 +17,7 @@ import {
   type ServisLogu,
   type TaniRaporu,
 } from "./tani.js";
+import { insanOkunur } from "./temporal-retention.js";
 
 /**
  * PANELDEN indirilen tanı raporu — `./tani.sh`in UI'dan erişilebilen hâli.
@@ -93,8 +94,14 @@ export interface AkisKaynagi {
    * ihtiyacı olan şey kayıp koşuların listesidir, bir eksiltme sonucu değil.
    */
   readonly acikTicketlar: () => Promise<ReadonlySet<string>>;
-  /** Namespace'in saklama süresi ("24 saat" / "90 gün"); okunamazsa `null`. */
-  readonly saklamaSuresi: () => Promise<string | null>;
+  /**
+   * Namespace'in saklama süresi, SANİYE; okunamazsa `null`.
+   *
+   * Sayı, metin değil: rapor bu süreyi yalnız yazmakla kalmıyor, akışın
+   * ölçeğiyle KIYASLIYOR (bkz. `tani.ts` → `saklamaUyarisi`). Görüntülenecek
+   * metin bu sayıdan türetilir, böylece ekrandaki süre ile uyarı ayrışamaz.
+   */
+  readonly saklamaSaniye: () => Promise<number | null>;
 }
 
 export interface PanelTaniOptions {
@@ -207,7 +214,7 @@ async function akisBolumu(kaynak: AkisKaynagi): Promise<AkisBolumu> {
      */
     const acik = await kaynak.acikTicketlar();
     const kayipKosular = bekleyen.filter((kosu) => !acik.has(kosu.ticketKey));
-    const saklamaSuresi = await guvenli(kaynak.saklamaSuresi, null);
+    const saklamaSaniye = await guvenli(kaynak.saklamaSaniye, null);
     return {
       toplam,
       adimDagilimi,
@@ -215,7 +222,7 @@ async function akisBolumu(kaynak: AkisKaynagi): Promise<AkisBolumu> {
       sonKosular,
       temporalAcik,
       kayipKosular,
-      ...(saklamaSuresi === null ? {} : { saklamaSuresi }),
+      ...(saklamaSaniye === null ? {} : { saklamaSuresi: insanOkunur(saklamaSaniye), saklamaSaniye }),
     };
   } catch (error) {
     // Temporal'ın okunamaması sayfayı düşürmez ve SESSİZ de kalmaz: sebebi

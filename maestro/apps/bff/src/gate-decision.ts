@@ -4,7 +4,7 @@ import {
   type StepId,
   type TicketKey,
 } from "@maestro/contracts";
-import type { ResolvedDeps } from "./deps.js";
+import type { GateOwner, ResolvedDeps } from "./deps.js";
 import { workflowIdFor } from "./gateway.js";
 import { projectKeyOf } from "./jira-intake.js";
 import { SIGNALS } from "./signal-names.js";
@@ -71,6 +71,24 @@ function isApprovalGate(step: StepId): boolean {
   return (APPROVAL_GATE_STEPS as readonly StepId[]).includes(step);
 }
 
+/**
+ * Kapının sahipliği, `ownerOf` varsa ondan; yoksa eski `ownerGroup`tan.
+ *
+ * Geri düşme dalı bilerek KATI: `ownerOf` uygulamayan bir dizin için "grup
+ * yok" ile "kapı değil" ayrımı yoktur, ve bilinmeyeni gevşek yorumlamak bu
+ * dosyanın koruduğu şeyi sessizce delerdi. Yani yeni davranış yalnız ayrımı
+ * gerçekten yapabilen bir dizinle açılır.
+ */
+async function resolveOwner(
+  deps: ResolvedDeps,
+  step: StepId,
+  projectKey: string,
+): Promise<GateOwner> {
+  if (deps.gates.ownerOf !== undefined) return deps.gates.ownerOf(step, projectKey);
+  const group = await deps.gates.ownerGroup(step, projectKey);
+  return group === null ? { kind: "not_a_gate" } : { kind: "group", group };
+}
+
 export async function decideGate(deps: ResolvedDeps, request: GateRequest): Promise<GateResult> {
   const workflowId = workflowIdFor(request.ticket);
   const state = await deps.runs.queryRunState(workflowId);
@@ -94,14 +112,41 @@ export async function decideGate(deps: ResolvedDeps, request: GateRequest): Prom
     return { ok: false, reason: "gate_not_returnable", step: state.step };
   }
 
-  const group = await deps.gates.ownerGroup(state.step, projectKeyOf(request.ticket));
-  if (group === null) return { ok: false, reason: "no_open_gate", step: state.step };
+  const owner = await resolveOwner(deps, state.step, projectKeyOf(request.ticket));
+  if (owner.kind === "not_a_gate") return { ok: false, reason: "no_open_gate", step: state.step };
 
-  // M32/M35: group membership is the whole authority behind a gate decision,
-  // and it is checked before anything is recorded or signalled. An unverifiable
-  // membership throws out of the port — fail-closed, never "assume yes".
-  const member = await deps.work.verifyMembership(request.membershipId, group);
-  if (!member) return { ok: false, reason: "not_member", step: state.step, group };
+  /**
+   * ÜYELİK — grup TANIMLIYSA sorulur, tanımlı değilse sorulacak bir şey yoktur.
+   *
+   * ── Eşlenmiş grup (`kind: "group"`) ───────────────────────────────────────
+   * M32/M35: grup üyeliği kapı kararının bütün yetkisidir ve hiçbir şey
+   * kaydedilmeden, hiçbir sinyal gitmeden ÖNCE ölçülür. Ölçülemeyen bir üyelik
+   * port'tan fırlar — fail-closed, asla "evet varsay". Bu dal değişmedi.
+   *
+   * ── Eşlenmemiş grup (`kind: "unconfigured"`) ──────────────────────────────
+   * `GATE_GROUPS`/`GATE_GROUP_DEFAULT` hiç eşlenmemiş. Eskiden burada rol adı
+   * (`product-owners`) bir grup adıymış gibi dizine soruluyordu; Jira böyle bir
+   * grup tanımadığı için 404 dönüyor ve HER kapı kararı — `/approve` de, statü
+   * taşıması da — sessizce düşüyordu. Kapı hiç kapanmıyordu.
+   *
+   * Bu bir yapılandırma boşluğu değil, bazı kurulumların KALICI gerçeği:
+   * onay grubu diye bir şey yok, kararlar Jira statüsüyle veriliyor. Orada
+   * yetkiyi koruyan şey başka: bir ticket'ı o statüye taşıyabilmek zaten
+   * Jira'nın kendi izin şemasından geçmeyi gerektirir. Görevler ayrımı (M32)
+   * da ayakta: analizi Maestro yazar, ONAYLAYAN İNSANDIR ve kimliği denetime
+   * adıyla yazılır. Kaybedilen tek şey "hangi grup" sorusunun cevabıdır — ve
+   * cevabın olmadığı yerde onu uydurmamak, uydurup 404 yemekten iyidir.
+   *
+   * Sessizce geçmiyoruz: `membershipCheck: "unconfigured"` hem denetim
+   * kaydına hem karar imzasına yazılıyor, yani bir denetçi bu kararların
+   * üyeliğinin ÖLÇÜLMEDİĞİNİ görebiliyor.
+   */
+  const group = owner.kind === "group" ? owner.group : owner.role;
+  const membershipCheck = owner.kind === "group" ? "verified" : "unconfigured";
+  if (owner.kind === "group") {
+    const member = await deps.work.verifyMembership(request.membershipId, owner.group);
+    if (!member) return { ok: false, reason: "not_member", step: state.step, group };
+  }
 
   // Audit first, on purpose: `signatureSeq` IS the position in the hash chain
   // (M33), so a signature can be located in the trail by its number and cannot
@@ -117,6 +162,13 @@ export async function decideGate(deps: ResolvedDeps, request: GateRequest): Prom
       step: state.step,
       group,
       source: request.source,
+      /**
+       * Denetim kaydının kendisi söylesin: üyelik ölçüldü mü, ölçülmedi mi.
+       * Bir denetçinin "bu onayı kim, hangi yetkiyle verdi" sorusunun cevabı
+       * bu satırda; bayrak olmadan `unconfigured` bir karar, üyeliği ölçülmüş
+       * bir karardan ayırt edilemezdi.
+       */
+      membershipCheck,
       ...(request.reason !== undefined ? { reason: request.reason } : {}),
     },
   });
@@ -126,7 +178,19 @@ export async function decideGate(deps: ResolvedDeps, request: GateRequest): Prom
     decision: request.decision,
     actorUserId: request.actor,
     actorGroup: group,
-    sodVerified: true,
+    /**
+     * DÜRÜST BAYRAK: yalnız üyelik gerçekten ölçüldüyse `true`.
+     *
+     * `unconfigured` dalında `true` yazmak kolay olurdu ve her kontrolü
+     * sessizce geçerdi — ama bu, doğrulanmamış bir şeyi doğrulanmış diye
+     * denetim zincirine yazmak demektir. Kararın geçmesini sağlayan şey bu
+     * bayrağın yalanı değil, `membershipCheck`in gerçeği olmalı.
+     */
+    sodVerified: membershipCheck === "verified",
+    // Aynı bayrak imzanın üstünde de: `canCloseGate` ve `recordGateDecision`
+    // bunu okuyup ikinci bir üyelik sorusunu atlar. Sinyalde taşınmasaydı
+    // worker aynı 404'e yeniden düşer ve BFF'in geçirdiği kararı reddederdi.
+    membershipCheck,
     signatureSeq: event.seq,
     source: request.source,
     at: request.at,

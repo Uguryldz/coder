@@ -7,6 +7,7 @@ import {
   JiraForbiddenError,
   JiraLinkFailedError,
   JiraMembershipUnresolvedError,
+  JiraNotFoundError,
   JiraResponseError,
   JiraWebhookVerificationError,
 } from "../errors.js";
@@ -278,12 +279,22 @@ export class JiraCloudWorkPort implements WorkPort {
 
     let startAt = 0;
     for (let page = 0; page < MAX_GROUP_PAGES; page += 1) {
-      const res = await this.client.get<unknown>(`${API}/group/member`, {
-        groupname: group,
-        includeInactiveUsers: false,
-        startAt,
-        maxResults: this.config.groupPageSize,
-      });
+      // 404 = "böyle bir grup yok". Bkz. DC sürücüsündeki aynı satır: ham 404
+      // ekranda belirsiz bir "üyelik doğrulanamadı"ya dönüşüyor ve yanlış
+      // yapılandırmayı bir yetki reddi gibi gösteriyordu.
+      const res = await this.client
+        .get<unknown>(`${API}/group/member`, {
+          groupname: group,
+          includeInactiveUsers: false,
+          startAt,
+          maxResults: this.config.groupPageSize,
+        })
+        .catch((error: unknown) => {
+          if (error instanceof JiraNotFoundError) {
+            throw new JiraMembershipUnresolvedError(group, "no_such_group", "Jira 404");
+          }
+          throw error;
+        });
       const body = asRecord(res);
       const values = Array.isArray(body?.["values"]) ? body["values"] : [];
       for (const member of values) {

@@ -6,6 +6,7 @@ const base: Omit<GateDecision, "step" | "decision"> = {
   actorUserId: "ayse.kaya@bank",
   actorGroup: "tech-leads",
   sodVerified: true,
+  membershipCheck: "verified",
   signatureSeq: 1,
   source: "jira",
   at: "2026-08-09T10:00:00+03:00",
@@ -53,6 +54,33 @@ describe("canCloseGate — fail-closed on every axis", () => {
   it("refuses an approval that never passed SoD verification", () => {
     const unverified = approve("5", { sodVerified: false });
     expect(canCloseGate(unverified, "5", new Map())).toEqual({ ok: false, reason: "not_verified" });
+  });
+
+  /**
+   * `unconfigured` — bu kurulumda eşlenmiş bir dizin grubu YOK.
+   *
+   * `sodVerified` DÜRÜST kalıyor (`false`, çünkü gerçekten doğrulanmadı) ve
+   * kararı geçiren şey o bayrağın yalanı değil, `membershipCheck`in gerçeği.
+   * Burada reddedilseydi düzeltme tam olarak düzeltmeye çalıştığı yerde
+   * çalışmazdı: BFF kararı geçirir, worker aynı kararı reddederdi.
+   */
+  it("üyelik ölçülecek grup yoksa reddetmez — ama bayrağı yalan söylemez", () => {
+    const eslenmemis = approve("5", { sodVerified: false, membershipCheck: "unconfigured" });
+    expect(canCloseGate(eslenmemis, "5", new Map())).toEqual({ ok: true });
+  });
+
+  /**
+   * `unconfigured` YALNIZ üyelik ölçümünü atlatır, başka HİÇBİR kontrolü değil.
+   * Bu, muafiyetin bir bypass'a dönüşmediğinin sınırı: yanlış gruba imzalanmış
+   * bir karar bu dalda da reddedilir.
+   */
+  it("eşlenmemiş kurulumda bile yanlış grup reddedilir", () => {
+    const yanlis = approve("5", {
+      actorGroup: "product-owners",
+      sodVerified: false,
+      membershipCheck: "unconfigured",
+    });
+    expect(canCloseGate(yanlis, "5", new Map())).toEqual({ ok: false, reason: "wrong_group" });
   });
 
   it("enforces four eyes: the step-4 approver cannot also sign step 5 (M32)", () => {

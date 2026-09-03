@@ -189,6 +189,10 @@ export const DEMO_GATE_DECISIONS: readonly DemoGateDecision[] = DEMO_GATE_INTENT
     actorUserId: gate.actorUserId,
     actorGroup: gate.actorGroup,
     sodVerified: verifyGateSod(gate, gatesOfRun(gate.ticketKey)),
+    // Demo verisi eşlenmiş grubu olan bir kurulumu anlatır: üyelik ÖLÇÜLDÜ.
+    // `unconfigured` gerçek bir kurulum gerçeğidir ve uydurma veriyle
+    // örneklenmesi, ekranlarda hiç yaşanmamış bir durumu normalleştirirdi.
+    membershipCheck: "verified",
     signatureSeq: seq,
     source: gate.source,
     at: gate.at.toISOString(),

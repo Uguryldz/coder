@@ -50,6 +50,7 @@ export function approval(step: StepId, over: Partial<GateDecision> = {}): GateDe
     actorUserId: `${group}-${step}@bank`,
     actorGroup: group,
     sodVerified: true,
+  membershipCheck: "verified",
     signatureSeq: 1,
     source: "jira",
     at: "2026-08-09T09:00:00+03:00",

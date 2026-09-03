@@ -1,5 +1,6 @@
 import type { StepId } from "@maestro/contracts";
 import { GATE_OWNER, isApprovalGate } from "@maestro/workflows";
+import type { GateOwner } from "@maestro/bff";
 import type { DeployEnv } from "../env.js";
 
 /**
@@ -34,7 +35,26 @@ import type { DeployEnv } from "../env.js";
  * this mapping, a real approval was verified against `jira-users-uyildiz` in
  * one process and refused against `product-owners` in the other.
  */
-export type RoleResolver = (role: string) => string;
+/**
+ * Rol → dizin grubu. `null` = "bu kurulumda eşlenmiş bir grup YOK".
+ *
+ * ── Neden `null`, neden rol adına düşmüyor ─────────────────────────────────
+ * Eskiden son çare rolün KENDİ ADIYDI (`product-owners`). Bu, iki farklı
+ * durumu tek cevaba indiriyordu: "grup eşlendi ama yanlış eşlendi" ile "hiç
+ * eşlenmedi". İkisi de Jira'da olmayan bir grup adı üretiyor, ikisi de 404
+ * veriyor, ve arayan taraf hangisiyle karşılaştığını bilemiyordu.
+ *
+ * Ayrım pahalıya patladı: `GATE_GROUPS` tanımlamamış bir kurulumda her kapı
+ * kararı — `/approve` de, statü taşıması da — olmayan bir gruba üyelik
+ * sorusunda sessizce düşüyordu. Operatör statüyü taşıyor, hiçbir şey olmuyor,
+ * ekranda hiçbir sebep yazmıyordu.
+ *
+ * `null` ile arayan taraf artık şunu ayırt edebiliyor: eşlenmiş bir grup varsa
+ * üyelik SORULUR ve üye olmayan REDDEDİLİR (davranış aynen korunur); grup hiç
+ * eşlenmemişse sorulacak bir şey yoktur ve karar `membershipCheck:
+ * "unconfigured"` olarak denetime yazılır.
+ */
+export type RoleResolver = (role: string) => string | null;
 
 /**
  * Takes the raw environment rather than a `DeployEnv` so the WORKER can build
@@ -47,9 +67,16 @@ export function roleResolver(source: Record<string, string | undefined>): RoleRe
   const byRole = parseMapping(source["GATE_GROUPS"]);
   const raw = source["GATE_GROUP_DEFAULT"]?.trim();
   const fallback = raw === undefined || raw === "" ? undefined : raw;
-  // The role's own name is the last resort, so a deployment whose directory
-  // happens to use these names needs no configuration at all.
-  return (role: string): string => byRole.get(role) ?? fallback ?? role;
+  /**
+   * Eşleme yoksa `null` — rolün kendi adına DÜŞMEZ.
+   *
+   * Rol adına düşmek "yapılandırılmamış"ı "yanlış yapılandırılmış" gibi
+   * gösteriyordu; ikisi de 404 üretiyor ama biri kurulum gerçeği, diğeri
+   * hata. Dizini bu adlarla kurmuş bir kurulum etkilenmez: `GATE_GROUPS`'a
+   * `product-owners=product-owners` yazmak eşlemeyi AÇIKÇA kurar, ve açık
+   * olan tahmin edilmiş olandan her zaman iyidir.
+   */
+  return (role: string): string | null => byRole.get(role) ?? fallback ?? null;
 }
 
 export class EnvGateDirectory {
@@ -59,11 +86,30 @@ export class EnvGateDirectory {
     this.#resolve = roleResolver(env.source);
   }
 
-  ownerGroup(step: StepId, _projectKey: string): Promise<string | null> {
-    if (!isApprovalGate(step)) return Promise.resolve(null);
+  /**
+   * `null` = "bu adım bir onay kapısı değil" — kararın REDDEDİLECEĞİ hâl.
+   *
+   * Grup eşlemesinin yokluğu bununla KARIŞTIRILMAMALI ve bu yüzden ayrı bir
+   * metotta duruyor (`ownerRole` + `groupOf`): birincisi "onaylanacak bir şey
+   * yok", ikincisi "onaylanacak şey var ama grubu tanımlı değil".
+   */
+  async ownerGroup(step: StepId, projectKey: string): Promise<string | null> {
+    const owner = await this.ownerOf(step, projectKey);
+    return owner.kind === "group" ? owner.group : null;
+  }
+
+  /**
+   * Aynı soru, ayrımı KAYBETMEDEN — `GateOwner`ın üç dalı.
+   *
+   * `ownerGroup` iki farklı yokluğu tek `null`a indiriyor; karar veren tarafın
+   * bunları ayırması şart, çünkü biri REDDET, diğeri KAYDET VE GEÇİR demek.
+   */
+  ownerOf(step: StepId, _projectKey: string): Promise<GateOwner> {
+    if (!isApprovalGate(step)) return Promise.resolve({ kind: "not_a_gate" });
     const role = GATE_OWNER[step as keyof typeof GATE_OWNER];
-    if (role === undefined) return Promise.resolve(null);
-    return Promise.resolve(this.#resolve(role));
+    if (role === undefined) return Promise.resolve({ kind: "not_a_gate" });
+    const group = this.#resolve(role);
+    return Promise.resolve(group === null ? { kind: "unconfigured", role } : { kind: "group", group });
   }
 }
 

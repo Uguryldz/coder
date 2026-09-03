@@ -20,6 +20,7 @@ import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { buildWorkerCore } from "../stores/worker-core.js";
 import { connectTemporal } from "../temporal-gateway.js";
+import { namespaceServisi, saklamaSuresiniAcilistaAyarla } from "../temporal-retention.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
 
 /**
@@ -72,7 +73,13 @@ export async function main(): Promise<void> {
       // verifies membership against it, the worker writes it onto the gate and
       // checks the decision's claim against it. Read straight from the raw
       // environment because the stores are built before `bootPlatform`.
-      resolveRole: roleResolver(process.env),
+      //
+      // Eşleme yoksa (`null`) ROL ADINA düşülüyor, ve bu bilerek: BFF de o
+      // durumda `actorGroup`a rol adını yazıyor (`GateOwner.unconfigured`).
+      // İki taraf aynı adı üretmezse kapı bir adla açılır, başka bir adla
+      // kontrol edilir ve her onay `wrong_group` ile reddedilir — OPS-34'ün
+      // arızası tam olarak buydu.
+      resolveRole: (role) => roleResolver(process.env)(role) ?? role,
     });
 
     const { env, deployment } = await bootPlatform({
@@ -245,6 +252,13 @@ export async function main(): Promise<void> {
  * NEVER fatal. A worker that cannot reconcile is a worker with a stale
  * dashboard; a worker that refuses to start is a bank with no delivery at all.
  * The failure is loud and the polling continues.
+ *
+ * Bu geçiş ayrıca namespace'in SAKLAMA SÜRESİNİ güvenceye alır (aşağıya
+ * bakın): Temporal bağlantısını açan tek açılış adımı burası, ve iki iş de
+ * aynı fail-soft kurala tabi. Adı `reconcile` kalıyor çünkü asıl işi o;
+ * saklama ayarı bir satır ve kendi dosyasında (`temporal-retention.ts`)
+ * anlatılıyor, ayrı bir bağlantı açmak ise yalnızca ikinci bir gRPC
+ * el sıkışması demek olurdu.
  */
 async function reconcileOnBoot(options: {
   address: string;
@@ -258,6 +272,26 @@ async function reconcileOnBoot(options: {
       address: options.address,
       namespace: options.namespace,
     });
+
+    /**
+     * SAKLAMA SÜRESİ — imajın kendisi ayarlıyor, operatör hiçbir şey yapmıyor.
+     *
+     * Burada, çünkü bu bağlantı zaten açık ve bu süreç Temporal'ın SAĞLIKLI
+     * olmasını compose'da beklemiş olan tek süreçtir (`depends_on: temporal:
+     * service_healthy`). `migrate` konteyneri yalnız Postgres'i bekler —
+     * oraya konsaydı Temporal henüz ayakta olmadığı için çoğu kurulumda
+     * sessizce atlanırdı. Ayrıntılı gerekçe: `temporal-retention.ts`.
+     *
+     * `reconcileOnBoot`'un içinde ve ONDAN ÖNCE: aynı `try` bloğunun fail-soft
+     * kuralı ikisi için de geçerli, ve süre uzatma kıyastan önce yapılırsa
+     * bu açılışta kaybolmaya en yakın koşular da korunmuş olur.
+     */
+    await saklamaSuresiniAcilistaAyarla({
+      servis: namespaceServisi(temporal.connection),
+      namespace: options.namespace,
+      istenen: process.env["TEMPORAL_RETENTION"],
+    });
+
     const report = await reconcileRunStatuses({
       runs: options.runs,
       source: temporal.gateway,

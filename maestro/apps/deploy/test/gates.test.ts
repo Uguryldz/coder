@@ -246,6 +246,9 @@ describe("PrismaGateStore.decisions", () => {
       actorUserId: "ayse.kaya@ugurbank.local",
       actorGroup: "product-owners",
       sodVerified: true,
+      // Kayıtta bayrak yok — bu alan eklenmeden önce yazılmış her karar
+      // üyeliği ÖLÇÜLMÜŞ karardı, o yüzden varsayılan `verified` doğru.
+      membershipCheck: "verified",
       signatureSeq: 81390,
       source: "jira",
       at: "2026-08-02T10:00:00.000Z",

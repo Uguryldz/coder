@@ -106,6 +106,37 @@ export const GateDecision = z
     actorUserId: NonEmpty,
     actorGroup: NonEmpty,
     sodVerified: z.boolean(),
+    /**
+     * ÜYELİK GERÇEKTEN ÖLÇÜLDÜ MÜ — yoksa ölçülecek bir grup mu yoktu.
+     *
+     * ── Neden bu alan var ────────────────────────────────────────────────
+     * `sodVerified` tek başına iki ayrı şeyi aynı `false` ile anlatıyordu:
+     * "üyelik SORULDU ve kişi üye ÇIKMADI" ile "sorulacak bir grup HİÇ
+     * TANIMLI DEĞİL". Birincisi bir güvenlik reddi, ikincisi bir kurulum
+     * gerçeği; ikisini aynı bayrağa sıkıştırmak, ya güvenliği ya da o
+     * kurulumu feda etmek demekti.
+     *
+     * ── "unconfigured" NE DEMEK DEĞİL ────────────────────────────────────
+     * Bir muafiyet, bir bypass ya da "kontrolü kapat" düğmesi DEĞİL.
+     * `GATE_GROUPS`/`GATE_GROUP_DEFAULT` hiç eşlenmemişse ortada
+     * doğrulanacak bir dizin grubu yoktur; olmayan bir gruba üyelik sormak
+     * her kararı 404 ile düşürür — yani kapı hiç kapanmaz. Bu değer o
+     * durumu DENETİME YAZAR: karar geçmiştir ve üyeliğin ölçülmediği
+     * kayıtlıdır. Sessizce geçmekle bunun farkı, denetçinin bunu
+     * görebilmesidir.
+     *
+     * ── Bu kurulumda yetkiyi ne koruyor ──────────────────────────────────
+     * Grup üyeliği tek koruma değil: kararın kanalı Jira'nın kendisi, ve
+     * bir ticket'ı o statüye taşıyabilmek zaten Jira'nın izin şemasından
+     * geçmeyi gerektiriyor. Görevler ayrımı (M32) da ayakta kalır — analizi
+     * Maestro yazar, onaylayan İNSANDIR ve kimliği denetime adıyla
+     * yazılır. Kaybedilen tek şey "hangi grup" sorusunun cevabı, ve o
+     * cevabın olmadığı bir kurulumda bunu iddia etmemek doğru olandır.
+     *
+     * Eski kayıtlarda alan yok: `default("verified")` geriye dönük okuma
+     * içindir — bugüne kadar yazılmış her karar üyeliği ölçülmüş kararlardı.
+     */
+    membershipCheck: z.enum(["verified", "unconfigured"]).default("verified"),
     signatureSeq: z.number().int().positive(),
     source: z.enum(["jira", "studio"]),
     at: IsoDateTime,

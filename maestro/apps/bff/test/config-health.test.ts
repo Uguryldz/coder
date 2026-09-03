@@ -44,6 +44,7 @@ const HEALTHY: ConfigHealthInput = {
     internalKeyRuleCount: 0,
     connectionKnown: true,
   },
+  gateGroups: { configured: true },
 };
 
 function row(findings: readonly ConfigFinding[], id: string): ConfigFinding {
@@ -257,12 +258,13 @@ describe("buildConfigFindings", () => {
       variants: null,
       statusMaps: null,
       ruleIdentity: null,
+    gateGroups: null,
     });
 
     // Dokuz satır: kapı onay yolu (`gate_channel`) sekizincinin yanına eklendi.
     // Sayı sabitlenmiş kalıyor ve bilerek: yeni bir satırın "bilinmiyor"
     // demeyi UNUTMASI, tam olarak bu testin yakalamak için var olduğu şey.
-    expect(findings).toHaveLength(9);
+    expect(findings).toHaveLength(10);
     expect(findings.every((finding) => finding.value === "bilinmiyor")).toBe(true);
     expect(findings.some((finding) => finding.severity === "iyi")).toBe(false);
   });
@@ -586,5 +588,43 @@ describe("GET /studio/tani", () => {
     expect(body.details?.capability).toBe("tani");
     // Ve operatöre ne yapacağını söylüyor: betik hâlâ tam raporu üretir.
     expect(body.details?.missing).toMatch(/tani\.sh/);
+  });
+});
+
+/**
+ * KAPI ONAY GRUBU — ve neden bu satır KIRMIZI DEĞİL.
+ *
+ * Bazı kurumlarda onay grubu diye bir şey yoktur ve kararlar Jira statüsüyle
+ * verilir; bu bir eksiklik değil, bir tercih. O operatöre her açılışta kırmızı
+ * bir satır göstermek, ona uyarıları okumamayı öğretir — ve bu ekranın en
+ * pahalıya patlayacak kaybı tam olarak budur.
+ */
+describe("kapı onay grubu satırı", () => {
+  it("eşlenmişse yeşil", () => {
+    const finding = row(buildConfigFindings(HEALTHY), "gate_groups");
+    expect(finding.severity).toBe("iyi");
+    expect(finding.value).toBe("eslenmis");
+  });
+
+  it("eşlenmemişse BİLGİ — uyarı ya da sorun DEĞİL", () => {
+    const findings = buildConfigFindings({ ...HEALTHY, gateGroups: { configured: false } });
+    const finding = row(findings, "gate_groups");
+    expect(finding.severity).toBe("bilgi");
+    expect(finding.value).toBe("eslenmemis");
+    // Düzeltilecek bir şey yok: "çözüm" satırı, bilerek yapılmış bir tercihi
+    // bir arıza gibi gösterirdi.
+    expect(finding.fixKey).toBeNull();
+  });
+
+  it("eşlenmemiş olması genel durumu bozmaz", () => {
+    const findings = buildConfigFindings({ ...HEALTHY, gateGroups: { configured: false } });
+    // `bilgi` en kötü satır olsa bile ekran kırmızıya ya da sarıya dönmez.
+    expect(worstSeverity(findings)).not.toBe("sorun");
+    expect(worstSeverity(findings)).not.toBe("uyari");
+  });
+
+  it("okunamadıysa 'bilinmiyor' — 'eşlenmemiş' değil", () => {
+    const finding = row(buildConfigFindings({ ...HEALTHY, gateGroups: null }), "gate_groups");
+    expect(finding.value).not.toBe("eslenmemis");
   });
 });

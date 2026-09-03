@@ -261,6 +261,17 @@ export class PrismaGateStore implements GateStore {
           actorUserId: row.actor,
           actorGroup: meta["actorGroup"],
           sodVerified: meta["sodVerified"] === true,
+          /**
+           * Denetim kaydının kendi yazdığı bayrak, ŞEMANIN VARSAYILANI DEĞİL.
+           *
+           * Varsayılana (`"verified"`) bırakılsaydı, üyeliği hiç ölçülmemiş
+           * bir karar geriye dönük okunduğunda "üyelik doğrulandı" diye
+           * görünürdü — bir denetçinin göreceği tek kayıt, tam olarak
+           * doğrulanmamış olanı doğrulanmış gösterirdi. Yazılmamış eski
+           * kayıtlar için varsayılan doğru (`decideGate` bu alanı eklemeden
+           * önce her karar ölçülmüştü); yazılmışsa yazan kazanır.
+           */
+          ...(meta["membershipCheck"] === "unconfigured" ? { membershipCheck: "unconfigured" } : {}),
           signatureSeq: Number(row.seq),
           source: meta["source"],
           at: row.at.toISOString(),

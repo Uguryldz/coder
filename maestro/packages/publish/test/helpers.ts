@@ -98,6 +98,7 @@ export const EVIDENCE: EvidencePackage = {
       actorUserId: "tl.yilmaz@ugurbank.corp",
       actorGroup: "tech-leads",
       sodVerified: true,
+      membershipCheck: "verified",
       signatureSeq: 7,
       source: "jira",
       at: "2026-08-08T10:00:00.000Z",

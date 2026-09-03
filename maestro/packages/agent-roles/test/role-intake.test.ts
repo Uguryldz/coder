@@ -201,6 +201,90 @@ describe("toIntakeResult", () => {
       "1. Limit üst sınırı hangi değerle sınırlanacak?\n2. Değişiklik yalnız web'de mi, mobil de kapsamda mı?",
     );
   });
+
+  /**
+   * CANLI BULGU — the operator's report: intake said questions were still open
+   * and the run walked on to analysis anyway. That is this exact shape, and
+   * `complete` used to decide, so the questions were dropped on the floor.
+   * The list decides now: questions exist, therefore they get asked.
+   */
+  it("asks the questions when 'complete' contradicts a non-empty missing list", () => {
+    const contradictory = IntakeOutput.parse({ complete: true, missing: incomplete.missing });
+    const result = toIntakeResult(contradictory);
+    expect(result.complete).toBe(false);
+    expect(result.question).toBe(
+      "1. Limit üst sınırı hangi değerle sınırlanacak?\n2. Değişiklik yalnız web'de mi, mobil de kapsamda mı?",
+    );
+  });
+
+  it("passes through when the list is empty, whatever the flag says", () => {
+    // The mirror contradiction. `validateIntake` refuses it before it can get
+    // here; if it ever did, "no questions" leaves nothing to ask anyway.
+    expect(toIntakeResult(IntakeOutput.parse({ complete: false, missing: [] }))).toEqual({
+      complete: true,
+    });
+  });
+});
+
+/**
+ * The whole path, with a model that answers the way gpt-oss actually answered:
+ * schema-valid, semantically self-contradicting. Two rounds of it, then a clean
+ * one — and at every point the verdict must land on "ask", never on "go".
+ */
+describe("runIntake — contradictory model answer stays fail-closed", () => {
+  const args = { ticket: thin, variantId: "web", dataClass: "dahili" as const };
+  const contradictory = { complete: true, missing: incomplete.missing };
+
+  it("repairs the contradiction and tells the model which way to resolve it", async () => {
+    const { llm, prompts } = scriptedLlm([contradictory, incomplete]);
+    const result = await runIntake({ llm, ...args });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    // The repair prompt must not leave the model free to fix the contradiction
+    // by deleting the questions — that is the failure mode being closed here.
+    expect(prompts[1]).toContain("SİLEREK çözme");
+    expect(prompts[1]).toContain("Karar veremiyorsan complete=false seç");
+    expect(toIntakeResult(result.value).complete).toBe(false);
+  });
+
+  it("still asks when the model never resolves the contradiction", async () => {
+    // Three stubborn contradictory rounds exhaust the budget and raise, rather
+    // than returning a "complete" verdict built on unanswered questions.
+    const { llm } = scriptedLlm([contradictory, contradictory, contradictory]);
+    await expect(runIntake({ llm, ...args })).rejects.toBeInstanceOf(RoleOutputError);
+  });
+});
+
+describe("intake prompt — question quality", () => {
+  it("tells the model what a usable clarification question looks like", () => {
+    const prompt = buildIntakePrompt(thin);
+    expect(prompt).toContain("SORU KALİTESİ");
+    // One gap per question; no "X and also Y" bundles.
+    expect(prompt).toContain("TEK KONU");
+    // Answerable with a concrete value or a choice, not an essay.
+    expect(prompt).toContain("CEVAPLANABİLİR");
+    // Named in the ticket's own words, and never asking what the ticket says.
+    expect(prompt).toContain("Ticket'ta ZATEN yazan bir şeyi sorma");
+    // The empty filler the operator was seeing, banned by name.
+    expect(prompt).toContain("daha fazla detay verin");
+    expect(prompt).toContain("gereksinimler net değil");
+  });
+
+  it("carries a bad/good example pair, because gpt-oss needs the contrast", () => {
+    const prompt = buildIntakePrompt(thin);
+    expect(prompt).toContain("KÖTÜ örnek");
+    expect(prompt).toContain("İYİ örnek");
+  });
+
+  it("does NOT touch the calibrated threshold while doing so", () => {
+    // The pilot's working calibration: quality rules are an addition, never a
+    // tightening of when a ticket gets returned.
+    const prompt = buildIntakePrompt(thin);
+    expect(prompt).toContain("EŞİK");
+    expect(prompt).toContain("çıkmaz sokaktır");
+    expect(prompt).toContain("endpoint adresi");
+    expect(prompt).toContain("analize BAŞLAMAK");
+  });
 });
 
 /**

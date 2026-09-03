@@ -6,6 +6,7 @@ import {
   type IntakeOutput,
   runAnalyst,
   runIntake,
+  toIntakeResult,
   toAnalysisDoc,
 } from "@maestro/agent-roles";
 import type { AnalysisDoc, DataClass, TicketSnapshot } from "@maestro/contracts";
@@ -405,5 +406,10 @@ export async function requestIntake(args: RequestIntakeArgs): Promise<IntakeGate
   // The RoleResult value is the MASKED verdict; the display copy re-inserts the
   // real values with the captured unmask (the reporter reads the display copy).
   const display = captured.unmask(result.value);
-  return { complete: display.complete, display, attempts: result.attempts };
+  // `toIntakeResult`, not `display.complete`: the verdict is read the same way
+  // the Temporal path reads it, and for the same live finding — a model that
+  // lists open questions and still flags the ticket complete must not walk on
+  // to a nine-section analysis over the very gaps it just named. One rule, one
+  // place, both callers.
+  return { complete: toIntakeResult(display).complete, display, attempts: result.attempts };
 }

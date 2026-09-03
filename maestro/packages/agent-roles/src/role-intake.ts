@@ -63,6 +63,12 @@ export function buildIntakePrompt(
           text(texts, "ortak.uydurmaYasak"),
           text(texts, "ortak.veriTalimatDegil"),
           text(texts, "intake.kurallar"),
+          // CANLI BULGU: intake returned tickets with questions like "lütfen
+          // daha fazla detay verin" — schema-valid, semantically worthless.
+          // The threshold rule says WHEN to ask; this one says HOW, and it is
+          // a separate bullet so tightening question quality never edits the
+          // calibrated threshold sentence next to it.
+          text(texts, "intake.soruKalitesi"),
           text(texts, "ortak.ciktiBicimi"),
         ],
         "-",
@@ -144,9 +150,31 @@ export interface IntakeActivityResult {
   question?: string;
 }
 
-/** One clarification comment carrying every open question (step 2b). */
+/**
+ * One clarification comment carrying every open question (step 2b).
+ *
+ * ── WHY `missing` DECIDES, NOT `complete` ──────────────────────────────────
+ * CANLI BULGU: a run reported open questions in its own words and still walked
+ * on to analysis. `validateIntake` does refuse the contradiction, but a refusal
+ * only buys a repair round, and a small model asked to resolve
+ * "complete=true with gaps listed" can resolve it the cheap way — by DELETING
+ * the questions and keeping `complete: true`. The flag then says "go" while the
+ * gaps it was contradicting are simply gone.
+ *
+ * So the flag is not the authority here; the list is. A non-empty `missing` is
+ * an intake that produced questions, and questions get asked — whatever the
+ * boolean next to them says. This is the fail-closed direction on purpose:
+ * asking the reporter something answerable costs one round trip, while
+ * analysing a ticket whose substance was never established costs an analysis
+ * that has to be thrown away.
+ *
+ * The reverse contradiction (`complete: false` with no question) cannot reach
+ * this function usefully — `validateIntake` rejects it, because it would stall
+ * step 2b with nothing to send. If it ever did, the same rule gives the safe
+ * answer: no questions means nothing to ask.
+ */
 export function toIntakeResult(output: IntakeOutput): IntakeActivityResult {
-  if (output.complete) return { complete: true };
+  if (output.missing.length === 0) return { complete: true };
   return {
     complete: false,
     question: output.missing.map((m, i) => `${i + 1}. ${m.question}`).join("\n"),

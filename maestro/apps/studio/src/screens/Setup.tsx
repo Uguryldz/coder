@@ -475,11 +475,17 @@ export function SetupScreen(): ReactNode {
         // analysis-approval moments, so values a draft may still hold there
         // (typed before the operator switched flows) stay off the wire — the
         // summary the operator just confirmed did not list them either.
+        // Kapı statüleri de yazılır, ve `statusOn`dan BAĞIMSIZ: sihirbaz artık
+        // onları soruyor (adım 4'ün alt bölümü) ve yorum-yalnız kipte kalıp
+        // kapıyı statüyle kapatmak geçerli bir kurulum. Eskiden bu argüman hiç
+        // verilmiyordu — sihirbazdan geçen her kurulumun kapı kanalı kapalı
+        // kalmasının sebebi buydu.
         statusMap: buildStatusMap(
           input.statusOn,
           input.statusDraft,
           input.reassignOnNeedInfo,
           input.flowType,
+          input.gateStatusDraft,
         ),
       });
 

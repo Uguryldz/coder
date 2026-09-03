@@ -87,6 +87,52 @@ export interface DiscoveryRule {
   readonly enabled: boolean;
 }
 
+/**
+ * Zaten koşusu olan bir ticket, koşunun NEREDE olduğuyla birlikte.
+ *
+ * `status` ve `step` serbest metin değil, koşunun kendi vokabüleri
+ * (`WorkflowRunStatus` ve `StepId`) — ama burada `string` olarak alınıyor:
+ * bu modül veritabanı satırını okumuyor, çağıran okuyor, ve daraltmak
+ * `apps/deploy`'un `packages/contracts`'a bu uçta bağlanmasını gerektirirdi.
+ */
+export interface KnownRun {
+  readonly ticket: TicketKey;
+  /** Koşunun adımı (`StepId`), ör. "5". Bilinmiyorsa boş. */
+  readonly step?: string;
+  /** Koşunun durumu (`WorkflowRunStatus`), ör. "gate". Bilinmiyorsa boş. */
+  readonly status?: string;
+}
+
+/**
+ * Koşunun durumunu operatörün okuyabileceği bir cümleye çevirir.
+ *
+ * Kod adları (`gate`, `running`, `handover`) operatörün kelimeleri değil, ve
+ * atlama satırının tamamı zaten bu yanılgıyı düzeltmek için var — kod adı
+ * yazmak, "koşusu zaten var" kadar sessiz olurdu.
+ */
+function runWhere(run: KnownRun): string {
+  const status = (run.status ?? "").trim();
+  const step = (run.step ?? "").trim();
+  const said =
+    status === "gate"
+      ? "kapıda, insan onayı bekliyor"
+      : status === "running"
+        ? "çalışıyor"
+        : status === "handover"
+          ? "insana devredildi"
+          : status === "done"
+            ? "tamamlandı"
+            : status === "cancelled"
+              ? "durduruldu"
+              : status === "failed"
+                ? "hata aldı"
+                : status === ""
+                  ? ""
+                  : status;
+  const parts = [said, step === "" ? "" : `adım ${step}`].filter((part) => part !== "");
+  return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
+}
+
 export interface DiscoveryOptions {
   readonly deps: ResolvedDeps;
   /** The driver that can run a JQL search; see {@link IssueSearcher}. */
@@ -122,8 +168,25 @@ export interface DiscoveryOptions {
    * has the binding table.
    */
   readonly boundProjects?: () => Promise<readonly string[]>;
-  /** Ticket keys the platform already knows about — never started twice. */
-  readonly known: () => Promise<readonly TicketKey[]>;
+  /**
+   * Ticket keys the platform already knows about — never started twice.
+   *
+   * DÜZ ANAHTAR ya da ANAHTAR+DURUM verilebilir, ve ikisi de geçerli:
+   *
+   *  - `TicketKey[]` — eski şekil. Atlama satırı "koşusu var" der, nokta.
+   *  - `{ ticket, step, status }[]` — koşunun NEREDE olduğunu da taşır, ve
+   *    atlama satırı bunu yazar: "OTYT-1 atlandı: koşusu var (kapıda bekliyor,
+   *    adım 5)".
+   *
+   * İkinci şeklin sebebi ölçülmüş bir yanılgı: operatör "koşusu zaten var"
+   * satırını okuyup "sistem beni duymuyor" diye anlıyor. Koşunun YAŞADIĞINI ve
+   * NEREDE olduğunu söylemek, aynı olguyu doğru okutuyor — "tamam, koşu
+   * kapıda, benim onayımı bekliyor".
+   *
+   * Ek bir sorgu MALİYETİ YOK: `WorkflowRun` satırı `step` ve `status`u zaten
+   * taşıyor, yalnız `select` genişliyor (bkz. `bin/bff.ts`).
+   */
+  readonly known: () => Promise<readonly (TicketKey | KnownRun)[]>;
   readonly intervalMs: number;
   /**
    * The interval as the OPERATOR set it, in SECONDS, re-read each tick.
@@ -407,7 +470,18 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
     }
   }
 
-  const known = new Set<string>(await options.known().catch(() => []));
+  /**
+   * Anahtar → koşunun nerede olduğu. İki şekli de kabul eder (bkz. `known`):
+   * düz anahtar boş bir `KnownRun`a düşer ve satır eskisi gibi yalnız
+   * "koşusu var" der.
+   */
+  const known = new Map<string, KnownRun>(
+    (await options.known().catch(() => [])).map((entry) =>
+      typeof entry === "string"
+        ? ([entry, { ticket: entry }] as const)
+        : ([entry.ticket, entry] as const),
+    ),
+  );
   const started: TicketKey[] = [];
   // Deduped across rules: several rules routinely match one ticket (an
   // `assigned` wildcard beside a per-issuetype rule), and starting it twice
@@ -536,13 +610,30 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       // from ending a round that has other tickets in it.
       const key = issueKeyOf(issue);
       if (key === null) continue;
-      if (known.has(key) || seenThisRound.has(key)) {
+      const knownRun = known.get(key);
+      if (knownRun !== undefined || seenThisRound.has(key)) {
         // Counted, not silent. A round that finds fourteen tickets and starts
         // none reads as a broken sweep; "fourteen already have a run" reads as
         // a working one. The two are indistinguishable in the summary line, and
         // that ambiguity is what sent an operator looking for a bug in the
         // query that had just done its job.
         alreadyKnown += 1;
+        /**
+         * ── ATLAMA ARTIK TİCKET BAŞINA DA YAZILIYOR ──────────────────────
+         *
+         * Tur özeti "14'ünün koşusu zaten var" diyordu ve doğruydu, ama
+         * operatör bunu "sistem beni duymuyor" diye okuyor — hangi ticket,
+         * ve koşu YAŞIYOR MU, satırda yoktu. Koşunun nerede olduğunu söylemek
+         * aynı olguyu doğru okutuyor: "tamam, koşu kapıda, benim onayımı
+         * bekliyor".
+         *
+         * Yalnız GERÇEK bir koşu için yazılır; `seenThisRound` çakışması
+         * (aynı turda iki kuralın aynı ticket'ı görmesi) operatörün bir şey
+         * yapmasını gerektirmeyen bir iç ayrıntı ve satırı gürültüye boğardı.
+         */
+        if (knownRun !== undefined) {
+          log(`[keşif] ${key} atlandı: koşusu var${runWhere(knownRun)}`);
+        }
         continue;
       }
       seenThisRound.add(key);

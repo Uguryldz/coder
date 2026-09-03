@@ -47,6 +47,7 @@ import {
   discoveryStatus,
   startJiraDiscovery,
   type IssueSearcher,
+  type KnownRun,
 } from "../jira-discovery.js";
 import type { ListeningProbeResult } from "@maestro/bff";
 import { probeListeningRule } from "../listening-probe.js";
@@ -1018,6 +1019,30 @@ export async function main(): Promise<void> {
     );
 
   /**
+   * Aynı satırlar, koşunun NEREDE olduğuyla birlikte — tarama turu için.
+   *
+   * `select` iki alan genişliyor, sorgu sayısı AYNI kalıyor: `step` ve `status`
+   * zaten `WorkflowRun` satırında duruyor. Karşılığında tarama, atladığı her
+   * ticket için "koşusu var (kapıda bekliyor, adım 5)" yazabiliyor — operatörün
+   * "koşusu zaten var" satırını "sistem beni duymuyor" diye okumasının çaresi.
+   *
+   * Deneme (`listeningProbe`) düz `knownTickets`i kullanmaya devam ediyor:
+   * orada ekran zaten "Bu zaten alınmış" rozetini basıyor ve adım bilgisi o
+   * tabloya ait bir sütun değil.
+   */
+  const knownRuns = async (): Promise<readonly KnownRun[]> =>
+    (
+      await db.workflowRun.findMany({
+        select: { ticketKey: true, step: true, status: true },
+        take: 500,
+      })
+    ).map((row) => ({
+      ticket: row.ticketKey as TicketKey,
+      step: row.step,
+      status: String(row.status),
+    }));
+
+  /**
    * Prova, sürücü arayabiliyorsa kurulur — tarama açık olsun ya da olmasın.
    * Gerekçesi `listeningProbe` bildiriminde.
    */
@@ -1132,8 +1157,9 @@ export async function main(): Promise<void> {
       },
       // Every ticket that already has a row, in ANY state: a finished run must
       // not be started again by the next sweep, and a failed one is a decision
-      // for a person, not something to retry on a timer.
-      known: knownTickets,
+      // for a person, not something to retry on a timer. Koşunun ADIMIYLA
+      // birlikte, ki atlama satırı koşunun yaşadığını da söyleyebilsin.
+      known: knownRuns,
     };
     startJiraDiscovery(discoveryOptions);
     // The panel's button runs ONE round with the same options; it does not

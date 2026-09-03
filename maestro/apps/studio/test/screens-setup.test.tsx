@@ -1584,3 +1584,100 @@ describe("setup wizard — how approvals arrive", () => {
     expect(screen.getByText("Sorma aralığı: 60 saniye.")).toBeTruthy();
   });
 });
+
+/**
+ * ── SİHİRBAZ KAPI STATÜLERİNİ SORUYOR ────────────────────────────────────────
+ *
+ * Sahadaki arızanın kök sebebi: sihirbaz `GATE_STATUS_POINTS`i HİÇ sormuyordu,
+ * dolayısıyla ondan geçen her kurulumun kapı kanalı kapalı kalıyordu — ve
+ * kapalı olduğunu söyleyen bir cümle hiçbir ekranda yoktu. Operatör
+ * "analysisapproval → analiz" akışını panodan yönetmek istiyor; o akışın
+ * TAMAMI bu iki alana bağlı.
+ */
+describe("kurulum sihirbazı — kapı kararının statüyle verilmesi", () => {
+  function statusRoutes(): Route[] {
+    return baseRoutes([
+      { path: "/onboarding/jira-match-values", body: { ok: false, messageKey: "error.unexpected" } },
+    ]);
+  }
+
+  async function reachStatusStep(): Promise<void> {
+    await chooseFlow();
+    await fillProject();
+    await screen.findByText("Hangi ticket'ları alsın?");
+    await userEvent.type(screen.getByLabelText("Hangi değer?"), "Hata");
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    await screen.findByText("Jira durumlarını da değiştirsin mi?");
+  }
+
+  /**
+   * BU DOSYANIN EN ÖNEMLİ TESTİ. Alanlar "Ticket'ın Jira durumunu da
+   * değiştirsin" anahtarı KAPALIYKEN de görünmeli: Dinleme ekranında tam
+   * olarak bu kısır döngü yaşandı (eşleme boş → anahtar kapalı → alanlar
+   * çizilmiyor → eşleme boş kalıyor).
+   */
+  it("iki alanı da anahtar KAPALIYKEN gösterir — kısır döngü yok", async () => {
+    const { fetchImpl } = stubFetch(statusRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+    await reachStatusStep();
+
+    // Yazma tarafı gizli (opt-in), okuma tarafı GÖRÜNÜR.
+    expect(screen.queryByLabelText("İş başladığında")).toBeNull();
+    expect(screen.getByLabelText("Buraya taşınırsa: onaylandı")).toBeTruthy();
+    expect(screen.getByLabelText("Buraya taşınırsa: analize geri gönder")).toBeTruthy();
+  });
+
+  it("boşken UYARIYOR — kapının yalnız yorumla kapanacağını söylüyor", async () => {
+    const { fetchImpl } = stubFetch(statusRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+    await reachStatusStep();
+
+    expect(screen.getByText(/yalnız \/approve ve \/reject yorumlarıyla çalışır/)).toBeTruthy();
+  });
+
+  /**
+   * Anahtar KAPALIYKEN bile kaydedilir: yorum-yalnız kipte kalıp kapıyı
+   * statüyle kapatmak tutarlı bir kurulum, ve `buildStatusMap` artık bunu
+   * yazıyor. Eskiden `if (!enabled) return null` her şeyi yutuyordu.
+   */
+  it("anahtar KAPALIYKEN bile kapı statülerini kaydeder", async () => {
+    const { fetchImpl, calls } = stubFetch(statusRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+    await reachStatusStep();
+
+    await userEvent.type(screen.getByLabelText("Buraya taşınırsa: onaylandı"), "Onaylandı");
+    await userEvent.type(
+      screen.getByLabelText("Buraya taşınırsa: analize geri gönder"),
+      "Analiz",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+
+    // Özet operatörün İMZALADIĞI şey: kapı kanalı orada da yazıyor.
+    await skipIntake();
+    await screen.findByText("Özet");
+    expect(screen.getByText(/“Onaylandı” durumuna taşımak onay sayılır/)).toBeTruthy();
+    expect(screen.getByText(/“Analiz” durumuna taşımak analizi baştan yazdırır/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+    await waitFor(() => {
+      // Yazma tarafı YOK (anahtar kapalıydı), okuma tarafı VAR.
+      expect(ruleBody(calls).statusMap).toEqual({
+        gateApproveStatus: "Onaylandı",
+        gateReturnStatus: "Analiz",
+      });
+    });
+  });
+
+  it("özet, kapı kanalı boşken bunu AÇIKÇA söyler — sessizlik sahada arıza oldu", async () => {
+    const { fetchImpl } = stubFetch(statusRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+    await reachStatusStep();
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    await skipIntake();
+    await screen.findByText("Özet");
+
+    expect(
+      screen.getByText(/yalnız ticket'a yazılan \/approve ve \/reject yorumlarıyla verilir/),
+    ).toBeTruthy();
+  });
+});

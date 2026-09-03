@@ -33,8 +33,29 @@ describe("an analysis gate rejection goes back to step 3", () => {
     );
 
     expect(run.status).toBe("done");
-    const backToThree = run.scenario.journal.find((e) => e.detail.startsWith("ret: kapsam eksik"));
-    expect(backToThree?.title).toBe("adım 3");
+    /**
+     * Ret'in deftere DÜŞTÜĞÜ yer değişti, ve daha iyisi oldu.
+     *
+     * Eskiden tek iz `goto("3", "ret: kapsam eksik — …")` satırıydı: ret'in
+     * kendisi (kim, hangi grup, hangi kanal) hiçbir yerde yazmıyordu. Artık
+     * kapının kapanışı KENDİ satırını yazıyor (`gate-loop.ts`) ve analize
+     * dönüş de ayrı bir satır — operatörün "geri gönderilen detayları
+     * yazmıyor" şikâyetinin cevabı bu.
+     *
+     * Ret dalı artık analizi yerinde yazdırmıyor, bağlamı devam eden koşunun
+     * girdisine koyuyor (bkz. `workflow-analysis-rewrite.test.ts`), yani
+     * "adım 3" satırı DEVAM EDEN koşuda yazılıyor — sebebiyle birlikte.
+     */
+    const closed = run.scenario.journal.find((e) => e.title === "kapı 5 kapandı — reddedildi");
+    expect(closed?.detail).toContain("kapsam eksik");
+    // Karar VEREN de defterde — eskiden hiçbir satırda yoktu.
+    expect(closed?.detail).toContain("karar veren:");
+    // Analiz yeniden yazılıyor, ve defter bunu söylüyor.
+    expect(
+      run.scenario.journal.some(
+        (e) => e.title === "adım 3" && e.detail === "analiz yeniden yazılıyor",
+      ),
+    ).toBe(true);
     // The gate was asked twice and answered twice — the second time, positively.
     expect(run.scenario.opened.filter((s) => s === "5")).toHaveLength(2);
     const gate5 = run.scenario.decisions.filter((d) => d.step === "5");

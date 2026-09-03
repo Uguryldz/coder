@@ -1,5 +1,7 @@
 import {
+  EMPTY_GATE_STATUS_DRAFT,
   EMPTY_STATUS_DRAFT,
+  type GateStatusDraft,
   type StatusDraft,
 } from "../common/status-map.ts";
 
@@ -239,6 +241,21 @@ export interface SetupDraft {
   readonly statusDraft: StatusDraft;
   readonly reassignOnNeedInfo: boolean;
   /**
+   * Adım 4b — KAPI KARARININ STATÜYLE VERİLMESİ, okuma tarafı.
+   *
+   * Sihirbaz bu iki alanı sormuyordu, ve sahadaki arızanın kök sebebi büyük
+   * olasılıkla buydu: operatör sihirbazdan geçiyor, o iki alanın VARLIĞINDAN
+   * haberdar olmuyor, kanal kapalı kalıyor. Kanal kapalıyken kapı yalnız
+   * `/approve` yorumuyla açılır — operatörün panodan yönetmek istediği akış
+   * ise hiç çalışmaz ve nedenini söyleyen bir cümle hiçbir ekranda yoktur.
+   *
+   * `statusOn`dan BAĞIMSIZ ve o ayrım kasıtlı: `statusDraft` "Maestro ticket'ı
+   * nereye taşısın" (yazma), bu ikisi "operatörün taşıması ne anlama gelsin"
+   * (okuma). Yorum-yalnız kipte kalıp kapıyı statüyle kapatmak tamamen tutarlı
+   * bir kurulum (bkz. `buildStatusMap`).
+   */
+  readonly gateStatusDraft: GateStatusDraft;
+  /**
    * Step 5 — how `/approve` reaches Maestro (`jira.command_intake`).
    *
    * The one PLATFORM-WIDE answer in an otherwise per-project draft, and the
@@ -278,6 +295,10 @@ export const EMPTY_SETUP_DRAFT: SetupDraft = {
   statusOn: false,
   statusDraft: EMPTY_STATUS_DRAFT,
   reassignOnNeedInfo: false,
+  // Boş: kapı statüsü bir SEÇİM, ve uydurma bir varsayılan operatöre hiç
+  // vermediği bir cevabı vermiş gibi gösterirdi. Boşluğun kendisi ekranda
+  // uyarıyla söyleniyor, sessizce geçilmiyor.
+  gateStatusDraft: EMPTY_GATE_STATUS_DRAFT,
   // The starting answer is what the platform ALREADY does, not what the wizard
   // recommends: the screen overwrites both fields with the stored parameters
   // once they load, and a draft that started on "poll" would show an operator

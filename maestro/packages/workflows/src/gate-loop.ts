@@ -53,6 +53,37 @@ export async function awaitGate(
   const openedAgainst = await acts.openGate(ticket, at, owner, gateStatuses);
 
   /**
+   * ── DEFTERE: "ŞU AN NE BEKLENİYOR" ──────────────────────────────────────
+   *
+   * Kapının açılması deftere HİÇ yazılmıyordu. Ticket'a bir yorum düşüyordu
+   * (`openGate`), ama Studio'nun defterinde koşunun kapıda beklediğini söyleyen
+   * tek şey adım satırıydı ("adım 5") — ki o kimin, neyle, nasıl kapatacağını
+   * söylemiyor. Operatörün "şu an ne oluyor, ne bekleniyor" sorusunun cevabı
+   * defter olmalı, ve o cevap burada yazılıyor.
+   *
+   * Kapının HANGİ STATÜLERLE kapanabileceği de satırda: operatör ne yapacağını
+   * bilsin diye. Statü kanalı yapılandırılmamışsa bu AÇIKÇA söyleniyor —
+   * "yalnız yorumla" cümlesi, sessizce eksik bir listeden çok daha yararlı.
+   */
+  await acts.journal(
+    ticket,
+    "gate",
+    `kapı ${at} açıldı — insan onayı bekleniyor`,
+    [
+      `onay grubu: ${openedAgainst}`,
+      `onay için: ticket'a "/approve" yazın${
+        gateStatuses?.approve === undefined ? "" : ` ya da ticket'ı "${gateStatuses.approve}" durumuna taşıyın`
+      }`,
+      `analize geri göndermek için: ticket'a "/reject <sebep>" yazın${
+        gateStatuses?.return === undefined ? "" : ` ya da ticket'ı "${gateStatuses.return}" durumuna taşıyın`
+      }`,
+      ...(gateStatuses?.approve === undefined && gateStatuses?.return === undefined
+        ? ["not: bu kuralda kapı durumu tanımlı değil — karar yalnız yorumla verilebilir"]
+        : []),
+    ].join(" · "),
+  );
+
+  /**
    * Kapının AÇILDIĞI an — `openGate`'ten SONRA damgalanır.
    *
    * Sıra kritik ve netleştirme damgasıyla birebir aynı gerekçeye dayanıyor:
@@ -98,6 +129,23 @@ export async function awaitGate(
         continue;
       }
       if (closed.decision === "approve") state.approvers.set(at, closed.actorUserId);
+      // Kapı KAPANDI, ve bu deftere yazılıyordu yalnızca reddedilen kararlar
+      // için. Onay sessizce geçiyordu: defterden bakan biri kapının açıldığını
+      // görüyor, kapandığını göremiyordu. `return_analysis` kendi ayrıntılı
+      // satırını `ticket-workflow.ts`te yazıyor, o yüzden burada tekrarlanmaz.
+      if (closed.decision !== "return_analysis") {
+        await acts.journal(
+          ticket,
+          "gate",
+          `kapı ${at} kapandı — ${closed.decision === "approve" ? "onaylandı" : "reddedildi"}`,
+          [
+            `karar veren: ${closed.actorUserId}`,
+            `grup: ${closed.actorGroup}`,
+            `kanal: ${closed.source}`,
+            `sebep: ${closed.reason === undefined || closed.reason.trim() === "" ? "belirtilmedi" : closed.reason}`,
+          ].join(" · "),
+        );
+      }
       state.status = "running";
       // Kapı kapandı: eşik kalkar, böylece bu andan sonraki bir statü değişimi
       // artık bu kapının kararı olarak okunamaz. `awaitingClarificationSince`

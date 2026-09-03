@@ -181,7 +181,7 @@ describe("discoverOnce", () => {
   async function run(options: {
     rules: readonly DiscoveryRule[];
     found: Record<string, string[]>;
-    known?: string[];
+    known?: readonly (string | { ticket: string; step?: string; status?: string })[];
     maxPerRound?: number;
     /** The bound+active projects. Omitted = the seam is not wired at all. */
     boundProjects?: readonly string[];
@@ -200,9 +200,12 @@ describe("discoverOnce", () => {
      */
     asked: readonly string[];
     askedAll: readonly string[];
+    /** Turun yazdığı her satır — atlama satırlarını ölçmek için. */
+    logs: readonly string[];
   }> {
     const { search, asked } = fakeSearch(options.found);
     const started: string[] = [];
+    const logs: string[] = [];
     const deps = {
       // `runIntake` reads these two; everything else it touches is behind them.
       bindings: { resolve: () => Promise.resolve(null) },
@@ -222,12 +225,13 @@ describe("discoverOnce", () => {
         : options.boundProjects === undefined
           ? {}
           : { boundProjects: () => Promise.resolve(options.boundProjects!) }),
-      log: () => undefined,
+      log: (line: string) => void logs.push(line),
     });
     return {
       started: result,
       asked: asked.filter((jql) => !jql.includes("statusCategory")),
       askedAll: asked,
+      logs,
     };
   }
 
@@ -350,6 +354,48 @@ describe("discoverOnce", () => {
     });
 
     expect(started).not.toContain("OPS-1");
+  });
+
+  /**
+   * ── "KOŞUSU ZATEN VAR" ARTIK KOŞUNUN NEREDE OLDUĞUNU DA SÖYLÜYOR ─────────
+   *
+   * Ölçülmüş yanılgı: operatör bu satırı okuyup "sistem beni duymuyor" diye
+   * anlıyor. Atlama DOĞRU — ticket'ın koşusu var ve ikinci kez başlatılmamalı —
+   * ama satır koşunun YAŞADIĞINI söylemiyordu, dolayısıyla atlamayı bir arıza
+   * gibi okutuyordu. Koşunun kapıda beklediğini söylemek aynı olguyu doğru
+   * okutuyor: "tamam, koşu benim onayımı bekliyor".
+   *
+   * Ek sorgu maliyeti yok: `step` ve `status` zaten `WorkflowRun` satırında.
+   */
+  it("atlarken koşunun NEREDE olduğunu söyler — 'sistem beni duymuyor' yanılgısının çaresi", async () => {
+    const jql = jqlFor(RULE)!;
+    const { started, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "5", status: "gate" }],
+    });
+
+    expect(started).not.toContain("OPS-1");
+    const skip = logs.find((line) => line.includes("OPS-1 atlandı"));
+    expect(skip).toBeDefined();
+    // Operatörün kelimeleri, kod adı değil: "gate" değil "kapıda".
+    expect(skip).toContain("kapıda, insan onayı bekliyor");
+    expect(skip).toContain("adım 5");
+  });
+
+  it("düz anahtar listesi de çalışır — satır eskisi gibi yalnız 'koşusu var' der", async () => {
+    const jql = jqlFor(RULE)!;
+    const { started, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: ["OPS-1"],
+    });
+
+    expect(started).not.toContain("OPS-1");
+    const skip = logs.find((line) => line.includes("OPS-1 atlandı"));
+    // Satır yine yazılıyor — hangi ticket'ın atlandığı, durum bilinmese de
+    // operatörün görmesi gereken bir şey.
+    expect(skip).toBe("[keşif] OPS-1 atlandı: koşusu var");
   });
 
   /**

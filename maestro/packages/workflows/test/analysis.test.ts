@@ -255,3 +255,118 @@ describe("analiz adımı Studio'da tanımlı personayı görüyor", () => {
     expect("persona" in input).toBe(false);
   });
 });
+
+/**
+ * ── YENİDEN YAZIM BAĞLAMI PROMPTA GİRİYOR ────────────────────────────────────
+ *
+ * Operatörün kuralı: "ben yorum yazsam da yazmasam da, geri gönderince tekrar
+ * incelesin, bağlam kaybı olmasın diye geçmiş var zaten". Yukarıdaki bloklar
+ * `writeAnalysis`'in ticket metnini gördüğünü ölçüyor; burası GEÇMİŞİ de
+ * gördüğünü ölçüyor — ve geçmiş yoksa promptun bugünküyle bit bit aynı
+ * kaldığını.
+ */
+describe("analiz yeniden yazılırken geçmişi görüyor", () => {
+  const doc = analysisDoc("orta");
+  const ok = () => ({ status: "ok" as const, value: doc, log: LOG });
+  const inputOf = (fakes: ReturnType<typeof makeFakes>): Record<string, unknown> =>
+    fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc")?.input as Record<
+      string,
+      unknown
+    >;
+
+  it("bağlam verilmezse prompt BUGÜNKÜYLE aynı — `rewrite` alanı hiç gitmez", async () => {
+    const fakes = makeFakes({ generateObject: () => ok() });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    expect("rewrite" in inputOf(fakes)).toBe(false);
+  });
+
+  it("geri gönderme gerekçesi prompta giriyor", async () => {
+    const fakes = makeFakes({ generateObject: () => ok() });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay", { reason: "kabul kriterleri eksik" });
+    expect(String(inputOf(fakes)["rewrite"])).toContain("kabul kriterleri eksik");
+  });
+
+  /**
+   * OPERATÖRÜN KURALININ ZOR YARISI: gerekçe YOK, ama bağlam var.
+   *
+   * Karar statüyle verildiğinde yazılı gerekçe olmaz. "Yorum yazsam da yazmasam
+   * da tekrar incelesin" tam olarak bunu söylüyor — ve o durumda tek bağlam
+   * kaynağı ticket yorumları ile önceki analizdir.
+   */
+  it("gerekçe YOKKEN ticket yorumları bağlamı taşıyor", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ok(),
+      comments: [
+        { author: { accountId: "uyildiz" }, body: "kabul kriterlerine limit kontrolü ekleyin" },
+      ],
+      botUserId: "maestro-bot",
+    });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay", {});
+    const note = String(inputOf(fakes)["rewrite"]);
+    expect(note).toContain("uyildiz");
+    expect(note).toContain("limit kontrolü");
+  });
+
+  it("Maestro'nun KENDİ yorumları elenir — model kendi çıktısını cevap sanmaz", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ok(),
+      comments: [
+        { author: { accountId: "maestro-bot" }, body: "analiz yayımlandı" },
+        { author: { accountId: "uyildiz" }, body: "gerçek yorum" },
+      ],
+      botUserId: "maestro-bot",
+    });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay", {});
+    const note = String(inputOf(fakes)["rewrite"]);
+    expect(note).toContain("gerçek yorum");
+    expect(note).not.toContain("analiz yayımlandı");
+  });
+
+  it("komut zarfları (`/approve`) bağlam değil — elenir", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ok(),
+      comments: [{ author: { accountId: "uyildiz" }, body: "/approve" }],
+      botUserId: "maestro-bot",
+    });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay", {});
+    // Elenince geriye hiçbir parça kalmıyor: alan HİÇ gitmiyor.
+    expect("rewrite" in inputOf(fakes)).toBe(false);
+  });
+
+  /**
+   * ÖNCEKİ ANALİZDEN BELGENİN TAMAMI DEĞİL, KİMLİĞİ GİDİYOR.
+   *
+   * Tamamını göndermek modele kopyalayacağı bir şablon vermek olurdu — istenen
+   * yeniden DÜŞÜNMEK, yeniden biçimlendirmek değil. Giden şey "bunu daha önce
+   * şöyle değerlendirmiştim" cümlesini kurmaya yetecek en küçük küme.
+   */
+  it("önceki analizden risk gerekçesi ve kabul kriterleri gidiyor, belgenin tamamı DEĞİL", async () => {
+    const fakes = makeFakes({ generateObject: () => ok() });
+    const previous = { ...analysisDoc("kritik"), riskReason: "ödeme akışına dokunuyor" };
+    await writeAnalysis(fakes.deps, "PAY-101", "pay", { previous });
+    const note = String(inputOf(fakes)["rewrite"]);
+    expect(note).toContain("kritik");
+    expect(note).toContain("ödeme akışına dokunuyor");
+    expect(note).toContain(previous.acceptanceCriteria[0]!);
+    // Belgenin ANLATI bölümleri gitmiyor — prompt şişmesin.
+    expect(note).not.toContain(previous.testApproach);
+    expect(note).not.toContain(previous.uiApiChanges);
+  });
+
+  it("yorum okuması patlarsa analiz DÜŞMEZ — gerekçe yine geçer", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ok(),
+      comments: new Error("jira 503"),
+    });
+    const written = await writeAnalysis(fakes.deps, "PAY-101", "pay", { reason: "kapsam yanlış" });
+    expect(written.risk).toBe(doc.riskTier);
+    expect(String(inputOf(fakes)["rewrite"])).toContain("kapsam yanlış");
+  });
+
+  it("bağlam bloğu ticket metninin ARDINDAN gider — talep önce, gerekçe sonra", async () => {
+    const fakes = makeFakes({ generateObject: () => ok() });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay", { reason: "bir daha bak" });
+    const keys = Object.keys(inputOf(fakes));
+    expect(keys.indexOf("rewrite")).toBeGreaterThan(keys.indexOf("description"));
+  });
+});

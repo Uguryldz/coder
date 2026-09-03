@@ -386,6 +386,63 @@ describe("ListeningScreen", () => {
       return body!;
     }
 
+    /**
+     * ── KAPI STATÜLERİ HER ZAMAN GÖRÜNÜR ────────────────────────────────────
+     *
+     * Sahadaki arıza: operatör "kapı statüleri dinleme ayarlarında YOK" dedi ve
+     * haklıydı. Alanlar koddaydı ama ekranda değildi — hem katlanır bölümün
+     * hem de "Jira durumunu da değiştir" anahtarının ARKASINDAYDILAR. Kuralda
+     * `statusMap` NULL olduğu için anahtar kapalı açılıyor, alanlar
+     * çizilmiyor, eşleme boş kalıyor: kısır döngü.
+     *
+     * Bu testin ölçtüğü şey tam olarak o döngünün kırıldığı: hiçbir şeye
+     * tıklamadan, anahtar kapalıyken, alanlar orada.
+     */
+    it("kapı statülerini HİÇBİR ŞEYE TIKLAMADAN gösterir — kısır döngü kırıldı", async () => {
+      stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+
+      // Katlanır bölüm açılmadı, anahtar işaretlenmedi — alanlar yine de var.
+      expect(screen.getByLabelText("Buraya taşınırsa: onaylandı")).toBeTruthy();
+      expect(screen.getByLabelText("Buraya taşınırsa: analize geri gönder")).toBeTruthy();
+      // Yazma tarafı hâlâ opt-in: iki yön karışmadı.
+      expect(screen.queryByLabelText("İş başladığında")).toBeNull();
+    });
+
+    it("boşken uyarıyor — kapının yalnız yorumla kapanacağı EKRANDA yazıyor", async () => {
+      stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+
+      expect(screen.getByText(/Kapı durumları BOŞ/)).toBeTruthy();
+    });
+
+    /**
+     * Anahtar KAPALIYKEN de kaydedilir. `buildStatusMap` eskiden `if (!enabled)
+     * return null` diyordu, yani alanlar görünse bile yazılmayacaklardı —
+     * görünürlük düzeltmesi tek başına yetmezdi.
+     */
+    it("anahtar KAPALIYKEN bile kapı statülerini kaydeder", async () => {
+      const fn = stubFetch([]);
+      renderScreen(ADMIN);
+      await screen.findByText("Yeni kural ekle");
+      await fillRequired();
+      await userEvent.type(screen.getByLabelText("Buraya taşınırsa: onaylandı"), "Onaylandı");
+      await userEvent.type(
+        screen.getByLabelText("Buraya taşınırsa: analize geri gönder"),
+        "Analiz",
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+      const body = await writtenBody(fn);
+      // Yorum-yalnız kip KORUNUYOR (beş nokta yok), kapı kanalı AÇIK.
+      expect(body.statusMap).toEqual({
+        gateApproveStatus: "Onaylandı",
+        gateReturnStatus: "Analiz",
+      });
+    });
+
     it("sends no map at all when the operator never opts in", async () => {
       const fn = stubFetch([]);
       renderScreen(ADMIN);

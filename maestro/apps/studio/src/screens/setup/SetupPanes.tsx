@@ -2,7 +2,14 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card, Input, Select } from "../../ui/index.ts";
 import { englishAside, matchValueLabel } from "../common/jira-english.ts";
-import { STATUS_POINTS, firesFor, type StatusPoint } from "../common/status-map.ts";
+import {
+  GATE_STATUS_POINTS,
+  STATUS_POINTS,
+  firesFor,
+  gateStatusConflicts,
+  type GateStatusPoint,
+  type StatusPoint,
+} from "../common/status-map.ts";
 import {
   COMMAND_INTAKES,
   DATA_CLASSES,
@@ -426,6 +433,15 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
   const setPoint = (point: StatusPoint, value: string): void =>
     onChange({ statusDraft: { ...draft.statusDraft, [point]: value } });
+  const setGatePoint = (point: GateStatusPoint, value: string): void =>
+    onChange({ gateStatusDraft: { ...draft.gateStatusDraft, [point]: value } });
+  // Çakışma, `Listening.tsx` ile AYNI yardımcıdan: iki ekranın bu konuda
+  // ayrışması, birinde uyarılan bir kurulumun diğerinde sessizce kaydedilmesi
+  // demek olurdu.
+  const gateClashes = gateStatusConflicts(draft.statusDraft, draft.gateStatusDraft);
+  const gateEmpty = GATE_STATUS_POINTS.every(
+    (point) => draft.gateStatusDraft[point].trim() === "",
+  );
 
   // Which of the five points the chosen flow can actually reach. `duzeltme`
   // skips the analysis gate entirely (see `firesFor`), so its two approval
@@ -506,6 +522,80 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
           </p>
         </>
       )}
+
+      {/*
+        ── KAPI KARARININ STATÜYLE VERİLMESİ ────────────────────────────────
+        Sihirbaz bu iki alanı HİÇ sormuyordu, ve sahadaki arızanın kök sebebi
+        büyük olasılıkla buydu: operatör sihirbazdan geçiyor, alanların
+        varlığından haberdar olmuyor, kapı kanalı kapalı kalıyor — ve neden
+        kapalı olduğunu söyleyen bir cümle hiçbir ekranda yok.
+
+        `draft.statusOn` anahtarının DIŞINDA, bilerek: yukarısı "Maestro
+        ticket'ı taşısın mı" (YAZMA), burası "operatörün taşıması ne anlama
+        gelsin" (OKUMA). Yorum-yalnız kipte kalıp kapıyı statüyle kapatmak
+        tutarlı bir kurulum, ve anahtarın arkasına koymak onu imkânsız kılardı
+        — Dinleme ekranında tam olarak bu olmuştu.
+      */}
+      <p className="scr-prose" style={{ marginTop: 20, fontWeight: 600 }}>
+        {t("setup.gate_status.title")}
+      </p>
+      <p className="scr-prose">{t("setup.gate_status.intro")}</p>
+      <p className="scr-note">{t("setup.gate_status.independent")}</p>
+      <div className="scr-grid scr-grid--2" style={{ marginTop: 8 }}>
+        {GATE_STATUS_POINTS.map((point) =>
+          data.statusNames.length > 0 ? (
+            <Select
+              key={point}
+              label={t(`listening.gate_status.${point}`)}
+              value={draft.gateStatusDraft[point]}
+              onChange={(e) => setGatePoint(point, e.target.value)}
+              options={[
+                { value: "", label: t("listening.gate_status.skip") },
+                ...data.statusNames.map((v) => ({ value: v, label: v })),
+              ]}
+              hint={t(`listening.gate_status.hint.${point}`)}
+            />
+          ) : (
+            // Jira'nın durum listesi okunamadı — beş alanla aynı gerekçe:
+            // boş bir açılır liste yerine serbest metin, ki adım yine
+            // tamamlanabilsin.
+            <Input
+              key={point}
+              label={t(`listening.gate_status.${point}`)}
+              value={draft.gateStatusDraft[point]}
+              onChange={(e) => setGatePoint(point, e.target.value)}
+              hint={t(`listening.gate_status.hint.${point}`)}
+            />
+          ),
+        )}
+      </div>
+      {/* Maestro'nun kendi taşıdığı bir durumla çakışma — KAYDETMEDEN önce
+          söylenir. Sunucu bunu zaten yakalayıp alanı düşürüyor (fail-closed);
+          burası yalnız aynası, ki operatör "neden çalışmıyor" diye sormasın. */}
+      {gateClashes.length > 0 && (
+        <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
+          {t("setup.gate_status.conflict_warning", {
+            values: gateClashes
+              .map(
+                (c) =>
+                  `${t(`listening.gate_status.${c.point}`)} ↔ ` +
+                  t(`setup.status.point.${c.clashesWith}`),
+              )
+              .join(", "),
+          })}
+        </div>
+      )}
+      {/* Boşluk SESSİZ GEÇİLMİYOR: bu iki alan boşken operatörün panodan
+          yönettiği akış hiç çalışmaz, ve bunu öğrendiği yer bir arıza
+          olmamalı. */}
+      {gateEmpty && (
+        <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
+          {t("setup.gate_status.empty_warning")}
+        </div>
+      )}
+      <p className="scr-note" style={{ marginTop: 6 }}>
+        {t("listening.gate_status.approval_note")}
+      </p>
     </Card>
   );
 }

@@ -96,6 +96,71 @@ export interface PrRef {
   prId: number;
 }
 
+/**
+ * Ticket'ın modele giden bir insan yorumu.
+ *
+ * `impl/comments.ts`'teki `HumanComment` ile AYNI şekil, ve burada YENİDEN
+ * bildirilmesi bilinçli: bu dosya workflow tarafından `import type` ile okunuyor
+ * ve `impl/` altındaki hiçbir şeyi — zod, `@temporalio/common`, sürücü seam'leri
+ * — workflow paketine sokmamalı. Tip düzeyinde birebir uyuşuyorlar; uyuşmasalar
+ * `impl/analysis.ts`'in `AnalysisRewriteContext`'i içe aktarması derlemede
+ * kırılırdı, yani sözleşme derleyici tarafından tutuluyor.
+ */
+export interface HumanCommentRef {
+  readonly author: string;
+  readonly text: string;
+}
+
+/**
+ * ANALİZİN YENİDEN YAZILMASI İÇİN BAĞLAM.
+ *
+ * ── Operatörün kuralı ───────────────────────────────────────────────────────
+ * "ben yorum yazsam da yazmasam da, geri gönderince tekrar incelesin, bağlam
+ * kaybı olmasın diye geçmiş var zaten."
+ *
+ * Yani `analysisapproval → analiz` geri göndermesi "yeniden incele" demek ve
+ * YORUM ŞART DEĞİL. Bu yüzden üç alanın üçü de opsiyonel ve üçü de tek başına
+ * yeterli: gerekçe yazılmadıysa yorumlar, yorum da yoksa önceki analizin
+ * kimliği modele "bu ikinci tur" der. Hiçbiri yoksa prompt bugünküyle aynı
+ * kalır — ilk turun doğru davranışı budur.
+ */
+export interface AnalysisRewriteContext {
+  /**
+   * Kapıda yazılmış geri gönderme/ret gerekçesi, VARSA.
+   *
+   * Opsiyonel olması bir incelik değil, sahadaki gerçek: karar statü kanalıyla
+   * da verilebiliyor (`gateReturnStatus`) ve bir statü taşımasının yazılı
+   * gerekçesi yoktur.
+   */
+  readonly reason?: string | undefined;
+  /**
+   * Ticket üzerindeki insan yorumları.
+   *
+   * Workflow bunu DOLDURMAZ ve dolduramaz — yorum okumak I/O. Aktivite kendisi
+   * okur (`impl/analysis.ts`). Alan yine de sözleşmede, çünkü pilot ve testler
+   * kendi listelerini enjekte ediyor.
+   */
+  readonly comments?: readonly HumanCommentRef[] | undefined;
+  /**
+   * Bir önceki turda üretilmiş analiz. Workflow onu zaten `state.analysis`'te
+   * TUTUYOR — journal'dan okumaya gerek yok, ve okumak bir aktivite daha demek
+   * olurdu (yani komut dizisinde bir değişiklik, yani replay riski).
+   */
+  readonly previous?: AnalysisDoc | undefined;
+  /**
+   * KAÇINCI geri gönderme turu — 1 = ilk kez geri gönderildi.
+   *
+   * Deftere yazılıyor ("2. kez geri gönderildi"), çünkü operatörün sorduğu şey
+   * bu: aynı analiz üçüncü kez geri geliyorsa bu bir süreç sorunudur ve
+   * defterin onu söylemesi gerekir. `rejectionCounts` bu işi göremez — geri
+   * gönderme bilerek ret sayacına girmiyor (M54 burada bir ceza olurdu).
+   *
+   * Sayaç `continueAsNew` girdisinde taşınıyor: `rejectionCounts` ve
+   * `resumeToken` ile aynı sebep, koşu her turda yeni bir execution.
+   */
+  readonly turn?: number | undefined;
+}
+
 export interface MaestroActivities {
   // ── step 0-3: intake, matching, analysis ────────────────────────────────
   resolveWorkMode(ticket: TicketKey): Promise<{ mode: WorkMode; dataClass: DataClass }>;
@@ -110,7 +175,27 @@ export interface MaestroActivities {
    * (`discoverRepo` above keeps a REQUIRED appId: the workflow simply does not
    * schedule discovery when there is no repository to discover.)
    */
-  writeAnalysis(ticket: TicketKey, appId?: string): Promise<{ analysis: AnalysisDoc; risk: RiskTier }>;
+  writeAnalysis(
+    ticket: TicketKey,
+    appId?: string,
+    /**
+     * YENİDEN YAZIM BAĞLAMI — yalnız analiz İKİNCİ kez yazılırken dolu.
+     *
+     * Operatörün kuralı: `analysisapproval → analiz` geri göndermesi "yeniden
+     * incele" demek, ve yeniden inceleme aynı girdiyle yapılırsa aynı belgeyi
+     * üretir. Kapının gerekçesi ve önceki analizin kimliği buradan geçer;
+     * ticket'ın insan yorumlarını aktivitenin kendisi okur (I/O, bkz.
+     * `impl/analysis.ts`).
+     *
+     * OPSİYONEL ve YOKLUĞU eski davranış: ilk tur bağlamsız çağırır, ve prompt
+     * bugünküyle bit bit aynı kalır. Ekleme REPLAY GÜVENLİ — `openGate`'in
+     * `gateStatuses` alanıyla aynı gerekçe: workflow'un komut dizisi (aynı
+     * sırada aynı aktiviteler, aynı activityId) değişmiyor, yalnız YENİ
+     * zamanlamaların payload'ı büyüyor; kayıtlı geçmişlerdeki çağrılar olduğu
+     * gibi kalır ve replay onları argümanlarına göre eşleştirmez.
+     */
+    rewrite?: AnalysisRewriteContext,
+  ): Promise<{ analysis: AnalysisDoc; risk: RiskTier }>;
   publishAnalysis(ticket: TicketKey, analysis: AnalysisDoc): Promise<void>;
   fanOutChildren(ticket: TicketKey, analysis: AnalysisDoc): Promise<TicketKey[]>;
 

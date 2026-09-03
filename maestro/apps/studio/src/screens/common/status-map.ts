@@ -195,19 +195,33 @@ export function buildStatusMap(
   reassignOnNeedInfo: boolean,
   flow: StatusFlowType,
   /**
-   * Kapı statüleri — OKUMA tarafı. Opsiyonel, çünkü bu yardımcıyı çağıran iki
-   * ekrandan biri (kurulum sihirbazı) henüz kapı kanalını sormuyor: sihirbaz
-   * ilk kurulumu ayağa kaldırır, kapı kanalı ise akış oturduktan sonra
-   * ayarlanan bir incelik. Verilmezse alanlar hiç yazılmaz ve kural bugünkü
-   * davranışını korur.
+   * Kapı statüleri — OKUMA tarafı. Opsiyonel; verilmezse alanlar hiç yazılmaz
+   * ve kural bugünkü davranışını korur.
    */
   gateDraft?: GateStatusDraft,
 ): StatusMap | null {
-  if (!enabled) return null;
   const map: Record<string, string | boolean> = {};
-  for (const point of firesFor(flow)) {
-    const value = draft[point].trim();
-    if (value !== "") map[point] = value;
+  /**
+   * ── KAPI STATÜLERİ `enabled`E BAĞLI DEĞİL, VE BU BİR HATA DÜZELTMESİ ──────
+   *
+   * Önceden `if (!enabled) return null` en başta duruyordu, yani "Jira
+   * durumunu değiştirsin" KAPALIYKEN kapı statüleri de yazılmıyordu. Sahada
+   * bu bir kısır döngü üretti: operatörün kurulumunda `statusMapJson` NULL,
+   * dolayısıyla anahtar kapalı açılıyor, dolayısıyla alanlar hiç çizilmiyor,
+   * dolayısıyla eşleme boş kalıyor. Operatörün "kapı statüleri dinleme
+   * ayarlarında YOK" demesinin sebebi tam olarak bu.
+   *
+   * İki yön ZATEN ayrı şeyler (bkz. `GATE_STATUS_POINTS`'in notu): anahtar
+   * "Maestro ticket'ı taşısın mı" diye soruyor — YAZMA. Kapı statüsü ise
+   * "operatörün taşıması ne anlama gelsin" — OKUMA. Yorum-yalnız kipte kalmak
+   * isteyen ama kapıyı statüyle kapatmak isteyen bir kurulum tamamen tutarlı
+   * ve şimdiye kadar imkânsızdı.
+   */
+  if (enabled) {
+    for (const point of firesFor(flow)) {
+      const value = draft[point].trim();
+      if (value !== "") map[point] = value;
+    }
   }
   /**
    * Kapı statüleri AKIŞA GÖRE ELENMEZ, ve bu `firesFor`la aradaki asıl fark.
@@ -227,7 +241,8 @@ export function buildStatusMap(
   }
   // `reassignOnNeedInfo` alone is a real configuration: hand the ticket back to
   // its reporter without moving it on the board. It counts as a filled map.
-  if (reassignOnNeedInfo) map.reassignOnNeedInfo = true;
+  // Yazma tarafına ait, dolayısıyla anahtara bağlı kalır.
+  if (enabled && reassignOnNeedInfo) map.reassignOnNeedInfo = true;
   return Object.keys(map).length === 0 ? null : (map as StatusMap);
 }
 

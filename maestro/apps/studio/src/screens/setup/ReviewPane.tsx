@@ -67,6 +67,10 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
     draft.statusDraft,
     draft.reassignOnNeedInfo,
     draft.flowType,
+    // Kapı statüleri de özete girer: operatörün İMZALADIĞI şey, kaydedilecek
+    // eşlemenin tamamı olmalı. Eksik bırakılsaydı sihirbaz sorduğu bir soruyu
+    // özetlemeden kaydediyor olurdu.
+    draft.gateStatusDraft,
   );
 
   // The statuses the ticket will walk, in flow order, as "adım: durum" lines.
@@ -75,6 +79,10 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
   const mappedPoints = STATUS_POINTS.filter(
     (point) => typeof statusMap?.[point] === "string" && statusMap[point] !== "",
   );
+  // Kapı kanalı — ayrı okunur, çünkü ayrı bir soru: yukarısı "ticket nereye
+  // gider", burası "operatörün taşıması ne demek".
+  const gateApprove = draft.gateStatusDraft.gateApproveStatus.trim();
+  const gateReturn = draft.gateStatusDraft.gateReturnStatus.trim();
 
   return (
     <Card title={t("setup.review.title")} subtitle={t("setup.review.sub")}>
@@ -107,20 +115,45 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
           and the comment-only one is stated outright rather than left as the
           absence of a section. */}
       <h4 className="setup-review__h">{t("setup.review.status_heading")}</h4>
-      {statusMap === null ? (
+      {/* `mappedPoints`e bakılıyor, `statusMap === null`a DEĞİL, ve bu bir
+          düzeltme: eşleme artık yalnız kapı statüleriyle de dolu olabiliyor
+          (`buildStatusMap` onları anahtardan bağımsız yazıyor). Eskisi gibi
+          `statusMap`in varlığına bakmak, ticket'ı hiç oynatmayan ama kapıyı
+          statüyle kapatan bir kurulumda "ticket şuraya taşınacak" başlığı
+          altında BOŞ bir liste göstermek olurdu. */}
+      {mappedPoints.length === 0 && statusMap?.reassignOnNeedInfo !== true ? (
         <p className="scr-prose">{t("setup.review.status_comment_only")}</p>
       ) : (
         <>
           <ul className="setup-review__list">
             {mappedPoints.map((point) => (
               <li key={point}>
-                {t(`setup.status.point.${point}`)}: <b>{statusMap[point]}</b>
+                {t(`setup.status.point.${point}`)}: <b>{statusMap?.[point]}</b>
               </li>
             ))}
-            {statusMap.reassignOnNeedInfo === true && <li>{t("setup.status.reassign")}</li>}
+            {statusMap?.reassignOnNeedInfo === true && <li>{t("setup.status.reassign")}</li>}
           </ul>
           <p className="scr-note">{t("setup.review.status_note")}</p>
         </>
+      )}
+
+      {/* 2b — kapı kanalı. KENDİ bölümü, çünkü kendi sorusu: yukarısı
+          "Maestro ticket'ı nereye taşır", burası "operatörün taşıması ne
+          anlama gelir". Ve boş hâli de AÇIKÇA yazılıyor — operatörün
+          imzaladığı özet, kapının yalnız yorumla kapanacağını söylemeli;
+          sessizlik, sahada "neden çalışmıyor" olarak geri döndü. */}
+      <h4 className="setup-review__h">{t("setup.review.gate_status_heading")}</h4>
+      {gateApprove === "" && gateReturn === "" ? (
+        <p className="scr-prose">{t("setup.review.gate_status_none")}</p>
+      ) : (
+        <ul className="setup-review__list">
+          {gateApprove !== "" && (
+            <li>{t("setup.review.gate_status_approve", { status: gateApprove })}</li>
+          )}
+          {gateReturn !== "" && (
+            <li>{t("setup.review.gate_status_return", { status: gateReturn })}</li>
+          )}
+        </ul>
       )}
 
       {/* 3 — how an approval given on the ticket reaches Maestro. Its own

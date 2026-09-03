@@ -10,6 +10,7 @@ import type {
   WorkflowRunStatus,
 } from "@maestro/contracts";
 import type {
+  AnalysisRewriteContext,
   EngineeringResult,
   MaestroActivities,
   PrRef,
@@ -138,6 +139,28 @@ export interface TicketWorkflowInput {
   resumeToken?: string | null;
   /** The tier the analysis established, so a continuation reuses its gate set. */
   risk?: RiskTier;
+  /**
+   * ANALİZİN NEDEN YENİDEN YAZILDIĞI — `rejectionCounts` ve `resumeToken` ile
+   * TAM AYNI sebeple burada: `continueAsNew`'i AŞMASI gereken durum.
+   *
+   * ── Bu alan olmasaydı ne olurdu (ölçüldü) ─────────────────────────────────
+   * Geri gönderme dalı analizi bağlamla yeniden yazdırıyor, sonra `continueRun`
+   * çağırıyor. Devam eden koşu adım 3'ü KOŞULSUZ yeniden çalıştırıyor
+   * (aşağıda), yani bağlamlı belge saniyeler içinde BAĞLAMSIZ bir belgeyle
+   * eziliyordu — ve kapının yeniden yargıladığı belge o sonuncusu. Dal içinde
+   * bağlam vermek tek başına hiçbir şeyi düzeltmiyordu; testin yakaladığı şey
+   * bu (`workflow-analysis-rewrite.test.ts`).
+   *
+   * Bu yüzden geri gönderme dalı artık analizi KENDİSİ yazdırmıyor: bağlamı
+   * girdiye koyup devam ediyor, adım 3 bir kez ve doğru bağlamla çalışıyor.
+   * Aktivite sayısı da AZALIYOR — aynı belge iki kez üretilmiyordu artık.
+   *
+   * `previous` belgenin TAMAMI: `continueAsNew` girdisi zaten `statusMap` ve
+   * `rejectionCounts` taşıyor, bir `AnalysisDoc` de aynı boyut mertebesinde ve
+   * neyin kısaltılacağına aktivite karar veriyor (`rewriteNote`), workflow
+   * değil — kısaltma bir prompt kararı, replay edilen bir girdi değil.
+   */
+  rewrite?: AnalysisRewriteContext | null;
   /**
    * What the listening rule asked for (`planFor`). Absent means the full
    * pipeline — a ticket is never silently under-processed because no rule
@@ -317,12 +340,19 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     return state.status;
   };
 
-  const continueRun = (): Promise<never> =>
+  /**
+   * `rewrite` verilirse devam eden koşu analizi YENİDEN yazar ve nedenini
+   * bilir; verilmezse girdideki değer TEMİZLENİR (`null`). Temizlik şart:
+   * bir kez geri gönderilmiş koşu, sonraki her turunda "hâlâ geri gönderildi"
+   * bağlamıyla yazmaya devam ederdi — ve o bağlam artık yanlış.
+   */
+  const continueRun = (rewrite?: AnalysisRewriteContext): Promise<never> =>
     continueAsNew<typeof ticketWorkflow>({
       ...input,
       risk: state.risk,
       resumeToken: state.resumeToken,
       rejectionCounts: rejectionCounts(state),
+      rewrite: rewrite ?? null,
     });
 
   // ── 0 · work mode ────────────────────────────────────────────────────────
@@ -337,7 +367,26 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   await goto("2", "ticket tamlık kontrolü");
   const intake = await thinkActs.runIntake(ticket);
   if (!intake.complete) {
-    await goto("2b", "reporter'a soru soruldu");
+    /**
+     * DEFTERE SORUNUN KENDİSİ YAZILIYOR, "soru soruldu" değil.
+     *
+     * Eski satır `"reporter'a soru soruldu"` idi ve operatörün defterden
+     * öğrenebildiği tek şey buydu: hangi soru sorulmuş, ne bekleniyor, cevap
+     * gelmiş mi — hiçbiri yoktu. Ticket'a düşen yorumu açıp okumak gerekiyordu,
+     * yani defter "şu an ne oluyor" sorusunun cevabı OLAMIYORDU.
+     *
+     * Soru kırpılıyor: defter satırı bir özet, belgenin kendisi değil; tam
+     * metin zaten ticket yorumunda duruyor.
+     */
+    const question = (intake.question ?? "").trim();
+    await goto(
+      "2b",
+      [
+        "reporter'a soru soruldu — cevap bekleniyor",
+        `soru: ${question === "" ? "(intake soru üretmedi)" : question.length > 300 ? `${question.slice(0, 300)}…` : question}`,
+        "koşu, cevap ticket'a yorum olarak yazılana kadar burada bekler (zaman aşımı yok)",
+      ].join(" · "),
+    );
     state.status = "gate";
     // Before the question, not after: the board should say "waiting on the
     // reporter" by the time the reporter is looking at the comment that asks
@@ -364,6 +413,15 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     // "netleştirme cevabı" olarak okunamaz.
     state.awaitingClarificationSince = null;
     state.status = "running";
+    // Cevabın GELDİĞİ de deftere yazılıyor. Eskiden bekleme başlangıcı
+    // yazılıyordu ama bitişi yazılmıyordu: defterden bakan biri koşunun hâlâ
+    // cevap beklediğini sanabilirdi, oysa çoktan devam etmişti.
+    await acts.journal(
+      ticket,
+      "other",
+      "netleştirme cevabı alındı",
+      "reporter cevapladı — koşu kaldığı yerden devam ediyor",
+    );
   }
 
   // ── 3ö · discovery, 3 · analysis ─────────────────────────────────────────
@@ -390,8 +448,14 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
     await acts.discoverRepo(ticket, input.appId);
   }
 
-  await goto("3", "analiz üretiliyor");
-  const written = await thinkActs.writeAnalysis(ticket, input.appId);
+  // Yeniden yazım mı, ilk yazım mı — ve bunu SÖYLEYEN tek yer girdi.
+  // `null`/absent ilk yazım demek ve bugünkü davranış aynen korunur.
+  const rewrite = input.rewrite ?? undefined;
+  // Kaç kez geri gönderildi — defterin "kaçıncı tur" cümlesi için, ve
+  // `continueAsNew` sınırını aşması gerektiği için girdiden okunuyor.
+  const returnTurn = rewrite?.turn ?? 0;
+  await goto("3", rewrite === undefined ? "analiz üretiliyor" : "analiz yeniden yazılıyor");
+  const written = await thinkActs.writeAnalysis(ticket, input.appId, rewrite);
   state.analysis = written.analysis;
   state.risk = written.risk;
   await acts.publishAnalysis(ticket, state.analysis);
@@ -436,21 +500,66 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
      * sayaçları) `continueAsNew` girdisinde taşınır, yani "bağlam kaybı yok".
      */
     if (verdict.decision === "return_analysis") {
+      /**
+       * ── DEFTER: OPERATÖRÜN "ŞU AN NE OLUYOR" SORUSUNUN CEVABI ────────────
+       *
+       * Eski satır `"<kullanıcı> · <sebep>"` idi ve sebep yoksa yalnız
+       * kullanıcı adıydı. Operatörün şikâyeti tam buydu: "devam eden işlerin
+       * geri gönderilen detayları yazmıyor". Bir denetçi ya da ertesi gün
+       * ticket'a bakan biri o satırdan kaçıncı tur olduğunu, kararın hangi
+       * kanaldan geldiğini, sebebin YAZILMADIĞINI mı yoksa okunmadığını mı,
+       * ve şimdi ne olacağını çıkaramıyordu.
+       *
+       * Yeni satır beşini de söylüyor, ve "sebep belirtilmedi" AÇIKÇA yazılıyor
+       * — boş bırakmak, operatörün bir şey yazıp yazmadığını belirsiz bırakır.
+       */
+      const turn = returnTurn + 1;
       await acts.journal(
         ticket,
         "gate",
-        "analize geri gönderildi",
-        `${verdict.actorUserId}${verdict.reason === undefined ? "" : ` · ${verdict.reason}`}`,
+        `analize geri gönderildi (${turn}. kez)`,
+        [
+          `kapı ${at}`,
+          `karar veren: ${verdict.actorUserId}`,
+          // Karar hangi kanaldan geldi — operatörün "yorum mu yazsam, statü mü
+          // taşısam" sorusunun cevabı defterde durmalı.
+          `kanal: ${verdict.source === "jira" ? "Jira yorumu/statüsü" : verdict.source}`,
+          `sebep: ${verdict.reason === undefined || verdict.reason.trim() === "" ? "belirtilmedi" : verdict.reason}`,
+          "şimdi: analiz yeniden yazılıyor (önceki analiz, gerekçe ve ticket yorumları bağlam olarak veriliyor)",
+          "not: bu bir RET DEĞİL — ret sayacı artmadı, iş insana devredilmedi",
+        ].join(" · "),
       );
-      await goto("3", "geri gönderildi — analiz yeniden yazılıyor");
-      const again = await thinkActs.writeAnalysis(ticket, input.appId);
-      state.analysis = again.analysis;
-      // Ret dalıyla aynı gerekçe: yeniden yazım ticket'ı yeni bir risk
-      // katmanına taşımış olabilir ve eski değer devamı yanlış kapı setine
-      // sokardı.
-      state.risk = again.risk;
-      await acts.publishAnalysis(ticket, state.analysis);
-      return continueRun();
+      /**
+       * ── "BAĞLAM KAYBI YOK" ARTIK MODELE DE GEÇİYOR ──────────────────────
+       *
+       * Buraya kadarki `continueAsNew` KOŞUNUN bağlamını taşıyordu (kural,
+       * akış, varyant, statü eşlemesi, resume token, ret sayaçları). Modelin
+       * bağlamı taşınmıyordu: `writeAnalysis` yalnız `summary` + `description`
+       * görüyordu, yani ikinci tur BİREBİR AYNI girdiyi alıyordu ve doğal
+       * olarak aynı belgeyi üretiyordu. Operatörün "eksik var, bir daha bak"
+       * demesinin hiçbir izi yoktu — geri gönderme, sonucu değişmeyen bir tur.
+       *
+       * ── NEDEN BURADA YAZDIRMIYORUZ, GİRDİYE KOYUYORUZ ────────────────────
+       * Bu dal eskiden analizi KENDİSİ yazdırıp öyle devam ediyordu. Devam eden
+       * koşu ise adım 3'ü koşulsuz yeniden çalıştırıyor — yani belge iki kez
+       * üretiliyordu ve İKİNCİSİ bağlamsızdı. Kapının yeniden yargıladığı belge
+       * o bağlamsız olandı: dal içinde bağlam vermek tek başına HİÇBİR ŞEYİ
+       * düzeltmiyordu. (Ölçüm: `workflow-analysis-rewrite.test.ts`.)
+       *
+       * Bağlamı `continueAsNew` girdisine koymak üçünü birden çözüyor: belge
+       * bir kez üretiliyor, doğru bağlamla üretiliyor, ve bu dal bir model
+       * çağrısı daha az yapıyor.
+       *
+       * `reason` OPSİYONEL kalıyor ve kalması şart: karar statüyle de
+       * verilebiliyor (`gateReturnStatus`) ve o yolda yazılı gerekçe yok.
+       * Operatörün kuralı da bunu söylüyor — "ben yorum yazsam da yazmasam da".
+       * Gerekçe boşken bağlamı ticket yorumları ve önceki analiz taşır;
+       * yorumları aktivite kendisi okur (I/O, bkz. `impl/analysis.ts`).
+       *
+       * `previous` bellekten geliyor, journal'dan DEĞİL: `state.analysis` az
+       * önce onaya çıkan belgenin ta kendisi.
+       */
+      return continueRun({ reason: verdict.reason, previous: state.analysis, turn });
     }
     // `return_analysis` yukarıda ele alındı, dolayısıyla burada kalan tek
     // "onay değil" ret'tir — ama yine eşitlikle değil, ONAY DEĞİL diye
@@ -467,14 +576,11 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
       // to pick up work that is already back with the agent.
       await moveStatus("rejected", input.statusMap?.onRejected);
       // Back to analysis with the reason — the agent keeps its context (M30).
-      await goto("3", `ret: ${verdict.reason ?? ""} — analiz yeniden yazılıyor`);
-      const redone = await thinkActs.writeAnalysis(ticket, input.appId);
-      state.analysis = redone.analysis;
-      // The rewrite may have re-tiered the ticket; keeping the old value would
-      // send the continuation through the wrong gate set.
-      state.risk = redone.risk;
-      await acts.publishAnalysis(ticket, state.analysis);
-      return continueRun();
+      // Geri gönderme dalıyla AYNI şekil ve aynı gerekçe: bağlam devam eden
+      // koşunun girdisinde taşınır, analiz orada BİR KEZ ve doğru bağlamla
+      // yazılır. Ret'te gerekçe genelde YAZILI (`/reject <sebep>`) ama zorunlu
+      // değil — o yüzden burada da yorumlar ile önceki analiz taşınır.
+      return continueRun({ reason: verdict.reason, previous: state.analysis });
     }
   }
 

@@ -66,6 +66,12 @@ export {
   withComments,
   type HumanComment,
 } from "./comments.js";
+/**
+ * Analizin YENİDEN yazılmasında modele giden bağlam bloğu — kapının gerekçesi,
+ * ticket yorumları ve önceki analizin kimliği. Dışa açık, çünkü testler bloğun
+ * kendisini ölçüyor ve pilot aynı metni kurmak zorunda.
+ */
+export { REWRITE_NOTE_TITLE, rewriteNote, type AnalysisRewriteContext } from "./analysis.js";
 export { MIN_SUGGESTION_CONFIDENCE, WAITING_LABEL, pickRule, ruleApplies } from "./intake.js";
 
 /**
@@ -84,7 +90,7 @@ export function createActivities(deps: ActivityDeps): MaestroActivities {
     askClarification: (ticket, question) => intake.askClarification(deps, ticket, question),
 
     discoverRepo: (ticket, appId) => analysis.discoverRepo(deps, ticket, appId),
-    writeAnalysis: (ticket, appId) => analysis.writeAnalysis(deps, ticket, appId),
+    writeAnalysis: (ticket, appId, rewrite) => analysis.writeAnalysis(deps, ticket, appId, rewrite),
     publishAnalysis: (ticket, doc) => analysis.publishAnalysis(deps, ticket, doc),
     fanOutChildren: (ticket, doc) => analysis.fanOutChildren(deps, ticket, doc),
 

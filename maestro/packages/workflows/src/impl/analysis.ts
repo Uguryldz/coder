@@ -8,6 +8,8 @@ import {
 import { renderAnalysisMarkdown } from "@maestro/publish";
 import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
+import type { AnalysisRewriteContext } from "../activities.js";
+import { readHumanComments } from "./comments.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { analystPersona } from "./persona.js";
@@ -182,18 +184,150 @@ function assertDocument(run: RunContext, doc: AnalysisDoc): void {
 }
 
 /**
+ * YENİDEN YAZIM BAĞLAMI — analizin ikinci (ve üçüncü, ve dördüncü) turunda
+ * modelin görmesi gereken şey.
+ *
+ * ── NEDEN VAR ───────────────────────────────────────────────────────────────
+ * Operatörün kendi cümlesi: "ben yorum yazsam da yazmasam da, geri gönderince
+ * tekrar incelesin, bağlam kaybı olmasın diye geçmiş var zaten". Kapıdan
+ * `analysisapproval → analiz` geri göndermesi "yeniden incele" demek, ve
+ * yeniden inceleme AYNI GİRDİYLE yapılırsa aynı belgeyi üretir — operatör iki
+ * tur sonunda hiçbir şeyin değişmediğini görür, ki bu geri göndermenin
+ * kendisini işlevsiz kılar.
+ *
+ * `intake.ts`'in `runIntake`'i bu dersi çoktan almış: netleştirme cevapları
+ * yorumlarda duruyor, snapshot'ta değil, ve onlarsız ikinci tur aynı soruyu
+ * tekrar soruyor. Analiz tarafında aynı gerekçe geçerliydi ama uygulanmamıştı:
+ * `writeAnalysis` modele YALNIZ `summary` + `description` gönderiyordu.
+ *
+ * ── ÜÇ ALAN, ÜÇ FARKLI SORUNUN CEVABI ───────────────────────────────────────
+ *  · `reason`   — "neden geri geldi": kapıda yazılmış gerekçe, VARSA. Statüyle
+ *                 verilen bir geri gönderme gerekçesiz gelir ve bu normaldir.
+ *  · `comments` — "ne konuşuldu": operatör gerekçeyi kapı alanına değil,
+ *                 ticket'a yorum olarak yazmış olabilir; çoğu zaman öyle yazar.
+ *                 `reason` boşken TEK bağlam kaynağı budur.
+ *  · `previous` — "daha önce ne yazmıştım": önceki analizin KENDİSİ değil, onu
+ *                 tanımlayan kısa kimlik (risk katmanı + gerekçesi + kabul
+ *                 kriterleri). Aşağıda gerekçesi var.
+ *
+ * ÜÇÜ DE OPSİYONEL, ve hiçbiri yoksa çağrı bugünkü davranışını bit bit korur —
+ * ilk tur (`ticket-workflow.ts:394`) bağlamsız çağırır ve öyle kalmalı: ortada
+ * yeniden yazılan bir şey yok.
+ */
+export type { AnalysisRewriteContext } from "../activities.js";
+
+/** Yeniden yazım bloğunun prompt içindeki başlığı. */
+export const REWRITE_NOTE_TITLE = "--- Bu analiz YENİDEN yazılıyor ---";
+
+/**
+ * ÖNCEKİ ANALİZDEN NE GİDER, VE NEDEN TAMAMI DEĞİL.
+ *
+ * Belgenin tamamını geri göndermek cazip ama yanlış: yedi bölümlük bir
+ * `AnalysisDoc` promptun en uzun parçası olurdu ve modele kendi çıktısını
+ * kopyalayacak bir şablon vermiş olurduk — istenen şey yeniden DÜŞÜNMEK,
+ * yeniden BİÇİMLENDİRMEK değil. Aynı belgenin geri gelmesi zaten operatörün
+ * şikâyet ettiği şeydi.
+ *
+ * Giden üç şey, "bunu daha önce şöyle değerlendirmiştim" cümlesini kurmaya
+ * yetecek en küçük küme: risk katmanı, o katmanın GEREKÇESİ (modelin kendi
+ * muhakemesinin özeti) ve kabul kriterleri (operatörün en sık "eksik" dediği
+ * bölüm — `workflow-gate-return.test.ts`'in senaryosu bile "kabul kriterleri
+ * eksik"). Kriterler de ilk beşle sınırlı: onuncu kriter ikinci turda neyin
+ * eksik olduğunu anlatmaz, promptu uzatır.
+ */
+function previousNote(previous: AnalysisDoc): string {
+  const criteria = previous.acceptanceCriteria.slice(0, 5).map((c) => `  - ${c}`);
+  return [
+    `Önceki analiz — risk: ${previous.riskTier} (${previous.riskReason})`,
+    "Önceki kabul kriterleri:",
+    ...criteria,
+  ].join("\n");
+}
+
+/**
+ * Yeniden yazım bağlamını modele giden TEK bir metin bloğuna çevirir; bağlam
+ * boşsa `undefined` döner ve prompt'a hiç alan eklenmez.
+ *
+ * Tek blok, çünkü `withComments`'in gerekçesiyle aynı: bu metnin tamamı insan
+ * yazısı ya da modelin kendi eski çıktısı, yani VERİ — talimat değil. Tek bir
+ * alanda toplanması, gateway'in enjeksiyon çitinin hepsine birden uygulanmasını
+ * sağlar; üç ayrı alan üç ayrı çit demek olurdu.
+ */
+export function rewriteNote(context: AnalysisRewriteContext | undefined): string | undefined {
+  if (context === undefined) return undefined;
+  const parts: string[] = [];
+  const reason = (context.reason ?? "").trim();
+  if (reason !== "") parts.push(`Geri gönderme gerekçesi: ${reason}`);
+  if (context.previous !== undefined) parts.push(previousNote(context.previous));
+  const comments = context.comments ?? [];
+  if (comments.length > 0) {
+    parts.push(
+      ["Ticket üzerindeki insan yorumları:", ...comments.map((c) => `  - ${c.author}: ${c.text}`)].join(
+        "\n",
+      ),
+    );
+  }
+  // Hiçbir parça yoksa alan HİÇ gitmez. Boş bir "yeniden yazılıyor" başlığı
+  // modele "bir şey değişti" der ve neyin değiştiğini söylemez — gürültü.
+  if (parts.length === 0) return undefined;
+  return [REWRITE_NOTE_TITLE, ...parts].join("\n");
+}
+
+/**
+ * Yorumları OKUYAN taraf, ve neden burada okunuyor.
+ *
+ * Yorum okumak bir I/O — Jira'ya gider. Workflow kodu I/O yapamaz (determinizm),
+ * dolayısıyla `ticket-workflow.ts` bunu geçiremezdi; geçirebilseydi bile
+ * geçirmemeliydi: okuma zamanı ÖNEMLİ. Operatör kapıda "geri gönder" dedikten
+ * SONRA da yorum yazabilir, ve aktivite çalıştığı anda okumak o yorumu da
+ * yakalar. Workflow'un elindeki (kapı kararı anındaki) bir liste yakalayamazdı.
+ *
+ * Yalnız bir YENİDEN YAZIM için okunur (`rewrite !== undefined`). İlk turda
+ * ticket'ta zaten yorum yoktur ya da varsa da talebin parçasıdır ve
+ * `description`'da durur; her analiz çağrısına bir Jira okuması eklemek bedelini
+ * çıkarmayan bir yavaşlama olurdu.
+ *
+ * `readHumanComments` ATMAZ (bkz. `comments.ts`): Jira 5xx verirse liste boş
+ * döner, uyarı satırı yazılır ve analiz `reason` + `previous` ile devam eder.
+ * Çağıran açıkça bir liste verdiyse ona dokunulmaz — testin ve pilotun kendi
+ * listesini enjekte edebilmesi için.
+ */
+async function withReadComments(
+  deps: ActivityDeps,
+  ticket: TicketKey,
+  rewrite: AnalysisRewriteContext | undefined,
+): Promise<AnalysisRewriteContext | undefined> {
+  if (rewrite === undefined || rewrite.comments !== undefined) return rewrite;
+  return {
+    ...rewrite,
+    // Uyarı satırı "analiz" der, "intake" değil: bu adım başarısız okumada
+    // operatörü kendi adımına baksın diye.
+    comments: await readHumanComments(deps, ticket, undefined, "analiz"),
+  };
+}
+
+/**
  * Step 3. The risk tier is the DOCUMENT's, never a parameter and never a
  * default: it is the reason the analysis is read before the gates are chosen
  * (M51). `AnalysisDoc` is `.strict()` with seven required sections, so a
  * partial answer fails here instead of at a human's desk.
+ *
+ * `rewrite` OPSİYONEL ve bir REPLAY meselesi: bu bir Temporal aktivitesi ve
+ * sahada kapıda bekleyen koşular var. Yeni argüman workflow'un komut DİZİSİNİ
+ * değiştirmiyor — aynı sırada aynı aktiviteler, aynı `activityId` — yalnız
+ * yeni zamanlamaların taşıdığı payload'a bir alan ekliyor. `openGate`'in
+ * `gateStatuses` eklemesiyle birebir aynı şekil ve aynı gerekçe
+ * (`activities.ts`).
  */
 export async function writeAnalysis(
   deps: ActivityDeps,
   ticket: TicketKey,
   appId?: string,
+  rewrite?: AnalysisRewriteContext,
 ): Promise<{ analysis: AnalysisDoc; risk: RiskTier }> {
   const run = await deps.runs.get(ticket);
   const snapshot = await deps.work.getTicket(ticket);
+  const note = rewriteNote(await withReadComments(deps, ticket, rewrite));
   // Studio'nun "Ajan tanımları" ekranında bu analist ajanı için yazılmış
   // persona, varsa. `input`'un İLK alanı olarak gidiyor: rol talimatı,
   // uygulanacağı verinin önünde okunmalı — pilot da personayı analiz bağlamının
@@ -219,6 +353,10 @@ export async function writeAnalysis(
           templateVersion: run.templateVersion,
           summary: snapshot.summary,
           description: snapshot.description,
+          // Ticket metninin ARDINDAN: "şunu analiz et" önce gelir, "ve şu
+          // sebeple bir daha bak" sonra. Ters sırada, geri gönderme gerekçesi
+          // analiz edilecek talep sanılabilirdi.
+          ...(note === undefined ? {} : { rewrite: note }),
         },
       },
       AnalysisDoc,

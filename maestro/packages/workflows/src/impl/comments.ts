@@ -138,6 +138,12 @@ export async function readHumanComments(
   deps: ActivityDeps,
   ticket: TicketKey,
   warn: (message: string) => void = (message) => console.warn(message),
+  /**
+   * Uyarı satırındaki adımın adı. Bu yardımcıyı artık İKİ adım çağırıyor —
+   * intake ve analizin yeniden yazımı — ve "intake" yazan bir uyarı, analiz
+   * turunda operatörü yanlış adıma bakmaya gönderirdi.
+   */
+  step = "intake",
 ): Promise<HumanComment[]> {
   const reader = deps.comments;
   if (reader === undefined) return [];
@@ -146,15 +152,15 @@ export async function readHumanComments(
     raw = await reader.listComments(ticket);
   } catch (error) {
     warn(
-      `[maestro] intake: ${ticket} yorumları okunamadı (${String(error)}) — ` +
+      `[maestro] ${step}: ${ticket} yorumları okunamadı (${String(error)}) — ` +
         "adım yalnız ticket metniyle devam ediyor; netleştirme cevapları görünmeyebilir.",
     );
     return [];
   }
   if (reader.botUserId === undefined && raw.length > 0) {
     warn(
-      "[maestro] intake: bot hesabının kimliği bilinmiyor, Maestro'nun kendi yorumları " +
-        "elenemedi — intake kendi sorduğu soruyu da bağlamda görecek.",
+      `[maestro] ${step}: bot hesabının kimliği bilinmiyor, Maestro'nun kendi ` +
+        "yorumları elenemedi — adım kendi yazdığı notları da bağlamda görecek.",
     );
   }
   return humanCommentsOf(raw, reader.botUserId);

@@ -18,6 +18,7 @@ import {
   buildStatusMap,
   deadStatusEntries,
   firesFor,
+  gatePointsOf,
   gateStatusConflicts,
   statusSummary,
   type GateStatusDraft,
@@ -348,12 +349,16 @@ export function ListeningScreen(): ReactNode {
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
   const [statusDraft, setStatusDraft] = useState<StatusDraft>(EMPTY_STATUS_DRAFT);
   /**
-   * KAPI STATÜLERİ — okuma tarafı, `statusDraft`tan AYRI tutuluyor.
+   * KAPI STATÜLERİ — ARTIK EKRANDA GİRİLMİYOR, ama taşınıyor.
    *
-   * Aynı taslağa katmak kolaydı ve yanlış olurdu: `statusDraft` `firesFor` /
-   * `deadStatusEntries` ile akışa göre eleniyor, ve o eleme kapı statülerinde
-   * anlamsız (bkz. `buildStatusMap`'in notu). İki kavramı tek bir dizide
-   * tutmak, birinin kuralının sessizce diğerine uygulanması demek olurdu.
+   * Formun bu iki alanı yok: kapının iki kenarı beş statü alanından
+   * TÜRETİLİYOR (`gatePointsOf`). Taslak yine de duruyor ve duruyor olması
+   * bilinçli — bu turdan ÖNCE kaydedilmiş bir kuralda `gateApproveStatus` /
+   * `gateReturnStatus` dolu olabilir, ve o operatör onları bilerek hattından
+   * FARKLI bir statüye ayarlamış olabilir. Yüklenirken okunuyor (aşağıda),
+   * kaydedilirken geri yazılıyor (`buildStatusMap`), ve özet onları
+   * gösteriyor. Formdan silmek, o kurulumların ayarını sessizce çöpe atmak
+   * olurdu.
    */
   const [gateStatusDraft, setGateStatusDraft] = useState<GateStatusDraft>(EMPTY_GATE_STATUS_DRAFT);
   const [reassignOnNeedInfo, setReassignOnNeedInfo] = useState(false);
@@ -380,6 +385,15 @@ export function ListeningScreen(): ReactNode {
    * koruma sunucuda, burası yalnız aynadır.
    */
   const gateClashes = gateStatusConflicts(statusDraft, gateStatusDraft);
+  /**
+   * Kapının iki kenarı, beş alanlık hattan TÜRETİLMİŞ — sunucunun
+   * `gateStatusesOf`i ile aynı geri düşüş sırasıyla.
+   *
+   * Ekranda bir girdi değil, bir AYNA: operatör yukarıda hattını çizerken
+   * burası "o hâlde kapı şöyle işler" diye geri söyler. Eski iki kutu bunu
+   * operatöre İKİNCİ KEZ yazdırıyordu.
+   */
+  const gatePoints = gatePointsOf(statusDraft, gateStatusDraft);
 
   // Editing an existing rule: its id, or null while the form is adding a new
   // one. The BFF's PUT is a full replace, so the form carries EVERY field of
@@ -1521,80 +1535,95 @@ export function ListeningScreen(): ReactNode {
           </details>
 
           {/*
-            ── KAPI KARARININ STATÜYLE VERİLMESİ — HER ZAMAN GÖRÜNÜR ─────────
-            Bu blok eskiden YUKARIDAKİ `<details>`in içinde, üstelik `statusOn`
-            anahtarının ARKASINDAYDI. Sahada bu, alanların hiç görünmemesi
-            demekti ve sebebi bir kısır döngüydü: operatörün kuralında
-            `statusMapJson` NULL → anahtar kapalı açılıyor → alanlar
-            çizilmiyor → eşleme boş kalıyor → `statusMapJson` NULL kalıyor.
-            Operatörün "kapı statüleri dinleme ayarlarında YOK" demesinin
-            sebebi buydu: alanlar koddaydı, ekranda değildi.
+            ── KAPI KARARI: BEŞ ALANDAN TÜREYEN ÖZET, AYRI KUTU DEĞİL ────────
 
-            Artık DIŞARIDA ve KOŞULSUZ. Saklanacak bir şey de değil zaten:
-            yukarısı "Maestro ticket'ı nereye taşısın" (YAZMA, opsiyonel bir
-            otomasyon), burası "operatörün taşıması ne anlama gelsin" (OKUMA,
-            kapının ikinci kanalı). İkincisi birincisi olmadan da tamamen
-            tutarlı — yorum-yalnız kipte kalıp kapıyı statüyle kapatmak geçerli
-            bir kurulum, ve şimdiye kadar imkânsızdı (bkz. `buildStatusMap`).
+            Burada eskiden İKİ AYRI ALAN vardı (`gateApproveStatus`,
+            `gateReturnStatus`) ve operatörden aynı akışı İKİNCİ KEZ tarif
+            etmesini istiyorlardı. Şikâyet aynen şuydu: "şu dinleme ayarları çok
+            karmaşık oldu, daha mantıklı adam akıllı bir şey yap." Haklıydı —
+            akış tek bir hat:
+
+                todo → analiz → analysisapproval → development
+                 ↑       ↑            │
+                 │       └────────────┘
+                 └── (intake eksik bulursa)
+
+            ve bu hattı çizmek için beş kutu yeter. `development` zaten "iş
+            bitti"nin (onDone) statüsü; operatörün ticket'ı oraya taşıması,
+            "onaylandı" demenin panodaki hâli. `analiz` zaten "iş burada
+            yapılır"ın (onStart) statüsü; oraya taşımak "bir daha bak" demek.
+            İki ayrı kutu, aynı gerçeği iki yere yazdırıp ayrışmalarına izin
+            vermekti — ve üstelik yedinci kutuya "bu beşle çakışamaz" diye bir
+            koruma konduğu için operatörün DOĞRU yapılandırması reddediliyordu.
+
+            Alanlar KALDIRILMADI, GİZLENDİ: `gateStatusDraft` hâlâ var ve
+            kaydedilen kuralda dolu ise korunuyor (bkz. `buildStatusMap` ve
+            `gatePointsOf`in geri düşüş sırası). Eski bir kurulumda o alanlar
+            doluysa aşağıdaki özet onu gösterir ve nereden geldiğini söyler.
+
+            Bu blok bir GİRDİ değil, bir AYNA: operatörün yukarıda çizdiği
+            hattın kapıda ne anlama geldiğini, kaydetmeden önce okunur hâlde
+            geri söyler.
           */}
           <div className="scr-adv" style={{ marginTop: 14, padding: "12px 14px" }}>
             <p className="screen-note" style={{ marginTop: 0, fontWeight: 600 }}>
               {t("listening.gate_status.title")}
             </p>
             <p className="screen-note">{t("listening.gate_status.intro")}</p>
-            <div className="screen-filters" style={{ marginTop: 10 }}>
-              {GATE_STATUS_POINTS.map((point) =>
-                statusOptions.length > 0 ? (
-                  <Select
-                    key={point}
-                    label={t(`listening.gate_status.${point}`)}
-                    value={gateStatusDraft[point]}
-                    onChange={(e) =>
-                      setGateStatusDraft((prev) => ({ ...prev, [point]: e.target.value }))
-                    }
-                    options={[
-                      { value: "", label: t("listening.gate_status.skip") },
-                      ...statusOptions.map((v) => ({ value: v, label: v })),
-                    ]}
-                    hint={t(`listening.gate_status.hint.${point}`)}
-                  />
-                ) : (
-                  <Input
-                    key={point}
-                    label={t(`listening.gate_status.${point}`)}
-                    value={gateStatusDraft[point]}
-                    onChange={(e) =>
-                      setGateStatusDraft((prev) => ({ ...prev, [point]: e.target.value }))
-                    }
-                    hint={t(`listening.gate_status.hint.${point}`)}
-                  />
-                ),
-              )}
-            </div>
+            {/*
+              Kapının iki kenarı, TÜRETİLDİKLERİ alanın adıyla birlikte.
+              "Onay: Development" tek başına doğru ama öğretmiyor; "Onay:
+              Development (İş bittiğinde alanından)" operatöre hattın nasıl
+              okunduğunu gösterir, ve yanlışsa nereyi düzelteceğini söyler.
+            */}
+            <ul className="screen-note" style={{ margin: "10px 0 0", paddingLeft: 18 }}>
+              <li>
+                {t("listening.gate_status.derived_approve", {
+                  status:
+                    gatePoints.approve === ""
+                      ? t("listening.gate_status.derived_none")
+                      : gatePoints.approve,
+                  from:
+                    gatePoints.approveFrom === null
+                      ? ""
+                      : t(`listening.gate_status.from.${gatePoints.approveFrom}`),
+                })}
+              </li>
+              <li>
+                {t("listening.gate_status.derived_return", {
+                  status:
+                    gatePoints.return === ""
+                      ? t("listening.gate_status.derived_none")
+                      : gatePoints.return,
+                  from:
+                    gatePoints.returnFrom === null
+                      ? ""
+                      : t(`listening.gate_status.from.${gatePoints.returnFrom}`),
+                })}
+              </li>
+            </ul>
+            {/*
+              Kalan TEK yasak: kapı noktası `onReview` ile aynı olamaz — kapı
+              orada AÇILIYOR, dolayısıyla oradan bir karar okunamaz. Diğer dört
+              nokta ile çakışma artık serbest ve olması gereken de bu.
+            */}
             {gateClashes.length > 0 && (
               <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-                {t("listening.gate_status.conflict_warning", {
+                {t("listening.gate_status.review_clash", {
                   values: gateClashes
-                    .map(
-                      (c) =>
-                        `${t(`listening.gate_status.${c.point}`)} ↔ ` +
-                        t(`listening.status.${c.clashesWith}`),
-                    )
+                    .map((c) => t(`listening.gate_status.from.${c.point}`))
                     .join(", "),
                 })}
               </div>
             )}
-            {/* Boşken SESSİZ KALMIYOR. İki alan da boşsa kapı yalnız yorumla
-                kapanır, ve operatörün bunu EKRANDA okuması gerekiyor: "neden
-                statüyle çalışmıyor" sorusunun cevabı burada durmalı, bir
-                belgede değil. Uyarı, çünkü operatörün akışının tamamı bu iki
-                alana bağlı ve boş olmaları sessiz bir arıza üretiyordu. */}
-            {gateStatusDraft.gateApproveStatus.trim() === "" &&
-              gateStatusDraft.gateReturnStatus.trim() === "" && (
-                <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-                  {t("listening.gate_status.empty_warning")}
-                </div>
-              )}
+            {/* İki kenar da boşsa kapı yalnız yorumla kapanır, ve operatörün
+                bunu EKRANDA okuması gerekiyor: "neden statüyle çalışmıyor"
+                sorusunun cevabı burada durmalı, bir belgede değil. */}
+            {gatePoints.approve === "" && gatePoints.return === "" && (
+              <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
+                {t("listening.gate_status.empty_warning")}
+              </div>
+            )}
             <p className="screen-note" style={{ marginTop: 8 }}>
               {t("listening.gate_status.approval_note")}
             </p>

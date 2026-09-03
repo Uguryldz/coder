@@ -45,8 +45,10 @@ interface RoundOptions {
   readonly member?: boolean;
   readonly gateApproveStatus?: string;
   readonly gateReturnStatus?: string;
-  /** Maestro'nun KENDİ taşıdığı bir nokta — çakışma sınamak için. */
+  /** Maestro'nun KENDİ taşıdığı noktalar — türetme ve çakışma sınamak için. */
   readonly onRejected?: string;
+  /** Kapı ORADA açılıyor: kalan tek çakışma yasağı bununla sınanıyor. */
+  readonly onReview?: string;
 }
 
 interface RoundResult {
@@ -101,6 +103,7 @@ async function round(options: RoundOptions = {}): Promise<RoundResult> {
             enabled: true,
             statusMap: {
               ...(options.onRejected === undefined ? {} : { onRejected: options.onRejected }),
+              ...(options.onReview === undefined ? {} : { onReview: options.onReview }),
               gateApproveStatus: options.gateApproveStatus ?? "Geliştirme",
               gateReturnStatus: options.gateReturnStatus ?? "Analiz",
             },
@@ -229,21 +232,41 @@ describe("poller gate-status channel", () => {
   });
 
   /**
-   * YÖN katmanı: kapı statüsü, Maestro'nun kendi taşıdığı bir statüyle
-   * çakışırsa alan DÜŞER ve kanal o karar için kapanır. Sessizce değil.
+   * YÖN katmanı, KALAN TEK YASAĞIYLA: kapı kenarı `onReview` ile çakışırsa
+   * düşer — kapı ORADA açılıyor, dolayısıyla oradan bir karar okunamaz.
+   *
+   * `onRejected` ile çakışma ARTIK YASAK DEĞİL ve bu turun sebebi o: operatörün
+   * hattında `analiz` hem "iş burada yapılır" hem "buraya geri gönder", ve eski
+   * koruma bu doğru yapılandırmayı reddediyordu.
    */
-  it("çakışık eşlemede kanal kapanır ve operatöre söylenir", async () => {
-    const result = await round({ onRejected: "Analiz" });
+  it("onReview ile çakışan kenarda kanal kapanır ve operatöre söylenir", async () => {
+    const result = await round({ onReview: "Analiz", gateReturnStatus: "Analiz" });
     expect(result.signals).toHaveLength(0);
     expect(result.lines.some((l) => l.includes("çakışık"))).toBe(true);
   });
 
-  it("kapı statüsü olmayan sıradan bir taşımayı log'a doldurmaz", async () => {
+  /**
+   * ── "KAYITLAR ATLANMASIN" ──────────────────────────────────────────────
+   *
+   * Ticket KAPIDA BEKLERKEN bir yere taşındı ve o statünün kuralda tanımlı bir
+   * rolü yok. Eskiden bu sessizce düşüyordu — operatörün "taşıdım, hiçbir şey
+   * olmadı" sorusunun hiçbir yerde cevabı yoktu.
+   *
+   * Gürültü değil: buraya gelen hareket zaten kapıda bekleyen bir koşuya ait ve
+   * kapı açıldıktan sonra olmuş. Kuralın TANIDIĞI noktalar da satıra yazılıyor,
+   * ki cümle teşhis olsun, şikâyet değil.
+   */
+  it("tanımsız bir statüye taşıma SESSİZCE DÜŞMEZ — tanınan noktalarla yazılır", async () => {
     const result = await round({
       changes: [{ actorAccountId: "ayse.kaya", toStatus: "Beklemede", at: MOVED_AT }],
     });
     expect(result.signals).toHaveLength(0);
-    expect(result.lines.filter((l) => l.includes("kapı"))).toHaveLength(0);
+    const line = result.lines.find((l) => l.includes("tanımlı bir rol"));
+    expect(line).toBeDefined();
+    // Kuralın kendi noktaları satırda: operatör farkı bir bakışta görsün.
+    expect(line).toContain("Beklemede");
+    // Ve bir KARAR verilmedi: satır yalnız "yok sayıldı" diyor.
+    expect(result.lines.some((l) => l.includes("onaylandı"))).toBe(false);
   });
 
   // ── kanalın açık olması ────────────────────────────────────────────────────

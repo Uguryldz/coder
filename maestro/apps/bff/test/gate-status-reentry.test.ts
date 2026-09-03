@@ -53,8 +53,8 @@ function rule(statusMap: StatusMap | null, over: Partial<ListeningRuleRecord> = 
   };
 }
 
-describe("gateStatusesOf — bir kuralın kapı statüleri, çakışma elenmiş", () => {
-  it("iki alanı da okur", () => {
+describe("gateStatusesOf — beş alanlık hattan türeyen kapı noktaları", () => {
+  it("açıkça yazılmış iki kapı alanını okur — eski kurulumların yolu", () => {
     const gates = gateStatusesOf({ gateApproveStatus: "Geliştirme", gateReturnStatus: "Analiz" });
     expect(gates).toMatchObject({ approve: "Geliştirme", return: "Analiz", conflicts: [] });
   });
@@ -64,35 +64,92 @@ describe("gateStatusesOf — bir kuralın kapı statüleri, çakışma elenmiş"
   });
 
   /**
-   * Bu dosyanın en önemli testi. İki yön aynı belgede duruyor: beş alan
-   * Maestro'nun ticket'ı nereye taşıdığını, iki alan operatörün taşımasının ne
-   * anlama geldiğini söylüyor. Aynı adı iki yöne birden yazmak, Maestro'nun
-   * kendi hareketinin kendi kararı olarak geri okunması demek — kapı kendi
-   * açılışıyla kendini kapatırdı.
+   * ── BU DOSYANIN EN ÖNEMLİ TESTİ, VE ANLAMI TERSİNE DÖNDÜ ────────────────
    *
-   * Zaman eşiği bunu çoğu durumda yakalar, ve tam olarak bu yüzden ona
-   * GÜVENİLMİYOR: korumayı bir yarış koşusunun sonucuna bağlamanın bedeli,
-   * yanlış giderse kendi kendini onaylayan bir kapıdır.
+   * Eskiden burada "aynı statü iki role birden yazılırsa alan DÜŞER" yazıyordu.
+   * O koruma, operatörün GERÇEK akışını reddediyordu:
+   *
+   *     todo → analiz → analysisapproval → development
+   *
+   * Bu hatta `analiz` hem `onStart` hem "buraya geri gönder", `development`
+   * hem `onDone` hem "buraya taşıyarak onayla". Operatörün ekranda gördüğü
+   * "çakışık" uyarısı buydu ve kapının statü kanalı hiç açılmıyordu.
+   *
+   * Artık BEŞ ALAN YETİYOR: operatör hattını bir kez çiziyor, kapının iki
+   * kenarı ondan türüyor. Ayrı kutu yok.
    */
-  it("Maestro'nun kendi taşıdığı bir statüyle çakışan kapı statüsünü DÜŞÜRÜR", () => {
-    const gates = gateStatusesOf({ onRejected: "Analiz", gateReturnStatus: "Analiz" });
-    expect(gates.return).toBeNull();
-    expect(gates.conflicts).toHaveLength(1);
-    expect(gates.conflicts[0]).toContain("onRejected");
+  it("operatörün hattını BEŞ alandan türetir — ayrı kapı alanı gerekmez", () => {
+    const gates = gateStatusesOf({
+      onStart: "analiz",
+      onNeedInfo: "todo",
+      onReview: "analysisapproval",
+      onDone: "development",
+    });
+    // `development`e taşımak = onayla, `analiz`e taşımak = geri gönder.
+    expect(gates).toMatchObject({ approve: "development", return: "analiz", conflicts: [] });
   });
 
-  it("çakışmayı büyük/küçük harf ve boşluktan bağımsız görür", () => {
+  it("onRejected varsa geri gönderme ONU kullanır, onStart'a düşmez", () => {
+    // İki ayrı sütunu olan bir pano: ret ayrı bir yere düşüyor, iş başka yerde
+    // yapılıyor. Geri düşüş sırası operatörün açık tercihini ezmemeli.
+    const gates = gateStatusesOf({ onStart: "analiz", onRejected: "Revizyon", onDone: "Tamam" });
+    expect(gates.return).toBe("Revizyon");
+  });
+
+  it("açık kapı alanı, türetilene karşı KAZANIR — geriye dönük uyum", () => {
+    // Bu turdan önce kaydedilmiş bir kural hattından FARKLI bir statü seçmiş
+    // olabilir; onu sessizce ezmek, operatörün ayarını çöpe atmak olurdu.
+    const gates = gateStatusesOf({
+      onDone: "Tamam",
+      onStart: "Analiz",
+      gateApproveStatus: "Geliştirme",
+      gateReturnStatus: "Yeniden Analiz",
+    });
+    expect(gates).toMatchObject({ approve: "Geliştirme", return: "Yeniden Analiz" });
+  });
+
+  /**
+   * ── KALAN TEK YASAK ─────────────────────────────────────────────────────
+   *
+   * `onReview` kapının AÇILDIĞI yer: Maestro ticket'ı oraya kendisi taşıyor ve
+   * damga (`gateOpenedSince`) o taşımadan hemen SONRA atılıyor. Sıralama
+   * mantıken doğru ama bir yarışa bağlı, ve yanlış giderse bedeli kapının kendi
+   * açılışıyla kendini kapatması — imzasız bir onay.
+   *
+   * Diğer dört nokta bu riski taşımıyor: Maestro onlara taşırken kapı damgası
+   * ya hiç atılmamış (`onStart`/`onNeedInfo`) ya da çoktan silinmiş
+   * (`onRejected`/`onDone`), yani `tryGateStatusDecision` daha ilk kontrolde
+   * `not_at_gate` diyerek çıkıyor.
+   */
+  it("kapı noktası onReview ile çakışırsa DÜŞER — kapı orada açılıyor", () => {
+    const gates = gateStatusesOf({ onReview: "İncelemede", gateApproveStatus: "İncelemede" });
+    expect(gates.approve).toBeNull();
+    expect(gates.conflicts).toHaveLength(1);
+    expect(gates.conflicts[0]).toContain("onReview");
+  });
+
+  it("onReview çakışmasını büyük/küçük harf ve boşluktan bağımsız görür", () => {
     // Jira statü adları operatörün yazdığı gibi gelir ve iki ekranda iki türlü
-    // yazılabilir; koruma yazım farkıyla delinmemeli.
+    // yazılabilir; koruma yazım farkıyla delinmemeli. Türkçe "İ" düz
+    // `toLowerCase()` ile asla eşleşmez — `foldStatusName` bu yüzden var.
     const gates = gateStatusesOf({ onReview: " İNCELEMEDE ", gateApproveStatus: "incelemede" });
     expect(gates.approve).toBeNull();
     expect(gates.conflicts).toHaveLength(1);
   });
 
-  it("bir alan çakışsa bile diğeri ayakta kalır ve iki çakışma da raporlanır", () => {
+  it("türetilen bir nokta onReview ile çakışsa da düşer, ve çakışma ADIYLA anılır", () => {
+    // Operatör `onDone`u yanlışlıkla inceleme sütununa ayarlamış. Rapor
+    // "gateApproveStatus düştü" DEMEZ — o alan hiç yazılmadı; düşen `onDone`.
+    const gates = gateStatusesOf({ onReview: "İncelemede", onDone: "İncelemede", onStart: "Analiz" });
+    expect(gates.approve).toBeNull();
+    expect(gates.return).toBe("Analiz");
+    expect(gates.conflicts[0]).toContain("onDone");
+  });
+
+  it("bir kenar düşse bile diğeri ayakta kalır", () => {
     const gates = gateStatusesOf({
-      onDone: "Tamam",
-      gateApproveStatus: "Tamam",
+      onReview: "İncelemede",
+      gateApproveStatus: "İncelemede",
       gateReturnStatus: "Analiz",
     });
     expect(gates.approve).toBeNull();
@@ -369,13 +426,71 @@ describe("tryGateStatusDecision — yankı koruması", () => {
     expect(result.outcome).toMatchObject({ kind: "skipped", reason: "actor_unknown" });
   });
 
-  it("çakışık eşleme kanalı kapatır ve bunu ADIYLA söyler", async () => {
+  /**
+   * ── OPERATÖRÜN AKIŞI, UÇTAN UCA ────────────────────────────────────────
+   *
+   * `todo → analiz → analysisapproval → development`, tek bir hat, ayrı kapı
+   * alanı YOK. Bu test bu turun sebebidir: aynı eşleme ÖNCEDEN
+   * `status_map_conflict` ile reddediliyordu.
+   */
+  it("beş alanlık hat: development'a taşımak ONAYLAR", async () => {
     const result = await run({
-      status: "Analiz",
-      rules: [rule({ onRejected: "Analiz", gateReturnStatus: "Analiz" })],
+      status: "development",
+      rules: [
+        rule({
+          onStart: "analiz",
+          onNeedInfo: "todo",
+          onReview: "analysisapproval",
+          onDone: "development",
+        }),
+      ],
+      identity: { actor: "ayse.kaya", bot: BOT },
+    });
+    expect(result.outcome).toMatchObject({ kind: "decided", decision: "approve" });
+  });
+
+  it("beş alanlık hat: analiz'e geri taşımak GERİ GÖNDERİR", async () => {
+    const result = await run({
+      status: "analiz",
+      rules: [
+        rule({
+          onStart: "analiz",
+          onNeedInfo: "todo",
+          onReview: "analysisapproval",
+          onDone: "development",
+        }),
+      ],
+      identity: { actor: "ayse.kaya", bot: BOT },
+    });
+    expect(result.outcome).toMatchObject({ kind: "decided", decision: "return_analysis" });
+  });
+
+  it("onReview ile çakışan kenar kanalı kapatır ve bunu ADIYLA söyler", async () => {
+    const result = await run({
+      status: "İncelemede",
+      rules: [rule({ onReview: "İncelemede", gateReturnStatus: "İncelemede" })],
       identity: { actor: "ayse.kaya", bot: BOT },
     });
     expect(result.outcome).toMatchObject({ kind: "skipped", reason: "status_map_conflict" });
+  });
+
+  /**
+   * ── "KAYITLAR ATLANMASIN" ──────────────────────────────────────────────
+   *
+   * Operatörün son cümlesi. Kuralda tanımlı bir rolü olmayan bir statüye
+   * taşıma sessizce düşmemeli: çağıran onu loglayabilsin diye kuralın BİLDİĞİ
+   * noktalar cevaba ekleniyor.
+   */
+  it("tanımsız bir statüye taşıma, kuralın bildiği noktalarla birlikte raporlanır", async () => {
+    const result = await run({
+      status: "Beklemede",
+      rules: [rule({ onStart: "analiz", onDone: "development" })],
+      identity: { actor: "ayse.kaya", bot: BOT },
+    });
+    expect(result.outcome).toMatchObject({ kind: "skipped", reason: "not_a_gate_status" });
+    const skipped = result.outcome as Extract<GateStatusReentry, { kind: "skipped" }>;
+    expect(skipped.known?.approve).toContain("development");
+    expect(skipped.known?.return).toContain("analiz");
   });
 
   it("sıradan bir statü hareketi ile hiç yapılandırılmamış kanalı AYIRIR", async () => {

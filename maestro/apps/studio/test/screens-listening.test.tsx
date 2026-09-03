@@ -387,60 +387,90 @@ describe("ListeningScreen", () => {
     }
 
     /**
-     * ── KAPI STATÜLERİ HER ZAMAN GÖRÜNÜR ────────────────────────────────────
+     * ── KAPININ İKİ KENARI, BEŞ ALANDAN TÜRETİLMİŞ ─────────────────────────
      *
-     * Sahadaki arıza: operatör "kapı statüleri dinleme ayarlarında YOK" dedi ve
-     * haklıydı. Alanlar koddaydı ama ekranda değildi — hem katlanır bölümün
-     * hem de "Jira durumunu da değiştir" anahtarının ARKASINDAYDILAR. Kuralda
-     * `statusMap` NULL olduğu için anahtar kapalı açılıyor, alanlar
-     * çizilmiyor, eşleme boş kalıyor: kısır döngü.
+     * Bu blok eskiden İKİ AYRI KUTU sınıyordu (`gateApproveStatus`,
+     * `gateReturnStatus`). Operatörün şikâyeti önce "bu alanlar ekranda YOK"tu,
+     * sonra — alanlar görünür yapıldıktan sonra — "kapı onayı ÇAKIŞIK yazdı"
+     * oldu: doğru doldurulmuş bir hat, çakışma koruması yüzünden reddediliyordu.
      *
-     * Bu testin ölçtüğü şey tam olarak o döngünün kırıldığı: hiçbir şeye
-     * tıklamadan, anahtar kapalıyken, alanlar orada.
+     * Kök sebep kutuların görünürlüğü değil, VAR OLMALARIYDI. Operatörden aynı
+     * akışı ikinci kez tarif etmelerini istiyorlardı, oysa akış tek bir hat:
+     *
+     *     todo → analiz → analysisapproval → development
+     *
+     * `development` zaten "iş bittiğinde"nin statüsü ve oraya taşımak
+     * onaylamak demek; `analiz` zaten "iş başladığında"nınki ve oraya taşımak
+     * "bir daha bak" demek. Beş alan yeter.
+     *
+     * Bu testin ölçtüğü şey: operatör hattını BİR KEZ çiziyor, ekran kapının
+     * ne yapacağını geri söylüyor, ve kaydedilen kural hiçbir ek alan
+     * taşımıyor.
      */
-    it("kapı statülerini HİÇBİR ŞEYE TIKLAMADAN gösterir — kısır döngü kırıldı", async () => {
+    it("kapının iki kenarını beş alandan TÜRETİP ekranda gösterir", async () => {
       stubFetch([]);
       renderScreen(ADMIN);
       await screen.findByText("Yeni kural ekle");
 
-      // Katlanır bölüm açılmadı, anahtar işaretlenmedi — alanlar yine de var.
-      expect(screen.getByLabelText("Buraya taşınırsa: onaylandı")).toBeTruthy();
-      expect(screen.getByLabelText("Buraya taşınırsa: analize geri gönder")).toBeTruthy();
-      // Yazma tarafı hâlâ opt-in: iki yön karışmadı.
-      expect(screen.queryByLabelText("İş başladığında")).toBeNull();
+      // Ayrı kutular ARTIK YOK — operatörden ikinci kez tarif istenmiyor.
+      expect(screen.queryByLabelText("Buraya taşınırsa: onaylandı")).toBeNull();
+      expect(screen.queryByLabelText("Buraya taşınırsa: analize geri gönder")).toBeNull();
+
+      // Eşlemeyi aç ve operatörün hattını çiz.
+      await userEvent.click(screen.getByText("Jira durumunu da değiştir (isteğe bağlı)"));
+      await userEvent.click(screen.getByLabelText(/Jira durumunu da değiştir$/));
+      await userEvent.type(screen.getByLabelText("İş başladığında"), "analiz");
+      await userEvent.type(screen.getByLabelText("İş bittiğinde"), "development");
+
+      // Ekran kapının ne yapacağını GERİ SÖYLÜYOR — ve nereden türettiğini de.
+      expect(screen.getByText(/development durumuna taşımak/)).toBeTruthy();
+      expect(screen.getByText(/analiz durumuna taşımak/)).toBeTruthy();
+      expect(screen.getByText(/"İş bittiğinde" alanından/)).toBeTruthy();
     });
 
-    it("boşken uyarıyor — kapının yalnız yorumla kapanacağı EKRANDA yazıyor", async () => {
+    it("hiçbir kenar türetilemiyorsa UYARIYOR — kapı yalnız yorumla kapanır", async () => {
       stubFetch([]);
       renderScreen(ADMIN);
       await screen.findByText("Yeni kural ekle");
 
-      expect(screen.getByText(/Kapı durumları BOŞ/)).toBeTruthy();
+      expect(screen.getByText(/Kapının iki kenarı da BOŞ/)).toBeTruthy();
     });
 
     /**
-     * Anahtar KAPALIYKEN de kaydedilir. `buildStatusMap` eskiden `if (!enabled)
-     * return null` diyordu, yani alanlar görünse bile yazılmayacaklardı —
-     * görünürlük düzeltmesi tek başına yetmezdi.
+     * ── GERİYE DÖNÜK UYUM ──────────────────────────────────────────────────
+     *
+     * Bu turdan ÖNCE kaydedilmiş bir kuralda iki kapı alanı dolu olabilir, ve o
+     * operatör onları hattından bilerek FARKLI bir statüye ayarlamış olabilir.
+     * Form artık o alanları sormuyor ama TAŞIYOR: yüklerken okuyor, kaydederken
+     * geri yazıyor, özette gösteriyor. Sessizce çöpe atmak, kaydedilmiş bir
+     * ayarın kaybolması demek olurdu.
      */
-    it("anahtar KAPALIYKEN bile kapı statülerini kaydeder", async () => {
-      const fn = stubFetch([]);
+    it("eski kuralın açık kapı alanlarını KORUR ve özette gösterir", async () => {
+      const fn = stubFetch([
+        {
+          ruleId: "lr_eski",
+          projectKey: "UGURPAY",
+          assigneeAccountId: "bot",
+          matchKind: "assigned",
+          matchValue: "*",
+          flowType: "analiz",
+          priority: 100,
+          enabled: true,
+          statusMap: { onDone: "Tamam", gateApproveStatus: "Geliştirme" },
+        },
+      ]);
       renderScreen(ADMIN);
       await screen.findByText("Yeni kural ekle");
-      await fillRequired();
-      await userEvent.type(screen.getByLabelText("Buraya taşınırsa: onaylandı"), "Onaylandı");
-      await userEvent.type(
-        screen.getByLabelText("Buraya taşınırsa: analize geri gönder"),
-        "Analiz",
-      );
-      await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+      await userEvent.click((await screen.findAllByRole("button", { name: "Düzenle" }))[0]!);
 
+      // Özet, AÇIK alanın kazandığını ve nereden geldiğini söylüyor.
+      expect(screen.getByText(/Geliştirme durumuna taşımak/)).toBeTruthy();
+      expect(screen.getByText(/ayrıca ayarlanmış onay durumundan/)).toBeTruthy();
+
+      await userEvent.click(screen.getByRole("button", { name: "Kuralı kaydet" }));
       const body = await writtenBody(fn);
-      // Yorum-yalnız kip KORUNUYOR (beş nokta yok), kapı kanalı AÇIK.
-      expect(body.statusMap).toEqual({
-        gateApproveStatus: "Onaylandı",
-        gateReturnStatus: "Analiz",
-      });
+      // Alan hâlâ kayıtta: form onu sormadı ama düşürmedi de.
+      expect((body.statusMap as Record<string, unknown>).gateApproveStatus).toBe("Geliştirme");
     });
 
     it("sends no map at all when the operator never opts in", async () => {

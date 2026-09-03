@@ -290,14 +290,40 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
         );
       } else if (
         gateStatus.reason === "status_map_conflict" ||
-        gateStatus.reason === "actor_unknown"
+        gateStatus.reason === "actor_unknown" ||
+        gateStatus.reason === "not_a_gate_status" ||
+        gateStatus.reason === "approval_needs_identity"
       ) {
-        // İkisi de operatörün DÜZELTEBİLECEĞİ şeyler: biri çakışan bir
-        // eşleme, diğeri kimin ittiğini söylemeyen bir teslimat. Diğer
-        // atlama sebepleri (sıradan statü hareketi, kapıda değil) her
-        // teslimatta olur ve log'u doldurmamalı.
+        /**
+         * ── "KAYITLAR ATLANMASIN" ────────────────────────────────────────
+         *
+         * `not_a_gate_status` bu listeye SONRADAN eklendi ve eklenmesi bir
+         * hata düzeltmesi: ticket KAPIDA BEKLERKEN operatör onu bir yere
+         * taşıdı, o statünün kuralda tanımlı bir rolü yoktu, ve olay hiçbir iz
+         * bırakmadan düşüyordu. Operatörün "kayıtlar atlanmasın" kuralının tam
+         * olarak yasakladığı şey.
+         *
+         * Ve bu gürültü DEĞİL, çünkü buraya gelen olay dar bir elekten geçmiş:
+         * koşu var, bir onay kapısında bekliyor, ve hareket kapı açıldıktan
+         * SONRA olmuş. Kapıda beklemeyen bir ticket'ın statü hareketi bu satıra
+         * hiç ulaşmaz (`not_at_gate` ile çıkar) — yani bu, "her teslimatta
+         * olan" bir şey değil, "kapıda bekleyen bir işe dokunuldu ama bir şey
+         * olmadı" olayı.
+         *
+         * `known` yanına yazılıyor: kuralın hangi statüleri tanıdığı olmadan
+         * satır teşhis değil, yalnız bir şikâyet olurdu.
+         */
         request.log.warn(
-          { webhook: "jira", ticket: event.ticketKey, reason: gateStatus.reason },
+          {
+            webhook: "jira",
+            ticket: event.ticketKey,
+            reason: gateStatus.reason,
+            status: event.status,
+            ...(gateStatus.known === undefined
+              ? {}
+              : { knownApprove: gateStatus.known.approve, knownReturn: gateStatus.known.return }),
+            ...(gateStatus.conflicts === undefined ? {} : { conflicts: gateStatus.conflicts }),
+          },
           "webhook gate status channel skipped",
         );
       }

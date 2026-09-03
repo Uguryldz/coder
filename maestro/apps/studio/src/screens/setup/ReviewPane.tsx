@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card } from "../../ui/index.ts";
 import { matchValueLabel } from "../common/jira-english.ts";
-import { STATUS_POINTS, buildStatusMap } from "../common/status-map.ts";
+import { STATUS_POINTS, buildStatusMap, gatePointsOf } from "../common/status-map.ts";
 import { bindsNoRepository, flowDefaults, intakePolls, type SetupDraft } from "./model.ts";
 
 /**
@@ -79,10 +79,19 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
   const mappedPoints = STATUS_POINTS.filter(
     (point) => typeof statusMap?.[point] === "string" && statusMap[point] !== "",
   );
-  // Kapı kanalı — ayrı okunur, çünkü ayrı bir soru: yukarısı "ticket nereye
-  // gider", burası "operatörün taşıması ne demek".
-  const gateApprove = draft.gateStatusDraft.gateApproveStatus.trim();
-  const gateReturn = draft.gateStatusDraft.gateReturnStatus.trim();
+  /**
+   * Kapı kanalı — ARTIK AYRI SORULMUYOR, yukarıdaki beş alandan TÜRETİLİYOR.
+   *
+   * Operatör bu iki değeri sihirbazda ayrıca girmiyor: `development` zaten
+   * "iş bittiğinde"nin statüsü ve oraya taşımak onaylamak demek, `analiz`
+   * zaten "iş başladığında"nınki ve oraya taşımak "bir daha bak" demek.
+   * Özet yine de KENDİ bölümünde duruyor — imzalanan şey "ticket nereye
+   * gider" değil, "benim taşımam ne anlama gelir", ve o soru ayrıca
+   * cevaplanmayı hak ediyor.
+   */
+  const gatePoints = gatePointsOf(draft.statusDraft, draft.gateStatusDraft);
+  const gateApprove = gatePoints.approve;
+  const gateReturn = gatePoints.return;
 
   return (
     <Card title={t("setup.review.title")} subtitle={t("setup.review.sub")}>
@@ -147,11 +156,25 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
         <p className="scr-prose">{t("setup.review.gate_status_none")}</p>
       ) : (
         <ul className="setup-review__list">
+          {/* Türetildiği alanın adı da yazılıyor: "Onay: Development" tek
+              başına doğru ama öğretmiyor; nereden geldiğini söylemek,
+              operatörün yanlışsa hangi kutuyu düzelteceğini bilmesini
+              sağlıyor. */}
           {gateApprove !== "" && (
-            <li>{t("setup.review.gate_status_approve", { status: gateApprove })}</li>
+            <li>
+              {t("setup.review.gate_status_approve", { status: gateApprove })}{" "}
+              {gatePoints.approveFrom === null
+                ? ""
+                : t(`listening.gate_status.from.${gatePoints.approveFrom}`)}
+            </li>
           )}
           {gateReturn !== "" && (
-            <li>{t("setup.review.gate_status_return", { status: gateReturn })}</li>
+            <li>
+              {t("setup.review.gate_status_return", { status: gateReturn })}{" "}
+              {gatePoints.returnFrom === null
+                ? ""
+                : t(`listening.gate_status.from.${gatePoints.returnFrom}`)}
+            </li>
           )}
         </ul>
       )}

@@ -69,30 +69,76 @@ export const EMPTY_GATE_STATUS_DRAFT: GateStatusDraft = {
 };
 
 /**
- * KAPI STATÜSÜ, MAESTRO'NUN KENDİ TAŞIDIĞI BİR STATÜYLE ÇAKIŞIYOR MU.
+ * KAPI NOKTALARI, BEŞ ALANLIK HATTAN TÜRETİLMİŞ — panelin sunucuyla aynı
+ * cevabı vermesi için.
  *
- * İki yön aynı belgede olduğu için çakışabilir: operatör `onRejected: "Analiz"`
- * yazıp `gateReturnStatus: "Analiz"` de yazarsa, Maestro'nun kendi taşıması
- * kendi kararı olarak geri okunurdu — kapı kendi kendini kapatırdı.
+ * `apps/bff/src/gate-status-reentry.ts`'teki `gateStatusesOf`in ekran tarafı.
+ * İki kopya olması hoş değil ama alternatifi daha kötüydü: BFF'in modülü
+ * `@maestro/adapter-jira` ve Temporal bağımlılıkları taşıyor, ve onu tarayıcı
+ * paketine sokmak birkaç megabaytlık bir sunucu ağacını panele taşımak
+ * olurdu. Ayrışmayı testler tutuyor (`screens-listening.test.tsx` ile
+ * `gate-status-reentry.test.ts` aynı örnekleri sınıyor).
  *
- * Sunucu tarafı bunu zaten yakalıyor ve o alanı DÜŞÜRÜYOR
- * (`apps/bff/src/gate-status-reentry.ts`, `gateStatusesOf`). Bu fonksiyon o
- * kararı TEKRARLAMIYOR, ONU ÖNCEDEN GÖSTERİYOR: operatör kaydettikten sonra
- * "neden çalışmıyor" diye sormak zorunda kalmasın. Kaydı ENGELLEMEZ — sunucu
- * fail-closed davranıyor ve kullanıcıyı formda kilitlemek, elle SQL'le yazılmış
- * satırları zaten kapsamayan bir korumayı iki yere kopyalamak olurdu.
+ * Geri düşüş kuralı sunucununkiyle BİREBİR:
+ *   onay        = gateApproveStatus ?? onDone
+ *   geri gönder = gateReturnStatus  ?? onRejected ?? onStart
+ */
+export function gatePointsOf(
+  draft: StatusDraft,
+  gateDraft: GateStatusDraft,
+): { approve: string; approveFrom: StatusPoint | GateStatusPoint | null; return: string; returnFrom: StatusPoint | GateStatusPoint | null } {
+  const pick = (
+    candidates: readonly (readonly [StatusPoint | GateStatusPoint, string])[],
+  ): { value: string; from: StatusPoint | GateStatusPoint | null } => {
+    const hit = candidates.find(([, value]) => value.trim() !== "");
+    return hit === undefined ? { value: "", from: null } : { value: hit[1].trim(), from: hit[0] };
+  };
+  const approve = pick([
+    ["gateApproveStatus", gateDraft.gateApproveStatus],
+    ["onDone", draft.onDone],
+  ]);
+  const returned = pick([
+    ["gateReturnStatus", gateDraft.gateReturnStatus],
+    ["onRejected", draft.onRejected],
+    ["onStart", draft.onStart],
+  ]);
+  return {
+    approve: approve.value,
+    approveFrom: approve.from,
+    return: returned.value,
+    returnFrom: returned.from,
+  };
+}
+
+/**
+ * KAPI NOKTASI `onReview` İLE ÇAKIŞIYOR MU — kalan TEK yasak.
+ *
+ * ── Bu fonksiyon eskiden ÇOK DAHA GENİŞTİ, ve o yüzden yanlıştı ───────────
+ * Önceki hâli kapı alanlarının BEŞ yazma noktasından herhangi biriyle
+ * çakışmasını uyarıyordu. Operatörün gerçek akışında — `todo → analiz →
+ * analysisapproval → development` — aynı statünün iki rol taşıması ZORUNLU:
+ * `development` hem `onDone` hem "onayla", `analiz` hem `onStart` hem "geri
+ * gönder". Yani uyarı, operatörün DOĞRU yapılandırmasına "çakışık" diyordu ve
+ * sunucu o alanları düşürüyordu.
+ *
+ * Kalan tek yasak `onReview`: kapı ORADA açılıyor, dolayısıyla oradan bir
+ * karar okunamaz — ticket'ın kapının beklediği yerde olması bir karar değil,
+ * kapının kendi hâlidir. Gerekçenin tamamı sunucu modülünde ölçümüyle birlikte.
  */
 export function gateStatusConflicts(
   draft: StatusDraft,
   gateDraft: GateStatusDraft,
-): readonly { point: GateStatusPoint; clashesWith: StatusPoint }[] {
+): readonly { point: GateStatusPoint | StatusPoint; clashesWith: StatusPoint }[] {
   const fold = (value: string): string => value.trim().toLowerCase();
-  const out: { point: GateStatusPoint; clashesWith: StatusPoint }[] = [];
-  for (const point of GATE_STATUS_POINTS) {
-    const value = fold(gateDraft[point]);
-    if (value === "") continue;
-    const clash = STATUS_POINTS.find((written) => fold(draft[written]) === value);
-    if (clash !== undefined) out.push({ point, clashesWith: clash });
+  const review = fold(draft.onReview);
+  if (review === "") return [];
+  const points = gatePointsOf(draft, gateDraft);
+  const out: { point: GateStatusPoint | StatusPoint; clashesWith: StatusPoint }[] = [];
+  if (points.approveFrom !== null && fold(points.approve) === review) {
+    out.push({ point: points.approveFrom, clashesWith: "onReview" });
+  }
+  if (points.returnFrom !== null && fold(points.return) === review) {
+    out.push({ point: points.returnFrom, clashesWith: "onReview" });
   }
   return out;
 }

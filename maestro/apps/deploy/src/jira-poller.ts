@@ -745,7 +745,43 @@ async function gateStatusRound(
     if (outcome.reason === "status_map_conflict") {
       log(
         `[yoklama] ${ticket}: kapı statüsü eşlemesi çakışık — ` +
-          "kapı statüsü Maestro'nun kendi taşıdığı bir statüyle aynı, kanal kapalı",
+          `${(outcome.conflicts ?? []).join("; ")} — bu karar statüyle verilemiyor`,
+      );
+    }
+    /**
+     * ── "KAYITLAR ATLANMASIN" ──────────────────────────────────────────────
+     *
+     * Ticket KAPIDA BEKLİYOR, operatör onu bir yere taşıdı, ve o statünün
+     * kuralda tanımlı bir rolü yok. Eskiden bu sessizce düşüyordu ve operatörün
+     * "taşıdım, hiçbir şey olmadı" sorusunun hiçbir yerde cevabı yoktu.
+     *
+     * Gürültü değil: buraya gelen hareket zaten dar bir elekten geçti — koşu
+     * kapıda, hareket kapı açıldıktan sonra, ve aktör bot değil. Kapıda
+     * beklemeyen ticket'lar bu fonksiyona hiç girmiyor.
+     *
+     * Kuralın TANIDIĞI noktalar satıra yazılıyor: operatör farkı bir bakışta
+     * görsün diye. Boş liste "o karar bu kuralda hiç tanımlı değil" demek ve
+     * öyle yazılıyor — boş bir tırnak, cevabı bulunmuş gibi görünürdü.
+     */
+    if (outcome.reason === "not_a_gate_status") {
+      const known = outcome.known ?? { approve: [], return: [] };
+      const say = (names: readonly string[]): string =>
+        names.length === 0 ? "tanımsız" : names.join(", ");
+      log(
+        `[yoklama] ${ticket}: '${status.trim()}' statüsüne taşındı — bu kuralda tanımlı bir rol ` +
+          `değil, yok sayıldı (onay: ${say(known.approve)} · geri gönderme: ${say(known.return)})`,
+      );
+    }
+    /**
+     * Onay statüsüne taşındı ama bu kanal onayı taşıyamıyor. Bugün yoklama
+     * kanalı `canApprove: true` geçiyor (changelog aktörü veriyor), yani bu dal
+     * ulaşılmaz — ama `canApprove` bir gün `false` dönerse bu sessizce bir
+     * onayın yutulması demek olurdu, ve o tam olarak operatörün yasakladığı şey.
+     */
+    if (outcome.reason === "approval_needs_identity") {
+      log(
+        `[yoklama] ${ticket}: '${status.trim()}' onay statüsü — ama bu kanalda karar verenin ` +
+          "kimliği okunamıyor, onay taşınamadı. Ticket'a \"/approve\" yazın.",
       );
     }
     return;

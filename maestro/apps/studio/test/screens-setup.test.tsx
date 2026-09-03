@@ -1611,59 +1611,77 @@ describe("kurulum sihirbazı — kapı kararının statüyle verilmesi", () => {
   }
 
   /**
-   * BU DOSYANIN EN ÖNEMLİ TESTİ. Alanlar "Ticket'ın Jira durumunu da
-   * değiştirsin" anahtarı KAPALIYKEN de görünmeli: Dinleme ekranında tam
-   * olarak bu kısır döngü yaşandı (eşleme boş → anahtar kapalı → alanlar
-   * çizilmiyor → eşleme boş kalıyor).
+   * ── BU DOSYANIN EN ÖNEMLİ TESTİ, VE SORDUĞU SORU DEĞİŞTİ ────────────────
+   *
+   * Eskiden "iki kapı alanı anahtar kapalıyken de GÖRÜNÜYOR mu" diye
+   * soruyordu. Alanlar görünür yapıldı, ve operatör bu kez şunu söyledi:
+   * "kapı onayı ÇAKIŞIK yazdı… şu dinleme ayarları çok karmaşık oldu."
+   *
+   * Kök sebep alanların görünürlüğü değil, VAR OLMALARIYDI: operatörden aynı
+   * hattı ikinci kez tarif etmelerini istiyorlardı, ve üstelik doğru
+   * doldurulmuş bir hat çakışma koruması yüzünden reddediliyordu.
+   *
+   * Artık soru YOK, CEVAP var: sihirbaz beş alanı soruyor, kapının iki kenarını
+   * onlardan türetip geri söylüyor.
    */
-  it("iki alanı da anahtar KAPALIYKEN gösterir — kısır döngü yok", async () => {
+  it("kapı alanlarını SORMUYOR — kenarları beş alandan türetip gösteriyor", async () => {
     const { fetchImpl } = stubFetch(statusRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
     await reachStatusStep();
 
-    // Yazma tarafı gizli (opt-in), okuma tarafı GÖRÜNÜR.
-    expect(screen.queryByLabelText("İş başladığında")).toBeNull();
-    expect(screen.getByLabelText("Buraya taşınırsa: onaylandı")).toBeTruthy();
-    expect(screen.getByLabelText("Buraya taşınırsa: analize geri gönder")).toBeTruthy();
+    // Ayrı kutular ARTIK YOK.
+    expect(screen.queryByLabelText("Buraya taşınırsa: onaylandı")).toBeNull();
+    expect(screen.queryByLabelText("Buraya taşınırsa: analize geri gönder")).toBeNull();
+
+    // Hattı çiz, kenarların türetildiğini gör.
+    await userEvent.click(screen.getByLabelText(/Jira durumunu da değiştir/));
+    await userEvent.type(screen.getByLabelText("İş başladığında"), "analiz");
+    await userEvent.type(screen.getByLabelText("İş bittiğinde"), "development");
+
+    expect(screen.getByText(/development durumuna taşımak/)).toBeTruthy();
+    expect(screen.getByText(/analiz durumuna taşımak/)).toBeTruthy();
   });
 
-  it("boşken UYARIYOR — kapının yalnız yorumla kapanacağını söylüyor", async () => {
+  it("hiçbir kenar türetilemiyorsa UYARIYOR — kapı yalnız yorumla kapanır", async () => {
     const { fetchImpl } = stubFetch(statusRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
     await reachStatusStep();
 
-    expect(screen.getByText(/yalnız \/approve ve \/reject yorumlarıyla çalışır/)).toBeTruthy();
+    expect(screen.getByText(/Kapının iki kenarı da BOŞ/)).toBeTruthy();
   });
 
   /**
-   * Anahtar KAPALIYKEN bile kaydedilir: yorum-yalnız kipte kalıp kapıyı
-   * statüyle kapatmak tutarlı bir kurulum, ve `buildStatusMap` artık bunu
-   * yazıyor. Eskiden `if (!enabled) return null` her şeyi yutuyordu.
+   * ── OPERATÖRÜN HATTI, SİHİRBAZDAN UÇTAN UCA ────────────────────────────
+   *
+   * Beş alan dolduruluyor, ayrı bir kapı alanı GİRİLMİYOR, ve kaydedilen kural
+   * yalnız o beş alanı taşıyor. Özet de kapının ne yapacağını söylüyor.
    */
-  it("anahtar KAPALIYKEN bile kapı statülerini kaydeder", async () => {
+  it("beş alanlık hattı kaydeder ve özette kapının ne yapacağını söyler", async () => {
     const { fetchImpl, calls } = stubFetch(statusRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
     await reachStatusStep();
 
-    await userEvent.type(screen.getByLabelText("Buraya taşınırsa: onaylandı"), "Onaylandı");
-    await userEvent.type(
-      screen.getByLabelText("Buraya taşınırsa: analize geri gönder"),
-      "Analiz",
-    );
+    await userEvent.click(screen.getByLabelText(/Jira durumunu da değiştir/));
+    await userEvent.type(screen.getByLabelText("İş başladığında"), "analiz");
+    await userEvent.type(screen.getByLabelText("Bilgi eksik olduğunda"), "todo");
+    await userEvent.type(screen.getByLabelText("Analiz onaya çıktığında"), "analysisapproval");
+    await userEvent.type(screen.getByLabelText("İş bittiğinde"), "development");
     await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 
-    // Özet operatörün İMZALADIĞI şey: kapı kanalı orada da yazıyor.
     await skipIntake();
     await screen.findByText("Özet");
-    expect(screen.getByText(/“Onaylandı” durumuna taşımak onay sayılır/)).toBeTruthy();
-    expect(screen.getByText(/“Analiz” durumuna taşımak analizi baştan yazdırır/)).toBeTruthy();
+    // Operatörün İMZALADIĞI şey: kapının iki kenarı, türetildikleri alan adıyla.
+    expect(screen.getByText(/“development” durumuna taşımak onay sayılır/)).toBeTruthy();
+    expect(screen.getByText(/“analiz” durumuna taşımak analizi baştan yazdırır/)).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
     await waitFor(() => {
-      // Yazma tarafı YOK (anahtar kapalıydı), okuma tarafı VAR.
+      // Ayrı kapı alanı YOK — beş alan hattın tamamını taşıyor.
       expect(ruleBody(calls).statusMap).toEqual({
-        gateApproveStatus: "Onaylandı",
-        gateReturnStatus: "Analiz",
+        onStart: "analiz",
+        onNeedInfo: "todo",
+        onReview: "analysisapproval",
+        onDone: "development",
       });
     });
   });
@@ -1676,8 +1694,11 @@ describe("kurulum sihirbazı — kapı kararının statüyle verilmesi", () => {
     await skipIntake();
     await screen.findByText("Özet");
 
+    // Ve NEDEN boş olduğunu da söylüyor: hangi alanları doldurması gerektiği,
+    // "hayır" cevabının yanında duruyor. Sessizlik sahada arıza oldu; eksik bir
+    // "hayır" da olurdu.
     expect(
-      screen.getByText(/yalnız ticket'a yazılan \/approve ve \/reject yorumlarıyla verilir/),
+      screen.getByText(/"İş bittiğinde" ve "Ret gelince"\/"İş başladığında" alanları boş/),
     ).toBeTruthy();
   });
 });

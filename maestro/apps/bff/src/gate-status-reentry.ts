@@ -40,16 +40,18 @@ import { projectKeyOf } from "./jira-intake.js";
  *     değil, kendi sesidir. Webhook yolunda uygulanır. YOKLAMA yolunda
  *     uygulanamaz (bir ticket okuması onu kimin değiştirdiğini söylemez) ve
  *     orada eksikliği 2 ve 3 taşır — `clarify-reentry` aynı ödünü verdi.
- *  2. **Yön** — hedef statü, kuralın `gateApproveStatus`/`gateReturnStatus`
- *     alanlarından BİRİ olmalı. Maestro'nun kendi taşıdığı statüler
- *     (`onStart`/`onNeedInfo`/`onReview`/`onRejected`/`onDone`) bu ikisiyle
- *     aynı olamaz — {@link gateStatusesOf} bunu ADLANDIRIR ve çakışan bir
- *     eşlemede kanal KAPANIR. Yön katmanının bu kanaldaki hâli budur ve
- *     netleştirmedeki "ticket bot'a döndü" kadar keskindir: operatörün
- *     Maestro'nun asla kendiliğinden taşımayacağı bir statüye taşıması.
+ *  2. **Yön** — hedef statü, kuralın ONAY ya da GERİ GÖNDERME noktası olmalı
+ *     ({@link gateStatusesOf}). Bu noktalar operatörün hattının kendi
+ *     statüleridir ve Maestro'nun taşıdığı statülerle AYNI OLABİLİR — çünkü
+ *     olmaları gerekir: `development` hem "iş bitti"dir hem "onayla", `analiz`
+ *     hem "iş burada yapılır"dır hem "buraya geri gönder". Tek istisna
+ *     `onReview`: kapı ORADA açılıyor, dolayısıyla oradan bir karar okunamaz.
  *  3. **Zaman** (`gateOpenedSince`) — olay, kapı AÇILDIKTAN sonra alınmış
- *     olmalı. Damga `openGate`'ten sonra atılıyor (`gate-loop.ts`), dolayısıyla
- *     `onReview` taşımasının ve kapı yorumunun yankısı eşiğin gerisinde kalır.
+ *     olmalı, ve bu katman ölçüldüğünde tek başına belirleyici çıktı: Maestro'nun
+ *     beş taşımasından DÖRDÜ (`onStart`/`onNeedInfo`/`onRejected`/`onDone`)
+ *     damga BOŞKEN yapılıyor, yani `not_at_gate` ile daha ilk kontrolde
+ *     eleniyorlar. Yalnız `onReview` damganın hemen öncesinde ve onu 2. katman
+ *     kesiyor. Ayrıntılı ölçüm {@link gateStatusesOf} notunda.
  *
  * ── BAĞLAM ────────────────────────────────────────────────────────────────
  * Uyandırma `gateDecision` SİNYALİ ile, yeni bir `runIntake` ile değil: aynı
@@ -67,7 +69,23 @@ export type GateStatusReentry =
       /** `decideGate`'in cevabı — kapı gerçekten kapandı mı, yoksa reddedildi mi. */
       result: GateResult;
     }
-  | { kind: "skipped"; reason: GateStatusSkipReason };
+  | {
+      kind: "skipped";
+      reason: GateStatusSkipReason;
+      /**
+       * Kuralın BİLDİĞİ noktalar — yalnız `not_a_gate_status` ve
+       * `status_map_conflict` için dolu.
+       *
+       * "Ticket X'e taşındı, bu kuralda tanımlı bir rol değil" cümlesi tek
+       * başına operatöre ne yapması gerektiğini SÖYLEMİYOR. Kuralın hangi
+       * statüleri tanıdığını yanına yazmak, o cümleyi teşhisten talimata
+       * çeviriyor: "…tanınan noktalar: onay='Development',
+       * geri='Analiz'" — operatör farkı bir bakışta görür.
+       */
+      known?: { approve: readonly string[]; return: readonly string[] };
+      /** Eşlemedeki çakışmalar — `status_map_conflict` için dolu. */
+      conflicts?: readonly string[];
+    };
 
 export type GateStatusSkipReason =
   /** Issue olayı değil, ya da ticket anahtarı / statü yok. */
@@ -79,11 +97,20 @@ export type GateStatusSkipReason =
   /** Bu projede/ticket'ta kapı statüsü yapılandıran bir kural yok. */
   | "no_gate_statuses"
   /**
-   * Eşleme ÇAKIŞIK: kapı statüsü, Maestro'nun kendi taşıdığı bir statüyle aynı.
-   * Kanal bu kural için KAPALI — bkz. {@link gateStatusesOf}.
+   * Eşleme ÇAKIŞIK: kapı statüsü `onReview` ile aynı, ya da iki kural aynı adı
+   * zıt kararlara bağlamış. Kanal o karar için KAPALI — bkz.
+   * {@link gateStatusesOf}.
    */
   | "status_map_conflict"
-  /** Ticket'ın yeni statüsü ne onay ne geri gönderme statüsü — sıradan bir hareket. */
+  /**
+   * Ticket'ın yeni statüsü ne onay ne geri gönderme noktası — kuralda TANIMLI
+   * BİR ROLÜ YOK.
+   *
+   * Sessizce düşmez: çağıran bunu, kuralın bildiği noktalarla birlikte
+   * ({@link GateStatusReentry} `known`) loglar. Operatörün "kayıtlar
+   * atlanmasın" kuralının bu kanaldaki karşılığı — bir statü hareketi geldiyse
+   * ve hiçbir şey olmadıysa, NEDEN olmadığı deftere yazılmalı.
+   */
   | "not_a_gate_status"
   /** Olayı bot'un kendisi itti: kendi hareketinin yankısı. */
   | "bot_echo"
@@ -96,10 +123,12 @@ export type GateStatusSkipReason =
   | "approval_needs_identity";
 
 /**
- * Kuralın kapı statüleri, ÇAKIŞMA ELENDİKTEN sonra.
+ * Kuralın kapı noktaları — geri düşüşler uygulanmış, `onReview` çakışması
+ * elenmiş.
  *
- * `null` alanlar "bu kural bu kararı statüyle kabul etmiyor" demek — ya hiç
- * yapılandırılmamış, ya da çakıştığı için düşürülmüş.
+ * `null` alanlar "bu kural bu kararı statüyle kabul etmiyor" demek: ne açık bir
+ * kapı alanı var, ne de geri düşülecek bir yazma noktası — ya da bulunan değer
+ * `onReview` ile çakıştığı için düşürülmüş.
  */
 export interface GateStatuses {
   approve: string | null;
@@ -133,48 +162,104 @@ function sameStatus(left: string | undefined, right: string | undefined): boolea
 }
 
 /**
- * BİR KURALIN KAPI STATÜLERİ, ÇAKIŞMA KONTROLÜYLE.
+ * BİR KURALIN KAPI STATÜLERİ — BEŞ ALANLIK TEK HAT MODELİ.
  *
- * ── Neden çakışma kontrolü var ────────────────────────────────────────────
- * Eşlemenin iki yönü aynı belgede duruyor: beş alan Maestro'nun ticket'ı
- * NEREYE taşıdığını, iki alan operatörün taşımasının NE ANLAMA geldiğini
- * söylüyor. Operatör aynı statü adını iki yöne birden yazarsa — örneğin
- * `onRejected: "Analiz"` ve `gateReturnStatus: "Analiz"` — Maestro'nun kendi
- * taşıması, kendi kararı olarak geri okunurdu.
+ * ── ÖNCEKİ MODEL VE NEDEN YANLIŞTI ───────────────────────────────────────
+ * Bu fonksiyon eskiden YEDİ alan okuyordu (beş yazma + iki kapı) ve kapı
+ * alanlarının beş yazma noktasından HERHANGİ BİRİYLE çakışmasını yasaklıyordu:
+ * çakışan alan DÜŞÜYORDU. Varsayım şuydu — aynı statü hem Maestro'nun hedefi
+ * hem operatörün karar sinyali olamaz.
  *
- * Zaman katmanı (`gateOpenedSince`) bunu çoğu durumda yakalar: Maestro kendi
- * taşımasını kapı KAPANDIKTAN sonra yapar ve damga o an temizlenir. Ama buna
- * güvenmek, korumayı bir yarış koşusunun sonucuna bağlamak olurdu — ve bu
- * yanlış giderse bedeli kendi kendini onaylayan bir kapıdır.
+ * Sahada bu varsayım YANLIŞ çıktı. Operatörün akışı düz bir hat:
  *
- * ── Neden 400 değil, sessiz düşürme değil, ADLANDIRILMIŞ düşürme ──────────
- * Yazma anında 400 vermek düşünüldü ve reddedildi: eşlemeyi kabul eden İKİ
- * yüzey var (dinleme kuralı ekranı ve kurulum sihirbazı), ve elle SQL'le
- * yazılmış bir satır ikisinden de geçmez. Okuma tarafı kendini korumak
- * zorunda. Sessizce düşürmek ise operatörün yazdığı bir ayarın hiç
- * çalışmaması demek olurdu — 0024'ün "çalışır ama GÖRÜNÜR" dersinin tersi.
+ *     todo → analiz → analysisapproval → development
+ *      ↑       ↑            │
+ *      │       └────────────┘  (geri gönderme)
+ *      └── (intake eksik bulursa)
  *
- * Seçilen: alan DÜŞER (fail-closed, kanal o karar için kapanır) ve çakışma
- * ADLANDIRILIR — `conflicts` çağırana döner, panel ve `config-health` okur.
+ * Bu hatta aynı statü zorunlu olarak iki rol taşır ve TAŞIMALIDIR:
+ *   · `analiz`           = onStart  VE  "buraya geri gönder"
+ *   · `development`      = onDone   VE  "buraya taşıyarak onayla"
+ *
+ * Eski koruma tam da bu DOĞRU yapılandırmayı reddediyordu — operatörün
+ * gördüğü "çakışık" uyarısı buydu ve kapının statü kanalı hiç açılmıyordu.
+ *
+ * ── ÖLÇÜM: YANKI RİSKİ GERÇEKTE NEREDE ───────────────────────────────────
+ * Korumanın gerekçesi "Maestro'nun kendi taşıması kendi kararı olarak geri
+ * okunur"du. Maestro'nun BEŞ taşımasının her biri, kapı damgası
+ * (`gateOpenedSince`) açısından ölçüldü:
+ *
+ *   · `onStart`     — adım 3ö öncesi. Kapı henüz AÇILMADI, damga yok.
+ *   · `onNeedInfo`  — adım 2b. Kapı henüz açılmadı, damga yok.
+ *   · `onReview`    — kapı setine girerken, ve damga BUNDAN SONRA atılıyor
+ *                     (`gate-loop.ts`: `openGate` → `state.gateOpenedSince =
+ *                     workflowNow()`). Yani bu taşımanın yankısı eşiğin
+ *                     GERİSİNDE kalır — ama kıl payı, ve tek gerçek risk bu.
+ *   · `onRejected`  — YALNIZ `reject` dalında, ve o dal kapı KAPANDIKTAN
+ *                     sonra çalışıyor (`gate-loop.ts` kapanışta
+ *                     `gateOpenedSince = null` yapıyor). `return_analysis`
+ *                     dalı `onRejected`'a HİÇ TAŞIMIYOR — bu bilinçli
+ *                     (`ticket-workflow.ts`). Damga yok, yankı imkânsız.
+ *   · `onDone`      — akışın sonu, bütün kapılar kapalı. Damga yok.
+ *
+ * Sonuç: BEŞ taşımanın DÖRDÜ, kapı damgası boşken yapılıyor. Zaman katmanı
+ * (`gateOpenedSince`) onları teknik olarak imkânsız kılıyor — çünkü damga yoksa
+ * `tryGateStatusDecision` daha ilk kontrolde `not_at_gate` diyerek çıkıyor.
+ * Çakışma yasağı bu dördü için ÖLÇÜLEBİLİR HİÇBİR ŞEY korumuyordu; yalnızca
+ * operatörün doğru yapılandırmasını reddediyordu.
+ *
+ * ── KALAN TEK RİSK: `onReview` ───────────────────────────────────────────
+ * `onReview` taşıması damganın atılmasından HEMEN ÖNCE oluyor. Aynı iş
+ * parçacığında, aynı sırada — yani mantıken yankı eşiğin gerisinde. Ama iki
+ * ödün buna güvenmeyi kabul edilemez kılıyor:
+ *
+ *   1. Sıralama bir YARIŞA bağlı: Jira'nın webhook'u ile damganın Temporal'a
+ *      yazılması arasındaki milisaniyeler. Yoklama yolunda changelog kaydının
+ *      damgası kullanılıyor ve saat kaymaları (site saati vs. motor saati)
+ *      onu eşiğin ÖNÜNE geçirebilir.
+ *   2. Bedeli asimetrik: yanlış giderse kapı KENDİ AÇILIŞIYLA KENDİNİ
+ *      KAPATIR — imzasız bir onay, SoD'nin (M32) engellemek için var olduğu
+ *      şeyin ta kendisi.
+ *
+ * O yüzden `onReview` çakışması TEK BAŞINA yasak kalıyor, ve yasak dar: kapı
+ * kararı `onReview`den okunamaz. Zaten okunmasına gerek de yok — kapı ORADA
+ * açılıyor, yani "ticket kapının beklediği yerde" bir karar değil, kapının
+ * kendi hâli.
+ *
+ * ── YENİ MODEL: BEŞ ALAN, ÇİFT YÖNLÜ ─────────────────────────────────────
+ * `gateApproveStatus` / `gateReturnStatus` ARTIK ZORUNLU DEĞİL:
+ *
+ *   · onay statüsü      = `gateApproveStatus` ?? `onDone`
+ *   · geri gönderme     = `gateReturnStatus`  ?? `onRejected` ?? `onStart`
+ *
+ * `onRejected` yoksa `onStart`a düşmesi, operatörün hattının kendisinden
+ * geliyor: geri gönderme ticket'ı işin YAPILDIĞI yere (`analiz`) döndürür, ve
+ * o yer `onStart`tır. `onRejected` boş bırakılmış bir kurulumda — ki Maestro
+ * `return_analysis`te oraya zaten taşımıyor — hattın geri kenarı `onStart`
+ * olur ve kanal çalışır. Yoksa operatör beş kutuyu doldurup kapının hâlâ
+ * sağır olduğunu görürdü.
+ *
+ * ── GERİYE DÖNÜK UYUM ────────────────────────────────────────────────────
+ * İki alan KALDIRILMADI, İSTEĞE BAĞLI hâle geldi. Dolu ise KAZANIR (operatör
+ * onları bilerek yazmış olabilir ve hattından farklı bir statü seçmiş
+ * olabilir); boş ise yeni geri düşüş devreye girer. Migration YOK — kolon
+ * `statusMapJson`, JSON, ve şeması değişmedi.
  */
 export function gateStatusesOf(map: StatusMap | null | undefined): GateStatuses {
   if (map == null) return { approve: null, return: null, conflicts: [] };
   const conflicts: string[] = [];
-  /** Maestro'nun KENDİ taşıdığı noktalar — bunlarla çakışan bir kapı statüsü düşer. */
-  const written: readonly (readonly [string, string | undefined])[] = [
-    ["onStart", map.onStart],
-    ["onNeedInfo", map.onNeedInfo],
-    ["onReview", map.onReview],
-    ["onRejected", map.onRejected],
-    ["onDone", map.onDone],
-  ];
 
-  const keep = (field: "gateApproveStatus" | "gateReturnStatus"): string | null => {
-    const value = map[field];
+  /**
+   * Bir adayı `onReview` çakışmasına karşı süz.
+   *
+   * `field` yalnız RAPOR için: geri düşüşle gelen bir değerin çakışması,
+   * operatöre "yazdığın alan düştü" diye değil, "bu iki kutu aynı olamaz" diye
+   * anlatılmalı.
+   */
+  const vet = (value: string | undefined, field: string): string | null => {
     if (value === undefined || value.trim() === "") return null;
-    const clash = written.find(([, target]) => sameStatus(value, target));
-    if (clash !== undefined) {
-      conflicts.push(`${field}=${value.trim()} ↔ ${clash[0]}`);
+    if (sameStatus(value, map.onReview)) {
+      conflicts.push(`${field}=${value.trim()} ↔ onReview`);
       return null;
     }
     return value.trim();
@@ -182,8 +267,18 @@ export function gateStatusesOf(map: StatusMap | null | undefined): GateStatuses 
 
   // İki çağrı da yapılır, kısa devre YOK: biri çakışsa bile diğeri geçerli
   // olabilir, ve her iki çakışma da rapora girmeli.
-  const approve = keep("gateApproveStatus");
-  const returned = keep("gateReturnStatus");
+  const approve = vet(
+    map.gateApproveStatus ?? map.onDone,
+    map.gateApproveStatus === undefined ? "onDone" : "gateApproveStatus",
+  );
+  const returned = vet(
+    map.gateReturnStatus ?? map.onRejected ?? map.onStart,
+    map.gateReturnStatus !== undefined
+      ? "gateReturnStatus"
+      : map.onRejected !== undefined
+        ? "onRejected"
+        : "onStart",
+  );
   return { approve, return: returned, conflicts };
 }
 
@@ -205,12 +300,34 @@ export function gateStatusesOf(map: StatusMap | null | undefined): GateStatuses 
  * Denetim izi bundan zarar görmez: kararı hangi statünün ürettiği
  * `decideGate`'in `reason` alanında yazılıdır.
  *
+ * ── HER ŞEY KURAL BAZINDA, VE BU FONKSİYON BUNUN KANITI ──────────────────
+ * Kapı noktaları `ListeningRuleRecord.statusMap`ten okunuyor — kuralın
+ * KENDİSİNDEN. Global bir statü haritası, bir "kurulum varsayılanı" ya da
+ * koda gömülü bir statü adı YOK ve olmamalı: bir bankada OTYT projesi
+ * `analiz / analysisapproval / development` yürürken yanındaki proje
+ * `İnceleme / Onay / Geliştirme` yürütebilir, ve ikisi aynı Maestro
+ * kurulumunda yaşar. Aynı ilke `analystVariantId` / `engineerVariantId` /
+ * `flowType` / `allowedStatuses` için de geçerli — hepsi aynı kayıtta.
+ *
+ * Geri düşüşler (`gateApproveStatus` yoksa `onDone`, …) bu ilkeyi BOZMAZ:
+ * düşülen değer de aynı kuralın kendi haritasından geliyor, başka bir kuraldan
+ * ya da bir varsayılandan değil.
+ *
  * Birden çok kural eşleşirse hepsinin statüleri TOPLANIR. Bu bilinçli olarak
  * `flow-decision`'ın "en dar kural kazanır" kuralından FARKLI: orada soru
  * "hangi akış koşacak" (tek bir cevabı olmalı), burada "operatör bu hareketle
  * ne demek istedi" (bir statü, kuralların herhangi birinde tanımlıysa anlamı
  * vardır). İki kural aynı kararı farklı statülere bağlayabilir ("Geliştirme"
  * ve "Development" ikisi de onay) ve ikisi de geçerlidir.
+ *
+ * ── VE TOPLAMA, GERİ DÜŞÜŞLE BİRLİKTE DAHA SIK ÇAKIŞMA ÜRETEBİLİR ────────
+ * Eskiden bir kuralın kapı noktası olması için operatörün o iki alanı AÇIKÇA
+ * doldurması gerekiyordu; artık beş alanlı bir harita da noktalar üretiyor.
+ * Yani aynı projede iki kural — biri `onDone: "Tamam"`, diğeri
+ * `onStart: "Tamam"` — "Tamam"ı zıt kararlara bağlayabilir. Aşağıdaki
+ * çelişki elemesi bunu zaten yakalıyor ve fail-closed düşürüyor; geri düşüş o
+ * elemeyi atlamıyor, ona DAHA ÇOK iş veriyor, ve bu doğru olan: belirsiz bir
+ * onay, olmayan bir onaydan tehlikelidir.
  */
 export interface ProjectGateStatuses {
   /** Onay anlamına gelen statü adları, küçük harfe indirgenmiş. */
@@ -367,14 +484,31 @@ export async function tryGateStatusDecision(
   const statuses = gateStatusesForRules(rules, projectKeyOf(observation.ticket));
   const verdict = decideFromStatus(statuses, observation.status);
   if (verdict === null) {
-    // Çakışma VAR ama karar yok = eşleme bozuk; çakışma yok ve karar yok =
-    // sıradan bir statü hareketi. İkisi ayrı raporlanır: birincisi operatörün
-    // düzeltmesi gereken bir şey, ikincisi gürültü. Hiçbir kapı statüsü hiç
-    // yapılandırılmamışsa bu kanal bu projede kapalıdır, ve o da ayrı bir
-    // cevap — "yanlış yazılmış" ile "hiç istenmemiş" karıştırılmamalı.
-    if (statuses.conflicts.length > 0) return { kind: "skipped", reason: "status_map_conflict" };
+    /**
+     * ── ÜÇ AYRI CEVAP, VE ÜÇÜ DE SESSİZ DEĞİL ──────────────────────────────
+     *
+     * Çakışma VAR ama karar yok = eşleme bozuk; çakışma yok ve karar yok =
+     * kuralda tanımlı bir rolü olmayan bir statü hareketi; hiçbir nokta
+     * yapılandırılmamış = kanal bu projede kapalı. Üçü ayrı raporlanır çünkü
+     * operatörün yapması gereken üçünde farklı: eşlemeyi düzelt / bu statünün
+     * bir rolü olsun mu diye karar ver / kanalı hiç açmamışsın.
+     *
+     * `known` İKİSİNE DE ekleniyor — kuralın hangi noktaları tanıdığı,
+     * "hiçbir şey olmadı" cümlesini teşhisten talimata çeviren şey. Kanal hiç
+     * yapılandırılmamışsa listelenecek bir şey de yok, o yüzden orada
+     * eklenmiyor.
+     */
+    const known = {
+      approve: [...statuses.approve],
+      return: [...statuses.return],
+    };
+    if (statuses.conflicts.length > 0) {
+      return { kind: "skipped", reason: "status_map_conflict", known, conflicts: statuses.conflicts };
+    }
     const configured = statuses.approve.size > 0 || statuses.return.size > 0;
-    return { kind: "skipped", reason: configured ? "not_a_gate_status" : "no_gate_statuses" };
+    return configured
+      ? { kind: "skipped", reason: "not_a_gate_status", known }
+      : { kind: "skipped", reason: "no_gate_statuses" };
   }
 
   /**

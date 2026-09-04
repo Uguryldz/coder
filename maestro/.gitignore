@@ -11,3 +11,6 @@ coverage/
 .pilot-settings.json
 # Kalıcı analiz/kod çalışma alanı (ticket-başına izole)
 .sandbox/
+
+# Bankanın örnek PDD dosyaları: kişi adları içerir, depoya girmez (sablon-uret.py yerelden okur)
+plan/*.docx

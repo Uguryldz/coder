@@ -6,6 +6,7 @@ import {
 import type { GenerateObjectRequest, LlmCallLog, TicketSnapshot } from "@maestro/contracts";
 import type { AgentSessionResult, LlmOutcome, LlmPort } from "@maestro/ports";
 import { describe, expect, it } from "vitest";
+import { ENGINE_SKELETON_KEYS } from "../../../packages/db/src/template-defaults.js";
 import type { z } from "zod";
 import {
   AnalysisHaltedError,
@@ -292,6 +293,66 @@ describe("applyTemplateOverlay — Studio şablonunun güvenli overlay'i (M108)"
     expect(template.sections.map((s) => s.key)).toEqual(
       DEFAULT_ANALYSIS_TEMPLATE.sections.map((s) => s.key),
     );
+  });
+
+  it("hiçbir key eşleşmiyorsa bölümler SIRAYLA eşlenir — Studio'nun slug anahtarları motorun camelCase anahtarlarını üretemez", () => {
+    // The designer keys every section from its Turkish title (`amac_ve_is_degeri`),
+    // never "purpose". Before the positional fallback such an overlay changed
+    // nothing, silently, while the Template screen promised it did.
+    const { template, unmatched, positional } = applyTemplateOverlay({
+      sections: [
+        { key: "amac_ve_is_degeri", title: "Amaç ve iş değeri", aiInstruction: "Tanımı ve faydayı yaz." },
+        { key: "kapsam_dahil_haric", title: "Kapsam (dahil / hariç)" },
+        { key: "etki_analizi" }, // no override fields → engine section stays as is
+      ],
+    });
+    expect(positional).toBe(true);
+    expect(unmatched).toEqual([]);
+    const [purpose, scope, impact] = template.sections;
+    const [basePurpose, baseScope, baseImpact] = DEFAULT_ANALYSIS_TEMPLATE.sections;
+    expect(purpose!.key).toBe(basePurpose!.key); // engine key kept — schema/contract binding intact
+    expect(purpose!.title).toBe("Amaç ve iş değeri");
+    expect(purpose!.aiInstruction).toBe("Tanımı ve faydayı yaz.");
+    expect(scope!.key).toBe(baseScope!.key);
+    expect(scope!.title).toBe("Kapsam (dahil / hariç)");
+    expect(scope!.aiInstruction).toBe(baseScope!.aiInstruction);
+    expect(impact).toBe(baseImpact); // nothing to overlay → same object
+    expect(template.sections.slice(3)).toEqual(DEFAULT_ANALYSIS_TEMPLATE.sections.slice(3));
+  });
+
+  it("sıralı eşlemede iskeletten FAZLA bölümler unmatched'a düşer, bölüm eklenmez", () => {
+    const overlay = {
+      sections: [
+        ...DEFAULT_ANALYSIS_TEMPLATE.sections.map((_, i) => ({ key: `studio_${String(i)}`, title: `S${String(i)}` })),
+        { key: "surecteki_kisiler", title: "Süreçteki kişiler" },
+      ],
+    };
+    const { template, unmatched, positional } = applyTemplateOverlay(overlay);
+    expect(positional).toBe(true);
+    expect(unmatched).toEqual(["surecteki_kisiler"]);
+    expect(template.sections).toHaveLength(DEFAULT_ANALYSIS_TEMPLATE.sections.length);
+    expect(template.sections.map((s) => s.title)).toEqual(
+      DEFAULT_ANALYSIS_TEMPLATE.sections.map((_, i) => `S${String(i)}`),
+    );
+  });
+
+  it("tek bir key bile eşleşirse eşleme KEY ile kalır — sıralı okuma devreye girmez", () => {
+    const { template, positional, unmatched } = applyTemplateOverlay({
+      sections: [
+        { key: "baska", title: "Başka" },
+        { key: "purpose", title: "Amaç (Studio)" },
+      ],
+    });
+    expect(positional).toBe(false);
+    expect(unmatched).toEqual(["baska"]);
+    expect(template.sections[0]!.title).toBe("Amaç (Studio)");
+    expect(template.sections[1]).toBe(DEFAULT_ANALYSIS_TEMPLATE.sections[1]);
+  });
+
+  it("Studio varsayılan şablonunun iskelet listesi motorun bölüm sırasıyla birebir aynı — sıralı eşlemenin dayanağı", () => {
+    // packages/db cannot depend on agent-roles, so the skeleton key list lives
+    // there as data and is pinned here against the engine JSON.
+    expect(DEFAULT_ANALYSIS_TEMPLATE.sections.map((s) => s.key)).toEqual([...ENGINE_SKELETON_KEYS]);
   });
 
   it("null overlay → DEFAULT şablon birebir (aynı referans)", () => {

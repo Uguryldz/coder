@@ -77,6 +77,8 @@ export interface OverlayedAnalysisTemplate {
    * engine's structure did not grow a slot for it.
    */
   unmatched: string[];
+  /** True when sections were matched by POSITION — no Studio key matched an engine key. */
+  positional: boolean;
 }
 
 /**
@@ -93,15 +95,28 @@ export function applyTemplateOverlay(
   base: AnalysisTemplate = DEFAULT_ANALYSIS_TEMPLATE,
 ): OverlayedAnalysisTemplate {
   if (overlay === null || overlay.sections.length === 0) {
-    return { template: base, unmatched: [] };
+    return { template: base, unmatched: [], positional: false };
   }
 
+  // Match by KEY first. The Studio designer, however, derives every key from
+  // its Turkish title (`slugify` in the BFF) and can never produce the
+  // engine's camelCase keys ("purpose", "impactMatrix"); with key matching
+  // alone the designer changed nothing while its screen said the opposite.
+  // So when NO key matches, sections are matched by POSITION: the i-th Studio
+  // section overlays the i-th engine section. The designer's default template
+  // mirrors the engine skeleton in that order (`packages/db/src/template-defaults.ts`),
+  // which makes the positional reading faithful rather than a guess.
   const byKey = new Map(overlay.sections.map((s) => [s.key, s]));
-  const sections = base.sections.map((section) => {
-    const over = byKey.get(section.key);
+  const positional = !base.sections.some((section) => byKey.has(section.key));
+  const sections = base.sections.map((section, index) => {
+    const over = positional ? overlay.sections[index] : byKey.get(section.key);
     if (over === undefined) return section;
     const title = over.title?.trim();
     const aiInstruction = over.aiInstruction?.trim();
+    // Nothing to overlay → the engine's own object, untouched (no rebuild).
+    if ((title === undefined || title === "") && (aiInstruction === undefined || aiInstruction === "")) {
+      return section;
+    }
     return {
       ...section,
       ...(title !== undefined && title !== "" ? { title } : {}),
@@ -110,9 +125,13 @@ export function applyTemplateOverlay(
   });
 
   const known = new Set(base.sections.map((s) => s.key));
-  const unmatched = [...new Set(overlay.sections.map((s) => s.key).filter((key) => !known.has(key)))];
+  const unmatched = positional
+    ? // Beyond the skeleton's length there is nowhere to land: those are the
+      // sections the designer added and the engine cannot grow.
+      overlay.sections.slice(base.sections.length).map((s) => s.key)
+    : [...new Set(overlay.sections.map((s) => s.key).filter((key) => !known.has(key)))];
 
-  return { template: { ...base, sections }, unmatched };
+  return { template: { ...base, sections }, unmatched, positional };
 }
 
 /**

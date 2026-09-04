@@ -11,6 +11,7 @@ import {
   InMemoryGateBoard,
   InMemoryJournalReader,
   InMemoryKillSwitchStore,
+  InMemoryGuidanceStore,
   InMemoryKnowledgeIndex,
   InMemoryOnboardingReader,
   InMemoryParamStore,
@@ -187,6 +188,10 @@ export async function buildDemoStack(options: DemoStackOptions = {}): Promise<De
     settings: new StaticSettingsReader(DEMO_CONNECTIONS, DEMO_NOTIFY_DRIVERS),
     routing: new StaticRoutingReader(DEMO_ROUTING_PROJECTS, DEMO_ROUTING_RULES),
     killSwitch: new InMemoryKillSwitchStore(),
+    // The "öğren" library (Öğrenme kaynakları): optional on a real install,
+    // wired here so the screen is exercisable end to end — add, toggle, upload,
+    // delete — instead of showing the "not wired" refusal.
+    guidance: new InMemoryGuidanceStore(() => clock.now()),
     read,
     // The agent-configuration screens (M38/M43/M78). One catalogue instance
     // answers both the read and the write side, so a variant created in the

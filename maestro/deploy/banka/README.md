@@ -425,6 +425,29 @@ yenileyin: `docker compose up -d --force-recreate bff worker`
 
 ---
 
+
+### 5.7 Analiz şablonu ve kurumsal Word şablonu (PDD düzeni)
+
+Analiz belgesinin **bölümleri** ve **görünümü** iki ayrı şablondan gelir:
+
+- **Analiz şablonu** (Studio › Analiz şablonu): 9 bölüm — Amaç ve iş değeri, Kapsam (dahil / hariç),
+  Etki analizi, Kabul kriterleri, Ekran ve API değişiklikleri, Test yaklaşımı, Risk ve geri dönüş planı,
+  Kaynaklar, Netleştirilecek açık maddeler. Başlıklar ve AI talimatları bankanın süreç tanım
+  dokümanı (PDD) diliyle yazılmıştır; bölümler motorun sabit iskeletine **sırayla** eşlenir.
+- **Word şablonu** (Studio › Word şablonu): `sablon/HFKB-Analiz-Sablonu.docx` — bankanın kendi PDD
+  dosyasından türetilmiş kapak, künye, içindekiler, üstbilgi/altbilgi ve "Belge Onayı" tablosu;
+  gövdede 9 bölüm yuvası (`{{bolum:1}}` … `{{bolum:9}}`) ve taşan bölümler için `{{govde}}`.
+
+Kurulumdan sonra ikisini tek komutla yayınlayın (Studio yönetici hesabıyla giriş ister):
+
+```bash
+./sablon/analiz-sablonu-yayinla.sh
+```
+
+Word'de belge açılırken "alanlar güncellensin mi?" sorusuna **Evet** deyin: içindekiler o anda
+yenilenir. Şablonu kendi PDD'nizden yeniden üretmek için `sablon/sablon-uret.py` kaynak dosyayı
+`plan/` klasöründen okur; kişi adları ve tarihler üretilen dosyada yer almaz.
+
 ## 6. Sessiz arızalar — belirtiye göre teşhis
 
 ### 6.0 Önce bunu çalıştırın: tek dosyalık tanı raporu

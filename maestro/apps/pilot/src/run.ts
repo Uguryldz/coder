@@ -1117,9 +1117,14 @@ export class PilotRun {
         store.log("warn", `! Studio analiz şablonu okunamadı (varsayılan şablon kullanılacak): ${String(error)}`);
       }
     }
-    const { template, unmatched } = applyTemplateOverlay(overlay);
+    const { template, unmatched, positional } = applyTemplateOverlay(overlay);
     if (overlay !== null) {
-      store.log("info", "📐 analiz şablonu Studio yayınıyla güncellendi (bölüm başlıkları + AI talimatları)");
+      store.log(
+        "info",
+        positional
+          ? "📐 analiz şablonu Studio yayınıyla güncellendi (bölümler iskelete SIRAYLA eşlendi: başlıklar + AI talimatları)"
+          : "📐 analiz şablonu Studio yayınıyla güncellendi (bölüm başlıkları + AI talimatları)",
+      );
     }
     for (const key of unmatched) {
       store.log("warn", `! şablonda eşleşmeyen bölüm: ${key} (motor yapısı sabit — bölüm eklenmedi)`);

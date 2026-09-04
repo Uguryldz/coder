@@ -57,6 +57,14 @@ describe("isCloudModelName", () => {
     expect(isCloudModelName("gpt-4o-mini")).toBe(true);
   });
 
+  it("does not mistake the open-weight gpt-oss family for a cloud model", () => {
+    // Runs on-prem (vLLM/Ollama); the `gpt-` prefix alone must not condemn it.
+    expect(isCloudModelName("gpt-oss-120b")).toBe(false);
+    expect(isCloudModelName("gpt-oss-20b")).toBe(false);
+    expect(isCloudModelName("openai/gpt-oss-120b")).toBe(false);
+    expect(isCloudModelName("GPT-OSS-120B")).toBe(false);
+  });
+
   it("does NOT flag an on-prem model whose name merely contains dots or digits", () => {
     // The false positive that would destroy operator trust: a bank's own vLLM
     // serves names like these, and the audit must leave them alone.

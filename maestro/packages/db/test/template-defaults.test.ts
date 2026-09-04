@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ANALYSIS_TEMPLATE_NAME,
   DEFAULT_ANALYSIS_TEMPLATE_SECTIONS,
+  ENGINE_SKELETON_KEYS,
 } from "../src/template-defaults.js";
 import { seedAnalysisTemplate } from "../src/seed-template.js";
 
@@ -48,13 +49,38 @@ describe("the shipped analysis template", () => {
     expect(DEFAULT_ANALYSIS_TEMPLATE_SECTIONS.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("covers purpose, scope, impact, risk and acceptance", () => {
-    const keys = DEFAULT_ANALYSIS_TEMPLATE_SECTIONS.map((s) => s.key);
-    expect(keys).toContain("amac_ve_gerekce");
-    expect(keys).toContain("kapsam");
-    expect(keys).toContain("etki_analizi");
-    expect(keys).toContain("riskler_ve_onlemler");
-    expect(keys).toContain("test_ve_kabul_kriterleri");
+  it("mirrors the engine skeleton: nine sections, in the engine's order", () => {
+    // The Studio overlay is matched to the engine skeleton BY POSITION
+    // (apps/pilot `applyTemplateOverlay`), so the default must have exactly the
+    // skeleton's sections in its order — section 3 here IS the impact matrix.
+    expect(ENGINE_SKELETON_KEYS).toEqual([
+      "purpose",
+      "scope",
+      "impactMatrix",
+      "acceptanceCriteria",
+      "uiApiChanges",
+      "testApproach",
+      "riskAndRollback",
+      "sources",
+      "openItems",
+    ]);
+    expect(DEFAULT_ANALYSIS_TEMPLATE_SECTIONS).toHaveLength(ENGINE_SKELETON_KEYS.length);
+    const keys = DEFAULT_ANALYSIS_TEMPLATE_SECTIONS.map((section) => section.key);
+    expect(keys).toEqual([
+      "amac_ve_is_degeri",
+      "kapsam_dahil_haric",
+      "etki_analizi",
+      "kabul_kriterleri",
+      "ekran_ve_api_degisiklikleri",
+      "test_yaklasimi",
+      "risk_ve_geri_donus_plani",
+      "kaynaklar",
+      "netlestirilecek_acik_maddeler",
+    ]);
+    // The designer's view of each format follows the engine binding.
+    expect(DEFAULT_ANALYSIS_TEMPLATE_SECTIONS[2]?.format).toBe("impact_matrix");
+    expect(DEFAULT_ANALYSIS_TEMPLATE_SECTIONS[4]?.format).toBe("table");
+    expect(DEFAULT_ANALYSIS_TEMPLATE_SECTIONS[4]?.required).toBe(false);
   });
 
   it("derives every key from its own title", () => {
@@ -89,8 +115,11 @@ describe("the shipped analysis template", () => {
   it("marks the sections a gate depends on as required", () => {
     const required = DEFAULT_ANALYSIS_TEMPLATE_SECTIONS.filter((s) => s.required).map((s) => s.key);
     expect(required).toContain("etki_analizi");
-    expect(required).toContain("riskler_ve_onlemler");
-    expect(required).toContain("test_ve_kabul_kriterleri");
+    expect(required).toContain("risk_ve_geri_donus_plani");
+    expect(required).toContain("kabul_kriterleri");
+    // Screen/API changes are optional by design: an analysis that touches no
+    // surface must not be refused for leaving the table empty.
+    expect(required).not.toContain("ekran_ve_api_degisiklikleri");
   });
 });
 

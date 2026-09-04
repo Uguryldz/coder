@@ -56,10 +56,19 @@ const CLOUD_MODEL_PREFIXES: readonly string[] = [
   "azure/",
 ];
 
+/**
+ * Açık ağırlıklı, kurum içinde (vLLM/Ollama) koşan aileler: ad bir bulut
+ * önekiyle başlasa da bulut DEĞİLDİR. `gpt-oss-120b` bunun sahadaki örneği —
+ * `gpt-` öneki onu bulut sayıp internetsiz bir bankanın tek modelini
+ * "erişilemez" ilan ediyordu.
+ */
+const OPEN_WEIGHT_FAMILIES: readonly string[] = ["gpt-oss", "openai/gpt-oss"];
+
 /** Bir model adı, internetsiz bir kurulumda erişilemeyecek bir bulut adı mı? */
 export function isCloudModelName(model: string | null | undefined): boolean {
   const trimmed = model?.trim().toLowerCase() ?? "";
   if (trimmed === "" || trimmed === MODEL_NOT_SELECTED) return false;
+  if (OPEN_WEIGHT_FAMILIES.some((family) => trimmed.startsWith(family))) return false;
   return CLOUD_MODEL_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
 }
 

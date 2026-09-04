@@ -8,22 +8,30 @@
  * the feature is unfinished. So the installer publishes version 1, exactly the
  * way it seeds the operational parameters, and the bank edits from there.
  *
- * What this is NOT: sample text. Every section below is a question a Turkish
- * bank's change process genuinely asks of an analysis — purpose, scope,
- * impact, risk, acceptance — and the `aiInstruction` on each is a real
- * instruction that goes into the model's prompt. A template filled with
- * "Örnek bölüm 1" would be fabricated data dressed as configuration, and the
- * first analyst to open it would be reading a lie about what the institution
- * requires.
+ * WHAT THE ENGINE DOES WITH IT. The analyst runs the engine's fixed corporate
+ * skeleton (`packages/agent-roles/data/analysis-template.tr.json`, nine
+ * sections with schema/contract bindings). A Studio-published template is an
+ * OVERLAY on that skeleton: it renames sections and rewrites their AI
+ * instructions, never adds or removes one. Studio keys are slugs of the
+ * Turkish titles and can never equal the engine's camelCase keys, so the
+ * overlay is matched BY POSITION (`applyTemplateOverlay` in apps/pilot). That
+ * is why this default has exactly the skeleton's nine sections IN ITS ORDER —
+ * an operator who edits section 3 here edits the engine's impact matrix, as
+ * the screen says.
+ *
+ * The wording follows the bank's own process-definition documents (the PDD
+ * sample under plan/): a "Tanım" paragraph up front, planning and
+ * prerequisites, applications in scope, a step-wise design, and a signed-off
+ * risk/rollback section. The Word template under deploy/banka/sablon carries
+ * the same nine slots, so the generated .docx reads like the bank's own file.
+ *
+ * What this is NOT: sample text. Every `aiInstruction` goes into the model's
+ * prompt verbatim; every `example` is what the designer shows an operator as
+ * the shape expected. Turkish because these strings are document CONTENT, not
+ * UI chrome (M104).
  *
  * It is a STARTING POINT, not a policy: version 1 is append-only like every
- * other version (M83), and a bank that publishes version 2 has simply moved
- * on. Nothing re-seeds over it — see `seedAnalysisTemplate`.
- *
- * The wording is Turkish because the platform's primary locale is Turkish
- * (M104) and these strings are the CONTENT of a document, not UI chrome: they
- * are what the analyst reads and what the model is told, and they are edited
- * in the designer rather than translated in a catalog.
+ * other version (M83). Nothing re-seeds over it — see `seedAnalysisTemplate`.
  */
 
 /** Mirrors `TemplateSection` in apps/bff/src/deps.ts — the wire shape. */
@@ -37,144 +45,204 @@ export interface DefaultTemplateSection {
   example: string;
 }
 
-export const DEFAULT_ANALYSIS_TEMPLATE_NAME = "Standart analiz şablonu v1";
+export const DEFAULT_ANALYSIS_TEMPLATE_NAME = "Kurumsal analiz şablonu (PDD düzeni) v1";
+
+/**
+ * The engine skeleton's keys, in order. Not imported from `@maestro/agent-roles`
+ * (this package must not depend on it); `test/template-defaults.test.ts` pins
+ * the count and the order against this list, and apps/pilot's own tests pin
+ * the list against the engine JSON.
+ */
+export const ENGINE_SKELETON_KEYS: readonly string[] = [
+  "purpose",
+  "scope",
+  "impactMatrix",
+  "acceptanceCriteria",
+  "uiApiChanges",
+  "testApproach",
+  "riskAndRollback",
+  "sources",
+  "openItems",
+];
 
 /**
  * Keys are the slugs `slugify()` derives from the titles, written out here so
  * this file is readable on its own. `test/template-defaults.test.ts` re-derives
  * them with the server's own function, so a title edited without its key is a
  * failing test rather than a template whose generated schema silently drops a
- * section.
+ * section. The `format` is the DESIGNER's view of the section; the engine keeps
+ * its own binding (an impact matrix stays an impact matrix).
  */
 export const DEFAULT_ANALYSIS_TEMPLATE_SECTIONS: readonly DefaultTemplateSection[] = [
   {
-    key: "amac_ve_gerekce",
-    title: "Amaç ve gerekçe",
+    // engine: purpose (free_text)
+    key: "amac_ve_is_degeri",
+    title: "Amaç ve iş değeri",
     description:
-      "Bu değişikliğin neden yapıldığı ve yapılmazsa ne olacağı. İş biriminin talebi teknik bir cümleye çevrilir.",
+      "Sürecin/değişikliğin TANIMI ve neden yapıldığı; iş sonucu cinsinden ölçülebilir fayda. " +
+      "Planlama (ne zaman, hangi sıklıkta) ve otomasyon için asgari ön koşullar da burada.",
     aiInstruction:
-      "Ticket'taki talebi ve varsa bağlı olduğu iş gerekçesini oku. Değişikliğin amacını en fazla üç cümlede, " +
-      "iş sonucu cinsinden yaz (hangi süreç, kim için, hangi ölçülebilir fayda). Talep metninde gerekçe yoksa " +
-      "uydurma: \"Ticket'ta iş gerekçesi belirtilmemiş\" yaz ve gerekçeyi soracak şekilde açık bırak. " +
-      "Teknik çözümü BURADA anlatma; o kapsam bölümünün işi.",
+      "Ticket'ı ve bildiren yanıtlarını oku. Önce \"Tanım\" başlığı altında süreci ya da değişikliği 2-4 cümlede " +
+      "İŞ diliyle anlat (hangi süreç, kim için, hangi uygulamada); teknik terim kullanma. Ardından ölçülebilir " +
+      "bir fayda cümlesi yaz (hedef oran, süre ya da adet) — ticket'ta yoksa uydurma, \"ölçüt belirtilmemiş\" yaz. " +
+      "Sonra \"Planlama\" satırında ne zaman/hangi sıklıkta çalışacağını, \"Ön koşullar\" satırında gereken " +
+      "erişim ve yetkileri (ekran/rapor/uygulama adıyla) tek tek yaz. Teknik çözümü BURADA anlatma.",
     required: true,
     format: "free_text",
     example:
-      "Kredi başvuru ekranında müşterinin gelir belgesi yüklemesi zorunlu hale getirilecek. Bugün belge " +
-      "sonradan isteniyor ve başvuruların yaklaşık beşte biri eksik evrak nedeniyle ikinci kez ele alınıyor.",
+      "Tanım: Bu süreç, BOA uygulamasında geciken kredi ödemelerini, vadesi yaklaşan teminat mektuplarını ve " +
+      "taksitleri takip edip ilgili ekiplere bilgilendirme e-postası gönderir.\n" +
+      "Fayda: Günlük yaklaşık 2 saatlik manuel takip kalkar; bilgilendirme aynı gün 08:30'da tamamlanır.\n" +
+      "Planlama: Günde 1 kez, sabah 08:30.\n" +
+      "Ön koşullar: BOA erişimi; \"İdari Takip Müşteri Raporu\" ve \"Teminat Mektubu İşlemleri\" ekranlarına yetki.",
   },
   {
-    key: "kapsam",
-    title: "Kapsam",
+    // engine: scope (list_group — dahil / hariç)
+    key: "kapsam_dahil_haric",
+    title: "Kapsam (dahil / hariç)",
     description:
-      "Neyin değiştiği ve açıkça neyin değişmediği. Kapsam dışı maddeler kapsam kadar önemlidir.",
+      "Bu işin sınırı: neye dokunuluyor, neye dokunulmuyor. Süreçte kullanılan uygulamalar ve dijital " +
+      "girdi/çıktılar dahil listesinde adıyla geçer; hariç listesi kapsam kadar önemlidir.",
     aiInstruction:
-      "Değişikliğin kapsamını iki başlıkta madde madde yaz: \"Kapsam içi\" ve \"Kapsam dışı\". Kapsam içi " +
-      "maddeler dokunulacak ekran, servis, tablo ve entegrasyonları adıyla ansın. Kapsam dışı bölümünü boş " +
-      "bırakma: incelemede en sık tartışılan nokta budur. Emin olmadığın bir bileşeni kapsam içi saymak " +
-      "yerine kapsam dışına \"doğrulanmalı\" notuyla yaz.",
+      "İki liste üret: DAHİL ve HARİÇ. Dahil listesine sürecin alt adımlarını, kullanılan her uygulamayı " +
+      "(ör. BOA, Outlook) ve dijital girdi/çıktıları (hangi rapor girdi, hangi e-posta/dosya çıktı) ayrı " +
+      "maddeler olarak yaz. Hariç listesini boş bırakma — kapsam dışı bıraktığın her şeyi tek tek yaz, çünkü " +
+      "ürün sahibinin onayladığı sınır budur. Bir şeyin kapsamda olup olmadığını bilmiyorsan hariç listesine " +
+      "\"netleşmedi\" notuyla yaz ve açık maddelere taşı.",
     required: true,
     format: "bullet_list",
     example:
-      "Kapsam içi: başvuru formu ekranı, belge yükleme servisi, başvuru durum tablosu.\n" +
-      "Kapsam dışı: mevcut başvuruların geriye dönük güncellenmesi, mobil uygulama akışı.",
+      "DAHİL: BOA \"İdari Takip Müşteri Raporu\" ekranından Excel çıktısı alınması\n" +
+      "DAHİL: Her satır için tekil bilgilendirme e-postası (Outlook)\n" +
+      "HARİÇ: Bireysel müşteri segmenti\n" +
+      "HARİÇ: E-postaya yanıtların takibi",
   },
   {
+    // engine: impactMatrix (impact_matrix)
     key: "etki_analizi",
     title: "Etki analizi",
     description:
-      "Değişiklikten etkilenen sistemler, entegrasyonlar ve veri akışları; her biri için etkinin yönü ve büyüklüğü.",
+      "Hangi uygulama etkileniyor, hangisi etkilenmiyor — her uygulama için karar ve kaynağı. Alt " +
+      "ticket'lar bu tablodan açılır.",
     aiInstruction:
-      "Etkilenen her bileşen için bir satır üret: bileşen adı, etkinin türü (kod, veri, sözleşme, " +
-      "yapılandırma), etki düzeyi (düşük/orta/yüksek) ve kısa gerekçe. Yukarı ve aşağı yöndeki " +
-      "entegrasyonları ayrı ayrı değerlendir. Depoda karşılığını göremediğin bir bileşeni tabloya " +
-      "\"doğrulanmadı\" düzeyiyle ekle; sessizce atlama.",
+      "Repo keşfi çıktısını ve Uygulama Kayıtları'nı kullan. Her uygulama için etkilenip etkilenmediğine " +
+      "KARAR VER; etkilenmiyorsa da satır aç ve gerekçesini yaz. \"Belki\" yazma. Etkilenen uygulama için " +
+      "özet alanında etkinin türünü (kod, veri, entegrasyon, yapılandırma) ve büyüklüğünü belirt. Kaynak " +
+      "alanına repo keşfinden gelen dosya yolunu ya da uygulama kartını yaz; depoda karşılığını " +
+      "göremediğin bir bileşeni \"doğrulanmadı\" notuyla ekle, sessizce atlama.",
     required: true,
     format: "impact_matrix",
     example:
-      "Belge yükleme servisi · kod · yüksek · zorunluluk kontrolü burada uygulanacak\n" +
-      "Başvuru veri modeli · veri · orta · yeni bir zorunlu alan ekleniyor\n" +
-      "Arşiv entegrasyonu · sözleşme · düşük · alan adı değişmiyor, doluluk oranı artıyor",
+      "ugurpay-core · evet · kod, orta: limit kontrolü burada uygulanacak · src/limit/service.ts\n" +
+      "ugurmobil-ios · hayır · limit ekranı API sözleşmesi değişmiyor · apps/ios/README.md",
   },
   {
-    key: "veri_ve_gizlilik",
-    title: "Veri ve gizlilik",
+    // engine: acceptanceCriteria (bullet_list, en az 3)
+    key: "kabul_kriterleri",
+    title: "Kabul kriterleri",
     description:
-      "İşlenen kişisel/müşteri verisi, veri sınıfı ve saklama; KVKK ve banka içi veri politikası açısından durum.",
+      "Değişikliğin doğru çalıştığını kanıtlayan, tek tek doğrulanabilir maddeler (en az üç); test " +
+      "senaryoları buradan türer.",
     aiInstruction:
-      "Değişikliğin dokunduğu veriyi listele ve her biri için veri sınıfını (açık/dahili/gizli) belirt. " +
-      "Yeni bir kişisel veri alanı ekleniyorsa, saklama süresi ve maskeleme ihtiyacını ayrıca yaz. " +
-      "Kişisel veri işlenmiyorsa bunu açıkça \"Kişisel veri işlenmiyor\" diye belirt — boş bırakmak, " +
-      "incelemede \"değerlendirilmedi\" olarak okunur.",
+      "Her madde tek bir doğrulanabilir davranış olsun ve bir testle karşılanabilsin: \"verildiğinde / " +
+      "yapıldığında / beklenen\" biçiminde yaz. En az bir olumsuz senaryo (hatalı ya da eksik girdi) ve en az " +
+      "bir sınır durumu ekle; geriye uyum maddesini unutma. \"Sistem düzgün çalışmalı\" gibi ölçülemez ifade " +
+      "kullanma.",
     required: true,
-    format: "free_text",
+    format: "bullet_list",
     example:
-      "Gelir belgesi (gizli): müşteriye ait finansal belge. Mevcut arşiv politikasına göre 10 yıl saklanıyor. " +
-      "Belge içeriği log'lara yazılmayacak; yalnız belge kimliği loglanır.",
+      "Raporda \"İzleme Durumu = İhtarname Çekildi\" olan satır için e-posta üretilmez.\n" +
+      "Rapor boş döndüğünde süreç hatasız biter ve \"işlem yok\" özeti gönderilir.\n" +
+      "Mevcut günlük bilgilendirme akışı değişmeden çalışmaya devam eder.",
   },
   {
-    key: "riskler_ve_onlemler",
-    title: "Riskler ve önlemler",
+    // engine: uiApiChanges (table: Yüzey · Durum · Geriye uyum) — isteğe bağlı
+    key: "ekran_ve_api_degisiklikleri",
+    title: "Ekran ve API değişiklikleri",
     description:
-      "Değişikliğin taşıdığı riskler ve her biri için alınan somut önlem. Önlemsiz risk, kabul edilmiş risktir ve öyle yazılır.",
+      "Kullanıcıya ve entegrasyona görünen yüzey: hangi ekran ya da uç nokta yeni, hangisi değişti, " +
+      "geriye uyumlu mu. Yüzeye dokunulmuyorsa boş kalır.",
     aiInstruction:
-      "Her risk için bir satır yaz: risk, olasılık (düşük/orta/yüksek), etki (düşük/orta/yüksek) ve önlem. " +
-      "Teknik risklerin yanında operasyonel riski de değerlendir (müşteri iletişimi, çağrı merkezi yükü, " +
-      "geri alma zorluğu). Önlemi olmayan bir riski silme; \"önlem yok — kabul edilen risk\" yazarak bırak, " +
-      "kararı onaycıya bırak.",
-    required: true,
+      "UI'ye veya API'ye dokunulmuyorsa bu bölümü hiç doldurma. Dokunuluyorsa her ekran ve uç nokta için bir " +
+      "satır: yüzey (ekran adı ya da metot + yol), durum (yeni / değişti / değişmedi) ve geriye uyumlu olup " +
+      "olmadığı. Eski istemcinin kırılacağı bir değişiklik varsa \"geriye uyumlu değil\" yaz ve nedenini " +
+      "yüzey adının yanına ekle.",
+    required: false,
     format: "table",
     example:
-      "Belge yükleyemeyen müşteri başvurusunu tamamlayamaz · orta · yüksek · geçiş döneminde eski akış " +
-      "bayrakla açık tutulur\n" +
-      "Belge boyutu limiti aşılır · yüksek · düşük · istemci tarafında boyut kontrolü ve anlaşılır hata mesajı",
+      "Kredi limiti ekranı · değişti · evet\n" +
+      "POST /limit/artir · yeni · —",
   },
   {
-    key: "geri_alma_plani",
-    title: "Geri alma planı",
+    // engine: testApproach (free_text)
+    key: "test_yaklasimi",
+    title: "Test yaklaşımı",
     description:
-      "Değişiklik canlıda beklendiği gibi çalışmazsa nasıl geri alınacağı ve geri almanın sınırı.",
+      "Birim / entegrasyon / uçtan uca dağılımı, kapsam eşiği ve test verisi ihtiyacı. Test tasarımcısının " +
+      "girdisidir.",
     aiInstruction:
-      "Geri alma adımlarını sırayla yaz. Veri tarafında geri alınamayan bir işlem varsa (yapılmış şema " +
-      "değişikliği, gönderilmiş bildirim, yazılmış müşteri kaydı) bunu ayrıca ve açıkça belirt: geri " +
-      "alınabilirlik varsayımı, üretim olaylarında en pahalıya mal olan varsayımdır. Özellik bayrağıyla " +
-      "kapatılabiliyorsa bayrağın adını yaz.",
+      "Test piramidine uy. Birim, entegrasyon ve uçtan uca testlerin yaklaşık adedini ve kapsam eşiğini yaz. " +
+      "Kabul kriterlerinin her birinin hangi seviyede doğrulanacağını belirt. Gerçek müşteri verisi " +
+      "gerekiyorsa maskelenmiş/anonim test verisi kullanılacağını açıkça yaz. Bu bölüm test tasarımcısının " +
+      "girdisi olur — ona göre somut yaz.",
     required: true,
     format: "free_text",
     example:
-      "Zorunluluk kontrolü `basvuru.belge_zorunlu` bayrağıyla kapatılır; kod geri alınmadan eski davranışa " +
-      "dönülür. Eklenen veri alanı boş bırakılabilir olduğu için şema geri alınmasına gerek yoktur.",
+      "Birim: filtreleme ve e-posta gövdesi üretimi (~12 test). Entegrasyon: BOA rapor çıktısının okunması " +
+      "(anonim örnek dosyayla, ~4 test). Uçtan uca: 1 senaryo, test ortamında. Kapsam eşiği %80.",
   },
   {
-    key: "test_ve_kabul_kriterleri",
-    title: "Test ve kabul kriterleri",
+    // engine: riskAndRollback (field_group: risk · mitigation · rollback)
+    key: "risk_ve_geri_donus_plani",
+    title: "Risk ve geri dönüş planı",
     description:
-      "Değişikliğin doğru çalıştığını kanıtlayan, tek tek doğrulanabilir kriterler.",
+      "Ne ters gidebilir, nasıl azaltılır, nasıl geri alınır. Önlemsiz risk kabul edilmiş risktir ve öyle " +
+      "yazılır; denetim bu bölüme bakar.",
     aiInstruction:
-      "Kabul kriterlerini \"verildiğinde / yapıldığında / beklenen\" biçiminde, her biri tek başına " +
-      "doğrulanabilir maddeler olarak yaz. En az bir olumsuz senaryo (hatalı/eksik girdi) ve en az bir " +
-      "sınır durumu ekle. \"Sistem düzgün çalışmalı\" gibi ölçülemeyen ifade kullanma; her madde bir " +
-      "test adımına çevrilebilmeli.",
+      "En az bir gerçek risk yaz (etkisiyle birlikte), azaltma önlemini ve GERİ DÖNÜŞ adımını ayrı ayrı " +
+      "belirt. Teknik riskin yanında operasyonel riski de değerlendir (yanlış müşteriye bildirim, çağrı " +
+      "merkezi yükü). Şema ya da veri göçü, gönderilmiş bildirim gibi geri alınamayan bir adım varsa bunu " +
+      "açıkça yaz; özellik bayrağıyla kapatılabiliyorsa bayrağın adını ver. Önlemi olmayan riski silme, " +
+      "\"önlem yok — kabul edilen risk\" yazarak onaycıya bırak.",
+    required: true,
+    format: "free_text",
+    example:
+      "Risk: Filtre hatası yüzünden ihtarname çekilmiş müşteriye hatırlatma gider (itibar, orta).\n" +
+      "Azaltma: Gönderim öncesi \"İzleme Durumu\" için ikinci kontrol; ilk hafta gönderim listesi elle onaylanır.\n" +
+      "Geri dönüş: Zamanlanmış görev durdurulur; gönderilmiş e-postalar geri alınamaz, düzeltme e-postası şablonu hazır tutulur.",
+  },
+  {
+    // engine: sources (source_list)
+    key: "kaynaklar",
+    title: "Kaynaklar",
+    description:
+      "Her iddianın dayanağı: repo dosyası, uygulama kartı, öğrenme notu ya da ticket cümlesi. Kaynağı " +
+      "olmayan iddia yazılmaz.",
+    aiInstruction:
+      "Yazdığın HER bölüm için en az bir kaynak satırı aç: hangi bölüm, hangi kaynak. Kaynak, sana verilen " +
+      "bağlamda birebir geçen bir değer olmalı — repo dosya yolu, uygulama kartındaki alan, öğrenme notunun " +
+      "başlığı ya da ticket'taki cümle. Kaynak gösteremiyorsan iddiayı hiç yazma; uydurma kesinlikle yasak.",
     required: true,
     format: "bullet_list",
     example:
-      "Belge yüklemeden devam denendiğinde başvuru ilerlemez ve eksik belge uyarısı gösterilir.\n" +
-      "Desteklenmeyen dosya türü yüklendiğinde dosya reddedilir ve kabul edilen türler listelenir.\n" +
-      "Belge yüklendiğinde başvuru bir sonraki adıma geçer ve belge kimliği başvuru kaydına işlenir.",
+      "Amaç ve iş değeri ← ticket açıklaması, 1. paragraf\n" +
+      "Etki analizi ← src/limit/service.ts; Uygulama Kayıtları: ugurpay-core",
   },
   {
-    key: "bagimliliklar",
-    title: "Bağımlılıklar",
+    // engine: openItems (open_items)
+    key: "netlestirilecek_acik_maddeler",
+    title: "Netleştirilecek açık maddeler",
     description:
-      "Bu değişikliğin beklediği dış koşullar: başka ekipler, sistemler, onaylar veya sıralama zorunlulukları.",
+      "Cevaplanmamış ya da ertelenmiş maddeler: madde, neden açık, kimden cevap bekleniyor. Onaycı neyin " +
+      "açık kaldığını burada görür.",
     aiInstruction:
-      "Bu işin başlayabilmesi veya canlıya çıkabilmesi için önce tamamlanması gereken şeyleri listele: " +
-      "başka bir ticket, bir ekip onayı, bir altyapı değişikliği, bir sözleşme güncellemesi. Sıralama " +
-      "zorunluluğu varsa açıkça yaz. Bağımlılık yoksa \"Bağımlılık yok\" yaz; bölümü boş bırakmak " +
-      "\"bakılmadı\" demektir.",
-    required: false,
+      "Cevap alamadığın veya ertelenen her maddeyi yaz: madde, neden açık kaldığı ve kimden (rol ya da kişi) " +
+      "cevap beklendiği. Gerçekten açık madde yoksa listeyi boş bırak — ama \"bilmiyorum\" dediğin bir konuyu " +
+      "buraya yazmadan analizi teslim etme.",
+    required: true,
     format: "bullet_list",
     example:
-      "Arşiv ekibinin belge tipi tanımını açması gerekiyor (ARSIV-412) — canlıya çıkıştan önce tamamlanmalı.",
+      "Bireysel segmentin kapsam dışı kalması teyit edilmedi — ürün sahibinden yanıt bekleniyor.\n" +
+      "E-posta gönderim saati 08:30 mu 09:00 mı — süreç sahibinden yanıt bekleniyor.",
   },
 ];

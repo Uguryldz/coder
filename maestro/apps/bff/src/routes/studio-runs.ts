@@ -181,10 +181,11 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
    *     insan onayı bekleyen birini — yeniden başlatmak, o onayı sessizce
    *     çöpe atmak olurdu. Motor cevap veriyorsa 409 döner, ve bu ret bilerek
    *     KATI: emin olmadığımız yerde yeniden başlatmıyoruz.
-   *  2. Eski satırı EMEKLİYE AYIRIR (`retire`) — silmez. Defter, adım olayları,
-   *     kanıt paketi ve kapı kayıtları `onUpdate: Cascade` ile yeni kimliğe
-   *     taşınır; tek satır kaybolmaz. Eski koşunun defteri, bir denetçinin
-   *     "orada ne oldu" sorusunun cevabı olarak yerinde kalır.
+   *  2. Eski satırı EMEKLİYE AYIRIR (`retire`) — silmez, adını da değiştirmez:
+   *     statüsünü terminale çekip arşiv damgası basar. Defter, adım olayları,
+   *     kanıt paketi ve kapı kayıtları yazıldıkları kimlikte olduğu gibi kalır;
+   *     tek satır kaybolmaz. Eski koşunun defteri, bir denetçinin "orada ne
+   *     oldu" sorusunun cevabı olarak yerinde kalır.
    *  3. `runIntake` ile ticket'ı yeniden alır — `POST /start`in AYNI yolu, aynı
    *     kapılardan: proje bağlı mı, kill-switch kapalı mı, hangi kural eşleşti,
    *     hangi ajan iğnelenecek. Ayrı bir "yeniden başlat" yolu yazmak, alımın

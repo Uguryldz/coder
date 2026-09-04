@@ -87,6 +87,10 @@ function fakeDelegate(result: RunRow | null): {
         recorded.creates.push(args.data);
         return Promise.resolve(undefined);
       },
+      // Ticket'ın kullandığı kimlikler — yeni koşuya boş ad seçilirken okunuyor.
+      // `result` bu ticket'ın (tek) satırı, varsa: kimliğinin DOLU sayılması
+      // gerekiyor, yoksa mağaza onu boş sanıp aynı adı ikinci kez seçerdi.
+      findMany: () => Promise.resolve(result === null ? [] : [{ id: result.id }]),
     },
   };
 }
@@ -139,7 +143,7 @@ describe("PrismaRunContextStore.get — önceki koşuların işi", () => {
   it("emekli koşuların defterini yeni koşunun bağlamına taşır", async () => {
     const { delegate } = fakeDelegate(row());
     const { seam } = history(
-      ["run-pay-101-0001#emekli-1", "run-pay-101-0001#emekli-2"],
+      ["maestro-PAY-101", "maestro-PAY-101-2"],
       [
         { kind: "analysis", title: "analiz yazıldı", detail: "risk: yuksek — ödeme akışı" },
         { kind: "clarification", title: "soru soruldu", detail: "hangi para birimi?" },
@@ -199,7 +203,7 @@ describe("PrismaRunContextStore.get — önceki koşuların işi", () => {
   it("tür başına en fazla beş satır taşır — küçük modelleri boğmaz", async () => {
     const { delegate } = fakeDelegate(row());
     const { seam } = history(
-      ["run-pay-101-0001#emekli-1"],
+      ["maestro-PAY-101"],
       Array.from({ length: 9 }, (_, i) => ({ kind: "analysis", title: `analiz ${i}` })),
     );
     const context = await new PrismaRunContextStore(delegate, seam).get("PAY-101");
@@ -211,7 +215,7 @@ describe("PrismaRunContextStore.get — önceki koşuların işi", () => {
   it("çok uzun bir defter ayrıntısını kırpar", async () => {
     const { delegate } = fakeDelegate(row());
     const { seam } = history(
-      ["run-pay-101-0001#emekli-1"],
+      ["maestro-PAY-101"],
       [{ kind: "analysis", title: "analiz", detail: "x".repeat(1000) }],
     );
     const context = await new PrismaRunContextStore(delegate, seam).get("PAY-101");
@@ -436,6 +440,86 @@ describe("PrismaRunContextStore.create", () => {
     expect(created.status).toBe("running");
   });
 
+  /**
+   * ── YENİDEN BAŞLATILMIŞ TICKET: KİMLİK ÇAKIŞMASI ────────────────────────
+   *
+   * Emekliye ayırma artık satırın KİMLİĞİNE dokunmuyor (dokunmak
+   * `JournalEntry.runId`'yi cascade ile UPDATE ettiriyor ve o tablo
+   * yalnızca-ekleme korumalı — Postgres reddediyor, bkz.
+   * `packages/db/test/live-guards.test.ts`). Bedeli, emekli satırın
+   * `maestro-<ticket>` adını TUTMAYA devam etmesi: yeni koşu o adı bir daha
+   * kullanamaz, ve kullanmaya kalkarsa birincil anahtar P2002'si `create`
+   * tarafından yarış sanılıp YUTULUR — ticket "başlatıldı" der, satırsız kalır.
+   *
+   * Bu yüzden yeni koşu ticket'ın BOŞ bir kimliğini seçiyor.
+   */
+  it("ilk koşuda motorun kimliğini AYNEN kullanır — eski davranışın ta kendisi", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create(newRun);
+
+    expect((recorded.creates[0] as RunCreate).id).toBe("run-1");
+  });
+
+  it("kimlik DOLUYSA sıradaki boş adı seçer — emekli satırın adı korunduğu için", async () => {
+    // Ticket'ın emekli satırı `run-1` adını tutuyor ve canlı satırı yok.
+    const recorded: { creates: RunCreate[] } = { creates: [] };
+    const store = new PrismaRunContextStore({
+      findFirst: () => Promise.resolve(null),
+      update: () => Promise.resolve(undefined),
+      create: (args) => {
+        recorded.creates.push(args.data);
+        return Promise.resolve(undefined);
+      },
+      findMany: () => Promise.resolve([{ id: "run-1" }]),
+    });
+    await store.create(newRun);
+
+    expect(recorded.creates[0]?.id).toBe("run-1-2");
+  });
+
+  /** Üçüncü koşu da tıkanmamalı: iki kez düşen bir koşu sıradan bir şey. */
+  it("üçüncü koşuda sırayı ilerletir", async () => {
+    const recorded: { creates: RunCreate[] } = { creates: [] };
+    const store = new PrismaRunContextStore({
+      findFirst: () => Promise.resolve(null),
+      update: () => Promise.resolve(undefined),
+      create: (args) => {
+        recorded.creates.push(args.data);
+        return Promise.resolve(undefined);
+      },
+      findMany: () => Promise.resolve([{ id: "run-1" }, { id: "run-1-2" }]),
+    });
+    await store.create(newRun);
+
+    expect(recorded.creates[0]?.id).toBe("run-1-3");
+  });
+
+  /**
+   * SEÇİLEN AD `RunId` ALFABESİNE UYMALI.
+   *
+   * Kimlik yalnız bir birincil anahtar değil, kanıt paketi anahtarlarının bir
+   * yol parçası (`evidence/<yıl>/<ticket>/<runId>/…`), ve `RunId`
+   * (`@maestro/contracts`) bu yüzden `[A-Za-z0-9._-]` ile sınırlı. Eski
+   * emeklilik kimliği `#` taşıyordu — o alfabede olmayan bir karakter.
+   */
+  it("seçtiği ad RunId alfabesinde kalır — '#' gibi bir karakter üretmez", async () => {
+    const recorded: { creates: RunCreate[] } = { creates: [] };
+    const store = new PrismaRunContextStore({
+      findFirst: () => Promise.resolve(null),
+      update: () => Promise.resolve(undefined),
+      create: (args) => {
+        recorded.creates.push(args.data);
+        return Promise.resolve(undefined);
+      },
+      findMany: () => Promise.resolve([{ id: "maestro-OPS-1" }]),
+    });
+    // Sahadaki şekil: motorun kimliği `maestro-<ticket>`.
+    await store.create({ ...newRun, runId: "maestro-OPS-1" });
+
+    expect(recorded.creates[0]?.id).toBe("maestro-OPS-1-2");
+    expect(recorded.creates[0]?.id).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{7,}$/);
+  });
+
   it("pins the variant and template the run will use", async () => {
     // Found live: the column defaults to "" and the row was written without
     // these, so the FIRST model call failed the gateway's contract with
@@ -476,6 +560,7 @@ describe("PrismaRunContextStore.create", () => {
       findFirst: () => Promise.resolve(null),
       update: () => Promise.resolve(undefined),
       create: () => Promise.reject(Object.assign(new Error("unique"), { code: "P2002" })),
+      findMany: () => Promise.resolve([]),
     });
     await expect(store.create(newRun)).resolves.toBeUndefined();
   });
@@ -548,6 +633,7 @@ describe("PrismaRunContextStore.create", () => {
       findFirst: () => Promise.resolve(null),
       update: () => Promise.resolve(undefined),
       create: () => Promise.reject(new Error("connection reset")),
+      findMany: () => Promise.resolve([]),
     });
     await expect(store.create(newRun)).rejects.toThrow("connection reset");
   });

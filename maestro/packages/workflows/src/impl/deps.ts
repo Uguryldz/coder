@@ -124,8 +124,9 @@ export interface RunContext {
    * başlayınca AI'IN ESKİ YAPILANLARI HATIRLAMASI lazım."
    *
    * Ölü bir koşu artık otomatik yeniden başlıyor (`jira-discovery.ts`), ve
-   * emekliye ayırma hiçbir satırı silmiyor: defter, adım olayları, kanıt ve
-   * kapı kayıtları `onUpdate: Cascade` ile emekli kimliğe TAŞINIYOR. Yani
+   * emekliye ayırma hiçbir satırı silmiyor ve adını da değiştirmiyor: defter,
+   * adım olayları, kanıt ve kapı kayıtları yazıldıkları kimlikte OLDUĞU GİBİ
+   * kalıyor (satır yalnız terminale çekilip arşivleniyor). Yani
    * geçmiş veritabanında duruyor — ama YENİ koşu onu GÖRMÜYORDU. Yeni bir
    * workflow execution'ın belleği boş: `state.analysis` gibi bellekte taşınan
    * bağlam ölen koşuyla birlikte gitti. Model sıfırdan başlıyor, aynı soruları

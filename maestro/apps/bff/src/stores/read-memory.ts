@@ -100,20 +100,27 @@ export class InMemoryRunCatalog implements RunCatalog {
   }
 
   /**
-   * `PrismaRunCatalog.retire`in bellek karşılığı — aynı iki etki: satırın
-   * kimliği değişir ve satır arşive düşer.
+   * `PrismaRunCatalog.retire`in bellek karşılığı — aynı iki etki: satır
+   * terminal statüye geçer ve arşive düşer.
    *
-   * Bu haritanın anahtarı `ticketKey`, satırın `runId`'si değil; yani gerçek
-   * mağazanın birincil-anahtar çakışması burada YAŞANMAZ. Yine de kimlik
-   * değiştiriliyor, çünkü rota `retire`in döndürdüğü yeni kimliği denetim
-   * kaydına yazıyor — bellek mağazası oraya farklı bir cevap verirse, testler
-   * gerçekte olmayan bir davranışı doğrulardı.
+   * ── Kimlik DEĞİŞMİYOR, ve bu bir sadeleştirme değil düzeltme ─────────────
+   * Bu mağaza bir zamanlar kimliği `…#emekli-<damga>` yapıyordu, çünkü gerçek
+   * mağaza da öyle yapıyordu. Gerçek mağaza artık yapmıyor: kimliği
+   * değiştirmek `JournalEntry.runId`'yi `onUpdate: Cascade` ile UPDATE
+   * ettiriyor ve o tablo yalnızca-ekleme korumalı (M30/M33) — Postgres yazıyı
+   * reddediyor, yani emekliye ayırma sahada HİÇ çalışmıyordu. Bellek mağazası
+   * o davranışı taklit ettiği için testler de kırılmayı göremiyordu.
+   *
+   * `status` da yazılıyor, çünkü ticket'ı yoldan çeken şey artık o: gerçek
+   * mağazada `WorkflowRun_ticketKey_live_key` yalnız terminal olmayan satırları
+   * kısıtlıyor. Bellek mağazası ticket başına tek satır tuttuğu için burada bir
+   * kısıt yok, ama statüyü yazmamak rotanın okuduğu satırı "emekli ama hâlâ
+   * çalışıyor" gösterirdi — gerçekte olmayan bir hâl.
    */
   retire(ticketKey: string, at: Date): Promise<RetiredRun | null> {
     const row = this.rows.get(ticketKey);
     if (row === undefined) return Promise.resolve(null);
-    const retiredId = `${row.runId}#emekli-${at.getTime()}`;
-    this.rows.set(ticketKey, { ...row, runId: retiredId, archivedAt: at.toISOString() });
+    this.rows.set(ticketKey, { ...row, status: "fail", archivedAt: at.toISOString() });
     /**
      * EMEKLİLİK SAYACI — gerçek mağazada emekli SATIRLAR sayılıyor, burada bir
      * sayaç tutuluyor, ve sebebi bu haritanın şekli: anahtar `ticketKey`, yani
@@ -125,7 +132,8 @@ export class InMemoryRunCatalog implements RunCatalog {
      */
     const count = (this.retirements.get(ticketKey) ?? 0) + 1;
     this.retirements.set(ticketKey, count);
-    return Promise.resolve({ id: retiredId, count });
+    // Emekliye ayrılan satırın kimliği — DEĞİŞMEDİĞİ için okunduğu gibi.
+    return Promise.resolve({ id: row.runId, count });
   }
 
   /** Ticket başına emeklilik sayısı — bkz. `retire`. */

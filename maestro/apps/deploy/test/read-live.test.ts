@@ -82,11 +82,22 @@ function fakeRuns(rows: RunCatalogRow[]): RunCatalogDelegate & { queries: RunCat
         .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
       return Promise.resolve(found[0] ?? null);
     },
+    /**
+     * Emekliye ayırmanın yazısı: statü + arşiv damgası, KİMLİK DEĞİL.
+     *
+     * Bu fake bir zamanlar `row.id = args.data.id` yapıyordu, ve tam olarak o
+     * yüzden sahadaki hatayı kaçırdı: gerçek Postgres'te kimliği değiştirmek
+     * `JournalEntry.runId`'yi `onUpdate: Cascade` ile UPDATE ettiriyor, o tablo
+     * yalnızca-ekleme korumalı ve veritabanı yazıyı REDDEDİYOR. Fake'in izin
+     * verdiği bir şeyi gerçek veritabanı reddediyordu. Kimliğin artık hiç
+     * yazılmaması bu tür bir ayrışmanın kapısını da kapatıyor; kalıcı kanıt
+     * gerçek DB testinde (`packages/db/test/live-guards.test.ts`).
+     */
     update: (args) => {
       const row = rows.find((candidate) => candidate.id === args.where.id);
       if (row !== undefined) {
-        row.id = args.data.id;
         row.archivedAt = args.data.archivedAt;
+        row.status = args.data.status;
       }
       return Promise.resolve(row ?? null);
     },

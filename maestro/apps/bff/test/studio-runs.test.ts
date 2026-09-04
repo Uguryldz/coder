@@ -1174,10 +1174,22 @@ describe("POST /studio/runs/:ticket/restart", () => {
     expect(response.statusCode).toBe(202);
     // Alım gerçekten yapıldı — motorda artık bir koşu var.
     expect(h.runs.started.at(-1)?.ticket).toBe(TICKET);
-    // Ve eski satırın kimliği değişti, ki yeni koşu kendi satırını açabilsin.
+    /**
+     * VE EMEKLİ SATIRIN KİMLİĞİ AYNEN DURUYOR.
+     *
+     * Bu satır bir zamanlar kimliğin DEĞİŞTİĞİNİ iddia ediyordu, ve iddia
+     * gerçek bir veritabanında hiç doğru olmadı: kimliği değiştirmek
+     * `JournalEntry.runId`'yi cascade ile UPDATE ettiriyor, o tablo
+     * yalnızca-ekleme korumalı (M30/M33) ve Postgres yazıyı reddediyor. Yani
+     * emekliye ayırma sahada HİÇ çalışmıyordu; bu testi geçiren tek şey
+     * bellek-içi mağazanın gerçeği taklit etmemesiydi.
+     *
+     * Ticket'ı yoldan çeken şey artık statü (`fail`) + arşiv damgası, ve
+     * denetim zincirine yazılan kimlik gerçekten defterin durduğu kimlik.
+     * Gerçek veritabanı kanıtı: `packages/db/test/live-guards.test.ts`.
+     */
     const body = response.json() as { retiredRunId: string };
-    expect(body.retiredRunId).toContain(RUN_ID);
-    expect(body.retiredRunId).not.toBe(RUN_ID);
+    expect(body.retiredRunId).toBe(RUN_ID);
   });
 
   /**
@@ -1194,9 +1206,30 @@ describe("POST /studio/runs/:ticket/restart", () => {
     const before = await restart(h, token);
     const retiredId = (before.json() as { retiredRunId: string }).retiredRunId;
 
-    // Satır hâlâ okunabilir durumda ve yeni kimliğini taşıyor.
+    // Satır hâlâ okunabilir durumda ve kimliğini KORUYOR.
     const record = await h.read.runs.get(TICKET);
     expect(record?.runId).toBe(retiredId);
+    // Ve arşive düştü: panonun varsayılan görünümünden çıktı.
+    expect(record?.archivedAt).not.toBeNull();
+  });
+
+  /**
+   * EMEKLİ SATIR GERÇEKTEN YOLDAN ÇEKİLİYOR — emekliye ayırmanın AMACI.
+   *
+   * Kimlik değişmediği için ticket'ı yoldan çeken tek şey statü: gerçek
+   * mağazada `WorkflowRun_ticketKey_live_key` yalnız terminal OLMAYAN
+   * satırları kısıtlıyor, yani emekli satır terminale geçmezse yeni koşu
+   * kendi satırını hiç açamaz ve ticket sessizce akış dışı kalır — sahada
+   * olanın ta kendisi, bir adım geride.
+   */
+  it("emekli satırı TERMİNAL statüye çeker — yoksa yeni koşu satır açamaz", async () => {
+    const h = await deadRunHarness();
+    const token = await adminToken(h);
+
+    await restart(h, token);
+
+    const record = await h.read.runs.get(TICKET);
+    expect(record?.status).toBe("fail");
   });
 
   /**

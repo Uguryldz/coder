@@ -64,7 +64,10 @@ export type RestartResult =
   | { readonly ok: false; readonly reason: "no_run" }
   | {
       readonly ok: true;
-      /** Emekliye ayrılan satırın yeni kimliği. */
+      /**
+       * Emekliye ayrılan satırın kimliği — DEĞİŞMEZ, çünkü emekliye ayırma
+       * satırın adına dokunmuyor. Eski koşunun defterinin gerçekten durduğu ad.
+       */
       readonly retiredRunId: string;
       /** Ticket'ın KAÇINCI yeniden başlatılması olduğu, bu dahil. */
       readonly attempt: number;
@@ -75,7 +78,7 @@ export type RestartResult =
  * Emekliye ayır, denetime yaz, yeniden akışa al — bu sırayla.
  *
  * ── Neden bu SIRA ─────────────────────────────────────────────────────────
- * Denetim kaydı `runIntake`ten ÖNCE yazılır ve emekliye ayrılan satırın YENİ
+ * Denetim kaydı `runIntake`ten ÖNCE yazılır ve emekliye ayrılan satırın
  * kimliğini adıyla taşır: bir denetçi "bu ticket'ın önceki koşusu nerede" diye
  * sorduğunda cevabın kendisi zincirde durur. Alım reddedilse bile (kill-switch,
  * bağlantısı duraklatılmış proje) kayıt yerinde kalır — çünkü emekliye ayırma
@@ -83,10 +86,17 @@ export type RestartResult =
  * söylemesi olurdu.
  *
  * ── BAĞLAM NASIL KORUNUYOR ────────────────────────────────────────────────
- * `retire` satırı SİLMEZ, kimliğini değiştirir. Şemadaki dört kardeş tablo da
- * `onUpdate: Cascade` taşıyor: defter (`JournalEntry`), adım olayları
+ * `retire` satırı ne SİLER ne de ADINI DEĞİŞTİRİR: yalnız statüsünü terminale
+ * çeker ve arşiv damgası basar. Defter (`JournalEntry`), adım olayları
  * (`StepEvent`), kanıt kalemleri (`EvidenceItem`) ve kapı kayıtları (`Gate`)
- * yeni kimliğe birlikte taşınır. Tek satır kaybolmaz; eski koşunun defteri,
+ * yazıldıkları kimlikte, olduğu gibi kalır — hiçbiri yeniden yazılmaz.
+ *
+ * Kimliği değiştirmek bir zamanlar denenmişti ve gerçek bir veritabanında HİÇ
+ * çalışmadı: kardeş tablolar `onUpdate: Cascade` taşıyor, yani ad değişimi
+ * `UPDATE "JournalEntry" SET "runId" = …` demek, ve o tablo M30/M33
+ * tetikleyicisiyle yalnızca-ekleme — Postgres yazıyı reddediyordu. Emekliye
+ * ayırma yeniden başlatmanın ilk adımı olduğu için de ölü koşusu olan ticket
+ * kalıcı olarak akış dışı kalıyordu. Tek satır kaybolmaz; eski koşunun defteri,
  * bir denetçinin "orada ne oldu" sorusunun cevabı olarak yerinde kalır.
  *
  * Yeni koşu ise ticket'ın KENDİSİNDEN besleniyor: `runIntake` yorumları ve

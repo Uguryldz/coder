@@ -75,8 +75,10 @@ export interface CoreStoreDb {
   /**
    * ÖNCEKİ KOŞULARIN DEFTERİ — yeniden başlayan bir koşunun hatırlaması için.
    *
-   * Emekliye ayrılan koşunun defteri `onUpdate: Cascade` ile emekli kimliğe
-   * taşınıyor, yani geçmiş silinmiyor; bu delege onu OKUYAN yüzey
+   * Emekliye ayrılan koşunun defteri yazıldığı kimlikte, olduğu yerde
+   * duruyor — emekliye ayırma satırın ne adını değiştiriyor ne de siliyor,
+   * yalnız statüsünü terminale çekip arşiv damgası basıyor; bu delege onu
+   * OKUYAN yüzey
    * (`PrismaRunContextStore`). Yalnız bir `findMany`, ve yalnız dört sütun.
    */
   readonly journalEntry: JournalDelegate;

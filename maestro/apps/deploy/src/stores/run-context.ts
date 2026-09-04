@@ -170,15 +170,34 @@ export interface RunDelegate {
   }): Promise<RunRow | null>;
   update(args: { where: { id: string }; data: RunUpdate }): Promise<unknown>;
   create(args: { data: RunCreate }): Promise<unknown>;
+  /**
+   * Bu ticket'ın ŞİMDİYE KADAR kullandığı kimlikler — yeni koşuya boş bir ad
+   * seçebilmek için.
+   *
+   * Emekliye ayırma artık satırın kimliğine DOKUNMUYOR (bkz.
+   * `PrismaRunCatalog.retire`: kimlik değiştirmek `JournalEntry.runId`'yi
+   * cascade ile UPDATE ettiriyordu ve o tablo yalnızca-ekleme korumalı, yani
+   * veritabanı reddediyordu). Bunun bedeli, emekli satırın `maestro-<ticket>`
+   * kimliğini TUTMAYA devam etmesi: yeni koşu aynı kimlikle satır açamaz.
+   *
+   * Bu yüzden yazan taraf ticket'ın kimliklerini okuyup kullanılmamış olanı
+   * seçiyor. `select: { id: true }` — bir ticket'ın koşu sayısı tek haneli, ve
+   * kimlikten başka bir şey okumak bu delegenin sözünü genişletirdi.
+   */
+  findMany(args: {
+    where: { ticketKey: string };
+    select: { id: true };
+  }): Promise<Array<{ id: string }>>;
 }
 
 /**
  * EMEKLİ DEFTER SATIRLARINI OKUYAN DELEGE — "AI eski yapılanları hatırlasın".
  *
  * `JournalEntry.runId` bu ticket'ın emekli koşularının kimliğini taşıyor
- * (`maestro-<ticket>#emekli-<ms>`), çünkü emekliye ayırma satırı silmiyor
- * kimliğini değiştiriyor ve şemadaki `onUpdate: Cascade` defteri o yeni
- * kimliğe TAŞIYOR. Yani geçmiş orada duruyor; bu delege onu okuyan yüzey.
+ * (`maestro-<ticket>`, sonraki koşularda `maestro-<ticket>-2`, …), çünkü
+ * emekliye ayırma satırı ne siliyor ne de adını değiştiriyor: yalnız statüsünü
+ * terminale çekip arşiv damgası basıyor. Defter yazıldığı kimlikte, olduğu
+ * yerde duruyor; bu delege onu okuyan yüzey.
  *
  * `RunDelegate` ile aynı desen ve aynı gerekçe: mağaza tablonun ne kadarına
  * dokunduğunu YAZILI olarak söylüyor. Tek bir `findMany`, ve `where` yalnız
@@ -492,10 +511,25 @@ export class PrismaRunContextStore implements RunContextStore {
     // retry that made it reproducible.
     assertPinned(input);
     if ((await this.liveRun(input.ticket)) !== null) return;
+    /**
+     * BU KOŞUNUN SATIR KİMLİĞİ — çağıranın istediği ad, ya da boş olanı.
+     *
+     * `input.runId` motorun iş akışı kimliği (`maestro-<ticket>`) ve ilk koşuda
+     * satır tam olarak onu alıyor — bugüne kadarki davranışın aynısı, ve
+     * ticket'ların ezici çoğunluğu hiç yeniden başlatılmadığı için pratikte
+     * TEK davranış.
+     *
+     * Yeniden başlatılmış bir ticket'ta ise o ad DOLU: emekli koşu kendi
+     * kimliğini koruyor (bkz. `PrismaRunCatalog.retire` — kimliği değiştirmek
+     * defterin yalnızca-ekleme korumasına çarpıyordu). O yüzden bu satır boş
+     * bir ad alıyor. Kimlik ÜRETİLMİYOR, SEÇİLİYOR: ticket'ın mevcut adlarına
+     * bakılıp ilk boş sıra numarası kullanılıyor.
+     */
+    const runId = await this.freeRunId(input.ticket, input.runId);
     try {
       await this.runs.create({
         data: {
-          id: input.runId,
+          id: runId,
           ticketKey: input.ticket,
           // Omitted, not written as null, for an analysis-only run: the column
           // stays at its schema default and a run that HAS an app writes the
@@ -529,6 +563,53 @@ export class PrismaRunContextStore implements RunContextStore {
       // one activity later as "no live run".
       if (!isUniqueViolation(error)) throw error;
     }
+  }
+
+  /**
+   * Ticket'ın KULLANILMAMIŞ bir koşu kimliği.
+   *
+   * İlk koşuda `wanted`ın kendisi (`maestro-<ticket>`) — yani bu işlev var
+   * olmadan önceki davranış, harfi harfine. Yeniden başlatılmış bir ticket'ta
+   * emekli satır o adı koruduğu için `-2`, `-3`, … diye ilk boş sıra.
+   *
+   * ── Neden `-2` ve `#emekli-<damga>` DEĞİL ────────────────────────────────
+   * Kimlik yalnız bir birincil anahtar değil, bir DEPOLAMA YOLU parçası:
+   * kanıt paketi anahtarları `evidence/<yıl>/<ticket>/<runId>/…` biçiminde ve
+   * `RunId` (`@maestro/contracts`) bu yüzden alfabeyi `[A-Za-z0-9._-]` ile
+   * sınırlıyor. `#` o alfabede YOK — eski emeklilik kimliği (`…#emekli-…`)
+   * bir defter ya da kanıt satırı yazılmaya kalksaydı zod'da patlardı; emekli
+   * satırlar terminal olduğu için pratikte yazılmıyordu, yani hata sadece
+   * saklanıyordu. Sıra numarası hem o alfabede hem okunur: bir denetçi
+   * `maestro-OTYT-1-2`yi "OTYT-1'in ikinci koşusu" diye okur.
+   *
+   * ── Neden zaman damgası değil, SIRA ──────────────────────────────────────
+   * Damga her çağrıda farklı bir ad üretir, yani bir yarışta iki çağıran iki
+   * AYRI satır açardı ve ikisi de "başarılı" olurdu. Sıra numarası ticket'ın
+   * mevcut adlarından türediği için iki çağıran AYNI adı seçer ve birincil
+   * anahtar yarışı veritabanında çözülür — `create`in zaten yuttuğu P2002,
+   * "satır zaten var" anlamına gelir ve çağıranın istediği sonuç odur.
+   *
+   * Sıra, sayıya değil DOLULUĞA bakıyor: silinmiş bir satır ("3 var, 2 yok")
+   * bir daha kullanılmasın diye değil — silme zaten yasak — ama elle
+   * arşivlenmiş ya da reconcile'ın kapattığı satırların sayısıyla adların
+   * sırası birbirinden ayrılabilir, ve ad çakışması sessiz bir yutulmaya
+   * dönüşür.
+   */
+  private async freeRunId(ticket: string, wanted: string): Promise<string> {
+    const taken = new Set(
+      (await this.runs.findMany({ where: { ticketKey: ticket }, select: { id: true } })).map(
+        (row) => row.id,
+      ),
+    );
+    if (!taken.has(wanted)) return wanted;
+    // 2'den başlıyor: `wanted`ın kendisi ticket'ın BİRİNCİ koşusu.
+    for (let attempt = 2; attempt <= taken.size + 2; attempt += 1) {
+      const candidate = `${wanted}-${attempt}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+    // Ulaşılamaz: döngü `taken.size + 1` aday deniyor ve o kadar dolu ad yok.
+    // Yine de bir ad dönmek, `undefined` bir kimlikle satır açmaktan iyidir.
+    return `${wanted}-${taken.size + 2}`;
   }
 
   /**

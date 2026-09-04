@@ -116,21 +116,39 @@ export interface RunCatalogDelegate {
     data: { archivedAt: Date | null };
   }): Promise<{ count: number }>;
   /**
-   * `retire`in yazma ucu — TEK bir satırın birincil anahtarını değiştirir.
+   * `retire`in yazma ucu — TEK bir satırın KİMLİĞİNE DOKUNMADAN emekliye
+   * ayrılması.
    *
-   * `update` (çoğul değil), çünkü emekliye ayrılan satır tam olarak BİR tane:
-   * ticket'ın motordaki iş akışı kimliğini tutan satır (`maestro-<ticket>`).
-   * Kardeş tablolar (`JournalEntry`, `StepEvent`, `EvidenceItem`, `Gate`) bu
-   * kolona `onUpdate: Cascade` ile bağlı, dolayısıyla kimlik değişince hepsi
-   * yeni kimliğe TAŞINIR — silinmez, kopyalanmaz, kaybolmaz.
+   * ── Neden kimlik DEĞİŞMİYOR (eskiden değişiyordu, ve saha onu kırdı) ──────
+   * Bu imza `data: { id, archivedAt }` idi: emekliye ayırma satırın birincil
+   * anahtarını `maestro-<ticket>#emekli-<damga>` yapıyor, kardeş tablolar da
+   * `onUpdate: Cascade` ile peşinden taşınıyordu. Postgres'te o cascade
+   * `UPDATE "JournalEntry" SET "runId" = …` demek, ve `JournalEntry` M30/M33
+   * tetikleyicisiyle YALNIZCA-EKLEME: veritabanı UPDATE'i reddediyor
+   * (`maestro_append_only`, P0001). Yani defteri korumak için konan kural
+   * defteri TAŞIMAYI engelliyordu, ve emekliye ayırmanın TEK yazısı olduğu
+   * için hem elle "Yeniden başlat" düğmesi (500) hem otomatik tarama turu
+   * kırılıyordu — ölü koşusu olan ticket kalıcı olarak akış dışı kalıyordu.
+   *
+   * Kimlik değiştirmek amacın kendisi değil, seçilmiş bir yoldu: amaç eski
+   * satırı YOLDAN ÇEKMEK, ki ticket yeniden akışa alınabilsin. Bunu kimlik
+   * değil STATÜ yapıyor — `WorkflowRun_ticketKey_live_key` (0002/0011) yalnız
+   * `status NOT IN ('done','cancelled','fail')` satırlarını kısıtlar, yani
+   * eski satır terminal bir statüye geçtiği anda yeni koşu aynı ticket için
+   * kendi satırını açabilir. Kimlik ise `maestro-<ticket>` kalır ve defterin
+   * yabancı anahtarı HİÇ yazılmaz: append-only garantisine dokunulmaz.
    *
    * `archivedAt` aynı yazıda veriliyor: emekliye ayrılan satır panonun
    * varsayılan görünümünden de çıkmalı, yoksa operatör aynı ticket'ı iki kez
    * (biri ölü, biri yeni) görür ve hangisinin canlı olduğunu ayırt edemez.
+   *
+   * `status` da aynı yazıda, çünkü ikisi tek bir olgunun iki yüzü ve ayrı
+   * yazılsalardı aradaki pencerede satır "arşivlenmiş ama hâlâ canlı" olurdu —
+   * tam da yeni koşunun kısmi unique indekse çarpacağı hâl.
    */
   update(args: {
     where: { id: string };
-    data: { id: string; archivedAt: Date };
+    data: { archivedAt: Date; status: "fail" };
   }): Promise<unknown>;
   findFirst(args: {
     where: { ticketKey: string };
@@ -307,37 +325,77 @@ export class PrismaRunCatalog implements RunCatalog {
   }
 
   /**
-   * Ölü koşuyu emekliye ayır: kimliğini değiştir, defterini yanında taşı.
+   * Ölü koşuyu emekliye ayır: KİMLİĞİNE DOKUNMADAN yoldan çek, defterini
+   * olduğu yerde bırak.
    *
-   * ── Neden kimlik değiştiriliyor ───────────────────────────────────────────
-   * `WorkflowRun.id` motorun iş akışı kimliğiyle aynı (`maestro-<ticket>`) ve
-   * yeni koşu da aynı kimliği isteyecek. Eski satır orada durduğu sürece
-   * `create` bir birincil anahtar çakışması görür, onu bir yarış sanıp YUTAR,
-   * ve ticket "yeniden başlatıldı" denmesine rağmen hiç başlamamış olur. Bu,
-   * ölü koşusu olan bir ticket'ın bir daha hiç akışa alınamamasının sebebi.
+   * ── Emekliye ayırmanın AMACI ──────────────────────────────────────────────
+   * Eski koşuyu yoldan çekmek, ki ticket yeniden akışa alınabilsin, VE geçmişi
+   * kaybetmemek. Bu iki şart; kimlik değiştirmek bunların hiçbiri değil.
    *
-   * ── Neden yeni kimlik ZAMAN DAMGALI ───────────────────────────────────────
-   * Aynı ticket birden çok kez emekliye ayrılabilir (iki kez düşen bir koşu
-   * sıradan bir şey), ve sabit bir son ek ikinci emeklilikte yine çakışırdı —
-   * yani düzeltilmeye çalışılan hatanın aynısı, bir adım geride. Damga koşunun
-   * emekliye ayrıldığı AN, çağıranın saatinden: iki emeklilik iki ayrı satır.
+   * ── Neden kimlik ARTIK değişmiyor ─────────────────────────────────────────
+   * Bu satır bir zamanlar `data: { id: retiredId, archivedAt: at }` idi ve
+   * SAHADA KIRILDI. Kardeş tablolar `onUpdate: Cascade` taşıyor, dolayısıyla
+   * birincil anahtarı değiştirmek Postgres'e `UPDATE "JournalEntry" SET
+   * "runId" = …` yazdırıyor — ve `JournalEntry` M30/M33 tetikleyicisiyle
+   * YALNIZCA-EKLEME, yani UPDATE'i veritabanı reddediyor (`maestro_append_only`,
+   * P0001). Emekliye ayırmanın tek yazısı bu olduğu için hem operatörün elle
+   * bastığı "Yeniden başlat" düğmesi 500 veriyor hem tarama turu her turda
+   * aynı ticket'ta patlıyordu: ölü koşusu olan ticket KALICI olarak akış dışı
+   * kalıyordu. Defteri korumak için konan kural, defteri taşımayı engelliyordu.
+   *
+   * Doğru cevap kuralı gevşetmek değil (append-only denetim zincirinin temeli,
+   * ve `runId` için açılacak bir delik "hangi koşunun defteri" sorusunu
+   * sonradan yazılabilir yapardı) — kimliği hiç değiştirmemek.
+   *
+   * ── Kimlik değişmeden ÇAKIŞMA nasıl çözülüyor ─────────────────────────────
+   * Yeni koşunun satırını açan tarafın çarptığı kısıt birincil anahtar DEĞİL:
+   * `PrismaRunContextStore.create` önce `liveRun` ile bakıyor
+   * (`status notIn TERMINAL_STATUSES`) ve veritabanı tarafında
+   * `WorkflowRun_ticketKey_live_key` (0002, 0011'de genişletildi) yalnız
+   * `status NOT IN ('done','cancelled','fail')` satırlarını kısıtlıyor.
+   * Yani ticket'ı yoldan çeken şey STATÜ. Eski satır `fail`e geçtiği anda
+   * ticket'ın canlı satırı kalmıyor ve yeni koşu `maestro-<ticket>` kimliğini
+   * yeniden kullanabiliyor — birincil anahtar zaten ticket başına tek satır
+   * tutmuyordu, ÇÜNKÜ o kimliği taşıyan satır artık canlı değil.
+   *
+   * ── Kimlik ÇAKIŞMASI nerede çözülüyor: YAZAN tarafta ─────────────────────
+   * Emekli satır `maestro-<ticket>` kimliğini KORUDUĞU için yeni koşu o
+   * kimliği bir daha kullanamaz — birincil anahtar hâlâ dolu. Eskiden bunu
+   * emekli satırın adını değiştirerek "boşaltma" yolu seçilmişti; append-only
+   * duvarına çarpan da tam olarak oydu.
+   *
+   * Doğru yer okuyan taraf değil, YAZAN taraf: yeni satırı açan
+   * `PrismaRunContextStore.create` artık ticket'ın kullanılmamış bir kimliğini
+   * seçiyor (`maestro-<ticket>`, sonra `maestro-<ticket>-2`, `-3`, …). Böylece
+   * hiçbir satırın adı DEĞİŞMİYOR: emekli satır kendi adıyla, defteriyle,
+   * kanıtıyla olduğu gibi duruyor; yeni koşu kendi adını alıyor. Bkz.
+   * `PrismaRunContextStore.create` (`run-context.ts`).
+   *
+   * ── Neden `fail` ──────────────────────────────────────────────────────────
+   * Terminal küme `('done','cancelled','fail')` ve emekliye ayrılan koşu
+   * bunlardan yalnız birine dürüstçe uyuyor: `done` başarıyla bitmiş demek
+   * (bitmedi), `cancelled` bir insanın iptal ettiği demek (etmedi). Koşu
+   * MOTORDA ÖLDÜĞÜ için emekliye ayrılıyor, ve `fail` tam olarak bunu söyler —
+   * `reconcileRunStatuses` da motorda ölmüş bir koşuya aynı statüyü yazıyor
+   * (`DB_STATUS_BY_EXECUTION`), yani iki yol aynı olguya aynı adı veriyor.
    *
    * ── Ne KAYBOLMUYOR ────────────────────────────────────────────────────────
-   * Hiçbir şey. Şemadaki dört kardeş tablo da `onUpdate: Cascade` taşıyor, yani
-   * defter satırları, adım olayları, kanıt kalemleri ve kapı kayıtları yeni
-   * kimliğe birlikte gidiyor. Satır silinmiyor, kopyalanmıyor; yalnız adı
-   * değişiyor ve panonun varsayılan görünümünden çıkıyor.
+   * Hiçbir şey, ve eskisinden DAHA azına dokunularak: satır silinmiyor,
+   * kopyalanmıyor, adı bile değişmiyor. Defter (`JournalEntry`), adım olayları,
+   * kanıt kalemleri ve kapı kayıtları zaten `maestro-<ticket>`e bağlı ve öyle
+   * kalıyor — tek bir yabancı anahtar yazısı yapılmadığı için taşınma
+   * sırasında kaybolma ihtimali de ortadan kalkıyor. `priorWork` bu satırları
+   * `ticketKey` + `archivedAt not null` ile buluyor (`PrismaRunContextStore`),
+   * ve o sorgu kimliğe hiç bakmadığı için aynen çalışmaya devam ediyor.
    *
    * `null` = böyle bir ticket yok.
    */
   async retire(ticketKey: string, at: Date): Promise<RetiredRun | null> {
     const row = await this.runs.findFirst({ where: { ticketKey }, orderBy: { updatedAt: "desc" } });
     if (row === null) return null;
-    // Saniye çözünürlüğü değil, MİLİSANİYE: aynı ticket'ı iki kez arka arkaya
-    // emekliye ayırmak (çift tık, ya da bir yeniden deneme) saniyede iki kez
-    // olabilir, ve o iki satır çakışırsa ikincisi sessizce düşerdi.
-    const retiredId = `${row.id}#emekli-${at.getTime()}`;
-    await this.runs.update({ where: { id: row.id }, data: { id: retiredId, archivedAt: at } });
+    // Kimlik AYNEN kalıyor; değişen yalnız statü ve arşiv damgası. Tek yazı,
+    // çünkü ikisi tek bir olgu: "bu koşu bitti ve panodan çekildi".
+    await this.runs.update({ where: { id: row.id }, data: { archivedAt: at, status: "fail" } });
     /**
      * KAÇINCI EMEKLİLİK — otomatik yeniden başlatmanın sonsuz döngü freni.
      *
@@ -347,16 +405,18 @@ export class PrismaRunCatalog implements RunCatalog {
      *
      * `archivedAt: { not: null }` elle ARŞİVLENMİŞ satırları da sayar, ve bu
      * bilinçli bir fazla saymadır: emekli satır ile elle arşivlenmiş satırı
-     * ayırmanın tek yolu kimliğin `#emekli-` son ekine bakmak olurdu, ve o
-     * kontrolü SQL'e taşımak bu delegenin yüzeyini bir `contains` yan
-     * tümcesiyle genişletirdi. Frenin yönü zaten güvenli tarafa bakıyor: fazla
-     * sayan bir sayaç ROBOTU ERKEN DURDURUR ve işi insana devreder, eksik
-     * sayan bir sayaç ise döngüyü açık bırakırdı. Elle arşivlemek nadir ve
-     * operatörün kendi kararı; onun ardından gelen bir devir, sessiz bir
-     * döngüden iyidir.
+     * ayırmanın tek yolu satırın kimliğine bakmak olurdu, ve emeklilik artık
+     * kimliğe HİÇ dokunmadığı için orada okunacak bir işaret de yok. Frenin
+     * yönü zaten güvenli tarafa bakıyor: fazla sayan bir sayaç ROBOTU ERKEN
+     * DURDURUR ve işi insana devreder, eksik sayan bir sayaç ise döngüyü açık
+     * bırakırdı. Elle arşivlemek nadir ve operatörün kendi kararı; onun
+     * ardından gelen bir devir, sessiz bir döngüden iyidir.
      */
     const count = await this.runs.count({ where: { ticketKey, archivedAt: { not: null } } });
-    return { id: retiredId, count };
+    // Emekliye ayrılan satırın kimliği — DEĞİŞMEDİĞİ için okunduğu gibi.
+    // Denetim zinciri bunu "önceki koşunun defteri nerede" sorusunun cevabı
+    // olarak yazıyor, ve o defter gerçekten hâlâ bu kimlikte duruyor.
+    return { id: row.id, count };
   }
 
   /**

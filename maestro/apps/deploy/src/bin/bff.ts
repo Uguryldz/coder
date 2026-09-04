@@ -1241,8 +1241,10 @@ export async function main(): Promise<void> {
       /**
        * YENİDEN BAŞLATMA — elle düğmenin kullandığı YOLUN AYNISI.
        *
-       * `restartDeadRun` emekliye ayırır (defter/adım/kanıt/kapı `onUpdate:
-       * Cascade` ile yeni kimliğe taşınır), denetime yazar, ve `runIntake` ile
+       * `restartDeadRun` emekliye ayırır (satır terminale çekilip arşivlenir;
+       * defter/adım/kanıt/kapı yazıldıkları kimlikte olduğu gibi kalır — kimliği
+       * değiştirmek defterin yalnızca-ekleme korumasına çarpıyordu), denetime
+       * yazar, ve `runIntake` ile
        * ticket'ı yeniden alır. İkinci bir mekanizma yazmak, alımın zayıf bir
        * kopyasını üretmek olurdu.
        *

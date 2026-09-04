@@ -190,9 +190,12 @@ export interface RunCatalog {
    * kapı kayıtlarının hepsi bu satıra `onDelete: Restrict` ile bağlı. Ama asıl
    * sebep o değil — eski koşunun defteri KORUNMALI, çünkü M33 zinciri o koşuda
    * ne olduğunu anlatıyor ve bir denetçinin sorusu tam olarak orada cevabını
-   * buluyor. Yapılan şey satırın KİMLİĞİNİ değiştirmek: `onUpdate: Cascade`
-   * sayesinde defteri, adımları, kanıtı ve kapıları yeni kimliğe TAŞINIR —
-   * tek bir satır bile kaybolmaz, yalnız yeni koşuya yer açılır.
+   * buluyor. Yapılan şey satırı TERMİNAL statüye çekip arşivlemek: defter,
+   * adımlar, kanıt ve kapılar yazıldıkları kimlikte olduğu gibi kalır — tek bir
+   * satır bile yeniden yazılmaz, ve ticket yine de yoldan çekilir, çünkü
+   * `WorkflowRun_ticketKey_live_key` yalnız terminal OLMAYAN satırları
+   * kısıtlıyor. Kimliği değiştirmek denenmişti ve defterin yalnızca-ekleme
+   * korumasına çarpıyordu (bkz. `PrismaRunCatalog.retire`).
    *
    * ── Neden yalnız ÖLÜ koşular ──────────────────────────────────────────────
    * Yaşayan bir koşuyu emekliye ayırmak, kapıda insan onayı bekleyen işi
@@ -219,16 +222,23 @@ export interface RunCatalog {
  * olması gerekiyor.
  *
  * ── Neden yeni bir SÜTUN değil ────────────────────────────────────────────
- * Cevap zaten veritabanında duruyor: her emeklilik `maestro-<ticket>#emekli-<ms>`
- * biçiminde BİR satır bırakıyor, ve o satırlar silinmiyor (defter, adım,
- * kanıt ve kapı kayıtları onlara bağlı). Sayaç için bir sütun açmak, aynı
+ * Cevap zaten veritabanında duruyor: her emeklilik ARŞİV DAMGASI basılmış bir
+ * satır bırakıyor (`archivedAt not null`), ve o satırlar silinmiyor (defter,
+ * adım, kanıt ve kapı kayıtları onlara bağlı). Sayaç için bir sütun açmak, aynı
  * olguyu ikinci kez — ve ilkiyle çelişebilecek şekilde — saymak olurdu.
  * Sayının kaynağı emekli satırların KENDİSİ; bir göç gerekmiyor.
  *
  * `count` bu emeklilik DAHİL: ilk kez emekliye ayrılan bir ticket 1 döner.
  */
 export interface RetiredRun {
-  /** Emekliye ayrılan satırın yeni kimliği — denetim kaydı bunu adıyla yazar. */
+  /**
+   * Emekliye ayrılan satırın kimliği — denetim kaydı bunu adıyla yazar.
+   *
+   * DEĞİŞMİYOR: emekliye ayırma satırın adına dokunmuyor, çünkü dokunmak
+   * `JournalEntry.runId`'yi cascade ile UPDATE ettiriyor ve o tablo
+   * yalnızca-ekleme korumalı (M30/M33). Yani bu kimlik, eski koşunun defterinin
+   * GERÇEKTEN durduğu kimlik — denetçinin peşine düşeceği ad.
+   */
   readonly id: string;
   /** Ticket'ın bugüne kadarki emeklilik sayısı, bu emeklilik dahil. */
   readonly count: number;

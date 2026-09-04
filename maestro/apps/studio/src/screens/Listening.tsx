@@ -234,6 +234,15 @@ interface SweepStatus {
   readonly lastStarted: number;
   readonly rulesSearched: number;
   readonly lastError: string | null;
+  /**
+   * Son turda otomatik yeniden başlatılan ölü koşu sayısı, ve üst üste
+   * düştüğü için insana devredilen ticket sayısı.
+   *
+   * Opsiyonel: bu alanları tanımayan eski bir BFF hâlâ geçerli bir cevap
+   * veriyor, ve o cevabın anlamı doğru olan — gösterilecek bir şey yok.
+   */
+  readonly lastRestarted?: number;
+  readonly lastHandedOver?: number;
 }
 
 export function ListeningScreen(): ReactNode {
@@ -1138,6 +1147,26 @@ export function ListeningScreen(): ReactNode {
                       rules: String(sweep.data.rulesSearched),
                     })}
                   </>
+                )}
+                {/* ÖLÜ KOŞULAR — "0 ticket alındı" diyen bir tur iki ölü
+                    koşuyu yeniden akışa almış olabilir: yeni ticket yoktu ama
+                    havuzdaki iş İLERLEDİ. Tek bir sayı bunu söyleyemez. */}
+                {(sweep.data.lastRestarted ?? 0) > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    {t("listening.sweep.restarted", {
+                      count: String(sweep.data.lastRestarted ?? 0),
+                    })}
+                  </div>
+                )}
+                {/* DEVİR — operatörün BAKMASI gereken tek rakam olabilir:
+                    bir ticket üst üste ölüyor ve robot artık denemiyor.
+                    Uyarı rengiyle, çünkü bu bir bilgi değil bir iş. */}
+                {(sweep.data.lastHandedOver ?? 0) > 0 && (
+                  <div style={{ marginTop: 4, color: "#b45309" }}>
+                    {t("listening.sweep.handed_over", {
+                      count: String(sweep.data.lastHandedOver ?? 0),
+                    })}
+                  </div>
                 )}
                 {sweep.data.lastError !== null && (
                   <div style={{ marginTop: 4, color: "#b91c1c" }}>

@@ -7,6 +7,9 @@ import {
   commentText,
   humanCommentsOf,
   withComments,
+  withPriorWork,
+  priorWorkNote,
+  PRIOR_WORK_BLOCK_TITLE,
 } from "../src/impl/comments.js";
 import { SNAPSHOT } from "./doubles.js";
 
@@ -144,6 +147,69 @@ describe("withComments — snapshot KLONLANIR, sözleşme donmuş kalır", () =>
 
   it("açıklama dışındaki her alan korunur", () => {
     const out = withComments(SNAPSHOT, [{ author: "u", text: "cevap" }]);
+    expect({ ...out, description: SNAPSHOT.description }).toEqual(SNAPSHOT);
+  });
+});
+
+/**
+ * ── ÖNCEKİ DENEMELER MODELE GÖSTERİLİR — "AI eski yapılanları hatırlasın" ───
+ *
+ * Ölü bir koşu artık otomatik yeniden başlıyor. Hatırlamayan bir AI ile bu,
+ * aynı işi baştan yaptırmak demek — operatör için ilerleme değil TEKRAR. Bu
+ * testler geçmişin promptta gerçekten göründüğünü ve ne kadarının göründüğünü
+ * sabitliyor.
+ */
+describe("withPriorWork — önceki koşuların işi modele gösterilir", () => {
+  const PRIOR = {
+    attempts: 2,
+    analysis: ["analiz yazıldı: risk: yuksek — ödeme akışı"],
+    questions: ["soru soruldu: hangi para birimi?"],
+    decisions: ["kapı reddedildi: kabul kriterleri eksik"],
+  };
+
+  it("geçmiş yoksa snapshot AYNEN döner — ilk koşunun promptu değişmez", () => {
+    expect(withPriorWork(SNAPSHOT, null)).toBe(SNAPSHOT);
+  });
+
+  it("geçmiş açıklamanın sonuna, başlıklı bir blok olarak eklenir", () => {
+    const out = withPriorWork(SNAPSHOT, PRIOR);
+    expect(out.description).toContain(SNAPSHOT.description);
+    expect(out.description).toContain(PRIOR_WORK_BLOCK_TITLE);
+    expect(out.description).toContain("daha önce 2 kez çalışıldı");
+    expect(out.description).toContain("risk: yuksek — ödeme akışı");
+    expect(out.description).toContain("hangi para birimi?");
+    expect(out.description).toContain("kabul kriterleri eksik");
+  });
+
+  /**
+   * "Aynı işi TEKRARLAMA" BAŞLIKTA, veri bloğunun içinde değil: veri çitinin
+   * içine yazılan bir emir tam olarak o çitin engellediği şeydir. Başlık
+   * prompt'un kendi metni, yani rolün sözü — ve söylenmesi gerekiyor, çünkü
+   * geçmişi GÖRMEK ile ondan DEVAM ETMEK arasındaki farkı model kendi başına
+   * kurmaz.
+   */
+  it("başlık modele geçmişi TEKRARLAMAMASINI söyler", () => {
+    expect(PRIOR_WORK_BLOCK_TITLE).toContain("TEKRARLAMA");
+  });
+
+  /**
+   * Defterin dört türü de boş olabilir — koşu daha ilk adımda ölmüş olabilir —
+   * ve o durumda bile modelin bilmesi gereken bir şey var: "bu ilk denemen
+   * değil".
+   */
+  it("defter boş olsa da deneme sayısı yazılır", () => {
+    const note = priorWorkNote({ attempts: 1, analysis: [], questions: [], decisions: [] });
+    expect(note).toContain("daha önce 1 kez çalışıldı");
+  });
+
+  it("özgün snapshot DEĞİŞMEZ — kopya, mutasyon değil", () => {
+    const before = SNAPSHOT.description;
+    withPriorWork(SNAPSHOT, PRIOR);
+    expect(SNAPSHOT.description).toBe(before);
+  });
+
+  it("açıklama dışındaki her alan korunur", () => {
+    const out = withPriorWork(SNAPSHOT, PRIOR);
     expect({ ...out, description: SNAPSHOT.description }).toEqual(SNAPSHOT);
   });
 });

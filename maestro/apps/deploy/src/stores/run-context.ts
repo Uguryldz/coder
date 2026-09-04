@@ -1,5 +1,5 @@
 import type { ApplicationRecord } from "@maestro/contracts";
-import type { RunContext, RunContextStore } from "@maestro/workflows";
+import type { PriorWork, RunContext, RunContextStore } from "@maestro/workflows";
 
 /**
  * `CommandSpec`, taken from the interface rather than imported.
@@ -173,6 +173,68 @@ export interface RunDelegate {
 }
 
 /**
+ * EMEKLİ DEFTER SATIRLARINI OKUYAN DELEGE — "AI eski yapılanları hatırlasın".
+ *
+ * `JournalEntry.runId` bu ticket'ın emekli koşularının kimliğini taşıyor
+ * (`maestro-<ticket>#emekli-<ms>`), çünkü emekliye ayırma satırı silmiyor
+ * kimliğini değiştiriyor ve şemadaki `onUpdate: Cascade` defteri o yeni
+ * kimliğe TAŞIYOR. Yani geçmiş orada duruyor; bu delege onu okuyan yüzey.
+ *
+ * `RunDelegate` ile aynı desen ve aynı gerekçe: mağaza tablonun ne kadarına
+ * dokunduğunu YAZILI olarak söylüyor. Tek bir `findMany`, ve `where` yalnız
+ * `runId in (...)` + `kind in (...)` — koşunun defterinin TAMAMI değil, özete
+ * girecek dört tür.
+ */
+export interface JournalDelegate {
+  findMany(args: {
+    where: { runId: { in: string[] }; kind: { in: JournalKind[] } };
+    orderBy: { at: "desc" };
+    take: number;
+    select: { kind: true; title: true; detail: true; actor: true };
+  }): Promise<Array<{ kind: string; title: string; detail: string; actor: string }>>;
+}
+
+/** Emekli KOŞU satırlarını bulan delege — özet hangi kimliklerden okunacak. */
+export interface RetiredRunDelegate {
+  findMany(args: {
+    where: { ticketKey: string; archivedAt: { not: null } };
+    orderBy: { archivedAt: "desc" };
+    take: number;
+    select: { id: true };
+  }): Promise<Array<{ id: string }>>;
+}
+
+/**
+ * ÖZETE GİREN DEFTER TÜRLERİ — ve neden yalnız bu üçü.
+ *
+ * `analysis` "daha önce ne yazmıştım", `clarification` "neyi zaten sordum",
+ * `gate` "insan neye hayır dedi". Diğer on beş tür (ci, pr, scan, test_run…)
+ * yeniden başlayan bir koşunun TEKRARLAMAYACAĞI işler: onlar mühendislik
+ * turunun çıktıları, ve yeni koşu o adımlara ulaşmadan önce zaten baştan
+ * karar verecek. Prompta koymak, modeli okumayacağı satırlarla doldurmak
+ * olurdu — küçük modellerde doğrudan zarar.
+ */
+const PRIOR_WORK_KINDS = ["analysis", "clarification", "gate"] as const;
+export type JournalKind = (typeof PRIOR_WORK_KINDS)[number];
+
+/**
+ * KAÇ EMEKLİ KOŞU, KAÇ SATIR — bağlam sınırının iki rakamı.
+ *
+ * Üç emekli koşu: otomatik yeniden başlatmanın kendi freni de üçte duruyor
+ * (`jira-discovery.ts` `maxAutoRestarts`), yani daha fazlası zaten insana
+ * devredilmiş bir ticket demek.
+ *
+ * Otuz satır: üç türün üç koşu boyunca toplamı. Daha fazlası gpt-oss gibi
+ * küçük modellerde bağlamı boğar, ve `previousNote`in "ilk beş kabul kriteri"
+ * kararıyla aynı disiplin — özet, döküm değil.
+ */
+const PRIOR_RUN_LIMIT = 3;
+const PRIOR_ENTRY_LIMIT = 30;
+
+/** Bir türden özete kaç satır girer — tek bir tür diğerlerini boğmasın. */
+const PER_KIND_LIMIT = 5;
+
+/**
  * Statuses that mean "this run is over". `get` reads the newest run that is
  * NOT one of them, which is the same definition of "live" the partial unique
  * index uses (migration 0002, widened by 0011) — one place to change it, and
@@ -305,7 +367,19 @@ export class UnpinnedRunError extends Error {
 }
 
 export class PrismaRunContextStore implements RunContextStore {
-  constructor(private readonly runs: RunDelegate) {}
+  /**
+   * `history` OPSİYONEL, ve bu bilinçli: onsuz mağaza bugüne kadar nasıl
+   * davranıyorsa öyle davranır (`priorWork: null`, prompta hiçbir şey
+   * eklenmez). Var olan çağıranlar ve testler değişmeden çalışsın diye —
+   * `boundProjects` seam'iyle aynı duruş.
+   */
+  constructor(
+    private readonly runs: RunDelegate,
+    private readonly history?: {
+      readonly retired: RetiredRunDelegate;
+      readonly journal: JournalDelegate;
+    },
+  ) {}
 
   /**
    * Fail-closed on both halves.
@@ -329,7 +403,69 @@ export class PrismaRunContextStore implements RunContextStore {
     if (row.appId !== null && row.application === null) {
       throw new IncompleteRunContextError(ticket, "application");
     }
-    return toRunContext(row, row.application);
+    return { ...toRunContext(row, row.application), priorWork: await this.priorWork(ticket) };
+  }
+
+  /**
+   * ÖNCEKİ KOŞULARIN ÖZETİ — emekli defterlerden okunur, ya da `null`.
+   *
+   * ── Maliyet ───────────────────────────────────────────────────────────────
+   * Emekli satırı OLMAYAN bir ticket'ta bir sorgu (ve o sorgu boş döner, yani
+   * ikincisi hiç yapılmaz). Emekli satırı olan ticket'ta iki sorgu. Ezici
+   * çoğunluk birincisi: bir ticket'ın yeniden başlatılması istisna, kural
+   * değil.
+   *
+   * ── ASLA ATMAZ ────────────────────────────────────────────────────────────
+   * Geçmişi okuyamamak, koşuyu durdurmak için bir sebep değil: bağlamsız bir
+   * koşu, hiç koşu olmamasından iyidir. Hata yutulur ve `null` dönülür — yani
+   * adım bu alan var olmadan önceki davranışına düşer. Aynı kural
+   * `readHumanComments`te de geçerli (`impl/comments.ts`) ve aynı gerekçeyle.
+   */
+  private async priorWork(ticket: string): Promise<PriorWork | null> {
+    if (this.history === undefined) return null;
+    try {
+      const retired = await this.history.retired.findMany({
+        where: { ticketKey: ticket, archivedAt: { not: null } },
+        orderBy: { archivedAt: "desc" },
+        take: PRIOR_RUN_LIMIT,
+        select: { id: true },
+      });
+      if (retired.length === 0) return null;
+
+      const entries = await this.history.journal.findMany({
+        where: {
+          runId: { in: retired.map((row) => row.id) },
+          kind: { in: [...PRIOR_WORK_KINDS] },
+        },
+        // En TAZE önce: sınıra takılırsak kaybedilen satırlar en eskiler olur,
+        // yani modelin en az ihtiyaç duyduğu olanlar.
+        orderBy: { at: "desc" },
+        take: PRIOR_ENTRY_LIMIT,
+        select: { kind: true, title: true, detail: true, actor: true },
+      });
+
+      const pick = (kind: string): string[] =>
+        entries
+          .filter((entry) => entry.kind === kind)
+          .slice(0, PER_KIND_LIMIT)
+          .map((entry) => {
+            const detail = entry.detail.trim();
+            // Başlık + ayrıntı, ayrıntı VARSA. Ayrıntı defterin uzun yarısı;
+            // kırpılması gerekiyor ki tek bir kayıt özeti ele geçirmesin.
+            return detail === ""
+              ? entry.title
+              : `${entry.title}: ${detail.length > 300 ? `${detail.slice(0, 300)}…` : detail}`;
+          });
+
+      return {
+        attempts: retired.length,
+        analysis: pick("analysis"),
+        questions: pick("clarification"),
+        decisions: pick("gate"),
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -545,6 +681,10 @@ function toRunContext(row: RunRow, app: ApplicationRow | null): RunContext {
     risk: (row.risk as RunContext["risk"]) ?? null,
     prId: row.prId,
     resumeToken: row.resumeToken,
+    // `get` bunu ÜZERİNE yazar (emekli defterleri okuduktan sonra). Buradaki
+    // `null` "geçmiş yok" demek ve satırdan okunabilecek bir şey değil —
+    // geçmiş EMEKLİ satırlarda duruyor, bu satırda değil.
+    priorWork: null,
   };
 }
 

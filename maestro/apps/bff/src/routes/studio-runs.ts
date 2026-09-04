@@ -14,6 +14,7 @@ import type { RunRecord } from "../read-models.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
 import { classifyingFields, runIntake } from "../jira-intake.js";
+import { restartDeadRun } from "../run-restart.js";
 import { assertProjectAccess } from "./access.js";
 import { blankAsAbsent } from "./paging.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
@@ -221,39 +222,37 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
         throw conflict("run_alive", { ticket, step: live.step, status: live.status });
       }
 
-      const at = deps.clock.now();
-      const retiredId = await deps.read.runs.retire(ticket, at);
-      // `get` az önce bir satır gördüğüne göre buraya düşmek, satırın iki çağrı
-      // ARASINDA gitmesi demek. 404, uydurulmuş bir başarıdan iyidir.
-      if (retiredId === null) throw notFound("no_run", { ticket });
-
-      await deps.audit.append({
-        actor: sessionActor(sessionOf(request)),
-        action: "PARAM_CHANGED",
-        subject: `run:${ticket}`,
-        at,
-        meta: {
-          surface: "runs",
-          verb: "restarted",
-          // Eski koşunun defteri nerede — zincirde adıyla.
-          retiredRunId: retiredId,
-          previousStatus: record.status ?? "",
-          previousStep: record.step,
+      /**
+       * Emekliye ayırma + denetim + alım, TEK yerden (`run-restart.ts`).
+       *
+       * Bu üçlü burada satır satır yazılıydı; tarama turu da aynı işi yapmak
+       * zorunda kalınca (operatörün "düşen koşu OTOMATİK yeniden başlamalı"
+       * şartı) ikinci bir kopya yerine ortak yol çıkarıldı. Elle yol ile
+       * otomatik yolun denetim kaydı ve alım çağrısı böylece BİREBİR aynı;
+       * ayrışsalardı, bir denetçinin gördüğü hikâye ticket'ın hangi kapıdan
+       * girdiğine göre değişirdi.
+       */
+      const restarted = await restartDeadRun(deps, {
+        ticket,
+        auditActor: sessionActor(sessionOf(request)),
+        intakeActor: sessionOf(request).userId,
+        source: "operator",
+        previousStatus: record.status ?? "",
+        previousStep: record.step,
+        onSnapshotError: (error) => {
+          request.log.warn({ err: error, ticket }, "ticket snapshot unavailable at restart");
         },
       });
+      // `get` az önce bir satır gördüğüne göre buraya düşmek, satırın iki çağrı
+      // ARASINDA gitmesi demek. 404, uydurulmuş bir başarıdan iyidir.
+      if (!restarted.ok) throw notFound("no_run", { ticket });
 
-      const outcome = await runIntake(deps, {
-        ticket,
-        actor: sessionOf(request).userId,
-        explicit: true,
-        ...(await classifyingFields(deps, ticket, (error) => {
-          request.log.warn({ err: error, ticket }, "ticket snapshot unavailable at restart");
-        })),
-      });
       // 202 ve `retiredRunId` birlikte: panel "eski koşu emekliye ayrıldı, yeni
       // koşu alındı" diyebilsin, ve alım REDDEDİLDİYSE (kill-switch, bağlı
       // olmayan proje) operatör sebebini aynı cevapta görsün.
-      return reply.code(202).send({ ...outcome, retiredRunId: retiredId });
+      return reply
+        .code(202)
+        .send({ ...restarted.outcome, retiredRunId: restarted.retiredRunId });
     },
   );
 

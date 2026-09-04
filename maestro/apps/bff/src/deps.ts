@@ -780,6 +780,26 @@ export type DiscoveryStatusReader = () => {
    * birikim yok.
    */
   readonly poolRemaining?: number | null;
+  /**
+   * Son turda OTOMATİK yeniden başlatılan ölü koşu sayısı.
+   *
+   * Ayrı bir alan, çünkü `lastStarted` ile karıştırılmamalı: 0 yeni ticket alan
+   * ama 2 ölü koşuyu yeniden akışa alan bir tur ÇALIŞAN bir turdur, ve tek bir
+   * sayı bunu söyleyemez.
+   *
+   * Opsiyonel, `poolRemaining` ile aynı gerekçe: bu alanı tanımayan bir okuyucu
+   * hâlâ geçerli bir cevap veriyor.
+   */
+  readonly lastRestarted?: number;
+  /**
+   * Üst üste düştüğü için İNSANA DEVREDİLEN ticket sayısı — panelin operatöre
+   * "bak" demesi gereken tek rakam.
+   *
+   * 0'dan büyükse kalıcı bir hata var ve robot artık denemiyor. Bu sayının
+   * gösterilmemesi, frenin sessizce çalışması demek olurdu — döngünün kendisi
+   * kadar kötü bir sessizlik.
+   */
+  readonly lastHandedOver?: number;
 };
 
 /**

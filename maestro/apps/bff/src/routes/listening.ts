@@ -223,6 +223,10 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
             // "bilinmiyor" değil, "sorulacak bir tarama yok" demek — ve panel
             // ikisini de aynı şekilde okur (kalan gösterme).
             poolRemaining: null,
+            // Aynı gerekçe: tarama hiç bağlı değilken yeniden başlatılan da,
+            // devredilen de yok.
+            lastRestarted: 0,
+            lastHandedOver: 0,
           }
         : read(),
     );

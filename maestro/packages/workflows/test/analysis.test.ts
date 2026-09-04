@@ -370,3 +370,48 @@ describe("analiz yeniden yazılırken geçmişi görüyor", () => {
     expect(keys.indexOf("rewrite")).toBeGreaterThan(keys.indexOf("description"));
   });
 });
+
+/**
+ * ── ANALİZ DE ÖNCEKİ KOŞULARI HATIRLAR ──────────────────────────────────────
+ *
+ * `runIntake` ile aynı gerekçe ve aynı kaynak (`RunContext.priorWork`): ölü
+ * bir koşu otomatik yeniden başlıyor, ve hatırlamayan bir analiz aynı belgeyi
+ * yeniden üretir — operatör için ilerleme değil TEKRAR.
+ *
+ * `rewrite`ten AYRI bir alan: `rewrite` AYNI koşunun ikinci turu ("operatör
+ * geri gönderdi"), bu ise ÖNCEKİ koşunun işi ("koşu düştü, yenisi başladı").
+ */
+describe("writeAnalysis — önceki koşuların işi", () => {
+  const ok = () => ({ status: "ok" as const, value: analysisDoc("kritik"), log: LOG });
+  const inputOf = (fakes: ReturnType<typeof makeFakes>): Record<string, unknown> =>
+    fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc")?.input as Record<
+      string,
+      unknown
+    >;
+
+  it("önceki koşuların özetini modele ayrı bir alanda verir", async () => {
+    const fakes = makeFakes({
+      context: {
+        priorWork: {
+          attempts: 2,
+          analysis: ["analiz yazıldı: risk: yuksek — ödeme akışı"],
+          questions: ["soru soruldu: hangi para birimi?"],
+          decisions: ["kapı reddedildi: kabul kriterleri eksik"],
+        },
+      },
+      generateObject: () => ok(),
+    });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+
+    const note = String(inputOf(fakes)["priorWork"] ?? "");
+    expect(note).toContain("daha önce 2 kez çalışıldı");
+    expect(note).toContain("kabul kriterleri eksik");
+    expect(note).toContain("hangi para birimi?");
+  });
+
+  it("geçmiş yoksa alan HİÇ gitmez — ilk koşunun promptu bit bit aynı kalır", async () => {
+    const fakes = makeFakes({ generateObject: () => ok() });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    expect("priorWork" in inputOf(fakes)).toBe(false);
+  });
+});

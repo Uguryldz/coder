@@ -63,6 +63,9 @@ export function runContext(over: Partial<RunContext> = {}): RunContext {
     risk: null,
     prId: null,
     resumeToken: null,
+    // Varsayılan: bu ticket'ın emekli koşusu yok — ezici çoğunluk, ve mevcut
+    // testlerin ölçtüğü davranış. Geçmişi SINAYAN test `over` ile verir.
+    priorWork: null,
     ...over,
   };
 }

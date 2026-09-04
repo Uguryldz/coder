@@ -14,6 +14,7 @@ import {
   type Page,
   type RunCatalog,
   type RunCatalogFilter,
+  type RetiredRun,
   type RunRecord,
 } from "@maestro/bff";
 
@@ -329,7 +330,7 @@ export class PrismaRunCatalog implements RunCatalog {
    *
    * `null` = böyle bir ticket yok.
    */
-  async retire(ticketKey: string, at: Date): Promise<string | null> {
+  async retire(ticketKey: string, at: Date): Promise<RetiredRun | null> {
     const row = await this.runs.findFirst({ where: { ticketKey }, orderBy: { updatedAt: "desc" } });
     if (row === null) return null;
     // Saniye çözünürlüğü değil, MİLİSANİYE: aynı ticket'ı iki kez arka arkaya
@@ -337,7 +338,25 @@ export class PrismaRunCatalog implements RunCatalog {
     // olabilir, ve o iki satır çakışırsa ikincisi sessizce düşerdi.
     const retiredId = `${row.id}#emekli-${at.getTime()}`;
     await this.runs.update({ where: { id: row.id }, data: { id: retiredId, archivedAt: at } });
-    return retiredId;
+    /**
+     * KAÇINCI EMEKLİLİK — otomatik yeniden başlatmanın sonsuz döngü freni.
+     *
+     * Yazıdan SONRA sayılıyor, ki bu emeklilik de sayıya dahil olsun: çağıran
+     * "bu ticket kaçıncı kez yeniden başlatılıyor" sorusunun cevabını istiyor,
+     * "önce kaç kez başlatılmıştı"nın değil.
+     *
+     * `archivedAt: { not: null }` elle ARŞİVLENMİŞ satırları da sayar, ve bu
+     * bilinçli bir fazla saymadır: emekli satır ile elle arşivlenmiş satırı
+     * ayırmanın tek yolu kimliğin `#emekli-` son ekine bakmak olurdu, ve o
+     * kontrolü SQL'e taşımak bu delegenin yüzeyini bir `contains` yan
+     * tümcesiyle genişletirdi. Frenin yönü zaten güvenli tarafa bakıyor: fazla
+     * sayan bir sayaç ROBOTU ERKEN DURDURUR ve işi insana devreder, eksik
+     * sayan bir sayaç ise döngüyü açık bırakırdı. Elle arşivlemek nadir ve
+     * operatörün kendi kararı; onun ardından gelen bir devir, sessiz bir
+     * döngüden iyidir.
+     */
+    const count = await this.runs.count({ where: { ticketKey, archivedAt: { not: null } } });
+    return { id: retiredId, count };
   }
 
   /**

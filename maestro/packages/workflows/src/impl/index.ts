@@ -64,6 +64,12 @@ export {
   humanCommentsOf,
   readHumanComments,
   withComments,
+  // Önceki koşuların özeti — "AI eski yapılanları hatırlasın". Dışa açık,
+  // çünkü testler bloğun kendisini ölçüyor: geçmişin modele NE kadarının
+  // gittiği, sessizce kayabilecek bir karar.
+  withPriorWork,
+  priorWorkNote,
+  PRIOR_WORK_BLOCK_TITLE,
   type HumanComment,
 } from "./comments.js";
 /**

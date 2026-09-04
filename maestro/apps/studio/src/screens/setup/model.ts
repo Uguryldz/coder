@@ -269,8 +269,9 @@ export interface SetupDraft {
    * Adım 4c — HANGİ ONAY KAPILARI AÇILSIN.
    *
    * ── Neden sihirbaza da kondu ──────────────────────────────────────────────
-   * Kapı seçimi uzman ekranında (`Listening.tsx`) vardı ve orada her zaman
-   * görünür. Ama sihirbazdan geçen bir operatör o ekrana hiç uğramayabilir, ve
+   * Kapı seçimi Dinleme kuralları ekranında (`Listening.tsx`) vardı ve orada her
+   * zaman görünür. Ama sihirbazdan geçen bir operatör o ekrana hiç uğramayabilir,
+   * ve
    * uğramadığında seçimin VARLIĞINDAN haberdar olmaz: sahada ölçülen cümle tam
    * buydu — "1.0.26'da var ama onu nereden yapacağım bilmiyorum". Bir ekranın
    * sormadığı soru, olmayan bir soru gibi davranır.

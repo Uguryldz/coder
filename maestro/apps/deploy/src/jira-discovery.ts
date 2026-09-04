@@ -104,6 +104,69 @@ export interface KnownRun {
 }
 
 /**
+ * MOTORDA YAŞAYAN KOŞULARIN ANAHTARLARI — turun "bu koşu ölmüş mü" ölçümü.
+ *
+ * ── Neden ticket BAŞINA sorgu değil ───────────────────────────────────────
+ * `queryRunState` tek bir iş akışını sorar, ve havuzda yüz ticket varsa bu
+ * her turda yüz gRPC çağrısı demek. Tarama beş dakikada bir koşuyor ve
+ * `runIntake`in kendisi zaten Jira'ya gidiyor; oraya ticket başına bir de
+ * Temporal turu eklemek, çözülen sorundan (durmayan robot) pahalı bir sorun
+ * (motoru döven zamanlayıcı) üretirdi.
+ *
+ * Bunun yerine TEK bir toplu okuma: `RunGateway.list()` motorun tuttuğu
+ * execution'ları bir sayfada verir, ve turun ihtiyacı olan tek şey o
+ * sayfadaki ticket ANAHTARLARIDIR. `reconcileRunStatuses` (açılışta koşan
+ * kıyas) tam olarak aynı deseni kullanıyor — aynı soruyu iki farklı maliyetle
+ * sormamak için.
+ *
+ * ── FAIL-CLOSED: okunamayan motor "her koşu ölü" demek DEĞİLDİR ───────────
+ * Bu işlev `null` dönerse tur hiçbir koşuyu ölü SAYMAZ ve hiçbir şey yeniden
+ * başlatmaz. Sebep ölçülebilir bir felaket: motora ulaşılamayan bir turda
+ * liste boş dönseydi, havuzdaki HER ticket "ölü" görünür ve hepsi birden
+ * yeniden başlatılırdı — kapıda insan onayı bekleyenler dahil. Bir ağ
+ * hıçkırığının bedeli, bankanın bütün onay kuyruğunun sessizce silinmesi
+ * olamaz.
+ */
+export interface LiveRuns {
+  /** Motorun tanıdığı ticket anahtarları, ya da okunamadıysa `null`. */
+  (): Promise<ReadonlySet<string> | null>;
+}
+
+/**
+ * ÖLÜ BİR KOŞUYU YENİDEN AKIŞA ALAN İŞLEV — turun elindeki tek yeniden
+ * başlatma yolu, ve elle düğmeyle AYNI yol (`@maestro/bff` `restartDeadRun`).
+ *
+ * Buraya bir seam olarak veriliyor, çünkü `apps/deploy`'un bu modülü
+ * `ResolvedDeps`in tamamını değil, yalnız "şu ticket'ı yeniden başlat" fiilini
+ * tanımalı — `IssueSearcher` ve `CommentReader` ile aynı duruş, ve testin
+ * yeniden başlatmayı gerçek bir veritabanı olmadan ölçebilmesinin yolu.
+ */
+export interface RunRestarter {
+  /**
+   * Ticket'ın BUGÜNE KADAR kaç kez yeniden başlatıldığı — fren bu sayıyla
+   * ölçülür ve ölçüm yeniden başlatmadan ÖNCE yapılır.
+   *
+   * Neden ayrı bir okuma: sayıyı emekliye ayırmanın kendisi de döndürüyor, ama
+   * o cevap ticket ZATEN yeniden başlatıldıktan sonra gelir — yani sınırın
+   * dördüncü denemeyi engellemesi için önce bir dördüncü deneme yapılması
+   * gerekirdi. Fren, frenlediği şeyden sonra çalışamaz.
+   *
+   * Kaynak veritabanındaki emekli SATIRLAR, bir bellek sayacı değil: süreç
+   * yeniden başlasa da sıfırlanmaz. Bellekte tutulan bir sayaç, her dağıtımda
+   * freni sıfırlar ve kalıcı bir hatada döngüyü yeniden açardı.
+   */
+  readonly priorRestarts: (ticket: TicketKey) => Promise<number>;
+  /** Emekliye ayır + yeniden akışa al. `null` = satır kayboldu, yapılacak bir şey yok. */
+  readonly restart: (ticket: TicketKey) => Promise<{
+    /** Ticket'ın KAÇINCI yeniden başlatılması olduğu, bu dahil. */
+    readonly attempt: number;
+    /** Alım kabul edildi mi — reddedildiyse sebebiyle. */
+    readonly accepted: boolean;
+    readonly reason?: string;
+  } | null>;
+}
+
+/**
  * Koşunun durumunu operatörün okuyabileceği bir cümleye çevirir.
  *
  * Kod adları (`gate`, `running`, `handover`) operatörün kelimeleri değil, ve
@@ -187,6 +250,50 @@ export interface DiscoveryOptions {
    * taşıyor, yalnız `select` genişliyor (bkz. `bin/bff.ts`).
    */
   readonly known: () => Promise<readonly (TicketKey | KnownRun)[]>;
+  /**
+   * Motorda YAŞAYAN koşular — ölü koşuyu otomatik yeniden başlatmanın ölçüsü.
+   *
+   * Verilmezse bu kurulumda otomatik yeniden başlatma YOKTUR ve tur bugüne
+   * kadar nasıl davranıyorsa öyle davranır: koşusu olan ticket atlanır, nokta.
+   * Bu, `tickets`/`statuses` seam'leriyle aynı duruş — ölçemediğimiz bir şeyi
+   * varsaymaktansa yapmamak doğru. `restart` olmadan da anlamsız: ikisi
+   * birlikte verilir ya da hiç verilmez.
+   */
+  readonly liveRuns?: LiveRuns;
+  /** Ölü koşuyu yeniden akışa alan işlev; bkz. {@link RunRestarter}. */
+  readonly restart?: RunRestarter;
+  /**
+   * BİR TICKET KAÇ KEZ OTOMATİK YENİDEN BAŞLATILABİLİR — sonsuz döngünün freni.
+   *
+   * ── Neden bir frene ihtiyaç var ───────────────────────────────────────────
+   * Operatörün şartı net: havuzdaki bir ticket'ın koşusu düştüyse robot onu
+   * KENDİLİĞİNDEN yeniden başlatmalı. Ama koşu KALICI bir sebeple ölüyorsa
+   * (bozuk bir repo, cevap vermeyen bir LLM sağlayıcısı, kaldırılmış bir
+   * ajan sürümü) frensiz bir tur onu her turda yeniden başlatır: beş dakikada
+   * bir yeni koşu, her birinde bir denetim kaydı, bir Jira yorumu, ve LLM
+   * çağrıları. Tarama ADMIN bir servis hesabıyla çalışıyor; kontrolsüz bir
+   * yeniden başlatma döngüsü bankaya para ve gürültü olarak yansır.
+   *
+   * ── Neden 3 ───────────────────────────────────────────────────────────────
+   * 1 fazla katı olurdu: bir koşu geçici bir sebeple de ölür (worker'ın
+   * yeniden başlatıldığı bir dağıtım, Temporal'ın saklama süresinin execution'ı
+   * düşürmesi), ve o ticket'ı ilk düşüşte insana devretmek robotun havuzu
+   * boşaltma sözünü tutmaması demek olurdu.
+   *
+   * 2 makul ama dar: iki denemenin ikisi de aynı dağıtım penceresine
+   * düşebilir — beş dakika arayla iki tur, bir bakım penceresini
+   * geçemeyecek kadar yakın.
+   *
+   * 3, iki bağımsız geçici hatanın ÜSTÜNDEN geçmeye yeter (varsayılan beş
+   * dakikalık turda ~15 dakikalık bir pencere) ve kalıcı bir hatada erken
+   * durur. Dördüncüsüne izin verilseydi kazanılan tek şey, kalıcı bir hatada
+   * bir tur daha gürültü olurdu.
+   *
+   * Sayaç ticket'ın EMEKLİ satırlarından okunuyor (`RunCatalog.retire` sayıyı
+   * kendisi döndürüyor), yani süreç yeniden başlasa da sıfırlanmaz — sayacı
+   * bellekte tutmak, her dağıtımda freni sıfırlamak olurdu.
+   */
+  readonly maxAutoRestarts?: number;
   readonly intervalMs: number;
   /**
    * The interval as the OPERATOR set it, in SECONDS, re-read each tick.
@@ -249,6 +356,23 @@ export interface DiscoveryStatus {
    * bitirememiştir.
    */
   readonly poolRemaining: number | null;
+  /**
+   * Son turda OTOMATİK yeniden başlatılan ölü koşu sayısı.
+   *
+   * Panelde ayrı bir satır, çünkü "alındı" ile karıştırılmamalı: 0 ticket
+   * alan ama 2 ölü koşuyu yeniden başlatan bir tur ÇALIŞAN bir turdur, ve
+   * özetin tek sayısı bunu söyleyemez.
+   */
+  readonly lastRestarted: number;
+  /**
+   * Frene takılıp İNSANA DEVREDİLEN ticket'lar — son turda kaç tane.
+   *
+   * Bu sayı 0'dan büyükse operatörün BAKMASI gereken bir şey var: bir ticket
+   * üst üste ölüyor ve robot artık denemiyor. Panelin bunu göstermemesi,
+   * frenin sessizce çalışması demek olurdu — ki bu, döngünün kendisi kadar
+   * kötü bir sessizlik.
+   */
+  readonly lastHandedOver: number;
 }
 
 const status: { current: DiscoveryStatus } = {
@@ -260,6 +384,8 @@ const status: { current: DiscoveryStatus } = {
     rulesSearched: 0,
     lastError: null,
     poolRemaining: null,
+    lastRestarted: 0,
+    lastHandedOver: 0,
   },
 };
 
@@ -270,6 +396,9 @@ export function discoveryStatus(): DiscoveryStatus {
 
 /** How many tickets one round may start, unless the caller says otherwise. */
 const DEFAULT_MAX_PER_ROUND = 20;
+
+/** Bir ticket'ın otomatik yeniden başlatılma sınırı — gerekçesi `maxAutoRestarts`ta. */
+const DEFAULT_MAX_AUTO_RESTARTS = 3;
 
 /**
  * The JQL a rule matches with.
@@ -501,6 +630,33 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
         : ([entry.ticket, entry] as const),
     ),
   );
+  /**
+   * MOTORDA YAŞAYAN KOŞULAR — tur başına TEK bir okuma.
+   *
+   * Döngünün İÇİNDE değil, öncesinde: aynı sayfayı ticket başına yeniden
+   * okumak, kaçınılan maliyetin ta kendisi olurdu. `null` = motor okunamadı,
+   * ve o durumda hiçbir koşu ölü SAYILMAZ (bkz. `LiveRuns`).
+   *
+   * Seam verilmemişse okuma da yapılmaz: otomatik yeniden başlatma bu
+   * kurulumda kapalıdır ve tur eskisi gibi davranır.
+   */
+  const canRestart = options.liveRuns !== undefined && options.restart !== undefined;
+  const alive: ReadonlySet<string> | null = canRestart
+    ? await options.liveRuns!().catch((error: unknown) => {
+        log(
+          `[keşif] motorun koşu listesi okunamadı: ${String(error)} — ` +
+            "bu turda hiçbir ölü koşu yeniden başlatılmayacak (okunamayan bir motoru " +
+            "'her koşu ölmüş' saymak, kapıda bekleyen canlı koşuları da silerdi).",
+        );
+        return null;
+      })
+    : null;
+  /** Bu turda otomatik yeniden başlatılan ticket'lar. */
+  let restarted = 0;
+  /** Frene takılıp insana devredilen ticket'lar — operatörün bakması gereken sayı. */
+  let handedOver = 0;
+  const restartLimit = options.maxAutoRestarts ?? DEFAULT_MAX_AUTO_RESTARTS;
+
   const started: TicketKey[] = [];
   // Deduped across rules: several rules routinely match one ticket (an
   // `assigned` wildcard beside a per-issuetype rule), and starting it twice
@@ -701,6 +857,97 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
       const key = issueKeyOf(issue);
       if (key === null) continue;
       const knownRun = known.get(key);
+
+      /**
+       * ── HAVUZDAKİ TICKET'IN KOŞUSU ÖLMÜŞSE OTOMATİK YENİDEN BAŞLAT ────────
+       *
+       * Operatörün modeli baştan beri şu: "robotun bir statü havuzu olur ve
+       * orada kendine atanmış HER ŞEYİ bitene kadar devam eder". Bu satırın
+       * öncesinde tur, koşusu olan her ticket'ı — ölüsünü de — atlıyordu, ve
+       * gerekçesi yazılıydı: "düşmüş bir koşu bir insanın kararıdır,
+       * zamanlayıcının yeniden deneyeceği bir şey değil".
+       *
+       * O gerekçe operatörün modeliyle ÇELİŞİYOR ve sahada ölçülen sonuç şuydu:
+       * ticket havuzda duruyor, panelde adımları görünüyor, kapıda
+       * "onayla/reddet" yazıyor, basıldığında "bu ticket için çalışan bir akış
+       * yok" cevabı geliyor — ve robot hiçbir şey yapmıyor. Havuzda iş varsa
+       * robotun işidir; koşunun daha önce düşmüş olması ticket'ı havuzdan
+       * çıkarmaz.
+       *
+       * ── ÜÇ FREN, sırayla ─────────────────────────────────────────────────
+       *  1. CANLI KOŞUYA DOKUNULMAZ. `alive` motorun kendi listesi; ticket
+       *     oradaysa koşu yaşıyor demektir ve yeniden başlatmak, kapıda
+       *     bekleyen bir insan onayını sessizce çöpe atmak olurdu.
+       *  2. MOTOR OKUNAMADIYSA HİÇBİR ŞEY. `alive === null` bir ağ hıçkırığı
+       *     olabilir, ve o turda "her koşu ölü" saymak bütün onay kuyruğunu
+       *     silerdi (bkz. `LiveRuns`).
+       *  3. SAYAÇ — aynı ticket `maxAutoRestarts` kez yeniden başlatıldıysa
+       *     DUR ve insana devret. Sayaç emekli SATIRLARDAN okunuyor, yani
+       *     süreç yeniden başlasa da sıfırlanmaz.
+       *
+       * Ayrıca `seenThisRound`: yeniden başlatılan ticket bu turda ikinci bir
+       * kuralla yeniden görülüp ikinci kez başlatılmasın.
+       */
+      if (
+        knownRun !== undefined &&
+        !seenThisRound.has(key) &&
+        canRestart &&
+        alive !== null &&
+        !alive.has(key)
+      ) {
+        seenThisRound.add(key);
+        // Fren, frenlediği şeyden ÖNCE: sayaç veritabanından okunur ve sınıra
+        // ulaşmışsa hiçbir yeniden başlatma yapılmaz. Sayıyı emekliye
+        // ayırmanın dönüşünden okumak, sınırı aşan denemeyi ancak YAPTIKTAN
+        // sonra fark etmek olurdu.
+        // Sayaç okunamadıysa yeniden başlatma YOK: freni ÖLÇEMEDİĞİMİZ bir
+        // turda denemek, freni hiç koymamakla aynı şey olurdu. Fail-closed,
+        // ve bu bir DEVİR değil bir atlama — sayı bilinmiyor, tükenmiş değil.
+        const prior = await options
+          .restart!.priorRestarts(key as TicketKey)
+          .catch((error: unknown) => {
+            log(`[keşif] ${key} yeniden başlatma sayacı okunamadı: ${String(error)} — atlandı`);
+            return null;
+          });
+        if (prior === null) continue;
+        if (prior >= restartLimit) {
+          handedOver += 1;
+          log(
+            `[keşif] ${key} YENİDEN BAŞLATILMADI: önceki koşu motorda bulunamadı, ama bu ticket ` +
+              `zaten ${restartLimit} kez otomatik yeniden başlatıldı — İNSANA DEVREDİLDİ. ` +
+              "Kalıcı bir hata var demektir; koşunun defterine bakın (Ticket'lar ekranı), " +
+              "sebebi giderdikten sonra Yeniden başlat düğmesiyle elle başlatın.",
+          );
+          continue;
+        }
+        // Alt kademedeki hata turu DÜŞÜRMEZ: bir ticket'ın yeniden
+        // başlatılamaması, diğerlerinin de başlatılmaması için sebep değil.
+        const outcome = await options.restart!.restart(key as TicketKey).catch((error: unknown) => {
+          log(`[keşif] ${key} yeniden başlatılamadı: ${String(error)}`);
+          return null;
+        });
+        if (outcome === null) continue;
+        if (outcome.accepted) {
+          restarted += 1;
+          started.push(key as TicketKey);
+        }
+        /**
+         * HER OTOMATİK YENİDEN BAŞLATMA GÖRÜNÜR — log'a ve denetim zincirine.
+         *
+         * Denetim kaydını `restartDeadRun` yazıyor (`source: "sweep"`,
+         * `attempt: N`); bu satır operatörün ilk baktığı yer olan LOG'un
+         * karşılığı. Kaçıncı deneme olduğu ikisinde de yazılı, çünkü
+         * "yeniden başlatıldı" ile "üçüncü kez yeniden başlatıldı" bambaşka
+         * iki haber: ikincisi operatörün bakması gereken bir şey.
+         */
+        log(
+          `[keşif] ${key}: önceki koşu motorda bulunamadı (${outcome.attempt}. yeniden başlatma), ` +
+            `emekliye ayrıldı, yeniden akışa alındı` +
+            (outcome.accepted ? "" : ` — ama alım reddedildi: ${outcome.reason ?? ""}`),
+        );
+        continue;
+      }
+
       if (knownRun !== undefined || seenThisRound.has(key)) {
         // Counted, not silent. A round that finds fourteen tickets and starts
         // none reads as a broken sweep; "fourteen already have a run" reads as
@@ -799,12 +1046,27 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
        * birikim bu sayıdan büyük olabilir. Kesin bir sayı vermek, kesin
        * olmayan bir şeyi kesinmiş gibi söylemek olurdu.
        */
+      /**
+       * ÖLÜ KOŞULAR — turun ikinci işi, ve özette AYRI bir sayı.
+       *
+       * "0 ticket alındı" diyen bir tur, iki ölü koşuyu yeniden akışa almış
+       * olabilir: yeni ticket yoktu ama havuzdaki iş ilerledi. Tek bir sayı bu
+       * ikisini ayırt edemez, ve operatörün "robot duruyor mu" sorusunun
+       * cevabı tam olarak bu farkta.
+       */
+      `${restarted === 0 ? "" : `, ${restarted} ölü koşu otomatik yeniden başlatıldı`}` +
+      // Devir sayısı özetin en önemli rakamı olabilir: 0'dan büyükse bir
+      // ticket üst üste ölüyor ve robot artık denemiyor. Operatörün BAKMASI
+      // gereken tek satır bu olabilir, ve gürültünün içinde kaybolmamalı.
+      `${handedOver === 0 ? "" : `, ${handedOver} ticket üst üste düştüğü için İNSANA DEVREDİLDİ`}` +
       `${hitCap ? `, tur sınırına (${cap}) takıldı — havuzda en az ${leftInPool} iş kaldı, hemen yeni tur yapılacak` : ""}`,
   );
   record({
     lastError: null,
     rulesSearched: rules.length - skippedRules,
     lastStarted: started.length,
+    lastRestarted: restarted,
+    lastHandedOver: handedOver,
     // `null` = "sınıra hiç takılmadık, havuz boşaldı". Sınıra takıldıysak
     // sayı verilir — `0` bile, çünkü `0` da "tekrar bak" demek: takılan tur
     // kalan kuralları aramamıştır.
@@ -907,11 +1169,16 @@ export function classifyingFieldsOf(issue: unknown): {
 /** Stamp the round's outcome onto the status the panel reads. */
 function record(
   round: Pick<DiscoveryStatus, "lastError" | "rulesSearched" | "lastStarted"> &
-    Partial<Pick<DiscoveryStatus, "poolRemaining">>,
+    Partial<Pick<DiscoveryStatus, "poolRemaining" | "lastRestarted" | "lastHandedOver">>,
 ): void {
   status.current = {
     ...status.current,
     ...round,
+    // `poolRemaining` ile aynı gerekçe: bir önceki turun "2 koşu yeniden
+    // başlatıldı" cevabı, hiçbir şey yeniden başlatmayan bir turdan sonra
+    // ekranda durmamalı. Her tur kendi sayısını yazar; yokluk sıfırdır.
+    lastRestarted: round.lastRestarted ?? 0,
+    lastHandedOver: round.lastHandedOver ?? 0,
     // HER TUR BU ALANI YENİDEN YAZAR — `...round` alanı taşımasa bile.
     // Yoksa bir önceki turun "30 iş kaldı" cevabı, kalanı olmayan bir turdan
     // sonra ekranda durmaya devam eder ve operatör var olmayan bir birikimi

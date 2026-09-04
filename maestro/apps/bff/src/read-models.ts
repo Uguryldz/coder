@@ -204,7 +204,34 @@ export interface RunCatalog {
    * ayrılan satırın YENİ kimliği döner, ki denetim kaydı hangi satırın
    * taşındığını adıyla yazabilsin.
    */
-  retire(ticketKey: string, at: Date): Promise<string | null>;
+  retire(ticketKey: string, at: Date): Promise<RetiredRun | null>;
+}
+
+/**
+ * Bir emekliye ayırmanın sonucu — YENİ kimlik ve ticket'ın KAÇINCI emekliliği.
+ *
+ * ── Neden sayı da dönüyor ─────────────────────────────────────────────────
+ * Tarama artık ölü koşuları KENDİLİĞİNDEN yeniden başlatıyor
+ * (`run-restart.ts`). Kalıcı bir hata yüzünden her koşusu ölen bir ticket, o
+ * yol frensiz olsaydı her turda yeniden başlatılırdı: sonsuz bir döngü, ve
+ * her turunda bir denetim kaydı, bir Jira yorumu, bir LLM çağrısı. Freni
+ * kurmak için "bu ticket kaç kez yeniden başlatıldı" sorusunun bir cevabı
+ * olması gerekiyor.
+ *
+ * ── Neden yeni bir SÜTUN değil ────────────────────────────────────────────
+ * Cevap zaten veritabanında duruyor: her emeklilik `maestro-<ticket>#emekli-<ms>`
+ * biçiminde BİR satır bırakıyor, ve o satırlar silinmiyor (defter, adım,
+ * kanıt ve kapı kayıtları onlara bağlı). Sayaç için bir sütun açmak, aynı
+ * olguyu ikinci kez — ve ilkiyle çelişebilecek şekilde — saymak olurdu.
+ * Sayının kaynağı emekli satırların KENDİSİ; bir göç gerekmiyor.
+ *
+ * `count` bu emeklilik DAHİL: ilk kez emekliye ayrılan bir ticket 1 döner.
+ */
+export interface RetiredRun {
+  /** Emekliye ayrılan satırın yeni kimliği — denetim kaydı bunu adıyla yazar. */
+  readonly id: string;
+  /** Ticket'ın bugüne kadarki emeklilik sayısı, bu emeklilik dahil. */
+  readonly count: number;
 }
 
 // ── journal (M30) ─────────────────────────────────────────────────────────────

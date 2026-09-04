@@ -188,6 +188,16 @@ describe("discoverOnce", () => {
     boundProjects?: readonly string[];
     /** A binding source that FAILS, for the fail-closed test. */
     boundProjectsThrows?: boolean;
+    /**
+     * MOTORDA YAŞAYAN koşuların anahtarları. Verilmezse otomatik yeniden
+     * başlatma seam'i hiç kurulmaz — turun bu özellik var olmadan önceki hâli.
+     * `"throws"` motorun okunamadığı turu ölçer.
+     */
+    alive?: readonly string[] | "throws";
+    /** Ticket başına ÖNCEKİ yeniden başlatma sayısı — freni ölçmek için. */
+    priorRestarts?: Record<string, number> | "throws";
+    /** Yeniden başlatma alımı reddedilsin mi (kill-switch benzeri). */
+    restartRefused?: boolean;
   }): Promise<{
     started: readonly string[];
     /**
@@ -203,6 +213,8 @@ describe("discoverOnce", () => {
     askedAll: readonly string[];
     /** Turun yazdığı her satır — atlama satırlarını ölçmek için. */
     logs: readonly string[];
+    /** Yeniden başlatılan ticket'lar, çağrı sırasıyla. */
+    restarts: readonly string[];
   }> {
     const { search, asked } = fakeSearch(options.found);
     const started: string[] = [];
@@ -214,9 +226,41 @@ describe("discoverOnce", () => {
       __record: started,
     } as never;
 
+    const restarts: string[] = [];
+    /** Emekli satır sayacının bellek karşılığı — gerçekte veritabanı sayıyor. */
+    const attempts = new Map<string, number>(
+      Object.entries(options.priorRestarts === "throws" ? {} : (options.priorRestarts ?? {})),
+    );
+    const restartSeam: Partial<Parameters<typeof discoverOnce>[0]> =
+      options.alive === undefined
+        ? {}
+        : {
+            liveRuns: () =>
+              options.alive === "throws"
+                ? Promise.reject(new Error("temporal down"))
+                : Promise.resolve(new Set(options.alive as readonly string[])),
+            restart: {
+              priorRestarts: (ticket: string) =>
+                options.priorRestarts === "throws"
+                  ? Promise.reject(new Error("db down"))
+                  : Promise.resolve(attempts.get(ticket) ?? 0),
+              restart: (ticket: string) => {
+                restarts.push(ticket);
+                const attempt = (attempts.get(ticket) ?? 0) + 1;
+                attempts.set(ticket, attempt);
+                return Promise.resolve({
+                  attempt,
+                  accepted: options.restartRefused !== true,
+                  ...(options.restartRefused === true ? { reason: "kill_switch" } : {}),
+                });
+              },
+            },
+          };
+
     const result = await discoverOnce({
       deps,
       search,
+      ...restartSeam,
       rules: () => Promise.resolve(options.rules),
       known: () => Promise.resolve((options.known ?? []) as never),
       intervalMs: 0,
@@ -233,6 +277,7 @@ describe("discoverOnce", () => {
       asked: asked.filter((jql) => !jql.includes("statusCategory")),
       askedAll: asked,
       logs,
+      restarts,
     };
   }
 
@@ -397,6 +442,199 @@ describe("discoverOnce", () => {
     // Satır yine yazılıyor — hangi ticket'ın atlandığı, durum bilinmese de
     // operatörün görmesi gereken bir şey.
     expect(skip).toBe("[keşif] OPS-1 atlandı: koşusu var");
+  });
+
+  /**
+   * ── HAVUZDAKİ ÖLÜ KOŞU OTOMATİK YENİDEN BAŞLAR ───────────────────────────
+   *
+   * Operatörün şartı: "eğer analize gönderilen bir koşu varsa, robotun
+   * havuzunda, düşen koşu önceden kapanmışsa OTOMATİK YENİDEN BAŞLAMALI".
+   *
+   * Bu testin ölçtüğü şey elle bir düğmeye basılmadan olan biten: ticket
+   * kuralın havuzunda, satırı var (yani `known`), ama motor onu tanımıyor
+   * (`alive` listesinde yok). Tur onu atlamak yerine yeniden akışa alır.
+   */
+  it("havuzdaki ölü koşuyu OTOMATİK yeniden başlatır — elle düğmeye basılmadan", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, started, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "3", status: "running" }],
+      // Motor OPS-1'i tanımıyor: koşu ölmüş.
+      alive: [],
+    });
+
+    expect(restarts).toEqual(["OPS-1"]);
+    // Yeniden akışa alınan ticket turun "alındı" listesine de girer: havuzdaki
+    // iş ilerledi, ve panelin bunu bir tur çıktısı olarak görmesi gerekiyor.
+    expect(started).toContain("OPS-1");
+    const line = logs.find((l) => l.includes("OPS-1:"));
+    expect(line).toContain("önceki koşu motorda bulunamadı");
+    expect(line).toContain("1. yeniden başlatma");
+    expect(line).toContain("emekliye ayrıldı");
+  });
+
+  /**
+   * CANLI KOŞUYA DOKUNULMAZ — frenlerin birincisi.
+   *
+   * Kapıda insan onayı bekleyen bir koşuyu yeniden başlatmak, o onayı sessizce
+   * çöpe atmak olurdu. Motor ticket'ı tanıyorsa koşu yaşıyor demektir ve tur
+   * eskisi gibi ATLAR.
+   */
+  it("motorda YAŞAYAN bir koşuya dokunmaz — kapıdaki onay çöpe gitmez", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "5", status: "gate" }],
+      alive: ["OPS-1"],
+    });
+
+    expect(restarts).toEqual([]);
+    expect(logs.find((l) => l.includes("OPS-1 atlandı"))).toContain("kapıda, insan onayı bekliyor");
+  });
+
+  /**
+   * MOTOR OKUNAMADIYSA HİÇBİR ŞEY — frenlerin ikincisi, ve en pahalısı.
+   *
+   * Boş dönen bir liste ile okunamayan bir motor AYNI ŞEY DEĞİL. İkisini bir
+   * tutmak, bir ağ hıçkırığında havuzdaki HER koşuyu — kapıda bekleyenler
+   * dahil — yeniden başlatmak olurdu.
+   */
+  it("motorun listesi okunamazsa HİÇBİR koşuyu ölü saymaz", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "5", status: "gate" }],
+      alive: "throws",
+    });
+
+    expect(restarts).toEqual([]);
+    expect(logs.find((l) => l.includes("motorun koşu listesi okunamadı"))).toContain(
+      "hiçbir ölü koşu yeniden başlatılmayacak",
+    );
+  });
+
+  /**
+   * SONSUZ DÖNGÜ FRENİ — N kez sonra DUR ve insana devret.
+   *
+   * Kalıcı bir hata yüzünden her koşusu ölen bir ticket, frensiz bir turda her
+   * beş dakikada bir yeniden başlatılırdı: her turda bir denetim kaydı, bir
+   * Jira yorumu, LLM çağrıları. Sayaç emekli SATIRLARDAN okunuyor, yani süreç
+   * yeniden başlasa da sıfırlanmaz.
+   */
+  it("aynı ticket 3 kez yeniden başlatıldıysa DURUR ve insana devreder", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "1", status: "running" }],
+      alive: [],
+      priorRestarts: { "OPS-1": 3 },
+    });
+
+    expect(restarts).toEqual([]);
+    const line = logs.find((l) => l.includes("OPS-1 YENİDEN BAŞLATILMADI"));
+    expect(line).toContain("3 kez otomatik yeniden başlatıldı");
+    expect(line).toContain("İNSANA DEVREDİLDİ");
+    // Devir turun ÖZETİNDE de görünür: operatörün bakması gereken tek satır
+    // bu olabilir ve gürültünün içinde kaybolmamalı.
+    expect(logs.find((l) => l.includes("tur bitti"))).toContain("İNSANA DEVREDİLDİ");
+  });
+
+  /** Sınırın ALTINDAysa yeniden başlatır — fren erken kapanmamalı. */
+  it("sınırın altındaki bir ticket'ı yeniden başlatmaya DEVAM eder", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "1", status: "running" }],
+      alive: [],
+      priorRestarts: { "OPS-1": 2 },
+    });
+
+    expect(restarts).toEqual(["OPS-1"]);
+    expect(logs.find((l) => l.includes("OPS-1:"))).toContain("3. yeniden başlatma");
+  });
+
+  /**
+   * Yeniden başlatılan ticket AYNI TURDA ikinci kez sayılmaz.
+   *
+   * Bir ticket'ı iki kural birden görebilir (`assigned` joker + tip kuralı) ve
+   * ikisi de "koşusu ölü" derse iki kez yeniden başlatılırdı — bir işe iki
+   * koşu, ve sayacın iki kere yenmesi.
+   */
+  it("aynı turda iki kural görse de bir kez yeniden başlatır", async () => {
+    const byType = jqlFor(RULE)!;
+    const byAssignment = jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*" })!;
+    const { restarts } = await run({
+      rules: [RULE, { ...RULE, matchKind: "assigned", matchValue: "*" }],
+      found: { [byType]: ["OPS-1"], [byAssignment]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "1", status: "running" }],
+      alive: [],
+    });
+
+    expect(restarts).toEqual(["OPS-1"]);
+  });
+
+  /**
+   * Alım REDDEDİLİRSE (kill-switch, duraklatılmış bağlantı) satır sebebini
+   * söyler — ve ticket "alındı" sayılmaz.
+   */
+  it("yeniden başlatma alımı reddedilirse sebebini yazar ve alınmış saymaz", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, started, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "1", status: "running" }],
+      alive: [],
+      restartRefused: true,
+    });
+
+    expect(restarts).toEqual(["OPS-1"]);
+    expect(started).not.toContain("OPS-1");
+    expect(logs.find((l) => l.includes("OPS-1:"))).toContain("alım reddedildi: kill_switch");
+  });
+
+  /**
+   * SAYAÇ OKUNAMAZSA YENİDEN BAŞLATMA YOK — freni ölçemediğimiz turda denemek,
+   * freni hiç koymamakla aynı şey olurdu.
+   *
+   * Ve bu bir DEVİR DEĞİL bir atlama: sayı bilinmiyor, tükenmiş değil.
+   * Devir sayısını artırmak, operatöre kalıcı bir hata olduğunu söylemek
+   * olurdu — oysa olan yalnızca bir veritabanı hıçkırığı.
+   */
+  it("yeniden başlatma sayacı okunamazsa denemez ve bunu DEVİR saymaz", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "1", status: "running" }],
+      alive: [],
+      priorRestarts: "throws",
+    });
+
+    expect(restarts).toEqual([]);
+    expect(logs.find((l) => l.includes("sayacı okunamadı"))).toBeDefined();
+    expect(logs.find((l) => l.includes("tur bitti"))).not.toContain("İNSANA DEVREDİLDİ");
+  });
+
+  /**
+   * Seam KURULMAMIŞSA tur bugüne kadarki hâlini bit bit korur: koşusu olan
+   * ticket atlanır, hiçbir şey yeniden başlatılmaz.
+   */
+  it("otomatik yeniden başlatma kurulmamışsa tur eskisi gibi ATLAR", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, started, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "1", status: "running" }],
+    });
+
+    expect(restarts).toEqual([]);
+    expect(started).not.toContain("OPS-1");
+    expect(logs.find((l) => l.includes("OPS-1 atlandı"))).toBeDefined();
   });
 
   /**

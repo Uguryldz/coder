@@ -9,7 +9,7 @@ import { renderAnalysisMarkdown } from "@maestro/publish";
 import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { AnalysisRewriteContext } from "../activities.js";
-import { readHumanComments } from "./comments.js";
+import { priorWorkNote, readHumanComments } from "./comments.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { analystPersona } from "./persona.js";
@@ -328,6 +328,10 @@ export async function writeAnalysis(
   const run = await deps.runs.get(ticket);
   const snapshot = await deps.work.getTicket(ticket);
   const note = rewriteNote(await withReadComments(deps, ticket, rewrite));
+  // Önceki koşuların özeti — `run` üzerinde geliyor, yani bir aktivite daha
+  // eklemeden (bkz. `RunContext.priorWork`). `intake.ts` ile AYNI metni
+  // üretir (`priorWorkNote`): iki adımın gördüğü geçmiş ayrışmamalı.
+  const priorNote = priorWorkNote(run.priorWork);
   // Studio'nun "Ajan tanımları" ekranında bu analist ajanı için yazılmış
   // persona, varsa. `input`'un İLK alanı olarak gidiyor: rol talimatı,
   // uygulanacağı verinin önünde okunmalı — pilot da personayı analiz bağlamının
@@ -357,6 +361,24 @@ export async function writeAnalysis(
           // sebeple bir daha bak" sonra. Ters sırada, geri gönderme gerekçesi
           // analiz edilecek talep sanılabilirdi.
           ...(note === undefined ? {} : { rewrite: note }),
+          /**
+           * ÖNCEKİ DENEMELER — koşu öldü ve yeniden başladıysa, orada ne oldu.
+           *
+           * `rewrite`ten AYRI bir alan, çünkü ayrı bir olgu: `rewrite` AYNI
+           * koşunun ikinci turu ("operatör geri gönderdi"), bu ise ÖNCEKİ
+           * koşunun işi ("koşu düştü, yenisi başladı"). İkisi aynı anda da
+           * olabilir — düşüp yeniden başlayan bir koşu da kapıdan geri
+           * gönderilebilir — ve tek alanda birleştirmek, modele hangisinin
+           * hangisi olduğunu söylememek olurdu.
+           *
+           * En SONDA: en güncel bağlam (ticket metni, sonra geri gönderme
+           * gerekçesi) önce okunur, tarih en sonda. Bir çelişkide güncelin
+           * kazanması gereken sıra bu.
+           *
+           * `null` (ilk koşu, ezici çoğunluk) → alan HİÇ gitmez ve prompt bit
+           * bit bugünküyle aynı kalır.
+           */
+          ...(priorNote === undefined ? {} : { priorWork: priorNote }),
         },
       },
       AnalysisDoc,

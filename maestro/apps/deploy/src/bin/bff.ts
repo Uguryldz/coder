@@ -10,6 +10,8 @@ import {
   parseStatusMap,
   resolveBotIdentity,
   resolveDeps,
+  restartDeadRun,
+  SYSTEM_ACTOR,
   parseAllowedStatuses,
   EnvSettingsReader,
   UNWIRED_CAPABILITY_LINES,
@@ -188,7 +190,13 @@ export async function main(): Promise<void> {
   // place that learns a start actually created an execution. Activities read
   // their context back from that row, so a started workflow without one fails
   // on its first activity — see `TemporalGatewayOptions.onRunOpened`.
-  const runContext = new PrismaRunContextStore(db.workflowRun);
+  const runContext = new PrismaRunContextStore(db.workflowRun, {
+    // ÖNCEKİ KOŞULARIN DEFTERİ — "AI eski yapılanları hatırlasın".
+    // İki delege de aynı tabloların dilimleri; mağaza tablonun ne kadarına
+    // dokunduğunu kendi arayüzünde yazıyor.
+    retired: db.workflowRun,
+    journal: db.journalEntry,
+  });
 
   const temporal = await connectTemporal({
     address: required(env.base.TEMPORAL_ADDRESS, "TEMPORAL_ADDRESS"),
@@ -1201,10 +1209,69 @@ export async function main(): Promise<void> {
         return typeof value === "number" && Number.isFinite(value) ? value : null;
       },
       // Every ticket that already has a row, in ANY state: a finished run must
-      // not be started again by the next sweep, and a failed one is a decision
-      // for a person, not something to retry on a timer. Koşunun ADIMIYLA
-      // birlikte, ki atlama satırı koşunun yaşadığını da söyleyebilsin.
+      // not be started again by the next sweep. Koşunun ADIMIYLA birlikte, ki
+      // atlama satırı koşunun yaşadığını da söyleyebilsin — ve koşusu ÖLMÜŞ
+      // olanlar `liveRuns`/`restart` ile otomatik yeniden akışa alınsın.
       known: knownRuns,
+      /**
+       * MOTORDA YAŞAYAN KOŞULAR — tur başına TEK sorgu.
+       *
+       * `RunGateway.list()` motorun tuttuğu execution'ları bir sayfada verir;
+       * turun ihtiyacı olan tek şey oradaki ticket anahtarları. Ticket başına
+       * `queryRunState` sormak, havuzda yüz ticket olan bir kurulumda her
+       * turda yüz gRPC çağrısı demekti — `reconcileRunStatuses` aynı soruyu
+       * aynı toplu okumayla soruyor ve iki yol ayrılmamalı.
+       *
+       * `onlyRunning: false`: kapanmış bir execution da motorun tanıdığı bir
+       * koşudur, ve "motor bu ticket'ı tanımıyor" ile "koşu bitti" farklı iki
+       * şey. Kapanmış koşu zaten `WorkflowRun.status` terminal olduğu için
+       * kuralla eşleşmez; burada onu ölü saymak, biten bir işi yeniden
+       * başlatmak olurdu.
+       *
+       * `limit` `knownRuns`in `take: 500`üyle aynı: iki listenin ufku ayrılırsa
+       * ufkun dışında kalan koşular "motorda yok" görünür ve yeniden
+       * başlatılırdı.
+       */
+      liveRuns: async (): Promise<ReadonlySet<string>> =>
+        new Set(
+          (await temporal.gateway.list({ limit: 500, onlyRunning: false })).map(
+            (summary) => summary.ticketKey,
+          ),
+        ),
+      /**
+       * YENİDEN BAŞLATMA — elle düğmenin kullandığı YOLUN AYNISI.
+       *
+       * `restartDeadRun` emekliye ayırır (defter/adım/kanıt/kapı `onUpdate:
+       * Cascade` ile yeni kimliğe taşınır), denetime yazar, ve `runIntake` ile
+       * ticket'ı yeniden alır. İkinci bir mekanizma yazmak, alımın zayıf bir
+       * kopyasını üretmek olurdu.
+       *
+       * `auditActor` = `intakeActor` = `SYSTEM_ACTOR`: bunu bir insan değil
+       * zamanlayıcı yaptı, ve denetim kaydı bunu `source: "sweep"` ile ayrıca
+       * söylüyor.
+       */
+      restart: {
+        priorRestarts: async (ticket: TicketKey): Promise<number> =>
+          db.workflowRun.count({ where: { ticketKey: ticket, archivedAt: { not: null } } }),
+        restart: async (ticket: TicketKey) => {
+          const result = await restartDeadRun(resolveDeps(deps), {
+            ticket,
+            auditActor: SYSTEM_ACTOR,
+            intakeActor: SYSTEM_ACTOR,
+            source: "sweep",
+            onSnapshotError: (error) =>
+              console.warn(
+                `[maestro] ${ticket} yeniden başlatılırken ticket okunamadı: ${String(error)}`,
+              ),
+          });
+          if (!result.ok) return null;
+          return {
+            attempt: result.attempt,
+            accepted: result.outcome.accepted,
+            ...(result.outcome.accepted ? {} : { reason: result.outcome.reason }),
+          };
+        },
+      },
     };
     startJiraDiscovery(discoveryOptions);
     // The panel's button runs ONE round with the same options; it does not

@@ -1260,4 +1260,24 @@ describe("POST /studio/runs/:ticket/restart", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.meta).toMatchObject({ verb: "restarted", retiredRunId: retiredId });
   });
+
+  /**
+   * ELLE Mİ, TARAMA MI — bir denetçinin ilk sorusu, ve zincirin cevaplaması
+   * gereken şey.
+   *
+   * Yeniden başlatma artık iki kapıdan geliyor: operatörün bastığı düğme ve
+   * havuzu boşaltan tarama turu (`jira-discovery.ts`). İkisi de AYNI yolu
+   * kullanıyor (`restartDeadRun`), ki denetim kaydı ve alım çağrısı
+   * ayrışmasın — ama kaydın hangisinin yaptığını SÖYLEMESİ gerekiyor, yoksa
+   * "bunu bir insan mı yaptı yoksa zamanlayıcı mı" sorusu cevapsız kalır.
+   */
+  it("elle yeniden başlatmayı zincire OPERATÖR kaynaklı olarak yazar", async () => {
+    const h = await deadRunHarness();
+    const token = await adminToken(h);
+
+    await restart(h, token);
+
+    const entries = (await h.auditStore.read()).filter((e) => e.subject === `run:${TICKET}`);
+    expect(entries[0]?.meta).toMatchObject({ source: "operator", attempt: 1 });
+  });
 });

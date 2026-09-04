@@ -1,5 +1,5 @@
 import type { TicketKey, TicketSnapshot } from "@maestro/contracts";
-import type { ActivityDeps } from "./deps.js";
+import type { ActivityDeps, PriorWork } from "./deps.js";
 
 /**
  * Ticket'ın İNSAN yorumlarını okuyup intake'in göreceği hâle getirmek.
@@ -191,4 +191,70 @@ export function withComments(
     ...snapshot,
     description: `${snapshot.description}\n\n${COMMENT_BLOCK_TITLE}\n${lines.join("\n")}`,
   };
+}
+
+/** Önceki koşuların özetinin açıklamaya eklenirken kullandığı başlık. */
+export const PRIOR_WORK_BLOCK_TITLE =
+  "--- ÖNCEKİ DENEMELER (bu ticket daha önce çalışıldı; aynı işi TEKRARLAMA) ---";
+
+/**
+ * ÖNCEKİ KOŞULARIN ÖZETİNİ modele gösterir — "AI eski yapılanları hatırlasın".
+ *
+ * ── Neden AÇIKLAMANIN İÇİNE ─────────────────────────────────────────────────
+ * `withComments`'in gerekçesinin AYNISI, ve bilerek onun yanında duruyor:
+ * `buildIntakePrompt` ticket bloğunu snapshot'tan kuruyor ve o blok zaten VERİ
+ * çitinin (`<<<VERI … VERI>>>`) içinde. Bu metnin tamamı ya modelin kendi eski
+ * çıktısı ya da bir insanın kapıda yazdığı gerekçe — yani VERİ, talimat değil.
+ * Ayrı bir prompt alanı açmak, enjeksiyon çitinin dışında ikinci bir kanal
+ * açmak olurdu.
+ *
+ * ── Neden ÖZET, ham defter değil ────────────────────────────────────────────
+ * `impl/analysis.ts` `previousNote`in kurduğu disiplin: önceki analizin tamamı
+ * değil, onu TANIMLAYAN kısa kimlik. "tamamını göndermek modele kopyalayacağı
+ * bir şablon vermek olurdu; istenen yeniden DÜŞÜNMEK". Özetin kendisi mağazada
+ * kırpılıyor (`PrismaRunContextStore.priorWork`: üç koşu, tür başına beş
+ * satır, satır başına 300 karakter) — küçük modeller uzun bağlamda zorlanır ve
+ * boğulmuş bir bağlam, hiç bağlam olmamasından kötüdür.
+ *
+ * ── Neden BAŞLIK bir TALİMAT cümlesi taşıyor ────────────────────────────────
+ * "aynı işi TEKRARLAMA" başlıkta, çitin İÇİNDEKİ veride değil: veri bloğunun
+ * içine yazılan bir emir tam olarak enjeksiyon çitinin engellediği şeydir.
+ * Başlık ise prompt'un kendi metni, yani rolün sözü — ve söylenmesi gerekiyor,
+ * çünkü geçmişi GÖRMEK ile ondan DEVAM ETMEK arasındaki farkı model kendi
+ * başına kurmaz.
+ *
+ * Geçmiş yoksa (`null`, ya da her listesi boş) snapshot AYNEN döner: ilk koşu
+ * bugünkü promptunu bit bit korur.
+ */
+export function withPriorWork(
+  snapshot: TicketSnapshot,
+  prior: PriorWork | null,
+): TicketSnapshot {
+  const note = priorWorkNote(prior);
+  if (note === undefined) return snapshot;
+  return { ...snapshot, description: `${snapshot.description}\n\n${note}` };
+}
+
+/**
+ * Özeti TEK bir metin bloğuna çevirir, ya da `undefined`.
+ *
+ * Ayrı bir işlev, çünkü analiz tarafı (`impl/analysis.ts` `rewriteNote`) aynı
+ * metni kendi bloğunun içine koyuyor: iki adımın modele gösterdiği geçmiş
+ * BİREBİR aynı olmalı, yoksa intake'in gördüğü ile analizin gördüğü ayrışır ve
+ * ikisi farklı hikâyelerden devam eder.
+ */
+export function priorWorkNote(prior: PriorWork | null): string | undefined {
+  if (prior === null) return undefined;
+  const parts: string[] = [];
+  // Deneme sayısı HER ZAMAN yazılır (özet varsa): defterin dört türü de boş
+  // olabilir — koşu daha ilk adımda ölmüş olabilir — ve o durumda bile modelin
+  // bilmesi gereken bir şey var: "bu ilk denemen değil".
+  parts.push(`Bu ticket daha önce ${prior.attempts} kez çalışıldı ve koşusu tamamlanamadı.`);
+  const section = (title: string, lines: readonly string[]): void => {
+    if (lines.length > 0) parts.push([title, ...lines.map((line) => `  - ${line}`)].join("\n"));
+  };
+  section("Önceki analizden:", prior.analysis);
+  section("Daha önce sorulan netleştirme soruları ve cevapları:", prior.questions);
+  section("Önceki kapı kararları (ret/geri gönderme ve sebepleri):", prior.decisions);
+  return [PRIOR_WORK_BLOCK_TITLE, ...parts].join("\n");
 }

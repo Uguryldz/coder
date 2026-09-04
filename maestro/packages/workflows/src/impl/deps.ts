@@ -116,6 +116,74 @@ export interface RunContext {
   readonly prId: number | null;
   /** Resume token of the live agent session (M30); null before the first turn. */
   readonly resumeToken: string | null;
+  /**
+   * ÖNCEKİ KOŞULARIN İŞİ — bu ticket bir kez daha denendiyse, orada ne olduğu.
+   *
+   * ── Neden var: operatörün şartı ───────────────────────────────────────────
+   * "koşu ölse de GEÇMİŞ BİLGİLERİN ÖLMEMESİ lazım DB'den. koşu yeniden
+   * başlayınca AI'IN ESKİ YAPILANLARI HATIRLAMASI lazım."
+   *
+   * Ölü bir koşu artık otomatik yeniden başlıyor (`jira-discovery.ts`), ve
+   * emekliye ayırma hiçbir satırı silmiyor: defter, adım olayları, kanıt ve
+   * kapı kayıtları `onUpdate: Cascade` ile emekli kimliğe TAŞINIYOR. Yani
+   * geçmiş veritabanında duruyor — ama YENİ koşu onu GÖRMÜYORDU. Yeni bir
+   * workflow execution'ın belleği boş: `state.analysis` gibi bellekte taşınan
+   * bağlam ölen koşuyla birlikte gitti. Model sıfırdan başlıyor, aynı soruları
+   * yeniden soruyor, aynı analizi yeniden üretiyor. Operatör için bu ilerleme
+   * değil TEKRAR — ve otomatik yeniden başlatmayı anlamsız kılar.
+   *
+   * ── Neden BURADA (yeni bir aktivite DEĞİL) ────────────────────────────────
+   * `AnalysisRewriteContext.previous` bilerek journal'dan değil BELLEKTEN
+   * geliyor (`ticket-workflow.ts:602`): workflow kodu I/O yapamaz, ve her
+   * bağlam için bir aktivite daha eklemek replay yüzeyini büyütürdü. Aynı
+   * kısıt burada da geçerli, ama çözüm farklı olmak zorunda: yeniden başlayan
+   * koşunun belleği YOK, dolayısıyla kaynak veritabanı olmalı.
+   *
+   * Çözüm yeni bir aktivite eklemek DEĞİL, VAR OLAN okumaya binmek: her
+   * aktivite zaten `deps.runs.get(ticket)` ile bağlamını okuyor, ve o okuma
+   * bir aktivitenin İÇİNDE oluyor — yani workflow determinizmine hiç
+   * dokunmuyor. Mağaza satırı okurken emekli defterleri de okur ve özeti bu
+   * alana koyar. Sıfır yeni aktivite, sıfır replay riski, aktivite başına bir
+   * ek sorgu (yalnız emekli satırı OLAN ticket'larda).
+   *
+   * ── Neden ÖZET, ham defter değil ──────────────────────────────────────────
+   * `impl/analysis.ts` `previousNote`in kurduğu disiplin: önceki analizin
+   * TAMAMI değil, üç alanı gidiyor — "tamamını göndermek modele kopyalayacağı
+   * bir şablon vermek olurdu; istenen yeniden DÜŞÜNMEK". Aynı gerekçe burada
+   * daha da güçlü: bir koşunun defteri onlarca satır, ve gpt-oss gibi küçük
+   * modeller uzun bağlamda zorlanır. Ham yığın modeli kör eder.
+   *
+   * `null` = bu ticket'ın emekli koşusu yok (ezici çoğunluk) ve hiçbir şey
+   * prompta eklenmez — ilk koşu bugünkü davranışını bit bit korur.
+   */
+  readonly priorWork: PriorWork | null;
+}
+
+/**
+ * ÖNCEKİ KOŞULARDAN TAŞINAN ÖZET — dört soru, dört cevap.
+ *
+ * Alanların seçimi keyfi değil: her biri yeniden başlayan bir koşunun
+ * TEKRARLAYACAĞI bir işi engelliyor.
+ *
+ *  · `attempts`    — "kaçıncı denemedeyim": modelin aynı yaklaşımı üçüncü kez
+ *                    denememesi için bilmesi gereken tek sayı.
+ *  · `analysis`    — "daha önce ne yazmıştım": önceki analizin KİMLİĞİ
+ *                    (risk + gerekçe), belgenin kendisi değil.
+ *  · `questions`   — "neyi zaten sordum, ne cevap aldım": aynı netleştirme
+ *                    sorusunu ikinci kez sormak, operatörün sahada gördüğü en
+ *                    can sıkıcı tekrar.
+ *  · `decisions`   — "insan neye hayır dedi ve neden": bir ret sebebini
+ *                    bilmeden yeniden yazmak, reddedilen şeyi yeniden yazmak.
+ */
+export interface PriorWork {
+  /** Bu ticket için daha önce kaç koşu emekliye ayrıldı. */
+  readonly attempts: number;
+  /** Önceki analizlerin son satırı — risk katmanı ve gerekçesi gibi kısa kimlik. */
+  readonly analysis: readonly string[];
+  /** Sorulan netleştirme soruları ve alınan cevaplar. */
+  readonly questions: readonly string[];
+  /** Kapı kararları: ret/geri gönderme ve sebepleri. */
+  readonly decisions: readonly string[];
 }
 
 /**

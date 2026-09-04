@@ -12,7 +12,7 @@ import { runIntake as runIntakeRole, toIntakeResult } from "@maestro/agent-roles
 import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { IntakeResult } from "../activities.js";
-import { readHumanComments, withComments } from "./comments.js";
+import { readHumanComments, withComments, withPriorWork } from "./comments.js";
 import type { ActivityDeps } from "./deps.js";
 import { guardModelCall, guardedLlm, outcomeOfRole, resolveOutcome } from "./outcome.js";
 import { analystPersona } from "./persona.js";
@@ -222,7 +222,18 @@ export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<
   const result = await guardModelCall(deps, run, "intake", () =>
     runIntakeRole({
       llm: guardedLlm(deps, run, "intake"),
-      ticket: withComments(snapshot, comments),
+      /**
+       * TICKET + YORUMLAR + ÖNCEKİ DENEMELER — üçü de açıklamanın içinde.
+       *
+       * `withPriorWork` en dışta, yani özet yorumlardan SONRA geliyor: yorumlar
+       * ticket'ın ŞU ANKİ konuşması, önceki denemeler ise geçmişi. Model
+       * güncel olanı önce, tarihi sonra okur — ve bir çelişki olduğunda
+       * güncelin kazanması gereken sıra budur.
+       *
+       * Geçmiş yoksa (`priorWork === null`, ilk koşu) `withPriorWork`
+       * snapshot'ı AYNEN döndürür: prompt bit bit bugünküyle aynı kalır.
+       */
+      ticket: withPriorWork(withComments(snapshot, comments), run.priorWork),
       variantId: run.variantId,
       dataClass: run.dataClass,
       ...(persona === undefined ? {} : { persona }),

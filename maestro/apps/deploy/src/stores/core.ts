@@ -26,6 +26,8 @@ import {
 } from "./params.js";
 import {
   PrismaRunContextStore,
+  type JournalDelegate,
+  type RetiredRunDelegate,
   TERMINAL_STATUSES,
   type RunDelegate,
 } from "./run-context.js";
@@ -69,7 +71,15 @@ export interface RunLookupDelegate {
  * what keeps each store's declared surface honest about what it touches.
  */
 export interface CoreStoreDb {
-  readonly workflowRun: RunDelegate & RunLookupDelegate;
+  readonly workflowRun: RunDelegate & RunLookupDelegate & RetiredRunDelegate;
+  /**
+   * ÖNCEKİ KOŞULARIN DEFTERİ — yeniden başlayan bir koşunun hatırlaması için.
+   *
+   * Emekliye ayrılan koşunun defteri `onUpdate: Cascade` ile emekli kimliğe
+   * taşınıyor, yani geçmiş silinmiyor; bu delege onu OKUYAN yüzey
+   * (`PrismaRunContextStore`). Yalnız bir `findMany`, ve yalnız dört sütun.
+   */
+  readonly journalEntry: JournalDelegate;
   readonly gate: GateDelegate;
   readonly auditLog: AuditLogDelegate & GateAuditDelegate;
   readonly paramVersion: ParamVersionDelegate;
@@ -145,7 +155,12 @@ export function buildCoreStores(db: CoreStoreDb, options: CoreStoreOptions): Bui
   const ticketOfRun = async (runId: string): Promise<string> => (await identityOf(runId)).ticketKey;
 
   return {
-    runs: new PrismaRunContextStore(db.workflowRun),
+    runs: new PrismaRunContextStore(db.workflowRun, {
+      // Bkz. `bin/bff.ts` — worker tarafı da geçmişi görmeli, çünkü
+      // aktiviteleri KOŞAN taraf burası: bağlam okuması orada oluyor.
+      retired: db.workflowRun,
+      journal: db.journalEntry,
+    }),
     gates: new PrismaGateStore(db.gate, db.auditLog, ticketOfRun, sqlGateClaim(options.sql)),
     params: new PrismaParamReader(db.paramVersion, db.routingRule, scopeOf),
     directory: new PrismaDirectoryReader(db.user, options.resolveRole),

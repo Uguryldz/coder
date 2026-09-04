@@ -285,12 +285,13 @@ function stubDb(): Parameters<typeof buildCoreStores>[0] {
     throw new Error("not called");
   };
   return {
-    workflowRun: { findFirst: never, update: never, findUnique: never, create: never },
+    workflowRun: { findFirst: never, update: never, findUnique: never, create: never, findMany: never },
     gate: { findUnique: never, update: never },
     auditLog: { findFirst: never, findMany: never, create: never },
     paramVersion: { findMany: never },
     routingRule: { findMany: never },
     user: { findMany: never },
     idempotencyKey: { findUnique: never, update: never, delete: never },
+    journalEntry: { findMany: never },
   };
 }

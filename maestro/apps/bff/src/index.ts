@@ -30,6 +30,7 @@ export * from "./onboarding-models.js";
 export * from "./onboarding-service.js";
 export * from "./params-service.js";
 export * from "./read-models.js";
+export * from "./run-restart.js";
 export * from "./read-studio.js";
 export * from "./repo-policy-service.js";
 export * from "./server.js";

@@ -484,3 +484,53 @@ describe("persona overlay", () => {
     expect(Object.keys(call?.input as object)[0]).toBe("persona");
   });
 });
+
+/**
+ * ── YENİDEN BAŞLAYAN KOŞU ESKİ YAPILANLARI HATIRLAR ─────────────────────────
+ *
+ * Operatörün şartı: "koşu ölse de GEÇMİŞ BİLGİLERİN ÖLMEMESİ lazım DB'den.
+ * koşu yeniden başlayınca AI'IN ESKİ YAPILANLARI HATIRLAMASI lazım."
+ *
+ * Ölü bir koşu artık otomatik yeniden başlıyor (`jira-discovery.ts`), ve
+ * emekliye ayırma defteri silmiyor emekli kimliğe TAŞIYOR. Bu testler o
+ * geçmişin gerçekten MODELE ULAŞTIĞINI ölçüyor — ve VERİ ÇİTİNİN İÇİNDE
+ * ulaştığını, ki geçmiş bir talimat değil veri olarak okunsun.
+ */
+describe("runIntake — önceki koşuların işi", () => {
+  const promptOf = (fakes: ReturnType<typeof makeFakes>): string => {
+    const call = fakes.recorded.llm.find((c) => c.schemaName === "IntakeOutput");
+    return typeof call?.input === "string" ? call.input : "";
+  };
+
+  it("önceki koşuların işini VERİ ÇİTİNİN İÇİNDE modele gösterir", async () => {
+    const fakes = makeFakes({
+      context: {
+        priorWork: {
+          attempts: 2,
+          analysis: ["analiz yazıldı: risk: yuksek — ödeme akışı"],
+          questions: ["soru soruldu: hangi para birimi?"],
+          decisions: ["kapı reddedildi: kabul kriterleri eksik"],
+        },
+      },
+      generateObject: () => ({ status: "ok", value: { complete: true, missing: [] }, log: LOG }),
+    });
+
+    await runIntake(fakes.deps, "PAY-101");
+
+    const body = fencedBlock(promptOf(fakes));
+    expect(body).toContain("daha önce 2 kez çalışıldı");
+    expect(body).toContain("hangi para birimi?");
+    expect(body).toContain("kabul kriterleri eksik");
+    expect(body).toContain("risk: yuksek");
+  });
+
+  /** İlk koşuda prompt bit bit bugünküyle aynı kalır — geçmiş bloğu HİÇ yok. */
+  it("geçmişi olmayan bir ticket'ın promptu değişmez", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ({ status: "ok", value: { complete: true, missing: [] }, log: LOG }),
+    });
+
+    await runIntake(fakes.deps, "PAY-101");
+    expect(promptOf(fakes)).not.toContain("ÖNCEKİ DENEMELER");
+  });
+});

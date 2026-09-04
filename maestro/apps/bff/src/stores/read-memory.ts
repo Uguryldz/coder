@@ -29,6 +29,7 @@ import type {
   Page,
   PageRequest,
   QuotaReader,
+  RetiredRun,
   RunCatalog,
   RunCatalogFilter,
   RunRecord,
@@ -108,13 +109,27 @@ export class InMemoryRunCatalog implements RunCatalog {
    * kaydına yazıyor — bellek mağazası oraya farklı bir cevap verirse, testler
    * gerçekte olmayan bir davranışı doğrulardı.
    */
-  retire(ticketKey: string, at: Date): Promise<string | null> {
+  retire(ticketKey: string, at: Date): Promise<RetiredRun | null> {
     const row = this.rows.get(ticketKey);
     if (row === undefined) return Promise.resolve(null);
     const retiredId = `${row.runId}#emekli-${at.getTime()}`;
     this.rows.set(ticketKey, { ...row, runId: retiredId, archivedAt: at.toISOString() });
-    return Promise.resolve(retiredId);
+    /**
+     * EMEKLİLİK SAYACI — gerçek mağazada emekli SATIRLAR sayılıyor, burada bir
+     * sayaç tutuluyor, ve sebebi bu haritanın şekli: anahtar `ticketKey`, yani
+     * bir ticket'ın yalnız SON satırı duruyor ve sayılacak bir geçmiş yok.
+     * Sayının kendisi aynı soruyu cevaplıyor ("bu ticket kaçıncı kez emekliye
+     * ayrıldı") ve otomatik yeniden başlatmanın freni onun üzerinden ölçülüyor
+     * — bellek mağazası oraya farklı bir cevap verirse testler gerçekte
+     * olmayan bir davranışı doğrulardı.
+     */
+    const count = (this.retirements.get(ticketKey) ?? 0) + 1;
+    this.retirements.set(ticketKey, count);
+    return Promise.resolve({ id: retiredId, count });
   }
+
+  /** Ticket başına emeklilik sayısı — bkz. `retire`. */
+  private readonly retirements = new Map<string, number>();
 }
 
 /** @see RunCatalogFilter.archived — the in-memory half of `archiveWhere`. */

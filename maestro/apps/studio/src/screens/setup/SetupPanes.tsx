@@ -458,8 +458,8 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
           <div style={{ marginLeft: 20 }}>
             {SELECTABLE_GATES.map((gate) => {
               /* Analiz akışı mühendislik kapılarına HİÇ ulaşmaz; seçili olsa da
-                 açılmaz. Kutuyu gizlemek yerine ölü olduğunu SÖYLEMEK, uzman
-                 ekranının yaptığının aynısı — gizlenen bir kutu, operatöre
+                 açılmaz. Kutuyu gizlemek yerine ölü olduğunu SÖYLEMEK, Dinleme
+                 kuralları ekranının yaptığının aynısı — gizlenen bir kutu, operatöre
                  cevabının kaydedildiğini sanmasına yol açar. */
               const dead =
                 draft.flowType === "analiz" && gate.step !== "4" && gate.step !== "5";

@@ -91,6 +91,144 @@ function fakeDelegate(result: RunRow | null): {
   };
 }
 
+/**
+ * ── ÖNCEKİ KOŞULARIN İŞİ — "AI eski yapılanları hatırlasın" ────────────────
+ *
+ * Operatörün şartı: "koşu ölse de GEÇMİŞ BİLGİLERİN ÖLMEMESİ lazım DB'den.
+ * koşu yeniden başlayınca AI'IN ESKİ YAPILANLARI HATIRLAMASI lazım."
+ *
+ * Emekliye ayırma defteri silmiyor, emekli kimliğe TAŞIYOR (`onUpdate:
+ * Cascade`). Bu testler o geçmişin YENİ koşunun bağlamına gerçekten
+ * ulaştığını — ve ne kadarının ulaştığını — sabitliyor.
+ */
+describe("PrismaRunContextStore.get — önceki koşuların işi", () => {
+  function history(
+    retired: readonly string[],
+    entries: ReadonlyArray<{ kind: string; title: string; detail?: string }>,
+  ): {
+    seam: NonNullable<ConstructorParameters<typeof PrismaRunContextStore>[1]>;
+    asked: { retired: unknown[]; journal: unknown[] };
+  } {
+    const asked: { retired: unknown[]; journal: unknown[] } = { retired: [], journal: [] };
+    return {
+      asked,
+      seam: {
+        retired: {
+          findMany: (args) => {
+            asked.retired.push(args);
+            return Promise.resolve(retired.map((id) => ({ id })));
+          },
+        },
+        journal: {
+          findMany: (args) => {
+            asked.journal.push(args);
+            return Promise.resolve(
+              entries.map((entry) => ({
+                kind: entry.kind,
+                title: entry.title,
+                detail: entry.detail ?? "",
+                actor: "ai",
+              })),
+            );
+          },
+        },
+      },
+    };
+  }
+
+  it("emekli koşuların defterini yeni koşunun bağlamına taşır", async () => {
+    const { delegate } = fakeDelegate(row());
+    const { seam } = history(
+      ["run-pay-101-0001#emekli-1", "run-pay-101-0001#emekli-2"],
+      [
+        { kind: "analysis", title: "analiz yazıldı", detail: "risk: yuksek — ödeme akışı" },
+        { kind: "clarification", title: "soru soruldu", detail: "hangi para birimi?" },
+        { kind: "gate", title: "kapı reddedildi", detail: "kabul kriterleri eksik" },
+      ],
+    );
+    const context = await new PrismaRunContextStore(delegate, seam).get("PAY-101");
+
+    expect(context.priorWork?.attempts).toBe(2);
+    expect(context.priorWork?.analysis).toEqual(["analiz yazıldı: risk: yuksek — ödeme akışı"]);
+    expect(context.priorWork?.questions).toEqual(["soru soruldu: hangi para birimi?"]);
+    expect(context.priorWork?.decisions).toEqual(["kapı reddedildi: kabul kriterleri eksik"]);
+  });
+
+  /**
+   * EMEKLİ SATIRI OLMAYAN TICKET — ezici çoğunluk, ve prompt bit bit
+   * bugünküyle aynı kalmalı. Defter sorgusu HİÇ yapılmaz: ikinci sorgunun
+   * maliyeti yalnız yeniden başlatılmış ticket'larda ödenir.
+   */
+  it("ilk koşuda geçmiş YOKTUR ve defter hiç okunmaz", async () => {
+    const { delegate } = fakeDelegate(row());
+    const { seam, asked } = history([], []);
+    const context = await new PrismaRunContextStore(delegate, seam).get("PAY-101");
+
+    expect(context.priorWork).toBeNull();
+    expect(asked.journal).toEqual([]);
+  });
+
+  /** Seam hiç verilmemişse mağaza bu alanı taşımaz — eski çağıranlar aynen çalışır. */
+  it("geçmiş kaynağı bağlanmamışsa null döner", async () => {
+    const { delegate } = fakeDelegate(row());
+    const context = await new PrismaRunContextStore(delegate).get("PAY-101");
+    expect(context.priorWork).toBeNull();
+  });
+
+  /**
+   * GEÇMİŞ OKUNAMAZSA KOŞU DURMAZ. Bağlamsız bir koşu, hiç koşu
+   * olmamasından iyidir — `readHumanComments` ile aynı kural.
+   */
+  it("defter okunamazsa koşuyu düşürmez, bağlamsız devam eder", async () => {
+    const { delegate } = fakeDelegate(row());
+    const context = await new PrismaRunContextStore(delegate, {
+      retired: { findMany: () => Promise.reject(new Error("db down")) },
+      journal: { findMany: () => Promise.resolve([]) },
+    }).get("PAY-101");
+
+    expect(context.priorWork).toBeNull();
+    expect(context.runId).toBe("run-pay-101-0001");
+  });
+
+  /**
+   * BAĞLAM SINIRI — tür başına en fazla beş satır.
+   *
+   * gpt-oss gibi küçük modeller uzun bağlamda zorlanır, ve `previousNote`in
+   * "ilk beş kabul kriteri" kararıyla aynı disiplin: özet, döküm değil.
+   */
+  it("tür başına en fazla beş satır taşır — küçük modelleri boğmaz", async () => {
+    const { delegate } = fakeDelegate(row());
+    const { seam } = history(
+      ["run-pay-101-0001#emekli-1"],
+      Array.from({ length: 9 }, (_, i) => ({ kind: "analysis", title: `analiz ${i}` })),
+    );
+    const context = await new PrismaRunContextStore(delegate, seam).get("PAY-101");
+
+    expect(context.priorWork?.analysis).toHaveLength(5);
+  });
+
+  /** Uzun bir ayrıntı kırpılır: tek bir kayıt özeti ele geçirmemeli. */
+  it("çok uzun bir defter ayrıntısını kırpar", async () => {
+    const { delegate } = fakeDelegate(row());
+    const { seam } = history(
+      ["run-pay-101-0001#emekli-1"],
+      [{ kind: "analysis", title: "analiz", detail: "x".repeat(1000) }],
+    );
+    const context = await new PrismaRunContextStore(delegate, seam).get("PAY-101");
+
+    expect(context.priorWork?.analysis[0]?.length).toBeLessThan(320);
+    expect(context.priorWork?.analysis[0]).toContain("…");
+  });
+
+  /** En fazla üç emekli koşu sorulur — otomatik yeniden başlatma freniyle aynı sayı. */
+  it("en fazla üç emekli koşu okur", async () => {
+    const { delegate } = fakeDelegate(row());
+    const { seam, asked } = history(["a"], []);
+    await new PrismaRunContextStore(delegate, seam).get("PAY-101");
+    expect((asked.retired[0] as { take: number }).take).toBe(3);
+  });
+});
+
 describe("PrismaRunContextStore.get", () => {
   it("maps a row and its application into a RunContext", async () => {
     const { delegate } = fakeDelegate(row());

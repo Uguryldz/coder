@@ -193,6 +193,15 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   not_found: "error.not_found",
   // 409
   no_open_gate: "error.no_open_gate",
+  /**
+   * Koşu VARDI, motorda yok — `no_run`dan ayrı bir cümle ve ayrı bir eylem.
+   * `no_run` "böyle bir akış yok" der ve operatörü hiç var olmamış bir şeyi
+   * aramaya gönderirdi; bu, kapıda bekleyen işin kaybolduğu yanılgısının
+   * kaynağıydı. Bkz. `GateFailure["run_gone"]` (apps/bff/src/gate-decision.ts).
+   */
+  run_gone: "error.run_gone",
+  /** Yeniden başlatma, YAŞAYAN bir koşuda reddedildi. */
+  run_alive: "error.run_alive",
   not_delivered: "error.not_delivered",
   param_value_mismatch: "error.param_value_mismatch",
   conflict: "error.conflict",

@@ -11,7 +11,7 @@ import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ResolvedDeps } from "../deps.js";
 import type { RunRecord } from "../read-models.js";
-import { badRequest, notFound } from "../errors.js";
+import { badRequest, conflict, notFound } from "../errors.js";
 import { workflowIdFor } from "../gateway.js";
 import { classifyingFields, runIntake } from "../jira-intake.js";
 import { assertProjectAccess } from "./access.js";
@@ -153,6 +153,107 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
       });
 
       return reply.code(200).send({ ticketKey: ticket, archivedAt: at?.toISOString() ?? null });
+    },
+  );
+
+  /**
+   * ÖLÜ BİR KOŞUYU YENİDEN AKIŞA AL — operatörün kurtarma yolu.
+   *
+   * ── Neden bu rota var: ölçülmüş bir çıkmaz ────────────────────────────────
+   * Bir koşunun satır kimliği motorun iş akışı kimliğiyle AYNI
+   * (`maestro-<ticket>`). Yani ölü bir koşusu olan ticket için:
+   *
+   *  · `POST /start` hiçbir şey yapmaz — `signalWithStart` yeni bir execution
+   *    açar, ama `create` eski satırın birincil anahtarına çarpar, bunu bir
+   *    yarış sanıp yutar, ve ortada koşu YOKMUŞ gibi eski ölü satır durur.
+   *  · Tarama da almaz — `known` listesi `WorkflowRun` satırlarının HEPSİNİ
+   *    kapsıyor (bilerek: "düşmüş bir koşu bir insanın kararıdır, zamanlayıcının
+   *    yeniden deneyeceği bir şey değil").
+   *
+   * İkisi birlikte şu demekti: ölü koşusu olan bir ticket'ın akışa dönmesinin
+   * HİÇBİR yolu yoktu. Panelde adımları görünüyor, kapıda "onayla/reddet"
+   * yazıyor, ve basıldığında "bu ticket için çalışan bir akış yok" cevabı
+   * geliyordu — operatörün sahada gördüğü şey tam olarak buydu.
+   *
+   * ── Ne yapıyor, sırasıyla ─────────────────────────────────────────────────
+   *  1. Koşunun GERÇEKTEN ölü olduğunu ölçer. Yaşayan bir koşuyu — hele kapıda
+   *     insan onayı bekleyen birini — yeniden başlatmak, o onayı sessizce
+   *     çöpe atmak olurdu. Motor cevap veriyorsa 409 döner, ve bu ret bilerek
+   *     KATI: emin olmadığımız yerde yeniden başlatmıyoruz.
+   *  2. Eski satırı EMEKLİYE AYIRIR (`retire`) — silmez. Defter, adım olayları,
+   *     kanıt paketi ve kapı kayıtları `onUpdate: Cascade` ile yeni kimliğe
+   *     taşınır; tek satır kaybolmaz. Eski koşunun defteri, bir denetçinin
+   *     "orada ne oldu" sorusunun cevabı olarak yerinde kalır.
+   *  3. `runIntake` ile ticket'ı yeniden alır — `POST /start`in AYNI yolu, aynı
+   *     kapılardan: proje bağlı mı, kill-switch kapalı mı, hangi kural eşleşti,
+   *     hangi ajan iğnelenecek. Ayrı bir "yeniden başlat" yolu yazmak, alımın
+   *     ikinci ve zayıf bir kopyasını üretmek olurdu.
+   *
+   * ── Denetim ───────────────────────────────────────────────────────────────
+   * Emekliye ayırma kaydı `runIntake`ten ÖNCE yazılır ve emekliye ayrılan
+   * satırın YENİ kimliğini adıyla taşır: bir denetçi "bu ticket'ın önceki
+   * koşusu nerede" diye sorduğunda cevabın kendisi zincirde durur.
+   *
+   * `RUN_START_ROLES` (admin, tech-lead): bu bir koşu başlatmak, ve başlatmanın
+   * yetkisi neyse yeniden başlatmanınki de odur.
+   */
+  app.post(
+    "/studio/runs/:ticket/restart",
+    { preHandler: [preHandler, requireAnyRole(...RUN_START_ROLES)] },
+    async (request, reply) => {
+      const ticket = ticketParam(request.params);
+      assertProjectAccess(sessionOf(request), ticket);
+
+      const record = await deps.read.runs.get(ticket);
+      if (record === null) throw notFound("no_run", { ticket });
+
+      /**
+       * MOTOR HÂLÂ CEVAP VERİYORSA YENİDEN BAŞLATMA YOK.
+       *
+       * `queryStateOrNull` bir okuma HATASINI da `null` sayıyor ve orada bu
+       * doğru: bir satırı listelemeyi bir sorgu hatası engellememeli. Burada
+       * DEĞİL — okunamayan bir motoru "koşu ölmüş" saymak, kapıda bekleyen
+       * canlı bir koşuyu bir ağ hıçkırığı yüzünden yeniden başlatmak olurdu.
+       * Bu yüzden sorgu doğrudan yapılıyor ve hatası çağırana ULAŞIYOR.
+       */
+      const live = await deps.runs.queryRunState(workflowIdFor(ticket));
+      if (live !== null) {
+        throw conflict("run_alive", { ticket, step: live.step, status: live.status });
+      }
+
+      const at = deps.clock.now();
+      const retiredId = await deps.read.runs.retire(ticket, at);
+      // `get` az önce bir satır gördüğüne göre buraya düşmek, satırın iki çağrı
+      // ARASINDA gitmesi demek. 404, uydurulmuş bir başarıdan iyidir.
+      if (retiredId === null) throw notFound("no_run", { ticket });
+
+      await deps.audit.append({
+        actor: sessionActor(sessionOf(request)),
+        action: "PARAM_CHANGED",
+        subject: `run:${ticket}`,
+        at,
+        meta: {
+          surface: "runs",
+          verb: "restarted",
+          // Eski koşunun defteri nerede — zincirde adıyla.
+          retiredRunId: retiredId,
+          previousStatus: record.status ?? "",
+          previousStep: record.step,
+        },
+      });
+
+      const outcome = await runIntake(deps, {
+        ticket,
+        actor: sessionOf(request).userId,
+        explicit: true,
+        ...(await classifyingFields(deps, ticket, (error) => {
+          request.log.warn({ err: error, ticket }, "ticket snapshot unavailable at restart");
+        })),
+      });
+      // 202 ve `retiredRunId` birlikte: panel "eski koşu emekliye ayrıldı, yeni
+      // koşu alındı" diyebilsin, ve alım REDDEDİLDİYSE (kill-switch, bağlı
+      // olmayan proje) operatör sebebini aynı cevapta görsün.
+      return reply.code(202).send({ ...outcome, retiredRunId: retiredId });
     },
   );
 

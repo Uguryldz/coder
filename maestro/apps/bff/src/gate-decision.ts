@@ -37,6 +37,29 @@ export interface GateRequest {
 
 export type GateFailure =
   | "no_run"
+  /**
+   * KOŞU VARDI, MOTORDA YOK — `no_run`dan ayrı, çünkü ayrı iki durum.
+   *
+   * ── Neden ayrıldı ─────────────────────────────────────────────────────────
+   * `no_run` iki bambaşka şeyi tek cümleye topluyordu: "bu ticket hiç akışa
+   * girmemiş" ve "koşu VARDI, motor artık onu hatırlamıyor". Operatörün sahada
+   * gördüğü ikincisiydi ve mesaj onu yanıltıyordu: panel adımları gösteriyor
+   * (katalogdan okuyor), kapıda "onayla/reddet" yazıyor, basınca "bu ticket
+   * için çalışan bir akış yok" diyordu. Operatör bundan "sistem ticket'ımı
+   * düşürdü" sonucunu çıkardı — doğru sonuç ise "koşu öldü, yeniden alınması
+   * gerekiyor" idi, ve o cümle hiçbir yerde yazmıyordu.
+   *
+   * Ayrımı yapabilen tek şey KATALOG: motor `null` derken `WorkflowRun` satırı
+   * duruyorsa koşu gerçekten vardı. Aynı ayrımı `studio-runs.ts` `stateSource`
+   * ile detay ekranında zaten yapıyor; bu, onun karar yolundaki karşılığı.
+   *
+   * ── Neden `no_open_gate` DEĞİL ────────────────────────────────────────────
+   * `no_open_gate` "koşu yaşıyor ama şu an bir kapıda değil" demek ve
+   * operatörün yapacağı şey beklemek. Burada koşu yaşamıyor ve beklemek hiçbir
+   * şeyi değiştirmeyecek — yapılacak şey ticket'ı yeniden akışa almak. İki
+   * farklı eylem, iki farklı ad.
+   */
+  | "run_gone"
   | "no_open_gate"
   | "not_member"
   | "not_delivered"
@@ -92,7 +115,22 @@ async function resolveOwner(
 export async function decideGate(deps: ResolvedDeps, request: GateRequest): Promise<GateResult> {
   const workflowId = workflowIdFor(request.ticket);
   const state = await deps.runs.queryRunState(workflowId);
-  if (state === null) return { ok: false, reason: "no_run" };
+  if (state === null) {
+    /**
+     * MOTOR SUSUYOR — ama bu iki ayrı cevabın hangisi?
+     *
+     * Katalogda satır varsa koşu VARDI: saklama süresi dolmuş ya da koşu
+     * düşmüş. Karar yine verilemez (verilecek bir kapı yok, gidecek bir sinyal
+     * yok), ama operatöre söylenecek cümle ve önerilecek EYLEM bambaşka —
+     * "yeniden akışa alın", "böyle bir ticket yok" değil.
+     *
+     * Katalog okuması FAIL-SOFT: patlarsa eski davranışa (`no_run`) düşülür.
+     * Bir teşhis uğruna kapı kararını 500'e çevirmek, düzeltmeye çalıştığı
+     * şeyden daha kötü olurdu — ve `no_run` zaten bugüne kadarki cevap.
+     */
+    const record = await deps.read.runs.get(request.ticket).catch(() => null);
+    return { ok: false, reason: record === null ? "no_run" : "run_gone" };
+  }
 
   // A decision is only meaningful at an OPEN approval gate. The clarification
   // wait (2b) also reports `gate`, and it is not something to approve.

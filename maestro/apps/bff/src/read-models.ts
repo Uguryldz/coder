@@ -175,6 +175,36 @@ export interface RunCatalog {
    * can pin the recorded moment and the audit entry beside it agrees.
    */
   setArchived(ticketKey: string, at: Date | null): Promise<boolean>;
+  /**
+   * ÖLÜ BİR KOŞUYU EMEKLİYE AYIR — yerine yenisi başlatılabilsin diye.
+   *
+   * ── Neden bu var ──────────────────────────────────────────────────────────
+   * Bir koşunun satır kimliği (`WorkflowRun.id`) motorun iş akışı kimliğiyle
+   * AYNI: `maestro-<ticket>`. Yani bir ticket'ın ikinci koşusu, birincinin
+   * birincil anahtarına çarpar — `create` bunu bir yarış sanıp yutar ve ortada
+   * yeni koşu YOKMUŞ gibi eski satır durmaya devam eder. Ölü bir koşusu olan
+   * ticket, bu yüzden bir daha hiç akışa alınamıyordu.
+   *
+   * ── Neden SİLME değil ─────────────────────────────────────────────────────
+   * Silinemez zaten: defter (`JournalEntry`), adım olayları, kanıt paketi ve
+   * kapı kayıtlarının hepsi bu satıra `onDelete: Restrict` ile bağlı. Ama asıl
+   * sebep o değil — eski koşunun defteri KORUNMALI, çünkü M33 zinciri o koşuda
+   * ne olduğunu anlatıyor ve bir denetçinin sorusu tam olarak orada cevabını
+   * buluyor. Yapılan şey satırın KİMLİĞİNİ değiştirmek: `onUpdate: Cascade`
+   * sayesinde defteri, adımları, kanıtı ve kapıları yeni kimliğe TAŞINIR —
+   * tek bir satır bile kaybolmaz, yalnız yeni koşuya yer açılır.
+   *
+   * ── Neden yalnız ÖLÜ koşular ──────────────────────────────────────────────
+   * Yaşayan bir koşuyu emekliye ayırmak, kapıda insan onayı bekleyen işi
+   * sessizce yok saymak olurdu. Çağıran taraf koşunun gerçekten bittiğini
+   * (motorda karşılığı yok ya da satır terminal) ölçmeden burayı çağırmamalı;
+   * bu port o ölçümü tekrarlamaz, yalnız yazar.
+   *
+   * `null` = böyle bir ticket yok (rota 404'e çevirir). Başarıda emekliye
+   * ayrılan satırın YENİ kimliği döner, ki denetim kaydı hangi satırın
+   * taşındığını adıyla yazabilsin.
+   */
+  retire(ticketKey: string, at: Date): Promise<string | null>;
 }
 
 // ── journal (M30) ─────────────────────────────────────────────────────────────

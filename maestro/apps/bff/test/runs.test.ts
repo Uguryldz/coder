@@ -210,3 +210,80 @@ describe("POST /runs/:ticket/signals/:name", () => {
     expect(response.statusCode).toBe(404);
   });
 });
+
+/**
+ * "BU TİCKET İÇİN ÇALIŞAN BİR AKIŞ YOK" — İKİ AYRI DURUM, TEK CÜMLE.
+ *
+ * Sahada ölçülen yanılgı: operatörün koşusu 5. kapıda bekliyordu, Temporal'ın
+ * 24 saatlik saklama süresi doldu ve execution düştü. Panel adımları KATALOGDAN
+ * okuyup doğru gösteriyordu — "tech lead onayında" — ama "Reddet" düğmesi
+ * kararı MOTORA gönderiyordu ve motor o koşuyu tanımıyordu. Cevap şuydu: "Bu
+ * ticket için çalışan bir akış yok." Operatör bundan ticket'ının kaybolduğu
+ * sonucunu çıkardı; doğru sonuç "koşu öldü, yeniden alınması gerek" idi.
+ *
+ * Ayrımı yapabilen tek şey KATALOG: motor susarken `WorkflowRun` satırı
+ * duruyorsa koşu gerçekten VARDI. Aşağıdaki iki test o ayrımı sabitliyor.
+ */
+describe("kapı kararı: koşu hiç yok mu, yoksa motorda mı yok", () => {
+  const RUN_RECORD = {
+    ticketKey: TICKET,
+    runId: `run-${TICKET}`,
+    title: "kapıda kalmış koşu",
+    appId: null,
+    mode: "full_auto" as const,
+    risk: "orta" as const,
+    dataClass: "dahili" as const,
+    step: "5",
+    status: "gate" as const,
+    reporter: "ayse.kaya",
+    assignee: null,
+    prId: null,
+    costUsd: 0,
+    tokensIn: 0,
+    tokensOut: 0,
+    startedAt: "2026-08-09T09:00:00.000Z",
+    updatedAt: "2026-08-09T09:00:00.000Z",
+    archivedAt: null,
+    parentTicketKey: null,
+    childTicketKeys: [],
+  };
+
+  it("KOŞU VARDI ama motorda yok → 409 `run_gone`, 404 `no_run` DEĞİL", async () => {
+    const h = await harness({ groups: { "tech-leads": ["ayse.kaya"] } });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
+    // Katalogda satır VAR, motorda execution YOK — sahadaki durumun tam kopyası.
+    h.read.runs.put(RUN_RECORD);
+    const token = await h.login("ayse.kaya");
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/runs/${TICKET}/signals/gateDecision`,
+      headers: auth(token),
+      payload: { decision: "reject", reason: "eksik var" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: "run_gone" });
+  });
+
+  /**
+   * Ve karşı taraf: katalogda da satır yoksa cevap gerçekten `no_run`. Yeni dal
+   * eskisini yutmuş olsaydı, hiç başlamamış bir ticket için operatöre "koşunuz
+   * öldü, yeniden başlatın" denirdi — aynı hatanın ters yönü.
+   */
+  it("HİÇ koşu olmamışsa cevap yine `no_run` — yeni dal eskisini yutmuyor", async () => {
+    const h = await harness({ groups: { "tech-leads": ["ayse.kaya"] } });
+    await h.addUser({ username: "ayse.kaya", groups: [PROJECT_GROUP] });
+    const token = await h.login("ayse.kaya");
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/runs/${TICKET}/signals/gateDecision`,
+      headers: auth(token),
+      payload: { decision: "approve" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: "no_run" });
+  });
+});

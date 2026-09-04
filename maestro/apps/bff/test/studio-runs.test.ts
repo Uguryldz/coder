@@ -1124,3 +1124,140 @@ describe("PUT /studio/runs/:ticket/archive", () => {
     expect(entries.filter((e) => e.subject === `run:${TICKET}`)).toEqual([]);
   });
 });
+
+/**
+ * ÖLÜ BİR KOŞUYU YENİDEN AKIŞA ALMAK — operatörün elinde HİÇ olmayan yol.
+ *
+ * Sahada ölçülen çıkmaz: Temporal'ın saklama süresi 24 saat, kapıda bekleyen
+ * iş o süreyi aşıyor, ve execution düştüğü anda ticket kalıcı olarak akış
+ * dışında kalıyordu. İki kapı birden kapalıydı:
+ *
+ *  · `POST /start` sessizce hiçbir şey yapmıyordu — koşu satırının birincil
+ *    anahtarı motorun iş akışı kimliğiyle AYNI (`maestro-<ticket>`), yani yeni
+ *    koşunun satırı eskisine çarpıyor, `create` bunu bir yarış sanıp yutuyordu.
+ *  · Tarama koşusu olan ticket'ı BİLEREK atlıyor ("düşmüş bir koşu bir insanın
+ *    kararıdır, zamanlayıcının yeniden deneyeceği bir şey değil").
+ *
+ * Bu rota o insanın kararını verebileceği yer. Testlerin asıl işi, kurtarmanın
+ * hiçbir şeyi KAYBETMEDİĞİNİ sabitlemek: eski koşunun defteri duruyor mu.
+ */
+describe("POST /studio/runs/:ticket/restart", () => {
+  async function restart(h: Harness, token: string, ticket = TICKET) {
+    return h.app.inject({
+      method: "POST",
+      url: `/studio/runs/${ticket}/restart`,
+      headers: auth(token),
+    });
+  }
+
+  /**
+   * Koşusu olan, ama motorda karşılığı OLMAYAN bir ticket — sahadaki durum.
+   *
+   * `studioHarness` kapıyı motorda AÇIK bırakıyor (`openGate`); burada onu
+   * silmek kurgu değil, ölçülen durumun ta kendisi: Temporal'ın saklama süresi
+   * dolduğunda katalog satırı yerinde kalır ve execution gider. Kapıda bekleyen
+   * on iki koşunun başına gelen tam olarak buydu.
+   */
+  async function deadRunHarness(): Promise<Harness> {
+    const h = await studioHarness();
+    h.runs.states.clear();
+    h.work.putTicket(SNAPSHOT);
+    return h;
+  }
+
+  it("ölü koşuyu emekliye ayırır ve ticket'ı YENİDEN akışa alır", async () => {
+    const h = await deadRunHarness();
+    const token = await adminToken(h);
+
+    const response = await restart(h, token);
+
+    expect(response.statusCode).toBe(202);
+    // Alım gerçekten yapıldı — motorda artık bir koşu var.
+    expect(h.runs.started.at(-1)?.ticket).toBe(TICKET);
+    // Ve eski satırın kimliği değişti, ki yeni koşu kendi satırını açabilsin.
+    const body = response.json() as { retiredRunId: string };
+    expect(body.retiredRunId).toContain(RUN_ID);
+    expect(body.retiredRunId).not.toBe(RUN_ID);
+  });
+
+  /**
+   * KAYIP YOK — bu testin var olma sebebi.
+   *
+   * Emekliye ayırma bir SİLME değil; eski koşunun defteri, adımları ve kanıt
+   * paketi olduğu yerde durur, yalnız kimlikleri yeni ada taşınır. Bir denetçi
+   * "o koşuda ne oldu" diye sorduğunda cevap hâlâ oradadır.
+   */
+  it("eski koşunun satırını SİLMEZ — kaydı emekli adıyla duruyor", async () => {
+    const h = await deadRunHarness();
+    const token = await adminToken(h);
+
+    const before = await restart(h, token);
+    const retiredId = (before.json() as { retiredRunId: string }).retiredRunId;
+
+    // Satır hâlâ okunabilir durumda ve yeni kimliğini taşıyor.
+    const record = await h.read.runs.get(TICKET);
+    expect(record?.runId).toBe(retiredId);
+  });
+
+  /**
+   * YAŞAYAN BİR KOŞU YENİDEN BAŞLATILAMAZ.
+   *
+   * Kapıda insan onayı bekleyen bir koşuyu "yeniden başlatmak", o onayı ve
+   * ona kadar yapılmış işi sessizce çöpe atmak olurdu. Ret bilerek katı: emin
+   * olmadığımız yerde yeniden başlatmıyoruz.
+   */
+  it("motor cevap veriyorsa REDDEDER — bekleyen işi çöpe atmaz", async () => {
+    const h = await studioHarness();
+    h.runs.states.set(`maestro-${TICKET}`, {
+      runId: RUN_ID,
+      ticketKey: TICKET,
+      step: "5",
+      status: "gate",
+      startedAt: AT,
+      updatedAt: AT,
+    });
+    const token = await adminToken(h);
+
+    const response = await restart(h, token);
+
+    expect(response.statusCode).toBe(409);
+    expect((response.json() as { error: string }).error).toBe("run_alive");
+    // Ve hiçbir şey başlatılmadı.
+    expect(h.runs.started).toEqual([]);
+  });
+
+  it("başlatma rolü olmayan çağıranı reddeder", async () => {
+    const h = await deadRunHarness();
+    const token = await memberToken(h);
+
+    const response = await restart(h, token);
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("hiç koşusu olmayan bir ticket için 404 — uydurma bir başarı değil", async () => {
+    const h = await deadRunHarness();
+    const token = await adminToken(h);
+
+    const response = await restart(h, token, "UGURPAY-9999");
+
+    expect(response.statusCode).toBe(404);
+    expect((response.json() as { error: string }).error).toBe("no_run");
+  });
+
+  /**
+   * Emekliye ayrılan satırın kimliği DENETİM ZİNCİRİNE yazılır: "bu ticket'ın
+   * önceki koşusu nerede" sorusunun cevabı, sorulacağı yerde durmalı.
+   */
+  it("emekliye ayrılan koşunun kimliğini M33 zincirine yazar", async () => {
+    const h = await deadRunHarness();
+    const token = await adminToken(h);
+
+    const response = await restart(h, token);
+    const retiredId = (response.json() as { retiredRunId: string }).retiredRunId;
+
+    const entries = (await h.auditStore.read()).filter((e) => e.subject === `run:${TICKET}`);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.meta).toMatchObject({ verb: "restarted", retiredRunId: retiredId });
+  });
+});

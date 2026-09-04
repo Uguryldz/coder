@@ -105,6 +105,15 @@ async function studioGateDecision(
   if (result.ok) return { accepted: true, step: result.step, signatureSeq: result.signatureSeq };
   if (result.reason === "not_member") throw forbidden("not_gate_owner", { group: result.group });
   if (result.reason === "no_run") throw notFound("no_run", { ticket });
+  /**
+   * 409, 404 DEĞİL — ve fark operatörün ekranında.
+   *
+   * 404 "böyle bir şey yok" demek, ve panel bunu ticket'ın hiç var olmadığı
+   * gibi okutuyordu. Burada ticket VAR, koşusu da vardı; çakışan şey koşunun
+   * DURUMU — motorda karşılığı kalmamış. `no_open_gate` ve `not_delivered`
+   * ile aynı sınıf, ve aynı kod: karar verilemez, ama sebebi bir yokluk değil.
+   */
+  if (result.reason === "run_gone") throw conflict("run_gone", { ticket });
   throw conflict(result.reason, { step: result.step });
 }
 

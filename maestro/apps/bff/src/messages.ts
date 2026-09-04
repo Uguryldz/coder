@@ -17,6 +17,12 @@ export const BFF_MESSAGE_KEYS = {
   gateReminder: "notify.gate_reminder",
   commandAccepted: "command.accepted",
   commandNoRun: "command.no_run",
+  /**
+   * Koşu VARDI, motorda yok. `commandNoRun`dan ayrı bir cümle, çünkü
+   * operatörün yapacağı şey ayrı: beklemek değil, ticket'ı yeniden akışa almak.
+   * Bkz. `GateFailure["run_gone"]`.
+   */
+  commandRunGone: "command.run_gone",
   commandNoOpenGate: "command.no_open_gate",
   commandRunStatus: "command.run_status",
   commandUnsupported: "command.unsupported",

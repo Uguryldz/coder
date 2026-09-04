@@ -1056,6 +1056,29 @@ export async function main(): Promise<void> {
     (
       await db.workflowRun.findMany({
         select: { ticketKey: true, step: true, status: true },
+        /**
+         * EMEKLİYE AYRILMIŞ SATIRLAR SAYILMAZ — ve bu, `take: 500` yüzünden
+         * bir kolaylık değil bir DOĞRULUK meselesi.
+         *
+         * Yeniden başlatma eski satırı emekliye ayırır (`RunCatalog.retire`):
+         * satır durur, kimliği değişir, `archivedAt` dolar. Ticket'ın CANLI
+         * satırı ise yenisi, ve tarama zaten onu görüp atlayacak — yani emekli
+         * satırı ayrıca saymanın bir faydası yok.
+         *
+         * Zararı ise var: bu sorgu 500 satırda kesiliyor. İki kez yeniden
+         * başlatılmış bir kurulumda emekli satırlar bütçeyi yiyip GERÇEKTEN
+         * koşusu olan ticket'ları listenin dışında bırakabilir — ve listenin
+         * dışında kalan ticket, koşusu olduğu hâlde ikinci kez başlatılır.
+         * Yani kesme, düzeltilen hatanın aynısını ters yönden üretirdi.
+         *
+         * `archivedAt` elle arşivlenmiş satırları da dışarıda bırakır ve bu
+         * DOĞRU: arşivlemek "bu satırla işim bitti" demek, ve o ticket yeniden
+         * eşleşirse yeniden alınması operatörün kendi kararının sonucudur.
+         */
+        where: { archivedAt: null },
+        // En taze satırlar önce: kesme yine de devreye girerse, kaybedilen
+        // satırlar en eskiler olur — yani en az ihtimalle yeniden eşleşecekler.
+        orderBy: { updatedAt: "desc" },
         take: 500,
       })
     ).map((row) => ({

@@ -487,6 +487,16 @@ export function SetupScreen(): ReactNode {
           input.flowType,
           input.gateStatusDraft,
         ),
+        /**
+         * KAPI DİZİSİ — ve `statusMap` gibi "boşsa hiç gönderme" DEĞİL.
+         *
+         * `null` "seçim yok" demek ve risk seviyesine düşülür; BOŞ DİZİ tam
+         * tersi, "hiç kapı açma". İkisini aynı dala koymak, operatörün
+         * sihirbazda kapattığı kapıları koşu başlarken geri açardı. Uzman
+         * ekranının (`Listening.tsx`) yaptığı ayrımın aynısı, ve aynı olmak
+         * zorunda: iki ekran aynı kuralı yazıyor.
+         */
+        gateSteps: input.gatesCustom ? { steps: [...input.gateSteps] } : null,
       });
 
       if (alreadyBound) return { awaitingApproval: false };

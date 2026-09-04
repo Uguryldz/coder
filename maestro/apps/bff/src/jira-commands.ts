@@ -228,6 +228,18 @@ async function replyGateFailure(
     await reply(deps, ticket, BFF_MESSAGE_KEYS.gateMembershipFailed, { group: result.group ?? "" });
     return;
   }
+  /**
+   * KOŞU ÖLDÜ — ayrı bir cümle, çünkü ayrı bir eylem.
+   *
+   * `no_run` "böyle bir akış hiç olmadı" demek ve operatörün yapacağı şey
+   * ticket'ı akışa sokmak. `run_gone` "koşu vardı, motor artık hatırlamıyor"
+   * demek ve yapılacak şey onu YENİDEN almak. İkisini aynı cümleye toplamak,
+   * operatörü kapıda bekleyen bir işin kaybolduğu sonucuna götürüyordu.
+   */
+  if (result.reason === "run_gone") {
+    await reply(deps, ticket, BFF_MESSAGE_KEYS.commandRunGone, { ticket });
+    return;
+  }
   if (result.reason === "no_run" || result.reason === "not_delivered") {
     await reply(deps, ticket, BFF_MESSAGE_KEYS.commandNoRun, { ticket });
     return;

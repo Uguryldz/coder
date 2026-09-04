@@ -114,6 +114,27 @@ export interface RunCatalogDelegate {
     where: RunCatalogWhere;
     data: { archivedAt: Date | null };
   }): Promise<{ count: number }>;
+  /**
+   * `retire`in yazma ucu — TEK bir satırın birincil anahtarını değiştirir.
+   *
+   * `update` (çoğul değil), çünkü emekliye ayrılan satır tam olarak BİR tane:
+   * ticket'ın motordaki iş akışı kimliğini tutan satır (`maestro-<ticket>`).
+   * Kardeş tablolar (`JournalEntry`, `StepEvent`, `EvidenceItem`, `Gate`) bu
+   * kolona `onUpdate: Cascade` ile bağlı, dolayısıyla kimlik değişince hepsi
+   * yeni kimliğe TAŞINIR — silinmez, kopyalanmaz, kaybolmaz.
+   *
+   * `archivedAt` aynı yazıda veriliyor: emekliye ayrılan satır panonun
+   * varsayılan görünümünden de çıkmalı, yoksa operatör aynı ticket'ı iki kez
+   * (biri ölü, biri yeni) görür ve hangisinin canlı olduğunu ayırt edemez.
+   */
+  update(args: {
+    where: { id: string };
+    data: { id: string; archivedAt: Date };
+  }): Promise<unknown>;
+  findFirst(args: {
+    where: { ticketKey: string };
+    orderBy: { updatedAt: "desc" };
+  }): Promise<{ id: string } | null>;
 }
 
 /**
@@ -282,6 +303,41 @@ export class PrismaRunCatalog implements RunCatalog {
   async setArchived(ticketKey: string, at: Date | null): Promise<boolean> {
     const { count } = await this.runs.updateMany({ where: { ticketKey }, data: { archivedAt: at } });
     return count > 0;
+  }
+
+  /**
+   * Ölü koşuyu emekliye ayır: kimliğini değiştir, defterini yanında taşı.
+   *
+   * ── Neden kimlik değiştiriliyor ───────────────────────────────────────────
+   * `WorkflowRun.id` motorun iş akışı kimliğiyle aynı (`maestro-<ticket>`) ve
+   * yeni koşu da aynı kimliği isteyecek. Eski satır orada durduğu sürece
+   * `create` bir birincil anahtar çakışması görür, onu bir yarış sanıp YUTAR,
+   * ve ticket "yeniden başlatıldı" denmesine rağmen hiç başlamamış olur. Bu,
+   * ölü koşusu olan bir ticket'ın bir daha hiç akışa alınamamasının sebebi.
+   *
+   * ── Neden yeni kimlik ZAMAN DAMGALI ───────────────────────────────────────
+   * Aynı ticket birden çok kez emekliye ayrılabilir (iki kez düşen bir koşu
+   * sıradan bir şey), ve sabit bir son ek ikinci emeklilikte yine çakışırdı —
+   * yani düzeltilmeye çalışılan hatanın aynısı, bir adım geride. Damga koşunun
+   * emekliye ayrıldığı AN, çağıranın saatinden: iki emeklilik iki ayrı satır.
+   *
+   * ── Ne KAYBOLMUYOR ────────────────────────────────────────────────────────
+   * Hiçbir şey. Şemadaki dört kardeş tablo da `onUpdate: Cascade` taşıyor, yani
+   * defter satırları, adım olayları, kanıt kalemleri ve kapı kayıtları yeni
+   * kimliğe birlikte gidiyor. Satır silinmiyor, kopyalanmıyor; yalnız adı
+   * değişiyor ve panonun varsayılan görünümünden çıkıyor.
+   *
+   * `null` = böyle bir ticket yok.
+   */
+  async retire(ticketKey: string, at: Date): Promise<string | null> {
+    const row = await this.runs.findFirst({ where: { ticketKey }, orderBy: { updatedAt: "desc" } });
+    if (row === null) return null;
+    // Saniye çözünürlüğü değil, MİLİSANİYE: aynı ticket'ı iki kez arka arkaya
+    // emekliye ayırmak (çift tık, ya da bir yeniden deneme) saniyede iki kez
+    // olabilir, ve o iki satır çakışırsa ikincisi sessizce düşerdi.
+    const retiredId = `${row.id}#emekli-${at.getTime()}`;
+    await this.runs.update({ where: { id: row.id }, data: { id: retiredId, archivedAt: at } });
+    return retiredId;
   }
 
   /**

@@ -97,6 +97,24 @@ export class InMemoryRunCatalog implements RunCatalog {
     this.rows.set(ticketKey, { ...row, archivedAt: at === null ? null : at.toISOString() });
     return Promise.resolve(true);
   }
+
+  /**
+   * `PrismaRunCatalog.retire`in bellek karşılığı — aynı iki etki: satırın
+   * kimliği değişir ve satır arşive düşer.
+   *
+   * Bu haritanın anahtarı `ticketKey`, satırın `runId`'si değil; yani gerçek
+   * mağazanın birincil-anahtar çakışması burada YAŞANMAZ. Yine de kimlik
+   * değiştiriliyor, çünkü rota `retire`in döndürdüğü yeni kimliği denetim
+   * kaydına yazıyor — bellek mağazası oraya farklı bir cevap verirse, testler
+   * gerçekte olmayan bir davranışı doğrulardı.
+   */
+  retire(ticketKey: string, at: Date): Promise<string | null> {
+    const row = this.rows.get(ticketKey);
+    if (row === undefined) return Promise.resolve(null);
+    const retiredId = `${row.runId}#emekli-${at.getTime()}`;
+    this.rows.set(ticketKey, { ...row, runId: retiredId, archivedAt: at.toISOString() });
+    return Promise.resolve(retiredId);
+  }
 }
 
 /** @see RunCatalogFilter.archived — the in-memory half of `archiveWhere`. */

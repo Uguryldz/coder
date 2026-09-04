@@ -93,7 +93,12 @@ export function DetailScreen(): ReactNode {
             </div>
           </Card>
 
-          <RunSidebar record={detail.run} state={detail.state} application={detail.application} />
+          <RunSidebar
+            record={detail.run}
+            state={detail.state}
+            application={detail.application}
+            {...(detail.stateSource === undefined ? {} : { stateSource: detail.stateSource })}
+          />
         </div>
       )}
     </QueryState>

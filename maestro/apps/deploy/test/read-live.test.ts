@@ -74,6 +74,22 @@ function fakeRuns(rows: RunCatalogRow[]): RunCatalogDelegate & { queries: RunCat
       for (const row of found) row.archivedAt = args.data.archivedAt;
       return Promise.resolve({ count: found.length });
     },
+    // `retire`in iki ucu — aynı satır nesnelerini değiştirir, ki emekliye
+    // ayırma sonrası bir listeleme gerçek bir gidiş-dönüş olsun.
+    findFirst: (args) => {
+      const found = rows
+        .filter((row) => row.ticketKey === args.where.ticketKey)
+        .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+      return Promise.resolve(found[0] ?? null);
+    },
+    update: (args) => {
+      const row = rows.find((candidate) => candidate.id === args.where.id);
+      if (row !== undefined) {
+        row.id = args.data.id;
+        row.archivedAt = args.data.archivedAt;
+      }
+      return Promise.resolve(row ?? null);
+    },
   };
 }
 

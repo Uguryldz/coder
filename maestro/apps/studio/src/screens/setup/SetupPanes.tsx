@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card, Input, Select } from "../../ui/index.ts";
 import { englishAside, matchValueLabel } from "../common/jira-english.ts";
@@ -412,6 +413,89 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
             data.botKnown ? t("setup.tickets.assignee_hint_auto") : t("setup.tickets.assignee_hint")
           }
         />
+      </div>
+      {/*
+        ── ONAY KAPILARI, SİHİRBAZDA ────────────────────────────────────────
+
+        Uzman ekranındaki bölümün aynısı, aynı gerekçeyle: kod adı değil ANLAM
+        ("Analiz onayı — ürün sahibi"), ve HER ZAMAN görünür — açılır bir
+        bölümün arkasında değil.
+
+        Neden sihirbaza da: bu seçim `Listening.tsx`te vardı ve orada
+        bulunabilirdi, ama sihirbazdan geçen operatör o ekrana hiç uğramıyor ve
+        seçimin varlığından haberdar olmuyordu. Sahadaki cümle buydu — "var ama
+        onu nereden yapacağımı bilmiyorum". Bir ekranın sormadığı soru,
+        operatör için olmayan bir sorudur.
+      */}
+      <div style={{ marginTop: 16 }}>
+        <div className="scr-note" style={{ marginBottom: 6 }}>
+          <strong>{t("listening.gates.title")}</strong>
+        </div>
+        <div className="scr-note" style={{ marginBottom: 8 }}>
+          {t("listening.gates.explain")}
+        </div>
+        {/* İki seçenek RADYO, bir onay kutusu değil: "seçim yok" ile "hiç kapı
+            istemiyorum" iki ayrı cevap, ve tek bir kutu ikisini anlatamaz. */}
+        <label style={{ display: "block", marginBottom: 4 }}>
+          <input
+            type="radio"
+            name="setup-gates-mode"
+            checked={!draft.gatesCustom}
+            onChange={() => onChange({ gatesCustom: false })}
+          />{" "}
+          <span>{t("listening.gates.default")}</span>
+        </label>
+        <label style={{ display: "block", marginBottom: 8 }}>
+          <input
+            type="radio"
+            name="setup-gates-mode"
+            checked={draft.gatesCustom}
+            onChange={() => onChange({ gatesCustom: true })}
+          />{" "}
+          <span>{t("listening.gates.custom")}</span>
+        </label>
+        {draft.gatesCustom && (
+          <div style={{ marginLeft: 20 }}>
+            {SELECTABLE_GATES.map((gate) => {
+              /* Analiz akışı mühendislik kapılarına HİÇ ulaşmaz; seçili olsa da
+                 açılmaz. Kutuyu gizlemek yerine ölü olduğunu SÖYLEMEK, uzman
+                 ekranının yaptığının aynısı — gizlenen bir kutu, operatöre
+                 cevabının kaydedildiğini sanmasına yol açar. */
+              const dead =
+                draft.flowType === "analiz" && gate.step !== "4" && gate.step !== "5";
+              const checked = draft.gateSteps.includes(gate.step);
+              return (
+                <div key={gate.step} style={{ marginBottom: 8 }}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        onChange({
+                          gateSteps: checked
+                            ? draft.gateSteps.filter((step) => step !== gate.step)
+                            : [...draft.gateSteps, gate.step],
+                        })
+                      }
+                    />{" "}
+                    <span style={dead ? { color: "#78716c" } : {}}>{t(gate.titleKey)}</span>
+                  </label>
+                  <div className="scr-note" style={{ marginLeft: 22 }}>
+                    {t(`${gate.titleKey}.hint`)}
+                  </div>
+                  {dead && checked && (
+                    <div className="scr-note" style={{ marginLeft: 22 }}>
+                      {t("listening.gates.engineering_only")}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {draft.gateSteps.length === 0 && (
+              <div className="scr-note">{t("listening.gates.none_selected")}</div>
+            )}
+          </div>
+        )}
       </div>
       <div className="scr-note" style={{ marginTop: 12 }}>
         {t("setup.tickets.note")}

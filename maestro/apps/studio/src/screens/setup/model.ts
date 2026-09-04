@@ -1,3 +1,4 @@
+import type { APPROVAL_GATE_STEPS } from "@maestro/contracts";
 import {
   EMPTY_GATE_STATUS_DRAFT,
   EMPTY_STATUS_DRAFT,
@@ -96,6 +97,15 @@ export function flowUnavailableReason(
  * about the other. Now the question is asked exactly once, here.
  */
 export type MatchKind = "status" | "issuetype" | "assigned" | "label";
+
+/**
+ * Seçilebilir bir onay kapısının adım kimliği — sözlüğü `contracts` tutuyor.
+ *
+ * Kendi birleşimini yazmak yerine oradan türetiliyor: ikinci bir sözlük er ya
+ * da geç birincisinden ayrışır, ve ayrıştığında sihirbaz workflow'un hiç
+ * tanımadığı bir kapı adı gönderir.
+ */
+export type GateStep = (typeof APPROVAL_GATE_STEPS)[number];
 
 /**
  * The value an `assigned` rule sends. The BFF pins it to the same literal
@@ -256,6 +266,26 @@ export interface SetupDraft {
    */
   readonly gateStatusDraft: GateStatusDraft;
   /**
+   * Adım 4c — HANGİ ONAY KAPILARI AÇILSIN.
+   *
+   * ── Neden sihirbaza da kondu ──────────────────────────────────────────────
+   * Kapı seçimi uzman ekranında (`Listening.tsx`) vardı ve orada her zaman
+   * görünür. Ama sihirbazdan geçen bir operatör o ekrana hiç uğramayabilir, ve
+   * uğramadığında seçimin VARLIĞINDAN haberdar olmaz: sahada ölçülen cümle tam
+   * buydu — "1.0.26'da var ama onu nereden yapacağım bilmiyorum". Bir ekranın
+   * sormadığı soru, olmayan bir soru gibi davranır.
+   *
+   * ── İki alan, çünkü iki ayrı cevap ────────────────────────────────────────
+   * `gatesCustom = false` → "seçim yok". Kapılar risk seviyesine göre açılır ve
+   * kural telde `gateSteps: null` taşır — bu alan hiç var olmamış gibi, yani
+   * geriye dönük uyumun tamamı.
+   * `gatesCustom = true` → operatör seçti, ve seçimi BOŞ da olabilir ("hiç kapı
+   * istemiyorum"). Yokluk ile boş dizi ayrı iki davranış (bkz.
+   * `GateStepSelection`), ve tek bir dizi alanıyla bu ayrım anlatılamaz.
+   */
+  readonly gatesCustom: boolean;
+  readonly gateSteps: readonly GateStep[];
+  /**
    * Step 5 — how `/approve` reaches Maestro (`jira.command_intake`).
    *
    * The one PLATFORM-WIDE answer in an otherwise per-project draft, and the
@@ -295,6 +325,11 @@ export const EMPTY_SETUP_DRAFT: SetupDraft = {
   statusOn: false,
   statusDraft: EMPTY_STATUS_DRAFT,
   reassignOnNeedInfo: false,
+  // Kapalı: "seçim yok" bugüne kadarki davranış, ve sihirbazın varsayılanı
+  // ürünün varsayılanından farklı bir şey OLMAMALI. Operatörün hiç dokunmadan
+  // geçtiği bir sihirbaz, kapı dizisini sessizce daraltmamalı.
+  gatesCustom: false,
+  gateSteps: [],
   // Boş: kapı statüsü bir SEÇİM, ve uydurma bir varsayılan operatöre hiç
   // vermediği bir cevabı vermiş gibi gösterirdi. Boşluğun kendisi ekranda
   // uyarıyla söyleniyor, sessizce geçilmiyor.

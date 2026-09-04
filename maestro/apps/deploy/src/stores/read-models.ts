@@ -145,6 +145,11 @@ export function unbridgedReadModels(): ReadModels {
       // unbridged store that resolved `true` would tell an operator their run
       // was archived, hide nothing, and leave them pressing the button again.
       setArchived: refuse("runs", "setArchived"),
+      // Aynı gerekçe, bir derece daha ağır: `retire` ölü bir koşuyu emekliye
+      // ayırıp yerine yenisinin başlatılmasının önünü açan yazma. Köprüsüz bir
+      // mağazada sessizce başarılı dönmek, operatöre ticket'ının yeniden akışa
+      // alındığını söyleyip hiçbir şey yapmamak olurdu.
+      retire: refuse("runs", "retire"),
     },
     journal: { list: refuse("journal", "list"), summary: refuse("journal", "summary") },
     gates: { listOpen: refuse("gates", "listOpen") },

@@ -28,6 +28,45 @@ export const STUDIO_SIGNALS = {
   modeChange: "modeChange",
 } as const;
 
+/**
+ * ÖLÜ BİR KOŞUYU YENİDEN AKIŞA AL.
+ *
+ * Bir sinyal DEĞİL, ve olamaz: sinyalin gideceği bir koşu yok — sorunun kendisi
+ * tam olarak bu. Bu yüzden kendi rotası var (`POST /studio/runs/:ticket/restart`)
+ * ve alım yolundan geçer: eski satır emekliye ayrılır (defteri korunur), ticket
+ * dinleme kuralının BUGÜNKÜ ayarlarıyla baştan alınır.
+ *
+ * Gerekçesi rotanın kendisinde (apps/bff/src/routes/studio-runs.ts): koşu satır
+ * kimliği motorun iş akışı kimliğiyle aynı olduğu için, eski satır durduğu
+ * sürece yeni koşu sessizce hiç başlamıyordu.
+ */
+export interface RunRestartResult {
+  readonly accepted: boolean;
+  /** Alım reddedildiyse sebebi — kill-switch, bağlı olmayan proje, vb. */
+  readonly reason?: string;
+  /** Emekliye ayrılan eski koşunun yeni kimliği; defteri orada duruyor. */
+  readonly retiredRunId: string;
+}
+
+export function useRunRestart(): UseMutationResult<RunRestartResult, unknown, string> {
+  const api = useApi();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ticket: string) =>
+      api.post<RunRestartResult>(`/studio/runs/${encodeURIComponent(ticket)}/restart`, {}),
+    onSuccess: (_result, ticket) => {
+      // Detay ekranı, pano ve defter — üçü de değişti: koşu artık başka bir
+      // koşu. Yalnız birini tazelemek, operatöre eski koşunun ekranını
+      // gösterip "yeniden başlatıldı" demek olurdu.
+      void queryClient.invalidateQueries({ queryKey: ["studio-run", ticket] });
+      void queryClient.invalidateQueries({ queryKey: ["run", ticket] });
+      void queryClient.invalidateQueries({ queryKey: ["runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["journal", ticket] });
+    },
+  });
+}
+
 export interface GateDecisionInput {
   readonly ticket: string;
   readonly decision: "approve" | "reject";

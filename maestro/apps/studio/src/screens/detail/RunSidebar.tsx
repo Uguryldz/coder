@@ -5,6 +5,7 @@ import { useI18n, useT } from "../../i18n/I18nProvider.tsx";
 import { Badge, Card, riskTone, workModeTone } from "../../ui/index.ts";
 import { useEnumLabel } from "../common/label.ts";
 import { GatePanel } from "../shared/GatePanel.tsx";
+import { RestartPanel } from "./RestartPanel.tsx";
 import { isApprovalGate, isClarificationWait } from "../shared/gate-utils.ts";
 import { ageLabel, dateTimeLabel } from "../shared/format.ts";
 import { RunStatusCell } from "../Tickets.tsx";
@@ -31,13 +32,38 @@ export interface RunSidebarProps {
   /** `null` when the ticket exists but its workflow has not started. */
   readonly state: WorkflowRunState | null;
   readonly application: ApplicationRecord | null;
+  /**
+   * Durumun NEREDEN geldiği — ve bu sütunun hangi paneli çizeceğini belirleyen
+   * şey. `"record"` ise motorun bu koşudan haberi yok: kapı paneli çizmek,
+   * basıldığında hata veren bir onay düğmesi göstermek demek. Bkz. `stateSource`
+   * (apps/bff/src/routes/studio-runs.ts).
+   *
+   * İsteğe bağlı, çünkü alanı göndermeyen bir BFF sürümü `"engine"` demektir —
+   * yani bugüne kadarki davranış.
+   */
+  readonly stateSource?: RunDetail["stateSource"];
 }
 
-export function RunSidebar({ record, state, application }: RunSidebarProps): ReactNode {
+export function RunSidebar({
+  record,
+  state,
+  application,
+  stateSource,
+}: RunSidebarProps): ReactNode {
   const t = useT();
   const { locale } = useI18n();
   const enumLabel = useEnumLabel();
   const age = ageLabel(state?.startedAt ?? record.startedAt);
+  /**
+   * KOŞU MOTORDA YOK — ve bu, kapı panelini çizmemenin sebebi.
+   *
+   * Operatörün sahada gördüğü hata tam buydu: panel "tech lead onayında" diyor,
+   * "onayla/reddet" düğmeleri duruyor, basınca "bu ticket için çalışan bir akış
+   * yok" cevabı geliyordu. Adımlar KATALOGDAN okunuyordu (doğru), ama karar
+   * MOTORA gidiyordu (yok). İki kaynağı ayırt eden alan zaten geliyor; eksik
+   * olan, ekranın onu dinlemesiydi.
+   */
+  const engineForgot = stateSource === "record";
 
   // Risk drives how many gates the run must pass (M51). The workflow's own
   // tier wins when it has one; the catalog always carries a tier.
@@ -46,11 +72,17 @@ export function RunSidebar({ record, state, application }: RunSidebarProps): Rea
 
   return (
     <div className="screen-stack">
-      {state !== null && isApprovalGate(state) && (
+      {engineForgot && <RestartPanel ticket={record.ticketKey} />}
+
+      {/* Kapı paneli YALNIZ motor cevap verirken. Katalogdan okunmuş bir
+          "kapıda" durumu gerçek bir kapı değil, koşunun öldüğü anda kaldığı
+          son pozisyon — ve onun üstüne onay düğmesi koymak, operatöre
+          veremeyeceği bir kararı sunmak. */}
+      {!engineForgot && state !== null && isApprovalGate(state) && (
         <GatePanel ticket={record.ticketKey} step={state.step} />
       )}
 
-      {state !== null && isClarificationWait(state) && (
+      {!engineForgot && state !== null && isClarificationWait(state) && (
         <Card title={t("detail.clarify.title")}>
           <p className="screen-note">{t("detail.clarify.body")}</p>
           <div className="screen-actions">

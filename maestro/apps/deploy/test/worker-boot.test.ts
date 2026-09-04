@@ -61,6 +61,11 @@ function emptyReadDb(): ReadModelDb {
     // Never reached (these models refuse first), but `RunCatalogDelegate` now
     // declares the 0019 write and every delegate has to hold its whole shape.
     updateMany: () => Promise.resolve({ count: 0 }),
+    // Aynı gerekçe: bu modeller zaten reddediyor, ama delege şeklinin tamamı
+    // tutulmalı yoksa köprünün eksik olduğu derleme zamanında değil çalışma
+    // zamanında öğrenilir.
+    update: () => Promise.resolve(null),
+    findFirst: () => Promise.resolve(null),
   };
   return {
     workflowRun: page,

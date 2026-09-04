@@ -1,11 +1,11 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { VariantScreen } from "../src/screens/Variant.tsx";
 import { ADMIN, VIEWER, renderScreen, stubFetch } from "./harness.tsx";
 
 /**
- * The agent-targeted knowledge upload (Variant → Knowledge tab). A document
+ * The agent-targeted knowledge upload (Variant → "Bilgi notları" tab). A document
  * uploaded HERE must carry `variantId` — that is the whole point: the note
  * feeds ONE agent, unlike the Knowledge screen's global upload. And the list
  * under the button shows ONLY this agent's notes, not the global ones and not
@@ -21,7 +21,6 @@ const DETAIL = {
     model: "claude-opus-5",
     activeVersion: 2,
     persona: "mevcut persona",
-    knowledge: [{ docId: "bddk-uyum.md", fileName: "bddk-uyum.md", category: "md", version: 2 }],
     versions: [],
   },
 };
@@ -52,7 +51,7 @@ function chooseFile(file: File): void {
 }
 
 async function openKnowledgeTab(): Promise<void> {
-  await userEvent.click(await screen.findByRole("tab", { name: /Knowledge/ }));
+  await userEvent.click(await screen.findByRole("tab", { name: /Bilgi notları/ }));
 }
 
 describe("variant detail — knowledge tab, targeted guidance", () => {
@@ -61,16 +60,13 @@ describe("variant detail — knowledge tab, targeted guidance", () => {
     renderScreen(<VariantScreen />, {
       fetchImpl,
       session: ADMIN,
-      initialEntries: ["/variant?id=analyst-web"],
+      initialEntries: ["/variants/detail?id=analyst-web"],
     });
 
     await openKnowledgeTab();
     expect(await screen.findByText("web-ozel.md")).toBeInTheDocument();
     expect(screen.queryByText("genel-kural.md")).not.toBeInTheDocument();
     expect(screen.queryByText("mobil-ozel.md")).not.toBeInTheDocument();
-    // The version's knowledgeRefs table is still there, honestly labelled.
-    expect(screen.getByText("bddk-uyum.md")).toBeInTheDocument();
-    expect(screen.getByText("Sürüme yazılı dosya adları (etiket)")).toBeInTheDocument();
   });
 
   it("counts the targeted notes into the Knowledge tab badge", async () => {
@@ -78,12 +74,12 @@ describe("variant detail — knowledge tab, targeted guidance", () => {
     renderScreen(<VariantScreen />, {
       fetchImpl,
       session: ADMIN,
-      initialEntries: ["/variant?id=analyst-web"],
+      initialEntries: ["/variants/detail?id=analyst-web"],
     });
 
-    // 1 targeted note + 1 knowledgeRef = 2.
-    const tab = await screen.findByRole("tab", { name: /Knowledge/ });
-    await waitFor(() => expect(tab).toHaveTextContent("Knowledge2"));
+    // Exactly the one note targeted at this agent.
+    const tab = await screen.findByRole("tab", { name: /Bilgi notları/ });
+    await waitFor(() => expect(tab).toHaveTextContent("Bilgi notları1"));
   });
 
   it("uploads a document WITH this variant’s id, and mirrors nowhere else", async () => {
@@ -91,7 +87,7 @@ describe("variant detail — knowledge tab, targeted guidance", () => {
     renderScreen(<VariantScreen />, {
       fetchImpl,
       session: ADMIN,
-      initialEntries: ["/variant?id=analyst-web"],
+      initialEntries: ["/variants/detail?id=analyst-web"],
     });
 
     await openKnowledgeTab();
@@ -112,12 +108,54 @@ describe("variant detail — knowledge tab, targeted guidance", () => {
     expect(calls.some((call) => call.url.includes("/studio/pilot/"))).toBe(false);
   });
 
+  it("deleting asks first and names the note; confirming sends the DELETE", async () => {
+    const { fetchImpl, calls } = stubFetch([
+      ...ROUTES,
+      { path: "/studio/guidance/ag_2", method: "DELETE", status: 204, body: null },
+    ]);
+    renderScreen(<VariantScreen />, {
+      fetchImpl,
+      session: ADMIN,
+      initialEntries: ["/variants/detail?id=analyst-web"],
+    });
+
+    await openKnowledgeTab();
+    await screen.findByText("web-ozel.md");
+    await userEvent.click(screen.getByRole("button", { name: "Sil" }));
+    // Nothing is sent by the first click — the dialog asks.
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/"web-ozel.md" silinecek/)).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Sil" }));
+    await waitFor(() => {
+      expect(calls.some((call) => call.method === "DELETE" && call.url.endsWith("/studio/guidance/ag_2"))).toBe(true);
+    });
+  });
+
+  it("a failed toggle shows the SERVER's reason, not a fixed sentence", async () => {
+    const { fetchImpl } = stubFetch([
+      ...ROUTES,
+      { path: "/studio/guidance/ag_2", method: "PUT", status: 404, body: { error: "no_such_guidance" } },
+    ]);
+    renderScreen(<VariantScreen />, {
+      fetchImpl,
+      session: ADMIN,
+      initialEntries: ["/variants/detail?id=analyst-web"],
+    });
+
+    await openKnowledgeTab();
+    await screen.findByText("web-ozel.md");
+    await userEvent.click(screen.getByRole("button", { name: "web-ozel.md notunu kapat" }));
+    expect(await screen.findByText("Böyle bir öğrenme notu yok.")).toBeInTheDocument();
+  });
+
   it("hides the upload button and actions from a viewer (write is admin/tech-lead)", async () => {
     const { fetchImpl } = stubFetch([...ROUTES]);
     renderScreen(<VariantScreen />, {
       fetchImpl,
       session: VIEWER,
-      initialEntries: ["/variant?id=analyst-web"],
+      initialEntries: ["/variants/detail?id=analyst-web"],
     });
 
     await openKnowledgeTab();

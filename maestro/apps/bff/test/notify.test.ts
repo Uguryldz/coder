@@ -1,6 +1,6 @@
 import type { LightMyRequestResponse } from "fastify";
 import { describe, expect, it } from "vitest";
-import { auth, harness, type Harness } from "./helpers.js";
+import { auth, harness, type Harness, TEST_NOTIFY_DRIVERS } from "./helpers.js";
 
 /**
  * The reminder ladder and channel routing (M45/M71/M88).
@@ -248,6 +248,21 @@ describe("GET /notify (M45/M88)", () => {
     for (const field of ["id", "afterHours", "channel", "event"]) {
       expect(body.ladderRaw.steps[0]).toHaveProperty(field);
     }
+  });
+
+  it("carries the deployment's notify drivers so the screen marks live channels from the runtime", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    await seed(h);
+
+    const body = (await get(h, token)).json() as {
+      drivers: readonly { channel: string; enabled: boolean }[];
+    };
+    // The same rows `/settings` reports — which channels exist and are enabled
+    // is the deployment's fact, not a list typed into the client.
+    expect(body.drivers).toEqual(TEST_NOTIFY_DRIVERS);
+    expect(body.drivers.length).toBeGreaterThan(0);
+    for (const driver of body.drivers) expect(typeof driver.enabled).toBe("boolean");
   });
 
   it("refuses a developer (M86)", async () => {

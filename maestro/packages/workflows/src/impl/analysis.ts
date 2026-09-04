@@ -12,6 +12,7 @@ import type { AnalysisRewriteContext } from "../activities.js";
 import { priorWorkNote, readHumanComments } from "./comments.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { guardModelCall, resolveOutcome } from "./outcome.js";
+import { analystGuidance } from "./guidance.js";
 import { analystPersona } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
@@ -337,6 +338,11 @@ export async function writeAnalysis(
   // uygulanacağı verinin önünde okunmalı — pilot da personayı analiz bağlamının
   // ilk bilgi notu yapıyor.
   const persona = await analystPersona(deps, run);
+  // Studio'nun "Öğrenme kaynakları" ekranındaki etkin notlar — global olanlar +
+  // yalnız bu ajana hedeflenenler. Personanın HEMEN ARDINDAN: rol talimatı,
+  // sonra kurum bilgisi, sonra analiz edilecek talep. Not yoksa alan hiç
+  // gitmez; prompt bugünküyle bit bit aynı kalır.
+  const guidance = await analystGuidance(deps, run);
   // The auth guard is what keeps a rejected model key from retrying this
   // activity in silence for days (see `guardModelCall`).
   const outcome = await guardModelCall(deps, run, "analysis", () =>
@@ -348,6 +354,7 @@ export async function writeAnalysis(
         schemaName: "analysis-doc",
         input: {
           ...(persona === undefined ? {} : { persona }),
+          ...(guidance.length === 0 ? {} : { guidance }),
           // `appId` is the ONLY repo-derived fact in this prompt — everything
           // else (locale, template pin, the ticket's own text) holds without a
           // repository. An analysis-only run omits it rather than sending a

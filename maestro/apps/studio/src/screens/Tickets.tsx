@@ -3,17 +3,7 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { messageKeyOf } from "../api/errors.ts";
 import { useI18n, useT } from "../i18n/I18nProvider.tsx";
-import {
-  Badge,
-  Button,
-  Card,
-  Input,
-  Select,
-  Table,
-  riskTone,
-  runStatusTone,
-  workModeTone,
-} from "../ui/index.ts";
+import { Badge, Button, Card, Input, Select, Table, riskTone, workModeTone } from "../ui/index.ts";
 import type { Column } from "../ui/index.ts";
 import { useToast } from "../ui/Toast.tsx";
 import { useEnumLabel } from "./common/label.ts";
@@ -25,66 +15,36 @@ import {
   useRuns,
   type RunRow,
   type RunStatus,
+  type UseRunsOptions,
 } from "./shared/runs.ts";
-import { RUN_STATUS_PREFIX } from "./tickets/status.ts";
-import "./shared/screens.css";
+import { RunStatusCell } from "./shared/RunStatusCell.tsx";
 
 /**
- * Screen: tickets — every workflow the operator may see.
- *
- * The rows are exactly what `GET /studio/runs` returns: the platform catalog
- * record joined to the live workflow state. That endpoint speaks the WORKFLOW
- * status vocabulary (gate / queued / fail / handover / done / …), so the chips
- * below can finally filter on the thing operators actually queue by — "kapıda"
- * is a real filter now, not a wish. The old list read Temporal and could only
- * offer running/completed/failed.
+ * The filterable run list — every workflow the operator may see, as
+ * `GET /studio/runs` returns it: the catalog record joined to the live
+ * workflow state, in the WORKFLOW's status vocabulary.
  *
  * A row whose workflow has not started carries `status: null`. It is listed
- * (the BFF deliberately does not hide it) and shown with an em dash, because a
+ * (the BFF deliberately does not hide it) and shown as "başlamadı", because a
  * ticket waiting to start is a ticket the operator must still be able to see.
  */
 
-/** Chip filters, over the statuses `/studio/runs` actually sends. */
-const FILTERS = [
-  { id: "all", labelKey: "tickets.filter.all", match: () => true },
-  {
-    id: "open",
-    labelKey: "tickets.filter.open",
-    match: (run: RunRow) => run.status === "running",
-  },
-  {
-    id: "gate",
-    labelKey: "tickets.filter.gate",
-    match: (run: RunRow) => run.status === "gate",
-  },
-  {
-    id: "done",
-    labelKey: "tickets.filter.done",
-    match: (run: RunRow) => run.status === "done",
-  },
-  {
-    id: "failed",
-    labelKey: "tickets.filter.failed",
-    match: (run: RunRow) => run.status === "fail" || run.status === "handover",
-  },
-] as const;
+/** The board's default scope — shared with the Panel so both read ONE query. */
+export const BOARD_SCOPE = { archived: "active" } satisfies UseRunsOptions;
 
-type FilterId = (typeof FILTERS)[number]["id"];
+/** Every status `/studio/runs` sends, in the order the chips show them. */
+const STATUS_FILTERS: readonly { readonly id: RunStatus; readonly labelKey: string }[] = [
+  { id: "running", labelKey: "tickets.filter.open" },
+  { id: "gate", labelKey: "tickets.filter.gate" },
+  { id: "queued", labelKey: "tickets.filter.queued" },
+  { id: "fail", labelKey: "tickets.filter.failed" },
+  { id: "handover", labelKey: "tickets.filter.handover" },
+  { id: "done", labelKey: "tickets.filter.done" },
+  { id: "cancelled", labelKey: "tickets.filter.cancelled" },
+];
 
-export function TicketsScreen(): ReactNode {
-  return (
-    <div className="screen-stack">
-      <TicketsList />
-    </div>
-  );
-}
+type FilterId = RunStatus | "all";
 
-/**
- * The filterable run list, split out of `TicketsScreen` so the Panel can show
- * it inline — the two used to be separate menu rows over the SAME `/studio/runs`
- * data (the Panel was literally the first-five summary of this list). Gathering
- * them means one page: summary on top, the full filterable list below.
- */
 export function TicketsList(): ReactNode {
   const t = useT();
   const { locale } = useI18n();
@@ -95,55 +55,53 @@ export function TicketsList(): ReactNode {
   const [project, setProject] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
   /**
-   * Whether this list is showing the board or the archive (0019).
-   *
-   * A separate piece of state from `filter` rather than a sixth status chip,
-   * because it is a different QUESTION: the chips slice one set of runs by
-   * status, while this decides which set is being sliced. Folding them
-   * together would make "Hatalı" and "Arşivlenmiş" mutually exclusive, and the
-   * first thing an operator wants after archiving twelve failures is to look
-   * at the archived failures.
+   * Board or archive. Separate from `filter` because it is a different
+   * QUESTION: the chips slice one set by status, this decides which set.
    */
   const [showArchived, setShowArchived] = useState(false);
 
-  const RUN_PAGE = MAX_RUN_PAGE;
-  // The scope goes to the SERVER, not to a `.filter()` here: the page is
-  // capped at `MAX_RUN_PAGE`, so a client-side hide would silently shrink an
-  // already-truncated page and the "ilk N kayıt" note below would be a lie.
-  const { data, isPending, error, refetch } = useRuns(RUN_PAGE, {
-    archived: showArchived ? "archived" : "active",
+  // The scope goes to the SERVER: the page is capped at `MAX_RUN_PAGE`, so a
+  // client-side hide would silently shrink an already-truncated page.
+  const { data, isPending, error } = useRuns(MAX_RUN_PAGE, {
+    archived: showArchived ? "archived" : BOARD_SCOPE.archived,
+    refetchInterval: 30_000,
   });
   const archive = useArchiveRun();
   const runs = useMemo(() => data?.runs ?? [], [data]);
-  // The list is capped at one page; if the cap is hit there may be more the
-  // server did not send. Say so plainly instead of implying this is everything.
-  const capped = runs.length >= RUN_PAGE;
+  const capped = runs.length >= MAX_RUN_PAGE;
 
   const projects = useMemo(
     () => [...new Set(runs.map((run) => projectKeyOf(run.ticketKey)))].sort(),
     [runs],
   );
 
-  const counts = useMemo(
-    () =>
-      Object.fromEntries(
-        FILTERS.map((entry) => [entry.id, runs.filter((run) => entry.match(run)).length]),
-      ) as Record<FilterId, number>,
-    [runs],
-  );
+  const counts = useMemo(() => {
+    const byStatus = new Map<FilterId, number>([["all", runs.length]]);
+    for (const run of runs) {
+      if (run.status === null) continue;
+      byStatus.set(run.status, (byStatus.get(run.status) ?? 0) + 1);
+    }
+    return byStatus;
+  }, [runs]);
+
+  // Only statuses that are actually present get a chip — "Hatalı (0)" is a
+  // pill that says nothing. A filter whose set emptied after a refetch falls
+  // back to "all" rather than showing an empty table under a vanished chip.
+  const chips = STATUS_FILTERS.filter((entry) => (counts.get(entry.id) ?? 0) > 0);
+  const active: FilterId = filter === "all" || (counts.get(filter) ?? 0) > 0 ? filter : "all";
+  const filtered = project !== "all" || search.trim() !== "" || active !== "all";
 
   const rows = useMemo(() => {
-    const active = FILTERS.find((entry) => entry.id === filter) ?? FILTERS[0];
     const q = search.trim().toLowerCase();
     return runs.filter(
       (run) =>
-        active.match(run) &&
+        (active === "all" || run.status === active) &&
         (project === "all" || projectKeyOf(run.ticketKey) === project) &&
         (q === "" ||
           run.ticketKey.toLowerCase().includes(q) ||
           (run.title ?? "").toLowerCase().includes(q)),
     );
-  }, [runs, filter, project, search]);
+  }, [runs, active, project, search]);
 
   const columns: readonly Column<RunRow>[] = [
     {
@@ -151,16 +109,15 @@ export function TicketsList(): ReactNode {
       header: t("col.ticket"),
       cell: (run) => (
         <>
-          <b className="screen-mono">{run.ticketKey}</b>
-          <div className="screen-note">{run.title}</div>
+          <b className="scr-mono">{run.ticketKey}</b>
+          <div className="scr-hint">{run.title}</div>
         </>
       ),
     },
     {
       key: "app",
       header: t("col.app"),
-      // `appId` is null until the ticket is matched to an application (M100).
-      cell: (run) => (run.appId === null ? "—" : <span className="screen-mono">{run.appId}</span>),
+      cell: (run) => (run.appId === null ? "—" : <span className="scr-mono">{run.appId}</span>),
     },
     {
       key: "status",
@@ -175,14 +132,14 @@ export function TicketsList(): ReactNode {
           "—"
         ) : (
           <>
-            <span className="screen-mono">{run.step}</span> {t(`steps.${run.step}`)}
+            <span className="scr-mono">{run.step}</span> {t(`steps.${run.step}`)}
           </>
         ),
     },
     {
       key: "risk",
       header: t("col.risk"),
-      cell: (run) => <Badge tone={riskTone(run.risk)}>{t(`risk.${run.risk}`)}</Badge>,
+      cell: (run) => <Badge tone={riskTone(run.risk)}>{enumLabel("risk", run.risk).text}</Badge>,
     },
     {
       key: "mode",
@@ -206,15 +163,8 @@ export function TicketsList(): ReactNode {
       },
     },
     /**
-     * The archive action (0019).
-     *
-     * `stopPropagation` because the row itself navigates to the detail screen:
-     * without it, archiving a run would also open it, which is the opposite of
-     * what "get this off my board" means.
-     *
-     * The label is the OPPOSITE of the row's current state — "Arşivle" on the
-     * board, "Geri al" in the archive — so the button always says what will
-     * happen rather than what is true now.
+     * Archive / restore. `stopPropagation` because the row navigates; the
+     * label is the OPPOSITE of the row's state so it says what will happen.
      */
     {
       key: "archive",
@@ -224,7 +174,7 @@ export function TicketsList(): ReactNode {
         const archived = run.archivedAt !== null;
         return (
           <Button
-            variant="default"
+            variant="ghost"
             size="sm"
             disabled={archive.isPending}
             onClick={(event) => {
@@ -239,9 +189,7 @@ export function TicketsList(): ReactNode {
                         ticket: run.ticketKey,
                       }),
                     ),
-                  // The error is surfaced, never swallowed: a 403 (the caller
-                  // lacks admin/tech-lead) must not look like a button that
-                  // simply did nothing.
+                  // A 403 must not look like a button that did nothing.
                   onError: (mutationError) => toast.show("error", t(messageKeyOf(mutationError))),
                 },
               );
@@ -254,41 +202,43 @@ export function TicketsList(): ReactNode {
     },
   ];
 
+  const emptyLabel = showArchived
+    ? t("tickets.empty_archived")
+    : filtered
+      ? t("tickets.empty_filtered")
+      : t("tickets.empty");
+
   return (
-    <>
-      <Card>
-        <div className="screen-filters">
-          {FILTERS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className="screen-chip"
-              aria-pressed={filter === entry.id}
-              onClick={() => setFilter(entry.id)}
-            >
-              {t(entry.labelKey, { n: String(counts[entry.id]) })}
-            </button>
-          ))}
-          {/* The archive toggle (0019), set apart from the status chips
-              because it selects WHICH SET the chips then slice, rather than
-              being another slice of the same one. `aria-pressed` is how the
-              status chips already say "on", so the toggle reads the same way
-              to a screen reader. */}
+    <div className="scr-stack">
+      <div className="scr-filters">
+        <button
+          type="button"
+          className="scr-chip"
+          aria-pressed={active === "all"}
+          onClick={() => setFilter("all")}
+        >
+          {t("tickets.filter.all", { n: String(runs.length) })}
+        </button>
+        {chips.map((entry) => (
           <button
+            key={entry.id}
             type="button"
-            className="screen-chip"
-            aria-pressed={showArchived}
-            onClick={() => setShowArchived((on) => !on)}
+            className="scr-chip"
+            aria-pressed={active === entry.id}
+            onClick={() => setFilter(entry.id)}
           >
-            {t(showArchived ? "tickets.filter.show_active" : "tickets.filter.show_archived")}
+            {t(entry.labelKey, { n: String(counts.get(entry.id) ?? 0) })}
           </button>
-          <span style={{ flex: 1 }} />
-          <Input
-            label={t("tickets.filter.search")}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={t("tickets.filter.search_ph")}
-          />
+        ))}
+        <button
+          type="button"
+          className="scr-chip"
+          aria-pressed={showArchived}
+          onClick={() => setShowArchived((on) => !on)}
+        >
+          {t(showArchived ? "tickets.filter.show_active" : "tickets.filter.show_archived")}
+        </button>
+        {projects.length > 1 && (
           <Select
             label={t("tickets.filter.project")}
             value={project}
@@ -298,55 +248,40 @@ export function TicketsList(): ReactNode {
               ...projects.map((key) => ({ value: key, label: key })),
             ]}
           />
-        </div>
-        {capped && (
-          <p className="screen-note" style={{ marginTop: 8 }}>
-            {t("tickets.capped", { n: String(RUN_PAGE) })}
-          </p>
         )}
-      </Card>
+        {runs.length > 0 && (
+          <Input
+            label={t("tickets.filter.search")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("tickets.filter.search_ph")}
+          />
+        )}
+      </div>
 
-      <Card padded={false}>
-        {error !== null ? (
-          <p className="screen-note" style={{ padding: 14 }} role="alert">
-            {t(messageKeyOf(error))}
-          </p>
-        ) : (
+      {error !== null ? (
+        <p className="scr-hint" role="alert">
+          {t(messageKeyOf(error))}
+        </p>
+      ) : (
+        <Card padded={false}>
           <Table
             columns={columns}
             rows={rows}
             rowKey={(run) => run.ticketKey}
             loading={isPending}
-            // "No archived runs" is a different sentence from "no runs at all",
-            // and showing the latter in the archive view would read as though
-            // the archive had lost something.
-            emptyLabel={t(showArchived ? "tickets.empty_archived" : "tickets.empty")}
+            emptyLabel={emptyLabel}
             caption={t("tickets.caption")}
             onRowClick={(run) => void navigate(`/detail/${run.ticketKey}`)}
           />
-        )}
-      </Card>
+        </Card>
+      )}
 
-      <p className="screen-note">
-        {t("tickets.hint")}{" "}
-        <button type="button" className="screen-chip" onClick={() => void refetch()}>
-          {t("action.refresh")}
-        </button>
-      </p>
-    </>
+      {!isPending && error === null && runs.length === 0 && !showArchived && (
+        <p className="scr-hint">{t("tickets.empty_hint")}</p>
+      )}
+      {capped && <p className="scr-hint">{t("tickets.capped", { n: String(MAX_RUN_PAGE) })}</p>}
+      {rows.length > 0 && <p className="scr-hint">{t("tickets.hint")}</p>}
+    </div>
   );
-}
-
-/**
- * A status badge that tells "not started" apart from a status.
- *
- * `null` is rendered as an em dash rather than as any word: the run exists in
- * the catalog and the workflow engine has never heard of it, and picking
- * "queued" for that would invent a queue position nothing assigned.
- */
-export function RunStatusCell({ status }: { readonly status: RunStatus | null }): ReactNode {
-  const t = useT();
-  const enumLabel = useEnumLabel();
-  if (status === null) return <span className="screen-note">{t("run.status.unknown")}</span>;
-  return <Badge tone={runStatusTone(status)}>{enumLabel(RUN_STATUS_PREFIX, status).text}</Badge>;
 }

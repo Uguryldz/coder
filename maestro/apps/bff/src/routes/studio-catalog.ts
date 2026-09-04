@@ -1,10 +1,16 @@
+import { randomInt } from "node:crypto";
 import { AppId } from "@maestro/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { toActor } from "../actor.js";
+import { sessionActor, toActor } from "../actor.js";
 import { ASSIGNABLE_GROUPS, rolesOf } from "../auth/groups.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
-import { accountProvisionerOf, type ResolvedDeps, type UserRecord } from "../deps.js";
+import {
+  accountProvisionerOf,
+  type IdentityProvider,
+  type ResolvedDeps,
+  type UserRecord,
+} from "../deps.js";
 import { badRequest, conflict, notFound, unavailable } from "../errors.js";
 import { visibleKnowledge } from "../knowledge-policy.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
@@ -260,6 +266,11 @@ export async function studioCatalogRoutes(app: FastifyInstance, deps: ResolvedDe
       const groups = body.data.groups ?? [...current.groups];
       const next: UserRecord = {
         ...current,
+        // The readable name is the one field of this form that is nothing but
+        // presentation — and it was being accepted, validated and DROPPED here,
+        // so the screen's "Görünen ad" changed nothing. An absent field leaves
+        // the stored name alone; a present one replaces it.
+        ...(body.data.displayName === undefined ? {} : { displayName: body.data.displayName }),
         groups,
         // Roles always track groups — an edit cannot leave a stored role the
         // new group set does not grant.
@@ -268,6 +279,50 @@ export async function studioCatalogRoutes(app: FastifyInstance, deps: ResolvedDe
       };
       await deps.users.upsert(next);
       return reply.code(200).send(publicUser(next));
+    },
+  );
+
+  /**
+   * Reset an account's password to a fresh temporary one (M8/M86) — the panel
+   * half of `reset-admin.sh`, for the everyday case: a person is locked out and
+   * an admin is at the screen. The temporary password is generated HERE, never
+   * typed by the admin (an admin who chooses a colleague's password knows it),
+   * returned exactly once in this response and stored only as a hash; the
+   * account is flagged `mustChangePassword`, so the first login with it goes
+   * straight to the change screen. Every live session of the account dies with
+   * the old password — a reset that leaves a possibly-stolen token alive has
+   * not reset anything.
+   *
+   * A deactivated account answers 404 like a missing one, never a silent
+   * revival: reactivation is its own deliberate act (PUT `active: true`).
+   */
+  app.post(
+    "/studio/users/:username/reset-password",
+    { preHandler: [preHandler, requireAnyRole(...USER_ADMIN_ROLES)] },
+    async (request, reply) => {
+      const resetter = passwordResetterOf(deps.identity);
+      if (resetter === null) throw unavailable("capability_not_wired");
+
+      const params = z
+        .object({ username: z.string().trim().min(1).max(128) })
+        .safeParse(request.params);
+      if (!params.success) throw badRequest("invalid_username");
+
+      const current = await deps.users.find(params.data.username);
+      // A deactivated account is not silently revived: the guard treats it as
+      // missing, so the reset does too. Reactivation is PUT `active: true`.
+      if (current === null || !current.active) throw notFound("unknown_user");
+
+      const temporaryPassword = generateTemporaryPassword();
+      const rekeyed = await resetter.resetPassword(current.username, temporaryPassword);
+      if (rekeyed === null) throw notFound("unknown_user");
+
+      const killedSessions = await deps.sessions.deleteByUser(current.userId);
+      return reply.code(200).send({
+        user: publicUser(rekeyed),
+        temporaryPassword,
+        killedSessions,
+      });
     },
   );
 
@@ -292,7 +347,26 @@ export async function studioCatalogRoutes(app: FastifyInstance, deps: ResolvedDe
       const current = await deps.users.find(params.data.username);
       if (current === null) throw notFound("unknown_user");
 
+      // Off-boarding is a destructive act on someone's access, so the Studio
+      // asks the admin for a written reason and sends it along. The reason is
+      // recorded in the audit chain — an auditor asking "who revoked this
+      // account, and why" must find both in one entry — and it is optional at
+      // the API level so a scripted off-boarding (an HR feed) is not refused
+      // for lacking prose. Same action/subject shape as the connection edits:
+      // `surface` says which admin screen the change came from.
+      const query = z
+        .object({ reason: z.string().trim().max(1024).optional() })
+        .safeParse(request.query);
+      const reason = query.success ? (query.data.reason ?? "") : "";
+
       await deps.users.remove(params.data.username);
+      await deps.audit.append({
+        actor: sessionActor(sessionOf(request)),
+        action: "PARAM_CHANGED",
+        subject: `user:${current.username}`,
+        at: deps.clock.now(),
+        meta: { surface: "users", verb: "deactivate", ...(reason === "" ? {} : { reason }) },
+      });
       return reply.code(200).send(publicUser({ ...current, active: false }));
     },
   );
@@ -307,4 +381,42 @@ function appIdParam(params: unknown): string {
   const parsed = z.object({ appId: AppId }).safeParse(params);
   if (!parsed.success) throw badRequest("invalid_app_id");
   return parsed.data.appId;
+}
+
+/**
+ * Admin-side password reset — a capability of the local bcrypt provider, not of
+ * every `IdentityProvider` (an AD/LDAP directory owns its passwords). Detected
+ * structurally, the same way `accountProvisionerOf` is.
+ */
+interface PasswordResetter {
+  resetPassword(username: string, newPassword: string): Promise<UserRecord | null>;
+}
+
+function passwordResetterOf(identity: IdentityProvider): PasswordResetter | null {
+  const candidate = identity as Partial<PasswordResetter>;
+  return typeof candidate.resetPassword === "function" ? (candidate as PasswordResetter) : null;
+}
+
+const UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const LOWER = "abcdefghjkmnpqrstuvwxyz";
+const DIGIT = "23456789";
+const SYMBOL = "!#$%*+-=?@";
+
+/**
+ * A temporary password that satisfies the password policy by construction:
+ * every character class is present and the length clears the minimum. The
+ * alphabets skip look-alikes (0/O, 1/l/I) because this string is read aloud or
+ * typed off a screen once, by a person who has just been locked out.
+ */
+function generateTemporaryPassword(): string {
+  const pick = (alphabet: string): string => alphabet[randomInt(alphabet.length)] ?? "";
+  const all = UPPER + LOWER + DIGIT + SYMBOL;
+  const chars = [pick(UPPER), pick(LOWER), pick(DIGIT), pick(SYMBOL)];
+  while (chars.length < 14) chars.push(pick(all));
+  // Fisher–Yates, so the mandatory classes do not always sit at the front.
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j] ?? "", chars[i] ?? ""];
+  }
+  return chars.join("");
 }

@@ -678,6 +678,26 @@ describe("DELETE /studio/connections/:id", () => {
     expect(h.connectorSecrets.has(record!.secretRef!)).toBe(false);
   });
 
+  it("writes the operator's reason into the audit row — the confirmation's promise is kept", async () => {
+    const h = await harness();
+    const admToken = await admin(h);
+    await createGithub(h, admToken);
+
+    const response = await del(
+      h,
+      "/studio/connections/github?reason=" + encodeURIComponent("eski PAT, yenisi ado"),
+      admToken,
+    );
+    expect(response.statusCode).toBe(204);
+
+    const entries = await h.auditStore.read();
+    const deleted = entries.find(
+      (entry) => (entry.meta as Record<string, unknown> | undefined)?.["verb"] === "deleted",
+    );
+    expect(deleted).toBeDefined();
+    expect((deleted?.meta as Record<string, unknown>)["reason"]).toBe("eski PAT, yenisi ado");
+  });
+
   it("refuses a viewer", async () => {
     const h = await harness();
     const admToken = await admin(h);

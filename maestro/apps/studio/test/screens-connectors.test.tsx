@@ -33,6 +33,9 @@ const GITHUB = {
 
 const LIST = { path: "/studio/connections", body: { connections: [GITHUB] } };
 
+/** A required box's label — the form marks every required field with ` *`. */
+const field = (label: string): string => `${label} *`;
+
 describe("connectors panel", () => {
   it("lists connections and shows the token only as a mask (****abcd)", async () => {
     const { fetchImpl } = stubFetch([LIST]);
@@ -105,15 +108,16 @@ describe("connectors panel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Test et/ }));
 
-    // The operator is told, in full, WHICH id was replaced by WHICH — the badge
-    // renders the live outcome text, so both ids are on screen to compare.
-    const shown = await screen.findAllByText(/712020:7ee7a2ab/);
-    expect(shown.length).toBeGreaterThan(0);
+    // The operator is told, in full, WHICH id was replaced by WHICH — the
+    // sentence under the row (and the toast) carry the live outcome text, so
+    // both ids are on screen to compare.
+    expect((await screen.findAllByText(/712020:7ee7a2ab/)).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/712020:b836c135/).length).toBeGreaterThan(0);
     // Never the plain "connected" badge — that would hide the correction.
     expect(screen.queryByText("bağlı")).not.toBeInTheDocument();
-    // The badge carries the amber warning tone, not the green success tone.
-    const badge = shown[0]?.closest(".ui-badge");
+    // The row's badge names the correction and carries the amber warning
+    // tone, not the green success tone.
+    const badge = screen.getByText("bot hesabı düzeltildi").closest(".ui-badge");
     expect(badge?.className).toContain("amber");
     expect(badge?.className).not.toContain("green");
   });
@@ -131,10 +135,10 @@ describe("connectors panel", () => {
     // The token field is LOCKED (shows the mask), not an input to prefill.
     expect(within(dialog).getByText("****1234")).toBeInTheDocument();
 
-    const name = within(dialog).getByLabelText("Görünen ad");
+    const name = within(dialog).getByLabelText(field("Görünen ad"));
     await userEvent.clear(name);
     await userEvent.type(name, "GitHub (prod)");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Düzenle" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Kaydet" }));
 
     await waitFor(() => {
       const put = calls.find((c) => c.method === "PUT");
@@ -155,13 +159,15 @@ describe("connectors panel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Bağlantı ekle/ }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText("Kimlik (id)"), "jira");
-    await userEvent.type(within(dialog).getByLabelText("Görünen ad"), "Jira");
+    await userEvent.type(within(dialog).getByLabelText(field("Kimlik (id)")), "jira");
+    // The form opens on `jira_dc` (the on-prem default); Cloud is a choice.
+    await userEvent.selectOptions(within(dialog).getByLabelText(field("Tür")), "jira_cloud");
+    await userEvent.type(within(dialog).getByLabelText(field("Görünen ad")), "Jira");
     await userEvent.type(within(dialog).getByLabelText(/URL/), "https://ugurbank.atlassian.net");
-    // Jira Cloud authenticates the token WITH this address — the form is
-    // `jira_cloud` by default, and its probe builds `basicAuth(email, token)`.
+    // Jira Cloud authenticates the token WITH this address — its probe builds
+    // `basicAuth(email, token)`, so the box is required and marked as such.
     await userEvent.type(within(dialog).getByLabelText(/Bot hesabının e-postası/), "bot@ugurbank.com");
-    await userEvent.type(within(dialog).getByLabelText("Token"), "s3cr3t-token");
+    await userEvent.type(within(dialog).getByLabelText(field("Token")), "s3cr3t-token");
     await userEvent.click(within(dialog).getByRole("button", { name: /Bağlantı ekle/ }));
 
     await waitFor(() => {
@@ -188,10 +194,11 @@ describe("connectors panel", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Bağlantı ekle/ }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText("Kimlik (id)"), "jira");
-    await userEvent.type(within(dialog).getByLabelText("Görünen ad"), "Jira");
+    await userEvent.type(within(dialog).getByLabelText(field("Kimlik (id)")), "jira");
+    await userEvent.selectOptions(within(dialog).getByLabelText(field("Tür")), "jira_cloud");
+    await userEvent.type(within(dialog).getByLabelText(field("Görünen ad")), "Jira");
     await userEvent.type(within(dialog).getByLabelText(/URL/), "https://ugurbank.atlassian.net");
-    await userEvent.type(within(dialog).getByLabelText("Token"), "s3cr3t-token");
+    await userEvent.type(within(dialog).getByLabelText(field("Token")), "s3cr3t-token");
     await userEvent.click(within(dialog).getByRole("button", { name: /Bağlantı ekle/ }));
 
     // Refused in the form, so the request is never made and the dialog stays

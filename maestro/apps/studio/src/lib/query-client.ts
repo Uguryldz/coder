@@ -19,12 +19,19 @@ export function makeQueryClient(): QueryClient {
          * unbuilt screen, which trains an operator to ignore the console — and
          * the console is where a REAL fault has to be visible.
          *
+         * 503 `capability_not_wired` is settled too: the BFF refuses this read
+         * model BY NAME (no store wired in this deployment). Retrying it sent
+         * three identical requests per unwired screen. Any other 503 is a real
+         * outage and keeps retrying.
+         *
          * 5xx and network failures are the transient cases, and those still
          * retry.
          */
         retry: (failureCount, error) => {
           const status = (error as { status?: number }).status;
+          const code = (error as { code?: string }).code;
           if (status === 401 || status === 403 || status === 404 || status === 501) return false;
+          if (status === 503 && code === "capability_not_wired") return false;
           return failureCount < 2;
         },
         staleTime: 15_000,

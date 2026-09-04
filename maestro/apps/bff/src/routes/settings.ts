@@ -100,7 +100,12 @@ export async function settingsRoutes(app: FastifyInstance, deps: ResolvedDeps): 
 
   /** The reminder ladder and channel routing (M45/M71/M88). */
   app.get("/notify", { preHandler: readHandler }, async (_request, reply) => {
-    return reply.code(200).send(await readNotify(deps));
+    // `drivers` says which channels this deployment can actually deliver on —
+    // the same fact `/settings` carries, sent here too so the notify screen
+    // marks a routed channel as live or not from the runtime, not from a list
+    // typed into the client.
+    const [view, drivers] = await Promise.all([readNotify(deps), deps.settings.notifyDrivers()]);
+    return reply.code(200).send({ ...view, drivers });
   });
 
   app.put("/notify", { preHandler: writeHandler }, async (request, reply) => {

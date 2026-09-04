@@ -3,6 +3,7 @@ import type { UseMutationResult } from "@tanstack/react-query";
 import { canDecideGate, type StepId, type WorkMode } from "@maestro/contracts";
 import type { Session } from "../../auth/types.ts";
 import { useApi } from "../../auth/AuthProvider.tsx";
+import { invalidateRun } from "./runs.ts";
 
 /**
  * Studio's write path. There is no REST verb for "approve" — a gate decision is
@@ -59,10 +60,7 @@ export function useRunRestart(): UseMutationResult<RunRestartResult, unknown, st
       // Detay ekranı, pano ve defter — üçü de değişti: koşu artık başka bir
       // koşu. Yalnız birini tazelemek, operatöre eski koşunun ekranını
       // gösterip "yeniden başlatıldı" demek olurdu.
-      void queryClient.invalidateQueries({ queryKey: ["studio-run", ticket] });
-      void queryClient.invalidateQueries({ queryKey: ["run", ticket] });
-      void queryClient.invalidateQueries({ queryKey: ["runs"] });
-      void queryClient.invalidateQueries({ queryKey: ["journal", ticket] });
+      invalidateRun(queryClient, ticket);
     },
   });
 }
@@ -111,9 +109,7 @@ export function useGateDecision(): UseMutationResult<
       );
     },
     onSuccess: (_result, { ticket }) => {
-      void queryClient.invalidateQueries({ queryKey: ["run", ticket] });
-      void queryClient.invalidateQueries({ queryKey: ["runs"] });
-      void queryClient.invalidateQueries({ queryKey: ["journal", ticket] });
+      invalidateRun(queryClient, ticket);
     },
   });
 }
@@ -141,8 +137,7 @@ export function useClarificationAnswer(): UseMutationResult<
       );
     },
     onSuccess: (_result, { ticket }) => {
-      void queryClient.invalidateQueries({ queryKey: ["run", ticket] });
-      void queryClient.invalidateQueries({ queryKey: ["journal", ticket] });
+      invalidateRun(queryClient, ticket);
     },
   });
 }
@@ -167,8 +162,7 @@ export function useModeChange(): UseMutationResult<
         { mode },
       ),
     onSuccess: (_result, { ticket }) => {
-      void queryClient.invalidateQueries({ queryKey: ["run", ticket] });
-      void queryClient.invalidateQueries({ queryKey: ["runs"] });
+      invalidateRun(queryClient, ticket);
     },
   });
 }

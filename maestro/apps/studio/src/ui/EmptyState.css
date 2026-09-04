@@ -1,15 +1,15 @@
 .ui-empty {
   background: var(--panel2);
   border: 1px dashed var(--border2);
-  border-radius: 9px;
-  padding: 26px 16px;
+  border-radius: var(--radius);
+  padding: 18px 14px;
   text-align: center;
   color: var(--muted);
 }
 
 .ui-empty__icon {
-  font-size: 22px;
-  margin-bottom: 8px;
+  font-size: 20px;
+  margin-bottom: 6px;
 }
 
 .ui-empty__title {

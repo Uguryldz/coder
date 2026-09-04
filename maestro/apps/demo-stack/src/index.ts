@@ -6,7 +6,6 @@ export * from "./fakes/work-port.js";
 export * from "./seed/index.js";
 export * from "./seed/journal.js";
 export * from "./seed/memberships.js";
-export * from "./seed/params.js";
 export * from "./seed/platform.js";
 export * from "./seed/runs.js";
 export * from "./seed/runs-data.js";

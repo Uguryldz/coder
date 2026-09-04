@@ -49,6 +49,31 @@ export interface SetupState {
   readonly complete: boolean;
   /** True until every underlying read has settled. */
   readonly loading: boolean;
+  /**
+   * A read was REFUSED (401/403): this session cannot see the setup at all.
+   * Not the same as "incomplete" — a viewer told "kurulum eksik" over reads
+   * it is not allowed to make would be shown a gap it can neither verify nor
+   * close. Optional so fixtures built before the field still type-check.
+   */
+  readonly forbidden?: boolean;
+}
+
+export interface SetupStateOptions {
+  /**
+   * Whether to read `/variants` for the "trained agent" step. The wizard's
+   * guide shows that step; the Panel does not, and `complete` never depended
+   * on it — so the Panel skips the request.
+   */
+  readonly trainedAgent?: boolean;
+}
+
+function isRefused(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    ((error as { status: unknown }).status === 403 || (error as { status: unknown }).status === 401)
+  );
 }
 
 /** Reads a boolean flag from localStorage, tolerating a disabled/absent store. */
@@ -84,8 +109,12 @@ export { WEBHOOK_ACK_KEY };
  * The shared setup read. `webhookAck` is passed in rather than read here so the
  * caller that owns the toggle re-renders when it flips.
  */
-export function useSetupState(webhookAck: boolean): SetupState {
+export function useSetupState(
+  webhookAck: boolean,
+  options: SetupStateOptions = {},
+): SetupState {
   const api = useApi();
+  const readTraining = options.trainedAgent ?? true;
 
   const jiraConns = useQuery({
     queryKey: ["onboarding-jira-connections"],
@@ -122,6 +151,7 @@ export function useSetupState(webhookAck: boolean): SetupState {
     queryFn: ({ signal }) =>
       api.get<{ variants: readonly { knowledgeFiles?: number }[] }>("/variants", { signal }),
     retry: false,
+    enabled: readTraining,
   });
 
   const hasConn =
@@ -131,7 +161,11 @@ export function useSetupState(webhookAck: boolean): SetupState {
   const hasSweep = sweep.data?.enabled === true;
 
   const loading =
-    jiraConns.isPending || scmConns.isPending || routing.isPending || variants.isPending;
+    jiraConns.isPending ||
+    scmConns.isPending ||
+    routing.isPending ||
+    (readTraining && variants.isPending);
+  const forbidden = [jiraConns.error, scmConns.error, routing.error, sweep.error].some(isRefused);
 
   return {
     hasConn,
@@ -152,5 +186,6 @@ export function useSetupState(webhookAck: boolean): SetupState {
      */
     complete: hasConn && hasBinding && (webhookAck || hasSweep),
     loading,
+    forbidden,
   };
 }

@@ -31,6 +31,7 @@ import {
   StaticSettingsReader,
 } from "@maestro/bff";
 import { loadEnv } from "@maestro/config";
+import { DEFAULT_PARAM_DEFINITIONS, SEED_ACTOR } from "@maestro/db/params-defaults";
 import { DemoCiPort, DemoWorkEventReader, DemoWorkPort } from "./fakes/work-port.js";
 import { InMemoryRunGateway } from "./fakes/run-gateway.js";
 import {
@@ -41,7 +42,6 @@ import {
   DEMO_ROUTING_PROJECTS,
   DEMO_ROUTING_RULES,
 } from "./seed/admin.js";
-import { DEMO_PARAMS } from "./seed/params.js";
 import { DEMO_TEMPLATE_BINDINGS, DEMO_TEMPLATE_VERSIONS } from "./seed/template.js";
 import { DEMO_EVAL, DEMO_VARIANTS } from "./seed/variants.js";
 import { seedInto, type SeedSummary } from "./seed/index.js";
@@ -106,6 +106,25 @@ export async function buildDemoStack(options: DemoStackOptions = {}): Promise<De
     new BcryptPasswordHasher(options.bcryptRounds ?? 12),
   );
 
+  // The parameter store carries the REAL registry (`params-defaults.ts`),
+  // seeded the way an installer's parameter seed does: version 1 of every
+  // default, by the installer. A hand-kept demo subset drifted once (the
+  // policy key was misspelled), and every /routing and /notify read answered
+  // `param_not_seeded` — the screens looked broken while the seed was.
+  const params = new InMemoryParamStore(DEFAULT_PARAM_DEFINITIONS);
+  for (const definition of DEFAULT_PARAM_DEFINITIONS) {
+    if (definition.defaultValue === undefined) continue;
+    await params.apply({
+      key: definition.key,
+      scopeRef: null,
+      value: definition.defaultValue,
+      version: 1,
+      changedBy: SEED_ACTOR,
+      approvedBy: null,
+      at: seededAt.toISOString(),
+    });
+  }
+
   const runs = new InMemoryRunGateway([], clock);
   const read: ReadModels = {
     runs: new InMemoryRunCatalog(),
@@ -158,7 +177,7 @@ export async function buildDemoStack(options: DemoStackOptions = {}): Promise<De
     users,
     bindings: new StaticJiraProjectBindings(DEMO_BINDINGS),
     gates: new StaticGateDirectory(),
-    params: new InMemoryParamStore(DEMO_PARAMS),
+    params,
     templates: new InMemoryTemplateStore(DEMO_TEMPLATE_VERSIONS, DEMO_TEMPLATE_BINDINGS),
     // No corporate `.docx` is seeded on purpose: the template screen's job is
     // to show that generation continues on a plain fallback WITH a visible

@@ -5,7 +5,6 @@ import { useApi } from "../../auth/AuthProvider.tsx";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card, Table, type Column } from "../../ui/index.ts";
 import { englishAside } from "../common/jira-english.ts";
-import "../shared/screens.css";
 
 /**
  * "Jira'da ne yapmam gerekiyor?" — the one question no screen answered.
@@ -63,7 +62,7 @@ export function JiraSetupCard(): ReactNode {
     {
       key: "projectKey",
       header: t("help.jira.col.project"),
-      cell: (r) => <b className="screen-mono">{r.projectKey}</b>,
+      cell: (r) => <b className="scr-mono">{r.projectKey}</b>,
     },
     {
       key: "matchValue",
@@ -82,10 +81,10 @@ export function JiraSetupCard(): ReactNode {
         const english = englishAside(r.matchValue);
         return (
           <span>
-            <span className="screen-note">{t(`help.jira.match.${r.matchKind}`)}: </span>
+            <span className="scr-hint">{t(`help.jira.match.${r.matchKind}`)}: </span>
             <b>{r.matchValue}</b>
             {english !== null && (
-              <span className="screen-note"> {t("jira.english.aside", { english })}</span>
+              <span className="scr-hint"> {t("jira.english.aside", { english })}</span>
             )}
           </span>
         );
@@ -94,7 +93,7 @@ export function JiraSetupCard(): ReactNode {
     {
       key: "assigneeAccountId",
       header: t("help.jira.col.assignee"),
-      cell: (r) => <span className="screen-mono">{r.assigneeAccountId}</span>,
+      cell: (r) => <span className="scr-mono">{r.assigneeAccountId}</span>,
     },
     {
       key: "flowType",
@@ -122,7 +121,7 @@ export function JiraSetupCard(): ReactNode {
                 rowKey={(r) => r.ruleId}
                 emptyLabel={t("help.jira.no_rules")}
               />
-              <p className="screen-note">{t("help.jira.open.note")}</p>
+              <p className="scr-hint">{t("help.jira.open.note")}</p>
             </>
           )}
         </section>
@@ -133,8 +132,8 @@ export function JiraSetupCard(): ReactNode {
           <ul className="help-fields">
             <li>
               <b>{t("help.jira.webhook.url_label")}</b>{" "}
-              <span className="screen-mono">{t("help.jira.webhook.url_host")}{WEBHOOK_PATH}</span>{" "}
-              <span className="screen-note">{t("help.jira.webhook.url_note")}</span>
+              <span className="scr-mono">{t("help.jira.webhook.url_host")}{WEBHOOK_PATH}</span>{" "}
+              <span className="scr-hint">{t("help.jira.webhook.url_note")}</span>
             </li>
             <li>
               <b>{t("help.jira.webhook.events_label")}</b> {t("help.jira.webhook.events")}

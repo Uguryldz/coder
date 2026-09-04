@@ -1,13 +1,14 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
-import { Card, Input, Select } from "../../ui/index.ts";
+import { Input, Select } from "../../ui/index.ts";
 import { englishAside, matchValueLabel } from "../common/jira-english.ts";
 import {
   STATUS_POINTS,
+  buildStatusMap,
   firesFor,
-  gatePointsOf,
-  gateStatusConflicts,
+  gateMirror,
   type StatusPoint,
 } from "../common/status-map.ts";
 import {
@@ -16,6 +17,7 @@ import {
   FLOW_TYPES,
   MAX_POLL_SECONDS,
   MIN_POLL_SECONDS,
+  flowNeedsRepository,
   flowUnavailableReason,
   intakePolls,
   intakeUnavailableReason,
@@ -29,6 +31,13 @@ import {
  * The wizard's panes. Presentational on purpose: every one of them takes the
  * single draft plus an `onChange`, so navigating between steps is a state
  * change in the container and never an unmount that could drop what was typed.
+ *
+ * They render CONTENT ONLY — the container wraps the active pane in one card
+ * with the step's title and the Geri/İleri row, so a step is one box on the
+ * screen rather than a card for the question and a second card for the
+ * buttons. Required answers come first; the optional ones (repository on an
+ * analysis flow, approval gates) sit behind a collapsed disclosure, so each
+ * step fits one screen.
  *
  * The register throughout is the one the whole wizard is for: a sentence about
  * what will HAPPEN, not the name of the field that causes it. "risk_tiered"
@@ -46,13 +55,9 @@ export interface PaneData {
   readonly scmConnections: readonly { id: string; label: string }[];
   /**
    * How many repository connections exist, or `null` while that is still
-   * unknown (the request is in flight, or it failed).
-   *
-   * Separate from `scmConnections.length` because an empty array and an
-   * unanswered question look identical there, and step 1 has to tell them
-   * apart: "you have no repository connection" is a claim about the install,
-   * and making it while a request is still running sends an operator to
-   * Ayarlar to fix something that was never broken.
+   * unknown (the request is in flight, or it failed). An empty array and an
+   * unanswered question look identical in `scmConnections`, and step 1 has to
+   * tell them apart before accusing the install of having no repository.
    */
   readonly scmConnectionCount: number | null;
   readonly scmRepos: readonly string[];
@@ -61,37 +66,15 @@ export interface PaneData {
   readonly platforms: readonly string[];
   /** Live Jira values for the chosen project + match kind; empty → free text. */
   readonly matchValues: readonly string[];
-  /**
-   * Set when `matchValues` came from the FALLBACK source, whose issue-type
-   * names can be a different localisation from the ones on the tickets. The
-   * dropdown still shows — a list beats a blank box — but it says so.
-   */
+  /** Set when `matchValues` came from the fallback source (other language). */
   readonly matchValuesNote: string | null;
-  /** Live Jira STATUS names, for the status map; empty → free text. */
+  /** Live Jira STATUS names, for the status gate and the status map; empty → free text. */
   readonly statusNames: readonly string[];
   /** True once a connection has reported a bot account id (step 3's pre-fill). */
   readonly botKnown: boolean;
-  /**
-   * Whether the configured work driver can read a ticket's comment thread —
-   * `undefined` while that is still unknown (the request is in flight, or the
-   * endpoint is not there).
-   *
-   * The wizard's answer to the worst outcome available here: an operator picks
-   * "biz Jira'ya soralım", the wizard saves it, and nothing ever polls because
-   * the driver has no `listComments`. Mirrors the BFF's own `canReadComments`
-   * check rather than a guess from the connection's `kind` — which driver
-   * offers what has changed once already, and a screen that hardcodes the
-   * answer goes stale silently.
-   */
+  /** Whether the work driver can read a comment thread; `undefined` while unknown. */
   readonly canReadComments: boolean | undefined;
-  /**
-   * Whether the poller can be started/stopped WITHOUT restarting the service,
-   * as the platform itself reports it. `undefined` while unknown.
-   *
-   * Decides which of two sentences the pane shows, and they are not
-   * interchangeable: "hemen devreye girer" on a deployment that needs a restart
-   * is exactly the silent wait this step exists to end.
-   */
+  /** Whether a changed intake applies without a restart; `undefined` while unknown. */
   readonly intakeAppliesLive: boolean | undefined;
 }
 
@@ -101,149 +84,108 @@ export interface PaneProps {
   readonly onChange: (patch: Partial<SetupDraft>) => void;
 }
 
-/**
- * Step 1 — "Ne yapmak istiyorsun?".
- *
- * A radio list, not a dropdown. The three flows differ in what Maestro is
- * ALLOWED to do (write code or not, merge or not), and a collapsed select shows
- * one option at a time — an operator would pick the first one without ever
- * reading that the other two open pull requests. Each option carries its
- * outcome sentence beside the label so the difference is visible before the
- * click, not after.
- */
-export function FlowPane({ draft, data, onChange }: PaneProps): ReactNode {
-  const t = useT();
+/** A radio CARD — the whole card is the label so the outcome sentence is part of the click. */
+function ChoiceCard({
+  name,
+  value,
+  checked,
+  onPick,
+  label,
+  desc,
+  meta,
+  blocked,
+}: {
+  readonly name: string;
+  readonly value: string;
+  readonly checked: boolean;
+  readonly onPick: () => void;
+  readonly label: string;
+  readonly desc: string;
+  readonly meta: string;
+  readonly blocked: string | null;
+}): ReactNode {
   return (
-    <Card title={t("setup.flow.title")} subtitle={t("setup.flow.sub")}>
-      <p className="scr-prose">{t("setup.flow.intro")}</p>
-      <div className="setup-choices" role="radiogroup" aria-label={t("setup.flow.title")}>
-        {FLOW_TYPES.map((flow) => {
-          /**
-           * Why this flow cannot be run here, if it cannot.
-           *
-           * The option is still SHOWN and still selectable. Hiding it would
-           * answer "why can't Maestro fix bugs?" with silence, and a disabled
-           * radio with no explanation is the same silence with a grey tint.
-           * What it gains instead is a sentence naming the missing piece and a
-           * link to where it is added — the same treatment a missing Jira
-           * connection already gets — and "İleri" stops until it is resolved.
-           */
-          const blocked = flowUnavailableReason(flow, data.scmConnectionCount);
-          return (
-            <label
-              key={flow}
-              className={
-                "setup-choice" +
-                (draft.flowType === flow ? " setup-choice--on" : "") +
-                (blocked === null ? "" : " setup-choice--blocked")
-              }
-            >
-              <input
-                type="radio"
-                name="setup-flow"
-                value={flow}
-                checked={draft.flowType === flow}
-                onChange={() => onChange({ flowType: flow as FlowType })}
-              />
-              <span className="setup-choice__body">
-                <span className="setup-choice__label">{t(`setup.flow.name.${flow}`)}</span>
-                <span className="setup-choice__desc">{t(`setup.flow.desc.${flow}`)}</span>
-                {/* What the choice COSTS, spelled out: which gates run, whether a
-                    repository is touched. An operator picking "geliştirme" should
-                    learn here that it opens pull requests, not from the summary. */}
-                <span className="setup-choice__meta">{t(`setup.flow.meta.${flow}`)}</span>
-                {blocked !== null && (
-                  <span className="scr-note scr-note--warn setup-choice__blocked">
-                    {t(blocked)}
-                  </span>
-                )}
-              </span>
-            </label>
-          );
-        })}
-      </div>
-    </Card>
+    <label
+      className={
+        "setup-choice" + (checked ? " setup-choice--on" : "") + (blocked === null ? "" : " setup-choice--blocked")
+      }
+    >
+      <input type="radio" name={name} value={value} checked={checked} onChange={onPick} />
+      <span className="setup-choice__body">
+        <span className="setup-choice__label">{label}</span>
+        <span className="setup-choice__desc">{desc}</span>
+        <span className="setup-choice__meta">{meta}</span>
+        {blocked !== null && <span className="scr-note scr-note--warn setup-choice__blocked">{blocked}</span>}
+      </span>
+    </label>
   );
 }
 
 /**
- * Step 2 — the Jira project and the repository the work lands in.
- *
- * Same four selects as the expert onboarding form, fed by the same endpoints,
- * but WITHOUT the trigger/gate/merge trio: those three are derived from step 1
- * and shown back as sentences on the summary. Asking a first-time operator to
- * choose a gate set is the thing this wizard exists not to do.
+ * Step 1 — "Ne yapmak istiyorsun?". A radio list, not a dropdown: the three
+ * flows differ in what Maestro is ALLOWED to do, and the difference has to be
+ * visible before the click.
+ */
+export function FlowPane({ draft, data, onChange }: PaneProps): ReactNode {
+  const t = useT();
+  return (
+    <div className="setup-choices" role="radiogroup" aria-label={t("setup.flow.title")}>
+      {FLOW_TYPES.map((flow) => {
+        // A flow this install cannot run is shown, selectable and explained —
+        // never hidden — and "İleri" stops until the gap is resolved.
+        const blocked = flowUnavailableReason(flow, data.scmConnectionCount);
+        return (
+          <ChoiceCard
+            key={flow}
+            name="setup-flow"
+            value={flow}
+            checked={draft.flowType === flow}
+            onPick={() => onChange({ flowType: flow as FlowType })}
+            label={t(`setup.flow.name.${flow}`)}
+            desc={t(`setup.flow.desc.${flow}`)}
+            meta={t(`setup.flow.meta.${flow}`)}
+            blocked={blocked === null ? null : t(blocked)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Step 2 — the Jira project, the data class, and the repository the work lands
+ * in. The repository is REQUIRED for the two code-writing flows and an offer
+ * for `analiz`, where it sits behind a collapsed disclosure.
  */
 export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
+  const repoRequired = flowNeedsRepository(draft.flowType);
+  // The optional disclosure opens itself when the operator already started a
+  // pick (a repo chosen under another flow must not vanish behind a closed
+  // summary), and otherwise remembers what the operator did with it.
+  const [repoOpen, setRepoOpen] = useState(draft.connectionId !== "");
 
-  // The two live lists each have four faces an operator has to tell apart: no
-  // connection picked yet, loading, a provider error, and an empty result. A
-  // single "seçiniz" for all four is how "hiçbir şey çıkmıyor" tickets happen.
+  // Each live list has four faces to tell apart: nothing picked yet, loading,
+  // a provider error, an empty result. One "seçiniz" for all four is how
+  // "hiçbir şey çıkmıyor" tickets happen.
   const projectPlaceholder =
     draft.jiraConnectionId === ""
       ? t("setup.project.pick_jira_conn_first")
       : data.jiraProjectsLoading
         ? t("setup.common.loading")
-        : data.jiraProjectsError !== null
-          ? data.jiraProjectsError
-          : data.jiraProjects.length === 0
-            ? t("setup.project.no_projects")
-            : t("setup.common.choose");
-
+        : (data.jiraProjectsError ??
+          (data.jiraProjects.length === 0 ? t("setup.project.no_projects") : t("setup.common.choose")));
   const repoPlaceholder =
     draft.connectionId === ""
       ? t("setup.project.pick_scm_conn_first")
       : data.scmReposLoading
         ? t("setup.common.loading")
-        : data.scmReposError !== null
-          ? data.scmReposError
-          : data.scmRepos.length === 0
-            ? t("setup.project.no_repos")
-            : t("setup.common.choose");
+        : (data.scmReposError ??
+          (data.scmRepos.length === 0 ? t("setup.project.no_repos") : t("setup.common.choose")));
 
-  return (
-    <Card title={t("setup.project.title")} subtitle={t("setup.project.sub")}>
-      <p className="scr-prose">{t("setup.project.intro")}</p>
+  const repoFields = (
+    <>
       <div className="scr-grid scr-grid--2">
-        <Select
-          label={t("setup.project.jira_connection")}
-          value={draft.jiraConnectionId}
-          onChange={(e) => onChange({ jiraConnectionId: e.target.value, jiraProject: "" })}
-          options={[
-            { value: "", label: t("setup.common.choose") },
-            ...data.jiraConnections.map((c) => ({ value: c.id, label: c.label })),
-          ]}
-          hint={t("setup.project.jira_connection_hint")}
-        />
-        <Select
-          label={t("setup.project.jira_project")}
-          value={draft.jiraProject}
-          onChange={(e) => onChange({ jiraProject: e.target.value, matchValue: "" })}
-          disabled={
-            draft.jiraConnectionId === "" ||
-            data.jiraProjectsLoading ||
-            data.jiraProjects.length === 0
-          }
-          options={[
-            { value: "", label: projectPlaceholder },
-            ...data.jiraProjects.map((p) => ({ value: p.key, label: `${p.key} · ${p.name}` })),
-          ]}
-          hint={t("setup.project.jira_project_hint")}
-        />
-      </div>
-      {/* For `analiz` the repository is an OFFER, not a requirement: the
-          analysis is written from the ticket text, and a repo only enriches
-          the impact section. The note stands ABOVE the selects so the operator
-          reads "isteğe bağlı" before wondering why an empty field lets them
-          through — and before going off to request a GitHub token their team
-          does not need. */}
-      {draft.flowType === "analiz" && (
-        <div className="scr-note" style={{ marginTop: 12 }}>
-          {t("setup.project.repo_optional_analiz")}
-        </div>
-      )}
-      <div className="scr-grid scr-grid--2" style={{ marginTop: 12 }}>
         <Select
           label={t("setup.project.scm_connection")}
           value={draft.connectionId}
@@ -258,16 +200,14 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
           label={t("setup.project.scm_repo")}
           value={draft.repoFullName}
           onChange={(e) => onChange({ repoFullName: e.target.value })}
-          disabled={
-            draft.connectionId === "" || data.scmReposLoading || data.scmRepos.length === 0
-          }
+          disabled={draft.connectionId === "" || data.scmReposLoading || data.scmRepos.length === 0}
           options={[
             { value: "", label: repoPlaceholder },
             ...data.scmRepos.map((r) => ({ value: r, label: r })),
           ]}
         />
       </div>
-      <div className="scr-grid scr-grid--2" style={{ marginTop: 12 }}>
+      <div className="scr-grid scr-grid--2 scr-mt-2">
         <Select
           label={t("setup.project.platform")}
           value={draft.platform}
@@ -279,85 +219,110 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
           hint={t("setup.project.platform_hint")}
         />
       </div>
-      {/* The data class (M18). A radio list for the same reason step 1 is one:
-          the three answers differ in what Maestro is ALLOWED to do with the
-          ticket's content, and a collapsed select shows one at a time — the
-          operator would take the first without ever reading that the third
-          turns the analysis off on an install with no on-prem model. Each
-          option carries its CONSEQUENCE, not its policy name. */}
-      <h4 className="setup-review__h" style={{ marginTop: 18 }}>
-        {t("setup.dataclass.heading")}
-      </h4>
-      <p className="scr-prose">{t("setup.dataclass.intro")}</p>
-      <div className="setup-choices" role="radiogroup" aria-label={t("setup.dataclass.heading")}>
-        {DATA_CLASSES.map((cls) => (
-          <label
-            key={cls}
-            className={"setup-choice" + (draft.dataClass === cls ? " setup-choice--on" : "")}
-          >
-            <input
-              type="radio"
-              name="setup-dataclass"
-              value={cls}
-              checked={draft.dataClass === cls}
-              onChange={() => onChange({ dataClass: cls as DataClass })}
-            />
-            <span className="setup-choice__body">
-              <span className="setup-choice__label">{t(`setup.dataclass.name.${cls}`)}</span>
-              <span className="setup-choice__desc">{t(`setup.dataclass.desc.${cls}`)}</span>
-              <span className="setup-choice__meta">{t(`setup.dataclass.meta.${cls}`)}</span>
-            </span>
-          </label>
-        ))}
+    </>
+  );
+
+  return (
+    <>
+      <div className="scr-grid scr-grid--2">
+        <Select
+          label={t("setup.project.jira_connection")}
+          value={draft.jiraConnectionId}
+          onChange={(e) => onChange({ jiraConnectionId: e.target.value, jiraProject: "" })}
+          options={[
+            { value: "", label: t("setup.common.choose") },
+            ...data.jiraConnections.map((c) => ({ value: c.id, label: c.label })),
+          ]}
+          hint={t("setup.project.jira_connection_hint")}
+        />
+        <Select
+          label={t("setup.project.jira_project")}
+          value={draft.jiraProject}
+          // A new project resets the answers that were read off the old one:
+          // the trigger value, and the status gate whose names are the old
+          // project's board vocabulary.
+          onChange={(e) => onChange({ jiraProject: e.target.value, matchValue: "", allowedStatuses: [] })}
+          disabled={draft.jiraConnectionId === "" || data.jiraProjectsLoading || data.jiraProjects.length === 0}
+          options={[
+            { value: "", label: projectPlaceholder },
+            ...data.jiraProjects.map((p) => ({ value: p.key, label: `${p.key} · ${p.name}` })),
+          ]}
+          hint={t("setup.project.jira_project_hint")}
+        />
       </div>
-      {/* `gizli` is the answer that can stop the product working, so its warning
-          is not a hint under a field — it is a block the operator cannot scroll
-          past, shown only when they have actually chosen it. This is the exact
-          gap that left SAM1-12 stalled with "modeli kullanamadım" and nothing
-          on any screen connecting that message to the data class. */}
+
+      {/* The data class (M18): one select, and the CONSEQUENCE of the current
+          answer as its hint — the policy name appears nowhere. `gizli` is the
+          answer that can stop the product working, so it gets a warning block
+          the operator cannot scroll past, shown only once chosen. */}
+      <div className="scr-grid scr-grid--2 scr-mt-2">
+        <Select
+          label={t("setup.dataclass.heading")}
+          value={draft.dataClass}
+          onChange={(e) => onChange({ dataClass: e.target.value as DataClass })}
+          options={DATA_CLASSES.map((cls) => ({ value: cls, label: t(`setup.dataclass.name.${cls}`) }))}
+          hint={`${t(`setup.dataclass.desc.${draft.dataClass}`)} ${t(`setup.dataclass.meta.${draft.dataClass}`)}`}
+        />
+      </div>
       {draft.dataClass === "gizli" && (
-        <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-          {t("setup.dataclass.gizli_warning")}
-        </div>
+        <div className="scr-note scr-note--warn scr-mt-2">{t("setup.dataclass.gizli_warning")}</div>
       )}
 
-      <div className="scr-note" style={{ marginTop: 12 }}>
-        {t("setup.project.four_eyes_note")}
-      </div>
-    </Card>
+      {repoRequired ? (
+        <>
+          <h4 className="scr-h">{t("setup.project.repo_heading")}</h4>
+          {repoFields}
+        </>
+      ) : (
+        <details className="scr-adv scr-mt-3" open={repoOpen} onToggle={(e) => setRepoOpen(e.currentTarget.open)}>
+          <summary className="scr-adv__summary">{t("setup.project.repo_optional_summary")}</summary>
+          <div className="scr-adv__body">
+            <p className="scr-hint">{t("setup.project.repo_optional_analiz")}</p>
+            <div className="scr-mt-2">{repoFields}</div>
+          </div>
+        </details>
+      )}
+    </>
   );
 }
 
 /**
- * Step 3 — which tickets Maestro picks up.
- *
- * Two questions: whose queue (the bot account) and which tickets in it. The
- * value list is read LIVE off the project so "Hata" is picked rather than
- * spelled; when Jira cannot be read the field falls back to free text rather
- * than to an empty dropdown that would make the step impossible to finish.
+ * Step 3 — which tickets Maestro picks up: the trigger, the status gate, the
+ * bot account, and (collapsed) the approval gates.
  */
 export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
-  // "Bota atanan her ticket" has no second question, so the value field is not
-  // merely disabled — it is GONE. A greyed-out box the operator cannot fill
-  // reads as an unfinished form; an absent one reads as an answered question.
+  // "Bota atanan her ticket" has no second question, so the value field is GONE
+  // rather than greyed out: an absent field reads as an answered question.
   const anyAssigned = draft.matchKind === "assigned";
+  const toggleAllowed = (name: string): void =>
+    onChange({
+      allowedStatuses: draft.allowedStatuses.includes(name)
+        ? draft.allowedStatuses.filter((s) => s !== name)
+        : [...draft.allowedStatuses, name],
+    });
+  // A STATUS trigger is itself a status the ticket must be in, so it joins the
+  // gate on its own — an operator who picked "Analiz Bekliyor" as the trigger
+  // must not also have to tick it below to make the rule fire.
+  const setMatchValue = (value: string): void =>
+    onChange({
+      matchValue: value,
+      ...(draft.matchKind === "status" && value !== "" && !draft.allowedStatuses.includes(value)
+        ? { allowedStatuses: [...draft.allowedStatuses, value] }
+        : {}),
+    });
+  const english = englishAside(draft.matchValue);
+
   return (
-    <Card title={t("setup.tickets.title")} subtitle={t("setup.tickets.sub")}>
-      <p className="scr-prose">{t("setup.tickets.intro")}</p>
+    <>
       <div className="scr-grid scr-grid--2">
         <Select
           label={t("setup.tickets.match_kind")}
           value={draft.matchKind}
-          onChange={(e) =>
-            // Switching the question invalidates the answer: an issue-type name
-            // is not a status name, and keeping it would silently save a rule
-            // that can never match a ticket. Switching TO `assigned` clears it
-            // for the same reason from the other side — the value is not part
-            // of that rule, and a leftover "Hata" riding along in the draft
-            // would show up in the summary as a condition nobody set.
-            onChange({ matchKind: e.target.value as MatchKind, matchValue: "" })
-          }
+          // Switching the question invalidates the answer: an issue-type name is
+          // not a status name, and a leftover value would save a rule that can
+          // never match a ticket.
+          onChange={(e) => onChange({ matchKind: e.target.value as MatchKind, matchValue: "" })}
           options={[
             { value: "status", label: t("setup.tickets.kind.status") },
             { value: "assigned", label: t("setup.tickets.kind.assigned") },
@@ -370,10 +335,9 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
           <Select
             label={t("setup.tickets.match_value")}
             value={draft.matchValue}
-            // The option's VALUE is the localised name Jira serves and the rule
-            // stores; only its LABEL carries the English aside. A dropdown that
-            // sent "Görev (Task)" would write a matchValue no ticket can equal.
-            onChange={(e) => onChange({ matchValue: e.target.value })}
+            // The option's VALUE is the name Jira serves and the rule stores;
+            // only its LABEL carries the English aside.
+            onChange={(e) => setMatchValue(e.target.value)}
             options={[
               { value: "", label: t("setup.common.choose") },
               ...data.matchValues.map((v) => ({ value: v, label: matchValueLabel(v) })),
@@ -384,169 +348,169 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
           <Input
             label={t("setup.tickets.match_value")}
             value={draft.matchValue}
-            onChange={(e) => onChange({ matchValue: e.target.value })}
-            // Typed by hand, so the English name cannot be offered up front —
-            // but once what they typed IS a name we know, saying so confirms
-            // they hit the right one.
+            onChange={(e) => setMatchValue(e.target.value)}
             hint={
-              englishAside(draft.matchValue) === null
+              english === null
                 ? t("setup.tickets.match_value_hint_manual")
-                : t("setup.tickets.match_value_hint_english", {
-                    english: englishAside(draft.matchValue) ?? "",
-                  })
+                : t("setup.tickets.match_value_hint_english", { english })
             }
           />
         )}
       </div>
-      {anyAssigned && (
-        <div className="scr-note" style={{ marginTop: 12 }}>
-          {t("setup.tickets.assigned_note")}
-        </div>
-      )}
-      <div style={{ marginTop: 12 }}>
+      {anyAssigned && <div className="scr-note scr-mt-2">{t("setup.tickets.assigned_note")}</div>}
+
+      {/* The status GATE (0024): which board columns a ticket may be in to be
+          picked up. Asked here because the wizard used to skip it, and every
+          rule it wrote then opened on the listening screen flagged "statü
+          kısıtı yok". Names come from the project's live Jira board; free text
+          only when the board could not be read. */}
+      <fieldset className="scr-fieldset scr-mt-2">
+        <legend className="setup-legend">{t("setup.tickets.allowed_statuses")}</legend>
+        {data.statusNames.length > 0 ? (
+          <div className="scr-checks">
+            {data.statusNames.map((name) => (
+              <label key={name} className="scr-check">
+                <input
+                  type="checkbox"
+                  checked={draft.allowedStatuses.includes(name)}
+                  onChange={() => toggleAllowed(name)}
+                />
+                {name}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <Input
+            label={t("setup.tickets.allowed_statuses_manual")}
+            value={draft.allowedStatuses.join(", ")}
+            onChange={(e) =>
+              onChange({
+                allowedStatuses: e.target.value
+                  .split(",")
+                  .map((v) => v.trim())
+                  .filter((v) => v !== ""),
+              })
+            }
+            hint={t(draft.jiraProject === "" ? "setup.tickets.allowed_statuses_pick_project" : "setup.tickets.allowed_statuses_unavailable")}
+          />
+        )}
+        <p className="scr-hint">
+          {t(draft.allowedStatuses.length === 0 ? "setup.tickets.allowed_statuses_none" : "setup.tickets.allowed_statuses_hint")}
+        </p>
+      </fieldset>
+
+      <div className="scr-mt-2">
         <Input
           label={t("setup.tickets.assignee")}
           value={draft.assigneeAccountId}
           onChange={(e) => onChange({ assigneeAccountId: e.target.value })}
           placeholder="712020:…"
-          hint={
-            data.botKnown ? t("setup.tickets.assignee_hint_auto") : t("setup.tickets.assignee_hint")
-          }
+          hint={data.botKnown ? t("setup.tickets.assignee_hint_auto") : t("setup.tickets.assignee_hint")}
         />
       </div>
-      {/*
-        ── ONAY KAPILARI, SİHİRBAZDA ────────────────────────────────────────
 
-        Uzman ekranındaki bölümün aynısı, aynı gerekçeyle: kod adı değil ANLAM
-        ("Analiz onayı — ürün sahibi"), ve HER ZAMAN görünür — açılır bir
-        bölümün arkasında değil.
-
-        Neden sihirbaza da: bu seçim `Listening.tsx`te vardı ve orada
-        bulunabilirdi, ama sihirbazdan geçen operatör o ekrana hiç uğramıyor ve
-        seçimin varlığından haberdar olmuyordu. Sahadaki cümle buydu — "var ama
-        onu nereden yapacağımı bilmiyorum". Bir ekranın sormadığı soru,
-        operatör için olmayan bir sorudur.
-      */}
-      <div style={{ marginTop: 16 }}>
-        <div className="scr-note" style={{ marginBottom: 6 }}>
-          <strong>{t("listening.gates.title")}</strong>
-        </div>
-        <div className="scr-note" style={{ marginBottom: 8 }}>
-          {t("listening.gates.explain")}
-        </div>
-        {/* İki seçenek RADYO, bir onay kutusu değil: "seçim yok" ile "hiç kapı
-            istemiyorum" iki ayrı cevap, ve tek bir kutu ikisini anlatamaz. */}
-        <label style={{ display: "block", marginBottom: 4 }}>
-          <input
-            type="radio"
-            name="setup-gates-mode"
-            checked={!draft.gatesCustom}
-            onChange={() => onChange({ gatesCustom: false })}
-          />{" "}
-          <span>{t("listening.gates.default")}</span>
-        </label>
-        <label style={{ display: "block", marginBottom: 8 }}>
-          <input
-            type="radio"
-            name="setup-gates-mode"
-            checked={draft.gatesCustom}
-            onChange={() => onChange({ gatesCustom: true })}
-          />{" "}
-          <span>{t("listening.gates.custom")}</span>
-        </label>
-        {draft.gatesCustom && (
-          <div style={{ marginLeft: 20 }}>
-            {SELECTABLE_GATES.map((gate) => {
-              /* Analiz akışı mühendislik kapılarına HİÇ ulaşmaz; seçili olsa da
-                 açılmaz. Kutuyu gizlemek yerine ölü olduğunu SÖYLEMEK, Dinleme
-                 kuralları ekranının yaptığının aynısı — gizlenen bir kutu, operatöre
-                 cevabının kaydedildiğini sanmasına yol açar. */
-              const dead =
-                draft.flowType === "analiz" && gate.step !== "4" && gate.step !== "5";
-              const checked = draft.gateSteps.includes(gate.step);
-              return (
-                <div key={gate.step} style={{ marginBottom: 8 }}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() =>
-                        onChange({
-                          gateSteps: checked
-                            ? draft.gateSteps.filter((step) => step !== gate.step)
-                            : [...draft.gateSteps, gate.step],
-                        })
-                      }
-                    />{" "}
-                    <span style={dead ? { color: "#78716c" } : {}}>{t(gate.titleKey)}</span>
-                  </label>
-                  <div className="scr-note" style={{ marginLeft: 22 }}>
-                    {t(`${gate.titleKey}.hint`)}
-                  </div>
-                  {dead && checked && (
-                    <div className="scr-note" style={{ marginLeft: 22 }}>
-                      {t("listening.gates.engineering_only")}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {draft.gateSteps.length === 0 && (
-              <div className="scr-note">{t("listening.gates.none_selected")}</div>
-            )}
+      {/* Approval gates — the same choice the listening screen offers, and for
+          the same reason it is HERE too: an operator who only ever walks the
+          wizard never learns the choice exists. Collapsed, because the default
+          ("risk seviyesine göre") is right for a first setup. */}
+      <details className="scr-adv scr-mt-3" open={draft.gatesCustom || undefined}>
+        <summary className="scr-adv__summary">
+          {t("setup.tickets.gates_summary", {
+            mode: draft.gatesCustom ? t("listening.gates.custom") : t("listening.gates.default"),
+          })}
+        </summary>
+        <div className="scr-adv__body">
+          <p className="scr-hint">{t("listening.gates.explain")}</p>
+          {/* Two radios, not a checkbox: "seçim yok" and "hiç kapı istemiyorum"
+              are different answers, and one box cannot carry both. */}
+          <div className="scr-checklist scr-mt-2">
+            <label className="scr-check">
+              <input
+                type="radio"
+                name="setup-gates-mode"
+                checked={!draft.gatesCustom}
+                onChange={() => onChange({ gatesCustom: false })}
+              />
+              {t("listening.gates.default")}
+            </label>
+            <label className="scr-check">
+              <input
+                type="radio"
+                name="setup-gates-mode"
+                checked={draft.gatesCustom}
+                onChange={() => onChange({ gatesCustom: true })}
+              />
+              {t("listening.gates.custom")}
+            </label>
           </div>
-        )}
-      </div>
-      <div className="scr-note" style={{ marginTop: 12 }}>
-        {t("setup.tickets.note")}
-      </div>
-    </Card>
+          {draft.gatesCustom && (
+            <div className="scr-checklist scr-mt-2 setup-indent">
+              {SELECTABLE_GATES.map((gate) => {
+                // The analysis flow never reaches the engineering gates; a ticked
+                // one is SAID to be dead rather than hidden.
+                const dead = draft.flowType === "analiz" && gate.step !== "4" && gate.step !== "5";
+                const checked = draft.gateSteps.includes(gate.step);
+                return (
+                  <div key={gate.step}>
+                    <label className={"scr-check" + (dead ? " scr-muted" : "")}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          onChange({
+                            gateSteps: checked
+                              ? draft.gateSteps.filter((step) => step !== gate.step)
+                              : [...draft.gateSteps, gate.step],
+                          })
+                        }
+                      />
+                      {t(gate.titleKey)}
+                    </label>
+                    <p className="scr-hint setup-indent">
+                      {t(`${gate.titleKey}.hint`)}
+                      {dead && checked && ` ${t("listening.gates.engineering_only")}`}
+                    </p>
+                  </div>
+                );
+              })}
+              {draft.gateSteps.length === 0 && <p className="scr-hint">{t("listening.gates.none_selected")}</p>}
+            </div>
+          )}
+        </div>
+      </details>
+      <p className="scr-hint">{t("setup.tickets.note")}</p>
+    </>
   );
 }
 
 /**
- * Step 4 — the Jira status map, OFF by default.
+ * Step 4 — the Jira status map, OFF by default, and the gate MIRROR under it.
  *
- * The one step that is genuinely optional, and it says so in its own heading.
- * Off means comment-only, which is what every rule in the platform does today;
- * a wizard that started moving a bank's tickets because the operator clicked
- * "İleri" five times would be a defect, not a convenience.
+ * The mirror reads the map exactly as it will go on the wire — built by
+ * `buildStatusMap` from the switch, the flow and the five fields — and says
+ * what the server will make of it. A mirror that read the five fields
+ * directly told an operator with the switch OFF that moving the ticket would
+ * approve the gate; the server, given `null`, would have done nothing.
  */
 export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
   const setPoint = (point: StatusPoint, value: string): void =>
     onChange({ statusDraft: { ...draft.statusDraft, [point]: value } });
-  // Çakışma ve türetme, `Listening.tsx` ile AYNI yardımcılardan: iki ekranın bu
-  // konuda ayrışması, birinde uyarılan bir kurulumun diğerinde sessizce
-  // kaydedilmesi demek olurdu.
-  const gateClashes = gateStatusConflicts(draft.statusDraft, draft.gateStatusDraft);
-  /**
-   * Kapının iki kenarı, beş alanlık hattan türetilmiş. Sihirbaz bu iki değeri
-   * artık SORMUYOR — beş alan zaten söylüyor.
-   */
-  const gatePoints = gatePointsOf(draft.statusDraft, draft.gateStatusDraft);
-  // Kapı kanalının kapalı olması artık "iki alan boş" değil, "türetilecek bir
-  // şey yok" demek — beş alan doldurulduğu anda kanal kendiliğinden açılıyor.
-  const gateEmpty = gatePoints.approve === "" && gatePoints.return === "";
-
-  // Which of the five points the chosen flow can actually reach. `duzeltme`
-  // skips the analysis gate entirely (see `firesFor`), so its two approval
-  // moments are DEAD: a value mapped there would never move a ticket. The dead
-  // fields stay visible but disabled, with the reason as their hint — an
-  // operator who saw five points on an analiz rule must be able to see WHY this
-  // rule has three, not wonder where two went.
   const livePoints = new Set(firesFor(draft.flowType));
+  const mirror = gateMirror(
+    buildStatusMap(draft.statusOn, draft.statusDraft, draft.reassignOnNeedInfo, draft.flowType),
+  );
+  const gateEmpty = mirror.approve === null && mirror.return === null;
 
   return (
-    <Card title={t("setup.status.title")} subtitle={t("setup.status.sub")}>
+    <>
       <p className="scr-prose">{t("setup.status.intro")}</p>
-      <label className="scr-check" style={{ marginTop: 4 }}>
+      <label className="scr-check">
         <input
           type="checkbox"
           checked={draft.statusOn}
-          // Turning it off never rewrites the draft — an operator who unticks it
-          // to re-read the explanation and ticks it again gets their five values
-          // back. Only what the summary builds depends on the flag.
+          // Turning it off never rewrites the draft; only what the wire builds
+          // depends on the flag, and ticking it again brings the values back.
           onChange={(e) => onChange({ statusOn: e.target.checked })}
         />
         {t("setup.status.enable")}
@@ -554,17 +518,13 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
 
       {draft.statusOn && (
         <>
-          <p className="scr-note" style={{ marginTop: 12 }}>
-            {t("setup.status.exact")}
-          </p>
-          <div className="scr-grid scr-grid--2" style={{ marginTop: 8 }}>
+          <p className="scr-hint">{t("setup.status.exact")}</p>
+          <div className="scr-grid scr-grid--2 scr-mt-1">
             {STATUS_POINTS.map((point) => {
-              // A dead point is disabled, never hidden, and its hint is the
-              // REASON rather than the usual "what this moment means" — the
-              // honest answer to "neden seçemiyorum?" is a sentence, not a
-              // missing field. A value the draft still holds there (typed under
-              // another flow) stays visible; `buildStatusMap` keeps it off the
-              // wire and the summary never lists it.
+              // A dead point is disabled, never hidden, with the REASON as its
+              // hint. A value the draft still holds there stays visible;
+              // `buildStatusMap` keeps it off the wire and the mirror never
+              // counts it.
               const dead = !livePoints.has(point);
               const hint = dead ? t("setup.status.dead_hint") : t(`setup.status.hint.${point}`);
               return data.statusNames.length > 0 ? (
@@ -581,9 +541,6 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
                   hint={hint}
                 />
               ) : (
-                // Jira's status list could not be read. Free text rather than an
-                // empty dropdown, so the step can still be completed — the
-                // "birebir aynı yazın" warning above is what carries the risk.
                 <Input
                   key={point}
                   label={t(`setup.status.point.${point}`)}
@@ -595,7 +552,7 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
               );
             })}
           </div>
-          <label className="scr-check" style={{ marginTop: 12 }}>
+          <label className="scr-check scr-mt-2">
             <input
               type="checkbox"
               checked={draft.reassignOnNeedInfo}
@@ -603,213 +560,109 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
             />
             {t("setup.status.reassign")}
           </label>
-          <p className="scr-note" style={{ marginTop: 6 }}>
-            {t("setup.status.reassign_hint")}
-          </p>
+          <p className="scr-hint">{t("setup.status.reassign_hint")}</p>
         </>
       )}
 
-      {/*
-        ── KAPI KARARI: BEŞ ALANDAN TÜREYEN ÖZET ────────────────────────────
-        Burada eskiden İKİ AYRI SORU vardı (`gateApproveStatus`,
-        `gateReturnStatus`) ve sihirbazdan geçen operatörden aynı akışı ikinci
-        kez tarif etmesini istiyorlardı. Operatörün şikâyeti buydu: yedi kutu,
-        ve üstelik doğru doldurulmuş bir hat "çakışık" diye reddediliyordu.
-
-        Artık soru yok, CEVAP var: yukarıdaki beş alan hattı çiziyor, burası o
-        hattın kapıda ne anlama geldiğini geri söylüyor. Gerekçenin tamamı
-        `common/status-map.ts`teki `gatePointsOf` ve sunucudaki
-        `gateStatusesOf` notlarında.
-
-        `draft.statusOn` anahtarının DIŞINDA kalmaya devam ediyor, ama artık
-        farklı bir sebeple: bu bir girdi değil, bir ayna — anahtar kapalıyken
-        de operatörün ne olacağını okuması gerekiyor (o durumda "tanımsız"
-        yazacak, ki doğru cevap odur).
-      */}
-      <p className="scr-prose" style={{ marginTop: 20, fontWeight: 600 }}>
-        {t("setup.gate_status.title")}
-      </p>
-      <p className="scr-prose">{t("setup.gate_status.intro")}</p>
-      <ul className="scr-prose" style={{ marginTop: 8, paddingLeft: 18 }}>
-        <li>
-          {t("listening.gate_status.derived_approve", {
-            status:
-              gatePoints.approve === ""
-                ? t("listening.gate_status.derived_none")
-                : gatePoints.approve,
-            from:
-              gatePoints.approveFrom === null
-                ? ""
-                : t(`listening.gate_status.from.${gatePoints.approveFrom}`),
-          })}
-        </li>
-        <li>
-          {t("listening.gate_status.derived_return", {
-            status:
-              gatePoints.return === ""
-                ? t("listening.gate_status.derived_none")
-                : gatePoints.return,
-            from:
-              gatePoints.returnFrom === null
-                ? ""
-                : t(`listening.gate_status.from.${gatePoints.returnFrom}`),
-          })}
-        </li>
-      </ul>
-      {/* Kalan TEK yasak: kapı kenarı `onReview` ile aynı olamaz — kapı orada
-          AÇILIYOR, dolayısıyla oradan bir karar okunamaz. Diğer dört noktayla
-          çakışma artık serbest, çünkü operatörün gerçek hattında zorunlu. */}
-      {gateClashes.length > 0 && (
-        <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-          {t("listening.gate_status.review_clash", {
-            values: gateClashes
-              .map((c) => t(`listening.gate_status.from.${c.point}`))
-              .join(", "),
-          })}
-        </div>
-      )}
-      {/* İki kenar da boşken operatörün panodan yönettiği akış hiç çalışmaz,
-          ve bunu öğrendiği yer bir arıza olmamalı. */}
-      {gateEmpty && (
-        <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-          {t("listening.gate_status.empty_warning")}
-        </div>
-      )}
-      <p className="scr-note" style={{ marginTop: 6 }}>
-        {t("listening.gate_status.approval_note")}
-      </p>
-    </Card>
+      {/* The gate, read back from the wire. Not an input: the five fields
+          above draw the line, this says what moving the ticket along it will
+          mean — and says "nothing" out loud when that is the answer. */}
+      <div className="setup-mirror">
+        <p className="setup-mirror__h">{t("setup.gate_status.title")}</p>
+        <p className="scr-hint">{t("setup.gate_status.intro")}</p>
+        <ul className="scr-list">
+          <li>
+            {t("listening.gate_status.derived_approve", {
+              status: mirror.approve ?? t("listening.gate_status.derived_none"),
+              from: mirror.approveFrom === null ? "" : t(`listening.gate_status.from.${mirror.approveFrom}`),
+            })}
+          </li>
+          <li>
+            {t("listening.gate_status.derived_return", {
+              status: mirror.return ?? t("listening.gate_status.derived_none"),
+              from: mirror.returnFrom === null ? "" : t(`listening.gate_status.from.${mirror.returnFrom}`),
+            })}
+          </li>
+        </ul>
+        {mirror.conflicts.length > 0 && (
+          <div className="scr-note scr-note--warn scr-mt-2">
+            {t("listening.gate_status.review_clash", {
+              values: mirror.conflicts.map((c) => t(`listening.gate_status.from.${c.point}`)).join(", "),
+            })}
+          </div>
+        )}
+        {gateEmpty && (
+          <div className="scr-note scr-note--warn scr-mt-2">
+            {t(draft.statusOn ? "listening.gate_status.empty_warning" : "setup.gate_status.off_warning")}
+          </div>
+        )}
+        <p className="scr-hint">{t("listening.gate_status.approval_note")}</p>
+      </div>
+    </>
   );
 }
 
 /**
- * Step 5 — "Onaylar Maestro'ya nasıl ulaşsın?".
- *
- * The step this wizard was missing, and the failure it closes is the most
- * expensive one on the platform: `/approve` written on a ticket is the
- * documented way to pass a gate, and whether it is ever READ depended on
- * `JIRA_POLL_MS` — an environment variable in a file on the server, which a
- * bank operator cannot edit and cannot be expected to have heard of. So a run
- * would reach an approval gate, a human would approve it in the only place they
- * were told to, and the gate would wait forever with nothing anywhere saying
- * why.
- *
- * Asked as ONE question with three answers rather than two switches, because
- * webhook and polling are alternatives: they read the same comments, and an
- * operator who understood them as independent options would turn both on
- * without meaning to pay for both.
- *
- * Its own step rather than a field on step 2 for a reason the pane states out
- * loud: this is the one PLATFORM-WIDE answer in a per-project wizard. Buried in
- * "hangi proje, hangi uygulama?" it would read as a property of that project,
- * and the second run of the wizard would silently change the first project's
- * behaviour.
+ * Step 5 — "Onaylar Maestro'ya nasıl ulaşsın?": the platform-wide command
+ * intake, asked as ONE question with three answers because webhook and polling
+ * are alternatives, not a checklist.
  */
 export function IntakePane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
   const polls = intakePolls(draft.commandIntake);
 
   return (
-    <Card title={t("setup.intake.title")} subtitle={t("setup.intake.sub")}>
+    <>
       <p className="scr-prose">{t("setup.intake.intro")}</p>
-
       <div className="setup-choices" role="radiogroup" aria-label={t("setup.intake.title")}>
         {COMMAND_INTAKES.map((intake) => {
-          /**
-           * Why this answer cannot be given on this install, if it cannot.
-           *
-           * Shown, selectable and explained — never hidden. The two polling
-           * answers are unavailable on a driver with no comment reader, and an
-           * operator whose webhook cannot arrive is precisely the person who
-           * came here to pick one: silence would leave them clicking "İleri"
-           * on a setting that does nothing.
-           */
           const blocked = intakeUnavailableReason(intake, data.canReadComments);
           return (
-            <label
+            <ChoiceCard
               key={intake}
-              className={
-                "setup-choice" +
-                (draft.commandIntake === intake ? " setup-choice--on" : "") +
-                (blocked === null ? "" : " setup-choice--blocked")
-              }
-            >
-              <input
-                type="radio"
-                name="setup-intake"
-                value={intake}
-                checked={draft.commandIntake === intake}
-                onChange={() => onChange({ commandIntake: intake })}
-              />
-              <span className="setup-choice__body">
-                <span className="setup-choice__label">{t(`setup.intake.name.${intake}`)}</span>
-                <span className="setup-choice__desc">{t(`setup.intake.desc.${intake}`)}</span>
-                {/* What the answer COSTS. The two polling answers put load on
-                    the bank's Jira, every interval, forever — an operator
-                    should read that before the click, not discover it from a
-                    Jira administrator afterwards. */}
-                <span className="setup-choice__meta">{t(`setup.intake.meta.${intake}`)}</span>
-                {blocked !== null && (
-                  <span className="scr-note scr-note--warn">{t(blocked)}</span>
-                )}
-              </span>
-            </label>
+              name="setup-intake"
+              value={intake}
+              checked={draft.commandIntake === intake}
+              onPick={() => onChange({ commandIntake: intake })}
+              label={t(`setup.intake.name.${intake}`)}
+              desc={t(`setup.intake.desc.${intake}`)}
+              meta={t(`setup.intake.meta.${intake}`)}
+              blocked={blocked === null ? null : t(blocked)}
+            />
           );
         })}
       </div>
 
-      {/* The interval, asked only when it will be used. A webhook-only install
-          has no interval to argue about, and a field that does nothing is a
-          field that teaches the operator to ignore this screen. */}
+      {/* The interval, asked only when it will be used. */}
       {polls && (
-        <div style={{ marginTop: 12 }}>
+        <div className="scr-grid scr-grid--2 scr-mt-2">
           <Input
             label={t("setup.intake.seconds")}
             type="number"
             min={MIN_POLL_SECONDS}
             max={MAX_POLL_SECONDS}
             value={String(draft.pollSeconds)}
-            // An empty field parses to NaN rather than 0: 0 is a MEANING here
-            // ("off") and typing over the value must not pass through it. NaN
-            // is what `stepBlockedReason` refuses with the range sentence.
+            // An empty field parses to NaN rather than 0: 0 MEANS "off" here
+            // and typing over the value must not pass through it.
             onChange={(e) => onChange({ pollSeconds: Number.parseInt(e.target.value, 10) })}
             hint={t("setup.intake.seconds_hint", {
               min: String(MIN_POLL_SECONDS),
               max: String(MAX_POLL_SECONDS),
             })}
           />
-          <div className="scr-note scr-note--warn" style={{ marginTop: 8 }}>
-            {t("setup.intake.load_warning")}
-          </div>
+          <div className="scr-note scr-note--warn">{t("setup.intake.load_warning")}</div>
         </div>
       )}
-
-      {/* "İkisi birden" — the duplicate-processing question, answered before it
-          is asked. Two paths reading the same comments IS a real risk, and the
-          operator is entitled to know which mechanism stops it rather than
-          being told to trust the platform. */}
-      {draft.commandIntake === "both" && (
-        <div className="scr-note" style={{ marginTop: 12 }}>
-          {t("setup.intake.double_guard")}
-        </div>
-      )}
-
-      {/* WHEN the answer takes effect. Read from the platform rather than
-          assumed: promising "hemen geçerli" on a deployment that needs a
-          restart would leave the operator waiting on a gate that is never
-          polled — the same silent wait this step exists to end. */}
-      <p className="scr-note" style={{ marginTop: 12 }}>
+      {draft.commandIntake === "both" && <p className="scr-hint">{t("setup.intake.double_guard")}</p>}
+      <p className="scr-hint">
         {data.intakeAppliesLive === undefined
           ? t("setup.intake.applies_unknown")
           : data.intakeAppliesLive
             ? t("setup.intake.applies_live")
             : t("setup.intake.applies_restart")}
       </p>
-
       {/* This one answer is not about the project the operator just configured. */}
-      <div className="scr-note scr-note--warn" style={{ marginTop: 12 }}>
-        {t("setup.intake.global_note")}
-      </div>
-    </Card>
+      <div className="scr-note scr-note--warn scr-mt-2">{t("setup.intake.global_note")}</div>
+    </>
   );
 }

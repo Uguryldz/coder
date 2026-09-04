@@ -11,6 +11,7 @@ import {
   type Delegation,
   NOTIFY_EVENTS,
   type NotifyChannel,
+  type NotifyDriver,
   type NotifyUpdate,
   type NotifyView,
   type ParamPutResult,
@@ -18,16 +19,23 @@ import {
   type WaitingGate,
 } from "./common/index.ts";
 import { useEnumLabel, useLabel } from "./common/label.ts";
-import { MaybeUnwired, UnwiredNote } from "./shared/unwired.tsx";
 import { NotifyEditor } from "./notify/NotifyEditor.tsx";
+import { QueryState } from "./shared/QueryState.tsx";
 
 /**
- * Reminders and escalation (M45/M88): the ladder that keeps a gate from being
- * forgotten, who a decision falls to when its owner is away, and what is
- * waiting right now.
+ * `GET /notify` also carries the deployment's notify drivers — the same rows
+ * `/settings` reports — so which channels actually deliver is read from the
+ * runtime. Optional on the type: an older BFF omits it, and then the screen
+ * simply does not claim to know.
+ */
+type NotifyViewWire = NotifyView & { readonly drivers?: readonly NotifyDriver[] };
+
+/**
+ * Reminders and escalation: the ladder that keeps a gate from being forgotten,
+ * who a decision falls to when its owner is away, and what is waiting right now.
  *
- * No rung of the ladder auto-rejects. A pause is not a decision (M29), so the
- * last step is a report to a human, never a timeout that closes the gate — the
+ * No rung of the ladder auto-rejects. A pause is not a decision, so the last
+ * step is a report to a human, never a timeout that closes the gate — the
  * screen says so, because an operator who assumes an unanswered gate eventually
  * resolves itself stops chasing it.
  */
@@ -45,9 +53,11 @@ export function NotifyScreen(): ReactNode {
 
   const notify = useQuery({
     queryKey: ["notify"],
-    queryFn: ({ signal }) => api.get<NotifyView>("/notify", { signal }),
+    queryFn: ({ signal }) => api.get<NotifyViewWire>("/notify", { signal }),
   });
 
+  // The BFF writes `/notify` for admin only (SETTINGS_WRITE_ROLES); tech-lead
+  // reads. The menu shows the page to both, the buttons only to the writer.
   const canEdit = hasRole(session, "admin");
 
   // PUT /notify answers `{ results: [...] }`; a guarded parameter comes back
@@ -57,22 +67,34 @@ export function NotifyScreen(): ReactNode {
       api.put<{ results: readonly ParamPutResult[] }>("/notify", update),
     onSuccess: ({ results }) => {
       setEditing(false);
+      void queryClient.invalidateQueries({ queryKey: ["notify"] });
       const anyPending = results.some((result) => result.status === "pending");
-      if (anyPending) {
-        toast.show("warning", t("notify.edit.toast.pending"));
-      } else {
-        void queryClient.invalidateQueries({ queryKey: ["notify"] });
-        toast.show("success", t("notify.edit.toast.saved"));
-      }
+      toast.show(
+        anyPending ? "warning" : "success",
+        t(anyPending ? "notify.edit.toast.pending" : "notify.edit.toast.saved"),
+      );
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
-  // The channels that actually deliver in this deployment. `jira` is always
-  // wired; `teams` once its webhook connector is set. `smtp`/`slack` are coded
-  // but not wired at runtime, so a rule naming them is shown but marked pasif —
-  // honest about what would fire vs. what is only configured.
-  const ACTIVE_CHANNELS: ReadonlySet<NotifyChannel> = new Set<NotifyChannel>(["jira", "teams"]);
+  const data = notify.data;
+  // Which channels deliver in THIS deployment, from the runtime's driver list.
+  // `null` = the BFF did not say (older build), and then no channel is marked
+  // either way rather than guessed.
+  const liveChannels: ReadonlySet<string> | null =
+    data?.drivers === undefined
+      ? null
+      : new Set(data.drivers.filter((driver) => driver.enabled).map((driver) => driver.channel));
+
+  const channelBadge = (channel: NotifyChannel): ReactNode => {
+    const live = liveChannels === null ? null : liveChannels.has(channel);
+    return (
+      <Badge key={channel} tone={live === false ? "gray" : "green"}>
+        {label(`notify.channel.${channel}`, channel)}
+        {live === false ? ` · ${t("notify.routing.pasif")}` : ""}
+      </Badge>
+    );
+  };
 
   const routingColumns: readonly Column<{
     event: string;
@@ -97,15 +119,7 @@ export function NotifyScreen(): ReactNode {
           <Badge tone="gray">{t("notify.routing.muted")}</Badge>
         ) : (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {row.channels.map((channel) => {
-              const active = ACTIVE_CHANNELS.has(channel);
-              return (
-                <Badge key={channel} tone={active ? "green" : "gray"}>
-                  {label(`notify.channel.${channel}`, channel)}
-                  {active ? "" : ` · ${t("notify.routing.pasif")}`}
-                </Badge>
-              );
-            })}
+            {row.channels.map(channelBadge)}
           </div>
         ),
     },
@@ -158,83 +172,73 @@ export function NotifyScreen(): ReactNode {
     },
   ];
 
+  // One editor, two doors — each named for the card it sits on. The routing
+  // card's button says "Eşlemeyi düzenle", the ladder's "Merdiveni düzenle";
+  // three identical "Merdiveni düzenle" buttons on unrelated cards read as a
+  // mistake. The delegation card has none: the editor does not change deputies.
+  const editButton = (labelKey: "notify.routing.edit" | "notify.edit.action"): ReactNode =>
+    canEdit && data !== undefined ? (
+      <Button size="sm" variant="primary" onClick={() => setEditing(true)}>
+        {t(labelKey)}
+      </Button>
+    ) : undefined;
+
   return (
     <div className="scr-stack">
-      {/* Honest strip: the settings below persist, but no channel actually
-          delivers yet — an operator must not rely on a reminder arriving. */}
-      <UnwiredNote>{t("notify.unwired_note")}</UnwiredNote>
+      <p className="scr-hint">{t("notify.intro.body")}</p>
 
-      {/* A plain-language intro: what this whole page decides. */}
-      <Card title={t("notify.intro.title")}>
-        <p className="scr-prose" style={{ margin: 0 }}>{t("notify.intro.body")}</p>
-      </Card>
-
-      <MaybeUnwired
+      <QueryState
         isPending={notify.isPending}
         error={notify.error}
         onRetry={() => void notify.refetch()}
       >
-        {/* 1 · Which event goes to which channel — the most-asked question, so
-            it leads. The routing map decides the channels per event; a blank
-            entry follows `default`, an empty list is muted DELIBERATELY. */}
-        {notify.data !== undefined && (
+        {/* Which event goes to which channel — the most-asked question, so it
+            leads. A blank entry follows `default`; an empty list is muted
+            DELIBERATELY. */}
+        {data !== undefined && (
           <Card
             title={t("notify.card.routing")}
             subtitle={t("notify.card.routing_sub")}
-            actions={
-              canEdit ? (
-                <Button size="sm" variant="primary" onClick={() => setEditing(true)}>
-                  {t("notify.routing.edit")}
-                </Button>
-              ) : undefined
-            }
+            actions={editButton("notify.routing.edit")}
             padded={false}
           >
             <Table
               columns={routingColumns}
               rows={NOTIFY_EVENTS.map((event) => ({
                 event,
-                channels: notify.data!.routing.byEvent[event] ?? notify.data!.routing.default,
-                explicit: notify.data!.routing.byEvent[event] !== undefined,
+                channels: data.routing.byEvent[event] ?? data.routing.default,
+                explicit: data.routing.byEvent[event] !== undefined,
               }))}
               rowKey={(row) => row.event}
               emptyLabel=""
               caption={t("notify.card.routing")}
             />
-            <div className="scr-note" style={{ margin: "10px 14px 14px" }}>
-              {t("notify.routing.channel_status")}
-            </div>
+            <p className="scr-hint" style={{ margin: "10px 14px 12px" }}>
+              {liveChannels === null
+                ? t("notify.routing.channel_status_unknown")
+                : t("notify.routing.channel_status")}
+            </p>
           </Card>
         )}
 
-        {/* 2 · Approvals waiting right now. */}
+        {/* Approvals waiting right now. */}
         <Card title={t("notify.card.waiting")} subtitle={t("notify.card.waiting_sub")} padded={false}>
           <Table
             columns={waitingColumns}
-            rows={notify.data?.waiting ?? []}
+            rows={data?.waiting ?? []}
             rowKey={(row) => `${row.ticketKey}:${row.step}`}
             emptyLabel={t("notify.empty.waiting")}
             caption={t("notify.card.waiting")}
           />
         </Card>
 
-        {/* 3 · The reminder ladder — how a long-waiting approval escalates. */}
-        <Card
-          title={t("notify.card.ladder")}
-          subtitle={t("notify.card.ladder_sub")}
-          actions={
-            canEdit && notify.data !== undefined ? (
-              <Button size="sm" onClick={() => setEditing(true)}>
-                {t("notify.edit.action")}
-              </Button>
-            ) : undefined
-          }
-        >
-          {(notify.data?.ladder ?? []).length === 0 ? (
+        {/* The reminder ladder — how a long-waiting approval escalates. */}
+        <Card title={t("notify.card.ladder")} subtitle={t("notify.card.ladder_sub")} actions={editButton("notify.edit.action")}>
+          {(data?.ladder ?? []).length === 0 ? (
             <p className="scr-mini">{t("notify.empty.ladder")}</p>
           ) : (
             <div className="scr-ladder">
-              {(notify.data?.ladder ?? []).map((step, index) => (
+              {(data?.ladder ?? []).map((step, index) => (
                 <span key={`${step.kind}-${step.afterHours}`} className="scr-row">
                   {index > 0 && <span className="scr-arrow">→</span>}
                   <span
@@ -253,16 +257,16 @@ export function NotifyScreen(): ReactNode {
               ))}
             </div>
           )}
-          <div className="scr-note" style={{ marginTop: 12 }}>
-            {t("notify.note.no_auto_reject")}
-          </div>
+          <p className="scr-hint" style={{ marginTop: 10 }}>{t("notify.note.no_auto_reject")}</p>
         </Card>
 
-        {/* 4 · The deputy chain — who a stuck approval falls to. */}
+        {/* The deputy chain — who a stuck approval falls to. It is the audience
+            of the ladder's "delegate" rung; read-only here, the editor does not
+            change it. */}
         <Card title={t("notify.card.delegation")} subtitle={t("notify.card.delegation_sub")} padded={false}>
           <Table
             columns={delegationColumns}
-            rows={notify.data?.delegations ?? []}
+            rows={data?.delegations ?? []}
             rowKey={(row) => row.role}
             emptyLabel={t("notify.empty.delegation")}
             caption={t("notify.card.delegation")}
@@ -270,20 +274,21 @@ export function NotifyScreen(): ReactNode {
         </Card>
 
         {/* The Teams webhook entry (admin only) — belongs with channel setup. */}
-        {notify.data !== undefined && canEdit && (
+        {data !== undefined && canEdit && (
           <TeamsWebhookCard
-            mask={notify.data.teamsWebhookMask}
+            mask={data.teamsWebhookMask}
             busy={save.isPending}
             onSave={(url) => save.mutate({ teamsWebhook: url })}
           />
         )}
-      </MaybeUnwired>
+      </QueryState>
 
-      {notify.data !== undefined && (
+      {data !== undefined && (
         <NotifyEditor
           open={editing}
-          ladder={notify.data.ladderRaw}
-          routing={notify.data.routing}
+          ladder={data.ladderRaw}
+          routing={data.routing}
+          liveChannels={liveChannels}
           busy={save.isPending}
           onClose={() => setEditing(false)}
           onSubmit={(update) => save.mutate(update)}
@@ -314,7 +319,7 @@ function humanDays(hours: number, t: (key: string, params?: Record<string, strin
 }
 
 /**
- * The Teams webhook URL entry (M45). The full URL is a bearer credential, so the
+ * The Teams webhook URL entry. The full URL is a bearer credential, so the
  * field starts EMPTY showing only the stored mask ("…<last 6>"); the admin types
  * a new URL to change it, and an empty submit clears it. The URL is never fetched
  * back to prefill — the server only ever hands out the mask.

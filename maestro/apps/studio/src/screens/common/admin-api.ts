@@ -1,4 +1,4 @@
-import type { ParamChange, ParamDefinition, Role } from "@maestro/contracts";
+import type { LlmCallLog, ParamChange, ParamDefinition, Role, SubscriptionAccount } from "@maestro/contracts";
 
 /**
  * Wire shapes for the platform-management screens.
@@ -155,35 +155,7 @@ export interface Page<T> {
   readonly nextCursor: string | null;
 }
 
-// ── /studio/runners, /studio/sandboxes (LIVE) ─────────────────────────────────
-
-export type RunnerState = "idle" | "busy" | "draining" | "unreachable";
-
-/** A row of `GET /studio/runners` (BFF `RunnerRecord`). */
-export interface RunnerRecord {
-  readonly runnerId: string;
-  readonly pool: string;
-  readonly platform: string;
-  readonly state: RunnerState;
-  readonly capacity: number;
-  readonly activeSandboxes: number;
-  readonly lastHeartbeatAt: string;
-  /** Why a runner is not fully healthy; `null` when it is. */
-  readonly note: string | null;
-}
-
-/** Per-pool capacity, summed by the BFF so client and server never disagree. */
-export interface PoolSummary {
-  readonly pool: string;
-  readonly capacity: number;
-  readonly busy: number;
-  readonly machines: number;
-  readonly unhealthy: number;
-}
-
-export interface RunnersResponse extends Page<RunnerRecord> {
-  readonly pools: readonly PoolSummary[];
-}
+// ── /studio/sandboxes (LIVE) ──────────────────────────────────────────────────
 
 export type SandboxState = "active" | "resumable" | "human_held";
 
@@ -603,3 +575,24 @@ export interface RepoPolicyView {
 }
 
 /** Onboarding wire shapes live in ./onboarding-api.ts. */
+
+// ── /studio/cost + /studio/quota (LIVE) — shared by the AI usage tabs ────────
+
+/** `GET /studio/cost` — a page of gateway call log rows. */
+export interface CostPage {
+  readonly items: readonly LlmCallLog[];
+  readonly nextCursor: string | null;
+}
+
+/** `GET /studio/quota`. */
+export interface QuotaResponse {
+  readonly accounts: readonly SubscriptionAccount[];
+  readonly pool: {
+    readonly ready: number;
+    readonly cooling: number;
+    readonly exhausted: number;
+    readonly disabled: number;
+    /** False when every account is spent — this is what makes a run queue. */
+    readonly hasCapacity: boolean;
+  };
+}

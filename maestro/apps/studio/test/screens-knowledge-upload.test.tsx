@@ -6,8 +6,7 @@ import { ADMIN, VIEWER, renderScreen, stubFetch } from "./harness.tsx";
 /**
  * The guidance FILE upload ("ajan eğitimi" from a document). The browser reads
  * the file, posts `{ fileName, contentBase64 }` to the BFF, and on success the
- * library refetches AND mirrors the enabled set into the running pilot — the
- * same after-write path a typed note takes.
+ * library refetches — the same after-write path a typed note takes.
  */
 
 const NOTE = {
@@ -85,7 +84,7 @@ describe("guidance file upload", () => {
     const { fetchImpl } = stubFetch([{ path: "/studio/guidance", body: { notes: [] } }]);
     renderScreen(<KnowledgeScreen />, { fetchImpl, session: VIEWER });
 
-    await screen.findByText("Öğrenme kaynakları");
+    await screen.findByText("Öğrenme notları");
     expect(screen.queryByRole("button", { name: "Dosya yükle" })).not.toBeInTheDocument();
   });
 });

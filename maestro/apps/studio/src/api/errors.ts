@@ -216,7 +216,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   /**
    * 503 — the route exists, the capability behind it does not.
    *
-   * Distinct from 404 on purpose. `MaybeUnwired` reads a 404 as "this screen is
+   * Distinct from 404 on purpose. a 404 used to be read as "this screen is
    * not published yet", which is the wrong sentence for `/eval`, `/cache` and
    * `/greenfield`: those endpoints ARE published and answer honestly that
    * nothing writes the data they would read. Without this line the screen falls

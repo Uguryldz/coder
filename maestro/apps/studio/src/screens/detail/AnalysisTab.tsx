@@ -39,10 +39,10 @@ export function AnalysisTab({ ticket }: { readonly ticket: string }): ReactNode 
       emptyDescription={t("detail.analysis.empty_hint")}
       emptyIcon="📄"
     >
-      <div className="screen-journal">
+      <div className="scr-journal">
         {entries.map((entry) => (
-          <div className="screen-journal__row" key={`${entry.runId}-${entry.seq}`}>
-            <span className="screen-note screen-mono">{dateTimeLabel(entry.at, locale)}</span>
+          <div className="scr-journal__row" key={`${entry.runId}-${entry.seq}`}>
+            <span className="scr-hint scr-mono">{dateTimeLabel(entry.at, locale)}</span>
             <span aria-hidden="true">📄</span>
             <div>
               <b>{entry.title}</b>
@@ -50,7 +50,7 @@ export function AnalysisTab({ ticket }: { readonly ticket: string }): ReactNode 
                 // `pre-wrap`: the analysis is written as prose with its own
                 // paragraph breaks, and collapsing them would run a risk
                 // assessment together into one unreadable block.
-                <div className="screen-note" style={{ whiteSpace: "pre-wrap" }}>
+                <div className="scr-hint" style={{ whiteSpace: "pre-wrap" }}>
                   {entry.detail}
                 </div>
               )}
@@ -58,7 +58,7 @@ export function AnalysisTab({ ticket }: { readonly ticket: string }): ReactNode 
           </div>
         ))}
       </div>
-      <p className="screen-note">{t("detail.analysis.source")}</p>
+      <p className="scr-hint">{t("detail.analysis.source")}</p>
     </QueryState>
   );
 }

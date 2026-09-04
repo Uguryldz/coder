@@ -377,6 +377,35 @@ export interface CommentReader {
 }
 
 /**
+ * Studio'nun "Öğrenme kaynakları" ekranındaki notlar — bir ajanın analizde
+ * DİKKATE ALACAĞI kurum bilgisi.
+ *
+ * ── HANGİ BOŞLUĞU KAPATIYOR ─────────────────────────────────────────────────
+ * Ekran "yeni analizlerde dikkate alınacak" diyordu; notlar `AnalysisGuidance`
+ * tablosuna yazılıyor, `/studio/guidance` ile geri okunuyor — ve Temporal yolu
+ * onları HİÇ okumuyordu. Tek tüketici emekli pilottu (`apps/pilot/src/run.ts`,
+ * `GuidanceStore.forVariant`). Persona ile birebir aynı hikâye, aynı çözüm:
+ * bir seam, kompozisyon kökünün karşıladığı bir şekil (M44).
+ *
+ * Persona gibi OPSİYONEL ve bir ÜST KATMAN: bağlı değilse ya da okuma patlarsa
+ * analiz notsuz devam eder — uyarıyla, sessiz değil.
+ */
+export interface GuidanceReader {
+  /**
+   * `variantId`'nin göreceği ETKİN notlar: hedefsiz (global) olanların tamamı +
+   * yalnız bu ajana hedeflenmiş olanlar. Başka bir ajana hedeflenmiş not asla
+   * dönmez. Pilotun `forVariant` kuralının aynısı.
+   */
+  activeGuidance(variantId: string): Promise<readonly GuidanceNote[]>;
+}
+
+/** Bir öğrenme notu, prompta konacak hâliyle — `NamedDoc` ile aynı iki alan. */
+export interface GuidanceNote {
+  readonly title: string;
+  readonly content: string;
+}
+
+/**
  * The PERSONA an admin typed into Studio's "Ajan tanımları" ekranı, per agent.
  *
  * ── HANGİ BOŞLUĞU KAPATIYOR ─────────────────────────────────────────────────
@@ -454,6 +483,11 @@ export interface ActivityDeps {
    * davranışın aynısı.
    */
   readonly persona?: PersonaReader;
+  /**
+   * "Öğrenme kaynakları" notları (yukarıdaki `GuidanceReader`). Absent = analiz
+   * yalnız persona + ticket metnini görür, bugünkü davranış.
+   */
+  readonly guidance?: GuidanceReader;
   /**
    * Ticket'ın yorum akışı (yukarıdaki `CommentReader`). Absent = intake yalnız
    * snapshot'ı görür, bugünkü davranış — ve netleştirme cevapları görünmez.

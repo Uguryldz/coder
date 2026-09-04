@@ -4,7 +4,7 @@ import { type StepId } from "@maestro/contracts";
 import { messageKeyOf } from "../../api/errors.ts";
 import { useAuth } from "../../auth/AuthProvider.tsx";
 import { useT } from "../../i18n/I18nProvider.tsx";
-import { Badge, Button, Card, Input, Modal, useToast } from "../../ui/index.ts";
+import { Badge, Button, Card, Modal, TextArea, useToast } from "../../ui/index.ts";
 import { mayDecide, useGateDecision } from "./signals.ts";
 
 export interface GatePanelProps {
@@ -66,7 +66,7 @@ export function GatePanel({ ticket, step }: GatePanelProps): ReactNode {
 
   return (
     <Card title={t("gate.waiting.title")} subtitle={t("gate.waiting.subtitle")}>
-      <dl className="screen-kv">
+      <dl className="scr-kv">
         <dt>{t("gate.field.gate")}</dt>
         <dd>
           <Badge tone="amber">{t(`steps.${step}`)}</Badge>
@@ -77,7 +77,7 @@ export function GatePanel({ ticket, step }: GatePanelProps): ReactNode {
         <dd>{t("gate.field.reminders_value")}</dd>
       </dl>
 
-      <div className="screen-actions">
+      <div className="scr-actions">
         <Button
           variant="success"
           disabled={!allowed}
@@ -89,8 +89,8 @@ export function GatePanel({ ticket, step }: GatePanelProps): ReactNode {
           {t("gate.action.reject")}
         </Button>
       </div>
-      {!allowed && <p className="screen-note">{t("gate.not_owner")}</p>}
-      <p className="screen-note">{t("gate.jira_hint")}</p>
+      {!allowed && <p className="scr-hint">{t("gate.not_owner")}</p>}
+      <p className="scr-hint">{t("gate.jira_hint")}</p>
 
       <Modal
         open={confirming === "approve"}
@@ -107,7 +107,7 @@ export function GatePanel({ ticket, step }: GatePanelProps): ReactNode {
         }
       >
         <p>{t("gate.confirm.approve_body")}</p>
-        <p className="screen-note">{t("gate.confirm.irreversible")}</p>
+        <p className="scr-hint">{t("gate.confirm.irreversible")}</p>
       </Modal>
 
       <Modal
@@ -130,9 +130,12 @@ export function GatePanel({ ticket, step }: GatePanelProps): ReactNode {
         }
       >
         <p>{t("gate.confirm.reject_body")}</p>
-        <Input
+        {/* Multi-line: the reason is handed to the agent to act on, and a
+            rejection worth sending rarely fits a single line. */}
+        <TextArea
           label={t("gate.field.reason")}
           value={reason}
+          rows={4}
           onChange={(event) => setReason(event.target.value)}
           onBlur={() => setReasonTouched(true)}
           hint={t("gate.field.reason_hint")}

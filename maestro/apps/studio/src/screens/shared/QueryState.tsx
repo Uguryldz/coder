@@ -93,3 +93,17 @@ export function NotAvailable({
     />
   );
 }
+
+/**
+ * An honest strip for a screen whose UI is complete but whose EFFECT on the
+ * engine is not live (a setting the engine does not read yet). The screen
+ * renders and saves; this says the thing it configures does not fire. Without
+ * it the page quietly poses as a working control panel.
+ */
+export function UnwiredNote({ children }: { readonly children: ReactNode }): ReactNode {
+  return (
+    <div className="scr-note scr-note--warn" role="note">
+      {children}
+    </div>
+  );
+}

@@ -56,12 +56,13 @@ export function JournalTab({ ticket }: { readonly ticket: string }): ReactNode {
       emptyTitle={t("journal.empty")}
       emptyDescription={t("journal.empty_hint")}
     >
-      <div className="screen-filters" style={{ marginBottom: 12 }}>
+      <div className="scr-stack">
+      <div className="scr-filters">
         {ACTORS.map((id) => (
           <button
             key={id}
             type="button"
-            className="screen-chip"
+            className="scr-chip"
             aria-pressed={actor === id}
             onClick={() => setActor(id)}
           >
@@ -70,12 +71,13 @@ export function JournalTab({ ticket }: { readonly ticket: string }): ReactNode {
         ))}
       </div>
 
-      <div className="screen-journal">
+      <div className="scr-journal">
         {rows.map((entry) => (
           <JournalRow key={`${entry.runId}-${entry.seq}`} entry={entry} locale={locale} />
         ))}
       </div>
-      <p className="screen-note">{t("journal.append_only")}</p>
+      <p className="scr-hint">{t("journal.append_only")}</p>
+      </div>
     </QueryState>
   );
 }
@@ -89,14 +91,14 @@ function JournalRow({
 }): ReactNode {
   const t = useT();
   return (
-    <div className="screen-journal__row">
-      <span className="screen-note screen-mono">{dateTimeLabel(entry.at, locale)}</span>
+    <div className="scr-journal__row">
+      <span className="scr-hint scr-mono">{dateTimeLabel(entry.at, locale)}</span>
       <span aria-label={t(`journal.actor.${entry.actor}.label`)} title={t(`journal.actor.${entry.actor}.label`)}>
         {ACTOR_ICON[entry.actor]}
       </span>
       <div>
         <b>{entry.title}</b>
-        {entry.detail !== "" && <div className="screen-note">{entry.detail}</div>}
+        {entry.detail !== "" && <div className="scr-hint">{entry.detail}</div>}
       </div>
     </div>
   );

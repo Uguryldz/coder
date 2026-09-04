@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
+import type { QueryClient, UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 import type {
   ApplicationRecord,
   DataClass,
@@ -13,6 +13,33 @@ import type {
   WorkflowRunStatus,
 } from "@maestro/contracts";
 import { useApi } from "../../auth/AuthProvider.tsx";
+
+/**
+ * Bir ticket'ın koşusuna dair HER önbelleği tazele — detay, pano listesi,
+ * defter. Kapı kararı, yeniden başlatma, mod değişimi, clarify yanıtı,
+ * dinleme kuralı taraması: yazan herkes bunu çağırır, anahtarı kendisi yazmaz.
+ *
+ * Neden tek yer: `signals.ts` bir süre `["run"]`/`["runs"]` anahtarlarını
+ * siliyordu; gerçek anahtarlar `["studio-run"]`/`["studio-runs"]` olduğu için
+ * hiçbir yazma sonrası ekran tazelenmiyordu. Anahtarlar burada tanımlı,
+ * sorgular da (`useRuns`, `useRunDetail`, `useJournal`) aynı sabitleri kullanır.
+ */
+export const RUN_QUERY_KEYS = {
+  list: "studio-runs",
+  detail: "studio-run",
+  journal: "journal",
+} as const;
+
+export function invalidateRun(queryClient: QueryClient, ticket?: string): void {
+  void queryClient.invalidateQueries({ queryKey: [RUN_QUERY_KEYS.list] });
+  if (ticket === undefined) {
+    void queryClient.invalidateQueries({ queryKey: [RUN_QUERY_KEYS.detail] });
+    void queryClient.invalidateQueries({ queryKey: [RUN_QUERY_KEYS.journal] });
+    return;
+  }
+  void queryClient.invalidateQueries({ queryKey: [RUN_QUERY_KEYS.detail, ticket] });
+  void queryClient.invalidateQueries({ queryKey: [RUN_QUERY_KEYS.journal, ticket] });
+}
 
 /**
  * The run data layer shared by the flow screens (dash, tickets, detail, live,
@@ -234,7 +261,7 @@ export function useRuns(
     // caches by key, so a board and an archive sharing one would serve each
     // other's rows — the toggle would appear to work and then hand back the
     // previous view's data on the next render.
-    queryKey: ["studio-runs", limit ?? null, archived ?? null],
+    queryKey: [RUN_QUERY_KEYS.list, limit ?? null, archived ?? null],
     queryFn: ({ signal }) =>
       api.get<RunPageWire>("/studio/runs", {
         query: {
@@ -246,9 +273,14 @@ export function useRuns(
         signal,
       }),
     select: toRunList,
+    // A polled list is FRESH between two polls. Without this, a second reader
+    // of the same key that mounts after the first answer (the Panel's tiles
+    // gate the list behind QueryState) re-requests the page it was just
+    // handed — two GETs for one screen. Explicit refreshes (`refetch`,
+    // `invalidateRun`) ignore freshness, so "Yenile" and a save still re-read.
     ...(options.refetchInterval === undefined
       ? {}
-      : { refetchInterval: options.refetchInterval }),
+      : { refetchInterval: options.refetchInterval, staleTime: options.refetchInterval }),
   });
 }
 
@@ -286,7 +318,7 @@ export interface RunDetail {
 export function useRunDetail(ticket: string | undefined): UseQueryResult<RunDetail> {
   const api = useApi();
   return useQuery({
-    queryKey: ["studio-run", ticket ?? null],
+    queryKey: [RUN_QUERY_KEYS.detail, ticket ?? null],
     queryFn: ({ signal }) =>
       api.get<RunDetail>(`/studio/runs/${encodeURIComponent(ticket ?? "")}`, { signal }),
     enabled: ticket !== undefined && ticket !== "",
@@ -314,7 +346,7 @@ export function useJournal(
 ): UseQueryResult<JournalResponse> {
   const api = useApi();
   return useQuery({
-    queryKey: ["journal", ticket ?? null],
+    queryKey: [RUN_QUERY_KEYS.journal, ticket ?? null],
     queryFn: ({ signal }) =>
       api.get<JournalResponse>(`/studio/runs/${encodeURIComponent(ticket ?? "")}/journal`, {
         signal,
@@ -376,7 +408,7 @@ export function useArchiveRun(): UseMutationResult<
   return useMutation({
     mutationFn: ({ ticketKey, archived }) =>
       api.put<ArchiveResult>(`/studio/runs/${encodeURIComponent(ticketKey)}/archive`, { archived }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["studio-runs"] }),
+    onSettled: () => invalidateRun(queryClient),
   });
 }
 

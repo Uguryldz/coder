@@ -1,159 +1,32 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { useToast } from "../ui/Toast.tsx";
-import { Badge, Button, Card, Input, Table } from "../ui/index.ts";
-import { partitionByDataClass, resolveDataClass, type KnowledgeDoc } from "./knowledge/classify.ts";
+import { Button, Card, Input, Select, TextArea, useToast } from "../ui/index.ts";
+import { GuidanceList } from "./knowledge/GuidanceList.tsx";
+import { GUIDANCE_QUERY_KEY, GUIDANCE_WRITE_ROLES, type GuidanceNote } from "./knowledge/types.ts";
 import { fileToBase64 } from "./shared/file-base64.ts";
-import { QueryState } from "./shared/QueryState.tsx";
-
-/** Who may upload/toggle guidance notes. */
-const GUIDANCE_WRITE_ROLES = ["admin", "tech-lead"] as const;
-
-interface GuidanceNote {
-  readonly id: string;
-  readonly title: string;
-  readonly content: string;
-  readonly enabled: boolean;
-  readonly updatedAt: string;
-  /** Target agent variant; null/absent = global (every agent learns from it). */
-  readonly variantId?: string | null;
-}
+import type { AgentVariant } from "./Variants.tsx";
 
 /**
- * Screen: knowledge — search over the shared knowledge library.
+ * Screen: knowledge — the "Öğrenme kaynakları" library.
  *
- * SECURITY, two layers and both wanted:
+ * A note is a rule, a piece of institutional knowledge, or a "watch out for
+ * this" instruction. The ENABLED notes are put in front of the analyst when a
+ * new analysis is prepared (`packages/workflows/src/impl/guidance.ts`, read by
+ * `writeAnalysis`), either for every agent or for one agent chosen here.
  *
- *  1. The BFF filters by data class on the way out and returns `withheld`, the
- *     count it removed for this session's clearance. That is the real control —
- *     withheld documents never reach the browser at all.
- *  2. This screen ALSO fails closed on whatever does arrive: a record whose
- *     `dataClass` is missing or unrecognised is treated as `gizli` and dropped
- *     here (see ./knowledge/classify.ts) rather than shown as public. The server
- *     promises the field is always set; the client should not stake a leak on
- *     that promise surviving every future change.
+ * Typed note and file upload land in the same table and go through the same
+ * write path; toggling and deleting live in the shared `GuidanceList`.
  *
- * Both counts are surfaced, so an omission is visible rather than a quietly
- * short list.
- *
- * `q` is REQUIRED by the endpoint — it is a search, not a listing — so with an
- * empty box this screen asks for nothing and says so, instead of rendering an
- * inviting empty table for data it never requested.
+ * The old "Bilgi kütüphanesi — arama" section is gone: it searched a
+ * `KnowledgeDoc` table nothing on this platform writes, and dropped every row
+ * as confidential — a search box that could never find anything.
  */
-
-interface KnowledgeResponse {
-  readonly items: readonly KnowledgeDoc[];
-  readonly nextCursor: string | null;
-  /** How many results the SERVER withheld for this session's clearance. */
-  readonly withheld: number;
-}
-
-const CLASS_TONE = { acik: "gray", dahili: "blue", gizli: "red" } as const;
-
 export function KnowledgeScreen(): ReactNode {
-  const t = useT();
-  const api = useApi();
-  const [text, setText] = useState("");
-
-  const query = text.trim();
-  const search = useQuery({
-    queryKey: ["knowledge", query],
-    enabled: query !== "",
-    placeholderData: keepPreviousData,
-    queryFn: ({ signal }) =>
-      api.get<KnowledgeResponse>("/studio/knowledge", { query: { q: query }, signal }),
-  });
-
-  // Server-side withholding, plus this screen's own fail-closed pass.
-  const { visible, withheld: droppedHere } = partitionByDataClass(search.data?.items ?? []);
-  const withheldTotal = (search.data?.withheld ?? 0) + droppedHere;
-
-  return (
-    <>
-      <GuidanceLibrary />
-
-      <Card title={t("knowledge.library")} subtitle={t("knowledge.library_sub")}>
-        <Input
-          label={t("knowledge.search")}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          hint={t("knowledge.search_hint")}
-        />
-      </Card>
-
-      <div style={{ marginTop: 14 }}>
-        <Card
-          title={t("knowledge.results")}
-          actions={
-            withheldTotal > 0 ? (
-              <Badge tone="red">{t("knowledge.withheld_n", { n: String(withheldTotal) })}</Badge>
-            ) : undefined
-          }
-          padded={query === ""}
-        >
-          {query === "" ? (
-            <p className="tpl-keyline">{t("knowledge.type_to_search")}</p>
-          ) : (
-            <QueryState
-              isPending={search.isPending}
-              error={search.error}
-              isEmpty={visible.length === 0}
-              emptyTitle={t("knowledge.empty")}
-              onRetry={() => void search.refetch()}
-            >
-              <Table
-                columns={[
-                  {
-                    key: "title",
-                    header: t("knowledge.col.file"),
-                    cell: (row: KnowledgeDoc) => row.title,
-                  },
-                  { key: "source", header: t("knowledge.col.source"), cell: (row) => row.source },
-                  {
-                    key: "class",
-                    header: t("knowledge.col.class"),
-                    cell: (row) => {
-                      const cls = resolveDataClass(row.dataClass);
-                      return <Badge tone={CLASS_TONE[cls]}>{t(`data_class.${cls}`)}</Badge>;
-                    },
-                  },
-                  { key: "app", header: t("knowledge.col.app"), cell: (row) => row.appId ?? "—" },
-                  {
-                    key: "updated",
-                    header: t("knowledge.col.updated"),
-                    cell: (row) => `${row.updatedBy} · ${row.updatedAt}`,
-                  },
-                ]}
-                rows={visible}
-                rowKey={(row) => row.id}
-                emptyLabel={t("knowledge.empty")}
-              />
-            </QueryState>
-          )}
-        </Card>
-      </div>
-
-      {withheldTotal > 0 && (
-        <p className="tpl-keyline" style={{ marginTop: 12 }}>
-          {t("knowledge.withheld_note")}
-        </p>
-      )}
-    </>
-  );
-}
-
-/**
- * The "öğren" library — analysis guidance an operator uploads so the AI takes it
- * into account when preparing a NEW analysis. Upload a note, toggle whether the
- * AI learns from it, delete it. The enabled notes are injected into the
- * analyst's context ("dikkat edilecekler") when the next analysis runs.
- */
-function GuidanceLibrary(): ReactNode {
   const t = useT();
   const api = useApi();
   const toast = useToast();
@@ -163,43 +36,49 @@ function GuidanceLibrary(): ReactNode {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  /** "" = every agent; otherwise the target agent's id. */
+  const [target, setTarget] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   const notes = useQuery({
-    queryKey: ["guidance"],
+    queryKey: GUIDANCE_QUERY_KEY,
     queryFn: ({ signal }) => api.get<{ notes: readonly GuidanceNote[] }>("/studio/guidance", { signal }),
     retry: false,
   });
 
+  // The agents a note may target. Read fails soft: with no list the note is
+  // simply global, which is the default anyway.
+  const agents = useQuery({
+    queryKey: ["variants"],
+    enabled: canWrite,
+    retry: false,
+    queryFn: ({ signal }) => api.get<{ variants: readonly AgentVariant[] }>("/variants", { signal }),
+  });
+
   const invalidate = (): void => {
-    void queryClient.invalidateQueries({ queryKey: ["guidance"] });
+    void queryClient.invalidateQueries({ queryKey: GUIDANCE_QUERY_KEY });
   };
+  const variantId = target === "" ? null : target;
 
   const add = useMutation({
     mutationFn: (body: { title: string; content: string }) =>
-      api.post<{ note: GuidanceNote }>("/studio/guidance", { ...body, enabled: true }),
+      api.post<{ note: GuidanceNote }>("/studio/guidance", { ...body, enabled: true, variantId }),
     onSuccess: () => {
       setTitle("");
       setContent("");
       invalidate();
       toast.show("success", t("guidance.toast.added"));
     },
-    onError: () => toast.show("error", t("guidance.toast.error")),
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
-  /**
-   * File → note ("ajan eğitimi"). The file is read in the browser and posted as
-   * `{ fileName, contentBase64 }` JSON — same pipeline (auth, error codes) as
-   * every other write; the BFF extracts the text (docx included) and stores an
-   * enabled note. `invalidate()` then refreshes the list, exactly like a typed
-   * note.
-   */
   const upload = useMutation({
     mutationFn: async (file: File) => {
       const contentBase64 = await fileToBase64(file);
       return api.post<{ note: GuidanceNote }>("/studio/guidance/upload", {
         fileName: file.name,
         contentBase64,
+        variantId,
       });
     },
     onSuccess: () => {
@@ -217,149 +96,79 @@ function GuidanceLibrary(): ReactNode {
     upload.mutate(file);
   };
 
-  const toggle = useMutation({
-    mutationFn: (note: GuidanceNote) =>
-      api.put<{ note: GuidanceNote }>(`/studio/guidance/${note.id}`, { enabled: !note.enabled }),
-    onSuccess: () => invalidate(),
-    onError: () => toast.show("error", t("guidance.toast.error")),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => api.delete<void>(`/studio/guidance/${id}`),
-    onSuccess: () => {
-      invalidate();
-      toast.show("success", t("guidance.toast.removed"));
-    },
-    onError: () => toast.show("error", t("guidance.toast.error")),
-  });
-
   const canSubmit = title.trim() !== "" && content.trim() !== "";
   const list = notes.data?.notes ?? [];
 
   return (
     <Card title={t("guidance.title")} subtitle={t("guidance.subtitle")}>
-      <p className="screen-note" style={{ marginBottom: 12 }}>
-        {t("guidance.intro")}
-      </p>
-
-      {canWrite && (
-        <div className="scr-grid" style={{ gap: 8, marginBottom: 14 }}>
-          <Input
-            label={t("guidance.field.title")}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={t("guidance.field.title_ph")}
-          />
-          <label className="ui-field">
-            <span className="ui-field__label">{t("guidance.field.content")}</span>
-            <textarea
-              className="ui-input"
+      <div className="scr-stack">
+        {canWrite && (
+          <div className="scr-stack">
+            <div className="scr-grid scr-grid--2">
+              <Input
+                label={t("guidance.field.title")}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder={t("guidance.field.title_ph")}
+              />
+              <Select
+                label={t("guidance.field.agent")}
+                value={target}
+                onChange={(event) => setTarget(event.target.value)}
+                hint={t("guidance.field.agent_hint")}
+                options={[
+                  { value: "", label: t("guidance.scope.all") },
+                  ...(agents.data?.variants ?? []).map((agent) => ({
+                    value: agent.variantId,
+                    label: `${agent.platform} · ${agent.variantId}`,
+                  })),
+                ]}
+              />
+            </div>
+            <TextArea
+              label={t("guidance.field.content")}
               rows={4}
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(event) => setContent(event.target.value)}
               placeholder={t("guidance.field.content_ph")}
+              hint={t("guidance.field.content_hint")}
             />
-            <span className="ui-field__hint">{t("guidance.field.content_hint")}</span>
-          </label>
-          <div className="scr-row" style={{ gap: 8, alignItems: "center" }}>
-            <Button
-              variant="primary"
-              busy={add.isPending}
-              disabled={!canSubmit}
-              onClick={() => add.mutate({ title: title.trim(), content: content.trim() })}
-            >
-              {t("guidance.action.add")}
-            </Button>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".md,.txt,.docx"
-              style={{ display: "none" }}
-              onChange={(event) => pickFile(event.target.files)}
-              aria-hidden="true"
-              tabIndex={-1}
-            />
-            <Button busy={upload.isPending} onClick={() => fileInput.current?.click()}>
-              {t("guidance.action.upload")}
-            </Button>
-            <span className="screen-note">{t("guidance.upload_hint")}</span>
+            <div className="scr-row">
+              <Button
+                variant="primary"
+                busy={add.isPending}
+                disabled={!canSubmit}
+                onClick={() => add.mutate({ title: title.trim(), content: content.trim() })}
+              >
+                {t("guidance.action.add")}
+              </Button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".md,.txt,.docx"
+                hidden
+                onChange={(event) => pickFile(event.target.files)}
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+              <Button busy={upload.isPending} onClick={() => fileInput.current?.click()}>
+                {t("guidance.action.upload")}
+              </Button>
+              <span className="scr-hint">{t("guidance.upload_hint")}</span>
+            </div>
           </div>
-          <p className="screen-note" style={{ margin: 0 }}>
-            {t("guidance.upload_scope_note")}
-          </p>
-        </div>
-      )}
+        )}
 
-      <QueryState
-        isPending={notes.isPending}
-        error={notes.error}
-        isEmpty={list.length === 0}
-        emptyTitle={t("guidance.empty")}
-        onRetry={() => void notes.refetch()}
-      >
-        <Table
-          columns={[
-            {
-              key: "title",
-              header: t("guidance.col.title"),
-              cell: (n: GuidanceNote) => (
-                <>
-                  {n.title}
-                  {typeof n.variantId === "string" && n.variantId !== "" && (
-                    <>
-                      {" "}
-                      <Badge tone="blue">{t("guidance.scope.variant", { id: n.variantId })}</Badge>
-                    </>
-                  )}
-                </>
-              ),
-            },
-            {
-              key: "content",
-              header: t("guidance.col.content"),
-              cell: (n) => <span className="screen-note">{n.content}</span>,
-            },
-            {
-              key: "enabled",
-              header: t("guidance.col.learn"),
-              cell: (n) =>
-                canWrite ? (
-                  <button
-                    type="button"
-                    className="scr-linkbtn"
-                    onClick={() => toggle.mutate(n)}
-                    disabled={toggle.isPending}
-                  >
-                    <Badge tone={n.enabled ? "green" : "gray"}>
-                      {n.enabled ? t("guidance.learn.on") : t("guidance.learn.off")}
-                    </Badge>
-                  </button>
-                ) : (
-                  <Badge tone={n.enabled ? "green" : "gray"}>
-                    {n.enabled ? t("guidance.learn.on") : t("guidance.learn.off")}
-                  </Badge>
-                ),
-            },
-            ...(canWrite
-              ? [
-                  {
-                    key: "actions",
-                    header: "",
-                    cell: (n: GuidanceNote) => (
-                      <Button size="sm" onClick={() => remove.mutate(n.id)}>
-                        {t("guidance.action.remove")}
-                      </Button>
-                    ),
-                  },
-                ]
-              : []),
-          ]}
-          rows={list}
-          rowKey={(n) => n.id}
+        <GuidanceList
+          notes={list}
+          canWrite={canWrite}
+          showScope
+          isPending={notes.isPending}
+          error={notes.error}
           emptyLabel={t("guidance.empty")}
+          onRetry={() => void notes.refetch()}
         />
-      </QueryState>
+      </div>
     </Card>
   );
 }
-

@@ -261,6 +261,47 @@ export function updateSection<K extends keyof TemplateSection>(
   return { ...draft, sections };
 }
 
+/** Rename the template. The name is display text; it never touches section keys. */
+export function renameTemplate(draft: TemplateDraft, name: string): TemplateDraft {
+  return { ...draft, name };
+}
+
+/**
+ * A brand-new draft for an installation that has published nothing yet
+ * (`GET /template` answers `no_template`). Version 0 means "nothing published":
+ * the first publish becomes version 1 on the server, which is also what
+ * `(current?.version ?? 0) + 1` yields there.
+ */
+export function newTemplateDraft(name: string, firstSection: NewSectionDefaults): TemplateDraft {
+  return addSection({ name, version: 0, sections: [], selectedId: null }, firstSection);
+}
+
+/**
+ * Whether publishing `draft` would change anything against `published`.
+ *
+ * A publish always creates a NEW version, so a publish with no change is not
+ * harmless: it bumps the version every open run is compared against and writes
+ * an audit entry that says nothing. The button therefore stays disabled until
+ * the wire shape actually differs. Whitespace is trimmed the way the server
+ * trims it, so a stray space is not a "change" either.
+ */
+export function isDirty(draft: TemplateDraft, published: TemplateVersion): boolean {
+  if (draft.name.trim() !== published.name.trim()) return true;
+  if (draft.sections.length !== published.sections.length) return true;
+  return draft.sections.some((section, index) => {
+    const base = published.sections[index];
+    if (base === undefined) return true;
+    return (
+      section.title.trim() !== base.title.trim() ||
+      section.description.trim() !== base.description.trim() ||
+      section.aiInstruction.trim() !== base.aiInstruction.trim() ||
+      section.example.trim() !== base.example.trim() ||
+      section.required !== base.required ||
+      section.format !== base.format
+    );
+  });
+}
+
 /** True when every section key is distinct — the invariant the schema needs. */
 export function keysAreUnique(sections: readonly { key: string }[]): boolean {
   return new Set(sections.map((s) => s.key)).size === sections.length;

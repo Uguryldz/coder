@@ -1,13 +1,8 @@
 import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Card, Select } from "../../ui/index.ts";
-import type {
-  JiraConnection,
-  JiraProject,
-  OnboardingOptions,
-  ScmConnection,
-  ScmRepo,
-} from "../common/index.ts";
+import type { JiraConnection, JiraProject, OnboardingOptions, ScmConnection, ScmRepo } from "../common/index.ts";
+import { DATA_CLASSES, type DataClass } from "../setup/model.ts";
 
 export interface OnboardingDraft {
   /** The chosen Jira connection (cloud/dc) the project is listed from. */
@@ -17,14 +12,20 @@ export interface OnboardingDraft {
   readonly connectionId: string;
   /** "owner/repo" (GitHub) or "project/repo" (ADO) — the picked repository. */
   readonly repoFullName: string;
-  readonly adoRepo: string;
   readonly platform: string;
   readonly triggerMode: "opt_in" | "automatic";
   readonly gateSet: "risk_tiered" | "always_six";
   readonly mergeMode: "human" | "auto";
+  /**
+   * The binding's data class (M18). The BFF falls back to `gizli` when the
+   * field is ABSENT — and `gizli` on an install with no on-prem model silently
+   * stops analysis (SAM1-12). This form used to omit the field; it is now asked
+   * with its consequence, exactly as the wizard asks it.
+   */
+  readonly dataClass: DataClass;
 }
 
-/** The live SCM state step 1 renders: the connections, and the repos of the chosen one. */
+/** The live SCM state the form renders: the connections, and the repos of the chosen one. */
 export interface ScmPickerState {
   readonly connections: readonly ScmConnection[];
   readonly repos: readonly ScmRepo[];
@@ -33,7 +34,7 @@ export interface ScmPickerState {
   readonly reposError: string | null;
 }
 
-/** The live Jira state step 1 renders: the connections, and the projects of the chosen one. */
+/** The live Jira state the form renders: the connections, and the projects of the chosen one. */
 export interface JiraPickerState {
   readonly connections: readonly JiraConnection[];
   readonly projects: readonly JiraProject[];
@@ -51,56 +52,31 @@ export interface OnboardingStepsProps {
 }
 
 /**
- * The onboarding form — ONE page, not a stepper. It used to be four wizard panes
- * (one of them, `.maestro.yaml`, had no field at all; another had a single
- * select), which put two nested progress bars on the screen and made an
- * operator ask "which step am I on". Now all the choices live on one scrollable
- * form under three headings, and `.maestro.yaml` is a one-line note rather than
- * a whole step.
- *
- * Every choice is still a Select over a server-supplied or closed list — never a
- * free-text field. A mistyped repository name would fail late or match the wrong
- * repository, and a project's ticket routing is not something to spell by hand.
- * The defaults are the safe ones: opt-in triggering, risk-tiered gates, human
- * merge.
+ * The expert onboarding form — ONE page, not a stepper. Every choice is a
+ * Select over a server-supplied or closed list, never free text: a mistyped
+ * repository name would fail late or match the wrong repository. The defaults
+ * are the safe ones: risk-tiered gates, human merge, `dahili` data.
  */
-export function OnboardingSteps({
-  draft,
-  options,
-  scm,
-  jira,
-  onChange,
-}: OnboardingStepsProps): ReactNode {
+export function OnboardingSteps({ draft, options, scm, jira, onChange }: OnboardingStepsProps): ReactNode {
   const t = useT();
 
-  // Both the project and the repo Selects are fed LIVE from a chosen connection
-  // — never a hard-coded list. Each has three faces the operator must tell
-  // apart: no connection picked yet, loading, and a provider error.
+  // Each live Select has three faces to tell apart: no connection picked yet,
+  // loading, a provider error.
   const projectLabel =
     draft.jiraConnectionId === ""
       ? t("onboard.jira.pick_connection_first")
       : jira.projectsLoading
         ? t("onboard.jira.loading")
-        : jira.projectsError !== null
-          ? jira.projectsError
-          : jira.projects.length === 0
-            ? t("onboard.jira.no_projects")
-            : t("onboard.jira.choose");
-
+        : (jira.projectsError ?? (jira.projects.length === 0 ? t("onboard.jira.no_projects") : t("onboard.jira.choose")));
   const repoLabel =
     draft.connectionId === ""
       ? t("onboard.scm.pick_connection_first")
       : scm.reposLoading
         ? t("onboard.scm.loading")
-        : scm.reposError !== null
-          ? scm.reposError
-          : scm.repos.length === 0
-            ? t("onboard.scm.no_repos")
-            : t("onboard.field.choose");
+        : (scm.reposError ?? (scm.repos.length === 0 ? t("onboard.scm.no_repos") : t("onboard.field.choose")));
 
   return (
     <Card title={t("onboard.card.jira")} subtitle={t("onboard.card.jira_sub")}>
-      {/* 1 — Jira project + target repo */}
       <div className="scr-grid scr-grid--2">
         <Select
           label={t("onboard.field.jira_connection")}
@@ -108,7 +84,7 @@ export function OnboardingSteps({
           onChange={(event) => onChange({ jiraConnectionId: event.target.value, jiraProject: "" })}
           options={[
             { value: "", label: t("onboard.field.choose") },
-            ...jira.connections.map((c) => ({ value: c.id, label: jiraConnLabel(c, t) })),
+            ...jira.connections.map((c) => ({ value: c.id, label: `${c.displayName} · ${t(`onboard.jira.kind.${c.kind}`)}` })),
           ]}
           hint={t("onboard.field.jira_connection_hint")}
         />
@@ -116,26 +92,21 @@ export function OnboardingSteps({
           label={t("onboard.field.jira_project")}
           value={draft.jiraProject}
           onChange={(event) => onChange({ jiraProject: event.target.value })}
-          disabled={
-            draft.jiraConnectionId === "" || jira.projectsLoading || jira.projects.length === 0
-          }
+          disabled={draft.jiraConnectionId === "" || jira.projectsLoading || jira.projects.length === 0}
           options={[
             { value: "", label: projectLabel },
-            ...jira.projects.map((p: JiraProject) => ({
-              value: p.key,
-              label: `${p.key} · ${p.name}`,
-            })),
+            ...jira.projects.map((p: JiraProject) => ({ value: p.key, label: `${p.key} · ${p.name}` })),
           ]}
         />
       </div>
-      <div className="scr-grid scr-grid--2" style={{ marginTop: 12 }}>
+      <div className="scr-grid scr-grid--2 scr-mt-2">
         <Select
           label={t("onboard.field.scm_connection")}
           value={draft.connectionId}
           onChange={(event) => onChange({ connectionId: event.target.value, repoFullName: "" })}
           options={[
             { value: "", label: t("onboard.field.choose") },
-            ...scm.connections.map((c) => ({ value: c.id, label: connLabel(c, t) })),
+            ...scm.connections.map((c) => ({ value: c.id, label: `${c.displayName} · ${t(`onboard.scm.kind.${c.kind}`)}` })),
           ]}
           hint={t("onboard.field.scm_connection_hint")}
         />
@@ -150,46 +121,32 @@ export function OnboardingSteps({
           ]}
         />
       </div>
-      <div className="scr-note" style={{ marginTop: 12 }}>
-        {t("onboard.note.no_silent_routing")}
+      <p className="scr-hint">{t("onboard.note.no_silent_routing")}</p>
+
+      {/* The build profile — a readable name per profile, not the raw slug. */}
+      <h4 className="onb-group">{t("onboard.card.repo")}</h4>
+      <div className="scr-grid scr-grid--2">
+        <Select
+          label={t("onboard.field.platform")}
+          value={draft.platform}
+          onChange={(event) => onChange({ platform: event.target.value })}
+          options={[
+            { value: "", label: t("onboard.field.choose") },
+            ...options.platforms.map((value) => ({ value, label: t(`platform.${value}`) })),
+          ]}
+          hint={t("onboard.field.platform_hint")}
+        />
       </div>
 
-      {/* 2 — build environment (one select, no longer its own step) */}
-      <h4 className="onb-group">{t("onboard.card.repo")}</h4>
-      <Select
-        label={t("onboard.field.platform")}
-        value={draft.platform}
-        onChange={(event) => onChange({ platform: event.target.value })}
-        // A readable name per profile ("Node.js / web"), not the raw slug.
-        options={withPlaceholder(options.platforms, t("onboard.field.choose"), (value) =>
-          t(`platform.${value}`),
-        )}
-        hint={t("onboard.field.platform_hint")}
-      />
-
-      {/* 3 — gates + trigger */}
+      {/* Gates, merge and the data class. The trigger mode is NOT here (0023):
+          a trigger is defined only on a listening rule, and the constant the
+          wire still needs travels from the draft's default. */}
       <h4 className="onb-group">{t("onboard.card.gates")}</h4>
-      <div className="scr-grid scr-grid--2">
-        {/* TETİKLEME MODU BURADAN KALDIRILDI (0023).
-            Bu seçici projeye "opt-in (etiket veya komut)" ya da "otomatik (her
-            ticket)" diyordu, ve intake gerçekten ona bakıyordu: opt-in bir
-            projede etiketi olmayan ticket, dinleme kuralları HİÇ okunmadan
-            reddediliyordu. Yani tetikleme iki ayrı yerde tanımlıydı ve ikisi
-            birbirini bilmiyordu — tarama yolu bu kapıyı atlıyor, webhook yolu
-            atlamıyordu, dolayısıyla aynı ticket girdiği kapıya göre iki farklı
-            cevap alıyordu.
-            Artık tetikleme YALNIZCA dinleme kuralında tanımlıdır (statü ·
-            atanma · etiket · iş tipi). Seçici kaldırıldı çünkü hâlâ dursaydı
-            hiçbir şeyi değiştirmeyen bir kutu olurdu — ve bir ayarın sessizce
-            etkisiz olması, hiç olmamasından beterdir. Taslak `triggerMode`
-            alanını taşımaya devam ediyor ve bağlama kaydına yazılıyor: donuk
-            sözleşmedeki (`JiraBinding.trigger`) kolon NOT NULL. */}
+      <div className="scr-grid scr-grid--3">
         <Select
           label={t("onboard.field.gate_set")}
           value={draft.gateSet}
-          onChange={(event) =>
-            onChange({ gateSet: event.target.value as OnboardingDraft["gateSet"] })
-          }
+          onChange={(event) => onChange({ gateSet: event.target.value as OnboardingDraft["gateSet"] })}
           options={[
             { value: "risk_tiered", label: t("onboard.gate_set.risk_tiered") },
             { value: "always_six", label: t("onboard.gate_set.always_six") },
@@ -198,48 +155,27 @@ export function OnboardingSteps({
         <Select
           label={t("onboard.field.merge_mode")}
           value={draft.mergeMode}
-          onChange={(event) =>
-            onChange({ mergeMode: event.target.value as OnboardingDraft["mergeMode"] })
-          }
+          onChange={(event) => onChange({ mergeMode: event.target.value as OnboardingDraft["mergeMode"] })}
           options={[
             { value: "human", label: t("onboard.merge.human") },
             { value: "auto", label: t("onboard.merge.auto") },
           ]}
           hint={t("onboard.field.merge_hint")}
         />
+        <Select
+          label={t("setup.dataclass.heading")}
+          value={draft.dataClass}
+          onChange={(event) => onChange({ dataClass: event.target.value as DataClass })}
+          options={DATA_CLASSES.map((cls) => ({ value: cls, label: t(`setup.dataclass.name.${cls}`) }))}
+          hint={t(`setup.dataclass.meta.${draft.dataClass}`)}
+        />
       </div>
+      {draft.dataClass === "gizli" && (
+        <div className="scr-note scr-note--warn scr-mt-2">{t("setup.dataclass.gizli_warning")}</div>
+      )}
 
-      {/* `.maestro.yaml` was a whole empty step; now it is the one-line fact it
-          always was — the file is proposed as a PR after approval. */}
-      <div className="scr-note" style={{ marginTop: 12 }}>
-        {t("onboard.yaml.oneliner")}
-      </div>
+      {/* `.maestro.yaml` is the one-line fact it always was — proposed as a PR after approval. */}
+      <p className="scr-hint">{t("onboard.yaml.oneliner")}</p>
     </Card>
   );
-}
-
-/**
- * An unselected Select must not silently mean "the first option". The empty
- * placeholder makes "nothing chosen" a state the submit guard can see, rather
- * than a project binding nobody picked.
- */
-function withPlaceholder(
-  values: readonly string[],
-  placeholder: string,
-  labelOf: (value: string) => string = (value) => value,
-): readonly { value: string; label: string }[] {
-  return [
-    { value: "", label: placeholder },
-    ...values.map((value) => ({ value, label: labelOf(value) })),
-  ];
-}
-
-/** A connection's label: its display name plus the provider it is. */
-function connLabel(c: ScmConnection, t: (key: string) => string): string {
-  return `${c.displayName} · ${t(`onboard.scm.kind.${c.kind}`)}`;
-}
-
-/** A Jira connection's label: its display name plus the Jira flavour it is. */
-function jiraConnLabel(c: JiraConnection, t: (key: string) => string): string {
-  return `${c.displayName} · ${t(`onboard.jira.kind.${c.kind}`)}`;
 }

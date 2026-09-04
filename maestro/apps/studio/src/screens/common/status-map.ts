@@ -69,78 +69,136 @@ export const EMPTY_GATE_STATUS_DRAFT: GateStatusDraft = {
 };
 
 /**
- * KAPI NOKTALARI, BEŞ ALANLIK HATTAN TÜRETİLMİŞ — panelin sunucuyla aynı
- * cevabı vermesi için.
+ * ── KAPI AYNASI ──────────────────────────────────────────────────────────
  *
- * `apps/bff/src/gate-status-reentry.ts`'teki `gateStatusesOf`in ekran tarafı.
- * İki kopya olması hoş değil ama alternatifi daha kötüydü: BFF'in modülü
- * `@maestro/adapter-jira` ve Temporal bağımlılıkları taşıyor, ve onu tarayıcı
- * paketine sokmak birkaç megabaytlık bir sunucu ağacını panele taşımak
- * olurdu. Ayrışmayı testler tutuyor (`screens-listening.test.tsx` ile
- * `gate-status-reentry.test.ts` aynı örnekleri sınıyor).
+ * `apps/bff/src/gate-status-reentry.ts`'teki `gateStatusesOf`in ekran tarafı,
+ * ve GİRDİSİ SUNUCUNUNKİYLE AYNI: telde gidecek `StatusMap | null`.
+ *
+ * Önceki ayna (`gatePointsOf(draft, gateDraft)`) beş alanlık TASLAĞA
+ * bakıyordu ve bu yüzden yalan söylüyordu: anahtar kapalıyken (`statusOn =
+ * false`) tel `null` taşır ve sunucu hiçbir kenar okumaz, ama ayna "Onay:
+ * Development" yazıyordu; düzeltme akışında `onRejected` tele hiç yazılmaz
+ * ama ayna geri kenarı oradan türetiyordu. Operatörün gördüğü cümle ile
+ * sunucunun yapacağı şey ayrışıyordu — ve ayrışma her zaman aynanın lehine,
+ * yani "çalışıyor" yönünde olduğu için sahada fark edilmiyordu.
+ *
+ * Çözüm aynayı taslaktan değil, TELDEN türetmek: önce `buildStatusMap(...)`
+ * ile gidecek gövde kurulur (anahtar, akış elemesi, boş alan atlama — hepsi
+ * orada), sonra bu fonksiyon o gövdeyi sunucunun okuyacağı gibi okur. İki
+ * ekran (sihirbaz ve dinleme kuralları) da böyle çağırır; aynanın taslağa
+ * bakan bir sürümü artık yok.
  *
  * Geri düşüş kuralı sunucununkiyle BİREBİR:
  *   onay        = gateApproveStatus ?? onDone
  *   geri gönder = gateReturnStatus  ?? onRejected ?? onStart
+ * ve tek yasak da aynı: kenar `onReview` ile aynıysa DÜŞER (`conflicts`e
+ * yazılır) — kapı orada açılıyor, oradan karar okunamaz.
+ *
+ * İki kopya olması hoş değil ama alternatifi daha kötüydü: BFF'in modülü
+ * `@maestro/adapter-jira` ve Temporal bağımlılıkları taşıyor. Ayrışmayı
+ * testler tutuyor.
  */
-export function gatePointsOf(
-  draft: StatusDraft,
-  gateDraft: GateStatusDraft,
-): { approve: string; approveFrom: StatusPoint | GateStatusPoint | null; return: string; returnFrom: StatusPoint | GateStatusPoint | null } {
-  const pick = (
-    candidates: readonly (readonly [StatusPoint | GateStatusPoint, string])[],
-  ): { value: string; from: StatusPoint | GateStatusPoint | null } => {
-    const hit = candidates.find(([, value]) => value.trim() !== "");
-    return hit === undefined ? { value: "", from: null } : { value: hit[1].trim(), from: hit[0] };
+
+/** Kenarın hangi alandan türediği — sunucunun rapor alanıyla aynı adlar. */
+export type GateSource = StatusPoint | GateStatusPoint;
+
+export interface GateMirror {
+  /** Onay kenarı; `null` = bu kural onayı statüyle kabul etmiyor. */
+  readonly approve: string | null;
+  readonly approveFrom: GateSource | null;
+  /** Geri gönderme kenarı; `null` = bu kural geri göndermeyi statüyle kabul etmiyor. */
+  readonly return: string | null;
+  readonly returnFrom: GateSource | null;
+  /**
+   * `onReview` ile çakıştığı için sunucunun DÜŞÜRECEĞİ kenarlar. Aynayı
+   * çizen ekran bunu bir uyarı olarak basar; kenarın kendisi zaten `null`.
+   */
+  readonly conflicts: readonly { readonly point: GateSource; readonly value: string }[];
+}
+
+const I_FOLD: Readonly<Record<string, string>> = { İ: "i", I: "i", ı: "i", i: "i" };
+
+/**
+ * `@maestro/adapter-jira`'nın `foldStatusName`'inin kopyası — sunucu çakışmayı
+ * bununla ölçüyor, ayna da aynısıyla ölçmeli. Düz `toLowerCase()` Türkçe
+ * "İ"yi "i̇"ye çevirir ve "İNCELEMEDE" ile "İncelemede" asla eşleşmez.
+ */
+function foldStatus(value: string): string {
+  return value
+    .normalize("NFC")
+    .replace(/[İIıi]/gu, (c) => I_FOLD[c] ?? c)
+    .toLowerCase()
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+export function gateMirror(map: StatusMap | null | undefined): GateMirror {
+  if (map == null) return { approve: null, approveFrom: null, return: null, returnFrom: null, conflicts: [] };
+  const conflicts: { point: GateSource; value: string }[] = [];
+  const review = map.onReview === undefined ? "" : foldStatus(map.onReview);
+
+  const vet = (value: string | undefined, from: GateSource): { value: string | null; from: GateSource | null } => {
+    if (value === undefined || value.trim() === "") return { value: null, from: null };
+    const trimmed = value.trim();
+    if (review !== "" && foldStatus(trimmed) === review) {
+      conflicts.push({ point: from, value: trimmed });
+      return { value: null, from };
+    }
+    return { value: trimmed, from };
   };
-  const approve = pick([
-    ["gateApproveStatus", gateDraft.gateApproveStatus],
-    ["onDone", draft.onDone],
-  ]);
-  const returned = pick([
-    ["gateReturnStatus", gateDraft.gateReturnStatus],
-    ["onRejected", draft.onRejected],
-    ["onStart", draft.onStart],
-  ]);
+
+  // `??` sunucudakiyle aynı: alan VARSA o kazanır, boş bile olsa geri düşülmez.
+  const approve = vet(
+    map.gateApproveStatus ?? map.onDone,
+    map.gateApproveStatus === undefined ? "onDone" : "gateApproveStatus",
+  );
+  const returned = vet(
+    map.gateReturnStatus ?? map.onRejected ?? map.onStart,
+    map.gateReturnStatus !== undefined
+      ? "gateReturnStatus"
+      : map.onRejected !== undefined
+        ? "onRejected"
+        : "onStart",
+  );
   return {
     approve: approve.value,
-    approveFrom: approve.from,
+    approveFrom: approve.value === null ? null : approve.from,
     return: returned.value,
-    returnFrom: returned.from,
+    returnFrom: returned.value === null ? null : returned.from,
+    conflicts,
   };
 }
 
 /**
- * KAPI NOKTASI `onReview` İLE ÇAKIŞIYOR MU — kalan TEK yasak.
- *
- * ── Bu fonksiyon eskiden ÇOK DAHA GENİŞTİ, ve o yüzden yanlıştı ───────────
- * Önceki hâli kapı alanlarının BEŞ yazma noktasından herhangi biriyle
- * çakışmasını uyarıyordu. Operatörün gerçek akışında — `todo → analiz →
- * analysisapproval → development` — aynı statünün iki rol taşıması ZORUNLU:
- * `development` hem `onDone` hem "onayla", `analiz` hem `onStart` hem "geri
- * gönder". Yani uyarı, operatörün DOĞRU yapılandırmasına "çakışık" diyordu ve
- * sunucu o alanları düşürüyordu.
- *
- * Kalan tek yasak `onReview`: kapı ORADA açılıyor, dolayısıyla oradan bir
- * karar okunamaz — ticket'ın kapının beklediği yerde olması bir karar değil,
- * kapının kendi hâlidir. Gerekçenin tamamı sunucu modülünde ölçümüyle birlikte.
+ * @deprecated TASLAĞA bakan eski ayna — `statusOn` ve akış elemesini görmediği
+ * için tel ile uyuşmuyordu. `gateMirror(buildStatusMap(...))` kullanın. Yalnız
+ * `Listening.tsx` bu turda geçiş yapana kadar duruyor; davranışı "anahtar açık,
+ * akış analiz" varsayımıyla eski aynanınkidir.
+ */
+export function gatePointsOf(
+  draft: StatusDraft,
+  gateDraft: GateStatusDraft,
+): { approve: string; approveFrom: GateSource | null; return: string; returnFrom: GateSource | null } {
+  const mirror = gateMirror(buildStatusMap(true, draft, false, "analiz", gateDraft));
+  return {
+    approve: mirror.approve ?? "",
+    approveFrom: mirror.approveFrom,
+    return: mirror.return ?? "",
+    returnFrom: mirror.returnFrom,
+  };
+}
+
+/**
+ * @deprecated `gateMirror(...).conflicts` kullanın — aynı bilgi, tel üzerinden.
  */
 export function gateStatusConflicts(
   draft: StatusDraft,
   gateDraft: GateStatusDraft,
-): readonly { point: GateStatusPoint | StatusPoint; clashesWith: StatusPoint }[] {
-  const fold = (value: string): string => value.trim().toLowerCase();
-  const review = fold(draft.onReview);
-  if (review === "") return [];
-  const points = gatePointsOf(draft, gateDraft);
-  const out: { point: GateStatusPoint | StatusPoint; clashesWith: StatusPoint }[] = [];
-  if (points.approveFrom !== null && fold(points.approve) === review) {
-    out.push({ point: points.approveFrom, clashesWith: "onReview" });
-  }
-  if (points.returnFrom !== null && fold(points.return) === review) {
-    out.push({ point: points.returnFrom, clashesWith: "onReview" });
-  }
-  return out;
+): readonly { point: GateSource; clashesWith: StatusPoint }[] {
+  return gateMirror(buildStatusMap(true, draft, false, "analiz", gateDraft)).conflicts.map((c) => ({
+    point: c.point,
+    clashesWith: "onReview" as const,
+  }));
 }
 
 /**

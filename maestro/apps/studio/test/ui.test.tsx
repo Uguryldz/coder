@@ -1,21 +1,30 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
 import {
   Badge,
   Button,
+  ButtonLink,
   Card,
   EmptyState,
+  FieldGroup,
   Input,
+  ListRow,
   Modal,
+  Section,
   Select,
   Skeleton,
   TabPanel,
   Table,
   Tabs,
+  TextArea,
+  ToastProvider,
   riskTone,
   runStatusTone,
+  useToast,
 } from "../src/ui/index.ts";
 
 describe("Button", () => {
@@ -43,6 +52,30 @@ describe("Button", () => {
   it("defaults to type=button so it never submits a form by accident", () => {
     render(<Button>x</Button>);
     expect(screen.getByRole("button")).toHaveAttribute("type", "button");
+  });
+
+  it("offers ghost and link variants that are still real buttons", () => {
+    render(
+      <>
+        <Button variant="ghost">sessiz</Button>
+        <Button variant="link">bağlantı gibi</Button>
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "sessiz" })).toHaveClass("ui-btn--ghost");
+    expect(screen.getByRole("button", { name: "bağlantı gibi" })).toHaveClass("ui-btn--link");
+  });
+
+  it("ButtonLink is an anchor dressed as a button", () => {
+    render(
+      <MemoryRouter>
+        <ButtonLink to="/setup" variant="primary" size="sm">
+          Sihirbazı aç
+        </ButtonLink>
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole("link", { name: "Sihirbazı aç" });
+    expect(link).toHaveAttribute("href", "/setup");
+    expect(link).toHaveClass("ui-btn", "ui-btn--primary", "ui-btn--sm");
   });
 });
 
@@ -76,6 +109,33 @@ describe("Select", () => {
     );
     await userEvent.selectOptions(screen.getByLabelText("Dil"), "en");
     expect(onChange).toHaveBeenCalled();
+  });
+});
+
+describe("Select placeholder", () => {
+  it("renders a 'choose' row with an empty value so nothing is pre-picked", () => {
+    render(
+      <Select
+        label="Bağlantı"
+        placeholder="Seçin…"
+        value=""
+        onChange={() => undefined}
+        options={[{ value: "a", label: "A" }]}
+      />,
+    );
+    const select = screen.getByLabelText("Bağlantı") as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(screen.getByRole("option", { name: "Seçin…" })).toHaveValue("");
+  });
+});
+
+describe("TextArea", () => {
+  it("wires label, hint and error like Input", () => {
+    render(<TextArea label="Gerekçe" error="Zorunlu alan" />);
+    const area = screen.getByLabelText("Gerekçe");
+    expect(area.tagName).toBe("TEXTAREA");
+    expect(area).toHaveAttribute("aria-invalid", "true");
+    expect(area).toHaveAccessibleDescription("Zorunlu alan");
   });
 });
 
@@ -121,7 +181,10 @@ describe("Table", () => {
         onRowClick={onRowClick}
       />,
     );
-    const row = screen.getAllByRole("button")[0];
+    // The row is a ROW (focusable), not a button: a button may not contain the
+    // cells' own buttons and links.
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    const row = screen.getAllByRole("row")[1];
     row?.focus();
     await userEvent.keyboard("{Enter}");
     expect(onRowClick).toHaveBeenCalledWith({ k: "UGURPAY-1" });
@@ -176,6 +239,81 @@ describe("Tabs", () => {
     expect(screen.getByText("kanıt içeriği")).toBeInTheDocument();
     expect(screen.queryByText("analiz içeriği")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Kanıt" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("moves between tabs with the arrow keys and keeps one tab stop", async () => {
+    render(<Harness />);
+    const first = screen.getByRole("tab", { name: "Analiz" });
+    const second = screen.getByRole("tab", { name: "Kanıt" });
+    expect(first).toHaveAttribute("tabindex", "0");
+    expect(second).toHaveAttribute("tabindex", "-1");
+    first.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(second).toHaveAttribute("aria-selected", "true");
+    expect(second).toHaveFocus();
+    await userEvent.keyboard("{ArrowRight}");
+    // Wraps around.
+    expect(first).toHaveAttribute("aria-selected", "true");
+    await userEvent.keyboard("{End}");
+    expect(second).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+describe("Toast", () => {
+  function Trigger(): ReactNode {
+    const toast = useToast();
+    return <Button onClick={() => toast.show("error", "Kaydedilemedi")}>göster</Button>;
+  }
+
+  it("gives the close affordance an accessible name", async () => {
+    render(
+      <ToastProvider>
+        <Trigger />
+      </ToastProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "göster" }));
+    expect(screen.getByText("Kaydedilemedi")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Kapat" }));
+    expect(screen.queryByText("Kaydedilemedi")).not.toBeInTheDocument();
+  });
+});
+
+describe("Section / ListRow / FieldGroup", () => {
+  it("renders a section heading without a card box", () => {
+    render(<Section title="Bağlantılar">içerik</Section>);
+    expect(screen.getByRole("heading", { name: "Bağlantılar" })).toBeInTheDocument();
+    expect(screen.getByText("içerik").closest(".ui-card")).toBeNull();
+  });
+
+  it("ListRow: a click on an action inside the row is the action's, not the row's", async () => {
+    const onRow = vi.fn();
+    const onAction = vi.fn();
+    render(
+      <ListRow
+        status={<Badge tone="green">açık</Badge>}
+        title="UgurBank Jira"
+        kind="Jira Cloud"
+        meta={<span>son test 2 dk önce</span>}
+        actions={<Button size="sm" onClick={onAction}>Test et</Button>}
+        onClick={onRow}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Test et" }));
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(onRow).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByText("UgurBank Jira"));
+    expect(onRow).toHaveBeenCalledOnce();
+  });
+
+  it("FieldGroup is a real fieldset with a legend", () => {
+    render(
+      <FieldGroup legend="Kimlik doğrulama" hint="Jira'nın kabul ettiği yöntem" columns={2}>
+        <Input label="Kullanıcı" />
+        <Input label="Token" />
+      </FieldGroup>,
+    );
+    expect(screen.getByRole("group", { name: "Kimlik doğrulama" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Kullanıcı")).toBeInTheDocument();
   });
 });
 

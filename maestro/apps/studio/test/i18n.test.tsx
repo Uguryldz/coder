@@ -45,7 +45,7 @@ describe("i18n catalog", () => {
   });
 
   it("interpolates params", () => {
-    expect(translate("en", "screen.placeholder.description", { screen: "dash" })).toContain("dash");
+    expect(translate("en", "value.unrecognised", { value: "dash" })).toContain("dash");
   });
 });
 

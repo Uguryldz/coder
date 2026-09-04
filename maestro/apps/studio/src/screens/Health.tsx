@@ -6,7 +6,7 @@ import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Button, Card, Table, useToast } from "../ui/index.ts";
+import { Badge, Button, Section, Table, useToast } from "../ui/index.ts";
 import type { BadgeTone, Column } from "../ui/index.ts";
 import type {
   ConfigFinding,
@@ -15,28 +15,30 @@ import type {
   HealthResponse,
   ServiceHealth,
   ServiceState,
+  SettingsView,
 } from "./common/index.ts";
 import { QueryState } from "./common/index.ts";
 import { useLabel, usePhrase } from "./common/label.ts";
+import {
+  InfrastructureSection,
+  SETTINGS_ID_FOR_SERVICE,
+  SETTINGS_QUERY_KEY,
+} from "./health/InfrastructureSection.tsx";
+import { KillSwitchSection } from "./health/KillSwitchSection.tsx";
 import { ageLabel } from "./shared/format.ts";
-import "./common/screens.css";
 
 const STATE_TONE: Readonly<Record<ServiceState, BadgeTone>> = {
   healthy: "green",
   degraded: "amber",
   down: "red",
-  // Grey on purpose: "nobody set this up" is a to-do, not an alarm, and an
-  // amber badge here would train operators to ignore amber.
+  // Grey on purpose: "nobody set this up" is a to-do, not an alarm.
   not_configured: "gray",
 };
 
 /**
- * Yapılandırma satırlarının rozet rengi.
- *
- * `bilgi` GRİ, ve bu servis tablosundaki `not_configured`ın gri olmasıyla aynı
- * gerekçe: "kapalı ağda webhook yok" bir alarm değil bir gerçektir, ve onu
- * kehribara boyamak operatöre kehribarı yok saymayı öğretir — gerçek bir bulgu
- * kaçtığında bedelini ödeyen tam olarak bu alışkanlıktır.
+ * Yapılandırma satırlarının rozet rengi. `bilgi` GRİ: "kapalı ağda webhook
+ * yok" bir alarm değil bir gerçektir, ve onu kehribara boyamak operatöre
+ * kehribarı yok saymayı öğretir.
  */
 const CONFIG_TONE: Readonly<Record<ConfigSeverity, BadgeTone>> = {
   sorun: "red",
@@ -46,18 +48,13 @@ const CONFIG_TONE: Readonly<Record<ConfigSeverity, BadgeTone>> = {
 };
 
 /**
- * Tanı raporunu kim indirebilir. Ekrandaki TABLO `OPS_ROLES` ile açık
- * (admin + tech-lead), ama raporun kendisi admin'e: tek dosyada toplanmış
- * hâlin ağırlığı parçaların toplamından fazla. Sunucudaki kapı asıl kapıdır
- * (`studio-ops.ts`); buradaki, olmayan bir düğmeyi göstermemek için.
+ * Tanı raporunu kim indirebilir. Tablo admin + tech-lead'e açık; raporun
+ * kendisi admin'e — tek dosyada toplanmış hâlin ağırlığı parçaların
+ * toplamından fazla. Sunucudaki kapı asıl kapıdır (`studio-ops.ts`).
  */
 const TANI_ROLES = ["admin"] as const;
 
-/**
- * `maestro-tani-YYYYAAGG-SSDD.html` — sunucunun `content-disposition` ile
- * söylediği biçimin aynısı. `blob:` bağlantısında tarayıcı o başlığı okumuyor,
- * bu yüzden burada da yazılı; ikisi ayrışırsa yalnız ad değişir.
- */
+/** `maestro-tani-YYYYAAGG-SSDD.html` — sunucunun `content-disposition` biçiminin aynısı. */
 function taniFileName(now: Date): string {
   const iki = (sayi: number): string => String(sayi).padStart(2, "0");
   const gun = `${String(now.getFullYear())}${iki(now.getMonth() + 1)}${iki(now.getDate())}`;
@@ -65,42 +62,28 @@ function taniFileName(now: Date): string {
 }
 
 /**
- * Rows the operator can fix from the settings screen — the managed
- * connections (LLM / Jira / SCM). Anything else on this table is
- * infrastructure the settings screen cannot repair, so pointing there would
- * be a false trail.
+ * Rows the operator can fix from Bağlantılar — the managed connections. Their
+ * `version` is the KIND that answered (`jira_cloud`, `openai_compat`), not a
+ * version string, and is rendered as the kind's name.
  */
 const CONNECTION_SERVICES: ReadonlySet<string> = new Set(["llm", "jira", "scm"]);
 
 /**
- * Platform dependency health (M6) — the detail behind the unauthenticated
- * `/readyz` probe.
+ * Sistem sağlığı — four sections, top to bottom in the order an operator
+ * needs them during an incident:
  *
- * The overall state comes from the BFF rather than being derived here: it
- * decides that `down` beats `degraded` beats `healthy`, and a client that
- * recomputed the same rule would eventually disagree with the alert that pages
- * somebody.
+ *  1. Acil durdurma — the kill switch, one line, operated from here only.
+ *  2. Yapılandırma — HOW this install is set up (driver, listening, models),
+ *     with the downloadable diagnosis report. No findings is a clean install,
+ *     not a failed read — the table says so and the download button stays.
+ *  3. Servisler — liveness from `/studio/health`, with the engine's and the
+ *     database's addresses joined in from `/settings`.
+ *  4. Altyapı — the remaining `deploy/.env` wiring (identity, SIEM, proxy…)
+ *     and the notify channels. Rows the services table already probes are
+ *     not repeated.
  *
- * The backup and restore-drill panel the mock draws is NOT rendered as data.
- * `/studio/health` reports service liveness only, and a "restore drill: never
- * run" line invented client-side would be the most dangerous kind of wrong: it
- * would look like a finding the platform is tracking (M66) when nothing is.
- *
- * ── YAPILANDIRMA BÖLÜMÜ ─────────────────────────────────────────────────────
- * Servis tablosunun ÜSTÜNDE ikinci bir bölüm: bu kurulum NASIL kurulmuş.
- * Operatörün sorusu buydu — "DC ise DC göreyim orada" — ve o cevap hiçbir
- * ekranda yoktu: sürücü kimliği yalnız boot log'unda yazıyordu, yani sunucuda
- * kabuğu olmayan bir banka operatörü için hiçbir yerde.
- *
- * Neden ÜSTTE: canlılık tablosu bir kesinti anında okunur, yapılandırma tablosu
- * ise kurulumdan sonra ve "neden hiçbir şey olmuyor?" anında — ki bu ikincisi
- * bu üründe çok daha sık ve çok daha sessiz bir arıza sınıfı. Sıralama da
- * sunucudan geliyor (`sorun` en üstte), burada yeniden hesaplanmıyor: iki yerde
- * iki sıralama kuralı, ekranın kırmızıyı gömdüğü günü davet ederdi.
- *
- * Bu bölümün başarısızlığı servis tablosunu DÜŞÜRMEZ: iki ayrı sorgu, iki ayrı
- * `QueryState`. Bir teşhis eklentisinin, teşhis etmeye geldiği ekranı
- * karartması olacak en kötü şeydir.
+ * Every section has its own query and its own `QueryState`: a failing
+ * diagnosis must never take the liveness table down with it.
  */
 export function HealthScreen(): ReactNode {
   const api = useApi();
@@ -112,17 +95,8 @@ export function HealthScreen(): ReactNode {
   const [downloading, setDownloading] = useState(false);
 
   /**
-   * Tanı raporunu indir — sunucuya SSH'lemeden, docker'a girmeden.
-   *
-   * `getBlob` üzerinden, düz bir `<a href>` ile değil: oturum jetonu tarayıcının
-   * kendiliğinden eklemeyeceği bir başlıkta taşınıyor. Denetim CSV'sinin
-   * (`Audit.tsx`) izlediği yolun aynısı.
-   *
-   * Dosya adını SUNUCU söylüyor (`content-disposition`), ama tarayıcı bir
-   * `blob:` bağlantısında onu okumuyor — bu yüzden `download` niteliğine burada
-   * da aynı biçim yazılıyor. İkisi ayrışırsa dosyanın adı değişir, içeriği
-   * değil; yine de aynı biçimde tutuluyor ki operatör iki yoldan inen raporu
-   * yan yana koyabilsin.
+   * Tanı raporunu indir — sunucuya SSH'lemeden. `getBlob` üzerinden: oturum
+   * jetonu tarayıcının kendiliğinden eklemeyeceği bir başlıkta taşınıyor.
    */
   const downloadTani = async (): Promise<void> => {
     setDownloading(true);
@@ -147,28 +121,33 @@ export function HealthScreen(): ReactNode {
     refetchInterval: 60_000,
   });
 
-  /**
-   * Yapılandırma teşhisi. Ayrı bir sorgu ve ÇOK daha seyrek yenileniyor
-   * (5 dk): bu satırların cevabı bir ayar değişmedikçe değişmez, ve varyant
-   * denetimi ile kural okuması veritabanına gidiyor — 60 saniyede bir
-   * tekrarlamak, hiç değişmeyen bir cevap için ödenen bir bedel olurdu.
-   */
+  /** Yapılandırma teşhisi: ayrı sorgu, seyrek (5 dk) — bir ayar değişmedikçe cevabı değişmez. */
   const config = useQuery({
     queryKey: ["studio-config-health"],
     queryFn: ({ signal }) => api.get<ConfigHealthResponse>("/studio/config-health", { signal }),
     refetchInterval: 300_000,
   });
 
-  const findings = config.data?.findings ?? [];
+  /** The same fetch the infrastructure section makes — deduplicated by key. */
+  const settings = useQuery({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: ({ signal }) => api.get<SettingsView>("/settings", { signal }),
+  });
 
+  const findings = config.data?.findings ?? [];
   const services = health.data?.services ?? [];
+  const endpointOf = (service: string): string | null => {
+    const id = SETTINGS_ID_FOR_SERVICE[service];
+    if (id === undefined) return null;
+    const row = settings.data?.connections.find((candidate) => candidate.id === id);
+    return row === undefined || row.endpoint === "" ? null : row.endpoint;
+  };
 
   const columns: readonly Column<ServiceHealth>[] = [
     {
       key: "service",
       header: t("health.col.service"),
-      // The id is the fallback: a component the catalog has not learned yet
-      // must still appear, and it is the one worth noticing.
+      // The id is the fallback: an uncatalogued component must still appear.
       cell: (row) => <b>{label(`health.service.${row.service}`, row.service)}</b>,
     },
     {
@@ -183,7 +162,17 @@ export function HealthScreen(): ReactNode {
     {
       key: "version",
       header: t("health.col.version"),
-      cell: (row) => <span className="scr-mono scr-mini">{row.version}</span>,
+      cell: (row) => {
+        const endpoint = endpointOf(row.service);
+        return (
+          <span className="scr-mono scr-mini">
+            {CONNECTION_SERVICES.has(row.service)
+              ? label(`connections.kind.${row.version}`, row.version)
+              : row.version}
+            {endpoint !== null && <> · {endpoint}</>}
+          </span>
+        );
+      },
     },
     {
       key: "checked",
@@ -200,13 +189,12 @@ export function HealthScreen(): ReactNode {
       cell: (row) => (
         <span className="scr-mini">
           {row.note === null ? "—" : label(row.note, "—")}
-          {/* The wizard's pattern (Setup.tsx): a fault the operator cannot fix
-              from THIS page is named and linked to the screen that fixes it.
-              Only for connection-backed rows, and never over a green one. */}
+          {/* A fault the operator cannot fix from THIS page is linked to the
+              screen that fixes it — connection rows only, never over green. */}
           {CONNECTION_SERVICES.has(row.service) && row.state !== "healthy" && (
             <>
               {" · "}
-              <Link to="/settings">{t("setup.prereq.open_settings")}</Link>
+              <Link to="/settings">{t("health.action.open_connections")}</Link>
             </>
           )}
         </span>
@@ -214,19 +202,10 @@ export function HealthScreen(): ReactNode {
     },
   ];
 
-  /**
-   * Yapılandırma tablosunun kolonları.
-   *
-   * Servis tablosunun deseninin aynısı — ad / rozet / açıklama — bilerek: bu
-   * ekranı bilen operatör ikinci tabloyu öğrenmek zorunda kalmasın. Yeni bir
-   * tasarım dili getirmiyoruz.
-   */
   const configColumns: readonly Column<ConfigFinding>[] = [
     {
       key: "item",
       header: t("config.col.item"),
-      // Katalogda olmayan bir satır kimliği ham hâliyle görünür: sunucu bu
-      // ekranın bilmediği bir bulgu eklediyse, görülmesi gereken tam odur.
       cell: (row) => <b>{label(`config.row.${row.id}`, row.id)}</b>,
     },
     {
@@ -241,71 +220,53 @@ export function HealthScreen(): ReactNode {
     {
       key: "value",
       header: t("config.col.value"),
-      // Değer kapalı bir kümeden geliyor ve `config.value.*` ile çevriliyor;
-      // çevrilemeyen bir değer ham hâliyle, tek aralıklı yazıyla görünür.
-      cell: (row) => (
-        <b className="scr-mono">{label(`config.value.${row.value}`, row.value)}</b>
-      ),
+      cell: (row) => <b className="scr-mono">{label(`config.value.${row.value}`, row.value)}</b>,
     },
     {
       key: "detail",
       header: t("config.col.detail"),
+      // ÇÖZÜM yalnız düzeltilecek bir şey varken — yeşil bir satırın yanındaki
+      // "şunu yapın" cümlesi olmayan bir arızayı varmış gibi okutur.
       cell: (row) => (
         <span className="scr-mini">
           {row.detailKey === null ? "—" : phrase(row.detailKey, row.detailParams)}
-          {/* ÇÖZÜM yalnız düzeltilecek bir şey varken. Yeşil bir satırın
-              yanındaki "şunu yapın" cümlesi, olmayan bir arızayı varmış gibi
-              okutur — servis tablosundaki bağlantı linkinin kuralı ile aynı. */}
-          {row.fixKey !== null && (
-            <>
-              {" "}
-              <b>{phrase(row.fixKey, row.fixParams)}</b>
-            </>
-          )}
+          {row.fixKey !== null && <> <b>{phrase(row.fixKey, row.fixParams)}</b></>}
         </span>
       ),
     },
   ];
 
+  const mayDownload = hasAnyRole(session, TANI_ROLES);
+
   return (
     <div className="scr-stack">
-      {/* Servis canlılığının ÜSTÜNDE ve KENDİ QueryState'i ile: bu bölümün
-          hatası aşağıdaki tabloyu düşürmez. */}
-      <QueryState
-        isPending={config.isPending}
-        error={config.error}
-        isEmpty={findings.length === 0}
-        emptyTitle={t("config.empty")}
-        emptyIcon="🧭"
-        onRetry={() => void config.refetch()}
-      >
-        {config.data !== undefined && (
-          <div className="scr-row">
-            <Badge tone={CONFIG_TONE[config.data.state] ?? "gray"} icon="●">
-              {label(`config.overall.${config.data.state}`, config.data.state)}
-            </Badge>
-          </div>
-        )}
+      <KillSwitchSection />
 
-        <Card
-          title={t("config.card.title")}
-          subtitle={t("config.card.sub")}
-          padded={false}
-          /* İndirme yalnız admin'e: rapor akış durumunu, ticket anahtarlarını
-             ve yapılandırmayı TEK dosyada topluyor, ve o dosya tasarımı gereği
-             dolaşıyor. Sunucu da aynı kapıyı tutuyor — buradaki gizleme bir
-             kolaylık, yetki kararı değil (uydurma bir 403 yerine düğmeyi hiç
-             göstermemek). */
-          actions={
-            hasAnyRole(session, TANI_ROLES) ? (
-              /* Denetim CSV'sinin düğmesiyle aynı: varsayılan biçim ve
-                 `busy` — indirme sırasında ikinci bir tıklama, sunucuda
-                 ikinci bir tam rapor üretimi demek. */
-              <Button busy={downloading} onClick={() => void downloadTani()}>
+      <Section
+        title={t("config.card.title")}
+        subtitle={t("config.card.sub")}
+        actions={
+          <>
+            {config.data !== undefined && (
+              <Badge tone={CONFIG_TONE[config.data.state] ?? "gray"} icon="●">
+                {label(`config.overall.${config.data.state}`, config.data.state)}
+              </Badge>
+            )}
+            {mayDownload && (
+              // `busy`: a second click during the download would mean a second
+              // full report generated on the server.
+              <Button size="sm" busy={downloading} onClick={() => void downloadTani()}>
                 {t("config.tani.download")}
               </Button>
-            ) : undefined
-          }
+            )}
+          </>
+        }
+      >
+        <QueryState
+          isPending={config.isPending}
+          error={config.error}
+          onRetry={() => void config.refetch()}
+          skeletonRows={3}
         >
           <Table
             columns={configColumns}
@@ -314,36 +275,30 @@ export function HealthScreen(): ReactNode {
             emptyLabel={t("config.empty")}
             caption={t("config.card.title")}
           />
-          {/* EKSİĞİ SÖYLEYEN SATIR, ve bu tablonun en önemli cümlesi.
-              Panelden inen rapor servis log'larını İÇERMEZ (BFF bir
-              konteynerin içinde, docker soketi bilerek bağlı değil). Yarım bir
-              rapora bakıp "sorun yok" demek, bu ekranın kapatmaya geldiği
-              sessiz-yanlışın ta kendisi olurdu — o yüzden eksiklik butonun
-              YANINDA yazıyor, raporun içinde tekrar ediliyor, ve hiçbirinde
-              küçük punto bir dipnot değil. */}
-          {hasAnyRole(session, TANI_ROLES) && (
-            <p className="scr-note scr-note--warn">{t("config.tani.partial")}</p>
-          )}
-        </Card>
-      </QueryState>
+        </QueryState>
+        {/* The report from this button does NOT include service logs (the BFF
+            cannot reach sibling containers). Half a report read as "no problem"
+            is the silent failure this screen exists to close, so the gap is
+            stated beside the button, not in a footnote. */}
+        {mayDownload && <p className="scr-hint scr-hint--warn">{t("config.tani.partial")}</p>}
+      </Section>
 
-      <QueryState
-        isPending={health.isPending}
-        error={health.error}
-        isEmpty={services.length === 0}
-        emptyTitle={t("health.empty.services")}
-        emptyIcon="💚"
-        onRetry={() => void health.refetch()}
-      >
-        {health.data !== undefined && (
-          <div className="scr-row">
+      <Section
+        title={t("health.card.services")}
+        actions={
+          health.data !== undefined ? (
             <Badge tone={STATE_TONE[health.data.state]} icon="●">
               {t(`health.overall.${health.data.state}`)}
             </Badge>
-          </div>
-        )}
-
-        <Card title={t("health.card.services")} padded={false}>
+          ) : undefined
+        }
+      >
+        <QueryState
+          isPending={health.isPending}
+          error={health.error}
+          onRetry={() => void health.refetch()}
+          skeletonRows={4}
+        >
           <Table
             columns={columns}
             rows={services}
@@ -351,8 +306,10 @@ export function HealthScreen(): ReactNode {
             emptyLabel={t("health.empty.services")}
             caption={t("health.card.services")}
           />
-        </Card>
-      </QueryState>
+        </QueryState>
+      </Section>
+
+      <InfrastructureSection coveredServices={new Set(services.map((row) => row.service))} />
     </div>
   );
 }

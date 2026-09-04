@@ -80,3 +80,30 @@ function toRecord(row: GuidanceRow): GuidanceRecord {
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+
+/**
+ * Akışın `GuidanceReader` seam'i (packages/workflows `deps.ts`), aynı tablodan.
+ *
+ * Bir ajanın göreceği notlar: hedefsiz (global) olanların tamamı + yalnız o
+ * ajana hedeflenmiş olanlar. Pilotun `GuidanceStore.forVariant` kuralının
+ * aynısı — başka bir ajana hedeflenmiş not asla sızmaz. Süzme bellekte:
+ * `GuidanceDelegate.findMany` yalnız `enabled` ile daraltır ve not sayısı
+ * onlarla ölçülür; ikinci bir delege şekli bunun için değmez.
+ *
+ * ATAR: Postgres erişilemezse hata yukarı çıkar; onu yutup uyarı yazan
+ * `analystGuidance`'tır (persona ile aynı iş bölümü).
+ */
+export function guidanceReaderFrom(db: { analysisGuidance: GuidanceDelegate }): {
+  activeGuidance(variantId: string): Promise<readonly { title: string; content: string }[]>;
+} {
+  const store = new PrismaGuidanceStore(db.analysisGuidance);
+  return {
+    async activeGuidance(variantId) {
+      const id = variantId.trim();
+      const notes = await store.listEnabled();
+      return notes
+        .filter((note) => note.variantId === null || note.variantId === undefined || note.variantId === id)
+        .map((note) => ({ title: note.title, content: note.content }));
+    },
+  };
+}

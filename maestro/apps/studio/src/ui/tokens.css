@@ -1,59 +1,58 @@
 /*
- * Design tokens lifted verbatim from mock/index.html. The mock is the visual
- * contract for this product: colours, radii, spacing and shadow all come from
- * there. Screen agents must use these variables, never literal hex values.
+ * Design tokens. Screen agents use these variables and never a literal colour.
+ *
+ * The palette is deliberately SMALL (operator's brief, 2026-09: "compact,
+ * calm, colour only for state"):
+ *
+ *   --blue    the one primary: links, the active nav entry, primary buttons
+ *   --purple  the one accent: things that are "AI-driven" (full-auto mode,
+ *             delegated sessions) — used sparingly
+ *   --green / --amber / --red   the three states: good / needs attention /
+ *             broken or dangerous. Red and amber appear ONLY when something is
+ *             actually wrong; informational text is grey.
+ *   everything else is a grey ramp (--text, --muted, --faint, --border…).
+ *
+ * `--teal` and `--orange` survive as NAMES so untouched screens keep compiling,
+ * but they resolve to neutral greys: two extra hues for "ai-assist" and
+ * "handover" made every list look like a warning board.
+ *
+ * There is no dark theme. The tokens for one existed for a year and nothing
+ * ever set `data-theme`; the dead block was deleted rather than shipped.
  */
 :root {
   --bg: #f6f7f9;
   --panel: #ffffff;
-  --panel2: #fbfcfd;
+  --panel2: #f8fafc;
   --border: #e2e8f0;
   --border2: #cbd5e1;
   --text: #0f172a;
   --muted: #64748b;
   --faint: #94a3b8;
-  --blue: #2563eb;
-  --blue-bg: #dbeafe;
-  --green: #16a34a;
-  --green-bg: #dcfce7;
-  --amber: #d97706;
-  --amber-bg: #fef3c7;
-  --red: #dc2626;
-  --red-bg: #fee2e2;
-  --purple: #7c3aed;
-  --purple-bg: #ede9fe;
-  --teal: #0f766e;
-  --teal-bg: #ccfbf1;
-  --orange: #ea580c;
-  --orange-bg: #ffedd5;
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.05);
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
+  /* Text placed ON a solid primary/state fill. */
+  --on-primary: #ffffff;
 
-:root[data-theme="dark"] {
-  --bg: #0b1120;
-  --panel: #111827;
-  --panel2: #0f172a;
-  --border: #1f2937;
-  --border2: #334155;
-  --text: #e5e7eb;
-  --muted: #94a3b8;
-  --faint: #64748b;
-  --blue: #60a5fa;
-  --blue-bg: #1e293b;
-  --green: #4ade80;
-  --green-bg: #052e1b;
-  --amber: #fbbf24;
-  --amber-bg: #3b2c07;
-  --red: #f87171;
-  --red-bg: #3b1113;
-  --purple: #a78bfa;
-  --purple-bg: #2a1e4d;
-  --teal: #2dd4bf;
-  --teal-bg: #0b3b37;
-  --orange: #fb923c;
-  --orange-bg: #3a1e0b;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+  --blue: #2563eb;
+  --blue-bg: #eaf1fe;
+
+  --purple: #6d28d9;
+  --purple-bg: #f1ecfd;
+
+  --green: #15803d;
+  --green-bg: #e7f6ec;
+  --amber: #b45309;
+  --amber-bg: #fdf3e2;
+  --red: #b91c1c;
+  --red-bg: #fdeaea;
+
+  /* Neutral aliases — see the note above. */
+  --teal: #475569;
+  --teal-bg: #eef2f7;
+  --orange: #475569;
+  --orange-bg: #eef2f7;
+
+  --shadow: none;
+  --radius: 8px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * {
@@ -69,7 +68,7 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 13.5px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -89,7 +88,7 @@ code,
   font-size: 12.5px;
 }
 
-/* Focus ring: the mock has none, but a bank console must be keyboard-operable. */
+/* The mock has no focus styles, but a bank console must be keyboard-operable. */
 :focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;

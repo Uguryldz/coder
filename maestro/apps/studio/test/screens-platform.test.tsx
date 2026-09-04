@@ -1,113 +1,12 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { CommandsScreen } from "../src/screens/Commands.tsx";
 import { HealthScreen } from "../src/screens/Health.tsx";
-import { McpScreen } from "../src/screens/Mcp.tsx";
 import { NotifyScreen } from "../src/screens/Notify.tsx";
 import { OnboardScreen } from "../src/screens/Onboard.tsx";
-import { RunnersScreen } from "../src/screens/Runners.tsx";
 import { SandboxScreen } from "../src/screens/Sandbox.tsx";
 import { YamlScreen } from "../src/screens/Yaml.tsx";
 import { ADMIN, renderScreen, stubFetch } from "./harness.tsx";
-
-function runner(overrides: Record<string, unknown>) {
-  return {
-    runnerId: "lnx-01",
-    pool: "docker-linux",
-    platform: "linux-node",
-    state: "idle",
-    capacity: 4,
-    activeSandboxes: 2,
-    lastHeartbeatAt: "2026-08-08T12:00:00.000Z",
-    note: null,
-    ...overrides,
-  };
-}
-
-function pool(overrides: Record<string, unknown>) {
-  return {
-    pool: "docker-linux",
-    capacity: 4,
-    busy: 2,
-    machines: 1,
-    unhealthy: 0,
-    ...overrides,
-  };
-}
-
-describe("runners screen", () => {
-  it("puts an unreachable machine at the top and raises an alert", async () => {
-    const { fetchImpl } = stubFetch([
-      {
-        path: "/studio/runners",
-        body: {
-          items: [
-            runner({ runnerId: "aaa-healthy", state: "idle" }),
-            runner({ runnerId: "zzz-dead", state: "unreachable", activeSandboxes: 0 }),
-          ],
-          nextCursor: null,
-          pools: [pool({ machines: 2, capacity: 8, busy: 2 })],
-        },
-      },
-    ]);
-    renderScreen(<RunnersScreen />, { fetchImpl });
-
-    expect(await screen.findByText(/1 makineye ulaşılamıyor/)).toBeInTheDocument();
-
-    // Worst news first: the dead machine precedes the healthy one even though
-    // it sorts last alphabetically.
-    const rows = screen.getAllByRole("row").slice(1);
-    expect(within(rows[0] as HTMLElement).getByText("zzz-dead")).toBeInTheDocument();
-  });
-
-  it("says how many of a pool's machines are dark beside the server's totals", async () => {
-    const { fetchImpl } = stubFetch([
-      {
-        path: "/studio/runners",
-        body: {
-          items: [
-            runner({ runnerId: "a", state: "busy" }),
-            runner({ runnerId: "b", state: "unreachable" }),
-          ],
-          nextCursor: null,
-          // The BFF sums capacity; the screen must render ITS number, not a
-          // second opinion computed here.
-          pools: [pool({ machines: 2, capacity: 8, busy: 4, unhealthy: 1 })],
-        },
-      },
-    ]);
-    renderScreen(<RunnersScreen />, { fetchImpl });
-
-    const note = await screen.findByText(/1 ulaşılamıyor/);
-    const tile = note.closest("section") as HTMLElement;
-    expect(within(tile).getByText("4/8")).toBeInTheDocument();
-  });
-
-  it("shows a translated failure instead of the server code", async () => {
-    const { fetchImpl } = stubFetch([
-      { path: "/studio/runners", status: 500, body: { error: "internal_error" } },
-    ]);
-    renderScreen(<RunnersScreen />, { fetchImpl });
-
-    expect(await screen.findByText("Veri alınamadı")).toBeInTheDocument();
-    expect(screen.getByText("Sunucuda bir hata oluştu.")).toBeInTheDocument();
-    expect(screen.queryByText(/internal_error/)).not.toBeInTheDocument();
-  });
-
-  it("reads an unwired read model as 'not available here', not a red error", async () => {
-    // The runners store has no producer in this deployment, so it refuses by
-    // name with 503 capability_not_wired. That is "not wired here", not a
-    // breakage — the screen must say so rather than show "Veri alınamadı".
-    const { fetchImpl } = stubFetch([
-      { path: "/studio/runners", status: 503, body: { error: "capability_not_wired", details: { capability: "runners.list" } } },
-    ]);
-    renderScreen(<RunnersScreen />, { fetchImpl });
-
-    expect(await screen.findByText("Bu bölüm henüz yayında değil")).toBeInTheDocument();
-    expect(screen.queryByText("Veri alınamadı")).not.toBeInTheDocument();
-  });
-});
 
 describe("sandbox screen", () => {
   it("shows an empty state rather than inventing a session", async () => {
@@ -210,35 +109,6 @@ describe("yaml screen", () => {
   });
 });
 
-describe("mcp screen", () => {
-  it("shows the forbidden tools as absent by design", async () => {
-    const { fetchImpl } = stubFetch([
-      {
-        path: "/mcp/manifest",
-        body: {
-          endpoint: "/mcp",
-          auditActor: "ai-via:ugur.yildiz@ugurbank.local",
-          tools: [
-            {
-              name: "propose_killswitch",
-              scope: "admin-proposal",
-              descriptionKey: "params.description.kill_switch_state",
-            },
-          ],
-          forbiddenTools: ["approve_gate", "reject_gate", "merge_pr"],
-        },
-      },
-    ]);
-    renderScreen(<McpScreen />, { fetchImpl });
-
-    expect(await screen.findByText("approve_gate")).toBeInTheDocument();
-    expect(screen.getByText("merge_pr")).toBeInTheDocument();
-    expect(screen.getByText(/karar veremez/)).toBeInTheDocument();
-    // The proposal scope must be labelled as such, not as a plain admin power.
-    expect(screen.getByText("admin-öneri")).toBeInTheDocument();
-  });
-});
-
 describe("health screen", () => {
   const SERVICE = {
     service: "postgres",
@@ -284,8 +154,8 @@ describe("health screen", () => {
 
   it("an unconfigured LLM says so honestly and points at the settings screen", async () => {
     // "Not set up" must be its own state — not a fake green and not a red that
-    // pages somebody — and the row must say WHERE to fix it, in the wizard's
-    // own words (Setup.tsx uses the same link label).
+    // pages somebody — and the row must say WHERE to fix it, by the name the
+    // navigation gives that screen (`nav.settings` = Bağlantılar).
     const { fetchImpl } = stubFetch([
       {
         path: "/studio/health",
@@ -308,7 +178,7 @@ describe("health screen", () => {
 
     expect(await screen.findByText("Model sağlayıcı (LLM)")).toBeInTheDocument();
     expect(screen.getByText("yapılandırılmadı")).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: "Ayarlar & bağlantılar'a git" });
+    const link = screen.getByRole("link", { name: "Bağlantılar'a git" });
     expect(link).toHaveAttribute("href", "/settings");
     // An unconfigured connector is a to-do, not an outage — the platform badge
     // the server computed stays green beside it.
@@ -338,7 +208,7 @@ describe("health screen", () => {
     expect(await screen.findByText("kapalı")).toBeInTheDocument();
     // The stored test verdict travels as a catalog key and renders as a sentence.
     expect(screen.getByText(/Token tanımlı değil/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Ayarlar & bağlantılar'a git" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Bağlantılar'a git" })).toHaveAttribute(
       "href",
       "/settings",
     );
@@ -505,32 +375,6 @@ describe("health screen — yapılandırma", () => {
     // Teşhis eklentisinin, teşhis etmeye geldiği ekranı karartması olacak en
     // kötü şeydir — servisler hâlâ okunabilir.
     expect(await screen.findByText("PostgreSQL")).toBeInTheDocument();
-  });
-});
-
-describe("commands screen", () => {
-  it("states that a comment with extra text is not an approval", async () => {
-    const { fetchImpl } = stubFetch([
-      {
-        path: "/commands",
-        body: {
-          commands: [
-            {
-              name: "/approve",
-              roles: ["tech-lead"],
-              takesArgument: false,
-              whenKey: "commands.check.right_step",
-              effectKey: "commands.check.sod",
-            },
-          ],
-        },
-      },
-    ]);
-    renderScreen(<CommandsScreen />, { fetchImpl });
-
-    expect(await screen.findByText("/approve")).toBeInTheDocument();
-    expect(screen.getByText(/onay SAYILMAZ/)).toBeInTheDocument();
-    expect(screen.getByText(/sonradan onay yazılamaz/)).toBeInTheDocument();
   });
 });
 

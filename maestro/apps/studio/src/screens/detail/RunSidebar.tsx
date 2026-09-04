@@ -1,31 +1,27 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { GATES_BY_RISK, type ApplicationRecord, type WorkflowRunState } from "@maestro/contracts";
+import type { ApplicationRecord, WorkflowRunState } from "@maestro/contracts";
 import { useI18n, useT } from "../../i18n/I18nProvider.tsx";
-import { Badge, Card, riskTone, workModeTone } from "../../ui/index.ts";
+import { Badge, ButtonLink, Card, riskTone, workModeTone } from "../../ui/index.ts";
 import { useEnumLabel } from "../common/label.ts";
 import { GatePanel } from "../shared/GatePanel.tsx";
+import { ClarifyPanel } from "./ClarifyPanel.tsx";
+import { ModeChange } from "./ModeChange.tsx";
 import { RestartPanel } from "./RestartPanel.tsx";
+import { isTerminal, moneyLabel } from "./run-state.ts";
 import { isApprovalGate, isClarificationWait } from "../shared/gate-utils.ts";
 import { ageLabel, dateTimeLabel } from "../shared/format.ts";
-import { RunStatusCell } from "../Tickets.tsx";
+import { RunStatusCell } from "../shared/RunStatusCell.tsx";
 import { projectKeyOf, type RunDetail } from "../shared/runs.ts";
 
 /**
- * The right-hand column of the detail screen: the open gate (if any), then the
- * run's identifying facts.
+ * The right-hand column of the detail screen: the one action the run is
+ * waiting on (if any), then the run's identifying facts.
  *
- * The mock's sidebar always wanted the ADO PR, the work mode, the token spend
- * and the people involved. `WorkflowRunState` carries none of those, so this
- * panel used to show six fields and a note admitting the rest were unavailable.
- * `GET /studio/runs/:ticket` returns the platform catalog record and the
- * matched application alongside the workflow state, so those fields are now
- * READ rather than requested — and the note is gone because the gap is closed.
- *
- * Every value below still comes from a field the BFF actually sent. `null`
- * renders as an em dash: an unassigned ticket, an unmatched application and a
- * run with no PR yet are all real states, and filling them in would be the one
- * failure this project treats as worse than a blank.
+ * Every value comes from a field the BFF actually sent. `null` renders as an
+ * em dash: an unassigned ticket, an unmatched application and a run with no
+ * PR yet are all real states, and filling them in would be the one failure
+ * this project treats as worse than a blank.
  */
 export interface RunSidebarProps {
   readonly record: RunDetail["run"];
@@ -33,13 +29,10 @@ export interface RunSidebarProps {
   readonly state: WorkflowRunState | null;
   readonly application: ApplicationRecord | null;
   /**
-   * Durumun NEREDEN geldiği — ve bu sütunun hangi paneli çizeceğini belirleyen
-   * şey. `"record"` ise motorun bu koşudan haberi yok: kapı paneli çizmek,
-   * basıldığında hata veren bir onay düğmesi göstermek demek. Bkz. `stateSource`
-   * (apps/bff/src/routes/studio-runs.ts).
-   *
-   * İsteğe bağlı, çünkü alanı göndermeyen bir BFF sürümü `"engine"` demektir —
-   * yani bugüne kadarki davranış.
+   * Where the state came from. `"record"` means the engine has no execution
+   * for this run — which is a FAULT for an open run (its gate cannot be
+   * decided) and the NORMAL state of a finished one (executions do not
+   * outlive the run). Absent on a BFF that predates the field = `"engine"`.
    */
   readonly stateSource?: RunDetail["stateSource"];
 }
@@ -54,53 +47,37 @@ export function RunSidebar({
   const { locale } = useI18n();
   const enumLabel = useEnumLabel();
   const age = ageLabel(state?.startedAt ?? record.startedAt);
-  /**
-   * KOŞU MOTORDA YOK — ve bu, kapı panelini çizmemenin sebebi.
-   *
-   * Operatörün sahada gördüğü hata tam buydu: panel "tech lead onayında" diyor,
-   * "onayla/reddet" düğmeleri duruyor, basınca "bu ticket için çalışan bir akış
-   * yok" cevabı geliyordu. Adımlar KATALOGDAN okunuyordu (doğru), ama karar
-   * MOTORA gidiyordu (yok). İki kaynağı ayırt eden alan zaten geliyor; eksik
-   * olan, ekranın onu dinlemesiydi.
-   */
-  const engineForgot = stateSource === "record";
 
-  // Risk drives how many gates the run must pass (M51). The workflow's own
-  // tier wins when it has one; the catalog always carries a tier.
+  const finished = isTerminal(state);
+  // The engine has forgotten an OPEN run: the only useful control is restart.
+  // A finished run is not "forgotten" — it is over, and nothing is offered.
+  const engineForgot = stateSource === "record" && !finished;
+  // Controls that send a SIGNAL need a live execution to receive it.
+  const live = state !== null && !finished && !engineForgot;
+
   const risk = state?.risk ?? record.risk;
-  const gateCount = GATES_BY_RISK[risk].length;
 
   return (
-    <div className="screen-stack">
+    <div className="scr-stack">
       {engineForgot && <RestartPanel ticket={record.ticketKey} />}
 
-      {/* Kapı paneli YALNIZ motor cevap verirken. Katalogdan okunmuş bir
-          "kapıda" durumu gerçek bir kapı değil, koşunun öldüğü anda kaldığı
-          son pozisyon — ve onun üstüne onay düğmesi koymak, operatöre
-          veremeyeceği bir kararı sunmak. */}
-      {!engineForgot && state !== null && isApprovalGate(state) && (
-        <GatePanel ticket={record.ticketKey} step={state.step} />
-      )}
+      {live && isApprovalGate(state) && <GatePanel ticket={record.ticketKey} step={state.step} />}
 
-      {!engineForgot && state !== null && isClarificationWait(state) && (
-        <Card title={t("detail.clarify.title")}>
-          <p className="screen-note">{t("detail.clarify.body")}</p>
-          <div className="screen-actions">
-            <Link className="ui-btn ui-btn--sm" to="/clarify">
-              {t("detail.clarify.action")}
-            </Link>
-          </div>
-        </Card>
-      )}
+      {live && isClarificationWait(state) && <ClarifyPanel ticket={record.ticketKey} />}
 
-      <Card title={t("detail.facts.title")}>
-        <dl className="screen-kv">
-          <dt>{t("detail.field.ticket")}</dt>
-          <dd className="screen-mono">{record.ticketKey}</dd>
-
-          <dt>{t("detail.field.title")}</dt>
-          <dd>{record.title}</dd>
-
+      <Card
+        title={t("detail.facts.title")}
+        actions={
+          <ButtonLink
+            size="sm"
+            variant="ghost"
+            to={`/evidence?ticket=${encodeURIComponent(record.ticketKey)}`}
+          >
+            {t("detail.evidence")}
+          </ButtonLink>
+        }
+      >
+        <dl className="scr-kv">
           <dt>{t("detail.field.project")}</dt>
           <dd>{projectKeyOf(record.ticketKey)}</dd>
 
@@ -115,22 +92,20 @@ export function RunSidebar({
               "—"
             ) : (
               <>
-                <span className="screen-mono">{state.step}</span> {t(`steps.${state.step}`)}
+                <span className="scr-mono">{state.step}</span> {t(`steps.${state.step}`)}
               </>
             )}
           </dd>
 
           <dt>{t("detail.field.risk")}</dt>
           <dd>
-            <Badge tone={riskTone(risk)}>{t(`risk.${risk}`)}</Badge>{" "}
-            <span className="screen-note">
-              {t("detail.field.gates", { n: String(gateCount) })}
-            </span>
+            <Badge tone={riskTone(risk)}>{enumLabel("risk", risk).text}</Badge>
           </dd>
 
           <dt>{t("detail.field.mode")}</dt>
           <dd>
-            <Badge tone={workModeTone(record.mode)}>{enumLabel("mode", record.mode).text}</Badge>
+            <Badge tone={workModeTone(record.mode)}>{enumLabel("mode", record.mode).text}</Badge>{" "}
+            {live && <ModeChange ticket={record.ticketKey} current={record.mode} />}
           </dd>
 
           <dt>{t("detail.field.data_class")}</dt>
@@ -141,15 +116,16 @@ export function RunSidebar({
           </dd>
 
           <dt>{t("detail.field.app")}</dt>
-          {/* The matched application (M100); the repo is rendered the way ADO
-              addresses it, from the record's own fields. */}
+          {/* The matched application; the repo is written the way Azure
+              DevOps addresses it (`<project>/_git/<repo>`), from the record's
+              own fields. */}
           <dd>
             {application === null ? (
               "—"
             ) : (
               <>
                 {application.displayName}
-                <div className="screen-note screen-mono">
+                <div className="scr-hint scr-mono">
                   {application.adoProject}/_git/{application.adoRepo}
                 </div>
               </>
@@ -163,14 +139,12 @@ export function RunSidebar({
           <dd>{record.assignee ?? "—"}</dd>
 
           <dt>{t("detail.field.pr")}</dt>
-          <dd className="screen-mono">{record.prId === null ? "—" : `#${record.prId}`}</dd>
+          <dd className="scr-mono">{record.prId === null ? "—" : `#${record.prId}`}</dd>
 
           <dt>{t("detail.field.cost")}</dt>
-          {/* Spend so far (M16). Shown to 2dp with the token split beside it —
-              a cost figure without its token count cannot be sanity-checked. */}
           <dd>
-            {record.costUsd.toFixed(2)} USD
-            <div className="screen-note">
+            {moneyLabel(record.costUsd, locale)}
+            <div className="scr-hint">
               {t("detail.field.tokens", {
                 in: String(record.tokensIn),
                 out: String(record.tokensOut),
@@ -181,14 +155,14 @@ export function RunSidebar({
           {state !== null && (
             <>
               <dt>{t("detail.field.run_id")}</dt>
-              <dd className="screen-mono">{state.runId}</dd>
+              <dd className="scr-mono">{state.runId}</dd>
             </>
           )}
 
           <dt>{t("detail.field.started")}</dt>
           <dd>
             {dateTimeLabel(state?.startedAt ?? record.startedAt, locale)}
-            {age !== null && <span className="screen-note"> {t(age.key, age.params)}</span>}
+            {age !== null && <span className="scr-hint"> {t(age.key, age.params)}</span>}
           </dd>
 
           <dt>{t("detail.field.updated")}</dt>
@@ -196,14 +170,16 @@ export function RunSidebar({
         </dl>
       </Card>
 
+      {/* Fan-out: the link is recorded on both sides of the catalog, so the
+          tree is READ, not inferred from the Jira project. */}
       {(record.parentTicketKey !== null || record.childTicketKeys.length > 0) && (
         <Card title={t("detail.fanout.title")}>
-          <dl className="screen-kv">
+          <dl className="scr-kv">
             {record.parentTicketKey !== null && (
               <>
                 <dt>{t("detail.fanout.parent")}</dt>
                 <dd>
-                  <Link className="screen-mono" to={`/detail/${record.parentTicketKey}`}>
+                  <Link className="scr-mono" to={`/detail/${record.parentTicketKey}`}>
                     {record.parentTicketKey}
                   </Link>
                 </dd>
@@ -215,7 +191,7 @@ export function RunSidebar({
                 <dd>
                   {record.childTicketKeys.map((child) => (
                     <div key={child}>
-                      <Link className="screen-mono" to={`/detail/${child}`}>
+                      <Link className="scr-mono" to={`/detail/${child}`}>
                         {child}
                       </Link>
                     </div>

@@ -6,6 +6,7 @@ import { SCREENS } from "./screens.ts";
 import { SCREEN_COMPONENTS } from "./screen-components.ts";
 import { LoginScreen } from "../screens/Login.tsx";
 import { ChangePasswordScreen } from "../screens/ChangePassword.tsx";
+import { VariantLegacyRedirect } from "../screens/Variant.tsx";
 import { NotFound } from "./NotFound.tsx";
 
 /**
@@ -47,6 +48,29 @@ export function AppRoutes(): ReactNode {
           <Route path="flow" element={<Navigate to="/dash" replace />} />
           {/* LLM Gateway merged into AI usage & cost as its traffic tab. */}
           <Route path="llm" element={<Navigate to="/cost?view=traffic" replace />} />
+          {/* Retired mock-gallery pages (static content, not operator tools) and
+              the three "yakında" screens with no data source. Bookmarks land
+              on the nearest real page instead of a 404. */}
+          <Route path="live" element={<Navigate to="/dash" replace />} />
+          <Route path="jira" element={<Navigate to="/help" replace />} />
+          <Route path="greenfield" element={<Navigate to="/dash" replace />} />
+          <Route path="cache" element={<Navigate to="/sandbox" replace />} />
+          <Route path="eval" element={<Navigate to="/variants" replace />} />
+          {/* Agent detail moved under /variants (sidebar stays lit); keep ?id=. */}
+          <Route path="variant" element={<VariantLegacyRedirect />} />
+          <Route path="security" element={<Navigate to="/audit" replace />} />
+          {/* The decision ledger is the audit trail's "Kararlar" tab. */}
+          <Route path="issues" element={<Navigate to="/audit?tab=decisions" replace />} />
+          <Route path="runners" element={<Navigate to="/health" replace />} />
+          {/* Clarify / work mode / fan-out live on the run's own detail page
+              now (sidebar panels); the old ticket-less forms land on the Panel. */}
+          <Route path="clarify" element={<Navigate to="/dash" replace />} />
+          <Route path="workmode" element={<Navigate to="/dash" replace />} />
+          <Route path="fanout" element={<Navigate to="/dash" replace />} />
+          {/* The two reference pages (Jira command set, Maestro MCP) are tabs
+              of Help now; the old paths land on the matching tab. */}
+          <Route path="commands" element={<Navigate to="/help?cat=commands" replace />} />
+          <Route path="mcp" element={<Navigate to="/help?cat=mcp" replace />} />
           {SCREENS.map((screen) => {
             const Component = SCREEN_COMPONENTS[screen.id];
             if (Component === undefined) return null;

@@ -9,7 +9,6 @@ import type { Session } from "../src/auth/types.ts";
 import { I18nProvider } from "../src/i18n/I18nProvider.tsx";
 import { AuditScreen } from "../src/screens/Audit.tsx";
 import { HelpScreen } from "../src/screens/Help.tsx";
-import { KnowledgeScreen } from "../src/screens/Knowledge.tsx";
 import { PiiScreen } from "../src/screens/Pii.tsx";
 import { TemplateScreen } from "../src/screens/Template.tsx";
 import { ToastProvider } from "../src/ui/index.ts";
@@ -222,10 +221,10 @@ describe("TemplateScreen (M108 designer)", () => {
     });
   });
 
-  it("says 'not published yet' for a route the BFF does not serve", async () => {
-    // Several cluster C endpoints do not exist yet, so they answer 404. That
-    // must NOT read as "record not found" — the record is not missing, the read
-    // model was never built. Anything else stays a normal translated error.
+  it("shows a 404 as the not-found error, never as 'not published yet'", async () => {
+    // Every endpoint is built. A 404 therefore means "no such record", and the
+    // screen says exactly that — the "yayında değil" fallback is gone with the
+    // last unwired read model.
     const missing = vi.fn(
       async () =>
         new Response(JSON.stringify({ error: "not_found" }), {
@@ -236,8 +235,8 @@ describe("TemplateScreen (M108 designer)", () => {
 
     renderScreen(<TemplateScreen />, missing);
 
-    expect(await screen.findAllByText("Bu bölüm henüz yayında değil")).not.toHaveLength(0);
-    expect(screen.queryByText("Kayıt bulunamadı.")).not.toBeInTheDocument();
+    expect(await screen.findAllByText("Kayıt bulunamadı.")).not.toHaveLength(0);
+    expect(screen.queryByText("Bu bölüm henüz yayında değil")).not.toBeInTheDocument();
   });
 
   it("shows a translated failure, never the raw server body", async () => {
@@ -253,82 +252,6 @@ describe("TemplateScreen (M108 designer)", () => {
     // Both cards on the screen report the same failure, hence getAllByText.
     expect((await screen.findAllByText("Sunucuda bir hata oluştu.")).length).toBeGreaterThan(0);
     expect(screen.queryByText(/internal_error/)).not.toBeInTheDocument();
-  });
-});
-
-describe("KnowledgeScreen (data class fails closed)", () => {
-  /**
-   * `/studio/knowledge` is a SEARCH: the BFF requires `q` and already filters by
-   * data class, returning `withheld` for what it removed. These rows are what
-   * survives that filter — the screen's own fail-closed pass is a second layer
-   * over whatever still arrives.
-   */
-  const RESULTS = {
-    items: [
-      {
-        id: "1",
-        title: "api-tasarim.md",
-        snippet: "…",
-        source: "conventions",
-        score: 0.9,
-        appId: "ugurpay",
-        updatedBy: "Mert D.",
-        updatedAt: "8 gün önce",
-        dataClass: "dahili",
-      },
-      {
-        id: "2",
-        title: "gizli-politika.md",
-        snippet: "…",
-        source: "rules",
-        score: 0.8,
-        appId: null,
-        updatedBy: "Uyum",
-        updatedAt: "1 ay önce",
-        dataClass: "gizli",
-      },
-      {
-        id: "3",
-        title: "etiketsiz.md",
-        snippet: "…",
-        source: "rules",
-        score: 0.7,
-        appId: null,
-        updatedBy: "—",
-        updatedAt: "—",
-        // dataClass absent: must be read as gizli, never as public.
-      },
-    ],
-    nextCursor: null,
-    withheld: 1,
-  };
-
-  it("asks for nothing until there is a search term", async () => {
-    const fetchImpl = stubFetch({ "/studio/knowledge": RESULTS, "/studio/guidance": { notes: [] } });
-    renderScreen(<KnowledgeScreen />, fetchImpl);
-    expect(await screen.findByText("Aramak için bir kelime yaz.")).toBeInTheDocument();
-    // The SEARCH endpoint is not called with an empty box (it is a search, not a
-    // listing). The guidance library above it loads independently, so assert the
-    // search specifically was never hit rather than "no fetch at all".
-    const calls = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    expect(calls.some(([u]) => String(u).includes("/studio/knowledge"))).toBe(false);
-  });
-
-  it("drops confidential and untagged documents from the results", async () => {
-    renderScreen(<KnowledgeScreen />, stubFetch({ "/studio/knowledge": RESULTS, "/studio/guidance": { notes: [] } }));
-    await user.type(screen.getByLabelText("Ara"), "limit");
-
-    expect(await screen.findByText("api-tasarim.md")).toBeInTheDocument();
-    expect(screen.queryByText("gizli-politika.md")).not.toBeInTheDocument();
-    expect(screen.queryByText("etiketsiz.md")).not.toBeInTheDocument();
-  });
-
-  it("counts both what the server withheld and what it dropped itself", async () => {
-    renderScreen(<KnowledgeScreen />, stubFetch({ "/studio/knowledge": RESULTS, "/studio/guidance": { notes: [] } }));
-    await user.type(screen.getByLabelText("Ara"), "limit");
-
-    // 1 withheld by the BFF + 2 dropped here (gizli, and the untagged one).
-    expect(await screen.findByText("3 kayıt gösterilmiyor")).toBeInTheDocument();
   });
 });
 
@@ -488,13 +411,13 @@ describe("AuditScreen", () => {
 });
 
 describe("HelpScreen", () => {
-  it("mirrors the sidebar's four groups as tabs, with the old ones gone", () => {
+  it("mirrors the sidebar's five page groups as tabs, plus the two reference tabs", () => {
     renderScreen(<HelpScreen />, stubFetch({}));
 
-    for (const name of ["İşler", "Ajanlar", "Denetim", "Kurulum"]) {
+    for (const name of ["İşler", "Ajanlar", "Projeler", "Denetim", "Yönetim", "Jira komutları", "Maestro MCP"]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
-    expect(screen.getAllByRole("tab")).toHaveLength(4);
+    expect(screen.getAllByRole("tab")).toHaveLength(7);
     // The start tab (default) now explains the daily-work pages. "Canlı akış"
     // is NOT among them any more: that guide described the retired pilot
     // engine's screen, and a guide to a page that no longer exists is worse

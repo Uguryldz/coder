@@ -20,7 +20,18 @@ import { unwired } from "./unwired.js";
  */
 export const OPS_ROLES = ["admin", "tech-lead"] as const;
 
-/** Only the trail's own auditors read the whole trail (M33/M86). */
+/**
+ * Only the trail's own auditors read the whole trail (M33/M86).
+ *
+ * `internal-audit` is NOT in contracts' `Role` enum, and the directory group
+ * of the same name maps to `viewer` (`ROLE_BY_GROUP`) — on purpose: an
+ * auditor is granted the role DIRECTLY (a local admin, or an AD attribute the
+ * identity provider passes through as a role), never inferred from group
+ * membership, so a group rename cannot silently widen who reads the trail.
+ * `CONFIDENTIAL_ROLES` (knowledge-policy.ts) and the demo stack's auditor
+ * account rely on the same vocabulary; dropping the name here once made the
+ * demo's auditor a 403 while the seed still documented her as the reader.
+ */
 export const AUDIT_ROLES = ["admin", "internal-audit"] as const;
 
 export async function studioOpsRoutes(app: FastifyInstance, deps: ResolvedDeps): Promise<void> {

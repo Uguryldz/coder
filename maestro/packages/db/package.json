@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./variant-model": "./src/variant-model-public.ts"
+    "./variant-model": "./src/variant-model-public.ts",
+    "./params-defaults": "./src/params-defaults.ts"
   },
   "scripts": {
     "postinstall": "prisma generate --schema prisma/schema.prisma",

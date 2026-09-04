@@ -48,3 +48,30 @@ export function Kpi({ label, value, note }: KpiProps) {
     </section>
   );
 }
+
+export interface SectionProps {
+  /** Already-translated heading. */
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly actions?: ReactNode;
+  readonly children: ReactNode;
+}
+
+/**
+ * A titled block WITHOUT a box: heading rule, then content. Cards were being
+ * used for everything, so a page of six small things became six bordered
+ * boxes; a Section is the calmer default for anything that is not a distinct
+ * panel of its own.
+ */
+export function Section({ title, subtitle, actions, children }: SectionProps) {
+  return (
+    <section className="ui-section">
+      <header className="ui-section__hd">
+        <h3>{title}</h3>
+        {subtitle !== undefined && <span className="ui-section__sub">{subtitle}</span>}
+        {actions !== undefined && <div className="ui-section__actions">{actions}</div>}
+      </header>
+      {children}
+    </section>
+  );
+}

@@ -1,320 +1,413 @@
 /*
- * Layout helpers shared by the flow screens, mirroring the mock's .grid/.kv/
- * .issue/.bar. Colours come from tokens.css only — a literal here would break
- * the dark theme silently, which is why src/ui/README.md forbids it.
+ * THE screen stylesheet — every layout helper a screen may use, in one file,
+ * one prefix (`scr-`), loaded ONCE from src/app/App.tsx. Screens import
+ * nothing; they just use the classes.
+ *
+ * History: this used to be two files with two prefixes doing the same job
+ * (`common/screens.css` `scr-*` and `shared/screens.css` `screen-*`), plus a
+ * third for the login form and two `tpl-*` helpers borrowed by fifteen screens
+ * that never imported the template stylesheet. Merged here; the old names are
+ * gone (a grep for `screen-` in a className is a bug).
+ *
+ * Design rules (operator's brief, 2026-09):
+ *   - compact and calm: small gaps, few borders, no shadows on cards;
+ *   - colour ONLY for state — red/amber mean "something is actually wrong",
+ *     informational text is grey/neutral;
+ *   - every colour is a token from ui/tokens.css; a literal here is a bug.
  */
 
-.screen-grid {
-  display: grid;
-  gap: 14px;
-}
+/* ── Layout ──────────────────────────────────────────────────────────────── */
 
-.screen-grid--2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.screen-grid--3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.screen-grid--4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-/* Detail's main column + sidebar. */
-.screen-grid--detail {
-  grid-template-columns: minmax(0, 1fr) 340px;
-  align-items: start;
-}
-
-@media (max-width: 1100px) {
-  .screen-grid--4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .screen-grid--detail,
-  .screen-grid--3 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 760px) {
-  .screen-grid--2,
-  .screen-grid--4 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.screen-stack {
+.scr-stack {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
-/* Mirrors .kv — a label column and a value column. */
-.screen-kv {
-  display: grid;
-  grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
-  gap: 7px 14px;
-  margin: 0;
-  font-size: 13px;
-}
-
-.screen-kv dt {
-  color: var(--muted);
-}
-
-.screen-kv dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.screen-actions {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-}
-
-.screen-note {
-  margin: 9px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.screen-mono {
-  font-family: var(--mono);
-}
-
-/*
- * A note the reader must NOT skim past.
- *
- * `.screen-note` is deliberately quiet — muted, small, the colour of a
- * footnote — which is right for "where this data came from" and wrong for
- * "the engine has lost this run and it will not advance on its own". That
- * second sentence went out in footnote grey and an operator read the screen
- * as "nothing is happening here". Same size, same rhythm, amber and boxed:
- * still a note, but one that stops the eye.
- */
-.screen-note--warn {
-  padding: 9px 11px;
-  border: 1px solid var(--amber);
-  border-radius: 6px;
-  background: var(--amber-bg);
-  color: var(--amber);
-}
-
-/* Mirrors .issue — an attention row that is also a link target. */
-.screen-issue {
-  display: flex;
-  gap: 11px;
-  align-items: flex-start;
-  width: 100%;
-  text-align: start;
-  padding: 10px;
-  margin-bottom: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.screen-issue:hover {
-  border-color: var(--blue);
-}
-
-.screen-issue--alert {
-  border-color: var(--red);
-}
-
-.screen-issue__body {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Mirrors .bar — a capacity/progress meter. */
-.screen-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--border);
-  overflow: hidden;
-}
-
-.screen-bar > i {
-  display: block;
-  height: 100%;
-  background: var(--blue);
-}
-
-.screen-filters {
+.scr-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
 }
 
-/* Mirrors .chip — the filter pills above a list. */
-.screen-chip {
-  padding: 5px 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--muted);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.screen-chip[aria-pressed="true"] {
-  border-color: var(--blue);
-  color: var(--blue);
-}
-
-/* Mirrors .jira — a comment card in the Jira transcript views. */
-.screen-comment {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 11px;
-  margin-bottom: 10px;
-  background: var(--panel);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.screen-comment__who {
+/* Button rows under a form / at the foot of a card. */
+.scr-actions {
   display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin-bottom: 6px;
-  font-weight: 600;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 10px;
 }
 
-.screen-comment__when {
-  font-weight: 400;
+.scr-grid {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+}
+
+.scr-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.scr-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.scr-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Detail's main column + sidebar. */
+.scr-grid--detail {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+@media (max-width: 1100px) {
+  .scr-grid--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .scr-grid--detail,
+  .scr-grid--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .scr-grid--2,
+  .scr-grid--4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Definition list: label column, value column (mock `.kv`). */
+.scr-kv {
+  display: grid;
+  grid-template-columns: minmax(110px, 30%) minmax(0, 1fr);
+  gap: 5px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.scr-kv dt {
+  color: var(--muted);
+}
+
+.scr-kv dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ── Text ────────────────────────────────────────────────────────────────── */
+
+.scr-mini {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.scr-mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.scr-prose {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+/* A quiet footnote under a control or a table: "where this came from". */
+.scr-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* A key's technical name beside its label (was `tpl-keyline`). */
+.scr-keyline {
+  margin: 4px 0 0;
   font-size: 12px;
   color: var(--muted);
 }
 
-/* Mirrors .flowbox — the horizontal step ribbon. */
-.screen-flow {
+.scr-keyline code {
+  font-family: var(--mono);
+}
+
+/* ── Notes: neutral by default, coloured only when something is wrong ────── */
+
+/* Dashed advisory panel (mock `.note`). Grey: information, not alarm. */
+.scr-note {
+  border: 1px dashed var(--border2);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  background: var(--panel2);
+}
+
+/* Amber: a condition the operator must act on, not a footnote. */
+.scr-note--warn,
+.scr-hint--warn {
+  border: 1px solid var(--amber);
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: var(--amber-bg);
+  color: var(--text);
+}
+
+/* Red: something is broken or dangerous. */
+.scr-note--danger {
+  border: 1px solid var(--red);
+  border-style: solid;
+  background: var(--red-bg);
+  color: var(--text);
+}
+
+/* Read-only source view (mock `.log` with a light background). */
+.scr-code {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ── Filters / chips ─────────────────────────────────────────────────────── */
+
+.scr-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.scr-chips {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
 }
 
-.screen-flow__item {
-  padding: 6px 11px;
+/* Mirrors .chip — the filter pills above a list. */
+.scr-chip {
+  padding: 4px 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
-  font-size: 12.5px;
+  border-radius: 999px;
+  background: var(--panel);
   color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
 }
 
-.screen-flow__item--on {
+.scr-chip[aria-pressed="true"] {
   border-color: var(--blue);
   color: var(--blue);
 }
 
-/* Mirrors .steps — the vertical step list on the detail screen. */
-.screen-steps {
+/* ── Steps, ladders, wizards ─────────────────────────────────────────────── */
+
+/* Horizontal step ladder (mock `.flowbox`) — pills with arrows between. */
+.scr-ladder,
+.scr-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.scr-step,
+.scr-flow__item {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  background: var(--panel2);
+  color: var(--muted);
+}
+
+.scr-step--on,
+.scr-flow__item--on {
+  border-color: var(--blue);
+  background: var(--blue-bg);
+  color: var(--text);
+}
+
+.scr-step--pending {
+  border-color: var(--amber);
+  background: var(--amber-bg);
+  color: var(--text);
+}
+
+.scr-arrow {
+  color: var(--faint);
+}
+
+/* Wizard progress rail (mock `.wiz`). */
+.scr-wiz {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.scr-wiz__step {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.scr-wiz__step--on {
+  border-color: var(--blue);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.scr-wiz__step--done {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* Vertical numbered step list on the run detail (mock `.steps`). */
+.scr-steplist {
   display: flex;
   flex-direction: column;
 }
 
-.screen-step {
+.scr-steplist__row {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
-  gap: 11px;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  padding: 9px 0;
+  padding: 7px 0;
   border-bottom: 1px dashed var(--border);
-  /* Satır bir <button> olarak da render ediliyor (tıklanabilir iş kaydı);
-     tarayıcının varsayılan kenarlık/zeminini sıfırla, yoksa her satır
-     kalın çerçeveli bir kutu gibi görünüyor. */
+  /* Rendered as a <button> too (clickable journal row): reset the chrome. */
   border-top: none;
   border-inline: none;
   background: none;
   font: inherit;
   color: inherit;
+  width: 100%;
+  text-align: start;
 }
 
-.screen-step:last-child {
+.scr-steplist__row:last-child {
   border-bottom: none;
 }
 
-/* Numarasız satırlar (ör. Panel'deki canlı motor işleri) yalnızca başlık +
-   durum içerir. Üç sütunlu şablonda başlık, numara için ayrılmış 46px'lik
-   sütuna düşüp kırılıyordu; bu varyant o sütunu kaldırır. */
-.screen-step:not(:has(.screen-step__num)) {
+/* Unnumbered rows (title + state only) drop the number column. */
+.scr-steplist__row:not(:has(.scr-steplist__num)) {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.screen-step__num {
+.scr-steplist__num {
   font-family: var(--mono);
   font-size: 12px;
   text-align: center;
-  padding: 3px 0;
-  border-radius: 6px;
+  padding: 2px 0;
+  border-radius: 5px;
   background: var(--border);
   color: var(--muted);
 }
 
-.screen-step--now .screen-step__num {
+.scr-steplist__row--now .scr-steplist__num {
   background: var(--blue);
   color: var(--panel);
 }
 
-.screen-step--done .screen-step__num {
+.scr-steplist__row--done .scr-steplist__num {
   color: var(--green);
 }
 
-.screen-step__title {
-  font-size: 13.5px;
+.scr-steplist__title {
+  font-size: 13px;
 }
 
-.screen-step__state {
+.scr-steplist__state {
   font-size: 12px;
   color: var(--muted);
   text-align: end;
 }
 
-/* Journal rows. */
-.screen-journal {
+/* ── Rows: issues, journal, files, comments ──────────────────────────────── */
+
+/* Mirrors .issue — an attention row that is also a link target. */
+.scr-issue {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: start;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.scr-issue:hover {
+  border-color: var(--blue);
+}
+
+.scr-issue--alert {
+  border-color: var(--red);
+}
+
+.scr-issue__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.scr-journal {
   display: flex;
   flex-direction: column;
 }
 
-.screen-journal__row {
+.scr-journal__row {
   display: grid;
-  grid-template-columns: 132px 26px minmax(0, 1fr);
-  gap: 11px;
-  padding: 10px 0;
+  grid-template-columns: 128px 24px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
   border-bottom: 1px dashed var(--border);
   align-items: start;
   font-size: 13px;
 }
 
-.screen-journal__row:last-child {
+.scr-journal__row:last-child {
   border-bottom: none;
 }
 
-.screen-file {
+.scr-file {
   display: flex;
-  gap: 11px;
+  gap: 10px;
   align-items: center;
-  padding: 9px 0;
+  padding: 7px 0;
   border-bottom: 1px dashed var(--border);
 }
 
-.screen-file:last-child {
+.scr-file:last-child {
   border-bottom: none;
 }
 
-.screen-file__name {
+.scr-file__name {
   flex: 1;
   min-width: 0;
   font-family: var(--mono);
@@ -322,14 +415,110 @@
   overflow-wrap: anywhere;
 }
 
-/* Collapsible "advanced / how it works" section — keeps reference and
-   infrastructure detail off the operator's default view without deleting it.
-   No horizontal padding on the container: its child cards must line up with the
-   cards ABOVE it (same left edge, same width). Only the summary is padded, so
-   the header reads as a clickable strip while the content stays aligned. */
+/* Mirrors .jira — a comment card in a transcript view. */
+.scr-comment {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 11px;
+  margin-bottom: 8px;
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.scr-comment__who {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.scr-comment__when {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Meters, toggles, checklists ─────────────────────────────────────────── */
+
+/* Capacity bar (mock `.bar`). */
+.scr-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.scr-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+
+.scr-bar--warn > i {
+  background: var(--amber);
+}
+
+.scr-toggle-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.scr-toggle-row:last-child {
+  border-bottom: none;
+}
+
+.scr-toggle-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.scr-toggle-row__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Group-membership picker on the user form. */
+.scr-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
+.scr-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scr-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.scr-check input {
+  cursor: pointer;
+}
+
+/* ── Collapsible "advanced" section ──────────────────────────────────────── */
+
+/* Keeps reference / infrastructure detail off the default view without
+   deleting it. No horizontal padding on the container so child cards line up
+   with the cards above. */
 .scr-adv {
   background: transparent;
 }
+
 .scr-adv > .scr-adv__summary {
   cursor: pointer;
   font-weight: 600;
@@ -337,29 +526,138 @@
   color: var(--muted);
   list-style: none;
   user-select: none;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
 }
+
 .scr-adv[open] > .scr-adv__summary {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
+
 .scr-adv > .scr-adv__summary::-webkit-details-marker {
   display: none;
 }
+
 .scr-adv > .scr-adv__summary::before {
   content: "▸ ";
   color: var(--muted);
 }
+
 .scr-adv[open] > .scr-adv__summary::before {
   content: "▾ ";
 }
 
-/* Project-binding journey strip — three numbered, clickable steps with arrows,
-   so a first-time admin sees the sequence and where they are. Colours come from
-   tokens (never literals) so both themes stay correct. */
+/* ── Legacy inline-link buttons ──────────────────────────────────────────── */
+
+/* Prefer <Button variant="ghost"> / <Button variant="link"> (ui/Button). These
+   stay so untouched screens keep rendering; remove them as screens migrate. */
+.scr-linkbtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.scr-link {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+.scr-link:hover {
+  text-decoration: none;
+}
+
+/* ── Screen-specific helpers (kept here so no screen needs a stylesheet) ─── */
+
+/* Guided setup wizard (screens/Setup.tsx): radio CARDS, the whole card is the
+   label so the outcome sentence is part of the click target. */
+.setup-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.setup-choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.setup-choice:hover {
+  border-color: var(--blue);
+}
+
+.setup-choice--on {
+  border-color: var(--blue);
+  background: var(--blue-bg);
+}
+
+.setup-choice input {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.setup-choice__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setup-choice__label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.setup-choice__desc {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.setup-choice__meta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* A flow this install cannot run yet — marked, not hidden. */
+.setup-choice--blocked {
+  border-style: dashed;
+}
+
+.setup-choice__blocked {
+  margin-top: 5px;
+  font-size: 12.5px;
+}
+
+.setup-review__h {
+  font-size: 13.5px;
+  font-weight: 700;
+  margin: 14px 0 5px;
+  color: var(--text);
+}
+
+.setup-review__list {
+  margin: 5px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Project-binding journey strip — numbered, clickable steps with arrows. */
 .proj-journey {
   display: flex;
   align-items: stretch;
@@ -369,35 +667,119 @@
   margin: 0;
   padding: 0;
 }
+
 .proj-journey__item {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1 1 200px;
-  min-width: 180px;
+  flex: 1 1 180px;
+  min-width: 160px;
 }
+
 .proj-journey__step {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   flex: 1;
   text-align: start;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
   cursor: pointer;
   color: inherit;
-  transition: border-color 0.12s, background 0.12s;
+  font: inherit;
 }
+
 .proj-journey__step:hover {
   border-color: var(--blue);
 }
+
 .proj-journey__step--on {
   border-color: var(--blue);
-  background: color-mix(in srgb, var(--blue) 10%, var(--panel));
+  background: var(--blue-bg);
 }
+
 .proj-journey__num {
+  flex: 0 0 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+.proj-journey__step--on .proj-journey__num {
+  background: var(--blue);
+  color: var(--on-primary);
+}
+
+.proj-journey__step--done .proj-journey__num {
+  background: var(--green);
+  color: var(--on-primary);
+}
+
+.proj-journey__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.proj-journey__label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.proj-journey__hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.proj-journey__arrow {
+  color: var(--muted);
+  font-size: 15px;
+  flex: 0 0 auto;
+}
+
+/* First-run "where do I start" checklist on the Panel. */
+.dash-start {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dash-start__step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: start;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.dash-start__step:hover {
+  border-color: var(--blue);
+}
+
+.dash-start__step--next {
+  border-color: var(--blue);
+  background: var(--blue-bg);
+}
+
+.dash-start__mark {
   flex: 0 0 26px;
   height: 26px;
   display: grid;
@@ -408,112 +790,255 @@
   font-weight: 700;
   font-size: 13px;
 }
-.proj-journey__step--on .proj-journey__num {
-  background: var(--blue);
-  color: #fff;
-}
-.proj-journey__step--done .proj-journey__num {
+
+.dash-start__step--done .dash-start__mark {
   background: var(--green);
-  color: #fff;
+  color: var(--on-primary);
 }
-.proj-journey__body {
+
+.dash-start__step--next .dash-start__mark {
+  background: var(--blue);
+  color: var(--on-primary);
+}
+
+.dash-start__body {
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  flex: 1;
 }
-.proj-journey__label {
+
+.dash-start__label {
   font-weight: 600;
-  font-size: 13px;
-}
-.proj-journey__hint {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-.proj-journey__arrow {
-  color: var(--muted);
-  font-size: 15px;
-  flex: 0 0 auto;
+  font-size: 13.5px;
 }
 
-/* First-run "where do I start" checklist on the Panel. Numbered, clickable
-   steps; the next unfinished step is highlighted. Tokens only (dark-safe). */
-.dash-start { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.dash-start__step {
-  display: flex; align-items: center; gap: 12px; width: 100%; text-align: start;
-  padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px;
-  background: var(--panel); cursor: pointer; color: inherit;
-  transition: border-color .12s, background .12s;
+.dash-start__hint {
+  font-size: 12.5px;
+  color: var(--muted);
 }
-.dash-start__step:hover { border-color: var(--blue); }
-.dash-start__step--next { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 8%, var(--panel)); }
-.dash-start__mark {
-  flex: 0 0 28px; height: 28px; display: grid; place-items: center; border-radius: 50%;
-  background: var(--border); color: var(--muted); font-weight: 700; font-size: 14px;
-}
-.dash-start__step--done .dash-start__mark { background: var(--green); color: #fff; }
-.dash-start__step--next .dash-start__mark { background: var(--blue); color: #fff; }
-.dash-start__body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-.dash-start__label { font-weight: 600; font-size: 14px; }
-.dash-start__hint { font-size: 12.5px; color: var(--muted); }
+
 .dash-start__cta {
-  flex: 0 0 auto; font-size: 12px; font-weight: 700; color: #fff; background: var(--blue);
-  padding: 4px 11px; border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--on-primary);
+  background: var(--blue);
+  padding: 3px 10px;
+  border-radius: 999px;
 }
 
-/* The guide's footer: the webhook acknowledgement on the left, "hide" on the
-   right. Wraps on a narrow screen rather than squeezing the label. */
 .dash-start__foot {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  flex-wrap: wrap; margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
 }
+
 .dash-start__ack {
-  display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
   cursor: pointer;
 }
 
-/* Shown when the guide is hidden but the setup is still open — the reminder
-   that "gizle" did not mean "tamamlandı". */
+/* Shown when the guide is hidden but the setup is still open. */
 .dash-setup-note {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  flex-wrap: wrap; padding: 10px 14px; border-radius: 10px;
-  border: 1px solid var(--line); background: var(--panel); font-size: 13px; color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 13px;
+  color: var(--muted);
 }
 
-/* Section heading inside the Panel (e.g. "Tüm iş akışları" above the full list). */
-.dash-section { font-size: 15px; font-weight: 700; margin: 6px 2px 10px; color: var(--ink, inherit); }
+/* Section heading inside the Panel. */
+.dash-section {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 4px 2px 8px;
+  color: var(--text);
+}
 
-/* A bare button that wraps a Badge to make a status cell clickable — no button
-   chrome, just a pointer, so the badge reads as a link to the fix-it step. */
-.scr-linkbtn { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
+/* Help page guide: the "what/how/example" blocks per page. */
+.help-guide {
+  display: grid;
+  gap: 10px;
+}
 
-/* A `.scr-linkbtn` that must READ as a link rather than as plain text — used
-   where the affordance is the whole point (the "Değiştir" beside a variant's
-   model, the "bunu kullan" beside the connection's model suggestion). Without
-   it the button is indistinguishable from the sentence around it, which is the
-   exact failure those two controls exist to fix. */
-.scr-link { color: var(--blue); text-decoration: underline; }
-.scr-link:hover { text-decoration: none; }
-
-/* Help page guide: the three "what/how/example" blocks per page. */
-.help-guide { display: grid; gap: 12px; }
 .help-guide__h {
-  margin: 0 0 3px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
-  text-transform: uppercase; color: var(--muted, #6b7280);
+  margin: 0 0 3px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
+
 .help-guide__block--example {
-  padding: 10px 12px; border-radius: 8px;
-  background: color-mix(in srgb, var(--blue, #2563eb) 7%, transparent);
-  border: 1px solid color-mix(in srgb, var(--blue, #2563eb) 18%, transparent);
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--blue-bg);
+  border: 1px solid var(--border);
 }
 
-/* Help "fields & steps" list: one field per line, bold name + description. */
-.help-fields { margin: 0; padding-left: 18px; display: grid; gap: 5px; }
-.help-fields li { line-height: 1.5; }
+.help-fields {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
 
-/* A sub-heading that groups fields inside the single onboarding form (replaces
-   what used to be a separate wizard step). */
+.help-fields li {
+  line-height: 1.5;
+}
+
+/* A sub-heading that groups fields inside the onboarding form. */
 .onb-group {
-  margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid var(--border);
-  font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--ink, inherit);
+  margin: 16px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+/* ── Login / change-password (outside the shell) ─────────────────────────── */
+
+.login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.login__box {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.login__brand small {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.login__logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--blue);
+  display: grid;
+  place-items: center;
+  color: var(--on-primary);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login__form button {
+  justify-content: center;
+  padding: 8px;
+}
+
+.login__error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--red);
+  background: var(--red-bg);
+  border: 1px solid var(--red);
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+
+.login__forgot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.login__lang {
+  max-width: 180px;
+}
+
+/* ── small utilities the screens reach for ─────────────────────────────────
+ * Vertical rhythm steps and a couple of list/body shapes. They were used
+ * across Setup/Onboard/Notify/Review before any sheet defined them, so the
+ * gaps they asked for silently collapsed. One place, one scale. */
+
+.scr-mt-1 {
+  margin-top: 6px;
+}
+
+.scr-mt-2 {
+  margin-top: 10px;
+}
+
+.scr-mt-3 {
+  margin-top: 16px;
+}
+
+.scr-muted {
+  color: var(--muted);
+}
+
+/* A plain reading list: tight, no bullets pushed out of the panel. */
+.scr-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.scr-list li + li {
+  margin-top: 3px;
+}
+
+/* Many checkboxes in one fieldset (allowed statuses): a wrapping row, so ten
+ * statuses take two lines rather than a column the length of the page. */
+.scr-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 6px;
+}
+
+/* The disclosed body of a `<details class="scr-adv">`: joined to its summary
+ * so the pair reads as one panel. */
+.scr-adv > .scr-adv__body {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: var(--panel);
 }

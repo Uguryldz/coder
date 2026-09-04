@@ -21,10 +21,24 @@ import { unwired } from "./unwired.js";
 const READ_ROLES = ["viewer", "admin", "tech-lead", "product-owner", "qa", "developer"] as const;
 const WRITE_ROLES = ["admin", "tech-lead"] as const;
 
+/**
+ * Target agent variant — the note then feeds ONLY that agent's analysis.
+ * Optional; empty/whitespace collapses to null = global (every agent). Typed
+ * notes and uploads share the rule so the two forms cannot drift.
+ */
+const VariantTarget = z
+  .string()
+  .trim()
+  .max(64)
+  .nullable()
+  .optional()
+  .transform((value) => (value === undefined || value === null || value === "" ? null : value));
+
 const CreateBody = z.object({
   title: z.string().trim().min(1).max(200),
   content: z.string().trim().min(1).max(20_000),
   enabled: z.boolean().default(true),
+  variantId: VariantTarget,
 });
 const PatchBody = z.object({
   title: z.string().trim().min(1).max(200).optional(),
@@ -42,12 +56,7 @@ const IdParam = z.object({ id: z.string().trim().min(1).max(64) });
 const UploadBody = z.object({
   fileName: z.string().trim().min(1).max(200),
   contentBase64: z.string().min(1),
-  /**
-   * Target agent variant — the note then feeds ONLY that agent's context.
-   * Optional; empty/whitespace collapses to null = global (all agents),
-   * which is exactly what the pre-variantId Studio kept sending.
-   */
-  variantId: z.string().trim().max(64).optional(),
+  variantId: VariantTarget,
 });
 
 /** File types an operator may upload as a guidance note. */
@@ -104,9 +113,7 @@ export async function guidanceRoutes(app: FastifyInstance, deps: ResolvedDeps): 
     await assertWritable(deps);
     const body = UploadBody.safeParse(request.body);
     if (!body.success) throw badRequest("invalid_guidance_upload");
-    const { fileName, contentBase64 } = body.data;
-    const variantId =
-      body.data.variantId === undefined || body.data.variantId === "" ? null : body.data.variantId;
+    const { fileName, contentBase64, variantId } = body.data;
 
     const extension = fileName.toLowerCase().split(".").pop() ?? "";
     if (!UPLOAD_EXTENSIONS.has(extension)) throw badRequest("guidance_upload_type");

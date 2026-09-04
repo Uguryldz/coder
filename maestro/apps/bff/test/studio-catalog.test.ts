@@ -454,6 +454,113 @@ describe("PUT /studio/users/:username", () => {
   });
 });
 
+describe("PUT /studio/users/:username — display name", () => {
+  it("persists the display name instead of dropping it", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "ayse.kaya", roles: ["qa"], groups: ["qa"] });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "PUT",
+      url: "/studio/users/ayse.kaya",
+      headers: auth(token),
+      payload: { displayName: "Ayşe Kaya" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { displayName: string }).displayName).toBe("Ayşe Kaya");
+    expect((await h.users.find("ayse.kaya"))?.displayName).toBe("Ayşe Kaya");
+    // Groups were not in the body, so they are untouched.
+    expect((await h.users.find("ayse.kaya"))?.groups).toEqual(["qa"]);
+  });
+
+  it("reactivates an off-boarded account with active: true", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "donen.kisi", roles: ["qa"], groups: ["qa"] });
+    await h.users.remove("donen.kisi");
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "PUT",
+      url: "/studio/users/donen.kisi",
+      headers: auth(token),
+      payload: { active: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { active: boolean }).active).toBe(true);
+    expect((await h.users.find("donen.kisi"))?.active).toBe(true);
+  });
+});
+
+describe("POST /studio/users/:username/reset-password", () => {
+  it("hands back a one-time temporary password, forces a change and kills the sessions", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "kilitli.kisi", roles: ["qa"], groups: ["qa"] });
+    const before = await h.login("kilitli.kisi");
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users/kilitli.kisi/reset-password",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      user: { username: string; active: boolean };
+      temporaryPassword: string;
+      killedSessions: number;
+    };
+    expect(body.user.username).toBe("kilitli.kisi");
+    expect(body.temporaryPassword.length).toBeGreaterThanOrEqual(14);
+    expect(body.killedSessions).toBe(1);
+
+    // The old session is gone.
+    const stale = await h.app.inject({ method: "GET", url: "/auth/session", headers: auth(before) });
+    expect(stale.statusCode).toBe(401);
+
+    // The temporary password logs in, and the account must change it first.
+    const login = await h.app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { username: "kilitli.kisi", password: body.temporaryPassword },
+    });
+    expect(login.statusCode).toBe(200);
+    expect((await h.users.find("kilitli.kisi"))?.mustChangePassword).toBe(true);
+  });
+
+  it("does not revive a deactivated account", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "giden.kisi", roles: ["qa"], groups: ["qa"] });
+    await h.users.remove("giden.kisi");
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users/giden.kisi/reset-password",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect((await h.users.find("giden.kisi"))?.active).toBe(false);
+  });
+
+  it("refuses a non-admin", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "biri", groups: [] });
+    const token = await memberToken(h);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/studio/users/biri/reset-password",
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+});
+
 describe("DELETE /studio/users/:username", () => {
   it("deactivates rather than deletes, keeping the account resolvable for audit", async () => {
     const h = await studioHarness();
@@ -473,6 +580,48 @@ describe("DELETE /studio/users/:username", () => {
     const still = await h.users.find("giden.kisi");
     expect(still).not.toBeNull();
     expect(still?.active).toBe(false);
+  });
+
+  it("records who revoked the account and the reason they typed, in the audit chain", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "giden.kisi", roles: ["tech-lead"], groups: ["tech-leads"] });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "DELETE",
+      url: "/studio/users/giden.kisi?reason=ayr%C4%B1ld%C4%B1%2C%20HR%20bildirimi",
+      headers: auth(token),
+    });
+    expect(response.statusCode).toBe(200);
+
+    const entries = await h.auditStore.read();
+    const entry = entries.find((event) => event.subject === "user:giden.kisi");
+    expect(entry).toBeDefined();
+    expect(entry?.action).toBe("PARAM_CHANGED");
+    expect(entry?.meta).toMatchObject({
+      surface: "users",
+      verb: "deactivate",
+      reason: "ayrıldı, HR bildirimi",
+    });
+    // The admin, not the bot and not the departed person, is the actor.
+    expect(entry?.actor).not.toContain("giden.kisi");
+  });
+
+  it("still deactivates without a reason — a scripted off-boarding is not refused for lacking prose", async () => {
+    const h = await studioHarness();
+    await h.addUser({ username: "giden.kisi", groups: [] });
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "DELETE",
+      url: "/studio/users/giden.kisi",
+      headers: auth(token),
+    });
+    expect(response.statusCode).toBe(200);
+
+    const entry = (await h.auditStore.read()).find((event) => event.subject === "user:giden.kisi");
+    expect(entry?.meta).toMatchObject({ surface: "users", verb: "deactivate" });
+    expect(entry?.meta).not.toHaveProperty("reason");
   });
 
   it("refuses a non-admin", async () => {

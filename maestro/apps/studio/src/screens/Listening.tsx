@@ -2,248 +2,58 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-/**
- * KAPI SÖZLÜĞÜ SÖZLEŞMEDEN, EKRANDAN DEĞİL.
- *
- * Aynı listeyi üç yer okuyor: bu panel, BFF'in doğrulaması, ve workflow'un
- * kapı döngüsü. Üç kopya, er ya da geç üç farklı liste demek — ve buradaki
- * kopya sessizce ayrışan olurdu, çünkü ekranın yanlış bir kapı göstermesi
- * hiçbir testi kırmaz. `titleKey` bir i18n anahtarı (M104): operatör kod adı
- * değil ANLAM görür.
- */
-import { SELECTABLE_GATES } from "@maestro/contracts";
-import { messageKeyOf, sweepReasonOf } from "../api/errors.ts";
+import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Button, Card, Input, Select, Table, useToast } from "../ui/index.ts";
-import type { BadgeTone, Column } from "../ui/index.ts";
+import { Button, Card, useToast } from "../ui/index.ts";
 import type { RoutingView } from "./common/index.ts";
-import { englishAside, matchValueLabel } from "./common/jira-english.ts";
 import {
-  EMPTY_GATE_STATUS_DRAFT,
-  EMPTY_STATUS_DRAFT,
-  GATE_STATUS_POINTS,
-  STATUS_POINTS,
-  buildStatusMap,
-  deadStatusEntries,
-  firesFor,
-  gatePointsOf,
-  gateStatusConflicts,
-  statusSummary,
-  type GateStatusDraft,
-  type StatusDraft,
-  type StatusMap,
-  type StatusPoint,
-} from "./common/status-map.ts";
-import { ageLabel } from "./shared/format.ts";
+  bodyFromDraft,
+  draftFromRule,
+  draftIncomplete,
+  emptyDraft,
+  priorityOf,
+  probeDraftOf,
+  type RuleDraft,
+} from "./listening/draft.ts";
+import { RuleForm } from "./listening/RuleForm.tsx";
+import { RuleTable } from "./listening/RuleTable.tsx";
+import { SweepBanner } from "./listening/SweepBanner.tsx";
+import {
+  DC_INTERNAL_KEY,
+  sameDraft,
+  type JiraConnectionOption,
+  type ListeningRule,
+  type ProbeDraft,
+  type ProbeResult,
+  type RuleBody,
+  type SweepRunResult,
+  type SweepStatus,
+  type VariantOption,
+} from "./listening/types.ts";
 import { QueryState } from "./shared/QueryState.tsx";
-import "./shared/screens.css";
+import { invalidateRun } from "./shared/runs.ts";
 
 /**
- * Screen: listening — the "dinleme kuralları" surface.
+ * Screen: listening — "dinleme kuralları".
  *
- * Turns Maestro's discovery from hard-coded code into rows an admin edits here:
- * "in project X, a ticket assigned to the bot whose <status|issuetype> is
- * <value> runs as <analiz|duzeltme|gelistirme>". Backed by the real DB table
- * (migration 0011) through `/studio/listening-rules`, which is the single
- * source of truth: the Temporal line reads discovery from that table, so a
- * saved rule is a live rule with nothing to mirror anywhere.
+ * "X projesinde, bota atanmış ve <statü|iş tipi>si <değer> olan ticket
+ * <analiz|düzeltme|geliştirme> olarak koşsun" satırları. Gerçek DB tablosuna
+ * (`/studio/listening-rules`) yazar; Temporal hattı keşfi o tablodan okur,
+ * dolayısıyla kaydedilen kural canlı kuraldır.
  *
- * Each rule also carries an OPTIONAL Jira status map — which status the ticket
- * moves to at each point of the flow. Absent is the default and means
- * comment-only: Maestro writes its comments and never touches the board. The
- * server has accepted the map since it was added, but nothing here could set
- * it, so the only way to use the feature was to write jsonb into Postgres by
- * hand — which in practice meant an operator could not use it at all. The
- * collapsed opt-in section in the form, the "Düzenle" path out of the table and
- * the "Jira durumu" column are that gap closed.
+ * Bu dosya yalnız ORKESTRA: sorgular, mutation'lar, taslak durumu, yerleşim.
+ * Parçalar `listening/` altında — `RuleForm` (form), `RuleTable` (liste +
+ * silme onayı), `RuleProbe` (kuralı test et), `SweepBanner` (tarama bandı),
+ * `draft.ts` (taslak ↔ tel çevirisi), `types.ts` (tel tipleri).
  *
- * WRITES ARE ADMIN-ONLY, mirroring the BFF's WRITE_ROLES. A tech-lead can read
- * the table but the form is hidden; the BFF is the real gate (a viewer who
- * forged the request still gets a 403).
+ * ROLLER BFF'İ AYNALAR: kural yazma `admin`; hazır kural yükleme
+ * `admin`+`tech-lead` (SEED_ROLES — onboarding yüzeyi gibi kapılı); okuma
+ * `admin`+`tech-lead`. Gerçek kapı BFF'te; burası yalnız düğmeyi gizler.
  */
-
-/** Mirrors the BFF WRITE_ROLES for the listening surface. */
 const WRITE_ROLES = ["admin"] as const;
-
-type FlowType = "analiz" | "duzeltme" | "gelistirme";
-/**
- * The rule's TETİKLEME TİPİ — mirrors the BFF's `MATCH_KINDS` and the DB CHECK
- * (migrations 0020, 0023).
- *
- * `assigned` compares no field: the rule fires because the ticket was handed to
- * the bot, full stop. Its `matchValue` is the fixed literal `*` the server
- * pins, carried only so the unique trigger index keeps one such rule per
- * (project, bot) — it is never shown and never compared.
- *
- * `label` is the opt-in etiketi, which used to live on the PROJECT BINDING as a
- * separate gate in front of these rules. There is now exactly one place a
- * trigger is defined, which is this dropdown.
- */
-type MatchKind = "status" | "issuetype" | "assigned" | "label";
-/** The value the BFF stores for an `assigned` rule. See ASSIGNED_MATCH_VALUE. */
-const ASSIGNED_MATCH_VALUE = "*";
-
-/**
- * The status map's shape, point list, empty draft and the `buildStatusMap` /
- * `statusSummary` pair now live in `common/status-map.ts` — the setup wizard
- * writes the same map, and the "no map is null, never `{}`" rule must have
- * exactly one implementation for both surfaces to obey it.
- */
-
-interface ListeningRule {
-  readonly ruleId: string;
-  readonly projectKey: string;
-  readonly assigneeAccountId: string;
-  readonly matchKind: MatchKind;
-  readonly matchValue: string;
-  readonly flowType: FlowType;
-  readonly priority: number;
-  readonly enabled: boolean;
-  /** Agent variant for the analysis side; null/absent → the default agent. */
-  readonly analystVariantId?: string | null;
-  /** Agent variant for the engineering side; null/absent → the default agent. */
-  readonly engineerVariantId?: string | null;
-  /**
-   * Which Jira status the ticket is moved to at each point of the flow.
-   * null/absent is the DEFAULT and means comment-only: Maestro writes its
-   * comments and never touches the ticket's status.
-   */
-  readonly statusMap?: StatusMap | null;
-  /**
-   * HANGİ STATÜDEKİ ticket'lar işlensin — her kuralda sorulan statü KAPISI.
-   *
-   * `statusMap` ile karıştırılmamalı: o "ticket'ı NEREYE taşıyayım" der (çıktı),
-   * bu "ticket NEREDEYSE işleyebilirim" der (giriş kapısı).
-   *
-   * null/boş = statü kısıtı yok. Bu, 0024 öncesi yazılmış kuralların hâli ve o
-   * kurallar ÇALIŞIR — ama tabloda ve formda görünür şekilde işaretlenir.
-   */
-  readonly allowedStatuses?: readonly string[] | null;
-  /**
-   * HANGİ ONAYLAR BEKLENSİN — kuralın kapı seçimi.
-   *
-   * `null`/absent = "seçim yok", kapılar risk seviyesine göre açılır (bugüne
-   * kadarki davranış, ve bu alan var olmadan yazılmış her kural). `{steps: []}`
-   * bundan FARKLI ve karıştırılmamalı: "hiç kapı istemiyorum".
-   */
-  readonly gateSteps?: { readonly steps: readonly string[]; readonly ownerless?: boolean } | null;
-}
-
-/**
- * DENEME TASLAĞI — kural taslağının yalnız ARAMAYI ilgilendiren yarısı.
- *
- * `POST /studio/listening-rules/test`in gövdesi. Akış, öncelik ve ajan
- * varyantları yok, çünkü hiçbiri JQL'e girmez; istemek, henüz akışını seçmemiş
- * bir operatörün kuralını deneyememesi demek olurdu.
- */
-interface ProbeDraft {
-  readonly projectKey: string;
-  readonly assigneeAccountId: string;
-  readonly matchKind: MatchKind;
-  readonly matchValue: string;
-  readonly allowedStatuses: readonly string[] | null;
-}
-
-/** Denemede görülen tek ticket — kuralın sorduğu dört alan, ticket metni YOK. */
-interface ProbeTicket {
-  readonly key: string;
-  readonly status: string | null;
-  readonly issueType: string | null;
-  readonly assignee: string | null;
-  readonly labels: readonly string[];
-  /**
-   * Bu ticket'ın zaten bir koşusu var. Ölçüldü: 14 ticket bulan bir turda
-   * "0 alındı" gören operatör taramayı bozuk sandı — oysa on dördünün de koşusu
-   * vardı. Eşleşenin yanında bunu söylemek o yanılgının tek çaresi.
-   */
-  readonly alreadyKnown: boolean;
-}
-
-type ProbeResult =
-  | {
-      readonly ok: true;
-      readonly jql: string;
-      readonly matched: readonly ProbeTicket[];
-      /** Eşleşme YOKKEN projedeki açık ticket'lar — karşılaştırma listesi. */
-      readonly projectSample: readonly ProbeTicket[];
-      readonly sampleJql: string | null;
-    }
-  | { readonly ok: false; readonly reason: string; readonly detail?: string };
-
-/**
- * İki taslak AYNI aramayı mı üretir?
- *
- * Alan alan, çünkü tek şey karşılaştırılıyor: bu deneme sonucu hâlâ formdaki
- * kuralı anlatıyor mu. `allowedStatuses` sırasız bir küme gibi davranır —
- * kutuları farklı sırada işaretlemek aynı JQL'i üretir ve operatörü sahte bir
- * "değişti" uyarısıyla yeniden teste zorlamak, uyarıyı inanılmaz kılardı.
- */
-function sameDraft(a: ProbeDraft, b: ProbeDraft): boolean {
-  const set = (list: readonly string[] | null): string => [...(list ?? [])].sort().join("\u0000");
-  return (
-    a.projectKey === b.projectKey &&
-    a.assigneeAccountId === b.assigneeAccountId &&
-    a.matchKind === b.matchKind &&
-    a.matchValue === b.matchValue &&
-    set(a.allowedStatuses) === set(b.allowedStatuses)
-  );
-}
-
-/** The slice of `GET /variants` this screen needs: id + role, for filtering. */
-interface VariantOption {
-  readonly variantId: string;
-  readonly role: string;
-}
-
-const FLOW_TONE: Readonly<Record<FlowType, BadgeTone>> = {
-  analiz: "blue",
-  duzeltme: "amber",
-  gelistirme: "green",
-};
-
-/**
- * `95000` → `"1 dk 35 sn"`, `300000` → `"5 dk"`, `45000` → `"45 sn"`.
- *
- * Rounded to nothing: the interval is a number the operator typed, and a
- * screen that rounds 80s to "1 dakika" reads as the setting having been
- * ignored.
- */
-function durationLabel(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  if (minutes === 0) return `${seconds} sn`;
-  if (seconds === 0) return `${minutes} dk`;
-  return `${minutes} dk ${seconds} sn`;
-}
-
-/** What one manual sweep answers: what it took, and the round's numbers. */
-interface SweepRunResult {
-  readonly started: readonly string[];
-  readonly error?: string;
-  readonly status: SweepStatus | null;
-}
-
-/** What `/studio/listening-status` answers; see the BFF route for why. */
-interface SweepStatus {
-  readonly enabled: boolean;
-  readonly intervalMs: number;
-  readonly lastRunAt: string | null;
-  readonly lastStarted: number;
-  readonly rulesSearched: number;
-  readonly lastError: string | null;
-  /**
-   * Son turda otomatik yeniden başlatılan ölü koşu sayısı, ve üst üste
-   * düştüğü için insana devredilen ticket sayısı.
-   *
-   * Opsiyonel: bu alanları tanımayan eski bir BFF hâlâ geçerli bir cevap
-   * veriyor, ve o cevabın anlamı doğru olan — gösterilecek bir şey yok.
-   */
-  readonly lastRestarted?: number;
-  readonly lastHandedOver?: number;
-}
+const SEED_ROLES = ["admin", "tech-lead"] as const;
 
 export function ListeningScreen(): ReactNode {
   const t = useT();
@@ -252,6 +62,7 @@ export function ListeningScreen(): ReactNode {
   const queryClient = useQueryClient();
   const { session } = useAuth();
   const canWrite = hasAnyRole(session, WRITE_ROLES);
+  const canSeed = hasAnyRole(session, SEED_ROLES);
 
   const query = useQuery({
     queryKey: ["listening-rules"],
@@ -260,17 +71,8 @@ export function ListeningScreen(): ReactNode {
     retry: false,
   });
 
-  /**
-   * Is anything actually LOOKING for tickets?
-   *
-   * The rules below say what Maestro should pick up. Without this the screen
-   * could not say whether a sweep was running at all — and an operator whose
-   * tickets never arrive has to tell three states apart: the sweep is off, it
-   * runs and finds nothing, or it is failing. Each needs a different fix.
-   *
-   * Refetched on an interval so the "last run" line ages honestly rather than
-   * freezing at whatever it said when the screen opened.
-   */
+  // Bir şey ticket ARIYOR mu? Aralıklı tazelenir ki "son tur" satırı ekran
+  // açıldığındaki hâlinde donmasın.
   const sweep = useQuery({
     queryKey: ["listening-status"],
     queryFn: ({ signal }) => api.get<SweepStatus>("/studio/listening-status", { signal }),
@@ -278,27 +80,12 @@ export function ListeningScreen(): ReactNode {
     retry: false,
   });
 
-  // The bound projects, so the operator PICKS one instead of typing a key from
-  // memory. A rule on a project that is not bound never fires — a dropdown of
-  // real bindings makes that mistake impossible.
-  /**
-   * "Şimdi tara" — run one sweep without waiting for the interval.
-   *
-   * Asked for directly: "tarama ok ama yine de panele gelmiyor, daha test
-   * butonu yok mu?". Writing a rule and then waiting five minutes to find out
-   * whether it matches anything is not a test; and reading the container log
-   * needs a shell, which the admin writing rules does not necessarily have.
-   */
+  // "Şimdi tara" — aralığı beklemeden bir tur.
   const sweepNow = useMutation({
     mutationFn: () => api.post<SweepRunResult>("/studio/listening-sweep", {}),
     onSuccess: (result) => {
-      // The round's own numbers come back with the response, but the strip
-      // reads the status query — refresh it so both agree.
       void queryClient.invalidateQueries({ queryKey: ["listening-status"] });
-      // A ticket that was taken becomes a run, so the runs list is stale too.
-      if (result.started.length > 0) {
-        void queryClient.invalidateQueries({ queryKey: ["runs"] });
-      }
+      if (result.started.length > 0) invalidateRun(queryClient);
     },
   });
 
@@ -308,161 +95,18 @@ export function ListeningScreen(): ReactNode {
   });
   const boundProjects = routing.data?.projects?.map((p) => p.projectKey) ?? [];
 
-  // The Maestro Bot's own accountId, learned when a Jira connection was tested.
-  // With it, the "Bot kullanıcısı" field pre-fills itself instead of asking the
-  // operator to hand-copy a 40-char GUID from a Jira profile URL. `null` until a
-  // connection has been tested once — then the field falls back to free text.
+  // Etkin Jira bağlantıları: bot hesabı (bağlantı testinde öğrenilir) ve
+  // değer listelerinin okunacağı bağlantı buradan.
   const jiraConns = useQuery({
     queryKey: ["onboarding-jira-connections"],
     queryFn: ({ signal }) =>
-      api.get<{ connections: readonly { id: string; botAccountId: string | null }[] }>(
-        "/onboarding/jira-connections",
-        { signal },
-      ),
+      api.get<{ connections: readonly JiraConnectionOption[] }>("/onboarding/jira-connections", {
+        signal,
+      }),
   });
-  const botAccountId =
-    jiraConns.data?.connections?.find((c) => c.botAccountId)?.botAccountId ?? null;
-  // The Jira connection to read match values through (first enabled one).
-  const jiraConnId = jiraConns.data?.connections?.[0]?.id ?? null;
+  const connections = jiraConns.data?.connections ?? [];
+  const botAccountId = connections.find((c) => c.botAccountId)?.botAccountId ?? null;
 
-  // Form state for a new rule. The project is pre-filled from `?projectKey=` when
-  // an operator arrives here straight from approving an onboarding package (M93),
-  // so they land on the rule editor for the project they just bound.
-  const [searchParams] = useSearchParams();
-  const [projectKey, setProjectKey] = useState(searchParams.get("projectKey") ?? "");
-  const [assigneeAccountId, setAssigneeAccountId] = useState("");
-  // Pre-fill the bot id once it is known and the operator has not typed their
-  // own. Runs when the query resolves; a manual edit is never overwritten.
-  const [assigneeTouched, setAssigneeTouched] = useState(false);
-  useEffect(() => {
-    if (!assigneeTouched && assigneeAccountId === "" && botAccountId) {
-      setAssigneeAccountId(botAccountId);
-    }
-  }, [botAccountId, assigneeTouched, assigneeAccountId]);
-  const [matchKind, setMatchKind] = useState<MatchKind>("issuetype");
-  const [matchValue, setMatchValue] = useState("");
-  const [flowType, setFlowType] = useState<FlowType>("analiz");
-  // Which agent variant runs each side of the flow. "" means "default agent"
-  // and is sent as null — the engine then picks its own.
-  const [analystVariantId, setAnalystVariantId] = useState("");
-  const [engineerVariantId, setEngineerVariantId] = useState("");
-
-  // The Jira status map. `statusOn` is the opt-in: OFF by default, because
-  // comment-only is the behaviour every existing rule already has and moving a
-  // customer's tickets is not something a form should start doing on its own.
-  // The draft survives toggling off and on again, so an operator who collapses
-  // the section to re-read a hint does not lose what they typed — only what is
-  // sent depends on the toggle.
-  /**
-   * İZİN VERİLEN STATÜLER — kuralın statü kapısı.
-   *
-   * `statusOn`/`statusDraft` ile aynı ekranda ama BAŞKA bir şey ve bilerek
-   * ayrı: durum eşlemesi opsiyonel bir çıktıdır, bu ise bir GİRİŞ ŞARTIDIR.
-   * Bu yüzden bir açılır-kapanır bölümün içinde değil, tetikleme tipinin hemen
-   * yanında, her zaman görünür duruyor — operatörün cümlesi "atanmış olsa da
-   * izin verdiğim analiz statüsünde değilse çalışmamalı" ve bu, tetiklemenin
-   * kendisi kadar merkezî bir soru.
-   */
-  const [allowedStatuses, setAllowedStatuses] = useState<readonly string[]>([]);
-  const toggleAllowedStatus = (name: string): void =>
-    setAllowedStatuses((prev) =>
-      prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name],
-    );
-
-  /**
-   * ONAY KAPILARI — "bu kuralda hangi onaylar beklensin".
-   *
-   * İKİ DURUM, İKİ AYRI STATE, ve birleştirmek yanlış olurdu:
-   *
-   *   `gatesCustom = false` → "seçim yok". Kapılar risk seviyesine göre açılır
-   *                           ve `gateSteps` telde `null` gider. Bu, bu alanı
-   *                           hiç görmemiş her kuralın hâli.
-   *   `gatesCustom = true`  → operatör seçti. Seçimi BOŞ da olabilir ("hiç kapı
-   *                           istemiyorum") ve o telde `{steps: []}` gider.
-   *
-   * Tek bir diziyle (boş = varsayılan) anlatılamazdı: o zaman "hiç kapı
-   * istemiyorum" ile "seçim yapmadım" aynı şeye inerdi, ve operatörün kapattığı
-   * kapılar kaydettiği anda geri açılırdı.
-   */
-  const [gatesCustom, setGatesCustom] = useState(false);
-  const [gateStepsSel, setGateStepsSel] = useState<readonly string[]>([]);
-  const [gateOwnerless, setGateOwnerless] = useState(false);
-  const toggleGateStep = (step: string): void =>
-    setGateStepsSel((prev) =>
-      prev.includes(step) ? prev.filter((s) => s !== step) : [...prev, step],
-    );
-
-  const [statusOn, setStatusOn] = useState(false);
-  // Whether the disclosure is expanded, tracked separately from `statusOn`: an
-  // operator opens the section to READ what it does long before deciding to use
-  // it, and closing it must never be read as "turn this off".
-  const [statusPanelOpen, setStatusPanelOpen] = useState(false);
-  const [statusDraft, setStatusDraft] = useState<StatusDraft>(EMPTY_STATUS_DRAFT);
-  /**
-   * KAPI STATÜLERİ — ARTIK EKRANDA GİRİLMİYOR, ama taşınıyor.
-   *
-   * Formun bu iki alanı yok: kapının iki kenarı beş statü alanından
-   * TÜRETİLİYOR (`gatePointsOf`). Taslak yine de duruyor ve duruyor olması
-   * bilinçli — bu turdan ÖNCE kaydedilmiş bir kuralda `gateApproveStatus` /
-   * `gateReturnStatus` dolu olabilir, ve o operatör onları bilerek hattından
-   * FARKLI bir statüye ayarlamış olabilir. Yüklenirken okunuyor (aşağıda),
-   * kaydedilirken geri yazılıyor (`buildStatusMap`), ve özet onları
-   * gösteriyor. Formdan silmek, o kurulumların ayarını sessizce çöpe atmak
-   * olurdu.
-   */
-  const [gateStatusDraft, setGateStatusDraft] = useState<GateStatusDraft>(EMPTY_GATE_STATUS_DRAFT);
-  const [reassignOnNeedInfo, setReassignOnNeedInfo] = useState(false);
-  const setStatusAt = (point: StatusPoint, value: string): void =>
-    setStatusDraft((prev) => ({ ...prev, [point]: value }));
-
-  // Which of the five points the SELECTED flow can reach. `duzeltme` skips the
-  // analysis gate (see `firesFor`), so its two approval moments are dead:
-  // mapping them moves nothing, ever. The fields stay visible but disabled with
-  // the reason — the same gating the wizard applies, from the same helper, so
-  // the two surfaces cannot drift apart about what the engine does.
-  const livePoints = new Set(firesFor(flowType));
-  // Dead points that nonetheless HOLD a value — a rule stored before this
-  // gating existed can carry `onReview` on a düzeltme flow, and the draft keeps
-  // a value typed before the operator switched flows. These are the values a
-  // save will stop storing, so they get a warning, not silence.
-  const deadDraftEntries = deadStatusEntries(statusDraft, flowType);
-  /**
-   * Kapı statüsü, Maestro'nun kendi taşıdığı bir statüyle çakışıyor mu —
-   * KAYDETMEDEN ÖNCE söylenir.
-   *
-   * Sunucu bunu zaten yakalıyor ve o alanı düşürüyor (fail-closed), ama
-   * operatör bunu ancak kapı çalışmadığında fark ederdi. Kaydı ENGELLEMİYOR:
-   * koruma sunucuda, burası yalnız aynadır.
-   */
-  const gateClashes = gateStatusConflicts(statusDraft, gateStatusDraft);
-  /**
-   * Kapının iki kenarı, beş alanlık hattan TÜRETİLMİŞ — sunucunun
-   * `gateStatusesOf`i ile aynı geri düşüş sırasıyla.
-   *
-   * Ekranda bir girdi değil, bir AYNA: operatör yukarıda hattını çizerken
-   * burası "o hâlde kapı şöyle işler" diye geri söyler. Eski iki kutu bunu
-   * operatöre İKİNCİ KEZ yazdırıyordu.
-   */
-  const gatePoints = gatePointsOf(statusDraft, gateStatusDraft);
-
-  // Editing an existing rule: its id, or null while the form is adding a new
-  // one. The BFF's PUT is a full replace, so the form carries EVERY field of
-  // the rule being edited — a half-filled edit would silently blank the rest.
-  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
-
-  /**
-   * Formun kendisi — "Düzenle"nin operatörü GÖTÜRDÜĞÜ yer.
-   *
-   * Kural tablosu formun ALTINDA duruyor, ve bir düzine kuralı olan bir
-   * kurulumda "Düzenle" ekranın dışında kalan bir formu doldururdu: operatör
-   * hiçbir şey olmamış gibi görür, ikinci kez basar, sonra kuralın
-   * düzenlenemediğini bildirir. Alanlar dolmuştu — görünmüyorlardı.
-   */
-  const formRef = useRef<HTMLDivElement | null>(null);
-
-  // The agent-variant catalogue, for the two per-role dropdowns. A platform
-  // without the variants surface (503) simply leaves both lists empty and the
-  // selects offer only "default agent" — the rule still saves.
   const variants = useQuery({
     queryKey: ["variants"],
     queryFn: ({ signal }) =>
@@ -472,61 +116,72 @@ export function ListeningScreen(): ReactNode {
   const analystOptions = (variants.data?.variants ?? []).filter((v) => v.role === "analyst");
   const engineerOptions = (variants.data?.variants ?? []).filter((v) => v.role === "engineer");
 
-  // The real status / issue-type names for the chosen project, read live off
-  // Jira. Turns "Değer" from free text (silent typos) into a dropdown of exactly
-  // the names Jira uses. Only runs once a project AND a Jira connection exist;
-  // any failure (connection down, project unreadable) leaves the list empty and
-  // the field falls back to free text.
+  // ── Taslak ────────────────────────────────────────────────────────────────
+  // `?projectKey=` ile gelen operatör (onboarding onayından) o projede açılır.
+  const [searchParams] = useSearchParams();
+  const [draft, setDraft] = useState<RuleDraft>(() =>
+    emptyDraft(searchParams.get("projectKey") ?? ""),
+  );
+  const patch = (changes: Partial<RuleDraft>): void =>
+    setDraft((prev) => ({ ...prev, ...changes }));
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
+
+  // Bot kimliği öğrenilince alan dolar; operatörün elle yazdığı asla ezilmez.
+  useEffect(() => {
+    if (!draft.assigneeTouched && draft.assigneeAccountId === "" && botAccountId) {
+      patch({ assigneeAccountId: botAccountId });
+    }
+  }, [botAccountId, draft.assigneeTouched, draft.assigneeAccountId]);
+
+  /**
+   * HANGİ JIRA BAĞLANTISI — kuralın kendi bot hesabına göre.
+   *
+   * Kural bağlantı taşımaz, bot hesabı taşır; ve bir bağlantı tam olarak o
+   * hesabı bilir. Listedeki ilkini almak iki Jira bağlantısında yanlış
+   * projenin statülerini getiriyordu. Sıra: operatörün seçimi → bot hesabına
+   * göre eşleşen → tek bağlantı → ilk bağlantı.
+   */
+  const jiraConnId =
+    (draft.jiraConnectionId !== "" && connections.some((c) => c.id === draft.jiraConnectionId)
+      ? draft.jiraConnectionId
+      : null) ??
+    connections.find(
+      (c) => c.botAccountId !== null && c.botAccountId.trim() === draft.assigneeAccountId.trim(),
+    )?.id ??
+    connections[0]?.id ??
+    null;
+
+  const matchValuesUrl = (kind: string): string =>
+    `/onboarding/jira-match-values?connectionId=${encodeURIComponent(jiraConnId ?? "")}` +
+    `&project=${encodeURIComponent(draft.projectKey.trim())}&kind=${kind}`;
+
+  // Seçilen projenin gerçek statü / iş tipi adları, canlı Jira'dan. Yalnız
+  // `status|issuetype` için — etiket serbest metindir, `assigned`ın değeri yok.
   const matchValues = useQuery({
-    queryKey: ["jira-match-values", jiraConnId, projectKey, matchKind],
-    // Never for `assigned`: that rule has no value to pick, and the endpoint
-    // only understands status|issuetype — asking for a third kind is a 400.
-    // Only `status` and `issuetype` have a list Jira can serve. `assigned` has
-    // no value at all, and a LABEL is free-form on the ticket — Jira has no
-    // per-project label endpoint the other two have, so that field stays a
-    // text box rather than an empty dropdown that looks broken.
+    queryKey: ["jira-match-values", jiraConnId, draft.projectKey, draft.matchKind],
     enabled:
       jiraConnId !== null &&
-      projectKey.trim() !== "" &&
-      (matchKind === "status" || matchKind === "issuetype"),
+      draft.projectKey.trim() !== "" &&
+      (draft.matchKind === "status" || draft.matchKind === "issuetype"),
     retry: false,
     queryFn: ({ signal }) =>
       api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(
-        `/onboarding/jira-match-values?connectionId=${encodeURIComponent(jiraConnId ?? "")}` +
-          `&project=${encodeURIComponent(projectKey.trim())}&kind=${matchKind}`,
+        matchValuesUrl(draft.matchKind),
         { signal },
       ),
   });
   const valueOptions = matchValues.data?.ok ? (matchValues.data.values ?? []) : [];
-  // The server could only reach the FALLBACK source for issue types, so these
-  // names may be a different localisation than the ones on the tickets
-  // ("Task" where the ticket says "Görev") — a rule built from them would match
-  // nothing. Still a dropdown, but one that says to check it against a real
-  // ticket rather than one that quietly looks authoritative.
   const valuesDegradedKey = matchValues.data?.ok ? matchValues.data.degradedKey : undefined;
 
-  // The project's real STATUS names, for the status-map fields. Same endpoint as
-  // "Değer", pinned to kind=status regardless of what the rule matches on: a
-  // rule can trigger on an issue type and still move the ticket through
-  // statuses, so the map can never borrow `matchValues` — that one follows
-  // `matchKind` and would offer issue types half the time. Only fetched once the
-  // section is actually opened; a closed section must not spend a Jira call.
-  // Any failure leaves the list empty and the five fields fall back to free
-  // text, which is why the "birebir aynı yazın" warning stays on screen either
-  // way.
+  // Projenin STATÜ adları — statü kapısı ve durum eşlemesi için, `matchKind`den
+  // bağımsız (iş tipine tetiklenen kural da ticket'ı statülerde gezdirir).
   const statusNames = useQuery({
-    queryKey: ["jira-match-values", jiraConnId, projectKey, "status"],
-    // `statusOn` DEĞİL: aynı statü listesini artık statü KAPISI da kullanıyor ve
-    // o kapı her kuralda, açılır-kapanır bir bölümün ardında değil, doğrudan
-    // formda duruyor. Proje seçilir seçilmez okunmalı.
-    enabled: jiraConnId !== null && projectKey.trim() !== "",
+    queryKey: ["jira-match-values", jiraConnId, draft.projectKey, "status"],
+    enabled: jiraConnId !== null && draft.projectKey.trim() !== "",
     retry: false,
     queryFn: ({ signal }) =>
-      api.get<{ ok: boolean; values?: readonly string[] }>(
-        `/onboarding/jira-match-values?connectionId=${encodeURIComponent(jiraConnId ?? "")}` +
-          `&project=${encodeURIComponent(projectKey.trim())}&kind=status`,
-        { signal },
-      ),
+      api.get<{ ok: boolean; values?: readonly string[] }>(matchValuesUrl("status"), { signal }),
   });
   const statusOptions = statusNames.data?.ok ? (statusNames.data.values ?? []) : [];
 
@@ -534,129 +189,92 @@ export function ListeningScreen(): ReactNode {
     void queryClient.invalidateQueries({ queryKey: ["listening-rules"] });
   };
 
-  /** The status-map half of the form, back to "this rule only comments". */
-  /** Kapı seçimini "seçim yok"a (bugünkü varsayılan davranışa) döndürür. */
-  const clearGateForm = (): void => {
-    setGatesCustom(false);
-    setGateStepsSel([]);
-    setGateOwnerless(false);
+  // ── Deneme ────────────────────────────────────────────────────────────────
+  // Sonuç, ÜRETİLDİĞİ taslakla birlikte tutulur: form sonradan değişirse tablo
+  // artık formdaki kuralı anlatmıyordur ve bunu söylemek zorundayız.
+  const [probe, setProbe] = useState<{ draft: ProbeDraft; result: ProbeResult } | null>(null);
+  const probeStale = probe !== null && !sameDraft(probe.draft, probeDraftOf(draft));
+
+  const test = useMutation({
+    mutationFn: (body: ProbeDraft) => api.post<ProbeResult>("/studio/listening-rules/test", body),
+    onSuccess: (result, body) => setProbe({ draft: body, result }),
+    onError: (error) => {
+      setProbe(null); // eski sonuç yeni kuralın cevabı sanılmasın
+      toast.show("error", t(messageKeyOf(error)));
+    },
+  });
+  const onTest = (): void => {
+    if (draftIncomplete(draft)) {
+      toast.show("error", t("listening.form.incomplete"));
+      return;
+    }
+    test.mutate(probeDraftOf(draft));
   };
 
-  const clearStatusForm = (): void => {
-    setStatusOn(false);
-    setStatusPanelOpen(false);
-    setStatusDraft(EMPTY_STATUS_DRAFT);
-    setGateStatusDraft(EMPTY_GATE_STATUS_DRAFT);
-    setReassignOnNeedInfo(false);
-  };
-
-  /** Leave edit mode and hand the form back to "add a new rule". */
-  const cancelEdit = (): void => {
+  // ── Yazma ─────────────────────────────────────────────────────────────────
+  const resetForm = (): void => {
     setEditingRuleId(null);
     setProbe(null);
-    setMatchValue("");
-    setAllowedStatuses([]);
-    setAnalystVariantId("");
-    setEngineerVariantId("");
-    clearStatusForm();
-    clearGateForm();
+    // Proje ve bot kalır — bir sonraki kural büyük ihtimalle aynı projede.
+    // Statü, kapı ve eşleme kural başına: kalması sonraki kurala önceki kuralın
+    // ayarlarını sessizce iliştirirdi.
+    setDraft((prev) => ({
+      ...emptyDraft(prev.projectKey),
+      assigneeAccountId: prev.assigneeAccountId,
+      assigneeTouched: prev.assigneeTouched,
+      jiraConnectionId: prev.jiraConnectionId,
+    }));
   };
 
-  type RuleBody = Omit<ListeningRule, "ruleId" | "priority" | "enabled">;
-
   const create = useMutation({
-    mutationFn: (body: RuleBody) =>
-      api.post<{ rule: ListeningRule }>("/studio/listening-rules", body),
+    mutationFn: (body: RuleBody) => api.post<{ rule: ListeningRule }>("/studio/listening-rules", body),
     onSuccess: () => {
       invalidate();
       toast.show("success", t("listening.toast.created"));
-      setMatchValue("");
-      setAllowedStatuses([]);
-      // Kaydedilen kuralın denemesi de ekrandan kalkar: form artık BAŞKA bir
-      // kuralı (bir sonraki eklenecek olanı) gösteriyor, yanındaki tablo ise
-      // kaydedilmiş olanı gösterirdi.
-      setProbe(null);
-      // The status map is per-rule, not a form default: leaving it filled after
-      // a save would quietly attach the previous rule's transitions to the next
-      // one an operator adds.
-      clearStatusForm();
-      // Kapı seçimi de kural başına: kaydettikten sonra formda kalması, bir
-      // sonraki kurala önceki kuralın onaylarını sessizce iliştirirdi.
-      clearGateForm();
+      resetForm();
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
-  // Editing replaces the whole rule (the BFF's PUT is a replace, not a patch),
-  // which is exactly what the form holds — every field of the rule that was
-  // loaded into it. This is the only way to reach the status map from the UI for
-  // a rule that already exists, which until now meant hand-editing jsonb in
-  // Postgres.
+  // PUT tam değiştirmedir; form kuralın HER alanını taşır (bkz. draftFromRule).
   const update = useMutation({
     mutationFn: ({ ruleId, body }: { ruleId: string; body: RuleBody }) =>
       api.put<{ rule: ListeningRule }>(`/studio/listening-rules/${ruleId}`, body),
     onSuccess: () => {
       invalidate();
       toast.show("success", t("listening.toast.updated"));
-      cancelEdit();
+      resetForm();
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
-  /** Load an existing rule into the form — the round trip out of the table. */
+  const onSubmit = (): void => {
+    if (draftIncomplete(draft)) {
+      toast.show("error", t("listening.form.incomplete"));
+      return;
+    }
+    const priority = priorityOf(draft.priority);
+    if (priority === null) {
+      toast.show("error", t("listening.form.priority_invalid"));
+      return;
+    }
+    const body = bodyFromDraft(draft, priority);
+    if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
+    else create.mutate(body);
+  };
+
+  /** Tablodan forma: kural olduğu gibi yüklenir, form ekrana getirilir. */
   const onEdit = (rule: ListeningRule): void => {
-    // Başka bir kural forma yüklenirken önceki denemenin tablosu düşer.
     setProbe(null);
     setEditingRuleId(rule.ruleId);
-    setProjectKey(rule.projectKey);
-    setAssigneeTouched(true); // never let the bot-id pre-fill overwrite the rule's own
-    setAssigneeAccountId(rule.assigneeAccountId);
-    setMatchKind(rule.matchKind);
-    setMatchValue(rule.matchValue);
-    setFlowType(rule.flowType);
-    setAnalystVariantId(rule.analystVariantId ?? "");
-    setEngineerVariantId(rule.engineerVariantId ?? "");
-    // Kısıtsız bir kural BOŞ açılır — formun gösterdiği şey kuralın BUGÜN ne
-    // yaptığı olmalı. Uydurma bir varsayılan seçmek, operatöre hiç vermediği
-    // bir cevabı vermiş gibi gösterirdi.
-    setAllowedStatuses(rule.allowedStatuses ?? []);
-    // Seçim yoksa form "risk seviyesine göre" açılır — kuralın BUGÜN ne
-    // yaptığını göstermek zorunda. Uydurma bir seçim doldurmak, operatöre hiç
-    // vermediği bir cevabı vermiş gibi gösterirdi.
-    const gates = rule.gateSteps ?? null;
-    setGatesCustom(gates !== null);
-    setGateStepsSel(gates?.steps ?? []);
-    setGateOwnerless(gates?.ownerless === true);
-    const map = rule.statusMap ?? null;
-    // A rule with no map opens with the section CLOSED — the form must show what
-    // the rule actually does today (comment only), not invite an edit nobody
-    // asked for.
-    setStatusOn(map !== null);
-    setStatusPanelOpen(map !== null);
-    setStatusDraft(
-      map === null
-        ? EMPTY_STATUS_DRAFT
-        : (Object.fromEntries(
-            STATUS_POINTS.map((point) => [point, map[point] ?? ""]),
-          ) as StatusDraft),
-    );
-    setGateStatusDraft(
-      map === null
-        ? EMPTY_GATE_STATUS_DRAFT
-        : (Object.fromEntries(
-            GATE_STATUS_POINTS.map((point) => [point, map[point] ?? ""]),
-          ) as GateStatusDraft),
-    );
-    setReassignOnNeedInfo(map?.reassignOnNeedInfo === true);
-    // Form ekranın dışındaysa oraya git. `requestAnimationFrame`: yukarıdaki
-    // `setState`lerin boyadığı formu kaydırıyoruz, bu satır çalışırken henüz
-    // eski hâliyle duran kutuyu değil.
-    //
-    // Varlığı KONTROL EDİLİYOR, ve bu bir test hilesi değil: kaydırma bir
-    // kolaylık, düzenlemenin kendisi değil. Onu sunmayan bir ortamda (jsdom,
-    // eski bir tarayıcı, kaydırmayı kapatan bir erişilebilirlik ayarı) fırlayan
-    // bir hata, kuralın alanları çoktan dolmuşken düzenlemenin tamamını
-    // bozardı — yani bir konfor özelliği, asıl işi düşürürdü.
+    const conn =
+      connections.find(
+        (c) => c.botAccountId !== null && c.botAccountId.trim() === rule.assigneeAccountId.trim(),
+      )?.id ?? "";
+    setDraft(draftFromRule(rule, conn));
+    // Form tablonun ÜSTÜNDE; bir düzine kuralda "Düzenle" görünmeyen bir formu
+    // doldururdu. Kaydırma bir kolaylık, düzenlemenin kendisi değil — sunmayan
+    // ortamda (jsdom) sessizce atlanır.
     requestAnimationFrame(() => {
       const form = formRef.current;
       if (typeof form?.scrollIntoView === "function") {
@@ -665,25 +283,24 @@ export function ListeningScreen(): ReactNode {
     });
   };
 
-  // One-click defaults: the BFF reads the project's Jira issue types and seeds
-  // a rule per type (bug-like types → düzeltme, the rest → analiz), skipping
-  // any value that already has a rule.
-  //
-  // The response is 200 in TWO shapes: `{created, skipped, rules}` on a real
-  // seed, and `{created: 0, skipped: 0, rules: [], reason:
-  // "issue_types_unavailable"}` when Jira's type list could not be read — the
-  // fail-soft case where nothing was written rather than inventing type names.
-  // That one is a WARNING with its own message, not a cheerful "0 kural
-  // eklendi". Named 409s (no connection / untested connection) and the 400 come
-  // through the error catalog as actionable Turkish messages.
+  const remove = useMutation({
+    mutationFn: (ruleId: string) => api.delete<{ ok?: boolean }>(`/studio/listening-rules/${ruleId}`),
+    onSuccess: (_data, ruleId) => {
+      invalidate();
+      if (editingRuleId === ruleId) resetForm();
+      toast.show("success", t("listening.toast.deleted"));
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
+  // Hazır kurallar: BFF projenin iş tiplerini okur, tip başına bir kural açar.
+  // `reason: issue_types_unavailable` = hiçbir şey yazılmadı, uyarıdır.
   const seed = useMutation({
     mutationFn: (key: string) =>
-      api.post<{
-        created: number;
-        skipped: number;
-        rules: readonly ListeningRule[];
-        reason?: string;
-      }>("/studio/listening-rules/seed-defaults", { projectKey: key }),
+      api.post<{ created: number; skipped: number; rules: readonly ListeningRule[]; reason?: string }>(
+        "/studio/listening-rules/seed-defaults",
+        { projectKey: key },
+      ),
     onSuccess: ({ created, skipped, reason }) => {
       invalidate();
       if (reason === "issue_types_unavailable") {
@@ -697,13 +314,10 @@ export function ListeningScreen(): ReactNode {
     },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
-
   const onSeed = (): void => {
-    // Prefer the project picked in the form; with exactly one bound project
-    // there is nothing to choose, so use it without making the admin pick.
     const key =
-      projectKey.trim() !== ""
-        ? projectKey.trim()
+      draft.projectKey.trim() !== ""
+        ? draft.projectKey.trim()
         : boundProjects.length === 1
           ? boundProjects[0]!
           : "";
@@ -714,24 +328,9 @@ export function ListeningScreen(): ReactNode {
     seed.mutate(key);
   };
 
-  /**
-   * BOT HESABINI HİZALA — bankada saatler yakan sessiz-yanlışın düzeltmesi.
-   *
-   * Bir kural, bot hesabının bir KOPYASINI taşır (`assigneeAccountId`), çünkü
-   * tarama o değeri doğrudan JQL'e yapıştırır. Kopya ayrışabilir, ve bir kez
-   * ayrıştı: Jira Data Center `/myself` cevabında kullanıcıyı iki alanla
-   * adlandırır — `name` ("ugyildiz", kullanıcı adı) ve `key` ("jirauser13506",
-   * iç tutamak) — ve bağlantı yoklaması `key`i okuyordu. JQL `assignee`yi
-   * KULLANICI ADIYLA çözdüğü için o kimlikle yapılan arama hiçbir şey bulmuyor,
-   * üstelik Jira buna hata değil BOŞ sonuç döndüğü için her tur sessizce "0
-   * sonuç" diyordu.
-   *
-   * Yoklama düzeltildi ve bağlantı testi doğru değeri öğreniyor — ama MEVCUT
-   * kurallar kendi kopyalarını taşıyor. Bu düğme onları bağlantının bildiği
-   * kimliğe taşır. Otomatik DEĞİL ve bilerek: bir kuralın hangi ticket'ları
-   * aldığı bu kurulumun en görünür davranışı, ve onu operatör bakmıyorken
-   * değiştirmek düzeltmeye çalıştığımız sessizliğin ters yönde tekrarı olurdu.
-   */
+  // Bot hesabını hizala — kuralların taşıdığı kopyayı bağlantının bildiği
+  // kimliğe çeker. Otomatik DEĞİL: hangi ticket'ların alındığı en görünür
+  // davranış, operatör bakmıyorken değişmemeli.
   const realign = useMutation({
     mutationFn: () =>
       api.post<{
@@ -741,11 +340,8 @@ export function ListeningScreen(): ReactNode {
       }>("/studio/listening-rules/realign-bot", {}),
     onSuccess: ({ accountId, changed }) => {
       invalidate();
-      // Kaç kuralın hangi kimliğe taşındığı SÖYLENİR. Sessiz bir düzeltme, hiç
-      // olmamış gibi okunur — ve operatör az önce neyin değiştiğini bilmeden
-      // ekrandan ayrılır.
       toast.show(
-        changed.length === 0 ? "success" : "success",
+        "success",
         changed.length === 0
           ? t("listening.realign.none")
           : t("listening.realign.done", { count: String(changed.length), account: accountId }),
@@ -754,1166 +350,117 @@ export function ListeningScreen(): ReactNode {
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
-  const remove = useMutation({
-    mutationFn: (ruleId: string) =>
-      api.delete<{ ok?: boolean }>(`/studio/listening-rules/${ruleId}`),
-    onSuccess: () => {
-      invalidate();
-      toast.show("success", t("listening.toast.deleted"));
-    },
-    onError: (error) => toast.show("error", t(messageKeyOf(error))),
-  });
-
+  // ── Türetilen uyarılar ───────────────────────────────────────────────────
   const rules = query.data?.rules ?? [];
 
-  // Bound projects with ZERO rules: the platform looks "live" (the binding is
-  // green) while no ticket is listened to — the exact state a failed default
-  // seed leaves behind (Jira'nın issue-type listesi okunamadı) with nothing on
-  // any screen saying so. Only computed once BOTH lists have actually answered:
-  // an in-flight or failed query is not evidence of an empty rule set.
+  // Bağlı ama kuralsız proje: bağ yeşil görünür, hiçbir ticket dinlenmez.
+  // Yalnız iki liste de cevapladıysa — yüklenen liste boşluk kanıtı değil.
   const unlistenedProjects =
     query.isSuccess && routing.isSuccess
       ? boundProjects.filter((key) => !rules.some((rule) => rule.projectKey === key))
       : [];
 
-  /**
-   * KURALLARIN BOT HESABI, bağlantının bildiğiyle karşılaştırıldığında.
-   *
-   * İki ayrı işaret, ve ikisi de gerekli:
-   *
-   *  · AYRIŞMA (`staleRules`) — kural, bağlantı testinin Jira'dan canlı olarak
-   *    öğrendiği kimlikten BAŞKA bir değer taşıyor. Bir tahmin değil bir
-   *    karşılaştırma, ve düzeltmesi kesin.
-   *  · DESEN (`internalKeyRules`) — kimlik `jirauser<sayı>` biçiminde, yani
-   *    Jira Data Center'ın İÇ tutamağı. Bu işaret kıyastan BAĞIMSIZ olmak
-   *    zorunda, çünkü bankadaki gerçek durum tam olarak buydu: yoklama da,
-   *    kurallar da aynı yanlış değeri taşıyordu — ayrışma YOKTU, arıza vardı.
-   *
-   * Sunucu aynı iki işareti `/studio/config-health`te de gösteriyor (Sistem
-   * Sağlığı ekranı). Burada tekrar edilmesi bilinçli: düzeltmenin YAPILDIĞI
-   * ekran, arızayı da söyleyen ekran olmalı — operatörü iki ekran arasında
-   * gezdirmek, uyarının okunmaması demektir.
-   *
-   * Yalnız sorgular CEVAPLADIKTAN sonra: yüklenmekte olan bir liste bir
-   * ayrışma kanıtı değildir.
-   */
-  const DC_INTERNAL_KEY = /^jirauser\d+$/i;
+  // Kuralların bot hesabı vs bağlantının bildiği: AYRIŞMA (kesin) ya da DESEN
+  // (`jirauser<sayı>`, DC iç tutamağı — kıyastan bağımsız, çünkü bankada
+  // ayrışma YOKTU, arıza vardı).
   const staleRules =
     query.isSuccess && jiraConns.isSuccess && botAccountId
       ? rules.filter((rule) => rule.assigneeAccountId.trim() !== botAccountId.trim())
       : [];
-  const internalKeyRules =
-    query.isSuccess ? rules.filter((rule) => DC_INTERNAL_KEY.test(rule.assigneeAccountId.trim())) : [];
+  const internalKeyRules = query.isSuccess
+    ? rules.filter((rule) => DC_INTERNAL_KEY.test(rule.assigneeAccountId.trim()))
+    : [];
   const identityWarning =
     staleRules.length > 0 ? "stale" : internalKeyRules.length > 0 ? "internal" : null;
 
-  /**
-   * DENEME SONUCU ve onun ÜRETİLDİĞİ TASLAK, birlikte tutulur.
-   *
-   * Taslağın saklanması süs değil, bu ekranın sözleşmesi: operatör test ettikten
-   * sonra formda bir alanı değiştirirse, ekranda duran tablo artık formdaki
-   * kuralı ANLATMIYOR demektir. Sessizce farklı bir kuralı kaydetmek — panelde
-   * doğru görünen, sahada başka çalışan — bu ekranın önlemek için var olduğu
-   * şeyin ta kendisi, o yüzden taslak yanında durur ve karşılaştırılır.
-   */
-  const [probe, setProbe] = useState<{
-    readonly draft: ProbeDraft;
-    readonly result: ProbeResult;
-  } | null>(null);
-
-  /** Formun ŞU ANKİ arama-taslağı — denemenin ve kaydın ortak yarısı. */
-  const currentDraft = (): ProbeDraft => ({
-    projectKey: projectKey.trim(),
-    assigneeAccountId: assigneeAccountId.trim(),
-    matchKind,
-    matchValue: matchKind === "assigned" ? ASSIGNED_MATCH_VALUE : matchValue.trim(),
-    allowedStatuses: allowedStatuses.length === 0 ? null : [...allowedStatuses],
-  });
-
-  /**
-   * Deneme sonucu hâlâ formdaki kuralı mı anlatıyor?
-   *
-   * Yalnız ARAMAYI etkileyen alanlar karşılaştırılır. Akışı ya da ajan
-   * varyantını değiştirmek JQL'i değiştirmez, ve orada da uyarı çıkarmak
-   * operatörü anlamsız bir yeniden-teste zorlardı — uyarının inanılır kalması,
-   * yalnız gerçekten değişince çıkmasına bağlı.
-   */
-  const probeStale =
-    probe !== null && !sameDraft(probe.draft, currentDraft());
-
-  const test = useMutation({
-    mutationFn: (draft: ProbeDraft) =>
-      api.post<ProbeResult>("/studio/listening-rules/test", draft),
-    onSuccess: (result, draft) => setProbe({ draft, result }),
-    onError: (error) => {
-      // Deneme başarısızsa ESKİ sonuç ekranda kalmamalı: bir önceki kuralın
-      // tablosunu yeni kuralın cevabı sanmak, hiç cevap görmemekten kötüdür.
-      setProbe(null);
-      toast.show("error", t(messageKeyOf(error)));
-    },
-  });
-
-  const onTest = (): void => {
-    const draft = currentDraft();
-    if (draft.projectKey === "" || draft.assigneeAccountId === "" || draft.matchValue === "") {
-      toast.show("error", t("listening.form.incomplete"));
-      return;
-    }
-    test.mutate(draft);
-  };
-
-  const onSubmit = (): void => {
-    // An `assigned` rule has no value to check for — the assignee IS the whole
-    // condition — so requiring one here would make the third kind unsaveable.
-    const needsValue = matchKind !== "assigned";
-    if (
-      projectKey.trim() === "" ||
-      assigneeAccountId.trim() === "" ||
-      (needsValue && matchValue.trim() === "")
-    ) {
-      toast.show("error", t("listening.form.incomplete"));
-      return;
-    }
-    const body: RuleBody = {
-      projectKey: projectKey.trim(),
-      assigneeAccountId: assigneeAccountId.trim(),
-      matchKind,
-      // The server pins this to the same literal for `assigned`; sending it
-      // means the client is not asking the server to fix up its payload.
-      matchValue: needsValue ? matchValue.trim() : ASSIGNED_MATCH_VALUE,
-      flowType,
-      // "" is the "default agent" choice — normalised to null on the wire.
-      analystVariantId: analystVariantId === "" ? null : analystVariantId,
-      engineerVariantId: engineerVariantId === "" ? null : engineerVariantId,
-      // Flow-aware: only the points `firesFor(flowType)` can reach go on the
-      // wire. A value sitting at a dead point (stored by an older rule, or
-      // typed before the flow was switched) is dropped HERE, after the form has
-      // said so on screen — the warning above the save button names the values
-      // and says they will not be written, so the save itself is the operator's
-      // confirmation.
-      statusMap: buildStatusMap(statusOn, statusDraft, reassignOnNeedInfo, flowType, gateStatusDraft),
-      // Boş liste `null` olarak gidiyor: "hiçbir statüye izin verilmedi" ile
-      // "statü kısıtı yok" tek bir davranışa iner, iki temsil taşımak er ya da
-      // geç ikisinin farklı davranmasıyla biter. Sunucu da aynı şekilde
-      // normalize eder (`AllowedStatusesRef`).
-      allowedStatuses: allowedStatuses.length === 0 ? null : [...allowedStatuses],
-      /**
-       * Kapı seçimi — ve `allowedStatuses`in TERSİ bir normalizasyon.
-       *
-       * Orada boş liste `null`'a iniyordu çünkü "hiçbir statüye izin
-       * verilmedi" ile "statü kısıtı yok" tek bir davranışa iniyordu. Burada
-       * inmiyor: `gatesCustom` kapalıysa `null` ("risk seviyesine göre"),
-       * açıksa seçim OLDUĞU GİBİ gider — boş dizi dahil, çünkü boş dizi
-       * operatörün verdiği bir cevap ("onay bekleme").
-       */
-      gateSteps: gatesCustom
-        ? {
-            steps: [...gateStepsSel],
-            ...(gateOwnerless ? { ownerless: true } : {}),
-          }
-        : null,
-    };
-    if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
-    else create.mutate(body);
-  };
-
-  const columns: readonly Column<ListeningRule>[] = [
-    { key: "projectKey", header: t("listening.col.project"), cell: (r) => <b className="screen-mono">{r.projectKey}</b> },
-    {
-      key: "trigger",
-      header: t("listening.col.trigger"),
-      // The stored value in bold, the English name beside it in the note voice.
-      // A rule holding `Görev` is what MATCHES, and it stays the thing the cell
-      // shouts; `(Task)` is there for the half of the bank whose Jira UI is in
-      // English and who would otherwise not recognise their own trigger. Two
-      // spans rather than one interpolated string so the value a reader copies
-      // out of the table is the value the rule holds.
-      cell: (r) => {
-        // The catch-all's `*` is a storage detail, not a trigger anybody set;
-        // printing it would invite an operator to look for a Jira status named
-        // "*". The kind's own label already says everything the rule does.
-        if (r.matchKind === "assigned") {
-          return <b>{t("listening.match.assigned")}</b>;
-        }
-        // NO aside for a label. The table behind `englishAside` is the set of
-        // Jira's own STATUS and ISSUE-TYPE names; a label is a free string an
-        // operator invented, so a label that happens to read `hata` would be
-        // annotated `(Bug)` — a confident wrong answer about a field the table
-        // knows nothing about.
-        const english = r.matchKind === "label" ? null : englishAside(r.matchValue);
-        return (
-          <>
-            <span className="screen-note">{t(`listening.match.${r.matchKind}`)}</span>{" "}
-            <b>{r.matchValue}</b>
-            {english !== null && (
-              <span className="screen-note"> {t("jira.english.aside", { english })}</span>
-            )}
-          </>
-        );
-      },
-    },
-    {
-      key: "allowedStatuses",
-      header: t("listening.col.allowed_statuses"),
-      /*
-        Kısıtsız kural, listede GÖRÜNÜR. Bu sütunun asıl işi eşleşenleri
-        göstermek değil, EKSİK olanı göstermek: operatörün "her ticket'ı
-        alıyor" dediği kural, ancak burada kendini ele verir.
-      */
-      cell: (r) => {
-        const allowed = r.allowedStatuses ?? [];
-        if (allowed.length === 0) {
-          return (
-            <span className="screen-note" style={{ color: "#b45309", fontWeight: 600 }}>
-              {t("listening.status_gate.none")}
-            </span>
-          );
-        }
-        return <span className="screen-note">{allowed.join(", ")}</span>;
-      },
-    },
-    {
-      key: "flowType",
-      header: t("listening.col.flow"),
-      cell: (r) => <Badge tone={FLOW_TONE[r.flowType]}>{t(`listening.flow.${r.flowType}`)}</Badge>,
-    },
-    {
-      key: "agents",
-      header: t("listening.col.agents"),
-      // Which variant runs each side; an unset side reads "default", so a rule
-      // that overrides nothing still says so instead of showing a blank cell.
-      cell: (r) => (
-        <span className="screen-note">
-          {t("listening.agent.analyst_short")}:{" "}
-          <b>{r.analystVariantId ?? t("listening.agent.default_short")}</b>
-          {" · "}
-          {t("listening.agent.engineer_short")}:{" "}
-          <b>{r.engineerVariantId ?? t("listening.agent.default_short")}</b>
-        </span>
-      ),
-    },
-    {
-      key: "statusMap",
-      header: t("listening.col.status"),
-      // The whole point of surfacing the map: whether a rule MOVES tickets or
-      // only comments has to be visible from the list, not something an operator
-      // discovers by opening each rule. A mapped rule shows the statuses it walks
-      // through, in flow order; an unmapped one says "yorum" outright rather than
-      // leaving a blank that could read as "not loaded yet". Only the points the
-      // rule's FLOW can reach count as the walk — a düzeltme rule stored with an
-      // `onReview` (written before the forms gated by flow) shows that value as
-      // "gerçekleşmez", not as a status the ticket will visit.
-      cell: (r) => {
-        const steps = statusSummary(r.statusMap, r.flowType);
-        const dead = deadStatusEntries(r.statusMap, r.flowType);
-        if (steps.length === 0 && dead.length === 0) {
-          return <span className="screen-note">{t("listening.status.comment_only_short")}</span>;
-        }
-        // A rule whose ONLY mappings are dead is comment-only in practice, so
-        // the cell says "yorum" — but keeps the dead values beside it, because
-        // "yorum" alone would hide that somebody once configured something.
-        const walk =
-          steps.length > 0 ? steps.join(" → ") : t("listening.status.comment_only_short");
-        return (
-          <span className="screen-note" title={walk}>
-            {walk}
-            {dead.length > 0 && (
-              <span className="screen-note">
-                {" · "}
-                {t("listening.status.dead_cell", {
-                  values: dead.map((e) => e.value).join(", "),
-                })}
-              </span>
-            )}
-          </span>
-        );
-      },
-    },
-    {
-      key: "gateSteps",
-      header: t("listening.gates.column"),
-      /**
-       * KAPI SEÇİMİ TABLODA DA GÖRÜNÜR.
-       *
-       * Formda görünüp tabloda görünmeyen bir ayar, ancak her kuralı tek tek
-       * açarak okunabilir — ve operatörün bugün yaşadığı sorun tam olarak
-       * "hangi kural hangi onayı bekliyor" sorusunun cevabının hiçbir yerde
-       * olmamasıydı.
-       *
-       * Kod adı yine yok: kapı ANLAMLARI, kısaltılmış hâlde.
-       */
-      cell: (r) => {
-        const gates = r.gateSteps ?? null;
-        if (gates === null) {
-          return <span className="screen-note">{t("listening.gates.default")}</span>;
-        }
-        if (gates.steps.length === 0) {
-          // Uyarı rengi DEĞİL: bu meşru bir yapılandırma, bir eksiklik değil.
-          // Ama açıkça yazılıyor — "boş hücre" ile "onay beklenmiyor" arasında
-          // fark var ve o fark operatörün okuması gereken şey.
-          return <span className="screen-note">{t("listening.gates.none_selected")}</span>;
-        }
-        const names = SELECTABLE_GATES.filter((gate) => gates.steps.includes(gate.step)).map(
-          (gate) => t(gate.titleKey),
-        );
-        return (
-          <span className="screen-note">
-            {names.join(" · ")}
-            {gates.ownerless === true ? ` · ${t("listening.gates.ownerless")}` : ""}
-          </span>
-        );
-      },
-    },
-    {
-      key: "assignee",
-      header: t("listening.col.assignee"),
-      // The raw accountId is a 40-char id that overruns the column and means
-      // nothing to a reader; show a short, hoverable form.
-      cell: (r) => (
-        <span className="screen-mono screen-note" title={r.assigneeAccountId}>
-          {shortAccount(r.assigneeAccountId)}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      align: "right",
-      cell: (r) =>
-        canWrite ? (
-          <span style={{ display: "inline-flex", gap: 6 }}>
-            {/* "Düzenle" loads the rule back into the form above — the only way
-                to reach an EXISTING rule's status map, which until now meant
-                editing jsonb in the database by hand. */}
-            <Button size="sm" onClick={() => onEdit(r)}>
-              {t("listening.action.edit")}
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              busy={remove.isPending}
-              onClick={() => remove.mutate(r.ruleId)}
-            >
-              {t("listening.action.delete")}
-            </Button>
-          </span>
-        ) : null,
-    },
-  ];
-
   return (
-    <div className="screen-stack">
-      <Card title={t("listening.title")} subtitle={t("listening.sub")}>
-        <p className="screen-note">{t("listening.intro")}</p>
-        {/*
-          Whether anything is LOOKING, above the rules that say what to look
-          for. Three states, three different fixes — and the screen used to
-          show none of them.
-        */}
-        {sweep.data !== undefined && (
-          <div
-            className="screen-note"
-            style={{
-              marginTop: 10,
-              padding: "8px 10px",
-              borderRadius: 6,
-              background: sweep.data.enabled ? "rgba(21,128,61,0.08)" : "rgba(161,92,7,0.10)",
-            }}
-          >
-            <strong>
-              {sweep.data.enabled ? t("listening.sweep.on") : t("listening.sweep.off")}
-            </strong>
-            {sweep.data.enabled && (
-              <>
-                {" "}
-                {/* Gerçek süre, dakikaya yuvarlanmadan: 80 saniyeye ayarlayan
-                    operatörün ekranda "1 dakika" görmesi, ayarladığı şeyin
-                    tutmadığını düşündürür. */}
-                {t("listening.sweep.every", {
-                  duration: durationLabel(sweep.data.intervalMs),
-                })}
-                {sweep.data.lastRunAt !== null && (
-                  <>
-                    {" · "}
-                    {t("listening.sweep.last", {
-                      // `ageLabel` answers with a catalog key + params, so the
-                      // "3 dakika önce" wording lives in the catalogue like
-                      // every other string.
-                      age: (() => {
-                        const label = ageLabel(sweep.data.lastRunAt);
-                        return label === null ? "—" : t(label.key, label.params);
-                      })(),
-                      started: String(sweep.data.lastStarted),
-                      rules: String(sweep.data.rulesSearched),
-                    })}
-                  </>
-                )}
-                {/* ÖLÜ KOŞULAR — "0 ticket alındı" diyen bir tur iki ölü
-                    koşuyu yeniden akışa almış olabilir: yeni ticket yoktu ama
-                    havuzdaki iş İLERLEDİ. Tek bir sayı bunu söyleyemez. */}
-                {(sweep.data.lastRestarted ?? 0) > 0 && (
-                  <div style={{ marginTop: 4 }}>
-                    {t("listening.sweep.restarted", {
-                      count: String(sweep.data.lastRestarted ?? 0),
-                    })}
-                  </div>
-                )}
-                {/* DEVİR — operatörün BAKMASI gereken tek rakam olabilir:
-                    bir ticket üst üste ölüyor ve robot artık denemiyor.
-                    Uyarı rengiyle, çünkü bu bir bilgi değil bir iş. */}
-                {(sweep.data.lastHandedOver ?? 0) > 0 && (
-                  <div style={{ marginTop: 4, color: "#b45309" }}>
-                    {t("listening.sweep.handed_over", {
-                      count: String(sweep.data.lastHandedOver ?? 0),
-                    })}
-                  </div>
-                )}
-                {sweep.data.lastError !== null && (
-                  <div style={{ marginTop: 4, color: "#b91c1c" }}>
-                    {t("listening.sweep.error", { reason: sweep.data.lastError })}
-                  </div>
-                )}
-              </>
-            )}
-            {/* The button sits INSIDE the strip, beside the numbers it changes:
-                pressing it and then reading "3 dakika önce" somewhere else on
-                the page is what makes an operator press it twice. */}
-            {canWrite && (
-              <div style={{ marginTop: 8 }}>
-                <Button
-                  size="sm"
-                  busy={sweepNow.isPending}
-                  onClick={() => sweepNow.mutate()}
-                >
-                  {t("listening.sweep.run_now")}
-                </Button>
-                {sweepNow.isSuccess && (
-                  <span style={{ marginLeft: 8 }}>
-                    {sweepNow.data.error !== undefined
-                      ? t("listening.sweep.run_failed", { reason: sweepNow.data.error })
-                      : sweepNow.data.started.length === 0
-                        ? t("listening.sweep.run_empty")
-                        : t("listening.sweep.run_took", {
-                            count: String(sweepNow.data.started.length),
-                            tickets: sweepNow.data.started.join(", "),
-                          })}
-                  </span>
-                )}
-                {sweepNow.isError && (
-                  <span style={{ marginLeft: 8, color: "#b91c1c" }}>
-                    {/* The server's own sentence when it has one: only it knows
-                        WHICH absence stopped the sweep (interval unset, or a
-                        driver with no JQL search). Falls back to the catalog
-                        line otherwise. */}
-                    {sweepReasonOf(sweepNow.error) ?? t(messageKeyOf(sweepNow.error))}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        {canWrite && (
-          <div
-            style={{
-              marginTop: 10,
-              display: "flex",
-              gap: 12,
-              alignItems: "flex-start",
-              flexWrap: "wrap",
-            }}
-          >
-            <Button variant="primary" busy={seed.isPending} onClick={onSeed}>
+    <div className="scr-stack">
+      <Card
+        title={t("listening.title")}
+        subtitle={t("listening.sub")}
+        actions={
+          canSeed ? (
+            <Button size="sm" busy={seed.isPending} onClick={onSeed} title={t("listening.seed.desc")}>
               {t("listening.seed.action")}
             </Button>
-            <p className="screen-note" style={{ margin: 0, flex: "1 1 280px" }}>
-              {t("listening.seed.desc")}
-            </p>
-          </div>
-        )}
-      </Card>
-
-      {/* The loud version of the silent failure: a binding exists, zero rules
-          listen for it, so NOTHING runs — most often because the default seed
-          could not read Jira's issue-type list during approval and failed soft.
-          Named warning + the way out (test the connection, re-seed, or write a
-          rule by hand), instead of a green setup that quietly does nothing. */}
-      {/*
-        BOT HESABI AYRIŞMASI — taramanın sessizce hiçbir şey bulmamasının sebebi.
-
-        Bu bant, "0 sonuç" ile "yanlış kimlikle soruldu" arasındaki farkı
-        söyleyen tek yer. Jira eşleşmeyen bir kimliğe hata değil BOŞ sonuç
-        döndürdüğü için, o fark başka hiçbir yerde görünmüyordu.
-
-        Düğme yalnız `canWrite`e: uyarıyı okumak kural okuyabilen herkesin
-        hakkı, kuralları taşımak ise bir yazma.
-      */}
-      {identityWarning !== null && (
-        <Card>
-          <div className="scr-note scr-note--warn">
-            {identityWarning === "stale"
-              ? t("listening.identity.stale", {
-                  count: String(staleRules.length),
-                  account: botAccountId ?? "",
-                })
-              : t("listening.identity.internal", { count: String(internalKeyRules.length) })}
-          </div>
-          {canWrite && (
-            <div className="screen-actions">
-              <Button
-                variant="primary"
-                busy={realign.isPending}
-                onClick={() => realign.mutate()}
-              >
-                {t("listening.identity.realign")}
-              </Button>
+          ) : undefined
+        }
+      >
+        <div className="scr-stack">
+          <p className="scr-prose" style={{ margin: 0 }}>
+            {t("listening.intro")}
+          </p>
+          <SweepBanner
+            status={sweep.data}
+            statusError={sweep.error}
+            onRetryStatus={() => void sweep.refetch()}
+            canWrite={canWrite}
+            run={{
+              isPending: sweepNow.isPending,
+              isSuccess: sweepNow.isSuccess,
+              isError: sweepNow.isError,
+              data: sweepNow.data,
+              error: sweepNow.error,
+              mutate: () => sweepNow.mutate(),
+            }}
+          />
+          {/* Bot hesabı ayrışması — "0 sonuç" ile "yanlış kimlikle soruldu"
+              arasındaki farkı söyleyen tek yer. Düğme yalnız yazabilene. */}
+          {identityWarning !== null && (
+            <div className="scr-note scr-note--warn">
+              {identityWarning === "stale"
+                ? t("listening.identity.stale", {
+                    count: String(staleRules.length),
+                    account: botAccountId ?? "",
+                  })
+                : t("listening.identity.internal", { count: String(internalKeyRules.length) })}
+              {canWrite && (
+                <div className="scr-actions">
+                  <Button variant="primary" size="sm" busy={realign.isPending} onClick={() => realign.mutate()}>
+                    {t("listening.identity.realign")}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
-        </Card>
-      )}
-
-      {unlistenedProjects.length > 0 && (
-        <Card>
-          <div className="scr-note scr-note--warn">
-            {t("listening.unlistened.warn", { projects: unlistenedProjects.join(", ") })}
-          </div>
-          {canWrite && (
-            <div className="screen-actions">
-              {unlistenedProjects.map((key) => (
-                <Button
-                  key={key}
-                  size="sm"
-                  busy={seed.isPending}
-                  onClick={() => seed.mutate(key)}
-                >
-                  {t("listening.unlistened.seed", { project: key })}
-                </Button>
-              ))}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {canWrite && (
-        <div ref={formRef}>
-        <Card
-          title={editingRuleId === null ? t("listening.form.title") : t("listening.form.title_edit")}
-          subtitle={t("listening.form.sub")}
-        >
-          {/*
-            DÜZENLENEN KURAL, ADIYLA. Form yukarıda, tablo aşağıda: başlıktaki
-            "Kuralı düzenle" tek başına HANGİ kuralı söylemiyor, ve yanlış kuralı
-            düzenlediğini kaydettikten sonra fark etmek bu ekranın en pahalı
-            hatası olurdu.
-          */}
-          {editingRuleId !== null && (
-            <div className="scr-note" style={{ marginBottom: 10 }}>
-              {t("listening.form.editing_which", {
-                project: projectKey,
-                trigger: matchKind === "assigned" ? t("listening.match.assigned") : matchValue,
-              })}
-            </div>
-          )}
-          <div className="screen-filters">
-            {boundProjects.length > 0 ? (
-              <Select
-                label={t("listening.form.project")}
-                value={projectKey}
-                onChange={(e) => setProjectKey(e.target.value)}
-                options={[
-                  { value: "", label: t("listening.form.project_choose") },
-                  ...boundProjects.map((key) => ({ value: key, label: key })),
-                ]}
-                hint={t("listening.form.project_hint")}
-              />
-            ) : (
-              // No bound projects yet: fall back to a text field rather than an
-              // empty dropdown, so a rule can still be written, and say why.
-              <Input
-                label={t("listening.form.project")}
-                value={projectKey}
-                onChange={(e) => setProjectKey(e.target.value.trim().toUpperCase())}
-                hint={t("listening.form.project_none_hint")}
-              />
-            )}
-            <Input
-              label={t("listening.form.assignee")}
-              value={assigneeAccountId}
-              onChange={(e) => {
-                setAssigneeTouched(true);
-                setAssigneeAccountId(e.target.value);
-              }}
-              placeholder="712020:…"
-              hint={
-                botAccountId
-                  ? t("listening.form.assignee_hint_auto")
-                  : t("listening.form.assignee_hint")
-              }
-            />
-            <Select
-              label={t("listening.form.matchKind")}
-              value={matchKind}
-              onChange={(e) => {
-                // Switching the question invalidates the answer: an issue-type
-                // name is not a status name, and a value left over from the
-                // previous kind would silently save a rule that matches nothing.
-                setMatchKind(e.target.value as MatchKind);
-                setMatchValue("");
-              }}
-              options={[
-                { value: "status", label: t("listening.match.status") },
-                { value: "assigned", label: t("listening.match.assigned") },
-                { value: "label", label: t("listening.match.label") },
-                { value: "issuetype", label: t("listening.match.issuetype") },
-              ]}
-              // Every kind gets a sentence, not just the odd one out. The three
-              // conditioned kinds look interchangeable in a dropdown and are
-              // not — "statü" fires when somebody MOVES the ticket, "iş tipi"
-              // the moment it is created — and choosing wrong is only visible
-              // weeks later as tickets that never arrive.
-              hint={t(`listening.match.hint.${matchKind}`)}
-            />
-            {/* "Bota atanan her ticket" has no value to give, so the field is
-                absent rather than disabled — a greyed box reads as a form the
-                operator failed to finish. */}
-            {matchKind === "assigned" ? null : valueOptions.length > 0 ? (
-              <Select
-                label={t("listening.form.matchValue")}
-                value={matchValue}
-                onChange={(e) => setMatchValue(e.target.value)}
-                // `value` is the Turkish name Jira serves and the rule stores;
-                // `label` adds the English one for the reader. They are
-                // DELIBERATELY different strings — a dropdown whose value was
-                // "Görev (Task)" would write a matchValue no ticket can equal,
-                // which is the bug this screen was fixed for today.
-                options={[
-                  { value: "", label: t("listening.form.matchValue_choose") },
-                  ...valueOptions.map((v) => ({ value: v, label: matchValueLabel(v) })),
-                ]}
-                hint={
-                  valuesDegradedKey !== undefined
-                    ? t(valuesDegradedKey)
-                    : t("listening.form.matchValue_hint_auto")
-                }
-              />
-            ) : (
-              <Input
-                label={t("listening.form.matchValue")}
-                value={matchValue}
-                onChange={(e) => setMatchValue(e.target.value)}
-                placeholder={
-                  matchKind === "issuetype"
-                    ? "Hata"
-                    : matchKind === "label"
-                      ? "maestro"
-                      : "Analiz Bekliyor"
-                }
-                // A label is not a name Jira can offer a list for, so its hint
-                // says the thing that actually goes wrong with labels
-                // (case, and the fact that it is the ticket's own label field)
-                // rather than the generic "type it exactly" the other two need.
-                hint={t(
-                  matchKind === "label"
-                    ? "listening.form.matchValue_hint_label"
-                    : "listening.form.matchValue_hint",
-                )}
-              />
-            )}
-            {/*
-              STATÜ KAPISI — her kuralda, tetikleme tipinin hemen yanında.
-
-              Bir açılır-kapanır bölümün içinde DEĞİL ve bu bilinçli: durum
-              eşlemesi opsiyonel bir çıktıdır ve gizlenebilir, bu ise bir GİRİŞ
-              ŞARTIDIR. Operatörün cümlesi "bota atanan her ticket seçsem de o
-              statüde atanıyor olmalı" — yani bu soru tetiklemenin kendisi kadar
-              merkezî, ve seçilmemiş olması ekranda görünmek zorunda.
-
-              Onay kutuları, tek seçimli bir dropdown değil: bir kural birden çok
-              statüye meşru olarak izin verebilir ("Yapılacaklar" ve "Analiz
-              Bekliyor"), ve operatörü aynı akış/ajan ayarlarını iki ayrı kurala
-              kopyalamaya zorlamak o kopyaların zamanla ayrışmasını garanti eder.
-            */}
-            <div style={{ gridColumn: "1 / -1" }}>
-              <div className="screen-note" style={{ marginBottom: 6 }}>
-                <strong>{t("listening.form.allowed_statuses")}</strong>
-              </div>
-              {/*
-                SEÇENEKLER JIRA'DAN, KODDAN DEĞİL.
-
-                `statusOptions`, `/onboarding/jira-match-values?...&kind=status`
-                ucunun o PROJE için canlı döndürdüğü statü adları. Bu ekranda
-                hiçbir statü adı gömülü değil ve olamaz: her kurumun pano
-                sözlüğü kendine ait (bu bankada `ANALİZ`, `TODO`,
-                `AnalysisApproval`), ve koda yazılmış bir liste, ilk farklı
-                Jira'da eşleşmeyen bir kural üretirdi — statüyü yanlış yazmanın
-                sessiz-sonsuz hatası, bu sefer ürünün kendi eliyle.
-
-                Sabit kalan tek şey AKIŞ TİPİ (analiz/duzeltme/gelistirme):
-                o Maestro'nun kendi kavramı, Jira'nın değil.
-              */}
-              {statusOptions.length > 0 ? (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  {statusOptions.map((name) => (
-                    <label key={name} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                      <input
-                        type="checkbox"
-                        checked={allowedStatuses.includes(name)}
-                        onChange={() => toggleAllowedStatus(name)}
-                      />
-                      <span>{name}</span>
-                    </label>
+          {unlistenedProjects.length > 0 && (
+            <div className="scr-note scr-note--warn">
+              {t("listening.unlistened.warn", { projects: unlistenedProjects.join(", ") })}
+              {canSeed && (
+                <div className="scr-actions">
+                  {unlistenedProjects.map((key) => (
+                    <Button key={key} size="sm" busy={seed.isPending} onClick={() => seed.mutate(key)}>
+                      {t("listening.unlistened.seed", { project: key })}
+                    </Button>
                   ))}
                 </div>
-              ) : (
-                <>
-                  {/*
-                    LİSTE ALINAMADI, VE BU SESSİZ GEÇMEZ.
-
-                    Boş bir kutu listesi göstermek burada en kötü cevap: "bu
-                    projede hiç statü yok" gibi okunur ve operatörü, aslında
-                    bağlantının cevap vermediği bir anda, kuralı statüsüz
-                    kaydetmeye — yani kapıyı açık bırakmaya — götürür. Neden
-                    seçim yapamadığı YAZILIR, ve serbest metin bir kaçış olarak
-                    kalır (kuralı hiç kaydedememek de bir çözüm değil).
-                  */}
-                  <div
-                    className="screen-note"
-                    style={{ color: "#b45309", fontWeight: 600, marginBottom: 6 }}
-                  >
-                    {t(
-                      projectKey.trim() === ""
-                        ? "listening.form.allowed_statuses_pick_project"
-                        : "listening.form.allowed_statuses_unavailable",
-                    )}
-                  </div>
-                  <Input
-                    label=""
-                    value={allowedStatuses.join(", ")}
-                    onChange={(e) =>
-                      setAllowedStatuses(
-                        e.target.value
-                          .split(",")
-                          .map((v) => v.trim())
-                          .filter((v) => v !== ""),
-                      )
-                    }
-                    hint={t("listening.form.allowed_statuses_manual")}
-                  />
-                </>
-              )}
-              <div
-                className="screen-note"
-                style={{
-                  marginTop: 6,
-                  ...(allowedStatuses.length === 0
-                    ? { color: "#b45309", fontWeight: 600 }
-                    : {}),
-                }}
-              >
-                {/*
-                  Boş seçim SESSİZ GEÇMEZ. Kural kaydedilebilir — mevcut
-                  kuralları düzenlenemez hâle getirmemek için — ama ne anlama
-                  geldiği tam olarak yazılır: bota atanan her ticket, panonun
-                  neresinde olursa olsun işlenir. Sessiz bir fail-open, bu
-                  alanın var olma sebebinin ta kendisi olurdu.
-                */}
-                {t(
-                  allowedStatuses.length === 0
-                    ? "listening.form.allowed_statuses_empty_warning"
-                    : "listening.form.allowed_statuses_hint",
-                )}
-              </div>
-            </div>
-            {/*
-              ── ONAY KAPILARI ────────────────────────────────────────────────
-
-              KOD ADI DEĞİL, ANLAM. Operatör "kapı 4" görmüyor; "Analiz onayı —
-              ürün sahibi" görüyor. Adım numarası bir uygulama ayrıntısı ve bu
-              ekranda işi yok — operatörün sorusu "hangi onaylar gerekli",
-              "hangi adım kimlikleri" değil.
-
-              Her zaman GÖRÜNÜR, açılır-kapanır bir bölümün içinde değil, ve
-              durum eşlemesinin YANINDA değil ÜSTÜNDE: operatörün bugün
-              yaşadığı sorunlardan biri, hiç bilmediği bir kapının hiç
-              açılmamasıydı. Bir ekranın söylemediği şey, olmayan bir şey gibi
-              davranır.
-            */}
-            <div style={{ gridColumn: "1 / -1" }}>
-              <div className="screen-note" style={{ marginBottom: 6 }}>
-                <strong>{t("listening.gates.title")}</strong>
-              </div>
-              <div className="screen-note" style={{ marginBottom: 8 }}>
-                {t("listening.gates.explain")}
-              </div>
-              {/*
-                İKİ SEÇENEK, RADYO — bir onay kutusu değil.
-
-                "Seçim yok" ile "hiçbirini seçmedim" bir onay kutusuyla
-                anlatılamaz: kutu kapalıyken hangisi olduğu belirsiz kalırdı.
-                İki radyo, iki cümle, ve ikisi de AÇIKÇA yazıyor.
-              */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <input
-                    type="radio"
-                    name="gates-mode"
-                    checked={!gatesCustom}
-                    onChange={() => setGatesCustom(false)}
-                  />
-                  <span>{t("listening.gates.default")}</span>
-                </label>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <input
-                    type="radio"
-                    name="gates-mode"
-                    checked={gatesCustom}
-                    onChange={() => setGatesCustom(true)}
-                  />
-                  <span>{t("listening.gates.custom")}</span>
-                </label>
-              </div>
-              {gatesCustom ? (
-                <div style={{ marginTop: 8, paddingLeft: 20 }}>
-                  {SELECTABLE_GATES.map((gate) => {
-                    /*
-                      MÜHENDİSLİK KAPILARI, ANALİZ AKIŞINDA SEÇİLSE DE AÇILMAZ.
-
-                      Seçimi ENGELLEMİYORUZ (operatör akışı sonradan
-                      değiştirebilir ve seçimi kaybetmemeli), ama SÖYLÜYORUZ.
-                      Sessiz bir "seçtim ama olmadı", bu ekranın önlemek için
-                      var olduğu şeyin ta kendisi.
-                    */
-                    const dead = flowType === "analiz" && gate.step !== "4" && gate.step !== "5";
-                    return (
-                      <div key={gate.step} style={{ marginBottom: 8 }}>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <input
-                            type="checkbox"
-                            checked={gateStepsSel.includes(gate.step)}
-                            onChange={() => toggleGateStep(gate.step)}
-                          />
-                          <span style={dead ? { color: "#78716c" } : {}}>{t(gate.titleKey)}</span>
-                        </label>
-                        <div className="screen-note" style={{ marginLeft: 24 }}>
-                          {t(`${gate.titleKey}.hint`)}
-                        </div>
-                        {dead && gateStepsSel.includes(gate.step) ? (
-                          <div
-                            className="screen-note"
-                            style={{ marginLeft: 24, color: "#b45309", fontWeight: 600 }}
-                          >
-                            {t("listening.gates.engineering_only")}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                  {gateStepsSel.length === 0 ? (
-                    <div
-                      className="screen-note"
-                      style={{ color: "#b45309", fontWeight: 600, marginBottom: 8 }}
-                    >
-                      {/*
-                        Boş seçim SESSİZ GEÇMEZ — ve bir hata da değil.
-                        Operatörün akışında meşru bir cevap (onay Jira'da statü
-                        taşıyarak veriliyor), ama ne anlama geldiği yazılmalı.
-                      */}
-                      {t("listening.gates.none_selected")}
-                    </div>
-                  ) : null}
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={gateOwnerless}
-                      onChange={() => setGateOwnerless((prev) => !prev)}
-                    />
-                    <span>{t("listening.gates.ownerless")}</span>
-                  </label>
-                  <div className="screen-note" style={{ marginLeft: 24 }}>
-                    {t("listening.gates.ownerless_explain")}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <Select
-              label={t("listening.form.flow")}
-              value={flowType}
-              onChange={(e) => setFlowType(e.target.value as FlowType)}
-              options={[
-                { value: "analiz", label: t("listening.flow.analiz") },
-                { value: "duzeltme", label: t("listening.flow.duzeltme") },
-                { value: "gelistirme", label: t("listening.flow.gelistirme") },
-              ]}
-              hint={t(`listening.flow.hint.${flowType}`)}
-            />
-            <Select
-              label={t("listening.agent.analyst")}
-              value={analystVariantId}
-              onChange={(e) => setAnalystVariantId(e.target.value)}
-              options={[
-                { value: "", label: t("listening.agent.default") },
-                ...analystOptions.map((v) => ({ value: v.variantId, label: v.variantId })),
-              ]}
-              hint={t("listening.agent.hint")}
-            />
-            <Select
-              label={t("listening.agent.engineer")}
-              value={engineerVariantId}
-              onChange={(e) => setEngineerVariantId(e.target.value)}
-              options={[
-                { value: "", label: t("listening.agent.default") },
-                ...engineerOptions.map((v) => ({ value: v.variantId, label: v.variantId })),
-              ]}
-              hint={t("listening.agent.hint")}
-            />
-          </div>
-
-          {/* The Jira status map. Collapsed, and OPT-IN: the checkbox inside is
-              off unless the rule being edited already has a map, because
-              comment-only is what every rule does today and a form must not
-              start moving a bank's tickets because it rendered.
-              `open` is CONTROLLED (with onToggle), not left to the browser: the
-              disclosure has to spring open by itself when "Düzenle" loads a rule
-              that already has a map — a configured map hidden behind a closed
-              summary is exactly the invisibility this screen is here to fix. */}
-          <details
-            className="scr-adv"
-            style={{ marginTop: 14 }}
-            open={statusPanelOpen}
-            onToggle={(e) => setStatusPanelOpen((e.currentTarget as HTMLDetailsElement).open)}
-          >
-            <summary className="scr-adv__summary">{t("listening.status.summary")}</summary>
-            <div style={{ padding: "12px 2px 2px" }}>
-              <p className="screen-note" style={{ marginTop: 0 }}>
-                {t("listening.status.intro")}
-              </p>
-              <label
-                className="screen-note"
-                style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0 0" }}
-              >
-                <input
-                  type="checkbox"
-                  checked={statusOn}
-                  onChange={(e) => {
-                    setStatusOn(e.target.checked);
-                    // Turning it off never rewrites what was typed — the draft
-                    // is kept so re-opening restores it. Only what `onSubmit`
-                    // builds depends on the toggle.
-                  }}
-                />
-                {t("listening.status.enable")}
-              </label>
-
-              {statusOn && (
-                <>
-                  <p className="screen-note">{t("listening.status.exact")}</p>
-                  <div className="screen-filters" style={{ marginTop: 10 }}>
-                    {STATUS_POINTS.map((point) => {
-                      // Dead for the selected flow: disabled, never hidden, and
-                      // the hint is the REASON. An operator who mapped five
-                      // points on an analiz rule and now writes a düzeltme one
-                      // should read WHY this rule has three, not wonder where
-                      // two fields went. A value the draft still holds there
-                      // stays visible; the warning below and `buildStatusMap`
-                      // handle what happens to it on save.
-                      const dead = !livePoints.has(point);
-                      const hint = dead
-                        ? t("listening.status.dead_hint")
-                        : t(`listening.status.hint.${point}`);
-                      return statusOptions.length > 0 ? (
-                        <Select
-                          key={point}
-                          label={t(`listening.status.${point}`)}
-                          value={statusDraft[point]}
-                          onChange={(e) => setStatusAt(point, e.target.value)}
-                          disabled={dead}
-                          options={[
-                            { value: "", label: t("listening.status.skip") },
-                            ...statusOptions.map((v) => ({ value: v, label: v })),
-                          ]}
-                          hint={hint}
-                        />
-                      ) : (
-                        // Jira's status list could not be read (no connection,
-                        // no project picked yet, project unreadable). Free text
-                        // rather than an empty dropdown, so the map can still be
-                        // written — the "birebir aynı" warning above is what
-                        // carries the risk in that case.
-                        <Input
-                          key={point}
-                          label={t(`listening.status.${point}`)}
-                          value={statusDraft[point]}
-                          onChange={(e) => setStatusAt(point, e.target.value)}
-                          disabled={dead}
-                          hint={hint}
-                        />
-                      );
-                    })}
-                  </div>
-                  {/* Values parked at dead points — an older rule's stored
-                      `onReview`, or text typed before the flow was switched.
-                      Saving will NOT write them, and that must be said before
-                      the save, in the operator's language, naming the exact
-                      values: a stored configuration vanishing without a word is
-                      the same silent dishonesty this gating exists to end. */}
-                  {deadDraftEntries.length > 0 && (
-                    <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-                      {t("listening.status.dead_warning", {
-                        values: deadDraftEntries
-                          .map((e) => `${t(`listening.status.${e.point}`)}: ${e.value}`)
-                          .join(", "),
-                      })}
-                    </div>
-                  )}
-                  <label
-                    className="screen-note"
-                    style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={reassignOnNeedInfo}
-                      onChange={(e) => setReassignOnNeedInfo(e.target.checked)}
-                    />
-                    {t("listening.status.reassign")}
-                  </label>
-                  <p className="screen-note" style={{ marginTop: 4 }}>
-                    {t("listening.status.reassign_hint")}
-                  </p>
-                </>
               )}
             </div>
-          </details>
-
-          {/*
-            ── KAPI KARARI: BEŞ ALANDAN TÜREYEN ÖZET, AYRI KUTU DEĞİL ────────
-
-            Burada eskiden İKİ AYRI ALAN vardı (`gateApproveStatus`,
-            `gateReturnStatus`) ve operatörden aynı akışı İKİNCİ KEZ tarif
-            etmesini istiyorlardı. Şikâyet aynen şuydu: "şu dinleme ayarları çok
-            karmaşık oldu, daha mantıklı adam akıllı bir şey yap." Haklıydı —
-            akış tek bir hat:
-
-                todo → analiz → analysisapproval → development
-                 ↑       ↑            │
-                 │       └────────────┘
-                 └── (intake eksik bulursa)
-
-            ve bu hattı çizmek için beş kutu yeter. `development` zaten "iş
-            bitti"nin (onDone) statüsü; operatörün ticket'ı oraya taşıması,
-            "onaylandı" demenin panodaki hâli. `analiz` zaten "iş burada
-            yapılır"ın (onStart) statüsü; oraya taşımak "bir daha bak" demek.
-            İki ayrı kutu, aynı gerçeği iki yere yazdırıp ayrışmalarına izin
-            vermekti — ve üstelik yedinci kutuya "bu beşle çakışamaz" diye bir
-            koruma konduğu için operatörün DOĞRU yapılandırması reddediliyordu.
-
-            Alanlar KALDIRILMADI, GİZLENDİ: `gateStatusDraft` hâlâ var ve
-            kaydedilen kuralda dolu ise korunuyor (bkz. `buildStatusMap` ve
-            `gatePointsOf`in geri düşüş sırası). Eski bir kurulumda o alanlar
-            doluysa aşağıdaki özet onu gösterir ve nereden geldiğini söyler.
-
-            Bu blok bir GİRDİ değil, bir AYNA: operatörün yukarıda çizdiği
-            hattın kapıda ne anlama geldiğini, kaydetmeden önce okunur hâlde
-            geri söyler.
-          */}
-          <div className="scr-adv" style={{ marginTop: 14, padding: "12px 14px" }}>
-            <p className="screen-note" style={{ marginTop: 0, fontWeight: 600 }}>
-              {t("listening.gate_status.title")}
-            </p>
-            <p className="screen-note">{t("listening.gate_status.intro")}</p>
-            {/*
-              Kapının iki kenarı, TÜRETİLDİKLERİ alanın adıyla birlikte.
-              "Onay: Development" tek başına doğru ama öğretmiyor; "Onay:
-              Development (İş bittiğinde alanından)" operatöre hattın nasıl
-              okunduğunu gösterir, ve yanlışsa nereyi düzelteceğini söyler.
-            */}
-            <ul className="screen-note" style={{ margin: "10px 0 0", paddingLeft: 18 }}>
-              <li>
-                {t("listening.gate_status.derived_approve", {
-                  status:
-                    gatePoints.approve === ""
-                      ? t("listening.gate_status.derived_none")
-                      : gatePoints.approve,
-                  from:
-                    gatePoints.approveFrom === null
-                      ? ""
-                      : t(`listening.gate_status.from.${gatePoints.approveFrom}`),
-                })}
-              </li>
-              <li>
-                {t("listening.gate_status.derived_return", {
-                  status:
-                    gatePoints.return === ""
-                      ? t("listening.gate_status.derived_none")
-                      : gatePoints.return,
-                  from:
-                    gatePoints.returnFrom === null
-                      ? ""
-                      : t(`listening.gate_status.from.${gatePoints.returnFrom}`),
-                })}
-              </li>
-            </ul>
-            {/*
-              Kalan TEK yasak: kapı noktası `onReview` ile aynı olamaz — kapı
-              orada AÇILIYOR, dolayısıyla oradan bir karar okunamaz. Diğer dört
-              nokta ile çakışma artık serbest ve olması gereken de bu.
-            */}
-            {gateClashes.length > 0 && (
-              <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-                {t("listening.gate_status.review_clash", {
-                  values: gateClashes
-                    .map((c) => t(`listening.gate_status.from.${c.point}`))
-                    .join(", "),
-                })}
-              </div>
-            )}
-            {/* İki kenar da boşsa kapı yalnız yorumla kapanır, ve operatörün
-                bunu EKRANDA okuması gerekiyor: "neden statüyle çalışmıyor"
-                sorusunun cevabı burada durmalı, bir belgede değil. */}
-            {gatePoints.approve === "" && gatePoints.return === "" && (
-              <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-                {t("listening.gate_status.empty_warning")}
-              </div>
-            )}
-            <p className="screen-note" style={{ marginTop: 8 }}>
-              {t("listening.gate_status.approval_note")}
-            </p>
-          </div>
-
-          {/*
-            DENE → GÖR → DÜZELT → KAYDET, tek form.
-            "Test et" ile "Kural ekle" yan yana ve AYNI alanları okuyor: test
-            edilen ile kaydedilen arasında ikinci bir form olsaydı, operatör
-            denediği değerleri bir kez daha yazmak zorunda kalır ve iki kopyanın
-            ayrışması an meselesi olurdu.
-          */}
-          <div className="screen-actions">
-            <Button busy={test.isPending} onClick={onTest}>
-              {t("listening.probe.run")}
-            </Button>
-            <Button
-              variant="primary"
-              busy={create.isPending || update.isPending}
-              onClick={onSubmit}
-            >
-              {editingRuleId === null ? t("listening.action.add") : t("listening.action.save")}
-            </Button>
-            {editingRuleId !== null && (
-              <Button size="sm" onClick={cancelEdit}>
-                {t("listening.action.cancel_edit")}
-              </Button>
-            )}
-          </div>
-
-          {probe !== null && (
-            <ProbePanel
-              t={t}
-              result={probe.result}
-              stale={probeStale}
-              onRetest={onTest}
-              busy={test.isPending}
-            />
           )}
-        </Card>
         </div>
+      </Card>
+
+      {canWrite && (
+        <RuleForm
+          draft={draft}
+          patch={patch}
+          editingRuleId={editingRuleId}
+          boundProjects={boundProjects}
+          botAccountId={botAccountId}
+          jiraConnections={connections}
+          valueOptions={valueOptions}
+          valuesDegradedKey={valuesDegradedKey}
+          statusOptions={statusOptions}
+          analystOptions={analystOptions}
+          engineerOptions={engineerOptions}
+          onSubmit={onSubmit}
+          onTest={onTest}
+          onCancelEdit={resetForm}
+          submitting={create.isPending || update.isPending}
+          testing={test.isPending}
+          probe={probe === null ? null : { result: probe.result, stale: probeStale }}
+          formRef={formRef}
+        />
       )}
 
       <Card padded={false}>
@@ -1923,226 +470,15 @@ export function ListeningScreen(): ReactNode {
           onRetry={() => void query.refetch()}
           skeletonRows={3}
         >
-          <Table
-            columns={columns}
-            rows={rules}
-            rowKey={(r) => r.ruleId}
-            emptyLabel={t("listening.empty")}
+          <RuleTable
+            rules={rules}
+            canWrite={canWrite}
+            onEdit={onEdit}
+            onDelete={(rule) => remove.mutate(rule.ruleId)}
+            deleting={remove.isPending}
           />
         </QueryState>
       </Card>
     </div>
-  );
-}
-
-/**
- * A Jira accountId is `<siteId>:<uuid>` — ~40 chars that blow out the column and
- * carry no meaning at a glance. Show the leading segment and an ellipsis; the
- * full value stays in the cell's `title` for anyone who needs to copy it.
- */
-function shortAccount(accountId: string): string {
-  if (accountId.length <= 14) return accountId;
-  return `${accountId.slice(0, 12)}…`;
-}
-
-/**
- * DENEME SONUCU — kuralın ürettiği JQL, eşleşenler, ve eşleşme yoksa
- * karşılaştırma listesi.
- *
- * Bu bileşenin asıl işi ikinci tablo. Bir kuralın 0 sonuç döndüğünü söylemek
- * yarım cevaptır: operatörün dört farklı sebebi vardır (tip adı farklı, statü
- * tutmuyor, ticket bota atanmamış, etiket yok) ve dördü de aynı "0" gibi
- * görünür. Projedeki AÇIK ticket'ları aynı sütunlarla yan yana koymak, dördünü
- * de tek bakışta ayırt ettirir — "kuralım Görev diyor ama Jira'da hepsi Task
- * yazıyor" cümlesi ancak iki tablo yan yanayken kurulabilir.
- */
-function ProbePanel({
-  t,
-  result,
-  stale,
-  onRetest,
-  busy,
-}: {
-  readonly t: ReturnType<typeof useT>;
-  readonly result: ProbeResult;
-  readonly stale: boolean;
-  readonly onRetest: () => void;
-  readonly busy: boolean;
-}): ReactNode {
-  if (!result.ok) {
-    /**
-     * Adlandırılmış sebep, katalogdan çevrilir. `unbound_project` ile
-     * `no_bot_account` operatörü iki AYRI ekrana gönderir; tek bir "deneme
-     * başarısız" cümlesi yarısını yanlış yere yollardı.
-     */
-    const known = ["unbound_project", "no_bot_account", "no_label", "bindings_unreadable", "search_failed", "probe_not_available"];
-    return (
-      <div className="scr-note scr-note--warn" style={{ marginTop: 16 }}>
-        <b>{t("listening.probe.failed")}</b>{" "}
-        {known.includes(result.reason)
-          ? t(`listening.probe.reason.${result.reason}`)
-          : result.reason}
-        {result.detail !== undefined && result.detail !== "" && (
-          <div className="screen-mono" style={{ marginTop: 6, wordBreak: "break-all" }}>
-            {result.detail}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const empty = result.matched.length === 0;
-  return (
-    <div style={{ marginTop: 16 }}>
-      {/*
-        TEST EDİLEN DEĞERLER DEĞİŞTİ.
-        Formu test ettikten sonra düzenlemek serbest — ama aşağıdaki tablo o
-        anda başka bir kuralı anlatıyor demektir. Sessizce durması, "panelde
-        doğru görünen, sahada başka çalışan" hatasının tam da bu ekranda
-        yeniden üretilmesi olurdu.
-      */}
-      {stale && (
-        <div className="scr-note scr-note--warn" style={{ marginBottom: 12 }}>
-          <b>{t("listening.probe.stale")}</b>{" "}
-          <Button size="sm" busy={busy} onClick={onRetest}>
-            {t("listening.probe.retest")}
-          </Button>
-        </div>
-      )}
-
-      <div className="screen-note">{t("listening.probe.jql_label")}</div>
-      <JqlBox t={t} jql={result.jql} />
-
-      {empty ? (
-        <>
-          {/*
-            Sıfır sonuç bir YASAK değil, bir uyarı: bugün eşleşen ticket
-            olmayabilir, yarın olur. Kuralı kaydetmek serbest kalır.
-          */}
-          <div className="scr-note scr-note--warn" style={{ marginTop: 12 }}>
-            <b>{t("listening.probe.no_match")}</b> {t("listening.probe.no_match_hint")}
-          </div>
-          {result.projectSample.length > 0 && (
-            <>
-              <div className="screen-note" style={{ marginTop: 12 }}>
-                {t("listening.probe.compare", { count: String(result.projectSample.length) })}
-              </div>
-              <ProbeTable t={t} rows={result.projectSample} />
-            </>
-          )}
-          {result.projectSample.length === 0 && result.sampleJql !== null && (
-            <div className="screen-note" style={{ marginTop: 12 }}>
-              {t("listening.probe.project_empty")}
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          <div className="screen-note" style={{ marginTop: 12 }}>
-            {t("listening.probe.matched", { count: String(result.matched.length) })}
-          </div>
-          <ProbeTable t={t} rows={result.matched} />
-        </>
-      )}
-    </div>
-  );
-}
-
-/**
- * Üretilen JQL, KOPYALANABİLİR halde.
- *
- * Operatör aynı sorguyu Jira'nın kendi arama kutusunda da denesin diye: panelin
- * "0 sonuç" demesi ile Jira'nın "0 sonuç" demesi aynı şeyi kanıtlamaz — biri
- * kuralı, diğeri servis hesabının o projedeki iznini de sınar.
- *
- * Salt-okunur bir `textarea`: seçilebilir, kopyalanabilir, ve panoya erişimi
- * olmayan bir tarayıcıda (HTTP üzerinden açılmış bir kurulum, ki bankada olur)
- * elle seçmek hâlâ çalışır. Kopyalama başarısız olursa metin kaybolmaz.
- */
-function JqlBox({ t, jql }: { readonly t: ReturnType<typeof useT>; readonly jql: string }): ReactNode {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 4 }}>
-      <textarea
-        readOnly
-        className="screen-mono"
-        value={jql}
-        rows={2}
-        style={{ flex: 1, resize: "vertical", padding: 8 }}
-        onFocus={(e) => e.currentTarget.select()}
-      />
-      <Button
-        size="sm"
-        onClick={() => {
-          void navigator.clipboard
-            ?.writeText(jql)
-            .then(() => setCopied(true))
-            .catch(() => setCopied(false));
-        }}
-      >
-        {copied ? t("listening.probe.copied") : t("listening.probe.copy")}
-      </Button>
-    </div>
-  );
-}
-
-/** Bir ticket listesi — kuralın karşılaştırdığı DÖRT alan, ticket metni yok. */
-function ProbeTable({
-  t,
-  rows,
-}: {
-  readonly t: ReturnType<typeof useT>;
-  readonly rows: readonly ProbeTicket[];
-}): ReactNode {
-  const columns: readonly Column<ProbeTicket>[] = [
-    {
-      key: "key",
-      header: t("listening.probe.col.key"),
-      cell: (r) => (
-        <>
-          <b className="screen-mono">{r.key}</b>
-          {/*
-            "Bu zaten alınmış." Eşleşen ama koşusu olan bir ticket, taramanın
-            hatası değil işidir — ve bunu söylememek bugün bir operatörü, işini
-            yeni yapmış bir sorguda hata aramaya gönderdi.
-          */}
-          {r.alreadyKnown && (
-            <span style={{ marginLeft: 6 }}>
-              <Badge tone="gray">{t("listening.probe.already_known")}</Badge>
-            </span>
-          )}
-        </>
-      ),
-    },
-    {
-      key: "issueType",
-      header: t("listening.probe.col.type"),
-      cell: (r) => <span className="screen-mono">{r.issueType ?? "—"}</span>,
-    },
-    {
-      key: "status",
-      header: t("listening.probe.col.status"),
-      cell: (r) => <span className="screen-mono">{r.status ?? "—"}</span>,
-    },
-    {
-      key: "assignee",
-      header: t("listening.probe.col.assignee"),
-      // Atanmamış bir ticket, bir kuralın 0 dönmesinin en sık sebebi — ve
-      // boş bir hücre bunu söylemez, o yüzden adı konur.
-      cell: (r) => <span>{r.assignee ?? t("listening.probe.unassigned")}</span>,
-    },
-    {
-      key: "labels",
-      header: t("listening.probe.col.labels"),
-      cell: (r) => <span className="screen-mono">{r.labels.length === 0 ? "—" : r.labels.join(", ")}</span>,
-    },
-  ];
-  return (
-    <Table
-      columns={columns}
-      rows={rows}
-      rowKey={(r) => r.key}
-      emptyLabel={t("listening.probe.no_match")}
-    />
   );
 }

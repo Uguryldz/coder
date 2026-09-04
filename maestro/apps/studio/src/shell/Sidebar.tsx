@@ -6,11 +6,13 @@ import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 
 /**
- * Left navigation, grouped exactly as the mock's NAV table.
+ * Left navigation, grouped by the SCREENS table.
  *
  * Entries whose `roles` the user lacks are hidden. That is a convenience so
  * operators are not sent to screens that would only 403 — it is NOT a security
  * boundary. The BFF authorises every request on its own; see RequireSession.tsx.
+ * Every entry with a role requirement in the table carries it because its BFF
+ * endpoint requires it; a viewer used to meet a red page on five menu items.
  */
 export function Sidebar(): ReactNode {
   const t = useT();
@@ -52,9 +54,6 @@ export function Sidebar(): ReactNode {
                   {screen.icon}
                 </span>
                 {t(screen.navKey as string)}
-                {screen.soon === true && (
-                  <span className="shell__soon">{t("nav.soon")}</span>
-                )}
               </NavLink>
             ))}
           </div>

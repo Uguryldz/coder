@@ -8,17 +8,8 @@ import { Button } from "../ui/Button.tsx";
 import { Card } from "../ui/Card.tsx";
 import { Input } from "../ui/Input.tsx";
 import { Select } from "../ui/Select.tsx";
-import "../auth/LoginForm.css";
-
-/** The failed password rules the BFF returns in `password_policy.details`. */
-type PasswordViolation =
-  | "too_short"
-  | "too_long"
-  | "no_upper"
-  | "no_lower"
-  | "no_digit"
-  | "no_symbol"
-  | "contains_username";
+import type { PasswordViolation } from "./common/admin-api.ts";
+import { PasswordViolations, readViolations } from "./users/PasswordPolicy.tsx";
 
 /**
  * The first-run bootstrap change-password screen (banking standard).
@@ -109,7 +100,7 @@ export function ChangePasswordScreen(): ReactNode {
               name="new-password"
               type="password"
               autoComplete="new-password"
-              hint={t("login.change.hint")}
+              hint={t("login.password_hint")}
               value={next}
               onChange={(event) => setNext(event.target.value)}
               required
@@ -125,16 +116,7 @@ export function ChangePasswordScreen(): ReactNode {
               required
             />
 
-            {violations.length > 0 && (
-              <div className="login__error" role="alert">
-                <div>{t("users.error.password_policy")}</div>
-                <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                  {violations.map((rule) => (
-                    <li key={rule}>{t(`users.password.${rule}`)}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <PasswordViolations violations={violations} className="login__error" />
             {errorKey !== null && (
               <p className="login__error" role="alert">
                 {t(errorKey)}
@@ -161,11 +143,4 @@ export function ChangePasswordScreen(): ReactNode {
       </div>
     </main>
   );
-}
-
-function readViolations(details: unknown): readonly PasswordViolation[] {
-  if (typeof details !== "object" || details === null) return [];
-  const value = (details as { violations?: unknown }).violations;
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is PasswordViolation => typeof entry === "string");
 }

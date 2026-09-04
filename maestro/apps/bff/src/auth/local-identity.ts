@@ -112,6 +112,33 @@ export class LocalIdentityProvider implements IdentityProvider {
     await this.users.upsert(rekeyed);
     return rekeyed;
   }
+
+  /**
+   * An ADMIN resets somebody else's password (M8/M86) — the panel half of
+   * `deploy/<paket>/reset-admin.sh`. No current password is asked (that is the
+   * point: the person is locked out); instead the caller is an admin the route
+   * has already authorised, and the new password is a corridor, not a
+   * credential: `mustChangePassword` is set so the first login forces a change.
+   *
+   * The generated password still faces the policy — a reset that installs a
+   * weak password is a reset to a weaker state. Returns `null` for an unknown
+   * or off-boarded account: a reset must never resurrect a revoked one, that is
+   * a separate, deliberate reactivation. Killing the account's sessions is the
+   * caller's job, as with `changePassword`.
+   */
+  async resetPassword(username: string, newPassword: string): Promise<UserRecord | null> {
+    const normalized = normalize(username);
+    const user = await this.users.find(normalized);
+    if (user === null || !user.active) return null;
+    assertPassword(newPassword, normalized, this.policy);
+    const rekeyed: UserRecord = {
+      ...user,
+      passwordHash: await this.hasher.hash(newPassword),
+      mustChangePassword: true,
+    };
+    await this.users.upsert(rekeyed);
+    return rekeyed;
+  }
 }
 
 function normalize(username: string): string {

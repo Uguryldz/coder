@@ -2,36 +2,59 @@ import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Card, TabPanel, Tabs } from "../ui/index.ts";
+import { JiraCommandsSection } from "./help/JiraCommands.tsx";
 import { JiraSetupCard } from "./help/JiraSetup.tsx";
-import "./shared/screens.css";
+import { McpServerSection } from "./help/McpServer.tsx";
 
 /**
  * Screen: help — a guided reference to the whole platform, one tab per menu
- * GROUP, mirroring the sidebar's four groups (İşler / Ajanlar / Denetim /
- * Kurulum — see app/screens.ts). Each tab lists that group's pages, and every
- * page is explained the same way an operator asks about it: NE İŞE YARAR (what
- * it is for), NASIL ÇALIŞIR (how it works), ÖRNEK (a concrete example). Above
- * the tabs, a "capabilities" card walks through the newer behaviours —
- * auto-start on binding, the two approval paths, per-agent training, the
- * clarification loop and the audit CSV export.
+ * GROUP, mirroring the sidebar's five groups (İşler / Ajanlar / Projeler /
+ * Denetim / Yönetim — see app/screens.ts), plus two reference tabs that used
+ * to be screens of their own: the Jira command set and the Maestro MCP server.
+ * Each group tab lists that group's pages, and every page is explained the
+ * same way an operator asks about it: NE İŞE YARAR (what it is for), NASIL
+ * ÇALIŞIR (how it works), ÖRNEK (a concrete example). Above the tabs, a
+ * "capabilities" card walks through the newer behaviours — auto-start on
+ * binding, the two approval paths, per-agent training, the clarification loop
+ * and the audit CSV export.
  *
- * No data layer — this is documentation, so every sentence is a catalog entry.
- * The active tab lives in the URL (`?cat=`) so a deep link lands on a category.
+ * The guide itself has no data layer — every sentence is a catalog entry. The
+ * three reference parts (Jira setup, commands, MCP) read the live BFF so they
+ * cannot drift from what the platform actually accepts. The active tab lives
+ * in the URL (`?cat=`) so a deep link lands on a category.
  */
+
+interface Category {
+  readonly id: string;
+  /** Catalog key of the tab label. */
+  readonly labelKey: string;
+  /** The page guides this tab lists; empty for a reference tab. */
+  readonly pages: readonly string[];
+}
 
 /**
  * The category tabs, in the sidebar's order (app/screens.ts NAV_GROUPS), each
  * with the pages it explains — the same pages the sidebar puts in that group,
- * plus the routable-but-hidden `params`. Tab labels come from the SAME
+ * plus the routable-but-hidden `params`. Group labels come from the SAME
  * `nav.group.*` catalog keys the sidebar renders, so the guide can never name
- * a group the menu does not.
+ * a group the menu does not. The last two are reference tabs (no page guides):
+ * their content is a component, chosen by id in REFERENCE below.
  */
-const CATEGORIES: readonly { readonly id: string; readonly pages: readonly string[] }[] = [
-  { id: "start", pages: ["dash", "sandbox"] },
-  { id: "ai", pages: ["variants", "knowledge", "template", "doctemplate", "eval"] },
-  { id: "compliance", pages: ["audit", "pii", "aiusage", "security", "evidence"] },
-  { id: "system", pages: ["projects", "notify", "users", "settings", "params", "health", "runners"] },
+const CATEGORIES: readonly Category[] = [
+  { id: "start", labelKey: "nav.group.start", pages: ["dash", "sandbox"] },
+  { id: "ai", labelKey: "nav.group.ai", pages: ["variants", "knowledge", "template", "doctemplate"] },
+  { id: "projects", labelKey: "nav.group.projects", pages: ["projects"] },
+  { id: "compliance", labelKey: "nav.group.compliance", pages: ["audit", "pii", "aiusage", "evidence"] },
+  { id: "admin", labelKey: "nav.group.admin", pages: ["settings", "notify", "params", "users", "health"] },
+  { id: "commands", labelKey: "help.tab.commands", pages: [] },
+  { id: "mcp", labelKey: "help.tab.mcp", pages: [] },
 ];
+
+/** The reference tabs' content — the old /commands and /mcp screens. */
+const REFERENCE: Readonly<Record<string, () => ReactNode>> = {
+  commands: JiraCommandsSection,
+  mcp: McpServerSection,
+};
 
 /** The newer platform behaviours the guide walks through, in reading order. */
 const FEATURES = ["autostart", "approval", "training", "clarify", "auditcsv"] as const;
@@ -49,13 +72,10 @@ const PAGE_LINK: Readonly<Record<string, string>> = {
   pii: "/pii",
   aiusage: "/cost",
   variants: "/variants",
-  eval: "/eval",
-  security: "/security",
   users: "/users",
   settings: "/settings",
   params: "/params",
   health: "/health",
-  runners: "/runners",
   sandbox: "/sandbox",
 };
 
@@ -103,18 +123,25 @@ export function HelpScreen(): ReactNode {
         label={t("help.tabs.label")}
         active={active}
         onChange={select}
-        items={CATEGORIES.map((c) => ({ id: c.id, label: t(`nav.group.${c.id}`) }))}
+        items={CATEGORIES.map((c) => ({ id: c.id, label: t(c.labelKey) }))}
       />
 
-      {CATEGORIES.map((category) => (
-        <TabPanel key={category.id} id={category.id} active={active}>
-          <div className="scr-stack">
-            {category.pages.map((page) => (
-              <PageGuide key={page} page={page} />
-            ))}
-          </div>
-        </TabPanel>
-      ))}
+      {CATEGORIES.map((category) => {
+        const Reference = REFERENCE[category.id];
+        return (
+          <TabPanel key={category.id} id={category.id} active={active}>
+            {Reference !== undefined ? (
+              <Reference />
+            ) : (
+              <div className="scr-stack">
+                {category.pages.map((page) => (
+                  <PageGuide key={page} page={page} />
+                ))}
+              </div>
+            )}
+          </TabPanel>
+        );
+      })}
     </div>
   );
 }

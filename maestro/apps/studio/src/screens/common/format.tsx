@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import "./screens.css";
 
 export interface KeyValueEntry {
   /** Already-translated label. */

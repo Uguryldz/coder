@@ -65,6 +65,10 @@ export function Table<Row>({
           </tr>
         </thead>
         <tbody>
+          {/* A focusable ROW, not a `role="button"`: a button may not contain
+              the cells' own buttons and links, and screen readers lost the grid
+              semantics. tabIndex + Enter/Space keeps it keyboard-operable while
+              the row stays a row. */}
           {rows.map((row) => (
             <tr
               key={rowKey(row)}
@@ -73,8 +77,9 @@ export function Table<Row>({
                 ? {
                     onClick: () => onRowClick(row),
                     tabIndex: 0,
-                    role: "button",
                     onKeyDown: (event: React.KeyboardEvent) => {
+                      // Only the row itself: a button INSIDE a cell handles its own keys.
+                      if (event.target !== event.currentTarget) return;
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         onRowClick(row);

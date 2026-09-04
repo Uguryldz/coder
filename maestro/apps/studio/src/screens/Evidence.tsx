@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useSearchParams } from "react-router";
 import type { EvidenceFile, GateDecision } from "@maestro/contracts";
 import { useI18n, useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Input, Table } from "../ui/index.ts";
@@ -7,7 +8,6 @@ import type { Column } from "../ui/index.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { byteSize, dateTimeLabel, shortHash } from "./shared/format.ts";
 import { useEvidence } from "./shared/runs.ts";
-import "./shared/screens.css";
 
 /**
  * Screen: evidence — the audit file of a finished workflow (M56/M57).
@@ -23,31 +23,61 @@ import "./shared/screens.css";
  *    table shows that field. A green tick invented by the client would be an
  *    audit claim with nothing behind it.
  *
- * Reads `GET /studio/runs/:ticket/evidence` (routes/studio-runs.ts:113).
+ * Reads `GET /studio/runs/:ticket/evidence` (routes/studio-runs.ts).
+ *
+ * The ticket comes from `?ticket=` (a run's Detail links here) or is typed.
+ * Typing is debounced and the key validated locally against the same shape
+ * the BFF enforces (`TicketKey`), so a half-typed "UGURPAY-1" neither fires a
+ * request per keystroke nor flashes the server's `invalid_ticket_key` in red.
  */
+
+/** Mirrors `TicketKey` in packages/contracts — PROJE-123. */
+const TICKET_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
+const DEBOUNCE_MS = 350;
+
 export function EvidenceScreen(): ReactNode {
   const t = useT();
   const { locale } = useI18n();
-  const [ticket, setTicket] = useState("");
+  const [params, setParams] = useSearchParams();
+  const [draft, setDraft] = useState(() => (params.get("ticket") ?? "").trim().toUpperCase());
+  const [settled, setSettled] = useState(draft);
 
-  const query = useEvidence(ticket.trim(), ticket.trim() !== "");
+  useEffect(() => {
+    if (draft === settled) return;
+    const timer = window.setTimeout(() => setSettled(draft), DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [draft, settled]);
+
+  const valid = TICKET_KEY.test(settled);
+  const invalid = settled !== "" && !valid;
+
+  // Keep the URL in step with a valid key so the page can be shared or
+  // bookmarked, without adding a history entry per keystroke.
+  useEffect(() => {
+    if (!valid || params.get("ticket") === settled) return;
+    const next = new URLSearchParams(params);
+    next.set("ticket", settled);
+    setParams(next, { replace: true });
+  }, [valid, settled, params, setParams]);
+
+  const query = useEvidence(settled, valid);
   const pkg = query.data;
 
   const fileColumns: readonly Column<EvidenceFile>[] = [
     {
       key: "name",
       header: t("evidence.col.file"),
-      cell: (file) => <span className="screen-file__name">{file.name}</span>,
+      cell: (file) => <span className="scr-file__name">{file.name}</span>,
     },
     {
       key: "type",
       header: t("evidence.col.type"),
-      cell: (file) => <span className="screen-note">{file.contentType}</span>,
+      cell: (file) => <span className="scr-hint">{file.contentType}</span>,
     },
     {
       key: "hash",
       header: t("evidence.col.hash"),
-      cell: (file) => <span className="screen-mono">{shortHash(file.sha256)}</span>,
+      cell: (file) => <span className="scr-mono">{shortHash(file.sha256)}</span>,
     },
     {
       key: "size",
@@ -66,7 +96,7 @@ export function EvidenceScreen(): ReactNode {
       header: t("evidence.col.gate"),
       cell: (decision) => (
         <>
-          <span className="screen-mono">{decision.step}</span> {t(`steps.${decision.step}`)}
+          <span className="scr-mono">{decision.step}</span> {t(`steps.${decision.step}`)}
         </>
       ),
     },
@@ -82,7 +112,7 @@ export function EvidenceScreen(): ReactNode {
     {
       key: "actor",
       header: t("evidence.col.actor"),
-      cell: (decision) => <span className="screen-mono">{decision.actorUserId}</span>,
+      cell: (decision) => <span className="scr-mono">{decision.actorUserId}</span>,
     },
     {
       key: "sod",
@@ -102,19 +132,22 @@ export function EvidenceScreen(): ReactNode {
   ];
 
   return (
-    <div className="screen-stack">
+    <div className="scr-stack">
       <Card title={t("evidence.pick.title")} subtitle={t("evidence.pick.subtitle")}>
         <Input
           label={t("evidence.field.ticket")}
-          value={ticket}
-          onChange={(event) => setTicket(event.target.value)}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value.trim().toUpperCase())}
           hint={t("evidence.field.ticket_hint")}
+          autoCapitalize="characters"
+          spellCheck={false}
+          {...(invalid ? { error: t("evidence.field.ticket_invalid") } : {})}
         />
       </Card>
 
-      {ticket.trim() === "" ? (
+      {!valid ? (
         <Card>
-          <p className="screen-note">{t("evidence.prompt")}</p>
+          <p className="scr-hint">{t("evidence.prompt")}</p>
         </Card>
       ) : (
         <QueryState
@@ -124,7 +157,7 @@ export function EvidenceScreen(): ReactNode {
           skeletonRows={6}
         >
           {pkg === undefined ? null : (
-            <div className="screen-grid screen-grid--detail">
+            <div className="scr-grid scr-grid--detail">
               <Card
                 title={t("evidence.files.title")}
                 subtitle={t("evidence.files.subtitle")}
@@ -139,13 +172,13 @@ export function EvidenceScreen(): ReactNode {
                 />
               </Card>
 
-              <div className="screen-stack">
+              <div className="scr-stack">
                 <Card title={t("evidence.summary.title")}>
-                  <dl className="screen-kv">
+                  <dl className="scr-kv">
                     <dt>{t("evidence.field.ticket_label")}</dt>
-                    <dd className="screen-mono">{pkg.ticketKey}</dd>
+                    <dd className="scr-mono">{pkg.ticketKey}</dd>
                     <dt>{t("evidence.field.run")}</dt>
-                    <dd className="screen-mono">{pkg.runId}</dd>
+                    <dd className="scr-mono">{pkg.runId}</dd>
                     <dt>{t("evidence.field.created")}</dt>
                     <dd>{dateTimeLabel(pkg.createdAt, locale)}</dd>
                     <dt>{t("evidence.field.template")}</dt>
@@ -161,7 +194,7 @@ export function EvidenceScreen(): ReactNode {
                       </Badge>
                     </dd>
                   </dl>
-                  <p className="screen-note">{t("evidence.summary.note")}</p>
+                  <p className="scr-hint">{t("evidence.summary.note")}</p>
                 </Card>
               </div>
 

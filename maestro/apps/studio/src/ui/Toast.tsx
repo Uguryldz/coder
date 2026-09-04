@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useOptionalT } from "../i18n/I18nProvider.tsx";
 import "./Toast.css";
 
 export type ToastTone = "info" | "success" | "warning" | "error";
@@ -23,6 +24,10 @@ const AUTO_DISMISS_MS = 6000;
 
 export function ToastProvider({ children }: { readonly children: ReactNode }): ReactNode {
   const [toasts, setToasts] = useState<readonly Toast[]>([]);
+  // The provider sits inside I18n in the app; a bare test render may not have
+  // one, and a toast must still close, so the label degrades to Turkish.
+  const t = useOptionalT();
+  const closeLabel = t === null ? "Kapat" : t("action.close");
 
   const dismiss = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -49,7 +54,12 @@ export function ToastProvider({ children }: { readonly children: ReactNode }): R
         {toasts.map((toast) => (
           <output key={toast.id} className={`ui-toast ui-toast--${toast.tone}`}>
             <span>{toast.message}</span>
-            <button type="button" className="ui-toast__x" onClick={() => dismiss(toast.id)}>
+            <button
+              type="button"
+              className="ui-toast__x"
+              aria-label={closeLabel}
+              onClick={() => dismiss(toast.id)}
+            >
               ✕
             </button>
           </output>

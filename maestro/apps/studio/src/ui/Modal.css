@@ -2,11 +2,11 @@
   background: var(--panel);
   color: var(--text);
   border: none;
-  border-radius: 13px;
+  border-radius: 10px;
   max-width: 600px;
   width: 100%;
   padding: 0;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22);
   max-height: 86vh;
   overflow: auto;
 }
@@ -17,7 +17,7 @@
 }
 
 .ui-modal__hd {
-  padding: 12px 15px;
+  padding: 10px 13px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -46,11 +46,11 @@
 }
 
 .ui-modal__bd {
-  padding: 15px;
+  padding: 13px;
 }
 
 .ui-modal__ft {
-  padding: 12px 15px;
+  padding: 10px 13px;
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;

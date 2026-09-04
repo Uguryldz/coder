@@ -14,14 +14,14 @@ export function StepList({ run }: { readonly run: WorkflowRunState }): ReactNode
   const currentIndex = STEP_IDS.indexOf(run.step);
 
   return (
-    <div className="screen-steps">
+    <div className="scr-steplist">
       {STEP_IDS.map((step, index) => {
         const state = phaseOf(index, currentIndex);
         return (
-          <div key={step} className={`screen-step screen-step--${state}`}>
-            <span className="screen-step__num">{step}</span>
-            <span className="screen-step__title">{t(`steps.${step}`)}</span>
-            <span className="screen-step__state">
+          <div key={step} className={`scr-steplist__row scr-steplist__row--${state}`}>
+            <span className="scr-steplist__num">{step}</span>
+            <span className="scr-steplist__title">{t(`steps.${step}`)}</span>
+            <span className="scr-steplist__state">
               {t(stateKey(state, run.status))}
             </span>
           </div>

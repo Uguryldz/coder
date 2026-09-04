@@ -85,7 +85,7 @@ describe("panel — setup guidance lives in the wizard now", () => {
     expect(screen.queryByText("Bağlantıları kur")).not.toBeInTheDocument();
     expect(screen.queryByText("Ticket girişini aç")).not.toBeInTheDocument();
     // The runs really did load, so this is a report screen showing its report.
-    expect(screen.getByText("Aktif iş akışı")).toBeInTheDocument();
+    expect(screen.getByText("Çalışıyor")).toBeInTheDocument();
   });
 
   it("links to the wizard rather than leaving the operator to find it", async () => {
@@ -101,7 +101,7 @@ describe("panel — setup guidance lives in the wizard now", () => {
     const { fetchImpl } = stubFetch(panelRoutes());
     renderScreen(<DashScreen />, { fetchImpl });
 
-    expect(await screen.findByText("Aktif iş akışı")).toBeInTheDocument();
+    expect(await screen.findByText("Çalışıyor")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByText(PANEL_NOTE)).not.toBeInTheDocument();
     });

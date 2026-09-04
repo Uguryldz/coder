@@ -17,6 +17,13 @@ export interface NotifyEditorProps {
   readonly open: boolean;
   readonly ladder: EscalationLadderRaw;
   readonly routing: NotifyRouting;
+  /**
+   * Channels the deployment can actually deliver to, from `/notify` `drivers`.
+   * `null` while unknown. Passed so the editor can mark a rung that points at a
+   * channel nobody is wired to — the screen already shows the same fact; the
+   * editor must not let an operator pick it blind.
+   */
+  readonly liveChannels: ReadonlySet<string> | null;
   readonly busy: boolean;
   readonly onClose: () => void;
   readonly onSubmit: (update: NotifyUpdate) => void;
@@ -36,6 +43,7 @@ export function NotifyEditor({
   open,
   ladder,
   routing,
+  liveChannels,
   busy,
   onClose,
   onSubmit,
@@ -110,7 +118,7 @@ export function NotifyEditor({
       {steps.map((step) => (
         <div key={step.id} className="scr-row" style={{ marginBottom: 8 }}>
           <Badge tone={step.action === "delegate" ? "amber" : "blue"}>
-            {label(`notify.step.event.${step.event}`, step.event)}
+            {label(`notify.event.${step.event}`, step.event)}
           </Badge>
           <Input
             label={t("notify.edit.after_hours")}
@@ -122,18 +130,27 @@ export function NotifyEditor({
               : {})}
           />
           <div className="scr-row">
-            {CHANNELS.map((channel) => (
-              <button
-                key={channel}
-                type="button"
-                className={
-                  step.channel === channel ? "scr-step scr-step--on" : "scr-step scr-step--pending"
-                }
-                onClick={() => setChannel(step.id, channel)}
-              >
-                {t(`notify.channel.${channel}`)}
-              </button>
-            ))}
+            {CHANNELS.map((channel) => {
+              // A rung may still point at a channel this deployment cannot
+              // deliver to — the choice is kept (it is a stored decision), but
+              // the operator must see it is dead rather than discover it when
+              // a reminder never arrives.
+              const wired = liveChannels === null || liveChannels.has(channel);
+              return (
+                <button
+                  key={channel}
+                  type="button"
+                  className={
+                    step.channel === channel ? "scr-step scr-step--on" : "scr-step scr-step--pending"
+                  }
+                  onClick={() => setChannel(step.id, channel)}
+                  {...(wired ? {} : { title: t("notify.edit.channel_not_wired") })}
+                >
+                  {t(`notify.channel.${channel}`)}
+                  {wired ? null : " ⚠"}
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}

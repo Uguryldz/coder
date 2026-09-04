@@ -51,7 +51,7 @@ export function DryRunPanel({ result, busy, ready, onRun }: DryRunPanelProps): R
           </div>
 
           {result.unresolved.length > 0 && (
-            <div className="scr-note scr-note--warn" style={{ marginTop: 11 }}>
+            <div className="scr-note scr-note--warn scr-mt-2">
               {t("onboard.dry_run.unresolved_detail", { tickets: result.unresolved.join(", ") })}
             </div>
           )}

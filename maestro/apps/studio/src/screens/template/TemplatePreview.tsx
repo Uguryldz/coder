@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Badge, Button, Modal } from "../../ui/index.ts";
 import type { DraftSection } from "./model.ts";
-import "./template.css";
 
 export interface TemplatePreviewProps {
   readonly open: boolean;
@@ -43,10 +42,8 @@ export function TemplatePreview({
               <b>
                 {index + 1}. {section.title}
               </b>
-              <Badge tone={section.required ? "red" : "amber"}>
-                {section.required ? t("template.required") : t("template.optional")}
-              </Badge>
-              <Badge tone="gray">{t(`template.format.${section.format}`)}</Badge>
+              {section.required && <Badge tone="gray">{t("template.required")}</Badge>}
+              <span className="tpl-preview__desc">{t(`template.format.${section.format}`)}</span>
             </div>
             {section.description !== "" && (
               <p className="tpl-preview__desc">{section.description}</p>

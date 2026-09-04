@@ -16,7 +16,7 @@ import { ADMIN, VIEWER, renderScreen, stubFetch } from "./harness.tsx";
  *
  * Operatörün şikâyeti "model değiştirilemiyor" değildi aslında — kod hep
  * değiştirebiliyordu — "değiştirmenin yolunu bulamıyorum"du: "Düzenle"ye
- * basıyor, orada yalnız platform kutusunu ve modelin nasıl değiştiğini
+ * basıyor, orada yalnız ad kutusunu ve modelin nasıl değiştiğini
  * ANLATAN ama oraya GÖTÜRMEYEN bir not buluyordu. Buradaki testler o yolun
  * artık tıklanabilir olduğunu sabitliyor; kaybolursa aynı şikâyet geri gelir.
  */
@@ -71,7 +71,7 @@ function renderVariant(fetchImpl: typeof fetch, session = ADMIN): void {
   renderScreen(<VariantScreen />, {
     fetchImpl,
     session,
-    initialEntries: ["/variant?id=analyst-web"],
+    initialEntries: ["/variants/detail?id=analyst-web"],
   });
 }
 
@@ -81,7 +81,7 @@ describe("varyant detayı — modeli değiştirme yolu keşfedilebilir", () => {
     renderVariant(fetchImpl);
 
     // Operatörün gerçekte bastığı düğme.
-    await userEvent.click(await screen.findByRole("button", { name: "Platformu düzenle" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Adı düzenle" }));
     // Çıkmaz sokağın kendisi: not burada duruyordu, yanında hiçbir şey yoktu.
     const go = await screen.findByRole("button", { name: "Modeli değiştir →" });
     await userEvent.click(go);
@@ -98,7 +98,7 @@ describe("varyant detayı — modeli değiştirme yolu keşfedilebilir", () => {
     const { fetchImpl } = stubFetch(routes());
     renderVariant(fetchImpl);
 
-    expect(await screen.findByText(/Model: qwen2.5-coder-32b-instruct/)).toBeInTheDocument();
+    expect(await screen.findByText("qwen2.5-coder-32b-instruct")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Değiştir" }));
 
     await waitFor(() => {
@@ -110,7 +110,7 @@ describe("varyant detayı — modeli değiştirme yolu keşfedilebilir", () => {
     const { fetchImpl } = stubFetch(routes());
     renderVariant(fetchImpl, VIEWER);
 
-    expect(await screen.findByText(/Model: qwen2.5-coder-32b-instruct/)).toBeInTheDocument();
+    expect(await screen.findByText("qwen2.5-coder-32b-instruct")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Değiştir" })).not.toBeInTheDocument();
   });
 

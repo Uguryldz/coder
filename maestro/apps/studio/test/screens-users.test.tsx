@@ -107,8 +107,10 @@ describe("users screen", () => {
     await userEvent.type(within(dialog).getByLabelText("Parola"), "short");
     await userEvent.click(within(dialog).getByRole("button", { name: "➕ Kullanıcı ekle" }));
 
-    expect(await within(dialog).findByText(/Çok kısa/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/simge gerekli/)).toBeInTheDocument();
+    // Each rule is one line from the shared `login.password_rule.*` catalog —
+    // the same lines the person's own change-password screen shows.
+    expect(await within(dialog).findByText(/Çok kısa \(en az 8 karakter\)/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/En az bir simge gerekir/)).toBeInTheDocument();
   });
 
   it("deactivates through a confirm modal, calling DELETE", async () => {

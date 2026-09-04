@@ -4,10 +4,10 @@ import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Card, Kpi, Table } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
-import { MaybeUnwired } from "./shared/unwired.tsx";
+import { QueryState } from "./shared/QueryState.tsx";
 
 /**
- * Screen: pii — PII masking overview.
+ * Screen: pii — PII masking overview (M20/M63).
  *
  * SECURITY, NON-NEGOTIABLE: masking happens on the SERVER. This screen can
  * neither unmask nor request an unmasked value, and it must never render a
@@ -19,17 +19,24 @@ import { MaybeUnwired } from "./shared/unwired.tsx";
  * field that could carry a sample value, and no sample is requested. If a
  * future BFF version starts returning one, this screen still cannot show it —
  * add nothing here.
+ *
+ * What is deliberately NOT shown, and why. `GET /pii` also answers
+ * `exemptVariants: []`, `archiveMasked: true` and a per-rule `strategy: "hash"`
+ * — all three are constants in the reader (deploy `read-governance.ts`), not
+ * measurements: the policy loader forbids exemptions, the archive path masks
+ * by construction, and every detector mints a reversible token. Rendering a
+ * constant as a green status tile or a column would be a setting nobody can
+ * change dressed up as a check somebody ran; the facts are stated once, in
+ * words, instead.
  */
 
 interface PiiRule {
   readonly ruleId: string;
   /** "field" | "regex" — what the rule matches on. */
   readonly kind: string;
-  /** The field name or pattern being matched. NOT a value. */
+  /** The detector type or field name being matched. NOT a value. */
   readonly matcher: string;
-  /** "hash" | "redact" | "partial" */
-  readonly strategy: string;
-  /** How many times this rule fired in the window. A count, never a value. */
+  /** How many times this rule fired. A count, never a value. */
   readonly hits: number;
 }
 
@@ -37,12 +44,8 @@ interface PiiSummary {
   readonly maskedCalls: number;
   readonly totalCalls: number;
   readonly maskedFields: number;
-  /** Variants exempted from masking; an exemption is a risk, so it is shown. */
-  readonly exemptVariants: readonly string[];
-  /** Calls that went to an on-prem model unmasked because they never leave. */
+  /** Calls in the `gizli` class — routed to the on-prem model, never leaving. */
   readonly onPremCalls: number;
-  /** Whether the archive stores the masked form (must be true). */
-  readonly archiveMasked: boolean;
 }
 
 interface PiiResponse {
@@ -67,88 +70,52 @@ export function PiiScreen(): ReactNode {
       : 0;
 
   return (
-    <>
-      <Card title={t("pii.today")}>
-        <MaybeUnwired isPending={query.isPending} error={query.error} onRetry={() => void query.refetch()}>
+    <div className="scr-stack">
+      <Card title={t("pii.summary")} subtitle={t("pii.summary_sub")}>
+        <QueryState isPending={query.isPending} error={query.error} onRetry={() => void query.refetch()}>
           {summary !== undefined && (
-            <>
-              <div className="tpl-chips">
-                <Kpi
-                  label={t("pii.masked_calls")}
-                  value={`${summary.maskedCalls} / ${summary.totalCalls}`}
-                  note={t("pii.masked_pct", { pct: String(pct) })}
-                />
-                <Kpi label={t("pii.masked_fields")} value={String(summary.maskedFields)} />
-                <Kpi
-                  label={t("pii.onprem_calls")}
-                  value={String(summary.onPremCalls)}
-                  note={t("pii.onprem_note")}
-                />
-                <Kpi
-                  label={t("pii.exempt_variants")}
-                  value={String(summary.exemptVariants.length)}
-                  note={
-                    summary.exemptVariants.length === 0
-                      ? t("pii.exempt_none")
-                      : summary.exemptVariants.join(", ")
-                  }
-                />
-              </div>
-              <p className="tpl-keyline" style={{ marginTop: 12 }}>
-                <Badge tone={summary.archiveMasked ? "green" : "red"}>
-                  {summary.archiveMasked ? t("pii.archive_masked") : t("pii.archive_unmasked")}
-                </Badge>{" "}
-                {t("pii.archive_note")}
-              </p>
-            </>
+            <div className="scr-chips">
+              <Kpi
+                label={t("pii.masked_calls")}
+                value={`${summary.maskedCalls} / ${summary.totalCalls}`}
+                note={t("pii.masked_pct", { pct: String(pct) })}
+              />
+              <Kpi label={t("pii.masked_fields")} value={String(summary.maskedFields)} />
+              <Kpi
+                label={t("pii.confidential_calls")}
+                value={String(summary.onPremCalls)}
+                note={t("pii.confidential_note")}
+              />
+            </div>
           )}
-        </MaybeUnwired>
+        </QueryState>
       </Card>
 
-      <div style={{ marginTop: 14 }}>
-        <Card title={t("pii.rules")} subtitle={t("pii.rules_sub")} padded={false}>
-          <MaybeUnwired
-            isPending={query.isPending}
-            error={query.error}
-            isEmpty={(query.data?.rules ?? []).length === 0}
-            emptyTitle={t("pii.no_rules")}
-          >
-            <Table
-              columns={[
-                {
-                  key: "kind",
-                  header: t("pii.col.kind"),
-                  cell: (row: PiiRule) => (
-                    <Badge tone="gray">{enumLabel("pii.kind", row.kind).text}</Badge>
-                  ),
-                },
-                { key: "matcher", header: t("pii.col.matcher"), cell: (row) => <code>{row.matcher}</code> },
-                {
-                  key: "strategy",
-                  header: t("pii.col.strategy"),
-                  cell: (row) => {
-                    const label = enumLabel("pii.strategy", row.strategy);
-                    return <Badge tone={label.unknown ? "gray" : "purple"}>{label.text}</Badge>;
-                  },
-                },
-                {
-                  key: "hits",
-                  header: t("pii.col.hits"),
-                  cell: (row) => String(row.hits),
-                  align: "right",
-                },
-              ]}
-              rows={query.data?.rules ?? []}
-              rowKey={(row) => row.ruleId}
-              emptyLabel={t("pii.no_rules")}
-            />
-          </MaybeUnwired>
-        </Card>
-      </div>
+      <Card title={t("pii.rules")} subtitle={t("pii.rules_sub")} padded={false}>
+        <QueryState
+          isPending={query.isPending}
+          error={query.error}
+          isEmpty={(query.data?.rules ?? []).length === 0}
+          emptyTitle={t("pii.no_rules")}
+        >
+          <Table
+            columns={[
+              {
+                key: "kind",
+                header: t("pii.col.kind"),
+                cell: (row: PiiRule) => <Badge tone="gray">{enumLabel("pii.kind", row.kind).text}</Badge>,
+              },
+              { key: "matcher", header: t("pii.col.matcher"), cell: (row) => <code>{row.matcher}</code> },
+              { key: "hits", header: t("pii.col.hits"), cell: (row) => String(row.hits), align: "right" },
+            ]}
+            rows={query.data?.rules ?? []}
+            rowKey={(row) => row.ruleId}
+            emptyLabel={t("pii.no_rules")}
+          />
+        </QueryState>
+      </Card>
 
-      <p className="tpl-keyline" style={{ marginTop: 12 }}>
-        {t("pii.no_unmask_note")}
-      </p>
-    </>
+      <p className="scr-hint">{t("pii.no_unmask_note")}</p>
+    </div>
   );
 }

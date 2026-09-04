@@ -1,7 +1,6 @@
 /**
- * Wire shapes for the self-service onboarding wizard (M93/M102). Split from
- * `admin-api.ts` only to keep each file inside the 300-line budget; both are
- * endpoint requests, neither is implemented in the BFF yet.
+ * Wire shapes for the self-service onboarding form (`apps/bff/src/routes/onboarding.ts`).
+ * Split from `admin-api.ts` only to keep each file inside the 300-line budget.
  */
 
 /** GET /onboarding/options — the lists the wizard's selects are built from. */
@@ -51,6 +50,12 @@ export interface PendingBinding {
   readonly triggerMode: "opt_in" | "automatic";
   readonly gateSet: "risk_tiered" | "always_six";
   readonly mergeMode: "human" | "auto";
+  /**
+   * What approval will write — resolved by the BFF exactly as
+   * `bindingFromProposal` resolves it, so the queue can never show a class
+   * other than the one the binding gets.
+   */
+  readonly dataClass: "acik" | "dahili" | "gizli";
   readonly proposedBy: string;
   readonly at: string;
 }

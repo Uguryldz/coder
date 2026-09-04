@@ -1,10 +1,32 @@
-/* Analysis template designer (M108). Tokens only — never a literal colour, or
-   the dark theme silently breaks. See src/ui/tokens.css. */
+/* Analysis template designer. Tokens only — never a literal colour.
+   See src/ui/tokens.css. Shared classes (scr-*) live in screens/shared/screens.css. */
 
+/* Top bar: template name on the left, version + actions on the right. */
+.tpl-bar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.tpl-bar__name {
+  flex: 1 1 240px;
+  max-width: 420px;
+}
+
+.tpl-bar__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: 2px;
+}
+
+/* Dense section list on the left, wide editor on the right. */
 .tpl-split {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr;
-  gap: 14px;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
 }
 
@@ -20,17 +42,17 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .tpl-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius, 8px);
   background: var(--panel2);
-  padding: 4px 6px 4px 4px;
+  padding: 2px 4px 2px 2px;
 }
 
 .tpl-row--sel {
@@ -42,21 +64,22 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   background: none;
   border: 0;
-  padding: 6px;
+  padding: 5px 6px;
   text-align: left;
   cursor: pointer;
   color: inherit;
   font: inherit;
-  border-radius: 7px;
+  border-radius: 6px;
 }
 
 .tpl-row__num {
   flex: none;
+  min-width: 14px;
   font-family: var(--mono, monospace);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
 }
 
@@ -64,7 +87,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .tpl-row__title {
@@ -78,8 +101,10 @@
 .tpl-row__meta {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--muted);
 }
 
 .tpl-row__key {
@@ -90,21 +115,34 @@
 
 .tpl-row__tools {
   display: flex;
-  gap: 3px;
+  gap: 0;
   flex: none;
 }
 
+/* Editor: two short fields share a row; the long ones stack. */
 .tpl-editor {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+}
+
+.tpl-editor__row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .tpl-editor__row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tpl-check {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 0;
+  padding: 6px 0;
 }
 
 .tpl-check span {
@@ -119,35 +157,7 @@
   font-size: 12px;
 }
 
-.tpl-keyline {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.tpl-keyline code,
-.tpl-preview code {
-  font-family: var(--mono, monospace);
-}
-
-.tpl-bar {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
-
-.tpl-bar__spacer {
-  flex: 1;
-}
-
-.tpl-bar__actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding-bottom: 2px;
-}
-
+/* Structural preview (modal). */
 .tpl-preview__sec {
   padding: 0 0 12px;
   border-bottom: 1px dashed var(--border);
@@ -179,11 +189,4 @@
   line-height: 1.6;
   white-space: pre-line;
   margin: 0;
-}
-
-.tpl-chips {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-  align-items: center;
 }

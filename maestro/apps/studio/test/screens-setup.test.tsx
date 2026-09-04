@@ -1038,19 +1038,13 @@ describe("setup wizard", () => {
       await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
 
-      // Scoped to the group: several options mention "kurum içi" in their prose
-      // (that is the point — they explain each other), so the assertion is
-      // about which radio is CHECKED, by its own value.
-      const group = screen.getByRole("radiogroup", {
-        name: "Bu uygulamanın verisi ne kadar gizli?",
-      });
-      const checked = within(group)
-        .getAllByRole("radio")
-        .filter((r) => (r as HTMLInputElement).checked)
-        .map((r) => (r as HTMLInputElement).value);
-      // Exactly one, and it is the class that is safe AND lets Maestro work.
-      // `gizli` was the old implicit answer and is the one that stalled SAM1.
-      expect(checked).toEqual(["dahili"]);
+      // The class is ONE select; the assertion is about which option is
+      // selected, by its own value. It is the class that is safe AND lets
+      // Maestro work — `gizli` was the old implicit answer and is the one that
+      // stalled SAM1.
+      const select = screen.getByLabelText("Bu uygulamanın verisi ne kadar gizli?") as HTMLSelectElement;
+      expect(select.value).toBe("dahili");
+      expect(select.selectedOptions[0]!.textContent).toBe("Kurum içi");
     });
 
     it("describes the consequence rather than the policy name", async () => {
@@ -1060,14 +1054,22 @@ describe("setup wizard", () => {
       await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
 
-      // The sentence the operator needed and never had.
+      // The select's hint states the consequence of the CURRENT answer: the
+      // default lets Maestro work, and no jargon stands in for it.
       expect(
-        screen.getByText(
-          "Yapay zekâ bulut modeli KULLANILAMAZ. Kurum içi (on-prem) model kurulu değilse Maestro bu projede analiz üretemez.",
+        screen.getByText(/Bulut modeli kullanılabilir\. Maestro analiz ve kod üretimini normal şekilde yapar\./),
+      ).toBeTruthy();
+      expect(screen.queryByText(/degrade_ai_assist|ai_assist|M18/)).toBeNull();
+
+      // Switching the answer switches the sentence — the one the operator
+      // needed and never had, still with no policy name in it.
+      await userEvent.selectOptions(screen.getByLabelText("Bu uygulamanın verisi ne kadar gizli?"), "gizli");
+      expect(
+        await screen.findByText(
+          /Yapay zekâ bulut modeli KULLANILAMAZ\. Kurum içi \(on-prem\) model kurulu değilse Maestro bu projede analiz üretemez\./,
         ),
       ).toBeTruthy();
-      // And no jargon standing in for it.
-      expect(screen.queryByText(/degrade_ai_assist|ai_assist|M18/)).toBeNull();
+      expect(screen.queryByText(/degrade_ai_assist|ai_assist/)).toBeNull();
     });
 
     it("makes the gizli consequence unmissable, and only once it is chosen", async () => {
@@ -1078,7 +1080,7 @@ describe("setup wizard", () => {
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
       expect(screen.queryByText(/modeli kullanamadım, elle tamamlayın/)).toBeNull();
 
-      await userEvent.click(screen.getByRole("radio", { name: /Gizli/ }));
+      await userEvent.selectOptions(screen.getByLabelText("Bu uygulamanın verisi ne kadar gizli?"), "gizli");
 
       // The exact message the operator saw on SAM1-12, now quoted back BEFORE
       // they can cause it rather than after.
@@ -1093,7 +1095,7 @@ describe("setup wizard", () => {
 
       await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
-      await userEvent.click(screen.getByRole("radio", { name: /Açık/ }));
+      await userEvent.selectOptions(screen.getByLabelText("Bu uygulamanın verisi ne kadar gizli?"), "acik");
       await fillProject();
       await fillTickets();
       await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
@@ -1647,7 +1649,17 @@ describe("kurulum sihirbazı — kapı kararının statüyle verilmesi", () => {
     renderScreen(<SetupScreen />, { fetchImpl });
     await reachStatusStep();
 
-    expect(screen.getByText(/Kapının iki kenarı da BOŞ/)).toBeTruthy();
+    // Eşleme KAPALIYKEN: kapı yalnız yorumla kapanır, ve bunu açıkça söylüyor.
+    expect(
+      screen.getByText(/Statü eşlemesi kapalı: kapı kararı yalnız ticket'a yazılan \/approve ve \/reject yorumlarıyla verilir/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Kapının iki kenarı da BOŞ/)).toBeNull();
+
+    // Eşleme AÇIK ama beş alan boşken: iki kenar da türetilemiyor, ve hangi
+    // alanların doldurulması gerektiğini söylüyor.
+    await userEvent.click(screen.getByLabelText(/Jira durumunu da değiştir/));
+    expect(await screen.findByText(/Kapının iki kenarı da BOŞ/)).toBeTruthy();
+    expect(screen.queryByText(/Statü eşlemesi kapalı/)).toBeNull();
   });
 
   /**

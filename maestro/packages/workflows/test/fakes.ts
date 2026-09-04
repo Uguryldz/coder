@@ -89,6 +89,11 @@ export interface FakeOptions {
    */
   persona?: Record<string, string | Error | undefined>;
   /**
+   * Studio'nun "Öğrenme kaynakları" notları: varyant kimliği → o ajanın göreceği
+   * notlar (ya da bir `Error`). Verilmezse `deps.guidance` HİÇ bağlanmaz.
+   */
+  guidance?: Record<string, readonly { title: string; content: string }[] | Error | undefined>;
+  /**
    * Ticket'ın yorum akışı, sürücünün HAM şekliyle (`CommentReader.listComments`
    * `unknown[]` döner — iki Jira lehçesi iki farklı şekil taşır). Verilmezse
    * `deps.comments` HİÇ bağlanmaz: intake yalnız snapshot'ı görür, yani bu seam
@@ -363,6 +368,19 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
               const answer = options.persona?.[variantId];
               if (answer instanceof Error) return Promise.reject(answer);
               return Promise.resolve(answer ?? null);
+            },
+          },
+        }),
+    // "Öğrenme kaynakları" notları. Persona ile aynı kalıp: verilmezse bağlı
+    // değil; bir varyant için `Error` verilirse okuma o varyantta patlar.
+    ...(options.guidance === undefined
+      ? {}
+      : {
+          guidance: {
+            activeGuidance: (variantId) => {
+              const answer = options.guidance?.[variantId];
+              if (answer instanceof Error) return Promise.reject(answer);
+              return Promise.resolve(answer ?? []);
             },
           },
         }),

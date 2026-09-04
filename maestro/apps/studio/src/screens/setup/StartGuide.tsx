@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Button, Card } from "../../ui/index.ts";
 import { setWebhookAcked, type SetupState } from "../dash/setup-state.ts";
-import "../shared/screens.css";
 
 /**
  * The "where do I start" checklist — on the KURULUM SİHİRBAZI.
@@ -56,7 +55,7 @@ export function StartGuide({
    */
   const steps: readonly StepDef[] = [
     { key: "step1", done: setup.hasConn, to: "/settings" },
-    { key: "step2", done: setup.hasBinding, to: "/projects?tab=onboard" },
+    { key: "step2", done: setup.hasBinding, to: "/setup" },
     /**
      * Ticket intake: EITHER path satisfies it.
      *
@@ -123,7 +122,7 @@ export function StartGuide({
           {t("dash.start.dismiss")}
         </Button>
       </div>
-      {!setup.complete && <p className="screen-note">{t("dash.start.dismiss_note")}</p>}
+      {!setup.complete && <p className="scr-hint">{t("dash.start.dismiss_note")}</p>}
     </Card>
   );
 }

@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
-import { Card, EmptyState, Input, Select } from "../../ui/index.ts";
-import { TextArea } from "../shared/TextArea.tsx";
+import { EmptyState, Input, Section, Select } from "../../ui/index.ts";
+import { TextArea } from "../../ui/TextArea.tsx";
 import { SECTION_FORMATS, type DraftSection, type SectionFormat, type TemplateSection } from "./model.ts";
-import "./template.css";
 
 export interface SectionEditorProps {
   readonly section: DraftSection | undefined;
@@ -25,36 +24,35 @@ export function SectionEditor({ section, index, onChange }: SectionEditorProps):
 
   if (section === undefined) {
     return (
-      <Card title={t("template.editor_title_empty")}>
-        <EmptyState icon="👈" title={t("template.pick_section")} />
-      </Card>
+      <Section title={t("template.editor_title_empty")}>
+        <EmptyState title={t("template.pick_section")} />
+      </Section>
     );
   }
 
   return (
-    <Card
+    <Section
       title={t("template.editor_title", { n: String(index + 1), title: section.title })}
       subtitle={t("template.editor_subtitle")}
     >
       <div className="tpl-editor">
-        <Input
-          label={t("template.field.title")}
-          value={section.title}
-          onChange={(event) => onChange(section.id, "title", event.target.value)}
-        />
-
-        <Select
-          label={t("template.field.format")}
-          value={section.format}
-          onChange={(event) =>
-            onChange(section.id, "format", event.target.value as SectionFormat)
-          }
-          options={SECTION_FORMATS.map((format) => ({
-            value: format,
-            label: t(`template.format.${format}`),
-          }))}
-          hint={t(`template.format_hint.${section.format}`)}
-        />
+        <div className="tpl-editor__row">
+          <Input
+            label={t("template.field.title")}
+            value={section.title}
+            onChange={(event) => onChange(section.id, "title", event.target.value)}
+          />
+          <Select
+            label={t("template.field.format")}
+            value={section.format}
+            onChange={(event) => onChange(section.id, "format", event.target.value as SectionFormat)}
+            options={SECTION_FORMATS.map((format) => ({
+              value: format,
+              label: t(`template.format.${format}`),
+            }))}
+          />
+        </div>
+        <p className="scr-keyline">{t(`template.format_hint.${section.format}`)}</p>
 
         <Input
           label={t("template.field.description")}
@@ -95,11 +93,11 @@ export function SectionEditor({ section, index, onChange }: SectionEditorProps):
           hint={t("template.field.example_hint")}
         />
 
-        <p className="tpl-keyline">
-          {t("template.key_is")} <code>{section.key}</code> ·{" "}
-          {t("template.placeholder_is")} <code>{`{{bolum:${index + 1}}}`}</code>
+        <p className="scr-keyline">
+          {t("template.key_is")} <code>{section.key}</code> · {t("template.placeholder_is")}{" "}
+          <code>{`{{bolum:${String(index + 1)}}}`}</code>
         </p>
       </div>
-    </Card>
+    </Section>
   );
 }

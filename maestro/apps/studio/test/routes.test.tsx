@@ -10,43 +10,60 @@ import { ALL_SCREEN_IDS, LOGIN_SCREEN, SCREENS, screenById } from "../src/app/sc
  */
 
 /**
- * Every view id in mock/index.html that is still its own screen. `onboard` and
- * `routing` were in the mock but merged into the `projects` page (three tabs),
- * so they are no longer standalone screen ids — see POST_MOCK_VIEW_IDS.
+ * Every screen the app routes to. Two kinds are deliberately ABSENT:
+ *
+ *  - the mock-gallery pages (`live`, `jira`, `cache`, `greenfield`) — static
+ *    content that was never an operator tool; deleted, their paths redirect;
+ *  - the three "yakında" screens (`eval`, `security`, `runners`) — no data
+ *    source exists in any deployment, so the page could only ever say "not
+ *    yet". Their files stay for the day a store is wired; nothing routes to
+ *    them (the operator's rule: either data comes, or there is no page).
+ *
+ * `projects` gathers the binding steps (onboard / routing / listening / yaml)
+ * as tabs; `setup` is the guided wizard over the same configuration.
  */
-const MOCK_VIEW_IDS = [
-  "dash", "detail", "live", "clarify", "workmode", "fanout", "evidence",
-  "jira", "params", "users", "yaml", "settings", "notify", "commands",
-  "mcp", "runners", "sandbox", "health", "template", "doctemplate", "knowledge",
-  "audit", "pii", "security", "issues", "cost", "variant",
-  "variants", "eval", "cache", "greenfield", "help", "login",
+const EXPECTED_VIEW_IDS = [
+  "dash", "detail", "evidence",
+  "params", "users", "yaml", "settings", "notify",
+  "sandbox", "health", "template", "doctemplate", "knowledge",
+  "audit", "pii", "cost", "variant", "variants", "help", "login",
+  "projects", "setup",
+] as const;
+const RETIRED_IDS = [
+  "live", "jira", "cache", "greenfield", "eval", "security", "runners",
+  // Folded into the run detail's sidebar (P1).
+  "clarify", "workmode", "fanout",
+  // Folded into Help as reference tabs (P7); their paths redirect there.
+  "commands", "mcp",
 ] as const;
 
-/**
- * Screens added AFTER the mock froze, or reshaped after it. `projects` is the
- * ONE page that gathers the three project-binding steps — add application, Jira
- * mapping & approval, listening rules — which used to be the separate
- * `onboard`, `routing` and `listening` screens (now its tabs; their old paths
- * redirect into it). `setup` is the guided wizard that walks a non-technical
- * operator through the SAME configuration in outcome language; `projects` stays
- * as the expert path, which is why both are here rather than one replacing the
- * other. Listed explicitly so the coverage check stays honest: a dropped or
- * accidental screen still fails.
- *
- * `pilot` (Dalga D) was here too — Studio's face for the retired pilot engine's
- * real-Jira flow, with `flow` as its process map. Both are gone with the engine;
- * their paths redirect to the Panel so old links still resolve.
- */
-const POST_MOCK_VIEW_IDS = ["projects", "setup"] as const;
-const EXPECTED_VIEW_IDS = [...MOCK_VIEW_IDS, ...POST_MOCK_VIEW_IDS];
-
 describe("route table", () => {
-  it("covers every screen in the mock, plus the intentional post-mock additions", () => {
+  it("covers exactly the expected screens", () => {
     expect([...ALL_SCREEN_IDS].sort()).toEqual([...EXPECTED_VIEW_IDS].sort());
+    expect(ALL_SCREEN_IDS).toHaveLength(EXPECTED_VIEW_IDS.length);
   });
 
-  it("declares exactly the mock screens plus the post-mock additions", () => {
-    expect(ALL_SCREEN_IDS).toHaveLength(EXPECTED_VIEW_IDS.length);
+  it("routes to none of the retired gallery / 'yakında' screens", () => {
+    for (const id of RETIRED_IDS) {
+      expect(screenById(id), `${id} should have no SCREENS row`).toBeUndefined();
+      expect(SCREEN_COMPONENTS[id], `${id} should have no component`).toBeUndefined();
+    }
+  });
+
+  it("gives every menu entry with a role-checked BFF endpoint a matching roles filter", () => {
+    const expectRoles = (id: string, roles: readonly string[]): void => {
+      expect([...(screenById(id)?.roles ?? [])].sort(), id).toEqual([...roles].sort());
+    };
+    expectRoles("users", ["admin"]);
+    // The trail's readers mirror BFF `AUDIT_ROLES`: `internal-audit` is a directly granted role, not a group-derived one.
+    expectRoles("audit", ["admin", "internal-audit"]);
+    for (const id of ["sandbox", "template", "doctemplate", "pii", "cost", "settings", "notify", "params", "health"]) {
+      expectRoles(id, ["admin", "tech-lead"]);
+    }
+    // Everyone's screens carry no filter.
+    for (const id of ["dash", "variants", "knowledge", "setup", "projects", "evidence", "help"]) {
+      expect(screenById(id)?.roles).toBeUndefined();
+    }
   });
 
   it("has no duplicate id or path", () => {
@@ -98,6 +115,6 @@ describe("route table", () => {
     const params = screenById("params");
     expect(params?.path).toBe("params");
     expect(params?.navKey).toBe("nav.params");
-    expect(params?.group).toBe("system");
+    expect(params?.group).toBe("admin");
   });
 });

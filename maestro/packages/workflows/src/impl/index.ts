@@ -52,6 +52,11 @@ export {
   type PersonaWarn,
 } from "./persona.js";
 /**
+ * Studio'daki "Öğrenme kaynakları" notlarını analize taşıyan yardımcı —
+ * `analysis.ts`'te (`writeAnalysis`) personanın hemen ardından çağrılır.
+ */
+export { analystGuidance, type GuidanceWarn } from "./guidance.js";
+/**
  * Ticket'ın insan yorumlarını intake bağlamına taşıyan yardımcılar. Sürücüden
  * okuma `CommentReader` seam'i üzerinden (bkz. `deps.ts`).
  */

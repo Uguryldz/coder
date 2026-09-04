@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi, afterEach } from "vitest";
@@ -433,7 +433,17 @@ describe("ListeningScreen", () => {
       renderScreen(ADMIN);
       await screen.findByText("Yeni kural ekle");
 
-      expect(screen.getByText(/Kapının iki kenarı da BOŞ/)).toBeTruthy();
+      // Eşleme KAPALIYKEN: kapı yalnız yorumla kapanır, ve bunu açıkça söylüyor.
+      expect(
+        screen.getByText(/Durum eşlemesi kapalı: kapı yalnız "\/approve" ve "\/reject" yorumlarıyla kapanır/),
+      ).toBeTruthy();
+      expect(screen.queryByText(/Kapının iki kenarı da BOŞ/)).toBeNull();
+
+      // Eşleme AÇIK ama beş alan boşken: iki kenar da türetilemiyor.
+      await userEvent.click(screen.getByText("Jira durumunu da değiştir (isteğe bağlı)"));
+      await userEvent.click(screen.getByLabelText(/Jira durumunu da değiştir$/));
+      expect(await screen.findByText(/Kapının iki kenarı da BOŞ/)).toBeTruthy();
+      expect(screen.queryByText(/Durum eşlemesi kapalı/)).toBeNull();
     });
 
     /**
@@ -747,14 +757,22 @@ describe("ListeningScreen", () => {
     });
   });
 
-  it("shows the rule's chosen agents in the list, or 'varsayılan' when unset", async () => {
+  it("shows the rule's chosen agents in the list, or 'Varsayılan ajan' when unset", async () => {
     stubFetch([
       { ...SEED, analystVariantId: "analyst-node-v2", engineerVariantId: null },
     ]);
-    renderScreen(VIEWER); // read-only: the table alone renders the agents cell
+    renderScreen(VIEWER); // read-only: no edit form, the table and its detail alone
     await screen.findByText("Hata");
+    // The row names only the agents that WERE chosen — "varsayılan" on every
+    // row would be noise.
     expect(screen.getByText("analyst-node-v2")).toBeTruthy();
-    expect(screen.getByText("varsayılan")).toBeTruthy();
+    expect(screen.queryByText(/Varsayılan ajan/)).toBeNull();
+
+    // The detail names both, and says which one is left to the platform.
+    await userEvent.click(screen.getByText("analyst-node-v2"));
+    const detail = await screen.findByRole("region", { name: "Kural ayrıntısı" });
+    expect(within(detail).getByText("analyst-node-v2")).toBeTruthy();
+    expect(within(detail).getByText("Varsayılan ajan")).toBeTruthy();
   });
 
   /**

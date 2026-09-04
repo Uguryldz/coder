@@ -26,7 +26,7 @@ const STUBS = [
 ];
 
 describe("projects page (tabbed binding)", () => {
-  it("shows the three tabs in the operator's order", async () => {
+  it("shows the three step tabs in the operator's order, then the protected-paths reference tab", async () => {
     const { fetchImpl } = stubFetch(STUBS);
     renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
 
@@ -36,6 +36,7 @@ describe("projects page (tabbed binding)", () => {
       "1 · Uygulama ekle",
       "2 · Bağlı projeler & onay",
       "3 · Dinleme kuralları",
+      "Korumalı yollar",
     ]);
     // Default tab is the first step: add application.
     expect(screen.getByRole("tab", { name: /Uygulama ekle/ })).toHaveAttribute(
@@ -101,14 +102,34 @@ describe("projects page (tabbed binding)", () => {
     );
   });
 
-  it("shows the how-it-works journey strip with all three steps", async () => {
+  it("says what the current step does, one line under the numbered tabs, for each of the three steps", async () => {
     const { fetchImpl } = stubFetch(STUBS);
     renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
 
-    // The journey heading and each step's one-line hint are present, so a
-    // first-time admin sees the sequence and what each step does.
-    expect(await screen.findByText(/3 adımda proje bağlama/)).toBeInTheDocument();
-    expect(screen.getByText(/İkinci bir yönetici onaylar/)).toBeInTheDocument();
-    expect(screen.getByText(/Hangi ticket'lar işlensin/)).toBeInTheDocument();
+    // The numbered tabs ARE the journey; the line under them says what the
+    // step the admin is on does — one step at a time, never a second card.
+    expect(await screen.findByText(/Jira projesi \+ repo seç, admin onayına gönder/)).toBeInTheDocument();
+    expect(screen.queryByText(/İkinci bir yönetici onaylar/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: /Bağlı projeler & onay/ }));
+    expect(await screen.findByText(/İkinci bir yönetici onaylar; proje bağlanır/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: /Dinleme kuralları/ }));
+    expect(await screen.findByText(/Hangi ticket'lar işlensin kuralını ekle/)).toBeInTheDocument();
+
+    // The reference tab is not a step, so it gets no step line.
+    await userEvent.click(screen.getByRole("tab", { name: /Korumalı yollar/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Korumalı yollar/ })).toHaveAttribute("aria-selected", "true"),
+    );
+    // Earlier tabs stay mounted (hidden) with their own prose, so the check is
+    // against the step lines themselves, word for word.
+    for (const line of [
+      "Jira projesi + repo seç, admin onayına gönder",
+      "İkinci bir yönetici onaylar; proje bağlanır",
+      "Hangi ticket'lar işlensin kuralını ekle",
+    ]) {
+      expect(screen.queryByText(line)).toBeNull();
+    }
   });
 });

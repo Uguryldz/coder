@@ -2,8 +2,9 @@ import type { ParamDefinition } from "@maestro/contracts";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
-import { Badge, Button, Input, Modal, Select } from "../../ui/index.ts";
+import { Badge, Button, Input, Modal, Select, TextArea } from "../../ui/index.ts";
 import { formatValue, KeyValue, type PendingParamChange } from "../common/index.ts";
+import { useLabel } from "../common/label.ts";
 
 export interface ParamEditorProps {
   readonly definition: ParamDefinition | null;
@@ -59,11 +60,12 @@ export function ParamEditor({
   onSubmit,
 }: ParamEditorProps): ReactNode {
   const t = useT();
+  const label = useLabel();
   const [draft, setDraft] = useState("");
   const [invalid, setInvalid] = useState(false);
 
   useEffect(() => {
-    setDraft(definition === null ? "" : formatValue(currentValue));
+    setDraft(definition === null ? "" : draftOf(definition, currentValue));
     setInvalid(false);
   }, [definition, currentValue]);
 
@@ -80,7 +82,7 @@ export function ParamEditor({
    * waiting: the most dangerous possible misreading of the four-eyes rule.
    */
   const confirming =
-    pending !== null && guarded && !ownProposal && formatValue(pending.value) === draft.trim();
+    pending !== null && guarded && !ownProposal && sameValue(definition, draft, pending.value);
 
   const submit = (): void => {
     const parsed = parseDraft(definition, draft);
@@ -114,8 +116,11 @@ export function ParamEditor({
       <KeyValue
         entries={[
           { label: t("params.col.key"), value: <code className="scr-mono">{definition.key}</code> },
-          { label: t("params.col.scope"), value: t(`params.scope.${definition.scope}`) },
           { label: t("params.col.type"), value: t(`params.type.${definition.type}`) },
+          // Only the global value is edited here. For a per-project definition
+          // that is the default every project starts from — said in words,
+          // instead of a "scope" cell that could only ever read "global".
+          { label: t("params.col.scope"), value: t(`params.scope_note.${definition.scope}`) },
           {
             label: t("params.field.current", { version: String(currentVersion) }),
             value: <span className="scr-mono">{formatValue(currentValue)}</span>,
@@ -123,7 +128,7 @@ export function ParamEditor({
         ]}
       />
 
-      <p className="scr-prose">{t(definition.descriptionKey)}</p>
+      <p className="scr-prose">{label(definition.descriptionKey, definition.key)}</p>
 
       {guarded && (
         <div className="scr-note scr-note--warn">
@@ -149,6 +154,19 @@ export function ParamEditor({
           }))}
           {...(invalid ? { error: t("params.error.value_type") } : {})}
         />
+      ) : definition.type === "json" ? (
+        // JSON is a document, not a line: the ladder, the risk tiers and the
+        // publish targets are objects a person reads indented, so the field is
+        // multi-line and the draft opens pretty-printed.
+        <TextArea
+          label={t("params.field.new_value")}
+          value={draft}
+          rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
+          spellCheck={false}
+          onChange={(event) => setDraft(event.target.value)}
+          hint={t("params.hint.json")}
+          {...(invalid ? { error: t("params.error.invalid_json") } : {})}
+        />
       ) : (
         <Input
           label={t("params.field.new_value")}
@@ -163,6 +181,28 @@ export function ParamEditor({
 }
 
 type Parsed = { ok: true; value: unknown } | { ok: false };
+
+/**
+ * Does the draft, once parsed, equal the proposed value? Compared as VALUES,
+ * not text: a pretty-printed JSON draft and the stored compact one are the same
+ * proposal, and a four-eyes confirmation must not hinge on whitespace.
+ */
+function sameValue(definition: ParamDefinition, draft: string, proposed: unknown): boolean {
+  const parsed = parseDraft(definition, draft);
+  return parsed.ok && formatValue(parsed.value) === formatValue(proposed);
+}
+
+/** The text the field opens with: JSON indented, everything else as displayed. */
+function draftOf(definition: ParamDefinition, value: unknown): string {
+  if (definition.type === "json") {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return formatValue(value);
+    }
+  }
+  return formatValue(value);
+}
 
 /**
  * The field is text; the parameter has a type. Parsing client-side is a

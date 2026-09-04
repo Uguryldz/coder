@@ -1,9 +1,16 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
 import { NotifyScreen } from "../src/screens/Notify.tsx";
 import { RoutingScreen } from "../src/screens/Routing.tsx";
 import { renderScreen, stubFetch, VIEWER } from "./harness.tsx";
+
+/** Where the router is now — the screen navigates after an approval. */
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
+}
 
 function routingBody(whenOnpremMissing: string, gizliOutcome: string) {
   return {
@@ -64,7 +71,8 @@ describe("routing screen", () => {
     renderScreen(<RoutingScreen />, { fetchImpl });
 
     expect(await screen.findByText("UgurPay Core")).toBeInTheDocument();
-    expect(screen.getByText("Payments/_git/ugurpay-core")).toBeInTheDocument();
+    // The ADO target as "project/repo" — the pair a ticket is routed to.
+    expect(screen.getByText("Payments/ugurpay-core")).toBeInTheDocument();
   });
 
   it("hides the guarded policy editor from a non-admin", async () => {
@@ -165,7 +173,13 @@ describe("routing screen", () => {
       PENDING_BODY,
       { path: "/onboarding/approve", method: "POST", body: { status: "bound", projectKey: "OPS", nextStep: "listening_rule" } },
     ]);
-    renderScreen(<RoutingScreen />, { fetchImpl });
+    renderScreen(
+      <>
+        <RoutingScreen />
+        <LocationProbe />
+      </>,
+      { fetchImpl },
+    );
 
     // The package is listed with its repo and proposer.
     expect(await screen.findByText("Uguryldz/maestro-pilot")).toBeInTheDocument();
@@ -176,8 +190,13 @@ describe("routing screen", () => {
     const post = calls.find((c) => c.method === "POST" && c.url.endsWith("/onboarding/approve"));
     expect(post).toBeDefined();
     expect((post!.body as { projectKey: string }).projectKey).toBe("OPS");
-    // After approval the operator is offered the chain's next step.
-    expect(await screen.findByRole("button", { name: "Dinleme kuralı ekle" })).toBeInTheDocument();
+    // After approval the operator is TAKEN to the chain's next step — the
+    // listening rules of the project that just went live — rather than pointed
+    // at a button inside the queue card that vanishes with the last package.
+    await screen.findByText(/OPS bağlandı/);
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/projects?tab=listening&projectKey=OPS",
+    );
   });
 
   it("warns — with the reason — when the approval bound the project but the default rules could not be seeded", async () => {
@@ -353,14 +372,38 @@ describe("notify screen editing", () => {
     expect(payload.ladder.steps[0]?.afterHours).toBe(48);
   });
 
-  it("wears the honest 'delivery not live yet' strip at the top", async () => {
+  // Delivery honesty comes from the runtime now: `GET /notify` carries the
+  // deployment's `drivers`, and the screen marks each routed channel live or
+  // not from that — never a blanket "not live yet" typed into the client, and
+  // never a green badge for a channel nobody wired.
+  it("says it cannot tell whether channels deliver when the BFF sent no drivers", async () => {
     const { fetchImpl } = stubFetch([NOTIFY_BODY]);
     renderScreen(<NotifyScreen />, { fetchImpl });
-    // Renders unconditionally: the settings persist but nothing delivers yet,
-    // so an operator must not rely on a reminder arriving.
     expect(
-      await screen.findByText(/bildirim gönderimi henüz devrede değil/),
+      await screen.findByText(/Kanalların bağlı olup olmadığı henüz okunamadı/),
     ).toBeInTheDocument();
+    // No channel is claimed dead — or live — on a guess.
+    expect(screen.queryByText(/pasif/)).not.toBeInTheDocument();
+  });
+
+  it("marks a routed channel the runtime cannot deliver to as pasif, so nobody waits for it", async () => {
+    const { fetchImpl } = stubFetch([
+      {
+        path: "/notify",
+        body: {
+          ...NOTIFY_BODY.body,
+          drivers: [
+            { channel: "teams", enabled: false, target: "TEAMS_WEBHOOK_URL" },
+            { channel: "jira", enabled: true, target: "jira" },
+          ],
+        },
+      },
+    ]);
+    renderScreen(<NotifyScreen />, { fetchImpl });
+    // Every event routes to `teams` by default, and teams is not wired here.
+    const dead = await screen.findAllByText(/Teams · pasif/);
+    expect(dead.length).toBeGreaterThan(0);
+    expect(screen.getByText(/'pasif' kanallar tanımlı ama runtime'a bağlı değil/)).toBeInTheDocument();
   });
 
   it("keeps the edit button from a non-admin", async () => {

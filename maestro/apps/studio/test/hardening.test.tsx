@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, renderHook, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -10,7 +9,6 @@ import { I18nProvider } from "../src/i18n/I18nProvider.tsx";
 import { catalogKeys, translate } from "../src/i18n/catalog.ts";
 import { ErrorBoundary } from "../src/app/ErrorBoundary.tsx";
 import { SandboxScreen } from "../src/screens/Sandbox.tsx";
-import { SecurityScreen } from "../src/screens/Security.tsx";
 import { SettingsScreen } from "../src/screens/Settings.tsx";
 import { TemplateScreen } from "../src/screens/Template.tsx";
 import { UsersScreen } from "../src/screens/Users.tsx";
@@ -213,73 +211,6 @@ describe("unknown server enum values", () => {
   });
 });
 
-// ── Y3: raw scanner prose is not printed on sight ─────────────────────────────
-
-describe("security findings — raw scanner text", () => {
-  const GITLEAKS_ROW = {
-    ticketKey: "UGURPAY-501",
-    finding: {
-      tool: "gitleaks",
-      ruleId: "aws-access-key",
-      severity: "critical",
-      message: "aws key detected: AKIAIOSFODNN7EXAMPLE in config/prod.env",
-      file: "config/prod.env",
-      line: 12,
-    },
-    outcome: "fail",
-    at: "2026-08-01T09:00:00.000Z",
-  };
-
-  /**
-   * A Gitleaks message can quote the secret it found. The screen that reports a
-   * leak must not become a second copy of it merely by being opened.
-   */
-  it("does not render the scanner's prose until an operator asks for it", async () => {
-    const fetchImpl = vi.fn(async () =>
-      json({ items: [GITLEAKS_ROW], nextCursor: null }),
-    ) as unknown as typeof fetch;
-
-    renderScreen(<SecurityScreen />, fetchImpl);
-
-    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
-
-    // The row is present and triageable...
-    expect(screen.getByText("kritik")).toBeInTheDocument();
-    expect(screen.getByText("gitleaks")).toBeInTheDocument();
-
-    // ...but the secret is NOT on the page.
-    expect(document.body.textContent).not.toContain("AKIAIOSFODNN7EXAMPLE");
-
-    // Revealing it is a deliberate act, and it is labelled as scanner output.
-    await userEvent.click(screen.getByRole("button", { name: "Tarayıcı metnini göster" }));
-    await waitFor(() =>
-      expect(document.body.textContent).toContain("AKIAIOSFODNN7EXAMPLE"),
-    );
-    expect(
-      screen.getByText("Tarayıcı çıktısı (çevrilmemiş, sır içerebilir)"),
-    ).toBeInTheDocument();
-  });
-
-  it("never tones an unrecognised scan outcome as a pass", async () => {
-    const fetchImpl = vi.fn(async () =>
-      json({
-        items: [{ ...GITLEAKS_ROW, outcome: "skipped" }],
-        nextCursor: null,
-      }),
-    ) as unknown as typeof fetch;
-
-    renderScreen(<SecurityScreen />, fetchImpl);
-
-    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
-
-    const badge = screen.getByText("tanınmayan: skipped");
-    expect(badge).toBeInTheDocument();
-    // A scanner result nobody recognises is not a clean one.
-    expect(badge.className).not.toContain("green");
-    expect(screen.queryByText("geçti")).not.toBeInTheDocument();
-  });
-});
-
 // ── O2: an unbuilt endpoint says so, instead of "record not found" ────────────
 
 describe("screens whose read model the BFF has not built", () => {
@@ -316,26 +247,27 @@ describe("screens whose read model the BFF has not built", () => {
 
 // ── EK-1: the template designer must never render as a blank panel ────────────
 
-describe("template designer against an unbuilt endpoint", () => {
+describe("template designer against a 404", () => {
   /**
-   * Reported from the running stack: `/template` answers 404, the screen showed
-   * a heading and two paragraphs of prose and nothing else, and the request was
-   * repeated three times in the console.
+   * Reported from the running stack: `/template` answered 404, the screen
+   * showed a heading and two paragraphs of prose and nothing else, and the
+   * request was repeated three times in the console.
    *
-   * The screen is the most-requested feature in the product; rendering it blank
-   * leaves the operator unable to tell "no template yet" from "system broken"
-   * from "not my permission".
+   * The policy since: a 404 is "no such record" and renders as that translated
+   * error — never as "henüz yayında değil". Every endpoint is built; a page
+   * that cannot show data shows WHY, and an unpublished-looking blank is the
+   * one thing it must not do.
    */
-  it("says the section is not published instead of rendering an empty panel", async () => {
+  it("shows the not-found error instead of an empty panel or an 'unpublished' claim", async () => {
     const fetchImpl = vi.fn(async () =>
       json({ error: "not_found" }, 404),
     ) as unknown as typeof fetch;
 
     renderScreen(<TemplateScreen />, fetchImpl);
 
-    await waitFor(() =>
-      expect(screen.getAllByText("Bu bölüm henüz yayında değil").length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(screen.getAllByText("Veri alınamadı").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("Kayıt bulunamadı.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Bu bölüm henüz yayında değil")).not.toBeInTheDocument();
   });
 
   it("does not retry an endpoint that does not exist", async () => {
@@ -374,9 +306,7 @@ describe("template designer against an unbuilt endpoint", () => {
       </I18nProvider>,
     );
 
-    await waitFor(() =>
-      expect(screen.getAllByText("Bu bölüm henüz yayında değil").length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(screen.getAllByText("Veri alınamadı").length).toBeGreaterThan(0));
 
     // Exactly one attempt: three identical console errors per unbuilt screen
     // teaches an operator to ignore the console.

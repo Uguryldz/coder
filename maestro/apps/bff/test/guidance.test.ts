@@ -13,7 +13,7 @@ async function adminToken(h: Harness): Promise<string> {
   return h.login("ayse.kaya");
 }
 
-function post(h: Harness, token: string, body: { title: string; content: string }) {
+function post(h: Harness, token: string, body: { title: string; content: string; variantId?: string | null }) {
   return h.app.inject({
     method: "POST",
     url: "/studio/guidance",
@@ -38,6 +38,20 @@ describe("analysis guidance", () => {
     });
     expect(list.statusCode).toBe(200);
     expect(list.json().notes).toHaveLength(1);
+  });
+
+  it("a TYPED note can target one agent too — the same rule as an upload", async () => {
+    const h = await harness();
+    const token = await adminToken(h);
+
+    const targeted = await post(h, token, { title: "Web kuralı", content: "yalnız web", variantId: "analyst-web" });
+    expect(targeted.statusCode).toBe(201);
+    expect(targeted.json().note).toMatchObject({ variantId: "analyst-web" });
+
+    // Empty / absent target collapses to global (null), never an empty string.
+    const global = await post(h, token, { title: "Genel", content: "herkese", variantId: "  " });
+    expect(global.statusCode).toBe(201);
+    expect(global.json().note.variantId).toBeNull();
   });
 
   it("exposes only ENABLED notes on /active — what the analyst learns", async () => {

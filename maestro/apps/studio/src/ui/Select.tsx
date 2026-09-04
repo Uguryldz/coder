@@ -14,10 +14,16 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
   readonly hint?: string;
   readonly error?: string;
   readonly options: readonly SelectOption[];
+  /**
+   * Already-translated "choose…" row, rendered first with an empty value. Use
+   * it when the field starts unset — without it a select silently pre-picks
+   * the first option, and the form saves a choice nobody made.
+   */
+  readonly placeholder?: string;
 }
 
 /** Mirrors `.sel` from the mock. */
-export function Select({ label, hint, error, options, id, ...rest }: SelectProps) {
+export function Select({ label, hint, error, options, placeholder, id, ...rest }: SelectProps) {
   const generated = useId();
   const selectId = id ?? generated;
   const describedBy = error !== undefined ? `${selectId}-err` : hint !== undefined ? `${selectId}-hint` : undefined;
@@ -36,6 +42,7 @@ export function Select({ label, hint, error, options, id, ...rest }: SelectProps
         aria-invalid={error !== undefined || undefined}
         aria-describedby={describedBy}
       >
+        {placeholder !== undefined && <option value="">{placeholder}</option>}
         {options.map((option) => (
           <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}

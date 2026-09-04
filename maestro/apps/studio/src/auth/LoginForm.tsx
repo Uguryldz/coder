@@ -9,7 +9,6 @@ import { Input } from "../ui/Input.tsx";
 import { Select } from "../ui/Select.tsx";
 import { Skeleton } from "../ui/Skeleton.tsx";
 import { useAuth } from "./AuthProvider.tsx";
-import "./LoginForm.css";
 
 interface LocationState {
   readonly from?: string;

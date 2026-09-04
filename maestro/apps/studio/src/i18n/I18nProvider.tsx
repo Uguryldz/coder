@@ -66,6 +66,15 @@ export function useI18n(): I18nValue {
   return ctx;
 }
 
+/**
+ * `t` when a provider is present, `null` when it is not. For primitives that
+ * may render outside the app tree (ToastProvider in a bare test) and must not
+ * throw for want of a label.
+ */
+export function useOptionalT(): I18nValue["t"] | null {
+  return useContext(I18nContext)?.t ?? null;
+}
+
 /** Shorthand for the common case: `const t = useT(); t("nav.dash")`. */
 export function useT(): I18nValue["t"] {
   return useI18n().t;

@@ -1,17 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 import { useApi } from "../auth/AuthProvider.tsx";
 import { useT } from "../i18n/I18nProvider.tsx";
+import type { KillSwitchLevel, KillSwitchState } from "../screens/common/admin-api.ts";
 import { Badge } from "../ui/Badge.tsx";
-
-export type KillSwitchLevel = "off" | "intake_only" | "all";
-
-export interface KillSwitchState {
-  readonly level: KillSwitchLevel;
-  readonly actor: string;
-  readonly reason: string;
-  readonly at: string;
-}
 
 const TONE = {
   off: "green",
@@ -28,7 +21,8 @@ const LABEL_KEY: Readonly<Record<KillSwitchLevel, string>> = {
 /**
  * Global pause indicator in the top bar. GET /killswitch needs a session but no
  * role, so every signed-in operator sees the platform state. Polled rather than
- * pushed: there is no event stream from the BFF today.
+ * pushed: there is no event stream from the BFF today. It links to the health
+ * screen, which is the one place the switch is operated from.
  */
 export function KillSwitchIndicator(): ReactNode {
   const api = useApi();
@@ -43,8 +37,10 @@ export function KillSwitchIndicator(): ReactNode {
   if (isPending || isError || data === undefined) return null;
 
   return (
-    <Badge tone={TONE[data.level]} icon="●">
-      {t(LABEL_KEY[data.level])}
-    </Badge>
+    <Link to="/health" title={t("killswitch.indicator.open")} style={{ textDecoration: "none" }}>
+      <Badge tone={TONE[data.level]} icon="●">
+        {t(LABEL_KEY[data.level])}
+      </Badge>
+    </Link>
   );
 }

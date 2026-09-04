@@ -7,20 +7,16 @@ import { describe, expect, it } from "vitest";
 import { AuthProvider } from "../src/auth/AuthProvider.tsx";
 import type { Session } from "../src/auth/types.ts";
 import { I18nProvider } from "../src/i18n/I18nProvider.tsx";
-import { ClarifyScreen } from "../src/screens/Clarify.tsx";
 import { DashScreen } from "../src/screens/Dash.tsx";
 import { DetailScreen } from "../src/screens/Detail.tsx";
 import { EvidenceScreen } from "../src/screens/Evidence.tsx";
-import { FanoutScreen } from "../src/screens/Fanout.tsx";
-import { LiveScreen } from "../src/screens/Live.tsx";
-import { TicketsScreen } from "../src/screens/Tickets.tsx";
-import { WorkmodeScreen } from "../src/screens/Workmode.tsx";
+import { TicketsList } from "../src/screens/Tickets.tsx";
 import { toRunList, toRunRow, MAX_RUN_PAGE } from "../src/screens/shared/runs.ts";
 import { ToastProvider } from "../src/ui/Toast.tsx";
 
 /**
- * Flow screens (dash, tickets, detail, live, clarify, workmode, fanout,
- * evidence, jira).
+ * Flow screens (dash, tickets, detail with its embedded clarify / mode-change
+ * panels, evidence).
  *
  * Every test drives a stub fetch: test/setup.ts makes the global one throw, so
  * a screen that bypasses the ApiClient fails here rather than silently hitting
@@ -255,7 +251,7 @@ function renderScreen(
 describe("tickets", () => {
   it("lists runs from GET /studio/runs and filters by workflow status", async () => {
     const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
     expect(screen.getByText("UGURPAY-478")).toBeInTheDocument();
@@ -274,7 +270,7 @@ describe("tickets", () => {
    */
   it("filters to runs parked at a gate", async () => {
     const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: /Kapıda \(2\)/ }));
@@ -283,10 +279,39 @@ describe("tickets", () => {
     expect(screen.queryByText("UGURPAY-501")).not.toBeInTheDocument();
   });
 
+  /**
+   * Every status the endpoint sends can be filtered — queued and cancelled
+   * used to have no chip at all. A chip appears only for a status that is
+   * present, so "Kuyrukta (0)" never clutters the row.
+   */
+  it("offers a chip for every status present, and none for an absent one", async () => {
+    const page = {
+      items: [
+        ...RUN_ITEMS,
+        { ...record("UGURPAY-810"), state: state("UGURPAY-810", "queued", "1") },
+        { ...record("UGURPAY-811"), state: state("UGURPAY-811", "cancelled", "6a") },
+      ],
+      nextCursor: null,
+    };
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(page) });
+    renderScreen(<TicketsList />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-810")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Devredildi/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Kuyrukta \(1\)/ }));
+    expect(screen.getByText("UGURPAY-810")).toBeInTheDocument();
+    expect(screen.queryByText("UGURPAY-501")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /İptal \(1\)/ }));
+    expect(screen.getByText("UGURPAY-811")).toBeInTheDocument();
+    expect(screen.queryByText("UGURPAY-810")).not.toBeInTheDocument();
+  });
+
   /** Enrichment: fields that only exist on the catalog record. */
   it("shows the title, application, step, risk and mode from the record", async () => {
     const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501 konusu")).toBeInTheDocument());
     expect(screen.getAllByText("odeme-servisi").length).toBeGreaterThan(0);
@@ -307,7 +332,7 @@ describe("tickets", () => {
    */
   it("lists a catalog row with no execution instead of dropping it", async () => {
     const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-900")).toBeInTheDocument());
     expect(screen.getByText("başlamadı")).toBeInTheDocument();
@@ -315,7 +340,7 @@ describe("tickets", () => {
 
   it("filters by Jira project", async () => {
     const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
     await userEvent.selectOptions(screen.getByLabelText("Proje"), "UGURDESK");
@@ -328,7 +353,7 @@ describe("tickets", () => {
     const { fetchImpl } = stubFetch({
       "/api/studio/runs": () => json({ error: "project_access" }, 403),
     });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByRole("alert").textContent).not.toContain("project_access");
@@ -345,7 +370,7 @@ describe("tickets", () => {
     const { fetchImpl, calls } = stubFetch({
       "/api/studio/runs": () => json({ items: [], nextCursor: null }),
     });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
     // Bound to the shared constant, not a literal: the screen asked for 500
@@ -389,7 +414,7 @@ describe("tickets: archiving a run", () => {
     const { fetchImpl, calls } = stubFetch({
       "/api/studio/runs": () => json(RUN_PAGE),
     });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Arşivlenenleri göster" }));
@@ -405,7 +430,7 @@ describe("tickets: archiving a run", () => {
         json({ ticketKey: "UGURPAY-501", archivedAt: "2026-08-16T12:00:00.000Z" }),
       "/api/studio/runs": () => json(RUN_PAGE),
     });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
     const row = screen.getByText("UGURPAY-501").closest("tr")!;
@@ -426,7 +451,7 @@ describe("tickets: archiving a run", () => {
     const { fetchImpl } = stubFetch({
       "/api/studio/runs": () => json(ARCHIVED_PAGE),
     });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-900")).toBeInTheDocument());
     const row = screen.getByText("UGURPAY-900").closest("tr")!;
@@ -439,7 +464,7 @@ describe("tickets: archiving a run", () => {
         json({ ticketKey: "UGURPAY-900", archivedAt: null }),
       "/api/studio/runs": () => json(ARCHIVED_PAGE),
     });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-900")).toBeInTheDocument());
     const row = screen.getByText("UGURPAY-900").closest("tr")!;
@@ -458,7 +483,7 @@ describe("tickets: archiving a run", () => {
       "/api/studio/runs/UGURPAY-501/archive": () => json({ error: "role_required" }, 403),
       "/api/studio/runs": () => json(RUN_PAGE),
     });
-    renderScreen(<TicketsScreen />, { fetchImpl });
+    renderScreen(<TicketsList />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
     const row = screen.getByText("UGURPAY-501").closest("tr")!;
@@ -568,19 +593,20 @@ describe("dash", () => {
     const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<DashScreen />, { fetchImpl });
 
-    await waitFor(() => expect(screen.getByText("Aktif iş akışı")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Çalışıyor")).toBeInTheDocument());
 
     // one `running`
-    const active = screen.getByText("Aktif iş akışı").closest("section");
+    const active = screen.getByText("Çalışıyor").closest("section");
     expect(within(active!).getByText("1")).toBeInTheDocument();
 
     // two `gate` rows — a count the Temporal-backed list could not produce
-    const gate = screen.getByText("Kapıda bekleyen").closest("section");
+    const gate = screen.getByText("Kapıda").closest("section");
     expect(within(gate!).getByText("2")).toBeInTheDocument();
 
-    // six rows on the page, including the one with no execution
-    const total = screen.getByText("Toplam").closest("section");
-    expect(within(total!).getByText("6")).toBeInTheDocument();
+    // one `fail`, and the handover count is not folded into it
+    const failed = screen.getByText("Hatalı").closest("section");
+    expect(within(failed!).getByText("1")).toBeInTheDocument();
+    expect(screen.queryByText(/insana devredildi/)).not.toBeInTheDocument();
   });
 
   it("puts the failed run first, then the gate, in the attention list", async () => {
@@ -588,34 +614,63 @@ describe("dash", () => {
     renderScreen(<DashScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("Dikkat isteyenler")).toBeInTheDocument());
-    const rows = screen.getAllByRole("button").filter((el) => el.className.includes("screen-issue"));
+    const rows = screen.getAllByRole("button").filter((el) => el.className.includes("scr-issue"));
     expect(rows[0]!.textContent).toContain("UGURDESK-45");
     expect(rows[1]!.textContent).toContain("UGURPAY-777");
     // A plain `running` run is not "attention" — nobody is blocked on it.
     expect(rows.some((row) => row.textContent?.includes("UGURPAY-501"))).toBe(false);
   });
 
-  it("shows the empty state when the operator has no runs", async () => {
-    const { fetchImpl } = stubFetch({
+  /**
+   * An empty board hides the tiles (nothing to count) but NOT the list: the
+   * archive toggle lives there, and an emptied board is exactly when the
+   * operator wants to look at what was archived.
+   */
+  it("shows the empty state and keeps the archive reachable when there are no runs", async () => {
+    const { fetchImpl, calls } = stubFetch({
       "/api/studio/runs": () => json({ items: [], nextCursor: null }),
     });
     renderScreen(<DashScreen />, { fetchImpl });
 
-    await waitFor(() => expect(screen.getByText("Henüz iş akışı yok")).toBeInTheDocument());
-    expect(screen.queryByText("Aktif iş akışı")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Panoda iş akışı yok")).toBeInTheDocument());
+    expect(screen.queryByText("Çalışıyor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dikkat isteyenler")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Arşivlenenleri göster" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes("archived=archived"))).toBe(true),
+    );
   });
 
-  /**
-   * The exact production symptom: a Postgres-backed page of runs rendered as
-   * "Henüz iş akışı yok" because the screen was reading Temporal. If the body
-   * below ever produces the empty state again, this fails.
-   */
   it("does not show the empty state when /studio/runs returns rows", async () => {
     const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<DashScreen />, { fetchImpl });
 
-    await waitFor(() => expect(screen.getByText("Aktif iş akışı")).toBeInTheDocument());
-    expect(screen.queryByText("Henüz iş akışı yok")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Çalışıyor")).toBeInTheDocument());
+    expect(screen.queryByText("Panoda iş akışı yok")).not.toBeInTheDocument();
+  });
+
+  /**
+   * The tiles and the list read ONE query. Two keys meant "Yenile" refreshed
+   * the list while the tiles kept yesterday's numbers.
+   */
+  it("reads the tiles and the list from a single /studio/runs request", async () => {
+    const { fetchImpl, calls } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
+    renderScreen(<DashScreen />, { fetchImpl });
+
+    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
+    const runCalls = calls.filter((c) => /\/api\/studio\/runs(\?|$)/.test(c.url));
+    expect(runCalls).toHaveLength(1);
+    expect(runCalls[0]!.url).toBe(`/api/studio/runs?limit=${MAX_RUN_PAGE}&archived=active`);
+  });
+
+  it("labels the list as the operator's jobs, not as an archive", async () => {
+    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
+    renderScreen(<DashScreen />, { fetchImpl });
+
+    expect(await screen.findByText("İşler")).toBeInTheDocument();
+    expect(screen.queryByText(/Arşiv \/ örnek/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Canlı motor işleri/)).not.toBeInTheDocument();
   });
 });
 
@@ -646,8 +701,9 @@ describe("detail + gate decision", () => {
 
     expect(screen.getAllByText("PR onayı").length).toBeGreaterThan(0);
     expect(screen.getByText("orta")).toBeInTheDocument();
-    // risk orta -> 4 gates, read from GATES_BY_RISK, not typed in
-    expect(screen.getByText("4 kapı")).toBeInTheDocument();
+    // The gate set is a rule setting now, not a function of risk; no
+    // "{n} kapı" claim may be derived from the tier.
+    expect(screen.queryByText(/\d+ kapı/)).not.toBeInTheDocument();
   });
 
   /**
@@ -664,7 +720,9 @@ describe("detail + gate decision", () => {
     expect(screen.getByText("mehmet.demir@ugurbank")).toBeInTheDocument();
     expect(screen.getByText("ayse.kaya@ugurbank")).toBeInTheDocument();
     expect(screen.getByText("#4821")).toBeInTheDocument();
-    expect(screen.getByText(/2\.25 USD/)).toBeInTheDocument();
+    // Spend in the viewer's locale (tr), never a hard-coded " USD" suffix.
+    expect(screen.getByText(/2,25/)).toBeInTheDocument();
+    expect(screen.queryByText(/2\.25 USD/)).not.toBeInTheDocument();
     expect(screen.getByText("5000 giriş / 900 çıkış token")).toBeInTheDocument();
   });
 
@@ -732,7 +790,8 @@ describe("detail + gate decision", () => {
 
     await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
     expect(screen.getByText("UGURPAY-900")).toBeInTheDocument();
-    expect(screen.getByText("başlamadı")).toBeInTheDocument();
+    // Header badge and the Künye's "Durum" row both say so — at least once.
+    expect(screen.getAllByText("başlamadı").length).toBeGreaterThan(0);
     // No gate panel may appear for a run with no state.
     expect(screen.queryByRole("button", { name: "Onayla" })).not.toBeInTheDocument();
   });
@@ -850,175 +909,200 @@ describe("detail + gate decision", () => {
   });
 });
 
-describe("clarify", () => {
-  it("sends the answer as a clarificationAnswered signal", async () => {
+/**
+ * The three ticket-less forms (clarify, work mode, fan-out) are gone; their
+ * controls live on the run's own detail page, bound to THAT ticket.
+ */
+describe("detail: engine state and embedded controls", () => {
+  function renderDetail(detail: unknown, extra: Readonly<Record<string, () => Response>> = {}) {
     const stub = stubFetch({
-      "/api/runs/UGURPAY-712/signals/clarificationAnswered": () => json({ accepted: true }),
-      "/api/studio/runs": () => json(RUN_PAGE),
+      "/api/studio/runs/UGURPAY-501": () => json(detail),
+      ...extra,
     });
-    renderScreen(<ClarifyScreen />, { fetchImpl: stub.fetchImpl });
+    renderScreen(<DetailScreen />, {
+      fetchImpl: stub.fetchImpl,
+      route: "/detail/UGURPAY-501",
+      path: "/detail/:ticket",
+    });
+    return stub;
+  }
 
-    await userEvent.type(screen.getByLabelText("Ticket"), "UGURPAY-712");
+  /**
+   * A finished run has no engine execution BY DESIGN. Offering "Yeniden
+   * başlat" on every done/failed run was the bug: it read a normal state as
+   * a fault and put a job-starting button under every closed ticket.
+   */
+  it("offers no restart, gate or mode control for a finished run read from the record", async () => {
+    renderDetail({
+      ...GATE_DETAIL,
+      state: state("UGURPAY-501", "done", "13"),
+      stateSource: "record",
+    });
+
+    await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
+    expect(screen.queryByText("Koşu motorda bulunamıyor")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Yeniden başlat" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Onayla" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Değiştir" })).not.toBeInTheDocument();
+    // Nor the "possibly stale" warning: a closed run's last record is final.
+    expect(screen.queryByText(/güncel olmayabilir/)).not.toBeInTheDocument();
+  });
+
+  it("offers restart — and no gate buttons — for an OPEN run the engine has forgotten", async () => {
+    renderDetail({ ...GATE_DETAIL, stateSource: "record" });
+
+    await waitFor(() => expect(screen.getByText("Koşu motorda bulunamıyor")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Yeniden başlat" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Onayla" })).not.toBeInTheDocument();
+    expect(screen.getByText(/güncel olmayabilir/)).toBeInTheDocument();
+  });
+
+  it("tells a viewer which role restart needs, not that they do not own a gate", async () => {
+    // QA is neither admin nor tech-lead.
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-501": () => json({ ...GATE_DETAIL, stateSource: "record" }),
+    });
+    renderScreen(<DetailScreen />, {
+      fetchImpl: stub.fetchImpl,
+      session: QA,
+      route: "/detail/UGURPAY-501",
+      path: "/detail/:ticket",
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Yeniden başlat" })).toBeDisabled());
+    expect(screen.getByText(/admin ya da tech-lead/)).toBeInTheDocument();
+    expect(screen.queryByText(/kapının sorumlusu/)).not.toBeInTheDocument();
+  });
+
+  it("sends the restart as POST /studio/runs/:ticket/restart after confirmation", async () => {
+    const stub = renderDetail(
+      { ...GATE_DETAIL, stateSource: "record" },
+      {
+        "/api/studio/runs/UGURPAY-501/restart": () =>
+          json({ accepted: true, retiredRunId: "run-old" }),
+      },
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Yeniden başlat" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Yeniden başlat" }));
+
+    await waitFor(() => {
+      const call = stub.calls.find((entry) => entry.url.endsWith("/restart"));
+      expect(call?.method).toBe("POST");
+      expect(call?.url).toBe("/api/studio/runs/UGURPAY-501/restart");
+    });
+  });
+
+  it("answers a 2b wait from the detail page, bound to this ticket", async () => {
+    const stub = renderDetail(
+      { ...GATE_DETAIL, state: state("UGURPAY-501", "gate", "2b") },
+      { "/api/runs/UGURPAY-501/signals/clarificationAnswered": () => json({ accepted: true }) },
+    );
+
+    await waitFor(() => expect(screen.getByText("Bildiren yanıtı bekleniyor")).toBeInTheDocument());
+    // No ticket field: the page IS the ticket.
+    expect(screen.queryByLabelText("Ticket")).not.toBeInTheDocument();
+    const send = screen.getByRole("button", { name: "Yanıtı gönder" });
+    expect(send).toBeDisabled();
+
     await userEvent.type(screen.getByLabelText("Yanıt"), "p95 < 800 ms");
-    await userEvent.click(screen.getByRole("button", { name: "Yanıtı gönder" }));
+    await userEvent.click(send);
 
     await waitFor(() => {
       const call = stub.calls.find((entry) => entry.url.includes("clarificationAnswered"));
       expect(call?.method).toBe("POST");
+      expect(call?.url).toContain("/api/runs/UGURPAY-501/signals/");
       expect(call?.body).toEqual({ text: "p95 < 800 ms" });
     });
   });
 
-  /**
-   * The open-2b list is now the REAL queue: it filters on `state.step`, which
-   * only the joined endpoint carries. The old screen showed every running run.
-   */
-  it("lists only the runs actually parked on step 2b", async () => {
-    const stub = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
-    renderScreen(<ClarifyScreen />, { fetchImpl: stub.fetchImpl });
+  it("changes the work mode from the facts panel, after confirmation", async () => {
+    const stub = renderDetail(
+      { ...GATE_DETAIL, state: state("UGURPAY-501", "running", "6a") },
+      {
+        "/api/runs/UGURPAY-501/signals/modeChange": () =>
+          json({ accepted: true, mode: "human_lead" }),
+      },
+    );
 
-    await waitFor(() => expect(screen.getByText("UGURPAY-712")).toBeInTheDocument());
-    // Running, at another gate, done, failed and not-started rows are all out.
-    expect(screen.queryByText("UGURPAY-501")).not.toBeInTheDocument();
-    expect(screen.queryByText("UGURPAY-777")).not.toBeInTheDocument();
-    expect(screen.queryByText("UGURDESK-45")).not.toBeInTheDocument();
-    // The reporter is who the reminder ladder chases — shown, not invented.
-    expect(screen.getAllByText("mehmet.demir@ugurbank").length).toBeGreaterThan(0);
-  });
-
-  it("keeps the send button disabled until both fields are filled", async () => {
-    const stub = stubFetch({
-      "/api/studio/runs": () => json({ items: [], nextCursor: null }),
-    });
-    renderScreen(<ClarifyScreen />, { fetchImpl: stub.fetchImpl });
-
-    const send = screen.getByRole("button", { name: "Yanıtı gönder" });
-    expect(send).toBeDisabled();
-
-    await userEvent.type(screen.getByLabelText("Ticket"), "UGURPAY-712");
-    expect(send).toBeDisabled();
-
-    await userEvent.type(screen.getByLabelText("Yanıt"), "cevap");
-    expect(send).toBeEnabled();
-    expect(stub.calls.some((call) => call.url.includes("/signals/"))).toBe(false);
-  });
-});
-
-describe("workmode", () => {
-  it("confirms before sending the modeChange signal", async () => {
-    const stub = stubFetch({
-      "/api/runs/UGURPAY-503/signals/modeChange": () =>
-        json({ accepted: true, mode: "human_lead" }),
-    });
-    renderScreen(<WorkmodeScreen />, { fetchImpl: stub.fetchImpl });
-
-    await userEvent.type(screen.getByLabelText("Ticket"), "UGURPAY-503");
-    await userEvent.selectOptions(screen.getByLabelText("Yeni mod"), "human_lead");
-    await userEvent.click(screen.getByRole("button", { name: "Modu değiştir" }));
-
-    // The modal stands between the click and the request.
-    expect(stub.calls.some((call) => call.url.includes("/signals/"))).toBe(false);
+    await userEvent.click(await screen.findByRole("button", { name: "Değiştir" }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Değiştir" }));
+    // Same mode → nothing to send.
+    expect(within(dialog).getByRole("button", { name: "Modu değiştir" })).toBeDisabled();
+    await userEvent.selectOptions(within(dialog).getByLabelText("Yeni mod"), "human_lead");
+    expect(stub.calls.some((call) => call.url.includes("/signals/"))).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Modu değiştir" }));
 
     await waitFor(() => {
       const call = stub.calls.find((entry) => entry.url.includes("modeChange"));
+      expect(call?.url).toContain("/api/runs/UGURPAY-501/signals/");
       expect(call?.body).toEqual({ mode: "human_lead" });
     });
+    // The modes are offered TRANSLATED.
+    expect(screen.queryByText("full_auto")).not.toBeInTheDocument();
   });
 
-  /**
-   * Every mode is rendered, and rendered TRANSLATED.
-   *
-   * The enum drives the loop — that is the part worth keeping, because it is
-   * what fails when `WorkMode` gains a member nobody wired up. What changed is
-   * the expected text: asserting the raw `full_auto` was appearing on screen
-   * had frozen the leak into the suite, so the bug could not be fixed without
-   * a test going red. It went red; this is the corrected expectation.
-   */
-  it("renders every mode from the frozen WorkMode enum, translated", () => {
-    const stub = stubFetch({});
-    renderScreen(<WorkmodeScreen />, { fetchImpl: stub.fetchImpl });
-
-    const translated: Readonly<Record<string, string>> = {
-      full_auto: "Tam otomatik",
-      ai_assist: "AI destekli",
-      human_lead: "İnsan öncülüğünde",
-      human_only: "Yalnız insan",
-    };
-
-    for (const [mode, label] of Object.entries(translated)) {
-      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
-      expect(screen.queryByText(mode)).not.toBeInTheDocument();
-    }
-  });
-});
-
-describe("fanout", () => {
-  /**
-   * The tree is READ from the record now, not inferred from the Jira project.
-   * The fixture deliberately puts a child in a DIFFERENT project (UGURDESK-9):
-   * the old project-prefix heuristic would have missed it, and a fan-out that
-   * silently drops the cross-app child defeats the point of M100.
-   */
-  const TREE = {
-    items: [
-      {
-        ...record("UGURPAY-500", {
-          childTicketKeys: ["UGURPAY-502", "UGURDESK-9", "UGURPAY-999"],
+  it("renders the per-run consumption from /studio/runs/:ticket/cost", async () => {
+    renderDetail(GATE_DETAIL, {
+      "/api/studio/runs/UGURPAY-501/cost": () =>
+        json({
+          items: [
+            {
+              at: "2026-08-01T09:05:00.000Z",
+              runId: "run-UGURPAY-501",
+              role: "analyst",
+              variantId: "v1",
+              driver: "anthropic",
+              model: "claude-sonnet",
+              tokensIn: 4000,
+              tokensOut: 700,
+              cachePct: null,
+              usd: 1.75,
+              dataClass: "dahili",
+            },
+            {
+              at: "2026-08-01T09:20:00.000Z",
+              runId: "run-UGURPAY-501",
+              role: "engineer",
+              variantId: "v1",
+              driver: "subscription",
+              model: "gpt-x",
+              tokensIn: 1000,
+              tokensOut: 200,
+              cachePct: null,
+              usd: null,
+              dataClass: "dahili",
+            },
+          ],
+          nextCursor: null,
+          totals: { usd: 1.75, tokensIn: 5000, tokensOut: 900, calls: 2 },
         }),
-        state: state("UGURPAY-500", "running", "3"),
-      },
-      {
-        ...record("UGURPAY-502", { parentTicketKey: "UGURPAY-500" }),
-        state: state("UGURPAY-502", "gate", "12"),
-      },
-      {
-        ...record("UGURDESK-9", { parentTicketKey: "UGURPAY-500", appId: "destek-portali" }),
-        state: state("UGURDESK-9", "running", "6a"),
-      },
-      // Same project, NOT a child — the old heuristic would have listed it.
-      { ...record("UGURPAY-478"), state: state("UGURPAY-478", "done", "13") },
-    ],
-    nextCursor: null,
-  };
+    });
 
-  it("shows the real parent/child tree, including a child in another project", async () => {
-    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(TREE) });
-    renderScreen(<FanoutScreen />, { fetchImpl });
+    await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("tab", { name: /Tüketim/ }));
 
-    await waitFor(() => expect(screen.getByText("Etki matrisi")).toBeInTheDocument());
-    await userEvent.type(screen.getByLabelText("Ana ticket anahtarı"), "UGURPAY-500");
-
-    await waitFor(() => expect(screen.getByText("UGURPAY-502")).toBeInTheDocument());
-    // The cross-project child is in the tree because the RECORD says so.
-    expect(screen.getByText("UGURDESK-9")).toBeInTheDocument();
-    expect(screen.getByText("destek-portali")).toBeInTheDocument();
-    // A same-project run that is not a child must NOT appear.
-    expect(screen.queryByText("UGURPAY-478")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("claude-sonnet")).toBeInTheDocument());
+    expect(screen.getByText("analist")).toBeInTheDocument();
+    expect(screen.getByText("4000 / 700")).toBeInTheDocument();
+    // A subscription call has no dollar figure and is not given one.
+    expect(screen.getByText("abonelik")).toBeInTheDocument();
+    expect(screen.getByText(/2 çağrı/)).toBeInTheDocument();
+    // No "elsewhere" tabs remain.
+    expect(screen.queryByRole("tab", { name: /Değişiklik/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Testler/ })).not.toBeInTheDocument();
   });
 
-  /**
-   * A child the parent claims but which is not on the visible page is reported
-   * as missing rather than dropped — a tree that under-reports its own scope
-   * would understate the blast radius of the change.
-   */
-  it("names children it cannot see instead of quietly omitting them", async () => {
-    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(TREE) });
-    renderScreen(<FanoutScreen />, { fetchImpl });
+  it("links back to the panel and forward to the evidence package with the ticket", async () => {
+    renderDetail(GATE_DETAIL);
+    await waitFor(() => expect(screen.getByText("Künye")).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText("Ana ticket anahtarı"), "UGURPAY-500");
-
-    await waitFor(() => expect(screen.getByText("Görünmeyen alt ticket'lar")).toBeInTheDocument());
-    expect(screen.getByText("UGURPAY-999")).toBeInTheDocument();
-  });
-
-  it("still states that the impact matrix itself has no endpoint", async () => {
-    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(TREE) });
-    renderScreen(<FanoutScreen />, { fetchImpl });
-
-    await waitFor(() => expect(screen.getByText("Etki matrisi")).toBeInTheDocument());
-    expect(screen.getByText(/Etki matrisi analiz belgesinde yaşıyor/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Panele dön/ })).toHaveAttribute("href", "/dash");
+    expect(screen.getByRole("link", { name: "Kanıt paketi" })).toHaveAttribute(
+      "href",
+      "/evidence?ticket=UGURPAY-501",
+    );
   });
 });
 
@@ -1099,20 +1183,3 @@ describe("evidence", () => {
   });
 });
 
-describe("live", () => {
-  it("draws the pipeline from the contract's step table and lists real in-flight work", async () => {
-    const { fetchImpl } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
-    renderScreen(<LiveScreen />, { fetchImpl });
-
-    // Steps come from STEP_IDS — 2b is a step id that only exists there.
-    expect(screen.getAllByText("2b").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("insan kapısı").length).toBeGreaterThan(0);
-
-    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
-    // Gates are in flight too — they are what a person is needed for.
-    expect(screen.getByText("UGURPAY-777")).toBeInTheDocument();
-    // Finished and failed work is not.
-    expect(screen.queryByText("UGURPAY-478")).not.toBeInTheDocument();
-    expect(screen.queryByText("UGURDESK-45")).not.toBeInTheDocument();
-  });
-});

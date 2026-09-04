@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Badge, Button } from "../../ui/index.ts";
 import type { DraftSection } from "./model.ts";
-import "./template.css";
 
 export interface SectionListProps {
   readonly sections: readonly DraftSection[];
@@ -43,10 +42,8 @@ export function SectionList({
               <span className="tpl-row__body">
                 <span className="tpl-row__title">{section.title}</span>
                 <span className="tpl-row__meta">
-                  <Badge tone={section.required ? "red" : "amber"}>
-                    {section.required ? t("template.required") : t("template.optional")}
-                  </Badge>
-                  <Badge tone="gray">{t(`template.format.${section.format}`)}</Badge>
+                  {section.required && <Badge tone="gray">{t("template.required")}</Badge>}
+                  <span>{t(`template.format.${section.format}`)}</span>
                   <code className="tpl-row__key">{section.key}</code>
                 </span>
               </span>
@@ -54,6 +51,7 @@ export function SectionList({
             <span className="tpl-row__tools">
               <Button
                 size="sm"
+                variant="ghost"
                 aria-label={t("template.move_up_of", { title: section.title })}
                 disabled={index === 0}
                 onClick={() => onMove(section.id, -1)}
@@ -62,6 +60,7 @@ export function SectionList({
               </Button>
               <Button
                 size="sm"
+                variant="ghost"
                 aria-label={t("template.move_down_of", { title: section.title })}
                 disabled={index === sections.length - 1}
                 onClick={() => onMove(section.id, 1)}
@@ -70,7 +69,7 @@ export function SectionList({
               </Button>
               <Button
                 size="sm"
-                variant="danger"
+                variant="ghost"
                 aria-label={t("template.remove_of", { title: section.title })}
                 disabled={!canRemove}
                 onClick={() => onRemove(section.id)}

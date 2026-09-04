@@ -5,6 +5,7 @@ import { defaultPiiPolicy } from "@maestro/pii";
 import type { CoreDeps } from "@maestro/workflows";
 import type { PublishRunDeps } from "../boot.js";
 import { buildCoreStores, type CoreStoreOptions } from "./core.js";
+import { guidanceReaderFrom } from "./guidance.js";
 import { PrismaPublishState } from "./publish-state.js";
 import { variantModelReaderFrom } from "./variant-model.js";
 import type { SqlExecutor } from "./sql.js";
@@ -101,6 +102,13 @@ export function buildWorkerCore(db: Db, options: WorkerCoreOptions): WorkerCore 
      * sorguyu iki yerde tutmak olurdu.
      */
     persona: variantModelReaderFrom(db),
+    /**
+     * Studio'nun "Öğrenme kaynakları" notlarını analize bağlayan taraf — persona
+     * ile aynı hikâye: ekran "yeni analizlerde dikkate alınacak" diyordu, worker
+     * tabloyu hiç okumuyordu. `analystGuidance` (workflows) global + bu ajana
+     * hedefli etkin notları personanın ardından prompta koyar.
+     */
+    guidance: guidanceReaderFrom(db),
     translate: t,
     now,
   };

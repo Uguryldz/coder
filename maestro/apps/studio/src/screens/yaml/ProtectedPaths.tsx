@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { messageKeyOf } from "../../api/errors.ts";
 import { useApi } from "../../auth/AuthProvider.tsx";
 import { useT } from "../../i18n/I18nProvider.tsx";
-import { Badge, Button, Card, Input, useToast } from "../../ui/index.ts";
+import { Badge, Button, Card, Input, Modal, useToast } from "../../ui/index.ts";
 import type { RepoPolicy } from "../common/index.ts";
 
 export interface ProtectedPathsProps {
@@ -20,6 +20,9 @@ export interface ProtectedPathsProps {
  * because the server refuses to remove them and an X that always errors is
  * worse than no X. A repo may only ADD to that floor. Widening protection is
  * safe in one direction only, so the screen offers exactly that direction.
+ *
+ * Removing a repo addition NARROWS protection, so it asks first: one click on
+ * an "X" beside a path the agent must never touch is not a decision.
  */
 export function ProtectedPaths({ policy }: ProtectedPathsProps): ReactNode {
   const api = useApi();
@@ -28,6 +31,8 @@ export function ProtectedPaths({ policy }: ProtectedPathsProps): ReactNode {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   const [invalid, setInvalid] = useState(false);
+  /** The repo addition awaiting confirmation; null while nothing is. */
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const addPath = useMutation({
     mutationFn: (path: string) =>
@@ -50,6 +55,7 @@ export function ProtectedPaths({ policy }: ProtectedPathsProps): ReactNode {
         { method: "DELETE" },
       ),
     onSuccess: (_result, path) => {
+      setRemoving(null);
       void queryClient.invalidateQueries({ queryKey: ["repo-policy"] });
       toast.show("success", t("yaml.toast.path_removed", { path }));
     },
@@ -99,12 +105,7 @@ export function ProtectedPaths({ policy }: ProtectedPathsProps): ReactNode {
               {policy.protectedPaths.repoAdditions.map((path) => (
                 <li key={path} className="scr-row">
                   <code className="scr-mono">{path}</code>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    busy={removePath.isPending}
-                    onClick={() => removePath.mutate(path)}
-                  >
+                  <Button size="sm" variant="danger" onClick={() => setRemoving(path)}>
                     {t("yaml.action.remove_path")}
                   </Button>
                 </li>
@@ -126,6 +127,27 @@ export function ProtectedPaths({ policy }: ProtectedPathsProps): ReactNode {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        title={t("yaml.confirm.remove_title")}
+        closeLabel={t("action.close")}
+        footer={
+          <>
+            <Button onClick={() => setRemoving(null)}>{t("action.cancel")}</Button>
+            <Button
+              variant="danger"
+              busy={removePath.isPending}
+              onClick={() => removing !== null && removePath.mutate(removing)}
+            >
+              {t("yaml.action.remove_path")}
+            </Button>
+          </>
+        }
+      >
+        <p className="scr-prose">{t("yaml.confirm.remove_body", { path: removing ?? "" })}</p>
+      </Modal>
     </Card>
   );
 }

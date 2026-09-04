@@ -7,37 +7,23 @@ import { Button, Card, Modal, useToast } from "../../ui/index.ts";
 import { useRunRestart } from "../shared/signals.ts";
 
 /**
- * "Koşu motorda bulunamıyor" — ve yanında YAPILACAK ŞEY.
+ * "Koşu motorda bulunamıyor" — and the way out.
  *
- * ── Neden var ───────────────────────────────────────────────────────────────
- * Bu panel bir teşhis kutusu değil, bir çıkış yolu. Ölçülen durum şuydu:
- * operatörün koşusu motorda yoktu (Temporal'ın saklama süresi 24 saat, ve
- * kapıda bekleyen işler o süreyi aşıyor), panel adımları katalogdan okuyup
- * doğru gösteriyordu, kapıda "onayla/reddet" düğmeleri duruyordu — ve
- * basıldığında "bu ticket için çalışan bir akış yok" cevabı geliyordu.
+ * Shown only for a run that is still OPEN (not done/fail/cancelled) but has no
+ * execution in the engine: retention expired, or the run died. Its gate
+ * buttons would answer "no workflow for this ticket", so instead of a dead
+ * control the operator gets the one action that helps — restart, which
+ * retires the old run (journal, steps and evidence kept) and takes the ticket
+ * through intake again with the listening rule's current settings.
  *
- * Operatörün elinde hiçbir eylem yoktu: `POST /start` sessizce hiçbir şey
- * yapmıyor (koşu satırının birincil anahtarı motorun iş akışı kimliğiyle aynı,
- * yani yeni koşu eski satıra çarpıp yutuluyordu), tarama da koşusu olan
- * ticket'ı bilerek atlıyordu. Ticket kalıcı olarak akış dışıydı.
- *
- * ── Neden ONAY SORUYOR ──────────────────────────────────────────────────────
- * Yeniden başlatmak eski koşuyu emekliye ayırır. Hiçbir şey silinmez — defter,
- * adımlar ve kanıt paketi olduğu gibi korunur — ama pano değişir ve ticket
- * baştan analiz edilir, yani gerçek bir iş başlar. Kapı kararlarıyla aynı sınıf
- * bir eylem, ve `GatePanel` gibi tek bir kazara tıklamanın ötesinde durmalı.
- *
- * ── Neden ROL KONTROLÜ ──────────────────────────────────────────────────────
- * Rota `RUN_START_ROLES` (admin, tech-lead) istiyor. Düğmeyi gizlemek yerine
- * KISITLAMAK, `GatePanel`in yaptığının aynısı ve aynı sebeple: operatör eylemin
- * var olduğunu görmeli, kendisine ait olmadığını öğrenmeli. Asıl kontrol
- * BFF'te; buradaki yalnız bir kullanılabilirlik işareti.
+ * Confirms first (a real job starts), and is restricted — not hidden — to the
+ * route's roles (`RUN_START_ROLES`: admin, tech-lead), so the operator sees
+ * the action exists and learns whose it is. The real check is the BFF's.
  */
 export interface RestartPanelProps {
   readonly ticket: string;
 }
 
-/** Rotanın `requireAnyRole` listesinin aynası — `RUN_START_ROLES`. */
 const RESTART_ROLES = ["admin", "tech-lead"];
 
 export function RestartPanel({ ticket }: RestartPanelProps): ReactNode {
@@ -53,15 +39,9 @@ export function RestartPanel({ ticket }: RestartPanelProps): ReactNode {
     restart.mutate(ticket, {
       onSuccess: (result) => {
         setConfirming(false);
-        /**
-         * KABUL EDİLMEYEN BİR ALIM DA BİR CEVAP — ve sessizce "başarılı"
-         * demiyoruz.
-         *
-         * Eski koşu her hâlükârda emekliye ayrıldı, ama alım reddedilmiş
-         * olabilir (kill-switch açık, proje bağlı değil, uygulama eşleşmedi).
-         * Bunu bir başarı bildirimiyle geçmek, operatöre olmayan bir koşuyu
-         * beklettirirdi — bugün düzeltilen hatanın aynısı, bir yüzey ötede.
-         */
+        // A refused intake is an answer too: the old run is retired either
+        // way, but the ticket may not have been re-admitted (kill-switch,
+        // unbound project, no matching application). Never a green toast for that.
         if (result.accepted) {
           toast.show("success", t("detail.restart.done", { ticket }));
         } else {
@@ -74,13 +54,13 @@ export function RestartPanel({ ticket }: RestartPanelProps): ReactNode {
 
   return (
     <Card title={t("detail.restart.title")}>
-      <p className="screen-note">{t("detail.restart.body")}</p>
-      <div className="screen-actions">
+      <p className="scr-hint">{t("detail.restart.body")}</p>
+      <div className="scr-actions">
         <Button variant="primary" disabled={!allowed} onClick={() => setConfirming(true)}>
           {t("detail.restart.action")}
         </Button>
       </div>
-      {!allowed && <p className="screen-note">{t("gate.not_owner")}</p>}
+      {!allowed && <p className="scr-hint">{t("detail.restart.not_allowed")}</p>}
 
       <Modal
         open={confirming}

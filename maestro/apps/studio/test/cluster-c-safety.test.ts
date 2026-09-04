@@ -1,50 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assess, type ChainVerification } from "../src/screens/audit/verification.ts";
-import {
-  isVisibleInChannel,
-  partitionByDataClass,
-  resolveDataClass,
-} from "../src/screens/knowledge/classify.ts";
 import { outcomeTone, poolOutcome, toOutcome } from "../src/screens/shared/outcome.ts";
 import { bySeverity, severityRank, severityTone, toSeverity } from "../src/screens/shared/severity.ts";
-
-describe("knowledge data-class handling (fail closed)", () => {
-  it("treats an untagged record as confidential, NOT public", () => {
-    expect(resolveDataClass(undefined)).toBe("gizli");
-    expect(resolveDataClass(null)).toBe("gizli");
-    expect(resolveDataClass("")).toBe("gizli");
-  });
-
-  it("treats an unrecognised label as confidential", () => {
-    expect(resolveDataClass("public")).toBe("gizli");
-    expect(resolveDataClass("AÇIK")).toBe("gizli");
-    expect(resolveDataClass(42)).toBe("gizli");
-  });
-
-  it("passes through the three known classes", () => {
-    expect(resolveDataClass("acik")).toBe("acik");
-    expect(resolveDataClass("dahili")).toBe("dahili");
-    expect(resolveDataClass("gizli")).toBe("gizli");
-  });
-
-  it("drops confidential and untagged records from this channel", () => {
-    expect(isVisibleInChannel("acik")).toBe(true);
-    expect(isVisibleInChannel("dahili")).toBe(true);
-    expect(isVisibleInChannel("gizli")).toBe(false);
-    expect(isVisibleInChannel(undefined)).toBe(false);
-  });
-
-  it("counts what it withheld instead of hiding the omission", () => {
-    const { visible, withheld } = partitionByDataClass([
-      { docId: "1", dataClass: "acik" },
-      { docId: "2", dataClass: "gizli" },
-      { docId: "3" },
-      { docId: "4", dataClass: "dahili" },
-    ]);
-    expect(visible.map((d) => d.docId)).toEqual(["1", "4"]);
-    expect(withheld).toBe(2);
-  });
-});
 
 describe("audit chain assessment (does not trust the record's own claim)", () => {
   const base: ChainVerification = { ok: true, checked: 81_422, brokenAtSeq: null };

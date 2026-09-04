@@ -8,6 +8,7 @@ import { ToastProvider } from "../ui/Toast.tsx";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { AppRoutes } from "./routes.tsx";
 import "../ui/tokens.css";
+import "../screens/shared/screens.css";
 
 /**
  * Provider stack, outermost first:

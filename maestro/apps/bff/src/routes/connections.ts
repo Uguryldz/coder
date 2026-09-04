@@ -53,6 +53,9 @@ const WRITE_ROLES = ["admin"] as const;
 /** The `:id` path param — the same grammar the contract's `ConnectionId` uses. */
 const IdParam = z.object({ id: ConnectionId });
 
+/** `DELETE ?reason=` — the written justification the audit row carries. */
+const DeleteQuery = z.object({ reason: z.string().trim().min(1).max(500).optional() });
+
 /**
  * Both halves the connector routes need, or neither. The store persists the
  * connection; the SecretPort enciphers the token. A deployment that wired one
@@ -369,20 +372,38 @@ async function clearOtherDefaults(
     });
   });
 
-  /** Delete a connection and its secret. */
+  /**
+   * Delete a connection and its secret.
+   *
+   * `?reason=` is the operator's written justification. Studio's confirmation
+   * refuses to submit without one and promises it is written to the audit
+   * trail — for a long time that promise was empty, because the route took no
+   * reason at all and the text was dropped on the floor. It rides in the query
+   * string because a DELETE body is something proxies and clients handle
+   * inconsistently; the audit row is what makes it real. Optional at the
+   * route so a scripted delete still works, but never silently lost.
+   */
   app.delete("/studio/connections/:id", { preHandler: writeHandler }, async (request, reply) => {
     await assertWritable(deps);
     const { store, secrets } = connectorDeps(deps);
 
     const params = IdParam.safeParse(request.params);
     if (!params.success) throw badRequest("invalid_connection_id");
+    const query = DeleteQuery.safeParse(request.query);
+    if (!query.success) throw badRequest("invalid_connection_body");
 
     const removed = await store.remove(params.data.id);
     if (removed === null) throw notFound("no_such_connection");
     // Drop the enciphered secret too — a connection deleted with its token left
     // behind is an orphaned credential nobody can see but that still exists.
     if (removed.secretRef !== null) await deleteToken(secrets, removed.secretRef);
-    await audit(deps, request, params.data.id, "deleted");
+    await audit(
+      deps,
+      request,
+      params.data.id,
+      "deleted",
+      query.data.reason === undefined ? {} : { reason: query.data.reason },
+    );
     return reply.code(204).send();
   });
 }

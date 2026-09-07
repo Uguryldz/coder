@@ -232,6 +232,11 @@ export interface GateStore {
 export interface ParamReader {
   escalationLadder(runId: RunId): Promise<EscalationLadder>;
   notifyRouting(runId: RunId): Promise<NotifyRouting>;
+  /**
+   * `notify.enabled` — the operator's master switch. Optional on the reader
+   * (an older composition root need not carry it); absent means ON.
+   */
+  notifyEnabled?(runId: RunId): Promise<boolean>;
   routingRules(ticket: TicketKey): Promise<RoutingRule[]>;
   /** Publish targets for a document kind (M47). */
   publishTargets(runId: RunId, doc: "analysis" | "evidence_summary"): Promise<string[]>;

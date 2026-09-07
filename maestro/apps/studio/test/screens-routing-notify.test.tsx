@@ -350,6 +350,24 @@ const NOTIFY_BODY = {
   },
 };
 
+describe("notify screen — master switch", () => {
+  it("shows the switch on by default and PUTs enabled:false when unticked", async () => {
+    const { fetchImpl, calls } = stubFetch([
+      NOTIFY_BODY,
+      { path: "/notify", method: "PUT", body: { results: [{ status: "applied", change: {} }] } },
+    ]);
+    renderScreen(<NotifyScreen />, { fetchImpl });
+
+    const box = await screen.findByRole("checkbox", { name: "Bildirimleri gönder" });
+    expect(box).toBeChecked();
+    await userEvent.click(box);
+
+    const put = calls.find((call) => call.method === "PUT" && call.url.endsWith("/notify"));
+    expect(put).toBeDefined();
+    expect(put!.body).toEqual({ enabled: false });
+  });
+});
+
 describe("notify screen editing", () => {
   it("edits a threshold and PUTs the same step id so open gates do not re-escalate", async () => {
     const { fetchImpl, calls } = stubFetch([

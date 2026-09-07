@@ -341,6 +341,18 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     defaultValue: true,
   },
   {
+    // The operator's master switch. Off = the engine sends to NO channel (the
+    // journal still says "bildirim kapalı" once per event) — for a site whose
+    // channels are not wired yet, or a rollout where every notification would
+    // be noise. Muting per event is `notify.routing`; this is the whole thing.
+    key: "notify.enabled",
+    scope: "global",
+    type: "boolean",
+    guarded: false,
+    descriptionKey: "params.description.notify_enabled",
+    defaultValue: true,
+  },
+  {
     // M45/M87 — event → channel routing. Without this row the routing map had
     // no home in the database at all, so "which channel does a runner health
     // warning go to" was answered by whatever a caller happened to construct.

@@ -398,6 +398,8 @@ export interface EscalationLadderRaw {
 }
 
 export interface NotifyView {
+  /** `notify.enabled`; an older BFF omits it, which reads as on. */
+  readonly enabled?: boolean;
   readonly ladder: readonly EscalationStep[];
   readonly delegations: readonly Delegation[];
   readonly waiting: readonly WaitingGate[];
@@ -430,6 +432,8 @@ export interface EscalationLadderStep {
 }
 
 export interface NotifyUpdate {
+  /** `notify.enabled` — the master switch; off sends to no channel. */
+  readonly enabled?: boolean;
   readonly ladder?: EscalationLadderRaw;
   readonly routing?: NotifyRouting;
   /** The Teams webhook URL to store, or "" to clear it. */

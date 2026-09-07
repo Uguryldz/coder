@@ -80,6 +80,8 @@ export interface FakeOptions {
   match?: MatchResult | null;
   ticket?: TicketSnapshot;
   members?: (group: string) => string[];
+  /** `notify.enabled` master switch; absent = on. */
+  notifyEnabled?: boolean;
   /** Makes `assign` reject, for the fail-soft delivery path. */
   assignFails?: boolean;
   /** Returns an Error to make THAT `createLinkedIssue` call reject (fan-out fail-soft path). */
@@ -211,6 +213,7 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     params: {
       escalationLadder: () => Promise.resolve(LADDER),
       notifyRouting: () => Promise.resolve(ROUTING),
+      notifyEnabled: () => Promise.resolve(options.notifyEnabled ?? true),
       routingRules: () => Promise.resolve(options.rules ?? []),
       publishTargets: () => Promise.resolve(["jira"]),
     },

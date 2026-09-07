@@ -161,6 +161,15 @@ export const PARAM_DEFINITIONS: ParamDefinition[] = [
     descriptionKey: "params.description.notify_teams_webhook",
     defaultValue: { url: "" },
   },
+  /** The master switch the notify screen flips (`notify.enabled`). */
+  {
+    key: "notify.enabled",
+    scope: "global",
+    type: "boolean",
+    guarded: false,
+    descriptionKey: "params.description.notify_enabled",
+    defaultValue: true,
+  },
 ];
 
 export interface Harness {

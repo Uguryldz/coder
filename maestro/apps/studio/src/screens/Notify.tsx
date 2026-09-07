@@ -195,6 +195,25 @@ export function NotifyScreen(): ReactNode {
         {/* Which event goes to which channel — the most-asked question, so it
             leads. A blank entry follows `default`; an empty list is muted
             DELIBERATELY. */}
+        {/* The master switch first: "bildirim gelmiyor" and "bildirim
+            istemiyorum" both start here. Off = the engine sends to no channel
+            and journals "bildirim kapalı"; gates and comments are unaffected. */}
+        {data !== undefined && (
+          <Card title={t("notify.enabled.title")}>
+            <label className="scr-check">
+              <input
+                type="checkbox"
+                checked={data.enabled !== false}
+                disabled={!canEdit || save.isPending}
+                onChange={(event) => save.mutate({ enabled: event.target.checked })}
+              />
+              {t("notify.enabled.toggle")}
+            </label>
+            <p className={data.enabled === false ? "scr-hint scr-hint--warn" : "scr-hint"}>
+              {t(data.enabled === false ? "notify.enabled.off" : "notify.enabled.on")}
+            </p>
+          </Card>
+        )}
         {data !== undefined && (
           <Card
             title={t("notify.card.routing")}

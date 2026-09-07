@@ -111,6 +111,18 @@ export async function notifyEvent(
   },
 ): Promise<void> {
   if (args.to.length === 0) return;
+  // Ana anahtar kapalıysa hiçbir kanala gidilmez; defterde tek satır kalır
+  // ki "bildirim gelmedi" sorusunun cevabı ayarda aransın, kanalda değil.
+  const enabled = deps.params.notifyEnabled === undefined ? true : await deps.params.notifyEnabled(run.runId).catch(() => true);
+  if (!enabled) {
+    await record(deps, run, {
+      kind: "other",
+      title: "bildirim kapalı",
+      detail: `${args.event} · notify.enabled = false`,
+      key: `notify-off:${args.key}`,
+    });
+    return;
+  }
   const routing = await deps.params.notifyRouting(run.runId);
   const routed = routeNotification(routing, {
     event: args.event,

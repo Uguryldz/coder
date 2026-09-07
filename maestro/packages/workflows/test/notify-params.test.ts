@@ -2,6 +2,8 @@ import type { Notification } from "@maestro/contracts";
 import { renderMessage } from "@maestro/notify";
 import { describe, expect, it } from "vitest";
 import { escalationParams, gateOpenParams } from "../src/impl/gate.js";
+import { notifyEvent } from "../src/impl/record.js";
+import { makeFakes } from "./fakes.js";
 
 /**
  * Her bildirim mesajı, kodun GERÇEKTEN gönderdiği parametrelerle çizilebilmeli.
@@ -44,5 +46,21 @@ describe("notify mesajları kodun gönderdiği parametrelerle çizilir", () => {
     const params = escalationParams({ ticket: "OTYT-1", step: "4", group: "product-owners", waitingHours: 5, deputies: [] });
     expect(render("notify.delegated", params)).toContain("product-owners-deputy");
     expect(params["days"]).toBe("1");
+  });
+});
+
+describe("notify.enabled kapalıyken", () => {
+  it("hiçbir kanala gönderilmez, defterde 'bildirim kapalı' kalır", async () => {
+    const fakes = makeFakes({ notifyEnabled: false });
+    const run = await fakes.deps.runs.get("PAY-101");
+    await notifyEvent(fakes.deps, run, {
+      event: "gate_open",
+      messageKey: "notify.gate_open",
+      params: gateOpenParams("PAY-101", "4", "product-owners"),
+      to: ["po@bank"],
+      key: "open:4",
+    });
+    expect(fakes.recorded.notifications).toEqual([]);
+    expect(fakes.journalStore.entries.at(-1)?.title).toBe("bildirim kapalı");
   });
 });

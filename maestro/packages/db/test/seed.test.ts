@@ -97,6 +97,8 @@ const DECISION_ONLY_KEYS: Record<string, string> = {
   // — even after the cause was fixed. The window is what lets a fixed system
   // try again ("havuzda hiçbir zaman ticket kalamaz").
   "stuck.restart_window_hours": "M54",
+  // The notify master switch: the Notify screen's "Bildirimler açık/kapalı".
+  "notify.enabled": "M45",
   "killswitch.state": "M58",
   "binding.dry_run_sample_size": "M102",
   "dataclass.policy": "M18/M63",

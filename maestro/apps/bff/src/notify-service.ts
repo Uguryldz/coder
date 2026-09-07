@@ -22,6 +22,8 @@ export const NOTIFY_PARAM_KEYS = {
   ladder: "escalation.ladder",
   routing: "notify.routing",
   teamsWebhook: "notify.teams.webhook",
+  /** The master switch (`notify.enabled`); unseeded on an older install = on. */
+  enabled: "notify.enabled",
 } as const;
 
 /** The stored Teams webhook URL shape (a bearer credential in its path). */
@@ -64,6 +66,8 @@ export interface WaitingGateView {
 }
 
 export interface NotifyView {
+  /** `notify.enabled` — the master switch; off sends to no channel. */
+  enabled: boolean;
   ladder: readonly EscalationStepView[];
   delegations: readonly DelegationView[];
   waiting: readonly WaitingGateView[];
@@ -98,11 +102,15 @@ export const NotifyUpdate = z
     routing: NotifyRouting.optional(),
     /** The Teams webhook URL to store, or "" to clear it. */
     teamsWebhook: z.string().optional(),
+    enabled: z.boolean().optional(),
   })
   .refine(
     (value) =>
-      value.ladder !== undefined || value.routing !== undefined || value.teamsWebhook !== undefined,
-    { message: "send at least one of ladder, routing or teamsWebhook" },
+      value.ladder !== undefined ||
+      value.routing !== undefined ||
+      value.teamsWebhook !== undefined ||
+      value.enabled !== undefined,
+    { message: "send at least one of ladder, routing, teamsWebhook or enabled" },
   );
 export type NotifyUpdate = z.infer<typeof NotifyUpdate>;
 
@@ -120,8 +128,11 @@ export async function readNotify(deps: ResolvedDeps): Promise<NotifyView> {
   // The Teams webhook is optional and may never have been seeded on an older
   // database; a missing row means "not set", not an error — unlike the ladder.
   const teamsWebhook = await readOptionalParam(deps, NOTIFY_PARAM_KEYS.teamsWebhook, TeamsWebhook);
+  // Master switch: absent on a database seeded before the key existed = on.
+  const enabled = (await readOptionalParam(deps, NOTIFY_PARAM_KEYS.enabled, z.boolean())) ?? true;
 
   return {
+    enabled,
     ladder: ladderView(ladder, routing),
     delegations: await delegations(deps),
     waiting: await waiting(deps),
@@ -145,6 +156,11 @@ export async function updateNotify(
   actor: string,
 ): Promise<readonly ParamPutResult[]> {
   const results: ParamPutResult[] = [];
+  if (update.enabled !== undefined) {
+    results.push(
+      await putParam(deps, { key: NOTIFY_PARAM_KEYS.enabled, scopeRef: null, value: update.enabled, actor }),
+    );
+  }
   if (update.ladder !== undefined) {
     results.push(
       await putParam(deps, {

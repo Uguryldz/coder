@@ -417,3 +417,20 @@ describe("PUT /notify", () => {
     expect(response.statusCode).toBe(409);
   });
 });
+
+/**
+ * The master switch (`notify.enabled`): an unseeded install reads ON; the
+ * screen's PUT writes the parameter and the next GET reflects it.
+ */
+describe("notify.enabled master switch", () => {
+  it("reads on when never seeded, off after the screen turns it off", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    await seed(h);
+    expect((await get(h, token)).json<{ enabled: boolean }>().enabled).toBe(true);
+
+    const put = await h.app.inject({ method: "PUT", url: "/notify", headers: auth(token), payload: { enabled: false } });
+    expect(put.statusCode).toBe(200);
+    expect((await get(h, token)).json<{ enabled: boolean }>().enabled).toBe(false);
+  });
+});

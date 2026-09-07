@@ -107,6 +107,7 @@ const PublishTargets = z.object({
 const PARAM_KEYS = {
   escalationLadder: "escalation.ladder",
   notifyRouting: "notify.routing",
+  notifyEnabled: "notify.enabled",
   publishTargets: "publish.targets",
 } as const;
 
@@ -124,6 +125,14 @@ export class PrismaParamReader implements ParamReader {
 
   async notifyRouting(runId: string): Promise<NotifyRouting> {
     return this.read(runId, PARAM_KEYS.notifyRouting, NotifyRouting);
+  }
+  /** `notify.enabled`; an install seeded before the key existed reads as ON. */
+  async notifyEnabled(runId: string): Promise<boolean> {
+    try {
+      return await this.read(runId, PARAM_KEYS.notifyEnabled, z.boolean());
+    } catch {
+      return true;
+    }
   }
 
   async publishTargets(runId: string, doc: "analysis" | "evidence_summary"): Promise<string[]> {

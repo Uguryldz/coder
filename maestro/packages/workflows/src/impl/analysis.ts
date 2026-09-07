@@ -33,7 +33,8 @@ export const DiscoveryDigest = z.object({
 });
 
 /** M18/M97: the analysis cannot be written by a human inside this activity. */
-export const AI_ASSIST_REQUIRED = "AiAssistRequired";
+export { AI_ASSIST_REQUIRED } from "../failure-types.js";
+import { AI_ASSIST_REQUIRED } from "../failure-types.js";
 
 function aiAssistRequired(what: string, messageKey: string): ApplicationFailure {
   return ApplicationFailure.create({

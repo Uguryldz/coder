@@ -520,6 +520,45 @@ describe("GET /studio/runs/:ticket", () => {
     ]);
   });
 
+  /**
+   * The run FAILED on an uncaught error: the journal holds nothing, but the
+   * engine's history does. That record is the last word — attributed to the
+   * step the run was on, named by the activity's failure type.
+   */
+  it("falls back to the engine's failure record for a failed run with no journal error", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+    h.read.runs.put({ ...RUN, status: "fail", step: "3" });
+    h.read.journal.append(JOURNAL_AI);
+    h.runs.failure = {
+      message: "Activity task failed ← analysis needs a human in ai-assist mode: llm.degraded_ai_assist",
+      type: "AiAssistRequired",
+      at: "2026-09-04T15:31:00.000Z",
+    };
+
+    const response = await h.app.inject({ method: "GET", url: `/studio/runs/${TICKET}`, headers: auth(token) });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { failure: { step: string; title: string; detail: string; at: string } | null; recentErrors: unknown[] };
+    expect(body.failure).toEqual({
+      step: "3",
+      kind: "other",
+      title: "motor hatası",
+      detail: "AiAssistRequired: Activity task failed ← analysis needs a human in ai-assist mode: llm.degraded_ai_assist",
+      at: "2026-09-04T15:31:00.000Z",
+      seq: 0,
+    });
+    expect(body.recentErrors).toHaveLength(1);
+  });
+
+  it("does not consult the engine for a run that is not failed, or when the journal already explains", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+    h.read.runs.put({ ...RUN, status: "running", step: "3" });
+    h.runs.failure = { message: "stale", type: null, at: null };
+    const response = await h.app.inject({ method: "GET", url: `/studio/runs/${TICKET}`, headers: auth(token) });
+    expect((response.json() as { failure: unknown }).failure).toBeNull();
+  });
+
   it("answers failure: null when the journal holds no error line", async () => {
     const h = await studioHarness();
     const token = await memberToken(h);
@@ -585,6 +624,13 @@ describe("recentErrorsOf: which journal lines are errors", () => {
     ]);
     expect(errors.map((e) => e.seq)).toEqual([6, 5, 4]);
     expect(errors.every((e) => e.step === "3")).toBe(true);
+  });
+
+  it("intake verdicts are not errors: 'ticket eksiksiz' (success) and 'ticket eksik' (clarification)", () => {
+    expect(isErrorEntry({ kind: "intake", title: "ticket eksiksiz" })).toBe(false);
+    expect(isErrorEntry({ kind: "intake", title: "ticket eksik" })).toBe(false);
+    expect(isErrorEntry({ kind: "other", title: "analiz belgesi eksik" })).toBe(true);
+    expect(isErrorEntry({ kind: "other", title: "ai_assist moduna düşüldü" })).toBe(true);
   });
 
   it("leaves the step null for an error written before the first transition", () => {

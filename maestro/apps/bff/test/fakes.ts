@@ -25,6 +25,7 @@ import type {
   SignalOutcome,
   SignalWithStartInput,
   StartOutcome,
+  EngineFailure,
 } from "../src/gateway.js";
 
 export const WEBHOOK_SECRET = "maestro-test-webhook-secret";
@@ -203,6 +204,12 @@ export class FakeRunGateway implements RunGateway {
   readonly signals: Array<{ workflowId: string; name: string; arg: unknown }> = [];
   readonly started: SignalWithStartInput[] = [];
   pingFails = false;
+  /** What `failureOf` answers — the engine's own record of why a run died. */
+  failure: EngineFailure | null = null;
+
+  failureOf(): Promise<EngineFailure | null> {
+    return Promise.resolve(this.failure);
+  }
 
   ping(): Promise<void> {
     return this.pingFails ? Promise.reject(new Error("temporal down")) : Promise.resolve();

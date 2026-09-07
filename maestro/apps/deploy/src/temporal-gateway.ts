@@ -1,4 +1,5 @@
 import type {
+  EngineFailure,
   RunExecutionStatus,
   RunGateway,
   RunSummary,
@@ -379,6 +380,35 @@ export class TemporalRunGateway implements RunGateway {
   }
 
   /** Run id of the current execution, or `null` when there is none. */
+  /**
+   * The failure that closed the execution, from its history: the
+   * `WorkflowExecutionFailed` event's failure, with the cause chain flattened
+   * so the activity's own `ApplicationFailure` type and message come through
+   * ("LlmBlocked: LLM policy blocked analysis: …"). A terminated or timed-out
+   * execution reports that instead. Missing execution → null; a live one → null.
+   */
+  async failureOf(workflowId: string): Promise<EngineFailure | null> {
+    let history: Awaited<ReturnType<ReturnType<Client["workflow"]["getHandle"]>["fetchHistory"]>>;
+    try {
+      history = await this.client.workflow.getHandle(workflowId).fetchHistory();
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+    for (const event of [...(history.events ?? [])].reverse()) {
+      const failed = event.workflowExecutionFailedEventAttributes?.failure;
+      if (failed) return { ...flattenFailure(failed), at: eventTimeOf(event.eventTime) };
+      const terminated = event.workflowExecutionTerminatedEventAttributes;
+      if (terminated) {
+        return { message: `terminated: ${terminated.reason ?? ""}`.trim(), type: "Terminated", at: eventTimeOf(event.eventTime) };
+      }
+      if (event.workflowExecutionTimedOutEventAttributes) {
+        return { message: "workflow timed out", type: "TimedOut", at: eventTimeOf(event.eventTime) };
+      }
+    }
+    return null;
+  }
+
   private async currentRunId(workflowId: string): Promise<string | null> {
     try {
       const description = await this.client.workflow.getHandle(workflowId).describe();
@@ -391,6 +421,36 @@ export class TemporalRunGateway implements RunGateway {
 }
 
 /** Inverse of `workflowIdFor`; `null` for ids this deployment did not mint. */
+interface FailureLike {
+  readonly message?: string | null;
+  readonly cause?: FailureLike | null;
+  readonly applicationFailureInfo?: { readonly type?: string | null } | null;
+}
+
+/** Deepest named type wins (the activity's), messages joined outer → inner. */
+function flattenFailure(failure: FailureLike): { message: string; type: string | null } {
+  const messages: string[] = [];
+  let type: string | null = null;
+  let node: FailureLike | null | undefined = failure;
+  const seen = new Set<FailureLike>();
+  while (node && !seen.has(node)) {
+    seen.add(node);
+    const message = (node.message ?? "").trim();
+    if (message !== "" && !messages.includes(message)) messages.push(message);
+    const named = node.applicationFailureInfo?.type ?? null;
+    if (named) type = named;
+    node = node.cause;
+  }
+  return { message: messages.join(" ← ") || "(sebep yazılmamış)", type };
+}
+
+function eventTimeOf(time: { seconds?: number | Long | null; nanos?: number | null } | null | undefined): string | null {
+  if (!time || time.seconds == null) return null;
+  const seconds = typeof time.seconds === "number" ? time.seconds : Number(time.seconds);
+  if (!Number.isFinite(seconds)) return null;
+  return new Date(seconds * 1000 + Math.floor((time.nanos ?? 0) / 1_000_000)).toISOString();
+}
+
 function ticketOf(workflowId: string): string | null {
   const prefix = "maestro-";
   return workflowId.startsWith(prefix) ? workflowId.slice(prefix.length) : null;

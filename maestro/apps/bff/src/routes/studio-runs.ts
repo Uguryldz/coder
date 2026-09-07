@@ -374,14 +374,22 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
     // last few error lines travel with the header, each attributed to the
     // step that was current when it was written.
     const recentErrors = await recentErrorsOrEmpty(deps, request, record.runId);
+    // The journal only holds what the activity managed to say before it
+    // died. A run that FAILED on an uncaught error (a policy refusal, a bug)
+    // left nothing there — so the engine's own failure record is the last
+    // word: message + the activity's failure type, attributed to the step
+    // the run was on. Read only for a failed run with no journal error, and
+    // never a reason for the detail itself to fail.
+    const engineFailure =
+      record.status === "fail" && recentErrors.length === 0 ? await engineFailureOf(deps, record) : null;
 
     return reply.code(200).send({
       run: record,
       state,
       stateSource: live !== null ? "engine" : state !== null ? "record" : "none",
       application: app_,
-      failure: recentErrors[0] ?? null,
-      recentErrors,
+      failure: recentErrors[0] ?? engineFailure,
+      recentErrors: engineFailure === null ? recentErrors : [engineFailure],
     });
   });
 
@@ -664,6 +672,29 @@ function ticketParam(params: unknown): string {
  * `step` is `null` when the line was written before the workflow's first
  * `adım …` transition; the screen falls back to the run's own step then.
  */
+async function engineFailureOf(
+  deps: ResolvedDeps,
+  record: { readonly ticketKey: string; readonly step?: string | null; readonly updatedAt?: string | Date | null },
+): Promise<RunFailure | null> {
+  const read = deps.runs.failureOf?.bind(deps.runs);
+  if (read === undefined) return null;
+  try {
+    const failure = await read(workflowIdFor(record.ticketKey as TicketKey));
+    if (failure === null) return null;
+    const updated = record.updatedAt instanceof Date ? record.updatedAt.toISOString() : (record.updatedAt ?? null);
+    return {
+      step: (record.step ?? null) as StepId | null,
+      kind: "other",
+      title: "motor hatası",
+      detail: failure.type === null ? failure.message : `${failure.type}: ${failure.message}`,
+      at: failure.at ?? updated ?? new Date(0).toISOString(),
+      seq: 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface RunFailure {
   readonly step: StepId | null;
   readonly kind: JournalKind;
@@ -705,8 +736,14 @@ const MAX_JOURNAL_PAGES = 25;
  * excluded by shape even though "ret" is a failure of sorts — showing it under
  * a red banner would tell an operator their own approval flow had broken.
  */
+/**
+ * Titles that name a FAILURE. Word-bounded on purpose: "ticket eksiksiz" is
+ * the intake's SUCCESS verdict and "ticket eksik" its normal clarification
+ * verdict — neither is an error, and the first shipped regex painted both
+ * red under step 2 while the real failure sat unexplained at step 3.
+ */
 const ERROR_TITLE =
-  /tutturamadı|reddedildi|doğrulanamadı|bulunamadı|başarısız|hata|eksik|kırmızı|bloke|düşüldü/i;
+  /tutturamadı|reddedildi|doğrulanamadı|bulunamadı|başarısız|\bhata\b|kırmızı|bloke|düşüldü|devredildi|gönderilemedi|kullanılamadı|çağrılamadı|belgesi eksik/i;
 const GATE_VERDICT = /^kapı \S+: /;
 
 export function isErrorEntry(entry: Pick<JournalEntry, "kind" | "title">): boolean {

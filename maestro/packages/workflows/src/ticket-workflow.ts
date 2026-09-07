@@ -18,6 +18,7 @@ import type {
 } from "./activities.js";
 import { awaitGreenBuild, runEngineeringLoop } from "./engineering-loop.js";
 import { answerModeRequests, assertNotKilled, awaitGate } from "./gate-loop.js";
+import { handoverReasonOf } from "./failure-types.js";
 import { gatesFor, planFor } from "./gates.js";
 import {
   countRejection,
@@ -496,7 +497,19 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   // `continueAsNew` sınırını aşması gerektiği için girdiden okunuyor.
   const returnTurn = rewrite?.turn ?? 0;
   await goto("3", rewrite === undefined ? "analiz üretiliyor" : "analiz yeniden yazılıyor");
-  const written = await thinkActs.writeAnalysis(ticket, input.appId, rewrite);
+  // A NAMED refusal (ai-assist required, policy block, key rejected, schema
+  // unmet five times) is the activity saying "a human must take this". Left
+  // uncaught it FAILED the execution: Studio showed "hatalı" at step 3 with
+  // no sentence under it, the ticket sat in the pool for days. Caught, it is
+  // a hand-over — status, journal line and Jira note all say why.
+  let written: Awaited<ReturnType<typeof thinkActs.writeAnalysis>>;
+  try {
+    written = await thinkActs.writeAnalysis(ticket, input.appId, rewrite);
+  } catch (error) {
+    const reason = handoverReasonOf(error);
+    if (reason === null) throw error;
+    return handOver(`analiz üretilemedi: ${reason}`);
+  }
   state.analysis = written.analysis;
   state.risk = written.risk;
   await acts.publishAnalysis(ticket, state.analysis);

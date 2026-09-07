@@ -17,9 +17,9 @@ import { audit, notifyEvent, record } from "./record.js";
  */
 
 export const QUOTA_WAIT = "LlmQuotaWait";
-export const LLM_BLOCKED = "LlmBlocked";
-export const LLM_AUTH_REJECTED = "LlmAuthRejected";
-export const LLM_SCHEMA_UNMET = "LlmSchemaUnmet";
+// Declared in `../failure-types.ts` (workflow-safe) so the workflow can catch them.
+export { LLM_AUTH_REJECTED, LLM_BLOCKED, LLM_SCHEMA_UNMET } from "../failure-types.js";
+import { LLM_AUTH_REJECTED, LLM_BLOCKED, LLM_SCHEMA_UNMET } from "../failure-types.js";
 
 /**
  * How many activity attempts an auth-rejected key is given before the run is

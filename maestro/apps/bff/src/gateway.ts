@@ -158,4 +158,20 @@ export interface RunGateway {
    * webhook deliveries racing on the same ticket cannot produce two runs.
    */
   signalWithStart(input: SignalWithStartInput): Promise<StartOutcome>;
+  /**
+   * Why a FAILED execution failed, from the engine's own history — or `null`
+   * when the execution is missing, still running, or closed without a
+   * failure. Optional: an engine that cannot read history simply leaves the
+   * panel with the journal. Without this, a run that died on an uncaught
+   * error showed "hatalı" and nothing else, because the run row has no error
+   * column and the journal only holds what the activity managed to write.
+   */
+  failureOf?(workflowId: string): Promise<EngineFailure | null>;
+}
+
+export interface EngineFailure {
+  readonly message: string;
+  /** The `ApplicationFailure` type when the activity named one, else null. */
+  readonly type: string | null;
+  readonly at: string | null;
 }

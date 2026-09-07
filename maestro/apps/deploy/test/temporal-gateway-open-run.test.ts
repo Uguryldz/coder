@@ -1,4 +1,4 @@
-import { WorkflowExecutionAlreadyStartedError, type Client } from "@temporalio/client";
+import { WorkflowExecutionAlreadyStartedError, WorkflowNotFoundError, type Client } from "@temporalio/client";
 import { describe, expect, it } from "vitest";
 import { TemporalRunGateway, type OpenedRun } from "../src/temporal-gateway.js";
 
@@ -155,5 +155,62 @@ describe("TemporalRunGateway.signalWithStart — the workflow's start argument",
 
     expect(Object.hasOwn(seen[0] as object, "appId")).toBe(false);
     expect(opened[0]?.appId).toBeNull();
+  });
+});
+
+/**
+ * `failureOf`: Studio'nun "hatalı" dediği ama sebebini gösteremediği koşu.
+ * Motor geçmişindeki kapanış olayından mesaj + aktivitenin adlandırdığı tip
+ * okunur; canlı ya da hatasız kapanan koşu için null.
+ */
+describe("TemporalRunGateway.failureOf — motorun kendi hata kaydı", () => {
+  function withHistory(events: unknown[]): TemporalRunGateway {
+    return gatewayWith({
+      getHandle: (() => ({ fetchHistory: () => Promise.resolve({ events }) })) as never,
+    });
+  }
+
+  it("WorkflowExecutionFailed olayının cause zincirini düzleştirir: aktivite tipi + mesajlar", async () => {
+    const gateway = withHistory([
+      { eventId: 1, workflowExecutionStartedEventAttributes: {} },
+      {
+        eventId: 9,
+        eventTime: { seconds: 1_757_000_000, nanos: 0 },
+        workflowExecutionFailedEventAttributes: {
+          failure: {
+            message: "Activity task failed",
+            cause: {
+              message: "LLM policy blocked analysis: llm.blocked_confidential",
+              applicationFailureInfo: { type: "LlmBlocked" },
+            },
+          },
+        },
+      },
+    ]);
+    const failure = await gateway.failureOf("maestro-OTYT-1");
+    expect(failure).toEqual({
+      message: "Activity task failed ← LLM policy blocked analysis: llm.blocked_confidential",
+      type: "LlmBlocked",
+      at: new Date(1_757_000_000 * 1000).toISOString(),
+    });
+  });
+
+  it("sonlandırılmış ve zaman aşımına uğramış koşuları adlandırır; tamamlanan ya da canlı için null", async () => {
+    expect(await withHistory([{ workflowExecutionTerminatedEventAttributes: { reason: "operator" } }]).failureOf("w")).toMatchObject({
+      type: "Terminated",
+      message: "terminated: operator",
+    });
+    expect(await withHistory([{ workflowExecutionTimedOutEventAttributes: {} }]).failureOf("w")).toMatchObject({ type: "TimedOut" });
+    expect(await withHistory([{ workflowExecutionCompletedEventAttributes: {} }]).failureOf("w")).toBeNull();
+    expect(await withHistory([{ workflowExecutionStartedEventAttributes: {} }]).failureOf("w")).toBeNull();
+  });
+
+  it("olmayan koşu için null — fırlatmaz", async () => {
+    const gateway = gatewayWith({
+      getHandle: (() => ({
+        fetchHistory: () => Promise.reject(new WorkflowNotFoundError("gone", "w", undefined)),
+      })) as never,
+    });
+    expect(await gateway.failureOf("w")).toBeNull();
   });
 });

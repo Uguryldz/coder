@@ -426,6 +426,23 @@ yenileyin: `docker compose up -d --force-recreate bff worker`
 ---
 
 
+### 5.6a Havuz kuralı: robotun havuzunda ticket kalmaz
+
+Robot, dinleme kuralında seçilen statüyü (örn. `analiz`) **iş havuzu** olarak okur. İşlem
+bittiğinde ticket ya ileri ("Analiz onaya çıktığında" → örn. `analysisapproval`) ya geri ("Bilgi
+eksik olduğunda" → örn. `todo`, ya da talep sahibine geri atama) oynar. Bunun için:
+
+- Havuzlu bir kural bu çıkış durumları boşken **kaydedilemez** (`Havuz çıkışı` hatası). Eski
+  kurallar için Sistem sağlığı › Yapılandırma'da "Havuz çıkışı" satırı uyarır.
+- Taşıma Jira tarafında başarısız olursa (geçiş tanımlı değil, yetki yok) ticket'a **görünür bir
+  yorum** yazılır: hangi duruma gidecekti, neden gidemedi, elle ne yapılmalı. Koşu defterinde de
+  "durum: …" satırı vardır.
+- Koşusu bitmiş ama hâlâ havuzda duran ticket'lar tarama bandında **"Havuzda kalan"** olarak
+  listelenir.
+- Ölmüş/devredilmiş koşu otomatik yeniden başlatılır; fren günde en fazla 3 denemedir
+  (`stuck.restart_window_hours`, varsayılan 24). Eskiden sayaç sonsuza kadar sayıyordu ve üçüncü
+  denemeden sonra ticket havuzda çürüyordu — sebep düzelse bile. Artık ertesi gün yeniden dener.
+
 ### 5.7 Analiz şablonu ve kurumsal Word şablonu (PDD düzeni)
 
 Analiz belgesinin **bölümleri** ve **görünümü** iki ayrı şablondan gelir:

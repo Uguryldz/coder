@@ -9,6 +9,7 @@ export * from "./jira-projects-service.js";
 export * from "./connection-store.js";
 export * from "./deps.js";
 export * from "./listening-identity.js";
+export * from "./listening-pool.js";
 export * from "./listening-store.js";
 export * from "./guidance-store.js";
 export * from "./doc-template-scan.js";

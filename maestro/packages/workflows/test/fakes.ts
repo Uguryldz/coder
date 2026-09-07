@@ -11,7 +11,7 @@ import type { AgentTurnRequest, AgentTurnResult } from "@maestro/execution";
 import { createJournalMasker } from "@maestro/memory";
 import { defaultPiiPolicy } from "@maestro/pii";
 import type { LlmOutcome, RepoRef } from "@maestro/ports";
-import type { ActivityDeps, AttachmentMeta, RunContext } from "../src/impl/deps.js";
+import type { ActivityDeps, AnalysisTemplateSectionText, AttachmentMeta, RunContext } from "../src/impl/deps.js";
 import { InMemoryIdempotency } from "../src/impl/idempotency.js";
 import {
   APP,
@@ -102,6 +102,11 @@ export interface FakeOptions {
     list: readonly AttachmentMeta[] | Error;
     files?: Record<string, Uint8Array | Error>;
   };
+  /**
+   * Studio'nun yayınlanmış analiz şablonu (bölüm başlığı + AI talimatı).
+   * Verilmezse `deps.analysisTemplate` HİÇ bağlanmaz. `null` = sürüm yok.
+   */
+  analysisTemplate?: readonly AnalysisTemplateSectionText[] | null | Error;
   /**
    * Ticket'ın yorum akışı, sürücünün HAM şekliyle (`CommentReader.listComments`
    * `unknown[]` döner — iki Jira lehçesi iki farklı şekil taşır). Verilmezse
@@ -408,6 +413,17 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
               if (file instanceof Error) return Promise.reject(file);
               if (file === undefined) return Promise.reject(new Error(`fake: no file for ${contentUrl}`));
               return Promise.resolve(file);
+            },
+          },
+        }),
+    ...(options.analysisTemplate === undefined
+      ? {}
+      : {
+          analysisTemplate: {
+            sections: () => {
+              const answer = options.analysisTemplate;
+              if (answer instanceof Error) return Promise.reject(answer);
+              return Promise.resolve(answer ?? null);
             },
           },
         }),

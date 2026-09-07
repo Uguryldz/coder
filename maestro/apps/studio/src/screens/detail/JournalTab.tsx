@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { JournalActor, JournalEntry } from "@maestro/contracts";
 import { useI18n, useT } from "../../i18n/I18nProvider.tsx";
+import { Badge } from "../../ui/index.ts";
 import { QueryState } from "../shared/QueryState.tsx";
 import { dateTimeLabel } from "../shared/format.ts";
-import { useJournal } from "../shared/runs.ts";
+import { useJournal, useRunDetail } from "../shared/runs.ts";
+import { recentErrorsOf } from "./run-state.ts";
 
 /**
  * The append-only ticket journal (M30) — the raw material of the evidence
@@ -15,6 +17,12 @@ import { useJournal } from "../shared/runs.ts";
  * cursor is deliberately not followed, because silently concatenating pages
  * would make "the journal" mean a different number of entries on every render.
  * A failed request renders the translated error — never a fabricated history.
+ *
+ * Error lines are marked: every `handover` entry, and every entry the detail
+ * header lists under `recentErrors` — the same lines the step list shows, so
+ * the two tabs never disagree about which entry was "the error". The
+ * classification itself lives in the BFF (`isErrorEntry`) and is not repeated
+ * here.
  */
 
 const ACTOR_ICON: Readonly<Record<JournalActor, string>> = {
@@ -30,6 +38,12 @@ export function JournalTab({ ticket }: { readonly ticket: string }): ReactNode {
   const { locale } = useI18n();
   const [actor, setActor] = useState<JournalActor | "all">("all");
   const { data, isPending, error, refetch } = useJournal(ticket);
+  // Already in the cache: the detail screen fetched it to render its header.
+  const { data: detail } = useRunDetail(ticket);
+  const errorSeqs = useMemo(
+    () => new Set((detail === undefined ? [] : recentErrorsOf(detail)).map((e) => e.seq)),
+    [detail],
+  );
 
   const entries = useMemo(() => data?.items ?? [], [data]);
   const rows = useMemo(
@@ -73,7 +87,12 @@ export function JournalTab({ ticket }: { readonly ticket: string }): ReactNode {
 
       <div className="scr-journal">
         {rows.map((entry) => (
-          <JournalRow key={`${entry.runId}-${entry.seq}`} entry={entry} locale={locale} />
+          <JournalRow
+            key={`${entry.runId}-${entry.seq}`}
+            entry={entry}
+            locale={locale}
+            isError={entry.kind === "handover" || errorSeqs.has(entry.seq)}
+          />
         ))}
       </div>
       <p className="scr-hint">{t("journal.append_only")}</p>
@@ -85,9 +104,11 @@ export function JournalTab({ ticket }: { readonly ticket: string }): ReactNode {
 function JournalRow({
   entry,
   locale,
+  isError,
 }: {
   readonly entry: JournalEntry;
   readonly locale: string;
+  readonly isError: boolean;
 }): ReactNode {
   const t = useT();
   return (
@@ -97,8 +118,19 @@ function JournalRow({
         {ACTOR_ICON[entry.actor]}
       </span>
       <div>
-        <b>{entry.title}</b>
-        {entry.detail !== "" && <div className="scr-hint">{entry.detail}</div>}
+        <div className="scr-row">
+          <b>{entry.title}</b>
+          {isError && <Badge tone="red">{t("journal.error_badge")}</Badge>}
+        </div>
+        {entry.detail !== "" && (
+          // An error's detail is the explanation; it wraps and is never cut.
+          <div
+            className={isError ? undefined : "scr-hint"}
+            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+          >
+            {entry.detail}
+          </div>
+        )}
       </div>
     </div>
   );

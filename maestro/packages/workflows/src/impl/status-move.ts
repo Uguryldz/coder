@@ -129,6 +129,15 @@ export async function moveTicketStatus(
       : `'${wanted}' durumuna taşınamadı — ${explain(reason)} (akış etkilenmedi)`,
     outcome.moved ? "moved" : `not-moved:${reason}`,
   );
+  // Operatörün kuralı: "Maestro'nun havuzunda hiçbir zaman ticket kalamaz;
+  // işlem yapıldıktan sonra ileri ya da geri oynar." Taşıma başarısızsa
+  // ticket havuzda kalır ve bunu YALNIZ defter bilir — panoya bakan kimse
+  // bilmez. Ticket'a yazılan yorum, kalan işi görünür kılar: hangi duruma
+  // gidecekti, neden gidemedi, elle ne yapılmalı. `already` bir arıza değil;
+  // yorumsuz kalır.
+  if (!outcome.moved && reason !== "already") {
+    await commentMoveFailure(deps, run, ticket, move.at, wanted, explain(reason), seq);
+  }
 
   return outcome.moved
     ? { moved: true, reassigned }
@@ -150,6 +159,29 @@ export async function moveTicketStatus(
  * already resolves the person to hand an analysis back to — one definition of
  * "whose ticket is this", not two.
  */
+async function commentMoveFailure(
+  deps: ActivityDeps,
+  run: RunContext,
+  ticket: TicketKey,
+  at: StatusMovePoint,
+  status: string,
+  reason: string,
+  seq: string,
+): Promise<void> {
+  try {
+    await deps.idempotency.once(`${run.runId}:status:${at}:${seq}:comment`, () =>
+      deps.work.addComment(
+        ticket,
+        deps.translate(run.locale, "jira.status_move_failed", { ticket, status, reason }),
+      ),
+    );
+  } catch (error) {
+    // The comment is the fallback for a failed move; its own failure is a
+    // journal line, never a stopped run — same policy as the move itself.
+    await note(deps, run, at, seq, `taşınamama yorumu yazılamadı: ${String(error)}`, "comment-failed");
+  }
+}
+
 async function handBackToReporter(
   deps: ActivityDeps,
   run: RunContext,

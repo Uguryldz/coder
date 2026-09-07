@@ -2,7 +2,7 @@ import type { TicketSnapshot } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import type { ListeningRuleRecord } from "../src/listening-store.js";
 import { PageQuery } from "../src/routes/paging.js";
-import { reconciledState } from "../src/routes/studio-runs.js";
+import { isErrorEntry, reconciledState, recentErrorsOf } from "../src/routes/studio-runs.js";
 import { auth } from "./helpers.js";
 import type { Harness } from "./helpers.js";
 import {
@@ -463,6 +463,134 @@ describe("GET /studio/runs/:ticket", () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+
+  /**
+   * The step list said "hata" and nothing else. The error text is in the
+   * journal — `handOver` and `guardSchemaError` write it there before the
+   * activity dies — so the header carries the last error lines, each with the
+   * step that was current when it was written.
+   */
+  it("carries the run's last error lines, attributed to their step", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+    const line = (seq: number, kind: string, title: string, detail = "") => ({
+      ...JOURNAL_AI,
+      seq,
+      kind: kind as typeof JOURNAL_AI.kind,
+      actor: "system" as const,
+      title,
+      detail,
+      at: `2026-08-09T09:0${seq}:00.000Z`,
+    });
+    h.read.journal.append(line(1, "other", "adım 2", "intake"));
+    h.read.journal.append(line(2, "other", "adım 3", "analiz üretiliyor"));
+    h.read.journal.append(
+      line(3, "other", "model çıktısı şemayı tutturamadı", "analysis · Invalid analysis · yeniden denenecek (1/3)"),
+    );
+    h.read.journal.append(line(4, "analysis", "analiz yazıldı"));
+    h.read.journal.append(line(5, "other", "adım 6a", "geliştirme"));
+    h.read.journal.append(
+      line(6, "handover", "insana devredildi", "engineering: model çıktısı 3 denemede de şemayı tutturamadı"),
+    );
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/studio/runs/${TICKET}`,
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      failure: { step: string; title: string; detail: string; at: string; seq: number } | null;
+      recentErrors: { step: string; seq: number }[];
+    };
+    expect(body.failure).toEqual({
+      step: "6a",
+      kind: "handover",
+      title: "insana devredildi",
+      detail: "engineering: model çıktısı 3 denemede de şemayı tutturamadı",
+      at: "2026-08-09T09:06:00.000Z",
+      seq: 6,
+    });
+    // Newest first, and the schema retry at step 3 is an error line too.
+    expect(body.recentErrors.map((e) => [e.step, e.seq])).toEqual([
+      ["6a", 6],
+      ["3", 3],
+    ]);
+  });
+
+  it("answers failure: null when the journal holds no error line", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+    h.read.journal.append(JOURNAL_AI);
+    h.read.journal.append(JOURNAL_HUMAN);
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/studio/runs/${TICKET}`,
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { failure: unknown; recentErrors: unknown[] };
+    expect(body.failure).toBeNull();
+    expect(body.recentErrors).toEqual([]);
+  });
+
+  it("still answers the header when the journal cannot be read", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+    h.read.journal.list = () => Promise.reject(new Error("journal down"));
+
+    const response = await h.app.inject({
+      method: "GET",
+      url: `/studio/runs/${TICKET}`,
+      headers: auth(token),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { failure: unknown }).failure).toBeNull();
+  });
+});
+
+describe("recentErrorsOf: which journal lines are errors", () => {
+  const entry = (seq: number, kind: string, title: string) => ({
+    ...JOURNAL_AI,
+    seq,
+    kind: kind as typeof JOURNAL_AI.kind,
+    title,
+    detail: "",
+  });
+
+  it("treats a handover as an error whatever its title", () => {
+    expect(isErrorEntry({ kind: "handover", title: "insana devredildi" })).toBe(true);
+  });
+
+  it("does not read a gate verdict as an error, even a rejection", () => {
+    expect(isErrorEntry({ kind: "gate", title: "kapı 5: ret" })).toBe(false);
+    expect(isErrorEntry({ kind: "gate", title: "kapı 5: onay" })).toBe(false);
+    // ...but a gate that could not verify its approver IS one.
+    expect(isErrorEntry({ kind: "gate", title: "üyelik doğrulanamadı" })).toBe(true);
+  });
+
+  it("keeps only the last three, newest first", () => {
+    const errors = recentErrorsOf([
+      entry(1, "other", "adım 3"),
+      entry(2, "other", "model anahtarı reddedildi"),
+      entry(3, "other", "model anahtarı reddedildi"),
+      entry(4, "other", "model anahtarı reddedildi"),
+      entry(5, "scan", "tarama bloke etti"),
+      entry(6, "test_run", "testler kırmızı"),
+    ]);
+    expect(errors.map((e) => e.seq)).toEqual([6, 5, 4]);
+    expect(errors.every((e) => e.step === "3")).toBe(true);
+  });
+
+  it("leaves the step null for an error written before the first transition", () => {
+    const errors = recentErrorsOf([entry(1, "other", "analiz belgesi eksik")]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.step).toBeNull();
   });
 });
 

@@ -1183,3 +1183,140 @@ describe("evidence", () => {
   });
 });
 
+
+/**
+ * The complaint that produced `recentErrors`: the step list marked a step
+ * "hata" and showed no error text at all. The operator must read, under the
+ * failed step, WHAT the activity said and WHEN — the journal line the BFF
+ * derives, not a sentence the screen made up.
+ */
+describe("detail: the failed step shows its error", () => {
+  const LONG_DETAIL = `analysis: model çıktısı 3 denemede de şemayı tutturamadı — ${"x".repeat(420)} · Ayarlar > Modeller'den bu rol için daha güçlü bir model bağlayın`;
+
+  const ERROR_HANDOVER = {
+    step: "3",
+    kind: "handover",
+    title: "insana devredildi",
+    detail: "analysis: model anahtarı reddedildi (HTTP 401, 5 deneme) — Ayarlar > Bağlantılar'dan anahtarı düzeltin",
+    at: "2026-08-01T11:20:00.000Z",
+    seq: 9,
+  };
+  const ERROR_SCHEMA = {
+    step: "3",
+    kind: "other",
+    title: "model çıktısı şemayı tutturamadı",
+    detail: "analysis · Invalid analysis: impact must be an array · yeniden denenecek (1/3)",
+    at: "2026-08-01T11:05:00.000Z",
+    seq: 7,
+  };
+
+  function renderFailed(
+    errors: readonly unknown[],
+    journal: readonly unknown[] = JOURNAL,
+  ): ReturnType<typeof stubFetch> {
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-501/journal": () => json({ items: journal, nextCursor: null }),
+      "/api/studio/runs/UGURPAY-501": () =>
+        json({
+          ...GATE_DETAIL,
+          state: state("UGURPAY-501", "fail", "3"),
+          stateSource: "record",
+          failure: errors[0] ?? null,
+          recentErrors: errors,
+        }),
+    });
+    renderScreen(<DetailScreen />, {
+      fetchImpl: stub.fetchImpl,
+      route: "/detail/UGURPAY-501",
+      path: "/detail/:ticket",
+    });
+    return stub;
+  }
+
+  it("renders the error's title, detail and time under the step that reported it", async () => {
+    renderFailed([ERROR_HANDOVER, ERROR_SCHEMA]);
+
+    await waitFor(() => expect(screen.getByText("hata — düzeltiliyor")).toBeInTheDocument());
+    const notes = screen.getAllByRole("note", { name: "Adımın verdiği hata" });
+    expect(notes).toHaveLength(2);
+    // Newest first, and the full sentence — nothing clipped.
+    expect(notes[0]).toHaveTextContent("insana devredildi");
+    expect(notes[0]).toHaveTextContent(ERROR_HANDOVER.detail);
+    expect(notes[1]).toHaveTextContent("model çıktısı şemayı tutturamadı");
+    // A time, formatted for the locale: 1 Aug 2026 11:20 UTC, in tr.
+    expect(notes[0]).toHaveTextContent(/1\.08\.2026 11:20/);
+    // Hung under step 3's row, not at the bottom of the list.
+    // The sidebar names the step too; the list's own title carries the class.
+    const row = screen
+      .getAllByText("Analiz + etki matrisi")
+      .find((el) => el.classList.contains("scr-steplist__title"))
+      ?.closest(".scr-steplist__group");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getAllByRole("note")).toHaveLength(2);
+  });
+
+  it("folds a long error behind 'Tamamını göster' and reveals every character", async () => {
+    renderFailed([{ ...ERROR_HANDOVER, detail: LONG_DETAIL }]);
+
+    const toggle = await screen.findByRole("button", { name: "Tamamını göster" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(LONG_DETAIL)).not.toBeInTheDocument();
+
+    await userEvent.click(toggle);
+    expect(screen.getByText(LONG_DETAIL)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Kısalt" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("says so when a failed run has no error line on record", async () => {
+    renderFailed([]);
+
+    await waitFor(() => expect(screen.getByText("hata — düzeltiliyor")).toBeInTheDocument());
+    expect(screen.getByRole("note")).toHaveTextContent(/defterde bir hata satırı yok/);
+  });
+
+  it("survives a BFF that predates the field", async () => {
+    const stub = stubFetch({
+      "/api/studio/runs/UGURPAY-501": () =>
+        json({ ...GATE_DETAIL, state: state("UGURPAY-501", "running", "6a") }),
+    });
+    renderScreen(<DetailScreen />, {
+      fetchImpl: stub.fetchImpl,
+      route: "/detail/UGURPAY-501",
+      path: "/detail/:ticket",
+    });
+
+    await waitFor(() => expect(screen.getByText("şu an burada")).toBeInTheDocument());
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("marks the same lines as errors in the journal tab", async () => {
+    const journal = [
+      ...JOURNAL,
+      {
+        runId: "run-501-aaaaaaaa",
+        seq: 7,
+        at: ERROR_SCHEMA.at,
+        actor: "system",
+        kind: "other",
+        title: ERROR_SCHEMA.title,
+        detail: ERROR_SCHEMA.detail,
+      },
+      {
+        runId: "run-501-aaaaaaaa",
+        seq: 9,
+        at: ERROR_HANDOVER.at,
+        actor: "system",
+        kind: "handover",
+        title: ERROR_HANDOVER.title,
+        detail: ERROR_HANDOVER.detail,
+      },
+    ];
+    renderFailed([ERROR_HANDOVER, ERROR_SCHEMA], journal);
+
+    await userEvent.click(await screen.findByRole("tab", { name: "Ticket defteri" }));
+    await waitFor(() => expect(screen.getByText("Analiz belgesi üretildi")).toBeInTheDocument());
+    // Two error rows badged; the analysis and gate rows are not.
+    expect(screen.getAllByText("hata")).toHaveLength(2);
+    expect(screen.getByText(ERROR_HANDOVER.detail)).toBeInTheDocument();
+  });
+});

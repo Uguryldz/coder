@@ -2,6 +2,8 @@ import {
   JournalActor,
   StepId,
   TicketKey,
+  type JournalEntry,
+  type JournalKind,
   type WorkflowRunState,
   type WorkflowRunStatus,
 } from "@maestro/contracts";
@@ -16,7 +18,7 @@ import { workflowIdFor } from "../gateway.js";
 import { classifyingFields, runIntake } from "../jira-intake.js";
 import { restartDeadRun } from "../run-restart.js";
 import { assertProjectAccess } from "./access.js";
-import { blankAsAbsent } from "./paging.js";
+import { MAX_PAGE_SIZE, blankAsAbsent } from "./paging.js";
 import { pageBody, pageOf, visibleProjects } from "./paging.js";
 
 /**
@@ -362,11 +364,24 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
     //   "record"  — the engine did not, and this is the catalog's last word.
     //               Real progress, possibly stale, NOT a run that never began.
     //   "none"    — neither source has a position to report.
+    // THE ERROR TEXT, beside the verdict. The step list marked a step "hata"
+    // and showed nothing else, because the run row holds no error column and
+    // the engine's own failure record never reaches this process: everything
+    // the activity said before it died is in the JOURNAL (`handOver`,
+    // `guardSchemaError` — packages/workflows/src/impl/outcome.ts). An
+    // operator reading "durum hatalı" with no sentence under it had to open
+    // the journal tab and guess which of forty lines was the reason. So the
+    // last few error lines travel with the header, each attributed to the
+    // step that was current when it was written.
+    const recentErrors = await recentErrorsOrEmpty(deps, request, record.runId);
+
     return reply.code(200).send({
       run: record,
       state,
       stateSource: live !== null ? "engine" : state !== null ? "record" : "none",
       application: app_,
+      failure: recentErrors[0] ?? null,
+      recentErrors,
     });
   });
 
@@ -638,4 +653,132 @@ function ticketParam(params: unknown): string {
   const parsed = z.object({ ticket: TicketKey }).safeParse(params);
   if (!parsed.success) throw badRequest("invalid_ticket_key");
   return parsed.data.ticket;
+}
+
+// ── the run's error lines (from the journal) ──────────────────────────────────
+
+/**
+ * One error the run recorded about itself — a journal line, attributed to the
+ * step that was current when it was written.
+ *
+ * `step` is `null` when the line was written before the workflow's first
+ * `adım …` transition; the screen falls back to the run's own step then.
+ */
+export interface RunFailure {
+  readonly step: StepId | null;
+  readonly kind: JournalKind;
+  readonly title: string;
+  readonly detail: string;
+  readonly at: string;
+  readonly seq: number;
+}
+
+/** How many error lines the detail header carries. Newest first. */
+export const RECENT_ERRORS = 3;
+
+/**
+ * Hard ceiling on how much journal a detail request will read to find its
+ * errors: `MAX_PAGE_SIZE` entries per page, this many pages. A run's journal
+ * is a few dozen lines in practice; the bound exists so a pathological one
+ * cannot turn "open the ticket" into an unbounded scan.
+ */
+const MAX_JOURNAL_PAGES = 25;
+
+/**
+ * Which journal lines are ERRORS, by kind and by title.
+ *
+ * There is no `error` kind in the contract and there must not be one invented
+ * here — the writers are in `packages/workflows` and this is a read. So the
+ * classification names the lines those writers actually produce:
+ *
+ *   · kind `handover`  — "insana devredildi", the reason in `detail`
+ *                        (`outcome.ts:handOver`; auth/schema/policy failures
+ *                        all end here).
+ *   · title words      — "model çıktısı şemayı tutturamadı", "model anahtarı
+ *                        reddedildi" (`outcome.ts`), "üyelik doğrulanamadı"
+ *                        (`gate.ts`), "analiz belgesi eksik"
+ *                        (`analysis-docs.ts`), "tarama bloke etti" (`scan.ts`),
+ *                        "testler kırmızı" (`engineering.ts`), "ai_assist
+ *                        moduna düşüldü" (`outcome.ts`).
+ *
+ * A gate VERDICT ("kapı 5: ret") is a human decision, not an error, and is
+ * excluded by shape even though "ret" is a failure of sorts — showing it under
+ * a red banner would tell an operator their own approval flow had broken.
+ */
+const ERROR_TITLE =
+  /tutturamadı|reddedildi|doğrulanamadı|bulunamadı|başarısız|hata|eksik|kırmızı|bloke|düşüldü/i;
+const GATE_VERDICT = /^kapı \S+: /;
+
+export function isErrorEntry(entry: Pick<JournalEntry, "kind" | "title">): boolean {
+  if (entry.kind === "handover") return true;
+  if (GATE_VERDICT.test(entry.title)) return false;
+  return ERROR_TITLE.test(entry.title);
+}
+
+/** The `adım <step>` transition lines the workflow writes in `goto`. */
+const STEP_LINE = /^adım (\S+)$/;
+
+/**
+ * The last {@link RECENT_ERRORS} error lines of a journal, newest first, each
+ * carrying the step that was current when it was written.
+ *
+ * Entries must be in `seq` order (the reader guarantees it). Step attribution
+ * walks the same order: every `adım N` line moves the cursor, and an error line
+ * takes the cursor's value — which is exactly what the operator wants to know,
+ * "which step said this".
+ */
+export function recentErrorsOf(entries: readonly JournalEntry[]): RunFailure[] {
+  let step: StepId | null = null;
+  const errors: RunFailure[] = [];
+  for (const entry of entries) {
+    const moved = STEP_LINE.exec(entry.title);
+    if (moved !== null && entry.kind === "other") {
+      const parsed = StepId.safeParse(moved[1]);
+      if (parsed.success) step = parsed.data;
+      continue;
+    }
+    if (!isErrorEntry(entry)) continue;
+    errors.push({
+      step,
+      kind: entry.kind,
+      title: entry.title,
+      detail: entry.detail,
+      at: entry.at,
+      seq: entry.seq,
+    });
+  }
+  return errors.slice(-RECENT_ERRORS).reverse();
+}
+
+/**
+ * The run's error lines, or an empty list when the journal cannot be read.
+ *
+ * Same stance as `queryStateOrNull`: the detail header must not 500 because
+ * one of its SIDE sources failed. A journal read error is logged and the
+ * header answers without errors — which the screen renders as "no error text
+ * on record", a true sentence about what this process could see.
+ */
+async function recentErrorsOrEmpty(
+  deps: ResolvedDeps,
+  request: { log: { warn: (obj: unknown, msg: string) => void } },
+  runId: string,
+): Promise<RunFailure[]> {
+  try {
+    const entries: JournalEntry[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < MAX_JOURNAL_PAGES; page += 1) {
+      const result = await deps.read.journal.list(runId, {
+        limit: MAX_PAGE_SIZE,
+        cursor,
+        actor: null,
+      });
+      entries.push(...result.items);
+      cursor = result.nextCursor;
+      if (cursor === null) break;
+    }
+    return recentErrorsOf(entries);
+  } catch (error) {
+    request.log.warn({ err: error, runId }, "journal unreadable; answering without error lines");
+    return [];
+  }
 }

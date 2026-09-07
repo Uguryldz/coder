@@ -92,6 +92,11 @@ const DECISION_ONLY_KEYS: Record<string, string> = {
   // never read and the gate waited forever.
   "jira.command_intake": "komut alımı",
   "jira.poll_seconds": "komut alımı",
+  // Not from a mock screen: the sweep's restart brake counted forever, so a
+  // ticket whose run had died three times stayed in the robot's pool for good
+  // — even after the cause was fixed. The window is what lets a fixed system
+  // try again ("havuzda hiçbir zaman ticket kalamaz").
+  "stuck.restart_window_hours": "M54",
   "killswitch.state": "M58",
   "binding.dry_run_sample_size": "M102",
   "dataclass.policy": "M18/M63",

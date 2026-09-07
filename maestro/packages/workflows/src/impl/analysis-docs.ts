@@ -1,5 +1,6 @@
 import { type AnalysisDoc, PublishTarget, type TicketKey } from "@maestro/contracts";
 import { renderAnalysisMarkdown } from "@maestro/publish";
+import { analysisInstructions, sectionTitlesOf } from "./analysis-template.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { record } from "./record.js";
 
@@ -154,11 +155,15 @@ async function generateDocs(
   ticket: TicketKey,
   analysis: AnalysisDoc,
 ): Promise<readonly AnalysisDocFile[]> {
+  // Bölüm başlıkları Studio şablonundan: belge, operatörün adlandırdığı
+  // bölümlerle çıkar; şablon okunamazsa katalogdaki sabit başlıklar kalır.
+  const sectionTitles = sectionTitlesOf(await analysisInstructions(deps, run, () => undefined));
   const markdown = renderAnalysisMarkdown(analysis, {
     translate: deps.translate,
     locale: run.locale,
     runId: run.runId,
     ticketKey: ticket,
+    ...(Object.keys(sectionTitles).length === 0 ? {} : { sectionTitles }),
   });
 
   // Idempotent: a retried activity replays the first run's receipts instead of

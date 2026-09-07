@@ -6,7 +6,9 @@ import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
+import { analysisTemplateReaderFor } from "../stores/analysis-template-reader.js";
 import { attachmentReaderFor } from "../stores/attachment-reader.js";
+import { PrismaTemplateStore } from "../stores/template.js";
 import { commentReaderFor } from "../stores/comment-reader.js";
 import { docAttacherFor } from "../stores/doc-attacher.js";
 import { statusMoverFor } from "../stores/status-mover.js";
@@ -151,6 +153,14 @@ export async function main(): Promise<void> {
      * analiz eksiz sürer — deftere "ekler okundu" satırı düşmez, o kadar.
      */
     const attachments = attachmentReaderFor(deployment.ports.work);
+    /**
+     * Studio'nun yayınlanmış analiz şablonu: analistin bölüm talimatları ve
+     * belgenin başlıkları. BFF'in okuduğu aynı append-only depo; koşunun
+     * çivilendiği sürüm okunur (M83).
+     */
+    const analysisTemplate = analysisTemplateReaderFor(
+      new PrismaTemplateStore(db.analysisTemplateVersion, db.jiraProjectBinding, db.workflowRun),
+    );
     const workerCore: CoreDeps = {
       ...core,
       execution: execution.runner,
@@ -158,6 +168,7 @@ export async function main(): Promise<void> {
       ...(statusMover === undefined ? {} : { statusMover }),
       ...(comments === undefined ? {} : { comments }),
       ...(attachments === undefined ? {} : { attachments }),
+      analysisTemplate,
     };
 
     if (MISSING_CORE_DEPS.length > 0) {

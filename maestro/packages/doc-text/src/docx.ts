@@ -1,4 +1,4 @@
-import { DOCX_DOCUMENT_ENTRY, DocxReadError, looksLikeZip, readZipEntry } from "./zip.js";
+import { DOCX_DOCUMENT_ENTRY, DocxReadError, looksLikeZip, readZipEntry, zipEntryNames } from "./zip.js";
 
 /**
  * Plain text out of a `.docx`, paragraph per line.
@@ -14,7 +14,33 @@ export function docxToText(bytes: Uint8Array): string {
   if (!looksLikeZip(bytes)) throw new DocxReadError("not a .docx (missing zip signature)");
   const entry = readZipEntry(bytes, DOCX_DOCUMENT_ENTRY);
   if (entry === null) throw new DocxReadError(`archive has no ${DOCX_DOCUMENT_ENTRY}`);
-  return documentXmlToText(Buffer.from(entry).toString("utf8"));
+  const body = documentXmlToText(Buffer.from(entry).toString("utf8"));
+  // Headers and footers carry the document's identity on a bank template —
+  // the institution, the title, the version line — and a reader sees them on
+  // every page. Listed once, before the body, and labelled so the model does
+  // not mistake a running header for a paragraph of the analysis.
+  const chrome = headerFooterText(bytes);
+  return chrome === "" ? body : `${chrome}\n${body}`;
+}
+
+/** `[üstbilgi] …` / `[altbilgi] …` lines from word/header*.xml and word/footer*.xml, deduplicated. */
+export function headerFooterText(bytes: Uint8Array): string {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const name of zipEntryNames(bytes)) {
+    const match = /^word\/(header|footer)\d*\.xml$/.exec(name);
+    if (match === null) continue;
+    const entry = readZipEntry(bytes, name);
+    if (entry === null) continue;
+    const text = documentXmlToText(Buffer.from(entry).toString("utf8"));
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed === "" || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      lines.push(`[${match[1] === "header" ? "üstbilgi" : "altbilgi"}] ${trimmed}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 /** The paragraph walk, separated so a caller holding the XML can reuse it. */

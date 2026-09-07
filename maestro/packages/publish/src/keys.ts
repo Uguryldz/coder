@@ -60,7 +60,7 @@ export const RISK_TIER_KEY_PREFIX = "publish.risk_tier.";
 /** Gate decision label; one key per `GateDecision.decision`. */
 export const DECISION_KEY_PREFIX = "publish.decision.";
 
-export const IMPACT_SOURCES = ["primary_repo_discovery", "repo_card"] as const;
+export const IMPACT_SOURCES = ["primary_repo_discovery", "repo_card", "ticket"] as const;
 export const DECISIONS = ["approve", "reject"] as const;
 
 export const DOC_TITLE_KEY: Record<PublishDocKind, string> = {

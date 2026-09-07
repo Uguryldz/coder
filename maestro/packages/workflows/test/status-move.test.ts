@@ -116,6 +116,26 @@ describe("warn but continue — every refusal is data, never a throw", () => {
    * `already` is not a failure at all — a retried step, or a human who moved
    * the card by hand — and it must read as the non-event it is.
    */
+  /**
+   * "Havuzda hiçbir zaman ticket kalamaz." Taşıma başarısızsa ticket havuzda
+   * kalır ve bunu yalnız defter bilir; ticket'a yazılan yorum, kalan işi
+   * panoya bakan herkese söyler — hangi duruma gidecekti, neden gidemedi.
+   */
+  it("taşınamayan ticket'a görünür bir yorum yazar: hedef durum ve sebep", async () => {
+    const fakes = makeFakes({ statusMove: () => ({ moved: false, reason: "no_transition" }) });
+    await moveTicketStatus(fakes.deps, TICKET, { at: "review", status: "analysisapproval" });
+    expect(fakes.recorded.comments).toHaveLength(1);
+    const body = String(fakes.recorded.comments[0]?.body);
+    expect(body).toContain("analysisapproval");
+    expect(body).toContain("geçiş tanımlı değil");
+  });
+
+  it("'zaten bu durumda' bir arıza değildir — yorum yazılmaz", async () => {
+    const fakes = makeFakes({ statusMove: () => ({ moved: false, reason: "already" }) });
+    await moveTicketStatus(fakes.deps, TICKET, { at: "review", status: "analysisapproval" });
+    expect(fakes.recorded.comments).toEqual([]);
+  });
+
   it("reports an already-there ticket as a reason, not an error", async () => {
     const fakes = makeFakes({ statusMove: () => ({ moved: false, reason: "already" }) });
     const result = await moveTicketStatus(fakes.deps, TICKET, { at: "start", status: "Devam Ediyor" });

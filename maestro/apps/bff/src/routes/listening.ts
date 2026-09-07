@@ -16,6 +16,7 @@ import { realignRules } from "../listening-identity.js";
 import { seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
 import { badRequest, conflict, notFound } from "../errors.js";
+import { poolExitGaps } from "../listening-pool.js";
 import { assertWritable } from "../platform/propose.js";
 import { unwired } from "./unwired.js";
 
@@ -179,6 +180,21 @@ const TestBody = z
  * database guarantee, enforced against every client including a hand-rolled
  * curl, instead of a rule the Studio form happens to follow.
  */
+/**
+ * Havuzlu (statü seçili) bir kural, ticket'ın havuzdan çıkacağı durumları
+ * eşlemeden KAYDEDİLEMEZ — bkz. `listening-pool.ts`. 400 `listening_pool_without_exit`,
+ * eksik alanlar `details.missing` içinde adlandırılmış.
+ */
+function assertPoolExits(record: Pick<ListeningRuleRecord, "allowedStatuses" | "statusMap" | "flowType" | "gateSteps">): void {
+  const missing = poolExitGaps({
+    allowedStatuses: record.allowedStatuses,
+    statusMap: record.statusMap,
+    flowType: record.flowType,
+    gateSteps: record.gateSteps,
+  });
+  if (missing.length > 0) throw badRequest("listening_pool_without_exit", { missing });
+}
+
 function storedRule<T extends { matchKind: string; matchValue: string }>(body: T): T {
   return body.matchKind === "assigned" ? { ...body, matchValue: ASSIGNED_MATCH_VALUE } : body;
 }
@@ -227,6 +243,8 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
             // devredilen de yok.
             lastRestarted: 0,
             lastHandedOver: 0,
+            lastLeftInPool: 0,
+            leftInPoolKeys: [],
           }
         : read(),
     );
@@ -409,6 +427,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ruleId,
       ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
     };
+    assertPoolExits(record);
     try {
       await store.put(record);
     } catch (error) {
@@ -583,6 +602,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ruleId: params.data.ruleId,
       ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
     };
+    assertPoolExits(record);
     try {
       await store.put(record);
     } catch (error) {

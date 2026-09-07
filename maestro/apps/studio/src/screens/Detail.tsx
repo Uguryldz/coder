@@ -8,7 +8,7 @@ import { CostTab } from "./detail/CostTab.tsx";
 import { JournalTab } from "./detail/JournalTab.tsx";
 import { RunSidebar } from "./detail/RunSidebar.tsx";
 import { StepList } from "./detail/StepList.tsx";
-import { isTerminal } from "./detail/run-state.ts";
+import { isTerminal, recentErrorsOf } from "./detail/run-state.ts";
 import { NotAvailable, QueryState } from "./shared/QueryState.tsx";
 import { RunStatusCell } from "./shared/RunStatusCell.tsx";
 import { useRunDetail } from "./shared/runs.ts";
@@ -22,10 +22,11 @@ import { useRunDetail } from "./shared/runs.ts";
  * application the ticket was matched to. 404 `no_run` and 403 `project_access`
  * surface through QueryState as translated sentences.
  *
- * Four tabs, each with a data source: steps (the state), journal and analysis
- * (`/journal`), consumption (`/cost`). There is no change-summary or test-result
- * endpoint, so there is no tab for them — a tab that can only say "elsewhere"
- * is not a tab.
+ * Four tabs, each with a data source: steps (the state, plus the run's last
+ * error lines — `recentErrors`, derived by the BFF from the journal), journal
+ * and analysis (`/journal`), consumption (`/cost`). There is no change-summary
+ * or test-result endpoint, so there is no tab for them — a tab that can only
+ * say "elsewhere" is not a tab.
  */
 
 const TAB_IDS = ["steps", "journal", "analysis", "cost"] as const;
@@ -76,7 +77,7 @@ export function DetailScreen(): ReactNode {
                       {detail.stateSource === "record" && !isTerminal(detail.state) && (
                         <p className="scr-hint scr-hint--warn">{t("detail.steps.from_record")}</p>
                       )}
-                      <StepList run={detail.state} />
+                      <StepList run={detail.state} errors={recentErrorsOf(detail)} />
                     </>
                   )}
                 </TabPanel>

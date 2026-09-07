@@ -17,6 +17,8 @@ import {
   UNWIRED_CAPABILITY_LINES,
   type BffDeps,
   type DeploymentConfigFacts,
+  parseGateSteps,
+  poolExitGaps,
 } from "@maestro/bff";
 import { auditVariantModels, createDb } from "@maestro/db";
 import { FlowType, type TicketKey } from "@maestro/contracts";
@@ -635,7 +637,14 @@ export async function main(): Promise<void> {
            */
           ...(await (async () => {
             const kurallar = await db.listeningRule.findMany({
-              select: { statusMapJson: true, assigneeAccountId: true },
+              select: {
+                statusMapJson: true,
+                assigneeAccountId: true,
+                allowedStatusesJson: true,
+                flowType: true,
+                gateStepsJson: true,
+                enabled: true,
+              },
             });
             // Bağlantıların öğrendiği bot kimliği — `botAccountIdOf`un okuduğu
             // alanın aynısı, burada Prisma satırından. Okunamazsa `null`, ve o
@@ -669,6 +678,23 @@ export async function main(): Promise<void> {
               statusMaps: {
                 ruleCount: kurallar.length,
                 mappedRuleCount: kurallar.filter((kural) => kural.statusMapJson != null).length,
+                // Havuz çıkışı (bkz. `listening-pool.ts`): yalnız AÇIK kurallar —
+                // kapalı kuralın havuzu yok.
+                ...(() => {
+                  const havuzlu = kurallar
+                    .filter((kural) => kural.enabled)
+                    .map((kural) => ({
+                      allowedStatuses: parseAllowedStatuses(kural.allowedStatusesJson),
+                      statusMap: parseStatusMap(kural.statusMapJson),
+                      flowType: kural.flowType,
+                      gateSteps: parseGateSteps(kural.gateStepsJson),
+                    }))
+                    .filter((kural) => kural.allowedStatuses !== null);
+                  return {
+                    poolRuleCount: havuzlu.length,
+                    poolWithoutExitCount: havuzlu.filter((kural) => poolExitGaps(kural).length > 0).length,
+                  };
+                })(),
                 /**
                  * KAPI ONAY YOLU — kanalın KENDİ okuyucusundan sayılıyor.
                  *
@@ -1063,7 +1089,7 @@ export async function main(): Promise<void> {
   const knownRuns = async (): Promise<readonly KnownRun[]> =>
     (
       await db.workflowRun.findMany({
-        select: { ticketKey: true, step: true, status: true },
+        select: { ticketKey: true, step: true, status: true, updatedAt: true },
         /**
          * EMEKLİYE AYRILMIŞ SATIRLAR SAYILMAZ — ve bu, `take: 500` yüzünden
          * bir kolaylık değil bir DOĞRULUK meselesi.
@@ -1253,8 +1279,20 @@ export async function main(): Promise<void> {
        * söylüyor.
        */
       restart: {
-        priorRestarts: async (ticket: TicketKey): Promise<number> =>
-          db.workflowRun.count({ where: { ticketKey: ticket, archivedAt: { not: null } } }),
+        priorRestarts: async (ticket: TicketKey): Promise<number> => {
+          // Pencereli sayım (bkz. `stuck.restart_window_hours`): pencere
+          // dışındaki eski yeniden başlatmalar freni doldurmaz — düzeltilmiş
+          // bir sistem ertesi gün yeniden dener, ticket havuzda çürümez.
+          const row = await db.paramVersion.findFirst({
+            where: { key: "stuck.restart_window_hours" },
+            orderBy: { version: "desc" },
+          });
+          const hours = typeof row?.valueJson === "number" && row.valueJson > 0 ? row.valueJson : 24;
+          const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+          return db.workflowRun.count({
+            where: { ticketKey: ticket, archivedAt: { not: null, gte: since } },
+          });
+        },
         restart: async (ticket: TicketKey) => {
           const result = await restartDeadRun(resolveDeps(deps), {
             ticket,

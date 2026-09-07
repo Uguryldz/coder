@@ -1,5 +1,5 @@
 export * from "./zip.js";
-export { docxToText, documentXmlToText } from "./docx.js";
+export { docxToText, documentXmlToText, headerFooterText } from "./docx.js";
 export { pdfToText } from "./pdf.js";
 
 import { docxToText } from "./docx.js";

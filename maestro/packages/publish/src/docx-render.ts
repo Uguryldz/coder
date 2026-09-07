@@ -139,6 +139,15 @@ async function patchTemplate(
     };
   }
 
+  // A template built for nine sections, a document that has seven: the two
+  // spare slots would otherwise print their own placeholder text into the
+  // bank's document. Emptied, never invented.
+  for (const token of found) {
+    if (/^\{\{bolum:\d+\}\}$/.test(token) && !(patchKey(token) in patches)) {
+      patches[patchKey(token)] = { type: PatchType.PARAGRAPH, children: [new TextRun("")] };
+    }
+  }
+
   const bodyChildren = [...model.preamble.flatMap(blockToDocx), ...overflow.flatMap(sectionToDocx)];
   if (found.has(FIXED_PLACEHOLDERS.body)) {
     patches[patchKey(FIXED_PLACEHOLDERS.body)] = {

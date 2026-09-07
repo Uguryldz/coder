@@ -148,6 +148,9 @@ export interface SweepStatus {
   /** Son turda otomatik yeniden başlatılan ölü koşu / insana devredilen ticket. Eski BFF'te yok. */
   readonly lastRestarted?: number;
   readonly lastHandedOver?: number;
+  /** Koşusu bitmiş ama hâlâ havuz durumunda duran ticket'lar (son tur). */
+  readonly lastLeftInPool?: number;
+  readonly leftInPoolKeys?: readonly string[];
 }
 
 /** Bir elle taramanın cevabı: ne aldı, turun sayıları. */

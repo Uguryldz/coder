@@ -229,6 +229,20 @@ export const DEFAULT_PARAM_DEFINITIONS: readonly ParamDefinition[] = [
     defaultValue: { gateRejections: 3, ciFailures: 3, action: "handover_ai_assist" },
   },
   {
+    // The sweep restarts a ticket whose run died (or was handed over) up to
+    // three times — and used to count those restarts FOREVER. After the
+    // third, a ticket stayed in the robot's pool for good, even after the
+    // cause (a model that could not meet the schema, a Jira outage) was
+    // fixed. The count now looks back over this window only: a fixed system
+    // gets to try again the next day, three times a day at most.
+    key: "stuck.restart_window_hours",
+    scope: "global",
+    type: "number",
+    guarded: false,
+    descriptionKey: "params.description.stuck_restart_window_hours",
+    defaultValue: 24,
+  },
+  {
     // M19 — quota/budget warning threshold. 100% stops; this is the shout
     // before the stop, so an operator can top up the pool in time (M55).
     key: "quota.warn_pct",

@@ -160,6 +160,13 @@ export interface StatusMapFacts {
   /** Statü eşlemesi DOLU olan kural sayısı. */
   readonly mappedRuleCount: number;
   /**
+   * Havuz tanımlayan (statü seçili, AÇIK) kural sayısı ve içlerinden ticket'ın
+   * havuzdan çıkacağı durumları eşlemeyenler (bkz. `listening-pool.ts`).
+   * Kayıt artık bunları reddediyor; eski kurallar için burada görünür.
+   */
+  readonly poolRuleCount?: number;
+  readonly poolWithoutExitCount?: number;
+  /**
    * KAPI KARARINI STATÜYLE de kabul eden kural sayısı — okuma tarafı.
    *
    * `mappedRuleCount` ile aynı satıra sığdırılmadı ve ayrı bir bulgu oldu,
@@ -261,6 +268,7 @@ export function buildConfigFindings(input: ConfigHealthInput): readonly ConfigFi
     ...variantFindings(input.variants),
     ...statusMapFindings(input.statusMaps, input.deployment),
     ...gateChannelFindings(input.statusMaps),
+    ...poolExitFindings(input.statusMaps),
     ...gateGroupFindings(input.gateGroups),
     ...ruleIdentityFindings(input.ruleIdentity),
   ];
@@ -601,6 +609,43 @@ function gateGroupFindings(facts: GateGroupFacts | null): ConfigFinding[] {
         fixKey: null,
       };
   return [finding];
+}
+
+/**
+ * Havuz çıkışı: "Maestro'nun havuzunda hiçbir zaman ticket kalamaz." Havuzlu
+ * bir kural işi bitince ticket'ı nereye taşıyacağını söylemiyorsa robot işini
+ * yapar, ticket havuzda kalır, pano "taşımadı" der. Kayıt bunu artık reddediyor;
+ * bu bulgu eski kurallar için.
+ */
+function poolExitFindings(maps: StatusMapFacts | null): ConfigFinding[] {
+  if (maps === null || maps.poolRuleCount === undefined || maps.poolWithoutExitCount === undefined) return [];
+  if (maps.poolRuleCount === 0) {
+    return [
+      { id: "pool_exit", severity: "bilgi", value: "havuz-yok", detailKey: "config.detail.pool_exit.none", fixKey: null },
+    ];
+  }
+  if (maps.poolWithoutExitCount > 0) {
+    return [
+      {
+        id: "pool_exit",
+        severity: "sorun",
+        value: "eksik",
+        detailKey: "config.detail.pool_exit.missing",
+        detailParams: { rules: String(maps.poolWithoutExitCount) },
+        fixKey: "config.fix.pool_exit.missing",
+      },
+    ];
+  }
+  return [
+    {
+      id: "pool_exit",
+      severity: "iyi",
+      value: "tanimli",
+      detailKey: "config.detail.pool_exit.ok",
+      detailParams: { rules: String(maps.poolRuleCount) },
+      fixKey: null,
+    },
+  ];
 }
 
 function gateChannelFindings(maps: StatusMapFacts | null): ConfigFinding[] {

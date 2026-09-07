@@ -406,6 +406,30 @@ export interface CommentReader {
  * `@maestro/doc-text` ile aktivitenin İÇİNDE yapılır; ekler Temporal
  * geçmişine hiç girmez (2 MB payload sınırı, determinizm).
  */
+/**
+ * Studio'da yayınlanan ANALİZ ŞABLONU — analistin bölüm başlıkları ve AI
+ * talimatları.
+ *
+ * ── HANGİ BOŞLUĞU KAPATIYOR ─────────────────────────────────────────────────
+ * Üretim yolu analiste yalnız JSON şemasını gösteriyordu: alan adları ve
+ * tipler, tek satır talimat yok. Studio'nun "Analiz şablonu" ekranı ise
+ * "başlıklar ve AI talimatları motora bağlıdır" diyordu — pilotta doğruydu,
+ * Temporal'da değildi. Bu seam yayınlanan sürümü (koşuya çivilenen
+ * `templateVersion`) okur; `analysis.ts` bölümleri belgenin alanlarına SIRAYLA
+ * eşleyip talimat olarak `input`'a koyar ve belge başlıklarını da buradan alır.
+ * Opsiyonel ve fail-soft: okunamazsa analist bugünkü gibi şemayla çalışır.
+ */
+export interface AnalysisTemplateSectionText {
+  readonly key: string;
+  readonly title: string;
+  readonly aiInstruction: string;
+}
+
+export interface AnalysisTemplateReader {
+  /** `version` bir sürüm numarasıdır ("2"); bulunamazsa `null` — uydurulmaz. */
+  sections(version: string): Promise<readonly AnalysisTemplateSectionText[] | null>;
+}
+
 export interface AttachmentMeta {
   readonly filename: string;
   readonly mimeType: string;
@@ -525,6 +549,8 @@ export interface ActivityDeps {
   readonly comments?: CommentReader;
   /** Ticket ekleri (metin/Word/PDF) — bkz. `AttachmentReader`. */
   readonly attachments?: AttachmentReader;
+  /** Studio'nun yayınlanmış analiz şablonu — bkz. `AnalysisTemplateReader`. */
+  readonly analysisTemplate?: AnalysisTemplateReader;
   readonly translate: Translate;
   readonly now: () => Date;
 }

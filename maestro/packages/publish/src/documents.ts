@@ -46,7 +46,23 @@ export interface DocContext {
   locale: Locale;
   runId: RunId;
   ticketKey: TicketKey;
+  /**
+   * Section headings from the institution's published analysis template
+   * (Studio), keyed by the document field. Absent → the catalogue's fixed
+   * headings. Numbering is the renderer's: the template names, the document
+   * counts.
+   */
+  sectionTitles?: Partial<Record<AnalysisSectionField, string>>;
 }
+
+export type AnalysisSectionField =
+  | "purpose"
+  | "scope"
+  | "impactMatrix"
+  | "acceptanceCriteria"
+  | "uiApiChanges"
+  | "testApproach"
+  | "riskAndRollback";
 
 /**
  * Analysis document (M43): the seven mandatory sections, in order, rendered
@@ -67,28 +83,31 @@ export function renderAnalysisMarkdown(input: AnalysisDoc, ctx: DocContext): str
     templateVersion: doc.templateVersion,
   });
 
-  md.heading(2, label(tr, locale, MSG.sectionPurpose));
+  md.heading(2, heading(ctx, "purpose", 1, MSG.sectionPurpose));
   md.paragraph(doc.purpose);
 
-  md.heading(2, label(tr, locale, MSG.sectionScope));
+  md.heading(2, heading(ctx, "scope", 2, MSG.sectionScope));
   md.heading(3, label(tr, locale, MSG.labelScopeIncluded));
   md.bullets(doc.scope.included);
   md.heading(3, label(tr, locale, MSG.labelScopeExcluded));
   md.bullets(doc.scope.excluded, label(tr, locale, MSG.labelNone));
 
-  md.heading(2, label(tr, locale, MSG.sectionImpact));
-  md.bullets(doc.impactMatrix.map((cell) => impactLine(cell, ctx)));
+  md.heading(2, heading(ctx, "impactMatrix", 3, MSG.sectionImpact));
+  // An analysis-only run may honestly have no repo-backed impact to list;
+  // the section then says "none" rather than vanishing, so a reader knows
+  // the question was asked.
+  md.bullets(doc.impactMatrix.map((cell) => impactLine(cell, ctx)), label(tr, locale, MSG.labelNone));
 
-  md.heading(2, label(tr, locale, MSG.sectionAcceptance));
+  md.heading(2, heading(ctx, "acceptanceCriteria", 4, MSG.sectionAcceptance));
   md.bullets(doc.acceptanceCriteria);
 
   // `prose`, not `paragraph`: these two are the free-text sections the model
   // writes at length, and it writes them in markdown. Escaping that markdown
   // published the asterisks and ran the bullets together (see `Markdown.prose`).
-  md.heading(2, label(tr, locale, MSG.sectionUiApi));
+  md.heading(2, heading(ctx, "uiApiChanges", 5, MSG.sectionUiApi));
   md.prose(doc.uiApiChanges);
 
-  md.heading(2, label(tr, locale, MSG.sectionTestApproach));
+  md.heading(2, heading(ctx, "testApproach", 6, MSG.sectionTestApproach));
   md.prose(doc.testApproach);
 
   /**
@@ -101,7 +120,7 @@ export function renderAnalysisMarkdown(input: AnalysisDoc, ctx: DocContext): str
    * (risk, mitigation, rollback) stay a labelled list, because a reviewer does
    * compare those three against each other.
    */
-  md.heading(2, label(tr, locale, MSG.sectionRisk));
+  md.heading(2, heading(ctx, "riskAndRollback", 7, MSG.sectionRisk));
   md.paragraph(
     `${label(tr, locale, MSG.labelRiskTier)}: ${label(tr, locale, `${RISK_TIER_KEY_PREFIX}${doc.riskTier}`)} — ${doc.riskReason}`,
   );
@@ -113,6 +132,17 @@ export function renderAnalysisMarkdown(input: AnalysisDoc, ctx: DocContext): str
   md.bullets(doc.clarificationsUsed, label(tr, locale, MSG.labelNone));
 
   return md.toString();
+}
+
+/**
+ * A section heading: the template's title when the institution named one,
+ * numbered the way the catalogue's own headings are ("3. Etki analizi"), so
+ * the corporate Word template's numbered slots read the same either way.
+ */
+function heading(ctx: DocContext, field: AnalysisSectionField, number: number, key: string): string {
+  const custom = ctx.sectionTitles?.[field]?.trim();
+  if (custom === undefined || custom === "") return label(ctx.translate, ctx.locale, key);
+  return `${String(number)}. ${custom.replace(/^\d+[.)]\s*/, "")}`;
 }
 
 function impactLine(cell: ImpactCell, ctx: DocContext): string {

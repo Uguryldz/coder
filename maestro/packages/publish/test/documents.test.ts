@@ -79,8 +79,31 @@ describe("analysis document (M43)", () => {
     expect(() => renderAnalysisMarkdown(incomplete as AnalysisDoc, ctx)).toThrow();
   });
 
-  it("refuses an empty impact matrix", () => {
-    expect(() => renderAnalysisMarkdown({ ...ANALYSIS, impactMatrix: [] }, ctx)).toThrow();
+  it("renders an empty impact matrix as 'none' — an analysis-only run has nothing repo-backed to list", () => {
+    const md = renderAnalysisMarkdown({ ...ANALYSIS, impactMatrix: [] }, ctx);
+    const impact = md.split("## tr:publish.section.impact")[1] ?? "";
+    expect(impact.split("## ")[0]).toContain("tr:publish.label.none");
+  });
+
+  it("labels a ticket-sourced impact cell honestly and never as a repo read", () => {
+    const md = renderAnalysisMarkdown(
+      { ...ANALYSIS, impactMatrix: [{ appId: "BOA", impacted: true, summary: "rapor ekranı", source: "ticket" }] },
+      ctx,
+    );
+    expect(md).toContain("BOA");
+    // The renderer escapes `_` in labels (markdown), hence the backslash.
+    expect(md).toContain("tr:publish.impact\\_source.ticket");
+    expect(md).not.toContain("impact\\_source.repo\\_card");
+  });
+
+  it("takes section headings from the institution's template when given, keeping the numbering", () => {
+    const md = renderAnalysisMarkdown(ANALYSIS, {
+      ...ctx,
+      sectionTitles: { purpose: "Amaç ve iş değeri", impactMatrix: "3. Etki analizi (PDD)" },
+    });
+    expect(md).toContain("## 1. Amaç ve iş değeri");
+    expect(md).toContain("## 3. Etki analizi (PDD)");
+    expect(md).toContain("## tr:publish.section.scope");
   });
 
   it("neutralises markdown injected through analysis text", () => {

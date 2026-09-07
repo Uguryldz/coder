@@ -48,6 +48,60 @@ const RULE = {
   enabled: true,
 } as const;
 
+/**
+ * "Maestro'nun havuzunda hiçbir zaman ticket kalamaz." Statü seçen (havuzlu)
+ * bir kural, ticket'ın havuzdan çıkacağı durumları eşlemeden kaydedilemez —
+ * yoksa robot işini bitirir, ticket havuzda kalır, pano "taşımadı" der.
+ */
+describe("havuzlu kural çıkışsız kaydedilemez (listening_pool_without_exit)", () => {
+  const POOLED = { ...RULE, flowType: "analiz", allowedStatuses: ["analiz"] } as const;
+
+  it("statü seçili ama eşleme yok → 400, eksikler adlandırılmış", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    const res = await post(h, "/studio/listening-rules", token, POOLED);
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { error: string; details?: { missing?: string[] } };
+    expect(body.error).toBe("listening_pool_without_exit");
+    expect(body.details?.missing).toEqual(["statusMap"]);
+  });
+
+  it("eşleme var ama geri/ileri çıkış eksik → 400, hangisi eksik yazılı", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    const res = await post(h, "/studio/listening-rules", token, { ...POOLED, statusMap: { onStart: "analiz" } });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { details: { missing: string[] } }).details.missing).toEqual(["onNeedInfo", "onReview"]);
+  });
+
+  it("geri (onNeedInfo) + ileri (onReview) çıkışı olan havuzlu kural kaydedilir", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    const res = await post(h, "/studio/listening-rules", token, {
+      ...POOLED,
+      statusMap: { onNeedInfo: "todo", onReview: "analysisapproval" },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("talep sahibine geri atama, geri çıkış sayılır; kapısız kural için ileri çıkış onDone", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    const res = await post(h, "/studio/listening-rules", token, {
+      ...POOLED,
+      gateSteps: { steps: [] },
+      statusMap: { reassignOnNeedInfo: true, onDone: "development" },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("statü seçmeyen (atamayla çalışan) kuralı ilgilendirmez", async () => {
+    const h = await harness();
+    const token = await admin(h);
+    expect((await post(h, "/studio/listening-rules", token, RULE)).statusCode).toBe(201);
+  });
+});
+
 describe("POST /studio/listening-rules", () => {
   it("creates a rule and assigns it an id", async () => {
     const h = await harness();

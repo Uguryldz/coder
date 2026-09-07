@@ -429,6 +429,26 @@ describe("discoverOnce", () => {
     expect(skip).toContain("adım 5");
   });
 
+  /**
+   * "Havuzda hiçbir zaman ticket kalamaz." Koşusu bitmiş (tamamlandı / hatalı /
+   * devredildi) ama hâlâ havuzda duran ticket, kuralın ihlalidir: sayılır,
+   * adlandırılır, tarama bandı gösterir. Kapıda bekleyen ihlal değildir.
+   */
+  it("koşusu bitmiş ama havuzda duran ticket'ı sayar ve adlandırır", async () => {
+    const jql = jqlFor(RULE)!;
+    await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1", "OPS-2", "OPS-3"] },
+      known: [
+        { ticket: "OPS-1", step: "3", status: "fail" },
+        { ticket: "OPS-2", step: "13", status: "done" },
+        { ticket: "OPS-3", step: "5", status: "gate" },
+      ],
+    });
+    expect(discoveryStatus().lastLeftInPool).toBe(2);
+    expect(discoveryStatus().leftInPoolKeys).toEqual(["OPS-1", "OPS-2"]);
+  });
+
   it("düz anahtar listesi de çalışır — satır eskisi gibi yalnız 'koşusu var' der", async () => {
     const jql = jqlFor(RULE)!;
     const { started, logs } = await run({

@@ -628,3 +628,27 @@ describe("kapı onay grubu satırı", () => {
     expect(finding.value).not.toBe("eslenmemis");
   });
 });
+
+
+/**
+ * Havuz çıkışı bulgusu: havuzlu kural sayısı ve çıkışsız olanlar. Gerçekler
+ * verilmemişse (eski bir BFF, ya da kurallar okunamadı) bulgu HİÇ çıkmaz —
+ * sekiz/dokuz satırlık mevcut tabloyu değiştirmez.
+ */
+describe("pool_exit bulgusu", () => {
+  it("çıkışsız havuzlu kural varsa SORUN; hepsi tanımlıysa iyi; havuz yoksa bilgi; gerçek yoksa satır yok", () => {
+    const withMaps = (maps: Record<string, number>) =>
+      buildConfigFindings({
+        ...HEALTHY,
+        statusMaps: { ruleCount: 3, mappedRuleCount: 2, gateStatusRuleCount: 1, gateStatusConflictCount: 0, ...maps },
+      }).find((f) => f.id === "pool_exit");
+    expect(withMaps({ poolRuleCount: 2, poolWithoutExitCount: 1 })).toMatchObject({
+      severity: "sorun",
+      detailKey: "config.detail.pool_exit.missing",
+      fixKey: "config.fix.pool_exit.missing",
+    });
+    expect(withMaps({ poolRuleCount: 2, poolWithoutExitCount: 0 })).toMatchObject({ severity: "iyi" });
+    expect(withMaps({ poolRuleCount: 0, poolWithoutExitCount: 0 })).toMatchObject({ severity: "bilgi" });
+    expect(withMaps({})).toBeUndefined();
+  });
+});

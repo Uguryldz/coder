@@ -1,3 +1,4 @@
+import { AppId } from "@maestro/contracts";
 import {
   AnalysisDoc,
   NonEmpty,
@@ -14,6 +15,7 @@ import type { ActivityDeps, RunContext } from "./deps.js";
 import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { analystGuidance } from "./guidance.js";
 import { ticketAttachments } from "./attachments.js";
+import { analysisInstructions, analysisRules } from "./analysis-template.js";
 import { analystPersona } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
@@ -183,6 +185,11 @@ function assertDocument(run: RunContext, doc: AnalysisDoc): void {
       nonRetryable: true,
     });
   }
+  // A repo-backed run must say what it touches; the schema no longer forces
+  // a row (an analysis-only run has none to give), so the run decides here.
+  if (run.app !== null && doc.impactMatrix.length === 0) {
+    throw new Error("analysis names no impacted application although the run has a repository");
+  }
 }
 
 /**
@@ -349,6 +356,11 @@ export async function writeAnalysis(
   // eksiz ticket için bit bit aynı kalır. Okunan ekler deftere yazılır ki
   // operatör analizin neyi gördüğünü bilsin (ve neyi göremediğini).
   const attachments = await ticketAttachments(deps, ticket);
+  // Studio'da yayınlanan şablonun başlık + talimatları, belgenin alanlarına
+  // sırayla eşlenmiş; ve şemanın söyleyemediği kurallar (dil, sürüm, deposuz
+  // koşuda etki matrisi). Okunamazsa alan gitmez, analist şemayla çalışır.
+  const instructions = await analysisInstructions(deps, run);
+  const rules = analysisRules(run);
   if (attachments.length > 0) {
     await record(deps, run, {
       kind: "other",
@@ -372,6 +384,10 @@ export async function writeAnalysis(
         input: {
           ...(persona === undefined ? {} : { persona }),
           ...(guidance.length === 0 ? {} : { guidance }),
+          // Rol ve kurum bilgisinden SONRA, talebin ÖNÜNDE: önce kim olduğun,
+          // sonra kurallar ve bölüm talimatları, sonra analiz edilecek talep.
+          rules,
+          ...(instructions === null ? {} : { template: instructions }),
           // `appId` is the ONLY repo-derived fact in this prompt — everything
           // else (locale, template pin, the ticket's own text) holds without a
           // repository. An analysis-only run omits it rather than sending a
@@ -478,6 +494,11 @@ export async function fanOutChildren(
   // application, and each honestly gets its child ticket.
   const impacted = analysis.impactMatrix
     .filter((cell) => cell.impacted && (run.app === null || cell.appId !== run.app.appId))
+    // Only a REPO-BACKED cell with a registry-shaped id is a work item. A
+    // `ticket` cell ("BOA", "kredi tahsis") is a statement in the document —
+    // there is no application to open a child under, and a child ticket
+    // labelled `app:BOA` would be an invented assignment.
+    .filter((cell) => cell.source !== "ticket" && AppId.safeParse(cell.appId).success)
     .sort((a, b) => a.appId.localeCompare(b.appId));
 
   const children: TicketKey[] = [];

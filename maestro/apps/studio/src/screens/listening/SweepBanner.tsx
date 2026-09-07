@@ -112,6 +112,14 @@ export function SweepBanner({ status, statusError, onRetryStatus, canWrite, run 
           {t("listening.sweep.handed_over", { count: String(status.lastHandedOver ?? 0) })}
         </div>
       )}
+      {status.enabled && (status.lastLeftInPool ?? 0) > 0 && (
+        <div style={{ marginTop: 4, color: "var(--amber)" }}>
+          {t("listening.sweep.left_in_pool", {
+            count: String(status.lastLeftInPool ?? 0),
+            tickets: (status.leftInPoolKeys ?? []).join(", "),
+          })}
+        </div>
+      )}
       {status.enabled && status.lastError !== null && (
         <div style={{ marginTop: 4, color: "var(--red)" }}>
           {t("listening.sweep.error")} <span className="scr-mono">{status.lastError}</span>

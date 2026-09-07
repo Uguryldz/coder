@@ -101,6 +101,19 @@ export interface KnownRun {
   readonly step?: string;
   /** Koşunun durumu (`WorkflowRunStatus`), ör. "gate". Bilinmiyorsa boş. */
   readonly status?: string;
+  /** Koşunun son güncellemesi. Bilinmiyorsa yok. */
+  readonly updatedAt?: string | Date;
+}
+
+/**
+ * Koşusu BİTMİŞ olduğu hâlde havuzda duran ticket: işlem yapıldı ama ticket
+ * ileri ya da geri oynamadı. Operatörün kuralı "havuzda hiçbir zaman ticket
+ * kalamaz"; bu yardımcı o kuralın ihlalini tanır. Kapıda bekleyen (`gate`) ya
+ * da çalışan koşu ihlal değildir — işi bitmemiştir.
+ */
+const FINISHED_RUN_STATUSES: ReadonlySet<string> = new Set(["done", "fail", "failed", "handover", "cancelled"]);
+export function finishedButPooled(run: KnownRun): boolean {
+  return FINISHED_RUN_STATUSES.has((run.status ?? "").trim());
 }
 
 /**
@@ -373,6 +386,9 @@ export interface DiscoveryStatus {
    * kötü bir sessizlik.
    */
   readonly lastHandedOver: number;
+  /** Son turda havuzda kalan (koşusu bitmiş) ticket sayısı ve ilk on anahtar. */
+  readonly lastLeftInPool: number;
+  readonly leftInPoolKeys: readonly string[];
 }
 
 const status: { current: DiscoveryStatus } = {
@@ -386,6 +402,8 @@ const status: { current: DiscoveryStatus } = {
     poolRemaining: null,
     lastRestarted: 0,
     lastHandedOver: 0,
+    lastLeftInPool: 0,
+    leftInPoolKeys: [],
   },
 };
 
@@ -668,6 +686,8 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
   let skippedRules = 0;
   /** Tickets a rule matched that already carry a run — the sweep's usual case. */
   let alreadyKnown = 0;
+  // Koşusu bitmiş ama hâlâ havuzda duran ticket'lar (bkz. `leftInPool`).
+  const stuckInPool: string[] = [];
   /**
    * Teşhis sorgusu atılmış projeler — TUR BAŞINA PROJE BAŞINA EN FAZLA BİR KEZ.
    *
@@ -970,6 +990,12 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
          */
         if (knownRun !== undefined) {
           log(`[keşif] ${key} atlandı: koşusu var${runWhere(knownRun)}`);
+          if (finishedButPooled(knownRun)) {
+            // İşi bitmiş, ticket hâlâ havuzda: "havuzda ticket kalamaz"
+            // kuralının ihlali. Sayılır ve adlandırılır; tur özeti ile
+            // tarama bandı bunu operatöre söyler.
+            stuckInPool.push(key);
+          }
         }
         continue;
       }
@@ -1067,6 +1093,8 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
     lastStarted: started.length,
     lastRestarted: restarted,
     lastHandedOver: handedOver,
+    lastLeftInPool: stuckInPool.length,
+    leftInPoolKeys: stuckInPool.slice(0, 10),
     // `null` = "sınıra hiç takılmadık, havuz boşaldı". Sınıra takıldıysak
     // sayı verilir — `0` bile, çünkü `0` da "tekrar bak" demek: takılan tur
     // kalan kuralları aramamıştır.
@@ -1169,7 +1197,9 @@ export function classifyingFieldsOf(issue: unknown): {
 /** Stamp the round's outcome onto the status the panel reads. */
 function record(
   round: Pick<DiscoveryStatus, "lastError" | "rulesSearched" | "lastStarted"> &
-    Partial<Pick<DiscoveryStatus, "poolRemaining" | "lastRestarted" | "lastHandedOver">>,
+    Partial<
+      Pick<DiscoveryStatus, "poolRemaining" | "lastRestarted" | "lastHandedOver" | "lastLeftInPool" | "leftInPoolKeys">
+    >,
 ): void {
   status.current = {
     ...status.current,
@@ -1179,6 +1209,9 @@ function record(
     // ekranda durmamalı. Her tur kendi sayısını yazar; yokluk sıfırdır.
     lastRestarted: round.lastRestarted ?? 0,
     lastHandedOver: round.lastHandedOver ?? 0,
+    // Aynı kural: havuzda kalan, her turun kendi cevabıdır.
+    lastLeftInPool: round.lastLeftInPool ?? 0,
+    leftInPoolKeys: round.leftInPoolKeys ?? [],
     // HER TUR BU ALANI YENİDEN YAZAR — `...round` alanı taşımasa bile.
     // Yoksa bir önceki turun "30 iş kaldı" cevabı, kalanı olmayan bir turdan
     // sonra ekranda durmaya devam eder ve operatör var olmayan bir birikimi

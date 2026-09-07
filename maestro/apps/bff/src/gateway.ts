@@ -167,6 +167,21 @@ export interface RunGateway {
    * column and the journal only holds what the activity managed to write.
    */
   failureOf?(workflowId: string): Promise<EngineFailure | null>;
+  /**
+   * The execution's status from the engine's own description — the honest
+   * "is it alive" answer. `queryRunState` is NOT that answer: Temporal replays
+   * a CLOSED (failed, completed) execution to serve a query, so a run that
+   * died three days ago still "answers", and the restart route read that as
+   * alive and refused (409) exactly when the operator needed it most.
+   * `null` when no execution exists.
+   */
+  executionStatus?(workflowId: string): Promise<RunExecutionStatus | null>;
+  /**
+   * Stop a RUNNING execution for good, with a reason on the engine's record.
+   * `false` when there was nothing to stop. The operator's "durdur ve baştan
+   * al" — a run stuck in a retry loop is otherwise untouchable.
+   */
+  terminate?(workflowId: string, reason: string): Promise<boolean>;
 }
 
 export interface EngineFailure {

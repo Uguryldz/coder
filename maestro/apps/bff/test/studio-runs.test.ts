@@ -1315,6 +1315,65 @@ describe("PUT /studio/runs/:ticket/archive", () => {
  * Bu rota o insanın kararını verebileceği yer. Testlerin asıl işi, kurtarmanın
  * hiçbir şeyi KAYBETMEDİĞİNİ sabitlemek: eski koşunun defteri duruyor mu.
  */
+/**
+ * "Takılması imkânsız": a run whose execution FAILED still answers a state
+ * query (Temporal replays closed runs), and the old liveness probe read that
+ * as alive and refused the restart with 409 — exactly when the operator
+ * needed it. Liveness now comes from the engine's execution status; a live
+ * run can be stopped first with `force`; "release" hands the ticket back to
+ * the pool without opening a new run.
+ */
+describe("restart / release on a failed or live run", () => {
+  it("restarts a run whose execution FAILED even though it still answers a state query", async () => {
+    const h = await studioHarness();
+    h.work.putTicket(SNAPSHOT);
+    h.runs.states.set(`maestro-${TICKET}`, { ...h.runs.states.get(`maestro-${TICKET}`)!, status: "fail" });
+    const token = await adminToken(h);
+    const response = await h.app.inject({ method: "POST", url: `/studio/runs/${TICKET}/restart`, headers: auth(token) });
+    expect(response.statusCode).toBe(202);
+    expect(h.runs.terminated).toEqual([]);
+  });
+
+  it("refuses a RUNNING execution without force (409), stops it first with force", async () => {
+    const h = await studioHarness();
+    h.work.putTicket(SNAPSHOT);
+    const token = await adminToken(h);
+    const refused = await h.app.inject({ method: "POST", url: `/studio/runs/${TICKET}/restart`, headers: auth(token) });
+    expect(refused.statusCode).toBe(409);
+    expect((refused.json() as { error: string }).error).toBe("run_alive");
+
+    const forced = await h.app.inject({
+      method: "POST",
+      url: `/studio/runs/${TICKET}/restart`,
+      headers: auth(token),
+      payload: { force: true },
+    });
+    expect(forced.statusCode).toBe(202);
+    expect(h.runs.terminated).toHaveLength(1);
+    expect(h.runs.terminated[0]?.reason).toContain("operator restart");
+  });
+
+  it("release: stops and retires the run, opens NO new run, audits it", async () => {
+    const h = await studioHarness();
+    const token = await adminToken(h);
+    const startedBefore = h.runs.started.length;
+    const response = await h.app.inject({ method: "POST", url: `/studio/runs/${TICKET}/release`, headers: auth(token) });
+    expect(response.statusCode).toBe(202);
+    expect((response.json() as { released: boolean }).released).toBe(true);
+    expect(h.runs.started).toHaveLength(startedBefore);
+    expect(h.runs.terminated).toHaveLength(1);
+    const events = await h.auditStore.read();
+    expect(events.some((e) => e.subject === `run:${TICKET}` && (e.meta as { verb?: string }).verb === "released")).toBe(true);
+  });
+
+  it("release needs the restart roles", async () => {
+    const h = await studioHarness();
+    const token = await memberToken(h);
+    const response = await h.app.inject({ method: "POST", url: `/studio/runs/${TICKET}/release`, headers: auth(token) });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
 describe("POST /studio/runs/:ticket/restart", () => {
   async function restart(h: Harness, token: string, ticket = TICKET) {
     return h.app.inject({

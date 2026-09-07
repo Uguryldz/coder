@@ -220,10 +220,8 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
        * canlı bir koşuyu bir ağ hıçkırığı yüzünden yeniden başlatmak olurdu.
        * Bu yüzden sorgu doğrudan yapılıyor ve hatası çağırana ULAŞIYOR.
        */
-      const live = await deps.runs.queryRunState(workflowIdFor(ticket));
-      if (live !== null) {
-        throw conflict("run_alive", { ticket, step: live.step, status: live.status });
-      }
+      const force = RestartBody.safeParse(request.body ?? {}).data?.force === true;
+      await stopIfAlive(deps, ticket, force, sessionActor(sessionOf(request)));
 
       /**
        * Emekliye ayırma + denetim + alım, TEK yerden (`run-restart.ts`).
@@ -256,6 +254,43 @@ export async function studioRunRoutes(app: FastifyInstance, deps: ResolvedDeps):
       return reply
         .code(202)
         .send({ ...restarted.outcome, retiredRunId: restarted.retiredRunId });
+    },
+  );
+
+  /**
+   * "Havuza geri ver": stop the run if it is still running, retire its row,
+   * and take NO new run — the ticket is left to the listening rule. The next
+   * sweep round picks it up again if it still sits in the pool (status +
+   * assignee), the way any new ticket is. The operator's third button, for
+   * "let the robot take it fresh from the pool" rather than "restart it now".
+   */
+  app.post(
+    "/studio/runs/:ticket/release",
+    { preHandler: [preHandler, requireAnyRole(...RUN_START_ROLES)] },
+    async (request, reply) => {
+      const ticket = ticketParam(request.params);
+      assertProjectAccess(sessionOf(request), ticket);
+      const record = await deps.read.runs.get(ticket);
+      if (record === null) throw notFound("no_run", { ticket });
+      const actor = sessionActor(sessionOf(request));
+      await stopIfAlive(deps, ticket, true, actor);
+      const at = deps.clock.now();
+      const retired = await deps.read.runs.retire(ticket, at);
+      if (retired === null) throw notFound("no_run", { ticket });
+      await deps.audit.append({
+        actor,
+        action: "PARAM_CHANGED",
+        subject: `run:${ticket}`,
+        at,
+        meta: {
+          surface: "runs",
+          verb: "released",
+          retiredRunId: retired.id,
+          previousStatus: record.status ?? "",
+          previousStep: record.step ?? "",
+        },
+      });
+      return reply.code(202).send({ released: true, retiredRunId: retired.id });
     },
   );
 
@@ -693,6 +728,31 @@ async function engineFailureOf(
   } catch {
     return null;
   }
+}
+
+const RestartBody = z.object({ force: z.boolean().optional() });
+
+/**
+ * Refuse to restart over a LIVE execution unless the operator said "force" —
+ * in which case it is terminated first, with the actor on the engine's record.
+ * Liveness comes from `executionStatus` (the engine's description); on an
+ * engine without it, the older `queryRunState` probe stands in, which reads a
+ * closed execution as alive (Temporal replays closed runs to answer queries)
+ * — so `force` is also what gets a dead-but-answering run restarted there.
+ */
+async function stopIfAlive(deps: ResolvedDeps, ticket: TicketKey, force: boolean, actor: string): Promise<void> {
+  const workflowId = workflowIdFor(ticket);
+  const status = deps.runs.executionStatus === undefined ? undefined : await deps.runs.executionStatus(workflowId);
+  const alive =
+    status === undefined
+      ? (await deps.runs.queryRunState(workflowId)) !== null
+      : status === "running" || status === "continued_as_new";
+  if (!alive) return;
+  if (!force) throw conflict("run_alive", { ticket, status: status ?? "running" });
+  if (deps.runs.terminate === undefined) {
+    throw conflict("run_alive", { ticket, status: status ?? "running", terminate: false });
+  }
+  await deps.runs.terminate(workflowId, `operator restart by ${actor}`);
 }
 
 export interface RunFailure {

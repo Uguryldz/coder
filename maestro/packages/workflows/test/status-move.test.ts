@@ -243,3 +243,16 @@ describe("idempotency — a retry must not move the ticket twice", () => {
     expect(fakes.recorded.moved).toHaveLength(2);
   });
 });
+
+
+describe("handOver Jira'ya yazar", () => {
+  it("devir sebebi ticket'a yorum olarak düşer; yorum patlarsa devir yine olur", async () => {
+    const { handOver } = await import("../src/impl/outcome.js");
+    const fakes = makeFakes();
+    const run = await fakes.deps.runs.get(TICKET);
+    await handOver(fakes.deps, run, "beklenmeyen hata (adım 3): Jira POST failed with HTTP 400", "test");
+    expect(fakes.recorded.comments).toHaveLength(1);
+    expect(String(fakes.recorded.comments[0]?.body)).toContain("HTTP 400");
+    expect(fakes.journalStore.entries.some((e) => e.kind === "handover")).toBe(true);
+  });
+});

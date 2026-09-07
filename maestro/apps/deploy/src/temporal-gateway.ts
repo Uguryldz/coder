@@ -409,6 +409,26 @@ export class TemporalRunGateway implements RunGateway {
     return null;
   }
 
+  async executionStatus(workflowId: string): Promise<RunExecutionStatus | null> {
+    try {
+      const description = await this.client.workflow.getHandle(workflowId).describe();
+      return STATUS_BY_NAME[description.status.name] ?? "running";
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async terminate(workflowId: string, reason: string): Promise<boolean> {
+    try {
+      await this.client.workflow.getHandle(workflowId).terminate(reason);
+      return true;
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw error;
+    }
+  }
+
   private async currentRunId(workflowId: string): Promise<string | null> {
     try {
       const description = await this.client.workflow.getHandle(workflowId).describe();

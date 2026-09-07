@@ -49,18 +49,27 @@ export interface RunRestartResult {
   readonly retiredRunId: string;
 }
 
-export function useRunRestart(): UseMutationResult<RunRestartResult, unknown, string> {
+export interface RunRestartInput {
+  readonly ticket: string;
+  /** Koşu motorda hâlâ çalışıyorsa önce durdur (operatörün "durdur ve baştan al"ı). */
+  readonly force?: boolean;
+}
+
+export function useRunRestart(): UseMutationResult<RunRestartResult, unknown, string | RunRestartInput> {
   const api = useApi();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (ticket: string) =>
-      api.post<RunRestartResult>(`/studio/runs/${encodeURIComponent(ticket)}/restart`, {}),
-    onSuccess: (_result, ticket) => {
+    mutationFn: (input: string | RunRestartInput) => {
+      const ticket = typeof input === "string" ? input : input.ticket;
+      const force = typeof input === "string" ? false : input.force === true;
+      return api.post<RunRestartResult>(`/studio/runs/${encodeURIComponent(ticket)}/restart`, force ? { force } : {});
+    },
+    onSuccess: (_result, input) => {
       // Detay ekranı, pano ve defter — üçü de değişti: koşu artık başka bir
       // koşu. Yalnız birini tazelemek, operatöre eski koşunun ekranını
       // gösterip "yeniden başlatıldı" demek olurdu.
-      invalidateRun(queryClient, ticket);
+      invalidateRun(queryClient, typeof input === "string" ? input : input.ticket);
     },
   });
 }
@@ -189,4 +198,22 @@ export function mayDecide(session: Session | null, step: StepId | undefined): bo
  */
 function rolesOf(session: Session): readonly never[] {
   return session.roles as readonly never[];
+}
+
+export interface RunReleaseResult {
+  readonly released: boolean;
+  readonly retiredRunId: string;
+}
+
+/**
+ * "Havuza geri ver": koşu durdurulup emekliye ayrılır, YENİ koşu açılmaz —
+ * ticket havuz durumundaysa bir sonraki tarama turu onu yeniden alır.
+ */
+export function useRunRelease(): UseMutationResult<RunReleaseResult, unknown, string> {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ticket: string) => api.post<RunReleaseResult>(`/studio/runs/${encodeURIComponent(ticket)}/release`, {}),
+    onSuccess: (_result, ticket) => invalidateRun(queryClient, ticket),
+  });
 }

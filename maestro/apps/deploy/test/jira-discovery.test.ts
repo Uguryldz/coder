@@ -434,6 +434,18 @@ describe("discoverOnce", () => {
    * devredildi) ama hâlâ havuzda duran ticket, kuralın ihlalidir: sayılır,
    * adlandırılır, tarama bandı gösterir. Kapıda bekleyen ihlal değildir.
    */
+  it("kaydı 'hatalı' olan koşuyu — motor onu canlı listelese bile — yeniden alır", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "3", status: "fail" }],
+      alive: ["OPS-1"],
+    });
+    expect(restarts).toEqual(["OPS-1"]);
+    expect(logs.some((line) => line.includes("OPS-1") && line.includes("yeniden akışa alındı"))).toBe(true);
+  });
+
   it("koşusu bitmiş ama havuzda duran ticket'ı sayar ve adlandırır", async () => {
     const jql = jqlFor(RULE)!;
     await run({

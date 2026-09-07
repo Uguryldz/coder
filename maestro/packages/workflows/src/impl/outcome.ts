@@ -360,6 +360,20 @@ export async function handOver(
     key: `handover:${key}`,
   });
   await audit(deps, run, { action: "HANDOVER", meta: { reason }, key: `handover:${key}` });
+  // Jira'ya da: ticket'ın başındaki kişi panele bakmaz, ticket'a bakar.
+  // Yorum yazılamazsa devir yine olur — defter ve denetim zaten yazıldı.
+  try {
+    await deps.idempotency.once(`${run.runId}:handover-comment:${key}`, () =>
+      deps.work.addComment(run.ticket, deps.translate(run.locale, "jira.handover", { ticket: run.ticket, reason })),
+    );
+  } catch (error) {
+    await record(deps, run, {
+      kind: "other",
+      title: "devir yorumu yazılamadı",
+      detail: String(error).slice(0, 300),
+      key: `handover-comment-failed:${key}`,
+    });
+  }
   await notifyEvent(deps, run, {
     event: "handover",
     messageKey: "notify.handover",

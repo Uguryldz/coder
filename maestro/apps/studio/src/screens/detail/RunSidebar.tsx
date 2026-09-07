@@ -54,12 +54,22 @@ export function RunSidebar({
   const engineForgot = stateSource === "record" && !finished;
   // Controls that send a SIGNAL need a live execution to receive it.
   const live = state !== null && !finished && !engineForgot;
+  // Hatalı, devredilmiş ya da durdurulmuş: işi bitmemiş ama ilerlemiyor.
+  const stuck = state !== null && ["fail", "handover", "cancelled"].includes(state.status);
 
   const risk = state?.risk ?? record.risk;
 
   return (
     <div className="scr-stack">
-      {engineForgot && <RestartPanel ticket={record.ticketKey} />}
+      {/* Never a dead end: a forgotten run, a failed/handed-over/cancelled
+          one, or — on request — a run the engine still holds. */}
+      {engineForgot ? (
+        <RestartPanel ticket={record.ticketKey} reason="dead" />
+      ) : stuck ? (
+        <RestartPanel ticket={record.ticketKey} reason="stuck" />
+      ) : live ? (
+        <RestartPanel ticket={record.ticketKey} reason="live" />
+      ) : null}
 
       {live && isApprovalGate(state) && <GatePanel ticket={record.ticketKey} step={state.step} />}
 

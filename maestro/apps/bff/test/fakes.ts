@@ -26,6 +26,7 @@ import type {
   SignalWithStartInput,
   StartOutcome,
   EngineFailure,
+  RunExecutionStatus,
 } from "../src/gateway.js";
 
 export const WEBHOOK_SECRET = "maestro-test-webhook-secret";
@@ -209,6 +210,24 @@ export class FakeRunGateway implements RunGateway {
 
   failureOf(): Promise<EngineFailure | null> {
     return Promise.resolve(this.failure);
+  }
+  /** Per-workflow execution status; absent = derived from `states` (done → completed, fail → failed, else running). */
+  readonly executionStatuses = new Map<string, RunExecutionStatus>();
+  readonly terminated: Array<{ workflowId: string; reason: string }> = [];
+
+  executionStatus(workflowId: string): Promise<RunExecutionStatus | null> {
+    const explicit = this.executionStatuses.get(workflowId);
+    if (explicit !== undefined) return Promise.resolve(explicit);
+    const state = this.states.get(workflowId);
+    if (state === undefined) return Promise.resolve(null);
+    return Promise.resolve(state.status === "done" ? "completed" : state.status === "fail" ? "failed" : "running");
+  }
+
+  terminate(workflowId: string, reason: string): Promise<boolean> {
+    if (!this.states.has(workflowId)) return Promise.resolve(false);
+    this.terminated.push({ workflowId, reason });
+    this.states.delete(workflowId);
+    return Promise.resolve(true);
   }
 
   ping(): Promise<void> {

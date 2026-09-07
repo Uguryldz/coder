@@ -112,6 +112,12 @@ export interface KnownRun {
  * da çalışan koşu ihlal değildir — işi bitmemiştir.
  */
 const FINISHED_RUN_STATUSES: ReadonlySet<string> = new Set(["done", "fail", "failed", "handover", "cancelled"]);
+/** Kaydı "hatalı" olan koşu — yürütme düştü; tarama onu yeniden alır. */
+export function isFailedRun(run: KnownRun): boolean {
+  const status = (run.status ?? "").trim();
+  return status === "fail" || status === "failed";
+}
+
 export function finishedButPooled(run: KnownRun): boolean {
   return FINISHED_RUN_STATUSES.has((run.status ?? "").trim());
 }
@@ -912,8 +918,12 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
         knownRun !== undefined &&
         !seenThisRound.has(key) &&
         canRestart &&
-        alive !== null &&
-        !alive.has(key)
+        // Ölü: motorda yaşayan koşular arasında yok — YA DA kaydı "hatalı"
+        // (yürütme düşmüş). İkincisi motor okunamasa da bilinir: hatalı bir
+        // koşu havuzdaki ticket'ı "koşusu zaten var" diye kilitleyemez;
+        // operatörün kuralı "hangi adımda düştüyse düşsün, takılmak yok".
+        // Fren aynı (pencereli sayaç), Jira'ya yazan da aynı yol.
+        ((alive !== null && !alive.has(key)) || isFailedRun(knownRun))
       ) {
         seenThisRound.add(key);
         // Fren, frenlediği şeyden ÖNCE: sayaç veritabanından okunur ve sınıra

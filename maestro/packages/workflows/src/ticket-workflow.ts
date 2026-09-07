@@ -1,4 +1,13 @@
-import { condition, continueAsNew, proxyActivities, setHandler, workflowInfo } from "@temporalio/workflow";
+import {
+  CancelledFailure,
+  condition,
+  continueAsNew,
+  ContinueAsNew,
+  isCancellation,
+  proxyActivities,
+  setHandler,
+  workflowInfo,
+} from "@temporalio/workflow";
 import type {
   DataClass,
   FlowType,
@@ -397,6 +406,31 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
       rewrite: rewrite ?? null,
     });
 
+  /**
+   * HİÇBİR HATA KOŞUYU SESSİZCE ÖLDÜRMEZ. Operatörün kuralı: "hangi adımda
+   * hata aldıysa ona göre aksiyon alsın, takılması imkânsız, Jira'ya
+   * bildirsin." Yakalanmamış bir hata yürütmeyi FAIL ediyordu: panelde
+   * "hatalı", defterde satır yok, Jira'da ses yok, ticket havuzda. Burada
+   * her beklenmeyen hata, düştüğü ADIM ve sebebiyle insana devredilir —
+   * `handOverToHuman` defteri, denetimi, bildirimi ve Jira yorumunu yazar —
+   * ve tarama pencereli freniyle koşuyu yeniden alır. Yayılması GEREKENLER
+   * yayılır: continue-as-new (bir hata değil), iptal, kill-switch.
+   */
+  try {
+    return await runSteps();
+  } catch (error) {
+    if (shouldPropagate(error)) throw error;
+    const reason = `beklenmeyen hata (adım ${state.step}): ${failureText(error)}`;
+    try {
+      return await handOver(reason);
+    } catch {
+      // Devir bile yazılamıyorsa (defter/DB yok) geriye yalnız yürütmenin
+      // kendi kaydı kalır; o zaman asıl hata Temporal'da adıyla dursun.
+      throw error;
+    }
+  }
+
+  async function runSteps(): Promise<WorkflowRunStatus> {
   // ── 0 · work mode ────────────────────────────────────────────────────────
   await goto("0", `work mode: ${state.mode} · veri sınıfı: ${input.dataClass}`);
   if (state.mode === "human_only") {
@@ -738,4 +772,43 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   await acts.closeTicket(ticket);
   state.status = "done";
   return state.status;
+  }
+}
+
+/**
+ * Devre DEĞİL, yayılma: continue-as-new bir hata değildir; iptal ve
+ * kill-switch bilerek verilmiş kesme kararlarıdır — kill-switch aktivitenin
+ * içinden de gelebilir (`ActivityFailure` → cause `KillSwitch`), o yüzden
+ * sebep zinciri yürünür.
+ */
+function shouldPropagate(error: unknown): boolean {
+  if (error instanceof ContinueAsNew || isCancellation(error)) return true;
+  const seen = new Set<unknown>();
+  let node: unknown = error;
+  while (typeof node === "object" && node !== null && !seen.has(node)) {
+    seen.add(node);
+    const record = node as { type?: unknown; message?: unknown; cause?: unknown };
+    if (record.type === "KillSwitch") return true;
+    // Bir aktiviteyi kesen abort sebebi (`kill_switch_stop_all`) düz bir
+    // Error olarak gelir; adı onu ayırt eder.
+    if (typeof record.message === "string" && /kill[_ ]switch/i.test(record.message)) return true;
+    if (node instanceof CancelledFailure) return true;
+    node = record.cause;
+  }
+  return false;
+}
+
+/** Sebep zinciri, dıştan içe — aktivitenin kendi cümlesi de gelsin. */
+function failureText(error: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let node: unknown = error;
+  while (typeof node === "object" && node !== null && !seen.has(node) && parts.length < 4) {
+    seen.add(node);
+    const record = node as { message?: unknown; cause?: unknown };
+    const message = typeof record.message === "string" ? record.message.trim() : "";
+    if (message !== "" && !parts.includes(message)) parts.push(message);
+    node = record.cause;
+  }
+  return (parts.length === 0 ? String(error) : parts.join(" ← ")).slice(0, 400);
 }

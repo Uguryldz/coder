@@ -130,9 +130,22 @@ export async function notifyEvent(
     return;
   }
   for (const notification of routed.notifications) {
-    await deps.idempotency.once(
-      `${run.runId}:notify:${args.key}:${notification.channel}`,
-      () => deps.notify.send(notification),
-    );
+    // BİR BİLDİRİM HİÇBİR ZAMAN ADIMI DURDURMAZ. Kanal düşmüş, mesaj katalogda
+    // eksik parametre taşıyor, webhook 500 döndü — hepsi deftere yazılır ve
+    // kapı açılmaya devam eder. Bildirim yüzünden ölen bir koşu (OTYT-1,
+    // adım 5) operatöre "kapı açılmadı" gibi görünür; oysa açılmıştı.
+    try {
+      await deps.idempotency.once(
+        `${run.runId}:notify:${args.key}:${notification.channel}`,
+        () => deps.notify.send(notification),
+      );
+    } catch (error) {
+      await record(deps, run, {
+        kind: "other",
+        title: "bildirim gönderilemedi",
+        detail: `${args.event} · ${notification.channel} · ${String(error instanceof Error ? error.message : error).slice(0, 300)}`,
+        key: `notify-failed:${args.key}:${notification.channel}`,
+      });
+    }
   }
 }

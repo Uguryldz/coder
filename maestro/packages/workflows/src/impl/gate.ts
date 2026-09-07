@@ -170,7 +170,7 @@ export async function openGate(
   await notifyEvent(deps, run, {
     event: "gate_open",
     messageKey: "notify.gate_open",
-    params: { ticket, gate: step, group: groupText },
+    params: gateOpenParams(ticket, step, groupText),
     // Sahipsiz kapıda dizine sorulacak bir grup yok; bildirilecek kimse de yok
     // ve bunu boş bir listeyle söylemek, olmayan bir gruba sormaktan dürüst.
     to: group === OWNERLESS_GATE_GROUP ? [] : await deps.directory.membersOf(group),
@@ -343,7 +343,7 @@ export async function escalateGate(
     now,
     firedStepIds: gate.firedStepIds,
     locale: run.locale,
-    params: { ticket, gate: step, group: gate.ownerGroup, hours: String(waitingHours) },
+    params: escalationParams({ ticket, step, group: gate.ownerGroup, waitingHours, deputies }),
     recipients: (ladderStep: ResolvedStep) => (ladderStep.action === "delegate" ? deputies : owners),
   });
 
@@ -460,6 +460,38 @@ export async function journal(
 function stepOfTitle(title: string): string | null {
   const match = /^adım\s+([0-9]+[a-zö]?)$/u.exec(title.trim());
   return match?.[1] ?? null;
+}
+
+/**
+ * The parameters the catalog's notify messages ACTUALLY name — kept as
+ * exported builders so a test renders every message with exactly what the
+ * code sends. `notify.gate_open` wants `{owner}` and the code sent `group`;
+ * the reminder/escalation/delegation messages want `{days}` and `{delegate}`
+ * and the code sent `hours` — every gate notification threw "missing
+ * parameter", and with the notifier in the activity's path, the gate itself
+ * died at step 5 ("beklenmeyen hata (adım 5)"). Both names travel now.
+ */
+export function gateOpenParams(ticket: string, step: string, ownerText: string): Record<string, string> {
+  return { ticket, gate: step, owner: ownerText, group: ownerText };
+}
+
+export function escalationParams(args: {
+  ticket: string;
+  step: string;
+  group: string;
+  waitingHours: number;
+  deputies: readonly string[];
+}): Record<string, string> {
+  const days = String(Math.max(1, Math.floor(args.waitingHours / 24)));
+  return {
+    ticket: args.ticket,
+    gate: args.step,
+    group: args.group,
+    owner: args.group,
+    hours: String(args.waitingHours),
+    days,
+    delegate: args.deputies.length > 0 ? args.deputies.join(", ") : `${args.group}-deputy`,
+  };
 }
 
 export async function handOverToHuman(

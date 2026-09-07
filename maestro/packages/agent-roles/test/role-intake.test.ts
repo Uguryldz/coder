@@ -344,3 +344,107 @@ describe("runIntake — persona reaches the model", () => {
     expect(prompts[0]).toContain("PERSONA-METNI");
   });
 });
+
+/**
+ * "Bu bilgiyi nereden alırım?" — the source enquiry. Before a gap becomes a
+ * question to the reporter, the model has to say where the answer lives:
+ * already in the context, in the repository during analysis, or with the
+ * reporter alone. Only the last kind is ever asked.
+ */
+describe("intake — source enquiry (nereden alırım)", () => {
+  const routed = {
+    complete: false,
+    missing: [
+      {
+        field: "limit üst sınırı",
+        why: "İş kuralı; kodda ya da notlarda yok.",
+        question: "Limit üst sınırı hangi değerle sınırlanacak?",
+        source: "reporter",
+        lookedIn: "ticket, ekler, öğrenme notları",
+      },
+      {
+        field: "mevcut limit servisi",
+        why: "Repo incelemesiyle bulunur.",
+        question: "Limit hangi serviste hesaplanıyor?",
+        source: "analysis",
+      },
+      {
+        field: "hedef ekran",
+        why: "Ekte yazıyor.",
+        question: "Hangi ekran?",
+        source: "context",
+      },
+    ],
+  };
+
+  it("tells the model to look before it asks, and where", () => {
+    const prompt = buildIntakePrompt(thin);
+    expect(prompt).toContain("KAYNAK SORGUSU");
+    expect(prompt).toContain("NEREDEN alabilirim");
+    expect(prompt).toContain('source="analysis"');
+    expect(prompt).toContain("lookedIn");
+  });
+
+  it("puts the agent's learning notes in front of the model, fenced as data", () => {
+    const prompt = buildIntakePrompt(thin, undefined, undefined, {
+      guidance: [{ title: "Limit politikası", content: "Bireysel limit üst sınırı 500.000 TL'dir." }],
+    });
+    expect(prompt).toContain("ÖĞRENME NOTLARI");
+    expect(prompt).toContain("### Limit politikası");
+    const notes = prompt.indexOf("Bireysel limit üst sınırı");
+    expect(notes).toBeGreaterThan(prompt.indexOf("TICKET BAĞLAMI"));
+    expect(notes).toBeGreaterThan(prompt.lastIndexOf("<<<VERI"));
+    expect(notes).toBeLessThan(prompt.lastIndexOf("VERI>>>"));
+  });
+
+  it("is byte-identical to today's prompt when there are no notes", () => {
+    const base = buildIntakePrompt(thin);
+    expect(buildIntakePrompt(thin, undefined, undefined, {})).toBe(base);
+    expect(buildIntakePrompt(thin, undefined, undefined, { guidance: [] })).toBe(base);
+    expect(buildIntakePrompt(thin, undefined, undefined, { guidance: [{ title: " ", content: "x" }] })).toBe(base);
+    // The rules bullet NAMES the heading; the heading itself is absent.
+    expect(base).not.toContain("## ÖĞRENME NOTLARI");
+  });
+
+  it("asks the reporter ONLY what the enquiry routed to the reporter", () => {
+    const result = toIntakeResult(IntakeOutput.parse(routed));
+    expect(result.complete).toBe(false);
+    expect(result.question).toBe(
+      "1. Limit üst sınırı hangi değerle sınırlanacak? (bakılan kaynaklar: ticket, ekler, öğrenme notları)",
+    );
+    expect(result.deferred).toEqual(["mevcut limit servisi (analizde bulunacak)", "hedef ekran (bağlamda var)"]);
+  });
+
+  it("passes the ticket through when every gap is the analyst's to find", () => {
+    const onlyAnalysis = { complete: false, missing: [routed.missing[1]] };
+    const result = toIntakeResult(IntakeOutput.parse(onlyAnalysis));
+    expect(result.complete).toBe(true);
+    expect(result.question).toBeUndefined();
+    expect(result.deferred).toEqual(["mevcut limit servisi (analizde bulunacak)"]);
+  });
+
+  it("does not call 'complete + analysis items' a contradiction", () => {
+    expect(validateIntake({ complete: true, missing: [routed.missing[1]] }).ok).toBe(true);
+    // A reporter item under `complete: true` is still the contradiction.
+    expect(validateIntake({ complete: true, missing: [routed.missing[0]] }).ok).toBe(false);
+  });
+
+  it("keeps the old meaning for a model that omits `source`: it is asked", () => {
+    const legacy = IntakeOutput.parse(incomplete);
+    expect(legacy.missing.every((m) => m.source === "reporter")).toBe(true);
+    expect(toIntakeResult(legacy).complete).toBe(false);
+  });
+
+  it("threads the notes through runIntake to the prompt the port receives", async () => {
+    const { llm, prompts } = scriptedLlm([{ complete: true, missing: [] }]);
+    await runIntake({
+      llm,
+      ticket: thin,
+      variantId: "web",
+      dataClass: "dahili",
+      guidance: [{ title: "NOT-BASLIGI", content: "NOT-ICERIGI" }],
+    });
+    expect(prompts[0]).toContain("NOT-BASLIGI");
+    expect(prompts[0]).toContain("NOT-ICERIGI");
+  });
+});

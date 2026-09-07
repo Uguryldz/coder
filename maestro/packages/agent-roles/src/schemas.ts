@@ -24,6 +24,18 @@ export const MissingField = z
     field: NonEmpty,
     why: NonEmpty,
     question: NonEmpty,
+    /**
+     * Where the answer can come from — the "nereden alırım" verdict the rules
+     * ask the model to make BEFORE it writes a question. Only `reporter`
+     * items are ever sent to the reporter; `analysis` items are left for the
+     * analyst to find in the repository and the knowledge base; `context`
+     * means the model found it in the ticket/attachments/notes after all
+     * (kept for honesty, treated as answered). Defaults to `reporter` so an
+     * older model output that omits the field keeps the old, ask-it meaning.
+     */
+    source: z.enum(["reporter", "analysis", "context"]).default("reporter"),
+    /** Where the model looked before asking, in its own words. */
+    lookedIn: z.string().trim().max(300).optional(),
   })
   .strict();
 export type MissingField = z.infer<typeof MissingField>;

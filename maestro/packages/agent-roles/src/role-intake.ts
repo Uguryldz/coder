@@ -2,7 +2,7 @@ import type { DataClass, TicketSnapshot } from "@maestro/contracts";
 import type { LlmPort } from "@maestro/ports";
 import { block, bullets, fence } from "./prompt.js";
 import { type RoleResult, runRole } from "./run.js";
-import { IntakeOutput } from "./schemas.js";
+import { IntakeOutput, type MissingField } from "./schemas.js";
 import { DEFAULT_PROMPT_TEXTS, type PromptTexts, text } from "./texts.js";
 import type { Deficiency, Validation } from "./validate.js";
 
@@ -35,10 +35,27 @@ import type { Deficiency, Validation } from "./validate.js";
  * "return anything imperfect" is contradicted by rules the model reads later
  * and by `validateIntake`, which the persona cannot reach at all.
  */
+/** A learning note from Studio's "Öğrenme kaynakları" screen. */
+export interface IntakeNote {
+  readonly title: string;
+  readonly content: string;
+}
+
+/**
+ * What intake may consult before it asks the reporter anything. Today that is
+ * the agent's learning notes; the ticket's own comments and attachments arrive
+ * folded into the ticket description by the workflow (`withComments`,
+ * `withAttachments`).
+ */
+export interface IntakeSources {
+  readonly guidance?: readonly IntakeNote[];
+}
+
 export function buildIntakePrompt(
   ticket: TicketSnapshot,
   texts: PromptTexts = DEFAULT_PROMPT_TEXTS,
   persona?: string,
+  sources: IntakeSources = {},
 ): string {
   const ticketLines = [
     `${ticket.key} · ${ticket.issueType} · ${ticket.projectKey}`,
@@ -50,6 +67,9 @@ export function buildIntakePrompt(
   ].join("\n");
 
   const overlay = (persona ?? "").trim();
+  const notes = (sources.guidance ?? [])
+    .map((note) => ({ title: note.title.trim(), content: note.content.trim() }))
+    .filter((note) => note.title !== "" && note.content !== "");
   return [
     text(texts, "intake.sistem"),
     // The admin's persona, when there is one: an addition on top of the role's
@@ -69,6 +89,11 @@ export function buildIntakePrompt(
           // a separate bullet so tightening question quality never edits the
           // calibrated threshold sentence next to it.
           text(texts, "intake.soruKalitesi"),
+          // "Where would I get this?" — the source enquiry that decides whether
+          // a gap is the reporter's to fill, the analyst's to discover, or not
+          // a gap at all. Separate bullet: it neither loosens nor tightens the
+          // threshold sentence, it routes what the threshold lets through.
+          text(texts, "intake.kaynakSorgusu"),
           text(texts, "ortak.ciktiBicimi"),
         ],
         "-",
@@ -76,6 +101,18 @@ export function buildIntakePrompt(
     ),
     // Reporter-authored text: fenced, same reasoning as the analyst prompt.
     block(text(texts, "ortak.baslik.ticket"), fence(ticketLines)),
+    // The organisation's learning notes for this agent, when there are any:
+    // the first place the source enquiry sends the model. Fenced like a
+    // knowledge document — it is content to consult, not instruction. Absent
+    // notes leave the prompt byte-identical to today's.
+    ...(notes.length === 0
+      ? []
+      : [
+          block(
+            text(texts, "ortak.baslik.ogrenmeNotlari"),
+            fence(notes.map((note) => `### ${note.title}\n${note.content}`).join("\n\n")),
+          ),
+        ]),
     block(text(texts, "ortak.baslik.gorev"), text(texts, "intake.gorev")),
   ].join("\n\n");
 }
@@ -107,7 +144,11 @@ export function validateIntake(
   if (!parsed.data.complete && parsed.data.missing.length === 0) {
     deficiencies.push({ code: "no_question", message: text(texts, "eksik.soruYok") });
   }
-  if (parsed.data.complete && parsed.data.missing.length > 0) {
+  // Only items the REPORTER has to answer contradict `complete: true`. An item
+  // routed to analysis ("the analyst will find this in the repo") or found in
+  // the context after all is not an open question, so a complete verdict that
+  // lists such items is consistent — `toIntakeResult` passes it through.
+  if (parsed.data.complete && askable(parsed.data).length > 0) {
     deficiencies.push({ code: "contradiction", message: text(texts, "eksik.soruFazla") });
   }
   return deficiencies.length === 0 ? { ok: true, value: parsed.data } : { ok: false, deficiencies };
@@ -127,6 +168,11 @@ export interface IntakeArgs {
    * the return threshold.
    */
   persona?: string;
+  /**
+   * The agent's learning notes, so the source enquiry has somewhere to look
+   * before the reporter. Absent = today's prompt, unchanged.
+   */
+  guidance?: readonly IntakeNote[];
 }
 
 export function runIntake(args: IntakeArgs): Promise<RoleResult<IntakeOutput>> {
@@ -138,7 +184,9 @@ export function runIntake(args: IntakeArgs): Promise<RoleResult<IntakeOutput>> {
     dataClass: args.dataClass,
     schemaName: "IntakeOutput",
     schema: IntakeOutput,
-    prompt: buildIntakePrompt(args.ticket, texts, args.persona),
+    prompt: buildIntakePrompt(args.ticket, texts, args.persona, {
+      ...(args.guidance === undefined ? {} : { guidance: args.guidance }),
+    }),
     check: (value) => validateIntake(value, texts),
     texts,
   });
@@ -148,6 +196,23 @@ export function runIntake(args: IntakeArgs): Promise<RoleResult<IntakeOutput>> {
 export interface IntakeActivityResult {
   complete: boolean;
   question?: string;
+  /**
+   * Gaps the model routed AWAY from the reporter — to be found during analysis
+   * (`source: "analysis"`) or already answered by the context. Never asked;
+   * surfaced so the journal can say what intake decided not to ask, and why.
+   */
+  deferred?: readonly string[];
+}
+
+/** The items that actually go to the reporter: source enquiry said so. */
+export function askable(output: IntakeOutput): readonly MissingField[] {
+  return output.missing.filter((m) => m.source === "reporter");
+}
+
+/** One question line: the question, then where the model looked before asking. */
+function questionLine(m: MissingField): string {
+  const looked = (m.lookedIn ?? "").trim();
+  return looked === "" ? m.question : `${m.question} (bakılan kaynaklar: ${looked})`;
 }
 
 /**
@@ -174,9 +239,15 @@ export interface IntakeActivityResult {
  * answer: no questions means nothing to ask.
  */
 export function toIntakeResult(output: IntakeOutput): IntakeActivityResult {
-  if (output.missing.length === 0) return { complete: true };
+  const ask = askable(output);
+  const deferred = output.missing
+    .filter((m) => m.source !== "reporter")
+    .map((m) => `${m.field} (${m.source === "analysis" ? "analizde bulunacak" : "bağlamda var"})`);
+  const rest = deferred.length === 0 ? {} : { deferred };
+  if (ask.length === 0) return { complete: true, ...rest };
   return {
     complete: false,
-    question: output.missing.map((m, i) => `${i + 1}. ${m.question}`).join("\n"),
+    question: ask.map((m, i) => `${i + 1}. ${questionLine(m)}`).join("\n"),
+    ...rest,
   };
 }

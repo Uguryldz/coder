@@ -16,6 +16,7 @@ import { ticketAttachments, withAttachments } from "./attachments.js";
 import { readHumanComments, withComments, withPriorWork } from "./comments.js";
 import type { ActivityDeps } from "./deps.js";
 import { guardModelCall, guardedLlm, outcomeOfRole, resolveOutcome } from "./outcome.js";
+import { analystGuidance } from "./guidance.js";
 import { analystPersona } from "./persona.js";
 import { audit, record } from "./record.js";
 
@@ -209,6 +210,11 @@ export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<
   // `attachments.ts`): okunamayan ek adıyla geçer, akış durmaz.
   const attachments = await ticketAttachments(deps, ticket);
   const persona = await analystPersona(deps, run);
+  // "Bu bilgiyi nereden alırım?" sorgusunun bakacağı ilk yer: Studio'nun
+  // "Öğrenme kaynakları" ekranındaki notlar. Analistle AYNI okuyucu — intake
+  // eksik dediği bir şeyi kurum notlarında bulabiliyorsa reporter'a sormaz.
+  // Not yoksa prompt bugünküyle bit bit aynı kalır.
+  const guidance = await analystGuidance(deps, run);
 
   // İKİ KAT SARMALAMA, ve ikisi de gerekli:
   //
@@ -242,6 +248,7 @@ export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<
       variantId: run.variantId,
       dataClass: run.dataClass,
       ...(persona === undefined ? {} : { persona }),
+      ...(guidance.length === 0 ? {} : { guidance }),
     }),
   );
 
@@ -253,11 +260,18 @@ export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<
   // `toIntakeResult`: eksik maddeleri TEK bir numaralı soru metnine çevirir —
   // step 2b tek bir yorum yazar, reporter tek bir yerde hepsini görür.
   const verdict = toIntakeResult(resolved.value);
+  // Defter, sorulMAYAN maddeleri de söyler: "analizde bulunacak" diye
+  // ertelenen bir eksik, operatörün "neden sormadı?" sorusunun cevabıdır.
+  const deferred = verdict.deferred ?? [];
+  const detail = [
+    ...(verdict.question === undefined ? [] : [verdict.question]),
+    ...(deferred.length === 0 ? [] : [`reporter'a sorulmadı — ${deferred.join(", ")}`]),
+  ].join("\n");
   await record(deps, run, {
     kind: "intake",
     actor: "ai",
     title: verdict.complete ? "ticket eksiksiz" : "ticket eksik",
-    detail: verdict.question ?? "",
+    detail,
     key: "intake",
   });
   return verdict.complete ? { complete: true } : { complete: false, question: verdict.question ?? "" };

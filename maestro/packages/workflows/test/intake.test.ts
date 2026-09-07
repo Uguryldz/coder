@@ -534,3 +534,72 @@ describe("runIntake — önceki koşuların işi", () => {
     expect(promptOf(fakes)).not.toContain("ÖNCEKİ DENEMELER");
   });
 });
+
+/**
+ * "Bu bilgiyi nereden alırım?" — Temporal yolunda. Öğrenme notları intake'in
+ * önüne gider; analizde bulunacak diye ertelenen madde reporter'a sorulmaz ve
+ * defter bunu söyler.
+ */
+describe("runIntake — kaynak sorgusu", () => {
+  const promptOf = (fakes: ReturnType<typeof makeFakes>): string => {
+    const call = fakes.recorded.llm.find((c) => c.schemaName === "IntakeOutput");
+    if (call === undefined || typeof call.input !== "string") throw new Error("intake rolü çağrılmadı");
+    return call.input;
+  };
+
+  it("öğrenme notları prompta VERİ ÇİTİ içinde gider", async () => {
+    const fakes = makeFakes({
+      guidance: { v1: [{ title: "Limit politikası", content: "Bireysel üst sınır 500.000 TL." }] },
+      generateObject: () => ({ status: "ok", value: { complete: true, missing: [] }, log: LOG }),
+    });
+    await runIntake(fakes.deps, "PAY-101");
+    const prompt = promptOf(fakes);
+    expect(prompt).toContain("ÖĞRENME NOTLARI");
+    expect(prompt).toContain("KAYNAK SORGUSU");
+    expect(prompt).toContain("Bireysel üst sınır 500.000 TL.");
+  });
+
+  it("analizde bulunacak madde reporter'a sorulmaz; defter neden sorulmadığını yazar", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ({
+        status: "ok",
+        value: {
+          complete: false,
+          missing: [
+            { field: "limit servisi", why: "repoda", question: "hangi servis?", source: "analysis" },
+            {
+              field: "üst sınır",
+              why: "iş kuralı",
+              question: "üst sınır kaç?",
+              source: "reporter",
+              lookedIn: "ticket, ekler",
+            },
+          ],
+        },
+        log: LOG,
+      }),
+    });
+    expect(await runIntake(fakes.deps, "PAY-101")).toEqual({
+      complete: false,
+      question: "1. üst sınır kaç? (bakılan kaynaklar: ticket, ekler)",
+    });
+    const entry = fakes.journalStore.entries.at(-1);
+    expect(entry?.title).toBe("ticket eksik");
+    expect(entry?.detail).toContain("reporter'a sorulmadı — limit servisi (analizde bulunacak)");
+  });
+
+  it("her madde analizde bulunacaksa ticket eksiksiz sayılır", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ({
+        status: "ok",
+        value: {
+          complete: false,
+          missing: [{ field: "endpoint", why: "repoda", question: "hangi endpoint?", source: "analysis" }],
+        },
+        log: LOG,
+      }),
+    });
+    expect(await runIntake(fakes.deps, "PAY-101")).toEqual({ complete: true });
+    expect(fakes.journalStore.entries.at(-1)?.title).toBe("ticket eksiksiz");
+  });
+});

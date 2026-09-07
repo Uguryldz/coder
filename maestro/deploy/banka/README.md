@@ -466,6 +466,13 @@ Kurulumdan sonra ikisini tek komutla yayınlayın (Studio yönetici hesabıyla g
 ve eski `.doc` yalnız adıyla anılır — model onları "incelenmeli" diye yazar, içeriğini uydurmaz.
 Sınırlar: ilk 8 ek, ek başına 8 MB indirme ve 20 000 karakter, toplam 60 000 karakter. Koşu
 defterinde "ekler okundu" satırı hangi ekin okunduğunu, hangisinin neden okunmadığını söyler.
+
+**Tamlık kontrolü sormadan önce bakar.** Ajan bir bilgiyi eksik saymadan önce "bunu nereden alırım"
+sorgusunu yapar: ticket metni, yorumlar, ekler ve o ajanın Studio'daki öğrenme notları. Oralarda
+bulduğunu sormaz. Analiz sırasında repodan/knowledge base'den öğrenilecek şeyleri (uygulama adı,
+endpoint, mevcut davranış) reporter'a sormaz, analiste bırakır. Yalnız reporter'ın bilebileceği
+öz bilgi (iş kuralı, beklenen davranış, hangi ekran) sorulur ve sorunun yanında nereye bakıldığı
+yazar. Koşu defterindeki "ticket eksik/eksiksiz" satırı sorulMAYAN maddeleri de gerekçesiyle listeler.
 Ek içeriği ticket metniyle aynı PII maskesinden geçer.
 
 Word'de belge açılırken "alanlar güncellensin mi?" sorusuna **Evet** deyin: içindekiler o anda

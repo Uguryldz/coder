@@ -504,13 +504,30 @@ export async function fanOutChildren(
 
   const children: TicketKey[] = [];
   for (const cell of impacted) {
-    const created = await deps.idempotency.once(`${run.runId}:fanout:${cell.appId}`, () =>
-      deps.work.createLinkedIssue(ticket, {
-        summary: deps.translate(run.locale, "jira.child_summary", { ticket, app: cell.appId }),
-        description: cell.summary,
-        labels: ["maestro", `app:${cell.appId}`],
-      }),
-    );
+    let created: { key: TicketKey };
+    try {
+      created = await deps.idempotency.once(`${run.runId}:fanout:${cell.appId}`, () =>
+        deps.work.createLinkedIssue(ticket, {
+          summary: deps.translate(run.locale, "jira.child_summary", { ticket, app: cell.appId }),
+          description: cell.summary,
+          labels: ["maestro", `app:${cell.appId}`],
+        }),
+      );
+    } catch (error) {
+      // A child ticket is a CONVENIENCE on top of a delivered analysis. Jira
+      // refusing it (a project without the child issue type, a field the
+      // screen does not carry — HTTP 400) used to fail the whole run at step
+      // 3, after the analysis was written and published. Named in the
+      // journal with Jira's own sentence; the flow goes on to the gate.
+      await record(deps, run, {
+        kind: "other",
+        actor: "ai",
+        title: "alt ticket açılamadı",
+        detail: `${cell.appId} · ${String(error instanceof Error ? error.message : error).slice(0, 400)} · analiz teslim edildi, alt ticket elle açılabilir`,
+        key: `fanout-failed:${cell.appId}`,
+      });
+      continue;
+    }
     children.push(created.key);
     await audit(deps, run, {
       action: "ASSIGN_APP",

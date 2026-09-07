@@ -14,7 +14,13 @@ export class JiraHttpError extends Error {
     readonly responseBody: string,
     message?: string,
   ) {
-    super(message ?? `Jira ${method} ${url} failed with HTTP ${status}`);
+    // The body is where Jira says WHY ("issuetype: The issue type selected
+    // is invalid", "labels: Field 'labels' cannot be set"). Kept out of the
+    // message, the operator saw "HTTP 400" on the panel and nothing else.
+    super(
+      message ??
+        `Jira ${method} ${url} failed with HTTP ${status}${responseBody.trim() === "" ? "" : ` — ${responseBody.trim().slice(0, 300)}`}`,
+    );
     this.name = "JiraHttpError";
   }
 }

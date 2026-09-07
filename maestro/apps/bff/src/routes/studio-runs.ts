@@ -743,7 +743,7 @@ const MAX_JOURNAL_PAGES = 25;
  * red under step 2 while the real failure sat unexplained at step 3.
  */
 const ERROR_TITLE =
-  /tutturamadı|reddedildi|doğrulanamadı|bulunamadı|başarısız|\bhata\b|kırmızı|bloke|düşüldü|devredildi|gönderilemedi|kullanılamadı|çağrılamadı|belgesi eksik/i;
+  /tutturamadı|reddedildi|doğrulanamadı|bulunamadı|başarısız|\bhata\b|kırmızı|bloke|düşüldü|devredildi|gönderilemedi|kullanılamadı|çağrılamadı|açılamadı|belgesi eksik/i;
 const GATE_VERDICT = /^kapı \S+: /;
 
 export function isErrorEntry(entry: Pick<JournalEntry, "kind" | "title">): boolean {

@@ -82,6 +82,8 @@ export interface FakeOptions {
   members?: (group: string) => string[];
   /** Makes `assign` reject, for the fail-soft delivery path. */
   assignFails?: boolean;
+  /** Returns an Error to make THAT `createLinkedIssue` call reject (fan-out fail-soft path). */
+  createLinkedIssueFails?: (parent: string, fields: { summary: string }) => Error | null;
   /**
    * Studio'da tanımlı ajan personaları: varyant kimliği → metin (ya da bir
    * `Error`, okumanın patladığı hâl için). Verilmezse `deps.persona` HİÇ
@@ -236,7 +238,9 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
         recorded.assignments.push({ ticket, to });
         return Promise.resolve();
       },
-      createLinkedIssue: (_parent, fields) => {
+      createLinkedIssue: (parent, fields) => {
+        const refused = options.createLinkedIssueFails?.(parent, fields) ?? null;
+        if (refused !== null) return Promise.reject(refused);
         recorded.children.push({ summary: fields.summary, description: fields.description });
         return Promise.resolve({ key: `PAY-${200 + recorded.children.length}` });
       },

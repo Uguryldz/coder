@@ -104,6 +104,29 @@ describe("publishAnalysis (M47)", () => {
 });
 
 describe("fanOutChildren (M100)", () => {
+  /**
+   * Jira refusing a child (HTTP 400: issue type not in the project, a field
+   * the screen lacks) must not kill a run whose analysis is already written
+   * and published — that was OTYT-1, dead at step 3 for three days.
+   */
+  it("bir alt ticket'ı Jira reddederse koşu ölmez: defter satırı, diğer alt ticket'lar açılır", async () => {
+    const fakes = makeFakes({
+      createLinkedIssueFails: (parent, fields) => (fields.summary.includes("ugurweb") ? new Error("Jira POST /rest/api/2/issue failed with HTTP 400 — issuetype: invalid") : null),
+    });
+    const doc = {
+      ...analysisDoc("orta"),
+      impactMatrix: [
+        { appId: "ugurweb", impacted: true, summary: "banner", source: "repo_card" as const },
+        { appId: "ugurmobil", impacted: true, summary: "ekran", source: "repo_card" as const },
+      ],
+    };
+    const children = await fanOutChildren(fakes.deps, "PAY-101", doc);
+    expect(children).toHaveLength(1);
+    const line = fakes.journalStore.entries.find((e) => e.title === "alt ticket açılamadı");
+    expect(line?.detail).toContain("ugurweb");
+    expect(line?.detail).toContain("HTTP 400");
+  });
+
   const withImpact = (): AnalysisDoc => ({
     ...analysisDoc("orta"),
     impactMatrix: [

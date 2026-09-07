@@ -12,6 +12,7 @@ import { runIntake as runIntakeRole, toIntakeResult } from "@maestro/agent-roles
 import { ApplicationFailure } from "@temporalio/common";
 import { z } from "zod";
 import type { IntakeResult } from "../activities.js";
+import { ticketAttachments, withAttachments } from "./attachments.js";
 import { readHumanComments, withComments, withPriorWork } from "./comments.js";
 import type { ActivityDeps } from "./deps.js";
 import { guardModelCall, guardedLlm, outcomeOfRole, resolveOutcome } from "./outcome.js";
@@ -203,6 +204,10 @@ export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<
   // `comments.ts`). Okuma başarısızsa liste boş döner ve adım eskisi gibi
   // yalnız ticket metniyle devam eder.
   const comments = await readHumanComments(deps, ticket);
+  // Ekler de intake'in önünde: "gerekçe ekteki dokümanda" diyen bir ticket, ek
+  // okunmadan "gerekçe eksik" diye geri gönderilirdi. Fail-soft (bkz.
+  // `attachments.ts`): okunamayan ek adıyla geçer, akış durmaz.
+  const attachments = await ticketAttachments(deps, ticket);
   const persona = await analystPersona(deps, run);
 
   // İKİ KAT SARMALAMA, ve ikisi de gerekli:
@@ -233,7 +238,7 @@ export async function runIntake(deps: ActivityDeps, ticket: TicketKey): Promise<
        * Geçmiş yoksa (`priorWork === null`, ilk koşu) `withPriorWork`
        * snapshot'ı AYNEN döndürür: prompt bit bit bugünküyle aynı kalır.
        */
-      ticket: withPriorWork(withComments(snapshot, comments), run.priorWork),
+      ticket: withPriorWork(withAttachments(withComments(snapshot, comments), attachments), run.priorWork),
       variantId: run.variantId,
       dataClass: run.dataClass,
       ...(persona === undefined ? {} : { persona }),

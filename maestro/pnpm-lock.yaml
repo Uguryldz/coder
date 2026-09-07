@@ -35,6 +35,9 @@ importers:
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@maestro/doc-text':
+        specifier: workspace:*
+        version: link:../../packages/doc-text
       '@maestro/execution':
         specifier: workspace:*
         version: link:../../packages/execution
@@ -660,6 +663,31 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.33.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
 
+  packages/doc-text:
+    dependencies:
+      unpdf:
+        specifier: ^1.8.1
+        version: 1.8.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@types/pdfkit':
+        specifier: ^0.17.6
+        version: 0.17.6
+      docx:
+        specifier: ^9.7.1
+        version: 9.7.1
+      pdfkit:
+        specifier: ^0.19.1
+        version: 0.19.1
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.33.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
+
   packages/execution:
     dependencies:
       '@maestro/contracts':
@@ -1011,6 +1039,9 @@ importers:
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@maestro/doc-text':
+        specifier: workspace:*
+        version: link:../doc-text
       '@maestro/execution':
         specifier: workspace:*
         version: link:../execution
@@ -3856,6 +3887,15 @@ packages:
 
   unionfs@4.6.0:
     resolution: {integrity: sha512-fJAy3gTHjFi5S3TP5EGdjs/OUMFFvI/ady3T8qVuZfkv8Qi8prV/Q8BuFEgODJslhZTT2z2qdD2lGdee9qjEnA==}
+
+  unpdf@1.8.1:
+    resolution: {integrity: sha512-xkURhy2SoGpOIH0a1gLHNkASPIQYonadDJs2AQwPEfUakafeD9EA1WTWWsaR++gfTCXJpV27W7tU1nXuk82UKQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@napi-rs/canvas': ^0.1.69 || ^1.0.0
+    peerDependenciesMeta:
+      '@napi-rs/canvas':
+        optional: true
 
   unpipe@1.0.0:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
@@ -6838,6 +6878,8 @@ snapshots:
   unionfs@4.6.0:
     dependencies:
       fs-monkey: 1.1.0
+
+  unpdf@1.8.1: {}
 
   unpipe@1.0.0: {}
 

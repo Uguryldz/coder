@@ -501,6 +501,10 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
     buildStatusMap(draft.statusOn, draft.statusDraft, draft.reassignOnNeedInfo, draft.flowType),
   );
   const gateEmpty = mirror.approve === null && mirror.return === null;
+  // See RuleForm: a blank `onReview` means the analysis never moves to the
+  // approval column, and the engine says nothing about it.
+  const reviewMissing =
+    draft.statusOn && livePoints.has("onReview") && draft.statusDraft.onReview.trim() === "";
 
   return (
     <>
@@ -595,6 +599,9 @@ export function StatusPane({ draft, data, onChange }: PaneProps): ReactNode {
           <div className="scr-note scr-note--warn scr-mt-2">
             {t(draft.statusOn ? "listening.gate_status.empty_warning" : "setup.gate_status.off_warning")}
           </div>
+        )}
+        {reviewMissing && (
+          <div className="scr-note scr-note--warn scr-mt-2">{t("listening.gate_status.review_missing")}</div>
         )}
         <p className="scr-hint">{t("listening.gate_status.approval_note")}</p>
       </div>

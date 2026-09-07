@@ -1057,6 +1057,7 @@
   "listening.gate_status.intro": "The five rows above say where Maestro MOVES the ticket. The same rows read in reverse too: when YOU move the ticket there, Maestro takes it as a decision. Nothing extra to fill in — the two edges of the gate are derived from those five fields and shown below. They apply while an analysis approval gate is open, and the /approve comment path stays exactly as it was; whichever arrives first closes the gate.",
   "listening.gate_status.no_gate_flow": "The bug-fix flow has no analysis-approval gate; moving the ticket is not read as a decision on this rule.",
   "listening.gate_status.review_clash": "A gate edge is the same as the \"when analysis goes to review\" status: {values}. The gate OPENS in that status, so moving the ticket there is not a decision — it is the ticket waiting at the gate. That edge does not take effect; pick a different status.",
+  "listening.gate_status.review_missing": "\"When analysis goes to approval\" is BLANK: when the analysis finishes the ticket is not moved to any status and the board never shows work awaiting approval — it reads as \"the robot did not move it\". Put your approval-queue status (e.g. analysisapproval) in that field.",
   "listening.gate_status.title": "Gate decision: approving by moving the ticket",
   "listening.gates.custom": "Let me choose the gates",
   "listening.gates.default": "No selection — by risk tier (today's behaviour)",

@@ -445,6 +445,13 @@ function StatusSection(props: RuleFormProps): ReactNode {
     ? t("listening.status.summary_on")
     : t("listening.status.summary_off");
   const gateEmpty = mirror.approve === "" && mirror.return === "";
+  // The move the operator most expects — "analysis done, ticket goes to the
+  // approval column" — is the `onReview` point. Left blank, the engine skips
+  // it silently ("absent = do not move"), so the board never shows the
+  // analysis waiting for approval and the operator reads it as "the robot
+  // did not move the ticket". Said here, next to the field, before the save.
+  const reviewMissing =
+    draft.statusOn && livePoints.has("onReview") && draft.statusDraft.onReview.trim() === "";
 
   return (
     <details
@@ -569,6 +576,9 @@ function StatusSection(props: RuleFormProps): ReactNode {
               )}
               {gateEmpty && (
                 <p className="scr-hint scr-hint--warn">{t("listening.gate_status.empty_warning")}</p>
+              )}
+              {reviewMissing && (
+                <p className="scr-hint scr-hint--warn">{t("listening.gate_status.review_missing")}</p>
               )}
               <p className="scr-hint">{t("listening.gate_status.approval_note")}</p>
             </>

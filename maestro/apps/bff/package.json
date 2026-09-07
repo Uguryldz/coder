@@ -15,6 +15,7 @@
     "@maestro/audit": "workspace:*",
     "@maestro/config": "workspace:*",
     "@maestro/contracts": "workspace:*",
+    "@maestro/doc-text": "workspace:*",
     "@maestro/execution": "workspace:*",
     "@maestro/llm-gateway": "workspace:*",
     "@maestro/mcp-servers": "workspace:*",

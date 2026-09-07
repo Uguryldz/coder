@@ -14,6 +14,10 @@ export function fixture(name: string): unknown {
 export interface StubResponse {
   status?: number;
   body?: unknown;
+  /** A raw text body (an attachment download) — sent as-is, `text/plain` unless `headers` says otherwise. */
+  text?: string;
+  /** A raw binary body (a Word/PDF attachment) — sent as-is, `application/octet-stream` unless `headers` says otherwise. */
+  bytes?: Uint8Array;
   headers?: Record<string, string>;
 }
 
@@ -53,6 +57,18 @@ export function stubFetch(responses: StubResponse[]): FetchStub {
     });
 
     const status = spec.status ?? 200;
+    if (spec.text !== undefined || spec.bytes !== undefined) {
+      const raw = spec.bytes ?? Buffer.from(spec.text ?? "", "utf8");
+      return Promise.resolve(
+        new Response(raw, {
+          status,
+          headers: {
+            "content-type": spec.bytes !== undefined ? "application/octet-stream" : "text/plain; charset=utf-8",
+            ...(spec.headers ?? {}),
+          },
+        }),
+      );
+    }
     const hasBody = spec.body !== undefined;
     return Promise.resolve(
       new Response(hasBody ? JSON.stringify(spec.body) : null, {

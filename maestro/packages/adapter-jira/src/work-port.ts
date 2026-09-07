@@ -13,6 +13,7 @@ import {
   JiraResponseError,
 } from "./errors.js";
 import { ISSUE_FIELDS, mapIssueToSnapshot, userIdOf } from "./mapping.js";
+import { normalizeAttachments, type JiraAttachment } from "./attachments.js";
 import { searchDcIssues, type DcSearchPage, type DcSearchRequest } from "./search.js";
 import {
   currentStatusNameOf,
@@ -250,6 +251,35 @@ export class JiraDcWorkPort implements WorkPort {
    * list — silently reading zero comments looks exactly like "nobody approved
    * yet", which is the failure this method exists to end.
    */
+  /**
+   * The ticket's attachments, metadata only — the Cloud driver's capability,
+   * now on Data Center too (REST v2 answers `fields=attachment` with the same
+   * shape). Not on the frozen `WorkPort`; the composition root probes for it
+   * (`stores/attachment-reader.ts`). A missing or malformed field is [] —
+   * an issue with no attachments is normal, not an error.
+   */
+  async readAttachments(key: TicketKey): Promise<JiraAttachment[]> {
+    const issueKey = requireTicketKey(key, "key");
+    const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}`, {
+      fields: "attachment",
+    });
+    return normalizeAttachments(raw);
+  }
+
+  /**
+   * An attachment's content as UTF-8 text, via its `content` URL
+   * (`/secure/attachment/<id>/<name>` on DC — outside the REST prefix, same
+   * PAT). The client pins the host and refuses a login page; see `getBytes`.
+   */
+  async downloadAttachment(contentUrl: string): Promise<string> {
+    return this.client.getText(contentUrl);
+  }
+
+  /** The attachment's bytes — Word/PDF are not text until `@maestro/doc-text` extracts them. */
+  async downloadAttachmentBytes(contentUrl: string): Promise<Uint8Array> {
+    return this.client.getBytes(contentUrl);
+  }
+
   async listComments(key: TicketKey): Promise<unknown[]> {
     const issueKey = requireTicketKey(key, "key");
     const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}/comment`, {});

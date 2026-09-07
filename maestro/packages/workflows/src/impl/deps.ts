@@ -390,6 +390,36 @@ export interface CommentReader {
  * Persona gibi OPSİYONEL ve bir ÜST KATMAN: bağlı değilse ya da okuma patlarsa
  * analiz notsuz devam eder — uyarıyla, sessiz değil.
  */
+/**
+ * Ticket'ın EKLERİ — analistin gördüğü bağlamın bir parçası.
+ *
+ * ── HANGİ BOŞLUĞU KAPATIYOR ─────────────────────────────────────────────────
+ * Bir banka ticket'ı "ekteki analiz dokümanına bakın" der; ek okunmayınca
+ * model yalnız özet + açıklamayı görür ve dokümanın dediğini uydurmadan
+ * yazamaz. Ek okuma kodu emekli pilotta vardı (`readTicketAttachments`),
+ * Temporal yolu ise hiç okumuyordu; Data Center sürücüsünde okuma metodu da
+ * yoktu. Persona/guidance/comments ile aynı çözüm: bir seam, kompozisyon
+ * kökünün sürücüden yapısal yoklamayla karşıladığı bir şekil (M44).
+ *
+ * OPSİYONEL ve BEST-EFFORT: bağlı değilse ya da bir ek indirilemezse analiz
+ * eksiz devam eder — uyarıyla, sessiz değil. Metin çıkarımı (Word/PDF)
+ * `@maestro/doc-text` ile aktivitenin İÇİNDE yapılır; ekler Temporal
+ * geçmişine hiç girmez (2 MB payload sınırı, determinizm).
+ */
+export interface AttachmentMeta {
+  readonly filename: string;
+  readonly mimeType: string;
+  /** Bytes as Jira reports them; the reader caps downloads before fetching. */
+  readonly size: number;
+  /** Jira-issued absolute URL; the driver authenticates the download. */
+  readonly contentUrl: string;
+}
+
+export interface AttachmentReader {
+  listAttachments(ticket: TicketKey): Promise<readonly AttachmentMeta[]>;
+  downloadBytes(contentUrl: string): Promise<Uint8Array>;
+}
+
 export interface GuidanceReader {
   /**
    * `variantId`'nin göreceği ETKİN notlar: hedefsiz (global) olanların tamamı +
@@ -493,6 +523,8 @@ export interface ActivityDeps {
    * snapshot'ı görür, bugünkü davranış — ve netleştirme cevapları görünmez.
    */
   readonly comments?: CommentReader;
+  /** Ticket ekleri (metin/Word/PDF) — bkz. `AttachmentReader`. */
+  readonly attachments?: AttachmentReader;
   readonly translate: Translate;
   readonly now: () => Date;
 }

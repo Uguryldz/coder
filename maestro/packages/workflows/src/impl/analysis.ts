@@ -13,6 +13,7 @@ import { priorWorkNote, readHumanComments } from "./comments.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { analystGuidance } from "./guidance.js";
+import { ticketAttachments } from "./attachments.js";
 import { analystPersona } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
@@ -343,6 +344,22 @@ export async function writeAnalysis(
   // sonra kurum bilgisi, sonra analiz edilecek talep. Not yoksa alan hiç
   // gitmez; prompt bugünküyle bit bit aynı kalır.
   const guidance = await analystGuidance(deps, run);
+  // Ticket'ın ekleri (metin/Word/PDF), aktivitenin İÇİNDE okunup metne
+  // indirgenir — Temporal geçmişine girmez. Ek yoksa alan hiç gitmez; prompt
+  // eksiz ticket için bit bit aynı kalır. Okunan ekler deftere yazılır ki
+  // operatör analizin neyi gördüğünü bilsin (ve neyi göremediğini).
+  const attachments = await ticketAttachments(deps, ticket);
+  if (attachments.length > 0) {
+    await record(deps, run, {
+      kind: "other",
+      actor: "ai",
+      title: "ekler okundu",
+      detail: attachments
+        .map((a) => `${a.name} (${a.kind}${a.note === undefined ? "" : ` — ${a.note}`})`)
+        .join(", "),
+      key: `attachments:${activitySeq()}`,
+    });
+  }
   // The auth guard is what keeps a rejected model key from retrying this
   // activity in silence for days (see `guardModelCall`).
   const outcome = await guardModelCall(deps, run, "analysis", () =>
@@ -364,6 +381,10 @@ export async function writeAnalysis(
           templateVersion: run.templateVersion,
           summary: snapshot.summary,
           description: snapshot.description,
+          // Ekler ticket metninin HEMEN ARDINDAN: açıklama "ekteki dokümana
+          // bakın" der, doküman onu izler. Okunamayan ek de adıyla gider;
+          // model onu "incelenmeli" diye anar, içeriğini uydurmaz.
+          ...(attachments.length === 0 ? {} : { attachments }),
           // Ticket metninin ARDINDAN: "şunu analiz et" önce gelir, "ve şu
           // sebeple bir daha bak" sonra. Ters sırada, geri gönderme gerekçesi
           // analiz edilecek talep sanılabilirdi.

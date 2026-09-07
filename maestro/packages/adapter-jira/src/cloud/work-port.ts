@@ -13,7 +13,7 @@ import {
 } from "../errors.js";
 import { ISSUE_FIELDS } from "../mapping.js";
 import { JIRA_SIGNATURE_HEADER, verifyWebhookSignature } from "../webhook.js";
-import { normalizeAttachments, type JiraAttachment } from "./attachments.js";
+import { normalizeAttachments, type JiraAttachment } from "../attachments.js";
 import { JiraCloudClient } from "./client.js";
 import { commandFromCloudPayload, parseCommandFromComment, type CloudCommentCommand } from "./comment-command.js";
 import type { JiraCloudConfig } from "./config.js";
@@ -108,6 +108,11 @@ export class JiraCloudWorkPort implements WorkPort {
    */
   async downloadAttachment(contentUrl: string): Promise<string> {
     return this.client.getText(contentUrl);
+  }
+
+  /** The attachment's bytes — for Word/PDF, which are not text until extracted. */
+  async downloadAttachmentBytes(contentUrl: string): Promise<Uint8Array> {
+    return this.client.getBytes(contentUrl);
   }
 
   /**

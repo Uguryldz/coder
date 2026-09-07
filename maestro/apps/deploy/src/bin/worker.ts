@@ -6,6 +6,7 @@ import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
+import { attachmentReaderFor } from "../stores/attachment-reader.js";
 import { commentReaderFor } from "../stores/comment-reader.js";
 import { docAttacherFor } from "../stores/doc-attacher.js";
 import { statusMoverFor } from "../stores/status-mover.js";
@@ -144,12 +145,19 @@ export async function main(): Promise<void> {
      * `stores/comment-reader.ts` içinde.
      */
     const comments = commentReaderFor(deployment.ports.work, env.source["MAESTRO_BOT_ACCOUNT_ID"]);
+    /**
+     * Ticket'ın ekleri (metin/Word/PDF), analist ve intake görsün diye. Her
+     * iki Jira sürücüsü de taşıyor; taşımayan bir sürücüde `undefined` ve
+     * analiz eksiz sürer — deftere "ekler okundu" satırı düşmez, o kadar.
+     */
+    const attachments = attachmentReaderFor(deployment.ports.work);
     const workerCore: CoreDeps = {
       ...core,
       execution: execution.runner,
       ...(docAttacher === undefined ? {} : { docAttacher }),
       ...(statusMover === undefined ? {} : { statusMover }),
       ...(comments === undefined ? {} : { comments }),
+      ...(attachments === undefined ? {} : { attachments }),
     };
 
     if (MISSING_CORE_DEPS.length > 0) {

@@ -57,6 +57,21 @@ export {
  */
 export { analystGuidance, type GuidanceWarn } from "./guidance.js";
 /**
+ * Ticket eklerini (metin/Word/PDF) analiz ve intake bağlamına taşıyan
+ * yardımcılar. Sürücüden okuma `AttachmentReader` seam'i üzerinden (bkz. `deps.ts`).
+ */
+export {
+  ticketAttachments,
+  withAttachments,
+  ATTACHMENT_BLOCK_TITLE,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_CHARS,
+  MAX_TOTAL_CHARS,
+  type AttachmentForModel,
+  type AttachmentWarn,
+} from "./attachments.js";
+/**
  * Ticket'ın insan yorumlarını intake bağlamına taşıyan yardımcılar. Sürücüden
  * okuma `CommentReader` seam'i üzerinden (bkz. `deps.ts`).
  */

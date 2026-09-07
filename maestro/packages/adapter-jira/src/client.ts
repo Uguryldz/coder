@@ -89,6 +89,59 @@ export class JiraDcClient {
     return this.request<T>({ method: "GET", path, query });
   }
 
+  /**
+   * GET a resource's RAW BYTES by ABSOLUTE URL — an attachment's `content`
+   * link, which on Data Center is `/secure/attachment/<id>/<name>`: outside
+   * the REST prefix, behind the same web security layer, and answered for a
+   * PAT the same way `/rest/api/2` is. Two things `get` never has to worry
+   * about are enforced here:
+   *
+   *  · the URL must be on THIS Jira's host — the PAT is sent as a bearer
+   *    header, and a `content` link pointing elsewhere (a misconfigured file
+   *    server, a crafted issue) would otherwise carry the bank's token to it;
+   *  · a login page is a failure, not a document — Data Center answers an
+   *    unaccepted credential on `/secure/` with a 302 to `login.jsp` and a
+   *    200 HTML body, which `res.ok` alone would hand to the analyst as the
+   *    attachment's text.
+   */
+  async getBytes(absoluteUrl: string): Promise<Uint8Array> {
+    const token = await this.token();
+    if (typeof token !== "string" || token.trim().length === 0) {
+      throw new JiraConfigError("the resolved PAT is empty — refusing to send an unauthenticated request");
+    }
+    const target = new URL(absoluteUrl);
+    const base = new URL(this.baseUrl);
+    if (target.host !== base.host) {
+      throw new JiraConfigError(
+        `attachment URL host '${target.host}' is not this Jira's host '${base.host}' — refusing to send the PAT there`,
+      );
+    }
+    const res = await this.fetchImpl(absoluteUrl, {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}`, accept: "*/*" },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!res.ok) {
+      throw new JiraHttpError(res.status, "GET", absoluteUrl, (await consumeBody(res)).slice(0, BODY_SNIPPET_LIMIT));
+    }
+    const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
+    if (contentType.startsWith("text/html") || res.url.includes("login.jsp")) {
+      throw new JiraHttpError(
+        res.status,
+        "GET",
+        absoluteUrl,
+        (await consumeBody(res)).slice(0, BODY_SNIPPET_LIMIT),
+        "Jira answered with an HTML page instead of the attachment — the PAT was not accepted on /secure/attachment (login redirect)",
+      );
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
+  /** `getBytes` decoded as UTF-8, for the text attachments the analyst reads inline. */
+  async getText(absoluteUrl: string): Promise<string> {
+    return Buffer.from(await this.getBytes(absoluteUrl)).toString("utf8");
+  }
+
   post<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>({ method: "POST", path, body });
   }

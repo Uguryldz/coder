@@ -11,7 +11,7 @@ import type { AgentTurnRequest, AgentTurnResult } from "@maestro/execution";
 import { createJournalMasker } from "@maestro/memory";
 import { defaultPiiPolicy } from "@maestro/pii";
 import type { LlmOutcome, RepoRef } from "@maestro/ports";
-import type { ActivityDeps, RunContext } from "../src/impl/deps.js";
+import type { ActivityDeps, AttachmentMeta, RunContext } from "../src/impl/deps.js";
 import { InMemoryIdempotency } from "../src/impl/idempotency.js";
 import {
   APP,
@@ -93,6 +93,15 @@ export interface FakeOptions {
    * notlar (ya da bir `Error`). Verilmezse `deps.guidance` HİÇ bağlanmaz.
    */
   guidance?: Record<string, readonly { title: string; content: string }[] | Error | undefined>;
+  /**
+   * Ticket'ın ekleri. Verilmezse `deps.attachments` HİÇ bağlanmaz (eksiz
+   * sürücü — bugüne kadarki davranış). `list` bir `Error` ise liste okuması
+   * patlar; `files` içinde bir içerik URL'si `Error` ise o ekin indirmesi patlar.
+   */
+  attachments?: {
+    list: readonly AttachmentMeta[] | Error;
+    files?: Record<string, Uint8Array | Error>;
+  };
   /**
    * Ticket'ın yorum akışı, sürücünün HAM şekliyle (`CommentReader.listComments`
    * `unknown[]` döner — iki Jira lehçesi iki farklı şekil taşır). Verilmezse
@@ -381,6 +390,24 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
               const answer = options.guidance?.[variantId];
               if (answer instanceof Error) return Promise.reject(answer);
               return Promise.resolve(answer ?? []);
+            },
+          },
+        }),
+    // Ticket'ın ekleri. Persona/guidance ile aynı kalıp: verilmezse bağlı değil.
+    ...(options.attachments === undefined
+      ? {}
+      : {
+          attachments: {
+            listAttachments: () => {
+              const list = options.attachments?.list;
+              if (list instanceof Error) return Promise.reject(list);
+              return Promise.resolve(list ?? []);
+            },
+            downloadBytes: (contentUrl) => {
+              const file = options.attachments?.files?.[contentUrl];
+              if (file instanceof Error) return Promise.reject(file);
+              if (file === undefined) return Promise.reject(new Error(`fake: no file for ${contentUrl}`));
+              return Promise.resolve(file);
             },
           },
         }),

@@ -444,6 +444,13 @@ Kurulumdan sonra ikisini tek komutla yayınlayın (Studio yönetici hesabıyla g
 ./sablon/analiz-sablonu-yayinla.sh
 ```
 
+**Ticket ekleri okunur.** Analist ve tamlık kontrolü, ticket'a eklenmiş dosyaların metnini görür:
+`.txt/.md/.csv/.json/.xml/.yaml`, Word (`.docx`) ve PDF (metin katmanı olan). Görsel, `.xlsx`, `.pptx`
+ve eski `.doc` yalnız adıyla anılır — model onları "incelenmeli" diye yazar, içeriğini uydurmaz.
+Sınırlar: ilk 8 ek, ek başına 8 MB indirme ve 20 000 karakter, toplam 60 000 karakter. Koşu
+defterinde "ekler okundu" satırı hangi ekin okunduğunu, hangisinin neden okunmadığını söyler.
+Ek içeriği ticket metniyle aynı PII maskesinden geçer.
+
 Word'de belge açılırken "alanlar güncellensin mi?" sorusuna **Evet** deyin: içindekiler o anda
 yenilenir. Şablonu kendi PDD'nizden yeniden üretmek için `sablon/sablon-uret.py` kaynak dosyayı
 `plan/` klasöründen okur; kişi adları ve tarihler üretilen dosyada yer almaz.

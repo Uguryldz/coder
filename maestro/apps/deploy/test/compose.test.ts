@@ -8,6 +8,7 @@ import { adoConfig, storageConfig } from "../src/driver-config.js";
 import { loadDeployEnv, vaultMounts } from "../src/env.js";
 import { ALL_PORT_KEYS, driversFor, WORKER_PORT_KEYS } from "../src/profile.js";
 import { buildSecretPort } from "../src/secrets.js";
+import { attachmentReaderFor } from "../src/stores/attachment-reader.js";
 import { docAttacherFor } from "../src/stores/doc-attacher.js";
 import { statusMoverFor } from "../src/stores/status-mover.js";
 import { isNotConfigured } from "../src/stores/unavailable-ports.js";
@@ -197,6 +198,29 @@ describe("composition root: dev profile", () => {
     const attacher = docAttacherFor(cloud);
     expect(attacher).toBeDefined();
     expect(typeof attacher?.addAttachment).toBe("function");
+  });
+
+  /**
+   * The attachment READER is the one seam both drivers carry: Data Center
+   * reads `fields=attachment` and downloads from `/secure/attachment/...` with
+   * the PAT, Cloud from its REST content URL. Asserted against the real
+   * drivers for the same reason as the attacher above — the risk is a driver
+   * silently losing the method and the analyst silently losing the documents.
+   */
+  it("gives the worker an attachment reader on BOTH drivers", async () => {
+    const dc = await boot({ ...DEV_ENV });
+    const dcReader = attachmentReaderFor(dc.deployment.ports.work);
+    expect(dcReader).toBeDefined();
+    expect(typeof dcReader?.listAttachments).toBe("function");
+    expect(typeof dcReader?.downloadBytes).toBe("function");
+
+    const cloud = createJiraCloudWorkPort({
+      baseUrl: "https://jira.invalid",
+      email: "maestro-bot@bank.invalid",
+      apiTokenRef: "kv/jira#token",
+      deps: { secrets: buildSecretPort(loadDeployEnv(DEV_ENV)) },
+    });
+    expect(attachmentReaderFor(cloud)).toBeDefined();
   });
 
   /**

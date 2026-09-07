@@ -77,6 +77,11 @@ export class JiraCloudClient {
    * auth and timeout as `send`; a non-2xx is a loud error, never silent bytes.
    */
   async getText(absoluteUrl: string): Promise<string> {
+    return Buffer.from(await this.getBytes(absoluteUrl)).toString("utf8");
+  }
+
+  /** The raw bytes of an attachment — a Word or PDF file the analyst reads through `@maestro/doc-text`. */
+  async getBytes(absoluteUrl: string): Promise<Uint8Array> {
     const token = await this.token();
     if (typeof token !== "string" || token.trim().length === 0) {
       throw new JiraConfigError("the resolved API token is empty — refusing to send an unauthenticated request");
@@ -92,7 +97,7 @@ export class JiraCloudClient {
     if (!res.ok) {
       throw new JiraHttpError(res.status, "GET", absoluteUrl, (await consumeBody(res)).slice(0, BODY_SNIPPET_LIMIT));
     }
-    return res.text();
+    return new Uint8Array(await res.arrayBuffer());
   }
 
   post<T>(path: string, body: unknown): Promise<T> {

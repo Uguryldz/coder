@@ -25,8 +25,17 @@ import {
   type ListeningRule,
   type MatchKind,
   type ProbeDraft,
+  type RepoMap,
   type RuleBody,
 } from "./types.ts";
+
+/** One row of the repo map as typed; empty rows are dropped on save. */
+export interface RepoMapRowDraft {
+  readonly value: string;
+  readonly appId: string;
+  readonly targetBranch: string;
+}
+export const EMPTY_REPO_MAP_ROW: RepoMapRowDraft = { value: "", appId: "", targetBranch: "" };
 
 export interface RuleDraft {
   readonly projectKey: string;
@@ -55,6 +64,12 @@ export interface RuleDraft {
   readonly gateOwnerless: boolean;
   /** Kapı bölümü açık mı — yalnız ekran; kaydedilmez. */
   readonly gatePanelOpen: boolean;
+  /** Depo eşlemesi: açık mı, hangi Jira alanı, satırlar. */
+  readonly repoMapOn: boolean;
+  readonly repoMapField: string;
+  readonly repoMapFieldName: string;
+  readonly repoMapRows: readonly RepoMapRowDraft[];
+  readonly repoMapPanelOpen: boolean;
   /** Durum eşlemesi açık mı (yazma tarafı). */
   readonly statusOn: boolean;
   /**
@@ -87,6 +102,11 @@ export function emptyDraft(projectKey = ""): RuleDraft {
     gateSteps: [],
     gateOwnerless: false,
     gatePanelOpen: false,
+    repoMapOn: false,
+    repoMapField: "",
+    repoMapFieldName: "",
+    repoMapRows: [EMPTY_REPO_MAP_ROW],
+    repoMapPanelOpen: false,
     statusOn: false,
     statusPanelOpen: false,
     statusDraft: EMPTY_STATUS_DRAFT,
@@ -120,6 +140,14 @@ export function draftFromRule(rule: ListeningRule, jiraConnectionId: string): Ru
     gateSteps: gates?.steps ?? [],
     gateOwnerless: gates?.ownerless === true,
     gatePanelOpen: gates !== null,
+    repoMapOn: (rule.repoMap ?? null) !== null,
+    repoMapField: rule.repoMap?.field ?? "",
+    repoMapFieldName: rule.repoMap?.fieldName ?? "",
+    repoMapRows:
+      rule.repoMap === undefined || rule.repoMap === null
+        ? [EMPTY_REPO_MAP_ROW]
+        : rule.repoMap.entries.map((e) => ({ value: e.value, appId: e.appId, targetBranch: e.targetBranch ?? "" })),
+    repoMapPanelOpen: (rule.repoMap ?? null) !== null,
     statusOn: map !== null,
     // Eşlemesi olan kural AÇIK bölümle gelir: kapalı bir özetin ardına saklanmış
     // bir yapılandırma, bu ekranın düzeltmek için var olduğu görünmezliğin ta kendisi.
@@ -159,6 +187,23 @@ export function priorityOf(text: string): number | null {
 }
 
 /** Tele giden durum eşlemesi — formun BUGÜN kaydedeceği hâliyle. */
+/** The map as it will be saved: only complete rows; null when off or empty. */
+export function repoMapOf(d: RuleDraft): RepoMap | null {
+  if (!d.repoMapOn || d.repoMapField.trim() === "") return null;
+  const entries = d.repoMapRows
+    .map((row) => ({ value: row.value.trim(), appId: row.appId.trim(), targetBranch: row.targetBranch.trim() }))
+    .filter((row) => row.value !== "" && row.appId !== "")
+    .map((row) => ({ value: row.value, appId: row.appId, ...(row.targetBranch === "" ? {} : { targetBranch: row.targetBranch }) }));
+  if (entries.length === 0) return null;
+  const fieldName = d.repoMapFieldName.trim();
+  return { field: d.repoMapField.trim(), ...(fieldName === "" ? {} : { fieldName }), entries };
+}
+
+/** On, with a field, but no complete row — the operator meant a map and has none. */
+export function repoMapIncomplete(d: RuleDraft): boolean {
+  return d.repoMapOn && repoMapOf(d) === null;
+}
+
 export function statusMapOf(d: RuleDraft): StatusMap | null {
   return buildStatusMap(d.statusOn, d.statusDraft, d.reassignOnNeedInfo, d.flowType, d.gateStatusDraft);
 }
@@ -193,6 +238,7 @@ export function bodyFromDraft(d: RuleDraft, priority: number): RuleBody {
     gateSteps: d.gatesCustom
       ? { steps: [...d.gateSteps], ...(d.gateOwnerless ? { ownerless: true } : {}) }
       : null,
+    repoMap: repoMapOf(d),
     enabled: d.enabled,
     priority,
   };

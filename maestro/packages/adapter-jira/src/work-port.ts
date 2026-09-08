@@ -1,3 +1,4 @@
+import { fieldsFromIssue } from "./fields.js";
 import { TicketKey, type CommandEnvelope, type TicketSnapshot } from "@maestro/contracts";
 import { type WorkPort } from "@maestro/ports";
 import { adfToWikiMarkup, toAdfDocument } from "./adf.js";
@@ -86,6 +87,17 @@ export class JiraDcWorkPort implements WorkPort {
       fields: ISSUE_FIELDS,
     });
     return mapIssueToSnapshot(raw);
+  }
+
+  /** The listening rule's repo-map field(s), as the text a person sees. */
+  async readFields(key: TicketKey, fieldIds: readonly string[]): Promise<Record<string, string>> {
+    const issueKey = requireTicketKey(key, "key");
+    const ids = [...new Set(fieldIds.map((id) => id.trim()).filter((id) => /^[A-Za-z0-9_]+$/.test(id)))];
+    if (ids.length === 0) return {};
+    const raw = await this.client.get<unknown>(`${API}/issue/${encodeURIComponent(issueKey)}`, {
+      fields: ids.join(","),
+    });
+    return fieldsFromIssue(raw, ids);
   }
 
   /**

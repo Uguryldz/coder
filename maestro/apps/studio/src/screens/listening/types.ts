@@ -59,6 +59,25 @@ export interface ListeningRule {
    * `{steps: []}` bundan FARKLI: "hiç kapı istemiyorum".
    */
   readonly gateSteps?: { readonly steps: readonly string[]; readonly ownerless?: boolean } | null;
+  /** Depo eşlemesi: bir Jira alanının değeri → uygulama (+hedef dal). null = proje bağlamasının uygulaması. */
+  readonly repoMap?: RepoMap | null;
+}
+
+export interface RepoMapEntry {
+  readonly value: string;
+  readonly appId: string;
+  readonly targetBranch?: string;
+}
+export interface RepoMap {
+  readonly field: string;
+  readonly fieldName?: string;
+  readonly entries: readonly RepoMapEntry[];
+}
+/** A Jira field the map can use, from `/onboarding/jira-fields`. */
+export interface JiraFieldOption {
+  readonly id: string;
+  readonly name: string;
+  readonly custom: boolean;
 }
 
 /** `POST`/`PUT` gövdesi — kimlik hariç her alan (PUT tam değiştirmedir). */

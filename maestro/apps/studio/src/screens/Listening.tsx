@@ -31,6 +31,7 @@ import {
   type SweepRunResult,
   type SweepStatus,
   type VariantOption,
+  type JiraFieldOption,
 } from "./listening/types.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { invalidateRun } from "./shared/runs.ts";
@@ -162,6 +163,24 @@ export function ListeningScreen(): ReactNode {
 
   // Seçilen projenin gerçek statü / iş tipi adları, canlı Jira'dan. Yalnız
   // `status|issuetype` için — etiket serbest metindir, `assigned`ın değeri yok.
+  // Depo eşlemesi için Jira alanları — yalnız bölüm açıkken ve bir bağlantı
+  // varken okunur; okunamazsa alan kimliği elle yazılır.
+  const jiraFields = useQuery({
+    queryKey: ["jira-fields", jiraConnId],
+    enabled: jiraConnId !== null && draft.repoMapOn,
+    retry: false,
+    queryFn: ({ signal }) =>
+      api.get<{ ok: boolean; fields?: readonly JiraFieldOption[]; messageKey?: string }>(
+        `/onboarding/jira-fields?connectionId=${encodeURIComponent(jiraConnId ?? "")}`,
+        { signal },
+      ),
+  });
+  const jiraFieldOptions = jiraFields.data?.ok ? (jiraFields.data.fields ?? []) : [];
+  const jiraFieldsDegradedKey =
+    jiraFields.data !== undefined && !jiraFields.data.ok ? jiraFields.data.messageKey : undefined;
+  // Seçili projeye bağlı uygulamalar — eşleme satırlarının hedefi.
+  const appOptions = routing.data?.projects?.find((p) => p.projectKey === draft.projectKey)?.apps ?? [];
+
   const matchValues = useQuery({
     queryKey: ["jira-match-values", jiraConnId, draft.projectKey, draft.matchKind],
     enabled:
@@ -466,6 +485,9 @@ export function ListeningScreen(): ReactNode {
           valueOptions={valueOptions}
           valuesDegradedKey={valuesDegradedKey}
           statusOptions={statusOptions}
+          jiraFields={jiraFieldOptions}
+          jiraFieldsDegradedKey={jiraFieldsDegradedKey}
+          appOptions={appOptions}
           analystOptions={analystOptions}
           engineerOptions={engineerOptions}
           onSubmit={onSubmit}

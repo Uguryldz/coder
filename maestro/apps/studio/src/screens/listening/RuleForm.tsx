@@ -10,7 +10,7 @@ import {
   gateStatusConflicts,
   type StatusPoint,
 } from "../common/status-map.ts";
-import { gateMirrorOf, type RuleDraft } from "./draft.ts";
+import { EMPTY_REPO_MAP_ROW, gateMirrorOf, repoMapIncomplete, type RepoMapRowDraft, type RuleDraft } from "./draft.ts";
 import { RuleProbe } from "./RuleProbe.tsx";
 import {
   FLOW_TYPES,
@@ -19,6 +19,7 @@ import {
   type MatchKind,
   type ProbeResult,
   type VariantOption,
+  type JiraFieldOption,
 } from "./types.ts";
 
 export interface RuleFormProps {
@@ -38,6 +39,11 @@ export interface RuleFormProps {
   readonly statusOptions: readonly string[];
   readonly analystOptions: readonly VariantOption[];
   readonly engineerOptions: readonly VariantOption[];
+  /** Jira alanları (depo eşlemesi için), bağlantıdan canlı; okunamadıysa boş + gerekçe anahtarı. */
+  readonly jiraFields: readonly JiraFieldOption[];
+  readonly jiraFieldsDegradedKey: string | undefined;
+  /** Seçili projeye bağlı uygulama kimlikleri — eşleme satırlarındaki hedef. */
+  readonly appOptions: readonly string[];
   readonly onSubmit: () => void;
   readonly onTest: () => void;
   readonly onCancelEdit: () => void;
@@ -88,6 +94,7 @@ export function RuleForm(props: RuleFormProps): ReactNode {
           <TriggerGroup {...props} />
           <ActionGroup {...props} />
           <GatesSection {...props} />
+          <RepoMapSection {...props} />
           <StatusSection {...props} />
 
           <div className="scr-actions">
@@ -584,6 +591,141 @@ function StatusSection(props: RuleFormProps): ReactNode {
             </>
           )}
         </div>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * DEPO EŞLEMESİ — hangi ticket hangi depoya. Bir Jira projesi tek uygulamaya
+ * bağlıdır; bankada aynı projede birden çok depo var ve hangisi olduğunu
+ * ticket'ın bir alanı ("İş Ailesi") söyler. Bu bölüm o alanı ve değer →
+ * uygulama satırlarını kurar. Kapalıyken kural eskisi gibi proje bağlamasının
+ * uygulamasına gider; açık ama satırsızken kaydedilmez, uyarı çıkar.
+ */
+function RepoMapSection(props: RuleFormProps): ReactNode {
+  const t = useT();
+  const { draft, patch } = props;
+  const rows = draft.repoMapRows;
+  const setRow = (index: number, changes: Partial<RepoMapRowDraft>): void =>
+    patch({ repoMapRows: rows.map((row, i) => (i === index ? { ...row, ...changes } : row)) });
+  const removeRow = (index: number): void =>
+    patch({ repoMapRows: rows.length === 1 ? [EMPTY_REPO_MAP_ROW] : rows.filter((_, i) => i !== index) });
+  const fieldOptions = props.jiraFields.map((f) => ({
+    value: f.id,
+    label: f.custom ? `${f.name} (${f.id})` : f.name,
+  }));
+  const incomplete = repoMapIncomplete(draft);
+  const complete = rows.filter((r) => r.value.trim() !== "" && r.appId.trim() !== "").length;
+  const summaryState = !draft.repoMapOn
+    ? t("listening.repomap.summary_off")
+    : incomplete
+      ? t("listening.repomap.summary_incomplete")
+      : t("listening.repomap.summary_count", { count: String(complete), field: draft.repoMapFieldName || draft.repoMapField });
+  return (
+    <details
+      className="scr-adv"
+      open={draft.repoMapPanelOpen}
+      onToggle={(e) => patch({ repoMapPanelOpen: (e.currentTarget as HTMLDetailsElement).open })}
+    >
+      <summary className="scr-adv__summary">
+        <span>{t("listening.repomap.title")}</span>{" "}
+        <span className={incomplete ? "scr-hint scr-hint--warn" : "scr-hint"} style={{ display: "inline", margin: 0 }}>
+          {summaryState}
+        </span>
+      </summary>
+      <div className="scr-stack" style={{ padding: "10px 2px 2px" }}>
+        <p className="scr-hint" style={{ margin: 0 }}>
+          {t("listening.repomap.explain")}
+        </p>
+        <label className="scr-check">
+          <input type="checkbox" checked={draft.repoMapOn} onChange={(e) => patch({ repoMapOn: e.target.checked })} />
+          {t("listening.repomap.enable")}
+        </label>
+        {draft.repoMapOn && (
+          <>
+            {fieldOptions.length > 0 ? (
+              <Select
+                label={t("listening.repomap.field")}
+                value={draft.repoMapField}
+                onChange={(e) => {
+                  const picked = props.jiraFields.find((f) => f.id === e.target.value);
+                  patch({ repoMapField: e.target.value, repoMapFieldName: picked?.name ?? "" });
+                }}
+                placeholder={t("listening.repomap.field_choose")}
+                options={fieldOptions}
+                hint={t("listening.repomap.field_hint")}
+              />
+            ) : (
+              <Input
+                label={t("listening.repomap.field")}
+                value={draft.repoMapField}
+                onChange={(e) => patch({ repoMapField: e.target.value })}
+                placeholder="customfield_10234"
+                hint={t(props.jiraFieldsDegradedKey ?? "listening.repomap.field_manual_hint")}
+              />
+            )}
+            <div className="scr-stack">
+              {rows.map((row, index) => (
+                <div key={index} className="scr-grid scr-grid--3">
+                  <Input
+                    label={t("listening.repomap.value")}
+                    value={row.value}
+                    onChange={(e) => setRow(index, { value: e.target.value })}
+                    placeholder={t("listening.repomap.value_placeholder")}
+                  />
+                  {props.appOptions.length > 0 ? (
+                    <Select
+                      label={t("listening.repomap.app")}
+                      value={row.appId}
+                      onChange={(e) => setRow(index, { appId: e.target.value })}
+                      placeholder={t("listening.repomap.app_choose")}
+                      options={[
+                        ...props.appOptions.map((id) => ({ value: id, label: id })),
+                        ...(row.appId !== "" && !props.appOptions.includes(row.appId) ? [{ value: row.appId, label: row.appId }] : []),
+                      ]}
+                    />
+                  ) : (
+                    <Input
+                      label={t("listening.repomap.app")}
+                      value={row.appId}
+                      onChange={(e) => setRow(index, { appId: e.target.value })}
+                      placeholder="bank/kredi"
+                    />
+                  )}
+                  <div>
+                    <Input
+                      label={t("listening.repomap.branch")}
+                      value={row.targetBranch}
+                      onChange={(e) => setRow(index, { targetBranch: e.target.value })}
+                      placeholder="develop"
+                      hint={t("listening.repomap.branch_hint")}
+                    />
+                    <p className="scr-mini" style={{ marginTop: -6 }}>
+                      <button type="button" className="scr-linkbtn scr-link" onClick={() => removeRow(index)}>
+                        {t("listening.repomap.remove_row")}
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              ))}
+              <p className="scr-mini" style={{ margin: 0 }}>
+                <button
+                  type="button"
+                  className="scr-linkbtn scr-link"
+                  onClick={() => patch({ repoMapRows: [...rows, EMPTY_REPO_MAP_ROW] })}
+                >
+                  {t("listening.repomap.add_row")}
+                </button>
+              </p>
+            </div>
+            {incomplete && (
+              <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
+                {t("listening.repomap.incomplete")}
+              </p>
+            )}
+          </>
+        )}
       </div>
     </details>
   );

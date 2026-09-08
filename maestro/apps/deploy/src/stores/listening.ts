@@ -7,6 +7,7 @@ import {
   type ListeningStore,
   type MatchKind,
   type StatusMap,
+  parseRepoMap,
 } from "@maestro/bff";
 import { DB_NULL, type DbNull } from "@maestro/db";
 
@@ -60,6 +61,7 @@ export interface ListeningRuleRow {
    * olabilir, çıkışta doğrulanır. NULL = "seçim yok" (varsayılana düşülür).
    */
   gateStepsJson?: unknown;
+  repoMapJson?: unknown;
 }
 
 /**
@@ -93,8 +95,11 @@ export interface ListeningRuleRow {
  */
 type ListeningRuleWrite = Omit<
   ListeningRuleRow,
-  "statusMapJson" | "allowedStatusesJson" | "gateStepsJson"
+  "statusMapJson" | "allowedStatusesJson" | "gateStepsJson" | "repoMapJson"
 > & {
+  repoMapJson:
+    | { field: string; fieldName?: string; entries: { value: string; appId: string; targetBranch?: string }[] }
+    | DbNull;
   statusMapJson: StatusMap | DbNull;
   /** `readonly string[]` DEĞİL, mutable: Prisma'nın `InputJsonValue`'su readonly dizileri kabul etmez. */
   allowedStatusesJson: string[] | DbNull;
@@ -223,7 +228,16 @@ export class PrismaListeningStore implements ListeningStore {
         );
       },
     );
-    return { ...toRecordBase(row), statusMap, allowedStatuses, gateSteps };
+    const repoMap = parseRepoMap(row.repoMapJson === DB_NULL ? null : row.repoMapJson, (reason) => {
+      this.onWarn(
+        `[maestro] dinleme kuralı ${row.ruleId}: repoMapJson okunamadı (${reason}) — ` +
+          "depo eşlemesi YOK sayılacak, ticket proje bağlamasının uygulamasına gider. " +
+          "Panelde kuralın depo eşlemesini yeniden kaydedin.",
+      );
+    });
+    // Absent, not null, when there is no map: the record keeps the shape every
+    // reader compared against before the column existed.
+    return { ...toRecordBase(row), statusMap, allowedStatuses, gateSteps, ...(repoMap === null ? {} : { repoMap }) };
   }
 }
 
@@ -290,6 +304,20 @@ function toRow(record: ListeningRuleRecord): ListeningRuleWrite {
       return parsed === null
         ? DB_NULL
         : { steps: [...parsed.steps], ...(parsed.ownerless === true ? { ownerless: true } : {}) };
+    })(),
+    repoMapJson: (() => {
+      const parsed = parseRepoMap(record.repoMap ?? null);
+      return parsed === null
+        ? DB_NULL
+        : {
+            field: parsed.field,
+            ...(parsed.fieldName === undefined ? {} : { fieldName: parsed.fieldName }),
+            entries: parsed.entries.map((entry) => ({
+              value: entry.value,
+              appId: entry.appId,
+              ...(entry.targetBranch === undefined ? {} : { targetBranch: entry.targetBranch }),
+            })),
+          };
     })(),
   };
 }

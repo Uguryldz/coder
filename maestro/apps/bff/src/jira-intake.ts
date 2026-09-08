@@ -7,6 +7,7 @@ import { resolveGateSteps } from "./gate-defaults.js";
 import { flowDecisionFor, statusGateOf, type FlowDecision } from "./flow-decision.js";
 import { decisionLogLine, decisionLogMarkdown, type IntakeDecisionFacts } from "./intake-decision-log.js";
 import type { ListeningRuleRecord } from "./listening-store.js";
+import { resolveRepoMapEntry } from "./listening-store.js";
 
 /**
  * Intake: the decision to put a ticket on the workflow engine, and every
@@ -202,7 +203,13 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     ...verdict,
   });
 
-  const appId = request.appId ?? binding.appId;
+  // ── Depo eşlemesi ────────────────────────────────────────────────────────
+  // The matched rule may map a Jira field's VALUE to an application: the
+  // bank's "İş Ailesi" says which repository this ticket belongs to. An
+  // explicit `/ai-assign` still wins; a ticket whose value matches no row
+  // keeps the project binding's app, exactly as before the map existed.
+  const mapped = await resolveRepoMap(deps, request.ticket, flowDecision.ruleId);
+  const appId = request.appId ?? mapped?.appId ?? binding.appId;
   if (appId === null || appId === undefined) {
     // Tier ③ of M99, narrowed to the flows it was written for: no rule matched
     // an application and no human said which one, so a flow that WRITES CODE
@@ -444,6 +451,47 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
  *    deliberate operator choice, not a guess, so falling back to it is safer
  *    than refusing the intake or inventing a flow.
  */
+/**
+ * The repo-map row the ticket's field value selects on the matched rule, or
+ * null: no rule, no map, driver cannot read fields, field empty, no row.
+ * Never throws — a Jira hiccup here must not turn into a refused intake.
+ */
+export async function resolveRepoMap(
+  deps: ResolvedDeps,
+  ticket: TicketKey,
+  ruleId: string | undefined,
+): Promise<{ appId: string; targetBranch?: string; field: string; value: string } | null> {
+  if (ruleId === undefined || deps.listening === undefined) return null;
+  let rule: ListeningRuleRecord | null;
+  try {
+    rule = await deps.listening.get(ruleId);
+  } catch {
+    return null;
+  }
+  const map = rule?.repoMap ?? null;
+  if (map === null) return null;
+  const readFields = deps.work.readFields?.bind(deps.work);
+  if (readFields === undefined) {
+    console.warn(`[maestro] ${ticket}: dinleme kuralı ${ruleId} depo eşlemesi taşıyor ama bu Jira sürücüsü alan okuyamıyor — proje bağlamasının uygulaması kullanılıyor.`);
+    return null;
+  }
+  let values: Record<string, string>;
+  try {
+    values = await readFields(ticket, [map.field]);
+  } catch (error) {
+    console.warn(`[maestro] ${ticket}: depo eşlemesi alanı (${map.field}) okunamadı: ${String(error)} — proje bağlamasının uygulaması kullanılıyor.`);
+    return null;
+  }
+  const value = values[map.field];
+  const entry = resolveRepoMapEntry(map, value);
+  if (entry === null) {
+    console.info(`[maestro] ${ticket}: ${map.fieldName ?? map.field} = "${value ?? ""}" için depo eşlemesinde satır yok — proje bağlamasının uygulaması kullanılıyor.`);
+    return null;
+  }
+  console.info(`[maestro] ${ticket}: depo eşlemesi ${map.fieldName ?? map.field} = "${value ?? ""}" → ${entry.appId}${entry.targetBranch === undefined ? "" : ` (${entry.targetBranch})`}.`);
+  return { appId: entry.appId, ...(entry.targetBranch === undefined ? {} : { targetBranch: entry.targetBranch }), field: map.field, value: value ?? "" };
+}
+
 async function decideFlow(deps: ResolvedDeps, request: IntakeRequest, projectKey: string): Promise<FlowOutcome> {
   const fallback = (): FlowOutcome => ({
     decision:

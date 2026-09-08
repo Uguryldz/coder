@@ -14,6 +14,7 @@ export * from "./config.js";
 export * from "./datetime.js";
 export * from "./dc-comment-command.js";
 export * from "./errors.js";
+export * from "./fields.js";
 export * from "./mapping.js";
 export * from "./register.js";
 export * from "./search.js";

@@ -881,3 +881,54 @@ describe("ListeningScreen", () => {
     });
   });
 });
+
+describe("repo map (depo eşlemesi)", () => {
+  it("is off by default and sends repoMap: null", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Hata");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string).repoMap).toBeNull();
+    });
+  });
+
+  it("maps a field value to an application and POSTs the map with the rule", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    // No field list from Jira in this stub → the id is typed by hand.
+    await userEvent.type(await screen.findByLabelText("Jira alanı"), "customfield_10234");
+    await userEvent.type(screen.getByLabelText("Alan değeri"), "Krediler");
+    await userEvent.type(screen.getByLabelText("Uygulama (depo)"), "bank/kredi");
+    await userEvent.type(screen.getByLabelText("Hedef dal (isteğe bağlı)"), "develop");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      const body = JSON.parse((posted![1] as RequestInit).body as string);
+      expect(body.repoMap).toEqual({
+        field: "customfield_10234",
+        entries: [{ value: "Krediler", appId: "bank/kredi", targetBranch: "develop" }],
+      });
+    });
+  });
+});

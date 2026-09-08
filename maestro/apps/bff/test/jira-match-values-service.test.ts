@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  listJiraFields,
   listJiraMatchValues,
   parseCreateMetaIssueTypes,
 } from "../src/jira-match-values-service.js";
@@ -355,5 +356,33 @@ describe("fetchSeedIssueTypes — the seed matches on the same names", () => {
       ok: false,
       reason: "issue_types_unavailable",
     });
+  });
+});
+
+describe("listJiraFields — the fields a repo map can use", () => {
+  it("reads /field on Cloud (v3) and DC (v2), custom fields first", async () => {
+    const body = [
+      { id: "summary", name: "Summary", custom: false },
+      { id: "customfield_10234", name: "İş Ailesi", custom: true, schema: { type: "option" } },
+      { id: "components", name: "Component/s", custom: false },
+    ];
+    const cloud = router([{ match: "/rest/api/3/field", status: 200, body }]);
+    const got = await listJiraFields(conn(), TOKEN, cloud.fetch);
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.fields.map((f) => f.id)).toEqual(["customfield_10234", "components"]);
+    const dc = router([{ match: "/rest/api/2/field", status: 200, body }]);
+    const gotDc = await listJiraFields(conn({ kind: "jira_dc", authKind: "bearer" }), TOKEN, dc.fetch);
+    expect(gotDc.ok).toBe(true);
+    expect(dc.urls[0]).toContain("/rest/api/2/field");
+  });
+
+  it("reports an unreachable or empty answer instead of an empty list", async () => {
+    const empty = router([{ match: "/field", status: 200, body: [] }]);
+    expect(await listJiraFields(conn(), TOKEN, empty.fetch)).toEqual({ ok: false, messageKey: "onboard.jira.bad_response" });
+    const http = router([{ match: "/field", status: 401, body: {} }]);
+    const got = await listJiraFields(conn(), TOKEN, http.fetch);
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.messageKey).toBe("onboard.jira.http_error");
+    expect(await listJiraFields(conn(), null, empty.fetch)).toEqual({ ok: false, messageKey: "onboard.jira.no_token" });
   });
 });

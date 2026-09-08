@@ -44,4 +44,12 @@ export interface WorkPort {
    * cannot express its result-returning signature.
    */
   transition(key: TicketKey, transitionId: string): Promise<void>;
+  /**
+   * The text of arbitrary issue fields (custom fields such as "İş Ailesi",
+   * `customfield_10234`), keyed by the id asked for. An option becomes its
+   * `value`/`name`, a list its members joined with ", ", a missing field is
+   * absent. Optional: a driver without it makes the listening rule's repo map
+   * unresolvable, and intake falls back to the project binding's app.
+   */
+  readFields?(key: TicketKey, fieldIds: readonly string[]): Promise<Record<string, string>>;
 }

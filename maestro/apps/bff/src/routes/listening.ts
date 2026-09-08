@@ -10,6 +10,7 @@ import {
   FLOW_TYPES,
   GateStepsSchema,
   MATCH_KINDS,
+  RepoMapSchema,
   StatusMapSchema,
 } from "../listening-store.js";
 import { realignRules } from "../listening-identity.js";
@@ -120,6 +121,7 @@ const AllowedStatusesRef = AllowedStatusesSchema.nullish().transform((value) => 
  * "seçim yok" diyor.
  */
 const GateStepsRef = GateStepsSchema.nullish().transform((value) => value ?? null);
+const RepoMapRef = RepoMapSchema.nullish().transform((value) => value ?? null);
 
 const RuleBody = z.object({
   projectKey: z.string().trim().min(1).max(32),
@@ -144,6 +146,8 @@ const RuleBody = z.object({
   allowedStatuses: AllowedStatusesRef,
   /** Hangi onaylar beklensin; null → risk seviyesine gore (bkz. GateStepsRef). */
   gateSteps: GateStepsRef,
+  /** Depo eşlemesi: Jira alanı değeri → uygulama (+hedef dal); null → proje bağlamasının uygulaması. */
+  repoMap: RepoMapRef,
 });
 
 /**

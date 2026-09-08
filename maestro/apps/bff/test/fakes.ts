@@ -93,9 +93,24 @@ export class FakeWorkPort implements WorkPort, CommandDiagnostics {
   private readonly tickets = new Map<string, TicketSnapshot>();
   /** Records every `getTicket`, so a test can prove a path did not ask. */
   readonly ticketReads: string[] = [];
+  /** Custom-field text per ticket, for the listening rule's repo map. */
+  private readonly fields = new Map<string, Record<string, string>>();
+  readonly fieldReads: Array<{ ticket: string; fieldIds: readonly string[] }> = [];
 
   putTicket(snapshot: TicketSnapshot): void {
     this.tickets.set(snapshot.key, snapshot);
+  }
+
+  putFields(key: string, values: Record<string, string>): void {
+    this.fields.set(key, values);
+  }
+
+  readFields(key: TicketKey, fieldIds: readonly string[]): Promise<Record<string, string>> {
+    this.fieldReads.push({ ticket: key, fieldIds });
+    const known = this.fields.get(key) ?? {};
+    const out: Record<string, string> = {};
+    for (const id of fieldIds) if (known[id] !== undefined) out[id] = known[id];
+    return Promise.resolve(out);
   }
 
   getTicket(key: TicketKey): Promise<TicketSnapshot> {

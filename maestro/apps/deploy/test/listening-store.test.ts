@@ -342,3 +342,31 @@ describe("PrismaListeningStore — kapı seçimi", () => {
     expect(warnings[0]).toContain("RİSK SEVİYESİNE");
   });
 });
+
+describe("PrismaListeningStore — repo map column", () => {
+  it("round-trips the map and drops the column to NULL when the rule has none", async () => {
+    const { delegate, rows } = fakeDelegate();
+    const store = new PrismaListeningStore(delegate);
+    const map = {
+      field: "customfield_10234",
+      fieldName: "İş Ailesi",
+      entries: [{ value: "Krediler", appId: "bank/kredi", targetBranch: "develop" }],
+    };
+    await store.put(record({ ruleId: "lr_map", repoMap: map }));
+    expect((await store.get("lr_map"))?.repoMap).toEqual(map);
+    expect(rows.get("lr_map")?.repoMapJson).toEqual(map);
+    await store.put(record({ ruleId: "lr_none" }));
+    expect((await store.get("lr_none"))?.repoMap ?? null).toBeNull();
+  });
+
+  it("an unreadable map is ignored with a warning — the rule still loads", async () => {
+    const warnings: string[] = [];
+    const { delegate, rows } = fakeDelegate();
+    rows.set("lr_bad", { ...toRow(record({ ruleId: "lr_bad" })), repoMapJson: { field: "x", entries: "nope" } });
+    const store = new PrismaListeningStore(delegate, (m) => warnings.push(m));
+    const got = await store.get("lr_bad");
+    expect(got?.ruleId).toBe("lr_bad");
+    expect(got?.repoMap ?? null).toBeNull();
+    expect(warnings.join("\n")).toContain("repoMapJson okunamadı");
+  });
+});

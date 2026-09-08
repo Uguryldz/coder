@@ -638,7 +638,10 @@ model ListeningRule {
   /// dizisi bir ürün kararı ve daha önce oynadı (M51, M92); her yeni soru için
   /// bir kolon, her yeni soruyu canlı tabloya karşı bir migration yapardı.
   gateStepsJson     Json?
-
+  /// Depo eşlemesi (repo map): bir Jira alanının değerine göre koşunun hangi
+  /// uygulamaya (depoya) ve hedef dala gideceği — { field, fieldName?, entries:
+  /// [{ value, appId, targetBranch? }] }. NULL = proje bağlamasının uygulaması.
+  repoMapJson       Json?
   /// One rule per (project, assignee, match target): a given trigger maps to
   /// exactly one flow, so a second rule for the same trigger is a mistake, not
   /// an ambiguity the runtime has to resolve.

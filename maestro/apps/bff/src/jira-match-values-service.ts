@@ -1,4 +1,4 @@
-import { normalizeProjectStatuses, normalizeProjectIssueTypes } from "@maestro/adapter-jira";
+import { type JiraFieldInfo, normalizeFieldList, normalizeProjectStatuses, normalizeProjectIssueTypes } from "@maestro/adapter-jira";
 import type { ConnectionKind } from "@maestro/contracts";
 import type { ConnectionRecord } from "./connection-store.js";
 import type { ConnectorFetch } from "./connection-service.js";
@@ -231,4 +231,35 @@ function failure(read: { reason: "unreachable" | "http" | "body"; status?: numbe
     return { ok: false, messageKey: "onboard.jira.http_error", messageParams: { status: String(read.status ?? 0) } };
   }
   return { ok: false, messageKey: "onboard.jira.bad_response" };
+}
+
+export type JiraFieldsResult =
+  | { ok: true; fields: readonly JiraFieldInfo[] }
+  | { ok: false; messageKey: string; messageParams?: Record<string, string> };
+
+/**
+ * The fields an operator can build a repo map on — `GET /rest/api/{2,3}/field`,
+ * custom fields first. Same connection/token handling as the match values.
+ */
+export async function listJiraFields(
+  connection: ConnectionRecord,
+  token: string | null,
+  fetchImpl: ConnectorFetch,
+): Promise<JiraFieldsResult> {
+  const source = jiraMatchSource(connection.kind);
+  if (source === null) {
+    return { ok: false, messageKey: "onboard.jira.not_listable", messageParams: { kind: connection.kind } };
+  }
+  if (token === null) return { ok: false, messageKey: "onboard.jira.no_token" };
+  const email = str((connection.config as { email?: unknown } | null)?.email) ?? "";
+  const base = connection.baseUrl.replace(/\/+$/, "");
+  const path = connection.kind === "jira_cloud" ? "/rest/api/3/field" : "/rest/api/2/field";
+  const read = await readJson(`${base}${path}`, source.header(token, email), fetchImpl);
+  if (!read.ok) {
+    const failed = failure(read);
+    return failed.ok ? { ok: false, messageKey: "onboard.jira.bad_response" } : failed;
+  }
+  const fields = normalizeFieldList(read.body);
+  if (fields.length === 0) return { ok: false, messageKey: "onboard.jira.bad_response" };
+  return { ok: true, fields };
 }

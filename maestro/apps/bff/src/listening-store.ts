@@ -165,6 +165,63 @@ export const StatusMapSchema = z
 export type StatusMap = z.infer<typeof StatusMapSchema>;
 
 /**
+ * ── Depo eşlemesi (repo map) ────────────────────────────────────────────────
+ * Which application (repository) a ticket goes to, decided by the VALUE of a
+ * Jira field on the ticket — the bank's "İş Ailesi" custom field. One rule,
+ * one field, many rows: "Krediler → bank/kredi", "Kartlar → bank/kart". A
+ * ticket whose value matches no row keeps the project binding's application,
+ * exactly as before this map existed. `targetBranch` is the optional
+ * environment branch the work lands on (develop/test), per row.
+ */
+const FieldId = z.string().trim().min(1).max(128);
+export const RepoMapSchema = z
+  .object({
+    /** Jira field id (`customfield_10234`) or a mappable system field (`components`). */
+    field: FieldId,
+    /** The field's display name, for the screen; never used to match. */
+    fieldName: z.string().trim().max(128).optional(),
+    entries: z
+      .array(
+        z
+          .object({
+            value: z.string().trim().min(1).max(256),
+            appId: z.string().trim().min(1).max(200),
+            targetBranch: z.string().trim().min(1).max(200).optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(200),
+  })
+  .strict();
+export type RepoMap = z.infer<typeof RepoMapSchema>;
+
+/** Parse a `repoMapJson` column value, FAIL-SAFE: unreadable = no map. */
+export function parseRepoMap(value: unknown, onInvalid?: (reason: string) => void): RepoMap | null {
+  if (value === null || value === undefined) return null;
+  const parsed = RepoMapSchema.safeParse(value);
+  if (!parsed.success) {
+    onInvalid?.(parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; "));
+    return null;
+  }
+  return parsed.data;
+}
+
+/** Turkish-aware, whitespace-tolerant equality for a mapped value. */
+export function repoMapValueMatches(a: string, b: string): boolean {
+  return a.trim().toLocaleLowerCase("tr") === b.trim().toLocaleLowerCase("tr");
+}
+
+/** The row a ticket's field value selects, or null. */
+export function resolveRepoMapEntry(
+  map: RepoMap,
+  fieldValue: string | undefined,
+): RepoMap["entries"][number] | null {
+  if (fieldValue === undefined) return null;
+  return map.entries.find((entry) => repoMapValueMatches(entry.value, fieldValue)) ?? null;
+}
+
+/**
  * HANGİ STATÜDEKİ ticket bu kuralla işlenebilir — statü KAPISI (0024).
  *
  * `StatusMapSchema` ile karıştırılmamalı ve karıştırılması kolay olduğu için
@@ -401,6 +458,8 @@ export interface ListeningRuleRecord {
    * istemiyorum". Bkz. `GateStepsSchema`.
    */
   gateSteps?: GateSteps | null;
+  /** Depo eşlemesi — bkz. `RepoMapSchema`. Absent/null = proje bağlamasının uygulaması. */
+  repoMap?: RepoMap | null;
 }
 
 /**

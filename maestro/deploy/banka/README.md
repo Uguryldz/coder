@@ -443,6 +443,22 @@ eksik olduğunda" → örn. `todo`, ya da talep sahibine geri atama) oynar. Bunu
   (`stuck.restart_window_hours`, varsayılan 24). Eskiden sayaç sonsuza kadar sayıyordu ve üçüncü
   denemeden sonra ticket havuzda çürüyordu — sebep düzelse bile. Artık ertesi gün yeniden dener.
 
+### 5.6b Depo eşlemesi: aynı projede birden çok depo
+
+Bir Jira projesi "Proje bağlama"da TEK uygulamaya bağlanır. Aynı projede birden çok depo varsa
+(React ön yüz, Java servis, Linux betikleri) hangi depoya gidileceğini ticket'taki bir alan söyler,
+bankada bu **İş Ailesi** özel alanı. Dinleme kuralında **Depo eşlemesi** bölümünü açın:
+
+1. Alanı seçin (liste Jira bağlantısından okunur, özel alanlar önce gelir; okunamazsa alan kimliğini
+   yazın, ör. `customfield_10234`).
+2. Her değeri bir uygulamaya eşleyin: `Krediler → bank/kredi`, `Kartlar → bank/kart`. İsteğe bağlı
+   hedef dal (ortam) yazılır.
+3. Uygulamalar önce "Proje bağlama"da kayıtlı olmalı; eşlemedeki uygulama kimliği oradaki kimliktir.
+
+Eşleşmeyen değer ya da boş alan proje bağlamasının uygulamasına gider (eskisi gibi). `/ai-assign`
+komutu eşlemeyi ezer. Webhook, tarama ve "Kuralı test et" aynı eşlemeyi okur; koşu günlüğünde
+`depo eşlemesi İş Ailesi = "Krediler" → bank/kredi` satırı görünür. Migration 0029 kolonu ekler.
+
 ### 5.7 Analiz şablonu ve kurumsal Word şablonu (PDD düzeni)
 
 Analiz belgesinin **bölümleri** ve **görünümü** iki ayrı şablondan gelir:

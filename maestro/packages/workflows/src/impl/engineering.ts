@@ -8,6 +8,7 @@ import { engineerVariantOf } from "./deps.js";
 import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
 import { developerBrief, loadAnalysis, planDeviations, ruleChecklist } from "./brief.js";
+import { trainingFor } from "./persona.js";
 
 /**
  * Steps 6a, 6c, 7, 8 and 10: the doing role and the roles that judge it.
@@ -198,9 +199,15 @@ export async function runEngineering(
  * turn reads exactly as it did before this brief existed.
  */
 async function engineeringTask(deps: ActivityDeps, run: RunContext, task: string, fresh: boolean): Promise<string> {
+  // The developer agent's TRAINING (its Studio persona, else the shipped
+  // text) goes out on every turn, with the one-line task framing; the plan
+  // itself only with a fresh session.
+  const training = await trainingFor(deps, run, "engineer");
   const rules = deps.translate(run.locale, "agent.engineering_brief", { ticket: run.ticket });
   const doc = fresh ? await loadAnalysis(deps, run) : null;
-  return [rules, ...(doc === null ? [] : [developerBrief(doc)]), `## Bu turun görevi\n${task}`].join("\n\n");
+  return [training, rules, ...(doc === null ? [] : [developerBrief(doc)]), `## Bu turun görevi\n${task}`]
+    .filter((part) => part !== "")
+    .join("\n\n");
 }
 
 /**
@@ -217,15 +224,18 @@ async function verifierSession(
 ): Promise<{ finalText: string } | null> {
   if (run.workspacePath.trim() === "") return null;
   const commands = run.verification.map((spec) => `- ${spec.name}: ${spec.command.join(" ")}`).join("\n");
+  // The verifier's own agent definition (role `dev_reviewer`): training
+  // first, then the task with this run's rules and commands.
+  const training = await trainingFor(deps, run, "dev_reviewer");
   let outcome: Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>>;
   try {
     outcome = await deps.llm.agentSession({
       workspacePath: run.workspacePath,
-      task: deps.translate(run.locale, "agent.verify_task", {
+      task: `${training}\n\n${deps.translate(run.locale, "agent.verify_task", {
         ticket: run.ticket,
         rules: rules.length === 0 ? "- (analizde iş kuralı yok — kabul kriterlerini ticket'tan al)" : rules.join("\n"),
         commands: commands === "" ? "- (tanımlı komut yok)" : commands,
-      }),
+      })}`,
       mcpServers: [],
       dataClass: run.dataClass,
       variantId: engineerVariantOf(run),

@@ -71,10 +71,10 @@ describe("seedDefaultVariants (M38)", () => {
 
     expect(result.seeded).toEqual(DEFAULT_VARIANTS.map((v) => v.variantId));
     expect(result.skipped).toEqual([]);
-    expect(variants.map((v) => v.role).sort()).toEqual(["analyst", "engineer"]);
+    expect(variants.map((v) => v.role).sort()).toEqual(["analyst", "dev_reviewer", "engineer", "planner"]);
     // Every seeded variant has exactly a version 1.
     expect(versions.every((v) => v.version === 1)).toBe(true);
-    expect(versions).toHaveLength(2);
+    expect(versions).toHaveLength(4);
   });
 
   it("uses the passed bootstrap model on version 1 (PILOT_MODEL feeds here only)", async () => {
@@ -132,8 +132,8 @@ describe("seedDefaultVariants (M38)", () => {
     // analyst-default was skipped (no version written for it); only the missing
     // engineer-default was planted.
     expect(result.skipped).toContain("analyst-default");
-    expect(result.seeded).toEqual(["engineer-default"]);
-    expect(versions.map((v) => v.variantId)).toEqual(["engineer-default"]);
+    expect(result.seeded).toEqual(["planner-default", "engineer-default", "verifier-default"]);
+    expect(versions.map((v) => v.variantId)).toEqual(["planner-default", "engineer-default", "verifier-default"]);
   });
 
   it("re-running against a fully-seeded install writes nothing", async () => {

@@ -1,3 +1,4 @@
+import { LlmRole } from "@maestro/contracts";
 /**
  * The pilot's `VariantModelReader` port, over Postgres (M38 / Uğur's hard rule).
  *
@@ -57,8 +58,38 @@ function personaOf(configJson: unknown): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/** The `Variant` table, as far as the by-role lookup needs it. */
+export interface VariantRoleDelegate {
+  findFirst(args: {
+    where: { role: LlmRole };
+    orderBy: { id: "asc" };
+    select: { id: true };
+  }): Promise<{ id: string } | null>;
+}
+
 export class PrismaVariantModelReader {
-  constructor(private readonly versions: VariantVersionModelDelegate) {}
+  constructor(
+    private readonly versions: VariantVersionModelDelegate,
+    private readonly variants?: VariantRoleDelegate,
+  ) {}
+
+  /**
+   * The persona of the installation's agent for `role` — the roles a run does
+   * not pin (planner, verifier). Same tie-break as `run-pins.ts`: the
+   * lowest id, so "planner-default" wins until an operator defines another.
+   * Null when no agent of that role exists, or the table is not wired.
+   */
+  async activePersonaForRole(role: string): Promise<string | null> {
+    if (this.variants === undefined) return null;
+    const known = LlmRole.safeParse(role);
+    if (!known.success) return null;
+    const row = await this.variants.findFirst({
+      where: { role: known.data },
+      orderBy: { id: "asc" },
+      select: { id: true },
+    });
+    return row === null ? null : this.activePersona(row.id);
+  }
 
   private activeRow(variantId: string): Promise<VariantVersionModelRow | undefined> {
     return this.versions

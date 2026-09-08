@@ -18,7 +18,7 @@ import { analystGuidance } from "./guidance.js";
 import { ticketAttachments } from "./attachments.js";
 import { analysisInstructions, analysisRules, briefRules, planRules } from "./analysis-template.js";
 import { discoveryNotes, storeAnalysis } from "./brief.js";
-import { analystPersona } from "./persona.js";
+import { analystPersona, trainingFor } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
 /**
@@ -125,7 +125,7 @@ async function agentSessionOrNull(
   }
 }
 
-function openSession(
+async function openSession(
   deps: ActivityDeps,
   run: RunContext,
   ticket: TicketKey,
@@ -133,7 +133,9 @@ function openSession(
 ): ReturnType<ActivityDeps["llm"]["agentSession"]> {
   return deps.llm.agentSession({
     workspacePath: run.workspacePath,
-    task: deps.translate(run.locale, "agent.discovery_task", { ticket, appId }),
+    // The analysis agent's TRAINING (its Studio persona, else the shipped
+    // text) leads; the task line below it names the ticket and the repo.
+    task: `${await trainingFor(deps, run, "analyst")}\n\n${deps.translate(run.locale, "agent.discovery_task", { ticket, appId })}`,
     /**
      * No MCP server for the discovery pass.
      *
@@ -498,18 +500,20 @@ async function writePlan(
   analysis: AnalysisDoc,
   discovery: string,
 ): Promise<ImplementationPlan | null> {
-  const persona = await analystPersona(deps, run);
+  // The PLANNER's own agent definition (role `planner`) — its training is
+  // the persona; the field rules below explain the JSON shape.
+  const persona = await trainingFor(deps, run, "planner");
   const guidance = await analystGuidance(deps, run);
   try {
     const outcome = await guardModelCall(deps, run, "plan", () =>
       deps.llm.generateObject(
         {
-          role: "analyst",
+          role: "planner",
           variantId: run.variantId,
           dataClass: run.dataClass,
           schemaName: "implementation-plan",
           input: {
-            ...(persona === undefined ? {} : { persona }),
+            persona,
             ...(guidance.length === 0 ? {} : { guidance }),
             rules: planRules(),
             summary: snapshot.summary,

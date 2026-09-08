@@ -100,3 +100,49 @@ async function personaOf(
     return undefined;
   }
 }
+
+/**
+ * ── Ajan eğitimleri ─────────────────────────────────────────────────────────
+ * The customer's four agent briefs live in Studio as the persona of the
+ * role's agent definition (seeded by `variant-defaults`), so the operator
+ * reads and edits what each agent is told. The engine asks for the agent's
+ * persona first and falls back to the shipped training (locale catalogue)
+ * only when the installation has no persona for that role — never to
+ * nothing, because a doing-role session without its brief is the old,
+ * one-line task.
+ */
+export const TRAINING_KEY: Readonly<Record<string, string>> = {
+  analyst: "agent.training.analysis",
+  planner: "agent.training.planner",
+  engineer: "agent.training.developer",
+  dev_reviewer: "agent.training.verifier",
+};
+
+/** The persona of the agent serving `role` on this run, or undefined. */
+export async function rolePersona(
+  deps: ActivityDeps,
+  run: RunContext,
+  role: string,
+  warn: PersonaWarn = (message) => console.warn(message),
+): Promise<string | undefined> {
+  if (role === "analyst") return personaOf(deps, run.variantId, warn);
+  if (role === "engineer") return personaOf(deps, engineerVariantOf(run), warn);
+  const reader = deps.persona;
+  if (reader?.activePersonaForRole === undefined) return undefined;
+  try {
+    const persona = await reader.activePersonaForRole(role);
+    const trimmed = persona?.trim() ?? "";
+    return trimmed === "" ? undefined : trimmed;
+  } catch (error) {
+    warn(`[maestro] persona: '${role}' rolünün ajanı okunamadı (${String(error)}) — varsayılan eğitimle devam ediyor.`);
+    return undefined;
+  }
+}
+
+/** The agent's training: its Studio persona, else the shipped text for the role. */
+export async function trainingFor(deps: ActivityDeps, run: RunContext, role: string): Promise<string> {
+  const persona = await rolePersona(deps, run, role);
+  if (persona !== undefined) return persona;
+  const key = TRAINING_KEY[role];
+  return key === undefined ? "" : deps.translate(run.locale, key);
+}

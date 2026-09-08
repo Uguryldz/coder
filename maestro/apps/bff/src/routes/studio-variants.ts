@@ -12,6 +12,8 @@ import {
   publishVariantVersion,
 } from "../variant-service.js";
 import { unwired } from "./unwired.js";
+import { agentTraining } from "@maestro/config";
+import { LlmRole } from "@maestro/contracts";
 
 /**
  * The variant catalogue (M38), and the cache/workspace screen (M4/M65).
@@ -87,6 +89,20 @@ export async function studioVariantRoutes(app: FastifyInstance, deps: ResolvedDe
     const rows = await catalog.list();
     const variants = z.array(VariantSummaryOut).parse(rows);
     return reply.code(200).send({ variants });
+  });
+
+  /**
+   * The training Maestro ships for a role — what the seed put into the
+   * default agent's persona. Studio's "Varsayılan eğitimi yükle" reads it so
+   * an operator can start from the shipped brief, or restore it after edits.
+   * 404 for a role that has no shipped training (intake, test roles).
+   */
+  app.get("/variants/default-training/:role", { preHandler }, async (request, reply) => {
+    const role = LlmRole.safeParse((request.params as { role: string }).role);
+    if (!role.success) throw notFound("unknown_role", {});
+    const persona = agentTraining(deps.config.locale, role.data);
+    if (persona === null) throw notFound("no_default_training", { role: role.data });
+    return reply.code(200).send({ role: role.data, persona });
   });
 
   app.get("/variants/:variantId", { preHandler }, async (request, reply) => {

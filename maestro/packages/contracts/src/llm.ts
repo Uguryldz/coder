@@ -51,6 +51,8 @@ export type SubscriptionAccount = z.infer<typeof SubscriptionAccount>;
 export const LlmRole = z.enum([
   "intake",
   "analyst",
+  /** Writes the implementation plan (files, endpoint contract, DTOs) after the analysis. */
+  "planner",
   "engineer",
   "dev_reviewer",
   "test_designer",

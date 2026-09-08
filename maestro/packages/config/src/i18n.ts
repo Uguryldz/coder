@@ -36,3 +36,22 @@ export function t(locale: Locale, key: string, params: Record<string, string> = 
   if (template === undefined) throw new MissingMessageError(locale, key);
   return template.replace(/\{(\w+)\}/g, (whole, name: string) => params[name] ?? whole);
 }
+
+/**
+ * The agent trainings Maestro ships, per role — the default persona of the
+ * role's agent definition (seeded into Studio's "Ajan tanımları") and the
+ * engine's fallback when an installation's agent has no persona of its own.
+ * Roles without a training (intake, test roles) are absent on purpose.
+ */
+export const AGENT_TRAINING_KEYS: Readonly<Record<string, string>> = {
+  analyst: "agent.training.analysis",
+  planner: "agent.training.planner",
+  engineer: "agent.training.developer",
+  dev_reviewer: "agent.training.verifier",
+};
+
+/** The role's shipped training text, or null for a role that has none. */
+export function agentTraining(locale: Locale, role: string): string | null {
+  const key = AGENT_TRAINING_KEYS[role];
+  return key === undefined ? null : t(locale, key);
+}

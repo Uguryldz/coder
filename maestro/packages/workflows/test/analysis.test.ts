@@ -497,7 +497,7 @@ describe("writeAnalysis — analysis-agent brief and planner", () => {
     expect(input.rules.join("\n")).toContain("SEÇME");
 
     const planner = fakes.recorded.llm.find((c) => c.schemaName === "implementation-plan");
-    expect(planner?.role).toBe("analyst");
+    expect(planner?.role).toBe("planner");
     const planInput = planner?.input as { discovery: string; analysis: { acceptanceCriteria: string[] }; rules: string[] };
     expect(planInput.discovery).toBe("G1 → src/pay/Limit.java:40");
     expect(planInput.analysis.acceptanceCriteria.length).toBeGreaterThan(0);
@@ -534,5 +534,65 @@ describe("writeAnalysis — analysis-agent brief and planner", () => {
     expect(written.analysis.plan).toBeNull();
     expect(written.risk).toBe("orta");
     expect(fakes.journalStore.entries.map((e) => e.title)).toContain("uygulama planı yazılamadı");
+  });
+});
+
+/**
+ * ── Ajan eğitimleri ─────────────────────────────────────────────────────────
+ * Each agent's brief is its Studio persona; the engine falls back to the
+ * shipped training only when the installation has none for that role.
+ */
+describe("agent trainings reach the sessions", () => {
+  it("the discovery session leads with the analyst agent's persona, then the task line", async () => {
+    const fakes = makeFakes({
+      persona: { v1: "ANALİZ-EĞİTİMİ" },
+      agentSession: session,
+      generateObject: () => ({ status: "ok", value: { files: 1, modules: [] }, log: LOG }),
+    });
+    const spy = fakes.deps.llm.agentSession;
+    let task = "";
+    fakes.deps.llm.agentSession = (opts) => {
+      task = opts.task;
+      return spy(opts);
+    };
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    expect(task.startsWith("ANALİZ-EĞİTİMİ\n\n")).toBe(true);
+    expect(task).toContain("agent.discovery_task(PAY-101,pay)");
+  });
+
+  it("without a persona the discovery session gets the shipped training", async () => {
+    const fakes = makeFakes({
+      agentSession: session,
+      generateObject: () => ({ status: "ok", value: { files: 1, modules: [] }, log: LOG }),
+    });
+    const spy = fakes.deps.llm.agentSession;
+    let task = "";
+    fakes.deps.llm.agentSession = (opts) => {
+      task = opts.task;
+      return spy(opts);
+    };
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    expect(task.startsWith("agent.training.analysis()")).toBe(true);
+  });
+
+  it("the planner call carries the planner agent's persona under its own role", async () => {
+    const PLAN = { files: [{ path: "a.ts", change: "x" }], endpoints: [], dtos: [], conventions: [], notes: "" };
+    const fakes = makeFakes({
+      personaByRole: { planner: "PLANCI-EĞİTİMİ" },
+      generateObject: (schemaName) =>
+        schemaName === "implementation-plan"
+          ? { status: "ok", value: PLAN, log: LOG }
+          : { status: "ok", value: analysisDoc("orta"), log: LOG },
+    });
+    await record(fakes.deps, await fakes.deps.runs.get("PAY-101"), {
+      kind: "discovery",
+      title: "repo keşfi",
+      detail: "1 dosya · 1 modül\nG1 → a.ts",
+      key: "discovery",
+    });
+    await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    const planner = fakes.recorded.llm.find((c) => c.schemaName === "implementation-plan");
+    expect(planner?.role).toBe("planner");
+    expect((planner?.input as { persona: string }).persona).toBe("PLANCI-EĞİTİMİ");
   });
 });

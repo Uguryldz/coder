@@ -1,3 +1,4 @@
+import { LoadTrainingButton } from "./Variants.tsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -539,6 +540,7 @@ function PublishVersionModal({
         hint={t("variants.field.persona_hint")}
         {...(touched && errors.persona ? { error: t("variants.error.persona") } : {})}
       />
+      <LoadTrainingButton role={current.role} onLoaded={setPersona} />
       <Input
         label={t("variants.field.note")}
         value={note}

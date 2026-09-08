@@ -1,3 +1,4 @@
+import { DEFAULT_LOCALE, agentTraining } from "@maestro/config";
 /**
  * The agent variants a fresh install starts with (M38).
  *
@@ -20,43 +21,24 @@
 
 /** A default variant's identity and starting version-1 fields. */
 export interface DefaultVariant {
-  /** Lower-case dash-separated id, the `VarChar(64)` the table stores. */
   readonly variantId: string;
-  /** The thinking role this variant configures (`LlmRoleE`). */
-  readonly role: "analyst" | "engineer";
-  /** The platform overlay (`Variant.name`). `default` = the institution-wide one. */
+  /** Studio label ("platform" in the write API) — the agent's display name. */
   readonly platform: string;
-  /** A short starting persona overlay; the full prompt lives in agent-roles. */
+  /**
+   * The four agents of the customer's chain. `dev_reviewer` IS the verifier:
+   * the step-6c role the engine already has, now trained as the customer's
+   * "doğrulayıcı" (build + rule-by-rule PASS/FAIL).
+   */
+  readonly role: "analyst" | "planner" | "engineer" | "dev_reviewer";
+  /**
+   * The agent's TRAINING — the customer's brief for that agent, shipped as the
+   * persona of the default definition so it is visible and editable in Studio
+   * ("Ajan tanımları"), not buried in code. The text itself lives in the
+   * locale catalogue (`agent.training.*`), which is also the engine's fallback
+   * for an agent whose persona was emptied.
+   */
   readonly persona: string;
 }
-
-/**
- * Model adı SEÇİLMEDİĞİNDE version 1'e yazılan İŞARET DEĞERİ — asla dialanmaz.
- *
- * ── NEDEN BULUT ADI DEĞİL ───────────────────────────────────────────────────
- * Burada eskiden `anthropic/claude-sonnet-4.5` yazıyordu. Banka kurulumu
- * TAMAMEN kurum içi ve internetsiz: o ad hiçbir zaman cevap veremez. Yine de
- * seed onu version 1'e yazıyordu, bu yüzden panelde ajanını tanımlayan
- * operatör "modeller değişmiyor" diyordu — aslında değişiyordu, ama altta
- * erişilemeyen bir buluta bağlı bir varsayılan duruyordu ve hata "bağlantı
- * kurulamadı" diye, yanlış yerde görünüyordu.
- *
- * ── NEDEN BOŞ STRING DE DEĞİL ───────────────────────────────────────────────
- * `""` de kabul edilemez: `VariantVersion.model` boş kalırsa `activeModel`
- * onu "yayınlanmış model yok" ile aynı sepete atar ve çağrı sessizce bağlantı
- * panelindeki modele düşer. İkisi AYNI ŞEY DEĞİL: biri "operatör henüz
- * seçmedi", diğeri "böyle bir varyant yok". Adı olan bir işaret değeri, ikisini
- * ayırt edilebilir ve LOGLANABİLİR yapar.
- *
- * ── NE OLUYOR ───────────────────────────────────────────────────────────────
- * Bu değeri taşıyan bir varyanta düşen çağrı MODEL SEÇMEZ; adıyla reddedilir
- * ya da (variant-model.ts'teki kurala göre) bağlantı paneline düşerken bunu
- * GÖRÜNÜR bir uyarı satırıyla yapar. Sessizce yanlış bir modele düşmek — bu
- * dosyanın kapattığı hatanın ta kendisi — hiçbir yolda mümkün değil.
- *
- * `.invalid` yerine düz bir ad: bu bir URL değil, bir model kimliği; sağlayıcıya
- * gitse bile "model not found" der ve operatör aradığı kelimeyi görür.
- */
 export const MODEL_NOT_SELECTED = "secilmedi";
 
 /**
@@ -82,47 +64,32 @@ export function isModelSelected(model: string | null | undefined): boolean {
 export const DEFAULT_VARIANTS: readonly DefaultVariant[] = [
   {
     variantId: "analyst-default",
-    // Studio'da "Ajan tanımları" listesinde görünen ad — jr-admin ne olduğunu
-    // adından anlasın: "default" değil, işini söyleyen bir etiket.
     platform: "Analiz ajanı (varsayılan)",
     role: "analyst",
-    persona:
-      "# Rolün\n" +
-      "Sen kurumun ANALİZ ajanısın. Bir Jira talebini alır, kurumun analiz " +
-      "şablonunu ve bilgi tabanındaki uyum kurallarını kullanarak, geliştiricinin " +
-      "hiç soru sormadan işe başlayabileceği eksiksiz bir analiz belgesi " +
-      "hazırlarsın.\n\n" +
-      "# Nasıl çalışırsın\n" +
-      "1. Talebi ve varsa ekleri, kabul kriterlerini oku.\n" +
-      "2. Kurum analiz şablonundaki her bölümü doldur; boş bırakma.\n" +
-      "3. Bilgi tabanındaki (uyum, güvenlik, PII) kuralları belgeye yansıt.\n" +
-      "4. Etkilenen sistemleri, riskleri ve test edilecek noktaları açıkça yaz.\n\n" +
-      "# Kırmızı çizgiler\n" +
-      "- Emin olmadığın hiçbir şeyi UYDURMA. Eksik bilgi varsa bölümü " +
-      "'NETLEŞTİRME GEREKLİ' diye işaretle ve tam olarak neyin sorulması " +
-      "gerektiğini yaz.\n" +
-      "- Gizli/PII veriyi belgeye açık yazma; maskele.\n" +
-      "- Kısa ve doğrulanabilir yaz; süslü anlatımdan kaçın.",
+    persona: training("analyst"),
+  },
+  {
+    variantId: "planner-default",
+    platform: "Plancı ajan (varsayılan)",
+    role: "planner",
+    persona: training("planner"),
   },
   {
     variantId: "engineer-default",
-    platform: "Geliştirme ajanı (varsayılan)",
+    platform: "Geliştirici ajan (varsayılan)",
     role: "engineer",
-    persona:
-      "# Rolün\n" +
-      "Sen kurumun GELİŞTİRME (mühendislik) ajanısın. ONAYLANMIŞ bir analizi " +
-      "alır, onu repo politikasına saygılı, küçük ve gözden geçirilebilir bir kod " +
-      "değişikliğine çevirir, testleri koşar ve bir PR açarsın.\n\n" +
-      "# Nasıl çalışırsın\n" +
-      "1. Yalnızca onaylı analizin kapsamındaki işi yap; kapsam dışına çıkma.\n" +
-      "2. Değişikliği mümkün olan en küçük, anlaşılır parçalara böl.\n" +
-      "3. Reponun kendi lint/build/test komutlarını çalıştır.\n" +
-      "4. Ne yaptığını ve neden yaptığını PR açıklamasına net yaz.\n\n" +
-      "# Kırmızı çizgiler\n" +
-      "- Korumalı yollara (deny-list, .maestro.yaml) DOKUNMA.\n" +
-      "- Testi GEÇMEYEN bir değişikliği asla teslim etme; geçmiyorsa dur ve " +
-      "sebebini bildir.\n" +
-      "- Analizde olmayan bir işi kendiliğinden ekleme; gerekiyorsa " +
-      "'analiz güncellensin' diye geri bildir.",
+    persona: training("engineer"),
+  },
+  {
+    variantId: "verifier-default",
+    platform: "Doğrulayıcı ajan (varsayılan)",
+    role: "dev_reviewer",
+    persona: training("dev_reviewer"),
   },
 ];
+
+function training(role: DefaultVariant["role"]): string {
+  const text = agentTraining(DEFAULT_LOCALE, role);
+  if (text === null) throw new Error(`no shipped training for role ${role}`);
+  return text;
+}

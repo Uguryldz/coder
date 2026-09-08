@@ -498,6 +498,13 @@ export interface PersonaReader {
    * hatasını yutar ve `null` döner, ama bunu GÖRÜNÜR bir uyarı satırıyla yapar.
    */
   activePersona(variantId: string): Promise<string | null>;
+  /**
+   * The persona of the agent defined for `role` when the run pins no agent of
+   * that role (planner, verifier): the installation's agent for that role,
+   * or null when none is defined. Optional — an older composition root
+   * without it makes those roles fall back to the shipped training.
+   */
+  activePersonaForRole?(role: string): Promise<string | null>;
 }
 
 export interface ActivityDeps {

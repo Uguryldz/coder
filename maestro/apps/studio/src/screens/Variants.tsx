@@ -45,12 +45,13 @@ export interface AgentVariant {
 }
 
 /**
- * The roles a run actually pins (`apps/deploy/src/stores/run-pins.ts`): the
- * analyst (which also serves intake) and the engineer. The contract lists seven;
- * an agent defined under any other role would never run, so the form does not
- * offer them.
+ * The roles an agent definition can serve — the customer's four-agent chain.
+ * The analyst (which also serves intake and the read-only repo discovery) and
+ * the engineer are pinned per run (`run-pins.ts`); the planner and the
+ * verifier (`dev_reviewer`) are resolved by ROLE, lowest id first. The test
+ * roles have no agent definition and are not offered.
  */
-const PINNED_ROLES: readonly LlmRole[] = ["analyst", "engineer"];
+const PINNED_ROLES: readonly LlmRole[] = ["analyst", "planner", "engineer", "dev_reviewer"];
 
 export function VariantsScreen(): ReactNode {
   const t = useT();
@@ -293,6 +294,7 @@ function CreateVariantModal({
         hint={t("variants.field.persona_hint")}
         {...(touched && errors.persona ? { error: t("variants.error.persona") } : {})}
       />
+      <LoadTrainingButton role={role} onLoaded={setPersona} />
       <details className="scr-adv">
         <summary className="scr-adv__summary">{t("variants.field.note")}</summary>
         <Input
@@ -303,5 +305,40 @@ function CreateVariantModal({
         />
       </details>
     </Modal>
+  );
+}
+
+/**
+ * "Varsayılan eğitimi yükle": puts the role's shipped training (the same text
+ * the installer seeded as the default agent's persona) into the persona box.
+ * The operator starts from the customer's brief instead of a blank field, and
+ * can restore it after an edit went wrong. Nothing is saved by this button.
+ */
+export function LoadTrainingButton({
+  role,
+  onLoaded,
+}: {
+  readonly role: LlmRole;
+  readonly onLoaded: (persona: string) => void;
+}): ReactNode {
+  const t = useT();
+  const api = useApi();
+  const toast = useToast();
+  const enumLabel = useEnumLabel();
+  const load = useMutation({
+    mutationFn: () => api.get<{ role: string; persona: string }>(`/variants/default-training/${encodeURIComponent(role)}`),
+    onSuccess: (body) => {
+      onLoaded(body.persona);
+      toast.show("success", t("variants.toast.training_loaded", { role: enumLabel("llm.role", role).text }));
+    },
+    onError: () => toast.show("error", t("variants.toast.training_unavailable")),
+  });
+  return (
+    <p className="scr-mini" style={{ marginTop: -6, marginBottom: 10 }}>
+      <button type="button" className="scr-linkbtn scr-link" onClick={() => load.mutate()} disabled={load.isPending}>
+        {t("variants.action.load_training")}
+      </button>{" "}
+      <span className="scr-hint">{t("variants.action.load_training_hint")}</span>
+    </p>
   );
 }

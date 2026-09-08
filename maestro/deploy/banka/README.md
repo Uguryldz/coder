@@ -494,11 +494,15 @@ Kurumun ajan tanımlarındaki dört ayrı sözleşme motorda ayrı çağrılar o
 Belge Word şablonunda 8-15. bölümler olarak gelir (yalnız dolu olanlar); plan kapı 4/5'te analizle
 birlikte onaylanır. Deposuz (yalnız analiz) koşuda kod karşılığı ve plan üretilmez, belge bunu söyler.
 
-**Promptlar nerede?** Uzun ajan talimatları dil kataloğunda (`packages/config/locales/tr.json`):
-`agent.discovery_task` (analiz ajanı), `agent.engineering_brief` (geliştirici), `agent.verify_task`
-(doğrulayıcı). Analist ve plancı kuralları motor kodunda (`packages/workflows/src/impl/analysis-template.ts`,
-`briefRules` / `planRules`); tamlık kontrolü kuralları `packages/agent-roles/data/prompts.tr.json`.
-Şablon bölüm talimatları ve persona Studio'dan düzenlenir; yukarıdakiler sürümle gelir.
+**Ajan eğitimleri nerede?** Dört ajanın talimatı Studio "Ajan tanımları"nda, her ajanın PERSONA
+metnidir: kurulum `analyst-default` (analiz), `planner-default` (plancı), `engineer-default`
+(geliştirici) ve `verifier-default` (doğrulayıcı, rol: kod gözden geçiren) ajanlarını bu eğitimlerle
+tohumlar. Motor her adımda o rolün ajanının personasını okur; persona boşsa Maestro ile gelen eğitim
+metnine düşer. Eski bir kurulumda `analyst-default` ve `engineer-default` zaten varsa dokunulmaz: ajanı
+açıp "Yeni sürüm yayınla" içindeki **Varsayılan eğitimi yükle** ile yeni eğitimi persona kutusuna alın,
+gerekirse düzenleyip yayınlayın. Plancı ve doğrulayıcı ajanları güncellemede kendiliğinden eklenir
+(migration 0028 `planner` rolünü açar). Tamlık kontrolü kuralları `packages/agent-roles/data/prompts.tr.json`,
+şablon bölüm talimatları Studio "Analiz şablonu".
 
 ## 6. Sessiz arızalar — belirtiye göre teşhis
 

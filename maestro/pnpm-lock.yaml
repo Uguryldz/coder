@@ -637,6 +637,9 @@ importers:
       '@maestro/audit':
         specifier: workspace:*
         version: link:../audit
+      '@maestro/config':
+        specifier: workspace:*
+        version: link:../config
       '@maestro/contracts':
         specifier: workspace:*
         version: link:../contracts

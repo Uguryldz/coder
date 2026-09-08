@@ -159,6 +159,7 @@ enum AuditActionE {
 enum LlmRoleE {
   intake
   analyst
+  planner
   engineer
   dev_reviewer
   test_designer

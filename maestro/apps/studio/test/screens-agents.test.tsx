@@ -88,7 +88,7 @@ describe("variants screen", () => {
     });
   });
 
-  it("offers only the roles a run pins (analyst, engineer) — no disabled 'coming soon' rows", async () => {
+  it("offers the four chain roles (analyst, planner, engineer, verifier) — no disabled 'coming soon' rows", async () => {
     const { fetchImpl } = stubFetch([VARIANTS_LIST]);
     renderScreen(<VariantsScreen />, { fetchImpl, session: ADMIN });
 
@@ -96,7 +96,12 @@ describe("variants screen", () => {
     const dialog = await screen.findByRole("dialog");
     const role = within(dialog).getByLabelText("Rol");
     const options = within(role).getAllByRole("option");
-    expect(options.map((option) => option.textContent)).toEqual(["analist", "geliştirici"]);
+    expect(options.map((option) => option.textContent)).toEqual([
+      "analist",
+      "plancı",
+      "geliştirici",
+      "doğrulayıcı (kod gözden geçiren)",
+    ]);
     expect(within(dialog).queryByText(/yakında/)).not.toBeInTheDocument();
   });
 

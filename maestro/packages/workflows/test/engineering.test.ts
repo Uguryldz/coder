@@ -355,3 +355,41 @@ describe("verifier (step 6c)", () => {
     expect(input.acceptanceCriteria?.length).toBeGreaterThan(0);
   });
 });
+
+describe("agent trainings reach the doing-role sessions", () => {
+  it("the developer turn leads with the engineer agent's persona", async () => {
+    // engineerVariantId is "" in the fixture, so the engineer resolves to v1.
+    const fakes = makeFakes({ persona: { v1: "GELİŞTİRİCİ-EĞİTİMİ" }, runTurn: () => ok() });
+    await runEngineering(fakes.deps, "PAY-101", null, "t");
+    const task = fakes.recorded.turns[0]?.context.task ?? "";
+    expect(task.startsWith("GELİŞTİRİCİ-EĞİTİMİ\n\n")).toBe(true);
+    expect(task).toContain("agent.engineering_brief(PAY-101)");
+  });
+
+  it("without a persona the developer gets the shipped training", async () => {
+    const fakes = makeFakes({ runTurn: () => ok() });
+    await runEngineering(fakes.deps, "PAY-101", null, "t");
+    expect(fakes.recorded.turns[0]?.context.task.startsWith("agent.training.developer()")).toBe(true);
+  });
+
+  it("the verifier session leads with the verifier agent's persona (role dev_reviewer)", async () => {
+    let task = "";
+    const fakes = makeFakes({
+      personaByRole: { dev_reviewer: "DOĞRULAYICI-EĞİTİMİ" },
+      agentSession: () => ({
+        status: "ok",
+        value: { resumeToken: "verify-1", finalText: "ok", log: LOG as never },
+        log: LOG,
+      }),
+      generateObject: () => ({ status: "ok", value: { approved: true, findings: [] }, log: LOG }),
+    });
+    const spy = fakes.deps.llm.agentSession;
+    fakes.deps.llm.agentSession = (opts) => {
+      task = opts.task;
+      return spy(opts);
+    };
+    await reviewDiff(fakes.deps, "PAY-101");
+    expect(task.startsWith("DOĞRULAYICI-EĞİTİMİ\n\n")).toBe(true);
+    expect(task).toContain("agent.verify_task(PAY-101");
+  });
+});

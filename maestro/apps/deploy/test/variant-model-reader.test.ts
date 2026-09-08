@@ -106,3 +106,24 @@ describe("PrismaVariantModelReader.activePersona", () => {
     expect(await reader.activePersona("ghost")).toBeNull();
   });
 });
+
+describe("activePersonaForRole — the roles a run does not pin", () => {
+  it("answers the lowest-id agent of the role, from its active version", async () => {
+    const versions = fakeVersions([row(1, "m", { persona: "eski" }), row(2, "m", { persona: "PLANCI-EĞİTİMİ" })]);
+    const reader = new PrismaVariantModelReader(versions, {
+      findFirst: ({ where, orderBy, select }) => {
+        expect(where).toEqual({ role: "planner" });
+        expect(orderBy).toEqual({ id: "asc" });
+        expect(select).toEqual({ id: true });
+        return Promise.resolve({ id: "planner-default" });
+      },
+    });
+    expect(await reader.activePersonaForRole("planner")).toBe("PLANCI-EĞİTİMİ");
+  });
+
+  it("is null when no agent of the role exists, or the table is not wired", async () => {
+    const versions = fakeVersions([row(1, "m", { persona: "x" })]);
+    expect(await new PrismaVariantModelReader(versions, { findFirst: () => Promise.resolve(null) }).activePersonaForRole("planner")).toBeNull();
+    expect(await new PrismaVariantModelReader(versions).activePersonaForRole("planner")).toBeNull();
+  });
+});

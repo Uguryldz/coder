@@ -1,7 +1,7 @@
 import { isModelSelected, MODEL_NOT_SELECTED } from "@maestro/db";
 import type { ModelResolver, ResolvedModel } from "@maestro/llm-gateway";
 import type { VariantVersionModelDelegate } from "./variant-model-reader.js";
-import { PrismaVariantModelReader } from "./variant-model-reader.js";
+import { PrismaVariantModelReader, type VariantRoleDelegate } from "./variant-model-reader.js";
 
 /**
  * Panelde tanımlanan AJANIN modelini gerçek çağrıya bağlayan çözücü.
@@ -160,6 +160,7 @@ export function variantAwareModelFrom(options: VariantModelResolverOptions): Mod
 /** `PrismaVariantModelReader`'ı delegeden kuran kısayol — çağrı yerlerini kısaltır. */
 export function variantModelReaderFrom(db: {
   variantVersion: VariantVersionModelDelegate;
+  variant?: VariantRoleDelegate;
 }): PrismaVariantModelReader {
-  return new PrismaVariantModelReader(db.variantVersion);
+  return new PrismaVariantModelReader(db.variantVersion, db.variant);
 }

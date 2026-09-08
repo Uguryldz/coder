@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@maestro/audit": "workspace:*",
+    "@maestro/config": "workspace:*",
     "@maestro/contracts": "workspace:*",
     "@prisma/client": "^6.5.0",
     "tsx": "^4.23.11"

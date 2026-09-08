@@ -88,3 +88,48 @@ export function analysisRules(run: RunContext): readonly string[] {
     "Serbest metin alanlarında (uiApiChanges, testApproach) markdown kullanabilirsin; alt başlık için '###'.",
   ];
 }
+
+/**
+ * ── Müşterinin analiz ajanı sözleşmesi ──────────────────────────────────────
+ * The bank's brief for the analysis agent, as rules the structured analyst
+ * follows for the document's sections 8-14. The DISCOVERY agent (step 3ö) is
+ * the one that read the code; the analyst may cite only what discovery
+ * reported. Without discovery (analysis-only run) the code-bound sections
+ * stay empty and say so — never invented from the ticket.
+ */
+export function briefRules(run: RunContext, hasDiscovery: boolean): readonly string[] {
+  const code = hasDiscovery
+    ? [
+        "'codeMapping': HER gereksinim için kod tabanındaki karşılığını yaz — 'location' alanına 'discovery' bulgularında geçen dosya:satır (ya da dosya) yolunu; 'status' alanına karsilar/kismen/yok. 'discovery' metninde GEÇMEYEN bir yol yazma. Karşılığı yoksa location='yok', status='yok'.",
+        "'gaps': mevcut endpoint/bileşen gereksinimi karşılamıyorsa bunu AÇIKÇA yaz — 'endpoint mevcut' ile 'gereksinimi karşılıyor' aynı şey değildir.",
+        "'scaleRisks': gereksinimde bir sayı/limit/hacim/eşzamanlılık geçiyorsa (ör. '30.000 kayıt', 'X kullanıcı', 'dosya limiti') 'yol zaten var' demekle YETİNME. 'discovery' bulgularından kod yolunu uçtan uca izle ve şunları kontrol et: döngü içinde satır/öğe başına harici servis çağrısı (HTTP/Feign/RestTemplate) ya da DB sorgusu/insert'i var mı (N+1); işlem tek bir senkron HTTP isteği/transaction içinde mi; mevcut timeout, circuit breaker, connection/thread pool, max payload limitleri talep edilen hacimle çarpılınca aşılıyor mu; bu yol daha önce bu hacme yakın veriyle test edilmiş mi. 'verdict' üç halden biri: karsilar / karsilamaz (sebep + kanıt dosya:satır 'evidence' alanında) / belirsiz (test edilmeli). 'belirsiz' çıkan her madde 'openQuestions' listesine de girer.",
+      ]
+    : [
+        "Bu koşuda kod deposu OKUNMADI: 'codeMapping' boş kalır ([]); 'gaps' ve 'scaleRisks' yalnız ticket/eklerden çıkarılabilenlerle sınırlıdır ve ölçek riski için 'verdict' 'belirsiz' olur. Dosya yolu, endpoint ya da sınıf adı UYDURMA.",
+      ];
+  return [
+    "'requirements': gereksinim listesi — belgeden (ticket, ekler, yorumlar) BİREBİR, kendi cümlelerinle yeniden yazma; her madde tek gereksinim.",
+    "'businessRules': gereksinimlerden çıkan iş kuralları — doğrulayıcı ajan her birini kodda TEK TEK kontrol edip PASS/FAIL raporlayacak; bu yüzden her kural test edilebilir, tek cümle ve somut olsun ('X ise Y olur' biçimi).",
+    ...code,
+    "'scopeOptions': birden fazla makul yol varsa SEÇME — kararı, seçenekleri ve her seçeneğin ödününü yaz (en az iki seçenek). Belirsizken kapsamı kendi kararınla GENİŞLETMEK ya da DARALTMAK YASAKTIR.",
+    "'openQuestions': cevaplanmadan geliştiriciye geçilmeyecek sorular — 'scaleRisks' içinde 'belirsiz' çıkan her madde burada da olmalı. Ticket'ta zaten cevaplanmış bir şeyi sorma.",
+    `Bu alanların dili '${run.locale}'.`,
+  ];
+}
+
+/**
+ * The PLANNER's brief: what the developer agent will be handed as the
+ * approved plan. It plans only against code it was shown (the discovery
+ * notes) and the analysis it was given; a plan is not a redesign.
+ */
+export function planRules(): readonly string[] {
+  return [
+    "Sen plancısın: analizi ve keşif bulgularını okuyup geliştiricinin uygulayacağı PLANI yazıyorsun. Kod yazma, tasarımı yeniden yapma, kapsamı değiştirme.",
+    "'files': değişecek ya da eklenecek her dosya için yol ve o dosyada NE değişeceği. Var olan dosyalar için yalnız 'discovery' bulgularında geçen yolları kullan; yeni dosya için aynı dizindeki benzer dosyanın adlandırmasını izle ve bunu 'change' alanında söyle.",
+    "'endpoints': eklenecek/değişecek her endpoint için method, yol ve sözleşme (istek/yanıt alanları, hata durumları, yetki). Mevcut bir endpoint yetiyorsa listeye alma.",
+    "'dtos': eklenecek/değişecek her DTO için ad ve alan listesi (ad:tip biçiminde).",
+    "'conventions': geliştiricinin örnek alacağı dosyalar/desenler — 'X dizinindeki Y dosyasını örnek al' biçiminde, keşifte geçen yollarla.",
+    "'notes': sıra, bağımlılık, migration, feature flag gibi uygulama notları. Analizdeki 'gaps' maddeleri planın içinde kapanmalı; 'scopeOptions' kararlarını SEN VERME — cevaplanmamışsa 'notes' içinde 'kapıda karar bekliyor' diye işaretle.",
+    "Uydurma yasak: bağlamda olmayan yol, sınıf, tablo ya da endpoint yazma.",
+  ];
+}

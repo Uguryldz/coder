@@ -5,6 +5,7 @@ import type {
   PublishRequest,
   TicketKey,
 } from "@maestro/contracts";
+import { EMPTY_ANALYSIS_BRIEF } from "@maestro/contracts";
 import { defaultPiiPolicy } from "@maestro/pii";
 import type { ScmPort, SecretPort, WorkPort } from "@maestro/ports";
 import type { ReleaseNoteDraft } from "../src/documents.js";
@@ -61,6 +62,7 @@ export const APP: ApplicationRecord = {
 };
 
 export const ANALYSIS: AnalysisDoc = {
+  ...EMPTY_ANALYSIS_BRIEF,
   templateVersion: "analysis-template@1.4.0",
   language: "tr",
   purpose: "Kart limit artırım akışını otomatikleştirmek.",

@@ -23,6 +23,20 @@ export const MSG = {
   sectionTestApproach: "publish.section.test_approach",
   sectionRisk: "publish.section.risk",
   sectionClarifications: "publish.section.clarifications",
+  // The analysis-agent brief's sections (8-15); rendered only when filled.
+  sectionRequirements: "publish.section.requirements",
+  sectionBusinessRules: "publish.section.business_rules",
+  sectionCodeMapping: "publish.section.code_mapping",
+  sectionGaps: "publish.section.gaps",
+  sectionScaleRisks: "publish.section.scale_risks",
+  sectionScopeOptions: "publish.section.scope_options",
+  sectionOpenQuestions: "publish.section.open_questions",
+  sectionPlan: "publish.section.plan",
+  labelPlanFiles: "publish.label.plan_files",
+  labelPlanEndpoints: "publish.label.plan_endpoints",
+  labelPlanDtos: "publish.label.plan_dtos",
+  labelPlanConventions: "publish.label.plan_conventions",
+  labelEvidence: "publish.label.evidence",
 
   labelScopeIncluded: "publish.label.scope_included",
   labelScopeExcluded: "publish.label.scope_excluded",
@@ -61,6 +75,9 @@ export const RISK_TIER_KEY_PREFIX = "publish.risk_tier.";
 export const DECISION_KEY_PREFIX = "publish.decision.";
 
 export const IMPACT_SOURCES = ["primary_repo_discovery", "repo_card", "ticket"] as const;
+/** Code-mapping status and scale-risk verdict labels; one key per enum value. */
+export const VERDICT_KEY_PREFIX = "publish.verdict.";
+export const VERDICTS = ["karsilar", "kismen", "yok", "karsilamaz", "belirsiz"] as const;
 export const DECISIONS = ["approve", "reject"] as const;
 
 export const DOC_TITLE_KEY: Record<PublishDocKind, string> = {
@@ -78,6 +95,7 @@ export function publishMessageKeys(): string[] {
   return [
     ...Object.values(MSG),
     ...IMPACT_SOURCES.map((s) => `${IMPACT_SOURCE_KEY_PREFIX}${s}`),
+    ...VERDICTS.map((v) => `${VERDICT_KEY_PREFIX}${v}`),
     ...RiskTier.options.map((r) => `${RISK_TIER_KEY_PREFIX}${r}`),
     ...DECISIONS.map((d) => `${DECISION_KEY_PREFIX}${d}`),
     // Gate names come from the catalog family the workflow already owns.

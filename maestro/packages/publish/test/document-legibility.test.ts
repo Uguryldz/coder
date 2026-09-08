@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { AnalysisDoc } from "@maestro/contracts";
+import { EMPTY_ANALYSIS_BRIEF } from "@maestro/contracts";
 import { buildDocumentModel } from "../src/doc-model.js";
 import { renderAnalysisMarkdown } from "../src/documents.js";
 import { blockToDocx } from "../src/docx-blocks.js";
@@ -81,6 +82,7 @@ function catalogTranslate(_locale: string, key: string, params?: Record<string, 
 }
 
 const ANALYSIS: AnalysisDoc = {
+  ...EMPTY_ANALYSIS_BRIEF,
   templateVersion: "analysis-template@1.4.0",
   language: "tr",
   purpose: "Mobil ve web uygulamalarında limit aşımı uyarısı göstermek.",

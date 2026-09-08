@@ -7,6 +7,7 @@ import type { ActivityDeps, RunContext } from "./deps.js";
 import { engineerVariantOf } from "./deps.js";
 import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
+import { developerBrief, loadAnalysis, planDeviations, ruleChecklist } from "./brief.js";
 
 /**
  * Steps 6a, 6c, 7, 8 and 10: the doing role and the roles that judge it.
@@ -22,6 +23,35 @@ export const ReviewVerdict = z.object({
   approved: z.boolean(),
   findings: z.array(NonEmpty.max(2000)).max(50).default([]),
 });
+
+/**
+ * The VERIFIER's digest (step 6c). A superset of `ReviewVerdict` on purpose:
+ * a deployment whose model still answers with the two old fields is not
+ * broken, it is just not yet rule-by-rule. `rules` is the customer's
+ * PASS/FAIL table — one row per business rule, never a blanket sentence.
+ */
+export const VerificationVerdict = ReviewVerdict.extend({
+  build: z
+    .object({ status: z.enum(["ok", "fail", "skipped"]), detail: z.string().max(2000).default("") })
+    .optional(),
+  rules: z
+    .array(
+      z.object({
+        rule: NonEmpty.max(800),
+        status: z.enum(["PASS", "FAIL", "BELIRSIZ"]),
+        evidence: z.string().max(1500).default(""),
+      }),
+    )
+    .max(100)
+    .default([]),
+  brokenTests: z.array(NonEmpty.max(300)).max(50).default([]),
+});
+
+const VERIFY_DIGEST_RULES: readonly string[] = [
+  "'report' doğrulayıcı ajanın son mesajı. Oradaki derleme sonucunu 'build' alanına (ok/fail/skipped + hata özeti), iş kuralı tablosunu 'rules' alanına (her kural için PASS/FAIL/BELIRSIZ + kanıt), kırılan testleri 'brokenTests' alanına, diğer bulguları 'findings' alanına aktar.",
+  "'rules' listesi 'businessRules' girdisindeki HER kuralı kapsamalı; raporda bir kuraldan söz edilmiyorsa BELIRSIZ yaz. Raporda olmayan bir sonucu UYDURMA.",
+  "'approved' yalnız derleme ok/skipped, hiçbir kural FAIL değil ve blocker/major bulgu yoksa true.",
+];
 
 export const TestDesign = z.object({ scenarios: z.number().int().nonnegative() });
 
@@ -106,7 +136,7 @@ export async function runEngineering(
 ): Promise<EngineeringResult> {
   const run = await deps.runs.get(ticket);
   const outcome = await deps.execution.runTurn({
-    context: await turnContext(deps, run, task),
+    context: await turnContext(deps, run, await engineeringTask(deps, run, task, resumeToken === null)),
     dataClass: run.dataClass,
     // The MÜHENDİS agent, not the analyst's. Every call in this file is on the
     // engineering half of the run — the code-writing turn, both reviewers, the
@@ -135,6 +165,19 @@ export async function runEngineering(
     detail: `${report.diff.files} dosya · +${report.diff.insertions} -${report.diff.deletions}`,
     key: `engineering:${attempt}:${report.at}`,
   });
+  // "Plan Sapması": the developer may leave the plan, never silently. Each
+  // line it wrote becomes its own journal entry, so the reviewer, the gate
+  // and the evidence package all see what changed against the approved plan.
+  const deviations = planDeviations(report.finalText);
+  for (const [index, deviation] of deviations.entries()) {
+    await record(deps, run, {
+      kind: "engineering",
+      actor: "ai",
+      title: "plan sapması",
+      detail: deviation,
+      key: `deviation:${attempt}:${report.at}:${String(index)}`,
+    });
+  }
   const ok = finished.handoverReason === undefined && report.protectedViolations.length === 0;
   return {
     ok,
@@ -146,6 +189,109 @@ export async function runEngineering(
 }
 
 /** Steps 6c and 8 — the AI reviews (a degraded gateway means "not approved"). */
+/**
+ * What the developer agent is told. The customer's developer brief (rules:
+ * follow the plan, mimic the sibling file, log every "PLAN SAPMASI") goes out
+ * on every turn — a resumed session receives only the task. The plan itself
+ * (files, endpoint contract, DTO fields, business rules) goes out once, with
+ * the fresh session, from the stored analysis; without a stored analysis the
+ * turn reads exactly as it did before this brief existed.
+ */
+async function engineeringTask(deps: ActivityDeps, run: RunContext, task: string, fresh: boolean): Promise<string> {
+  const rules = deps.translate(run.locale, "agent.engineering_brief", { ticket: run.ticket });
+  const doc = fresh ? await loadAnalysis(deps, run) : null;
+  return [rules, ...(doc === null ? [] : [developerBrief(doc)]), `## Bu turun görevi\n${task}`].join("\n\n");
+}
+
+/**
+ * Step 6c — the VERIFIER agent (customer brief): a fresh, separate session in
+ * the workspace that runs the build, checks every business rule one by one
+ * and runs the test suite — reporting, never fixing. Null when the run has
+ * no workspace or the session could not be opened; the caller then falls
+ * back to the ticket-only structured review this step always had.
+ */
+async function verifierSession(
+  deps: ActivityDeps,
+  run: RunContext,
+  rules: readonly string[],
+): Promise<{ finalText: string } | null> {
+  if (run.workspacePath.trim() === "") return null;
+  const commands = run.verification.map((spec) => `- ${spec.name}: ${spec.command.join(" ")}`).join("\n");
+  let outcome: Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>>;
+  try {
+    outcome = await deps.llm.agentSession({
+      workspacePath: run.workspacePath,
+      task: deps.translate(run.locale, "agent.verify_task", {
+        ticket: run.ticket,
+        rules: rules.length === 0 ? "- (analizde iş kuralı yok — kabul kriterlerini ticket'tan al)" : rules.join("\n"),
+        commands: commands === "" ? "- (tanımlı komut yok)" : commands,
+      }),
+      mcpServers: [],
+      dataClass: run.dataClass,
+      variantId: engineerVariantOf(run),
+    });
+  } catch {
+    return null;
+  }
+  const resolved = await resolveOutcome(deps, run, "verify", outcome);
+  return resolved.status === "degraded" ? null : { finalText: resolved.value.finalText };
+}
+
+/** The verifier's table as one journal detail: build, then one line per rule. */
+function verificationTable(verdict: z.infer<typeof VerificationVerdict>): string {
+  const build =
+    verdict.build === undefined
+      ? []
+      : [`derleme: ${verdict.build.status}${verdict.build.detail === "" ? "" : ` — ${verdict.build.detail}`}`];
+  const rules = verdict.rules.map(
+    (row) => `${row.status} — ${row.rule}${row.evidence === "" ? "" : ` (${row.evidence})`}`,
+  );
+  const broken = verdict.brokenTests.length === 0 ? [] : [`kırılan testler: ${verdict.brokenTests.join(", ")}`];
+  return [...build, ...rules, ...broken, ...verdict.findings].join("\n");
+}
+
+async function verifyChanges(deps: ActivityDeps, ticket: TicketKey, attempt: number): Promise<ReviewResult> {
+  const run = await deps.runs.get(ticket);
+  const doc = await loadAnalysis(deps, run);
+  const rules = doc === null ? [] : ruleChecklist(doc);
+  const session = await verifierSession(deps, run, rules);
+  if (session === null) return review(deps, ticket, "dev_reviewer", "diff-review", attempt);
+  const outcome = await guardModelCall(deps, run, "dev_reviewer", () =>
+    deps.llm.generateObject(
+      {
+        role: "dev_reviewer",
+        variantId: engineerVariantOf(run),
+        dataClass: run.dataClass,
+        schemaName: "diff-review",
+        input: { ticket, rules: VERIFY_DIGEST_RULES, businessRules: rules, report: session.finalText },
+      },
+      VerificationVerdict,
+    ),
+  );
+  const resolved = await resolveOutcome(deps, run, "dev_reviewer", outcome);
+  if (resolved.status === "degraded") {
+    return { approved: false, findings: [`ai_assist (M97): ${resolved.messageKey}`] };
+  }
+  const verdict = resolved.value;
+  const failed = verdict.rules.filter((row) => row.status === "FAIL");
+  const buildRed = verdict.build?.status === "fail";
+  const approved = verdict.approved && !buildRed && failed.length === 0 && verdict.brokenTests.length === 0;
+  const findings = [
+    ...(buildRed ? [`derleme kırmızı: ${verdict.build?.detail ?? ""}`] : []),
+    ...failed.map((row) => `${row.rule}: FAIL${row.evidence === "" ? "" : ` — ${row.evidence}`}`),
+    ...verdict.brokenTests.map((test) => `kırılan test: ${test}`),
+    ...verdict.findings,
+  ];
+  await record(deps, run, {
+    kind: "review",
+    actor: "ai",
+    title: approved ? "doğrulama onaylandı" : "doğrulama bulguları",
+    detail: verificationTable(verdict),
+    key: `dev_reviewer:${attempt}`,
+  });
+  return { approved, findings };
+}
+
 async function review(
   deps: ActivityDeps,
   ticket: TicketKey,
@@ -176,11 +322,8 @@ async function review(
   return { approved: resolved.value.approved, findings: [...resolved.value.findings] };
 }
 
-export const reviewDiff = (
-  deps: ActivityDeps,
-  ticket: TicketKey,
-  attempt = 1,
-): Promise<ReviewResult> => review(deps, ticket, "dev_reviewer", "diff-review", attempt);
+export const reviewDiff = (deps: ActivityDeps, ticket: TicketKey, attempt = 1): Promise<ReviewResult> =>
+  verifyChanges(deps, ticket, attempt);
 
 export const reviewTests = (
   deps: ActivityDeps,
@@ -194,6 +337,7 @@ export async function designTests(
   attempt = 1,
 ): Promise<{ scenarios: number }> {
   const run = await deps.runs.get(ticket);
+  const doc = await loadAnalysis(deps, run);
   const outcome = await guardModelCall(deps, run, "test-design", () =>
     deps.llm.generateObject(
       {
@@ -201,7 +345,13 @@ export async function designTests(
         variantId: engineerVariantOf(run),
         dataClass: run.dataClass,
         schemaName: "test-design",
-        input: { ticket },
+        // The designer writes a scenario per acceptance criterion, so it gets
+        // the criteria and the business rules from the stored analysis. No
+        // stored analysis: the input is what it always was.
+        input: {
+          ticket,
+          ...(doc === null ? {} : { acceptanceCriteria: doc.acceptanceCriteria, businessRules: doc.businessRules }),
+        },
       },
       TestDesign,
     ),

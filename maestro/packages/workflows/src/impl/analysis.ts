@@ -1,6 +1,7 @@
 import { AppId } from "@maestro/contracts";
 import {
   AnalysisDoc,
+  ImplementationPlan,
   NonEmpty,
   PublishTarget,
   type RiskTier,
@@ -15,7 +16,8 @@ import type { ActivityDeps, RunContext } from "./deps.js";
 import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { analystGuidance } from "./guidance.js";
 import { ticketAttachments } from "./attachments.js";
-import { analysisInstructions, analysisRules } from "./analysis-template.js";
+import { analysisInstructions, analysisRules, briefRules, planRules } from "./analysis-template.js";
+import { discoveryNotes, storeAnalysis } from "./brief.js";
 import { analystPersona } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
@@ -30,7 +32,21 @@ import { activitySeq, audit, record } from "./record.js";
 export const DiscoveryDigest = z.object({
   files: z.number().int().nonnegative(),
   modules: z.array(NonEmpty).max(200),
+  /**
+   * The analysis-agent brief's findings, kept as text: requirement → file:line,
+   * what nothing answers, scale-risk traces (N+1, sync transaction, timeouts,
+   * pools, prior volume tests), candidate files, existing endpoints/DTOs. Goes
+   * to the journal, where the analyst and the planner read it (`brief.ts`).
+   */
+  notes: z.string().max(12000).default(""),
 });
+
+/** What the digest call is told to keep from the discovery session's final text. */
+const DISCOVERY_DIGEST_RULES: readonly string[] = [
+  "'files' ve 'modules': keşif metninde sayılan dosya sayısı ve modül/paket adları.",
+  "'notes': keşif metnindeki bulguları KAYBETMEDEN özetle — her gereksinim için kod karşılığı (dosya:satır), karşılığı olmayanlar, ölçek riski izleri (döngü içinde HTTP/DB çağrısı, tek senkron istek/transaction, timeout/pool/payload limitleri, daha önce hangi hacimle test edildiği), aday dosyalar, mevcut endpoint ve DTO'lar, kapsam seçenekleri ve açık sorular.",
+  "Keşif metninde geçmeyen bir dosya yolu, endpoint ya da sayı YAZMA. Metin boşsa 'notes' boş kalır.",
+];
 
 /** M18/M97: the analysis cannot be written by a human inside this activity. */
 export { AI_ASSIST_REQUIRED } from "../failure-types.js";
@@ -153,18 +169,21 @@ async function finishDiscovery(
         variantId: run.variantId,
         dataClass: run.dataClass,
         schemaName: "repo-discovery",
-        input: { appId, findings: explored.finalText },
+        input: { appId, rules: DISCOVERY_DIGEST_RULES, findings: explored.finalText },
       },
       DiscoveryDigest,
     ),
   );
   const resolved = await resolveOutcome(deps, run, "discovery-digest", digest);
-  const value = resolved.status === "degraded" ? { files: 0, modules: [] } : resolved.value;
+  const value = resolved.status === "degraded" ? { files: 0, modules: [], notes: "" } : resolved.value;
+  // First line: the counts the entry always carried. Below it: the findings
+  // the analyst and the planner read back (`discoveryNotes` in brief.ts).
+  const notes = value.notes.trim();
   await record(deps, run, {
     kind: "discovery",
     actor: "ai",
     title: "repo keşfi",
-    detail: `${value.files} dosya · ${value.modules.length} modül`,
+    detail: `${value.files} dosya · ${value.modules.length} modül${notes === "" ? "" : `\n${notes}`}`,
     key: "discovery",
   });
   return { files: value.files, modules: [...value.modules] };
@@ -361,7 +380,11 @@ export async function writeAnalysis(
   // sırayla eşlenmiş; ve şemanın söyleyemediği kurallar (dil, sürüm, deposuz
   // koşuda etki matrisi). Okunamazsa alan gitmez, analist şemayla çalışır.
   const instructions = await analysisInstructions(deps, run);
-  const rules = analysisRules(run);
+  // Salt-okunur keşif ajanının bulguları (adım 3ö), defterden. Analist kod
+  // karşılığını, eksikleri ve ölçek riskini BUNDAN yazar; bulgu yoksa (deposuz
+  // koşu) o alanlar boş kalır ve kurallar bunu söyler.
+  const discovery = await discoveryNotes(deps, run);
+  const rules = [...analysisRules(run), ...briefRules(run, discovery !== null)];
   if (attachments.length > 0) {
     await record(deps, run, {
       kind: "other",
@@ -402,6 +425,7 @@ export async function writeAnalysis(
           // bakın" der, doküman onu izler. Okunamayan ek de adıyla gider;
           // model onu "incelenmeli" diye anar, içeriğini uydurmaz.
           ...(attachments.length === 0 ? {} : { attachments }),
+          ...(discovery === null ? {} : { discovery }),
           // Ticket metninin ARDINDAN: "şunu analiz et" önce gelir, "ve şu
           // sebeple bir daha bak" sonra. Ters sırada, geri gönderme gerekçesi
           // analiz edilecek talep sanılabilirdi.
@@ -432,20 +456,114 @@ export async function writeAnalysis(
   const resolved = await resolveOutcome(deps, run, "analysis", outcome);
   if (resolved.status === "degraded") throw aiAssistRequired("analysis", resolved.messageKey);
 
-  const analysis = AnalysisDoc.parse(resolved.value);
-  assertDocument(run, analysis);
-  await deps.runs.patch(ticket, { risk: analysis.riskTier });
+  const written = AnalysisDoc.parse(resolved.value);
+  assertDocument(run, written);
+  await deps.runs.patch(ticket, { risk: written.riskTier });
   await record(deps, run, {
     kind: "analysis",
     actor: "ai",
     title: "analiz yazıldı",
-    detail: `risk: ${analysis.riskTier} — ${analysis.riskReason}`,
+    detail: [
+      `risk: ${written.riskTier} — ${written.riskReason}`,
+      `${String(written.requirements.length)} gereksinim · ${String(written.businessRules.length)} iş kuralı · ${String(written.codeMapping.length)} kod karşılığı · ${String(written.gaps.length)} eksik · ${String(written.scaleRisks.length)} ölçek riski · ${String(written.openQuestions.length)} açık soru`,
+    ].join("\n"),
     // A rewrite after a rejection can legitimately land on the same tier and
     // the same criteria count; keying on the document's shape would hide the
     // second version behind the first.
     key: `analysis:${activitySeq()}`,
   });
+  // The PLANNER — a separate call with its own brief, after the analysis and
+  // only when there is a repository to plan against. Fail-soft: an analysis
+  // without a plan still reaches the gate; the developer then works from the
+  // acceptance criteria, as it always did.
+  const plan =
+    discovery === null || (appId === undefined && run.app === null)
+      ? null
+      : await writePlan(deps, run, snapshot, written, discovery);
+  const analysis: AnalysisDoc = { ...written, plan };
+  await storeAnalysis(deps, run, analysis);
   return { analysis, risk: analysis.riskTier };
+}
+
+/**
+ * Step 3 (second call) — the implementation plan the developer follows: which
+ * files change, the endpoint contract, the DTO fields, and the conventions to
+ * copy. Reads the analysis it plans for and the discovery notes; never the
+ * ticket alone, so it cannot plan against a code base it has not seen.
+ */
+async function writePlan(
+  deps: ActivityDeps,
+  run: RunContext,
+  snapshot: { summary: string; description: string },
+  analysis: AnalysisDoc,
+  discovery: string,
+): Promise<ImplementationPlan | null> {
+  const persona = await analystPersona(deps, run);
+  const guidance = await analystGuidance(deps, run);
+  try {
+    const outcome = await guardModelCall(deps, run, "plan", () =>
+      deps.llm.generateObject(
+        {
+          role: "analyst",
+          variantId: run.variantId,
+          dataClass: run.dataClass,
+          schemaName: "implementation-plan",
+          input: {
+            ...(persona === undefined ? {} : { persona }),
+            ...(guidance.length === 0 ? {} : { guidance }),
+            rules: planRules(),
+            summary: snapshot.summary,
+            description: snapshot.description,
+            analysis: {
+              requirements: analysis.requirements,
+              businessRules: analysis.businessRules,
+              acceptanceCriteria: analysis.acceptanceCriteria,
+              scope: analysis.scope,
+              uiApiChanges: analysis.uiApiChanges,
+              codeMapping: analysis.codeMapping,
+              gaps: analysis.gaps,
+              scopeOptions: analysis.scopeOptions,
+              openQuestions: analysis.openQuestions,
+            },
+            discovery,
+          },
+        },
+        ImplementationPlan,
+      ),
+    );
+    const resolved = await resolveOutcome(deps, run, "plan", outcome);
+    if (resolved.status === "degraded") {
+      await record(deps, run, {
+        kind: "analysis",
+        actor: "ai",
+        title: "uygulama planı yazılamadı",
+        detail: resolved.messageKey,
+        key: `plan:${activitySeq()}`,
+      });
+      return null;
+    }
+    const plan = ImplementationPlan.parse(resolved.value);
+    await record(deps, run, {
+      kind: "analysis",
+      actor: "ai",
+      title: "uygulama planı yazıldı",
+      detail: [
+        `${String(plan.files.length)} dosya · ${String(plan.endpoints.length)} endpoint · ${String(plan.dtos.length)} DTO`,
+        ...plan.files.slice(0, 12).map((file) => `- ${file.path} — ${file.change}`),
+      ].join("\n"),
+      key: `plan:${activitySeq()}`,
+    });
+    return plan;
+  } catch (error) {
+    await record(deps, run, {
+      kind: "analysis",
+      actor: "ai",
+      title: "uygulama planı yazılamadı",
+      detail: `analiz plansız kapıya gidiyor — ${String(error).slice(0, 300)}`,
+      key: `plan:${activitySeq()}`,
+    });
+    return null;
+  }
 }
 
 /** Step 3, publication (M47): the same document on every configured target. */

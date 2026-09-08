@@ -17,6 +17,7 @@ import {
   IMPACT_SOURCE_KEY_PREFIX,
   MSG,
   RISK_TIER_KEY_PREFIX,
+  VERDICT_KEY_PREFIX,
 } from "./keys.js";
 import { documentHeader, label } from "./md.js";
 import type { Translate } from "./types.js";
@@ -127,6 +128,68 @@ export function renderAnalysisMarkdown(input: AnalysisDoc, ctx: DocContext): str
   md.field(label(tr, locale, MSG.labelRisk), doc.riskAndRollback.risk);
   md.field(label(tr, locale, MSG.labelMitigation), doc.riskAndRollback.mitigation);
   md.field(label(tr, locale, MSG.labelRollback), doc.riskAndRollback.rollback);
+
+  /**
+   * Sections 8-15 — the analysis-agent brief. Each one appears ONLY when the
+   * document carries it: an analysis written before this contract, or an
+   * analysis-only run with nothing code-bound to say, keeps the seven-section
+   * shape it always had. An empty "Kod karşılığı: yok" heading would tell a
+   * committee the question was asked and answered, when it was never asked.
+   */
+  const none = label(tr, locale, MSG.labelNone);
+  const verdict = (value: string): string => label(tr, locale, `${VERDICT_KEY_PREFIX}${value}`);
+  let n = 8;
+  if (doc.requirements.length > 0) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionRequirements)}`);
+    md.bullets(doc.requirements.map((item, index) => `G${String(index + 1)}. ${item}`));
+  }
+  if (doc.businessRules.length > 0) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionBusinessRules)}`);
+    md.bullets(doc.businessRules.map((item, index) => `K${String(index + 1)}. ${item}`));
+  }
+  if (doc.codeMapping.length > 0) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionCodeMapping)}`);
+    md.bullets(
+      doc.codeMapping.map(
+        (row) =>
+          `${row.requirement} → \`${row.location}\` — ${verdict(row.status)}${row.note === "" ? "" : `: ${row.note}`}`,
+      ),
+    );
+  }
+  if (doc.gaps.length > 0) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionGaps)}`);
+    md.bullets(doc.gaps);
+  }
+  if (doc.scaleRisks.length > 0) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionScaleRisks)}`);
+    for (const risk of doc.scaleRisks) {
+      md.paragraph(`**${risk.claim}** — ${verdict(risk.verdict)}: ${risk.reason}`);
+      if (risk.evidence !== "") md.field(label(tr, locale, MSG.labelEvidence), risk.evidence);
+    }
+  }
+  if (doc.scopeOptions.length > 0) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionScopeOptions)}`);
+    for (const decision of doc.scopeOptions) {
+      md.heading(3, decision.decision);
+      md.bullets(decision.options.map((option) => `${option.option} — ${option.tradeoff}`));
+    }
+  }
+  if (doc.openQuestions.length > 0) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionOpenQuestions)}`);
+    md.bullets(doc.openQuestions.map((item, index) => `S${String(index + 1)}. ${item}`));
+  }
+  if (doc.plan !== null) {
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionPlan)}`);
+    md.heading(3, label(tr, locale, MSG.labelPlanFiles));
+    md.bullets(doc.plan.files.map((file) => `\`${file.path}\` — ${file.change}`), none);
+    md.heading(3, label(tr, locale, MSG.labelPlanEndpoints));
+    md.bullets(doc.plan.endpoints.map((e) => `${e.method} \`${e.path}\` — ${e.contract}`), none);
+    md.heading(3, label(tr, locale, MSG.labelPlanDtos));
+    md.bullets(doc.plan.dtos.map((dto) => `${dto.name}: ${dto.fields.join(", ")}`), none);
+    md.heading(3, label(tr, locale, MSG.labelPlanConventions));
+    md.bullets([...doc.plan.conventions], none);
+    if (doc.plan.notes !== "") md.prose(doc.plan.notes);
+  }
 
   md.heading(2, label(tr, locale, MSG.sectionClarifications));
   md.bullets(doc.clarificationsUsed, label(tr, locale, MSG.labelNone));

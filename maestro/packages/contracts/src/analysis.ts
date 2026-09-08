@@ -30,6 +30,78 @@ export const ImpactCell = z.object({
 export type ImpactCell = z.infer<typeof ImpactCell>;
 
 /**
+ * ── Müşteri sözleşmesi: analiz ajanının ek çıktıları ─────────────────────────
+ *
+ * The bank's analysis-agent brief asks for more than the seven template
+ * sections: the requirement list verbatim, where each one lives in the code
+ * (file:line), what is MISSING, scale risks traced end to end, scope decisions
+ * left as options with trade-offs (never chosen by the agent), the open
+ * questions a developer must not start without, the business rules a verifier
+ * later checks one by one, and — when a repository is bound — the
+ * implementation plan (files, endpoint contract, DTO fields) the developer
+ * agent follows. Every one of these DEFAULTS to empty so a document written
+ * before this contract still parses, and an analysis-only run (no repo) can
+ * honestly leave the code-bound ones empty.
+ */
+
+/** One requirement and where the code base answers it today. */
+export const CodeMapping = z.object({
+  requirement: NonEmpty.max(500),
+  /** `path:line` (or `path`) as seen in discovery; "yok" when nothing answers it. */
+  location: NonEmpty.max(300),
+  status: z.enum(["karsilar", "kismen", "yok"]),
+  note: z.string().max(800).default(""),
+});
+export type CodeMapping = z.infer<typeof CodeMapping>;
+
+/**
+ * A number, limit, volume or concurrency in the requirement, traced through
+ * the code path. Three verdicts on purpose: "the endpoint exists" and "it
+ * works at this volume" are different claims, and "belirsiz" (must be tested)
+ * is an honest third answer that becomes an open question.
+ */
+export const ScaleRisk = z.object({
+  claim: NonEmpty.max(300),
+  verdict: z.enum(["karsilar", "karsilamaz", "belirsiz"]),
+  /** What was checked: N+1 calls, sync transaction, timeouts/pools/payload limits, prior volume tests. */
+  evidence: z.string().max(1500).default(""),
+  reason: NonEmpty.max(800),
+});
+export type ScaleRisk = z.infer<typeof ScaleRisk>;
+
+/** A scope decision the agent must NOT make: the options and their trade-offs. */
+export const ScopeOption = z.object({
+  decision: NonEmpty.max(300),
+  options: z
+    .array(z.object({ option: NonEmpty.max(300), tradeoff: NonEmpty.max(800) }))
+    .min(2)
+    .max(6),
+});
+export type ScopeOption = z.infer<typeof ScopeOption>;
+
+/**
+ * The developer's input: which files change, the endpoint contract, the DTO
+ * fields, and the conventions to copy from neighbouring files. Written by a
+ * SEPARATE planner call after the analysis, from the discovery findings;
+ * null when the run has no repository or the planner could not produce one.
+ */
+export const ImplementationPlan = z.object({
+  files: z.array(z.object({ path: NonEmpty.max(300), change: NonEmpty.max(800) })).max(80),
+  endpoints: z
+    .array(z.object({ method: NonEmpty.max(16), path: NonEmpty.max(300), contract: NonEmpty.max(1500) }))
+    .max(40)
+    .default([]),
+  dtos: z
+    .array(z.object({ name: NonEmpty.max(200), fields: z.array(NonEmpty.max(300)).max(60) }))
+    .max(40)
+    .default([]),
+  /** Files/patterns the developer mimics ("look at X in the same directory"). */
+  conventions: z.array(NonEmpty.max(500)).max(30).default([]),
+  notes: z.string().max(3000).default(""),
+});
+export type ImplementationPlan = z.infer<typeof ImplementationPlan>;
+
+/**
  * Analysis document (M43): seven mandatory sections, validated fail-closed —
  * a missing section never reaches a human gate. Template version is pinned
  * per run (M83); language follows project parameter (M59/M104).
@@ -60,6 +132,39 @@ export const AnalysisDoc = z
     riskTier: RiskTier,
     riskReason: NonEmpty,
     clarificationsUsed: z.array(NonEmpty).default([]),
+    // ── the analysis-agent brief (see the section comment above) ──────────
+    /** 8. Requirements, verbatim from the ticket / documents. */
+    requirements: z.array(NonEmpty.max(800)).max(100).default([]),
+    /** 9. Business rules the verifier checks one by one (PASS/FAIL per rule). */
+    businessRules: z.array(NonEmpty.max(800)).max(100).default([]),
+    /** 10. Where each requirement lives in the code base today. */
+    codeMapping: z.array(CodeMapping).max(100).default([]),
+    /** 11. What is missing — no endpoint/component answers it. */
+    gaps: z.array(NonEmpty.max(800)).max(100).default([]),
+    /** 12. Scale risks traced end to end. */
+    scaleRisks: z.array(ScaleRisk).max(40).default([]),
+    /** 13. Scope decisions left to humans: options + trade-offs. */
+    scopeOptions: z.array(ScopeOption).max(40).default([]),
+    /** 14. Questions that block hand-over to a developer until answered. */
+    openQuestions: z.array(NonEmpty.max(800)).max(100).default([]),
+    /** 15. The implementation plan (repo-bound runs), by the planner call. */
+    plan: ImplementationPlan.nullable().default(null),
   })
   .strict();
 export type AnalysisDoc = z.infer<typeof AnalysisDoc>;
+
+/**
+ * The brief sections at their defaults — what a document written before this
+ * contract carries after `AnalysisDoc.parse`. For fixtures and adapters that
+ * build a document literal: spread it, then the seven sections.
+ */
+export const EMPTY_ANALYSIS_BRIEF = {
+  requirements: [] as string[],
+  businessRules: [] as string[],
+  codeMapping: [] as CodeMapping[],
+  gaps: [] as string[],
+  scaleRisks: [] as ScaleRisk[],
+  scopeOptions: [] as ScopeOption[],
+  openQuestions: [] as string[],
+  plan: null as ImplementationPlan | null,
+};

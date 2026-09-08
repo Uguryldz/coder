@@ -479,6 +479,27 @@ Word'de belge açılırken "alanlar güncellensin mi?" sorusuna **Evet** deyin: 
 yenilenir. Şablonu kendi PDD'nizden yeniden üretmek için `sablon/sablon-uret.py` kaynak dosyayı
 `plan/` klasöründen okur; kişi adları ve tarihler üretilen dosyada yer almaz.
 
+### 5.8 Dört ajanlı zincir: analiz → plan → geliştirici → doğrulayıcı
+
+Kurumun ajan tanımlarındaki dört ayrı sözleşme motorda ayrı çağrılar olarak koşar:
+
+| Ajan | Adım | Ne okur | Ne üretir |
+|---|---|---|---|
+| Analiz ajanı (salt-okunur) | 3ö | Repo (bu çalışma dizini), ticket, ekler | Gereksinim → kod karşılığı (dosya:satır), eksikler, ölçek riski izleri (N+1, senkron transaction, timeout/pool/payload, hacim testi), aday dosyalar, kapsam seçenekleri, açık sorular |
+| Analist (yapılandırılmış) | 3 | Keşif notları, ticket, ekler, öğrenme notları, şablon | Analiz belgesi: 7 şablon bölümü + gereksinim listesi, iş kuralları, kod karşılığı, eksikler, ölçek riski (karşılar / karşılamaz / belirsiz), kapsam kararları (seçenek + ödün, SEÇMEZ), açık sorular |
+| Plancı (ayrı çağrı) | 3 | Analiz + keşif notları | Uygulama planı: dosya listesi, endpoint sözleşmesi, DTO alanları, örnek alınacak konvansiyonlar |
+| Geliştirici | 6a | Onaylı plan + iş kuralları + görev | Kod; plan dışına çıktığı her şeyi son mesajında `PLAN SAPMASI: … — …` satırıyla loglar, defterde "plan sapması" girdisi olur |
+| Doğrulayıcı (ayrı oturum) | 6c | Değişen kod, iş kuralları, kurulumun doğrulama komutları | Derleme sonucu + iş kuralı bazında PASS/FAIL/BELİRSİZ tablosu + kırılan testler; FAIL ya da kırmızı derleme onay değildir |
+
+Belge Word şablonunda 8-15. bölümler olarak gelir (yalnız dolu olanlar); plan kapı 4/5'te analizle
+birlikte onaylanır. Deposuz (yalnız analiz) koşuda kod karşılığı ve plan üretilmez, belge bunu söyler.
+
+**Promptlar nerede?** Uzun ajan talimatları dil kataloğunda (`packages/config/locales/tr.json`):
+`agent.discovery_task` (analiz ajanı), `agent.engineering_brief` (geliştirici), `agent.verify_task`
+(doğrulayıcı). Analist ve plancı kuralları motor kodunda (`packages/workflows/src/impl/analysis-template.ts`,
+`briefRules` / `planRules`); tamlık kontrolü kuralları `packages/agent-roles/data/prompts.tr.json`.
+Şablon bölüm talimatları ve persona Studio'dan düzenlenir; yukarıdakiler sürümle gelir.
+
 ## 6. Sessiz arızalar — belirtiye göre teşhis
 
 ### 6.0 Önce bunu çalıştırın: tek dosyalık tanı raporu

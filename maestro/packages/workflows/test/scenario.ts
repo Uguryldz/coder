@@ -8,6 +8,7 @@ import type {
   ScanResult,
   StepId,
 } from "@maestro/contracts";
+import { EMPTY_ANALYSIS_BRIEF } from "@maestro/contracts";
 import type { MaestroActivities, StatusMoveRequest, StatusMoveResult } from "../src/activities.js";
 import { clarificationAnsweredSignal, gateDecisionSignal } from "../src/signals.js";
 import type { TicketStatusMap, TicketWorkflowInput } from "../src/ticket-workflow.js";
@@ -27,6 +28,7 @@ export const REPO = { adoProject: "BANK", adoRepo: "pay" } as const;
 
 export function analysisDoc(risk: RiskTier): AnalysisDoc {
   return {
+    ...EMPTY_ANALYSIS_BRIEF,
     templateVersion: "analysis@1.0.0",
     language: "tr",
     purpose: "ödeme akışında hata düzeltmesi",

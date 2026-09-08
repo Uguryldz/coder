@@ -1,6 +1,7 @@
 import { ListeningRulesStore } from "../src/listening.js";
 import type { AddressInfo } from "node:net";
 import type { AnalysisDoc } from "@maestro/contracts";
+import { EMPTY_ANALYSIS_BRIEF } from "@maestro/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { analysisToDocs, DocStore } from "../src/docs.js";
 import { close, listen } from "../src/http.js";
@@ -22,6 +23,7 @@ const TICKET = "OPS-7";
 const RUN_ID = "pilot-20260810120000";
 
 const ANALYSIS: AnalysisDoc = {
+  ...EMPTY_ANALYSIS_BRIEF,
   templateVersion: "pilot-v3",
   language: "tr",
   purpose: "Kart limiti güncelleme akışı",

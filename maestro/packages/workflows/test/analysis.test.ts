@@ -1,6 +1,8 @@
 import type { AnalysisDoc, LlmCallLog } from "@maestro/contracts";
+import { EMPTY_ANALYSIS_BRIEF } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import { discoverRepo, fanOutChildren, publishAnalysis, writeAnalysis } from "../src/impl/analysis.js";
+import { record } from "../src/impl/record.js";
 import { makeFakes } from "./fakes.js";
 import { analysisDoc } from "./harness.js";
 
@@ -196,6 +198,7 @@ describe("the analysis-only run — no application bound", () => {
 
   it("fanOutChildren has no primary to exclude: every impacted cell gets its child", async () => {
     const impact: AnalysisDoc = {
+      ...EMPTY_ANALYSIS_BRIEF,
       ...analysisDoc("orta"),
       impactMatrix: [
         { appId: "pay", impacted: true, summary: "ödeme servisi", source: "repo_card" },
@@ -436,5 +439,100 @@ describe("writeAnalysis — önceki koşuların işi", () => {
     const fakes = makeFakes({ generateObject: () => ok() });
     await writeAnalysis(fakes.deps, "PAY-101", "pay");
     expect("priorWork" in inputOf(fakes)).toBe(false);
+  });
+});
+
+/**
+ * ── Müşterinin ajan zinciri: keşif notları → analist → plancı ───────────────
+ * The discovery agent's findings reach the analyst; a SEPARATE planner call
+ * writes the implementation plan from them; the finished document is stored
+ * for the developer and the verifier. Each link is fail-soft.
+ */
+describe("writeAnalysis — analysis-agent brief and planner", () => {
+  const PLAN = {
+    files: [{ path: "src/pay/Limit.java", change: "üst sınır kontrolü" }],
+    endpoints: [{ method: "POST", path: "/api/limit", contract: "amount:number; 422 sınır aşımı" }],
+    dtos: [{ name: "LimitRequest", fields: ["amount:BigDecimal"] }],
+    conventions: ["src/pay dizinindeki Transfer.java'yı örnek al"],
+    notes: "",
+  };
+  const bySchema = (answers: Record<string, unknown>) => (schemaName: string) =>
+    schemaName in answers
+      ? { status: "ok" as const, value: answers[schemaName], log: LOG }
+      : { status: "ok" as const, value: analysisDoc("orta"), log: LOG };
+
+  it("discovery keeps the agent's findings in the journal, below the count line", async () => {
+    const fakes = makeFakes({
+      agentSession: session,
+      generateObject: () => ({
+        status: "ok",
+        value: { files: 12, modules: ["pay-core"], notes: "G1 → src/pay/Limit.java:40 (karşılar)\nG2 → yok" },
+        log: LOG,
+      }),
+    });
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    const entry = fakes.journalStore.entries.find((e) => e.kind === "discovery");
+    expect(entry?.detail).toBe("12 dosya · 1 modül\nG1 → src/pay/Limit.java:40 (karşılar)\nG2 → yok");
+    // The digest call is told what to keep.
+    const digest = fakes.recorded.llm.find((c) => c.schemaName === "repo-discovery");
+    expect(JSON.stringify(digest?.input)).toContain("dosya:satır");
+  });
+
+  it("hands the analyst the discovery notes and the brief's rules; then a separate planner call", async () => {
+    const fakes = makeFakes({ generateObject: bySchema({ "implementation-plan": PLAN }) });
+    const run = await fakes.deps.runs.get("PAY-101");
+    await record(fakes.deps, run, {
+      kind: "discovery",
+      title: "repo keşfi",
+      detail: "12 dosya · 1 modül\nG1 → src/pay/Limit.java:40",
+      key: "discovery",
+    });
+    const written = await writeAnalysis(fakes.deps, "PAY-101", "pay");
+
+    const analyst = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc");
+    const input = analyst?.input as { discovery?: string; rules: string[] };
+    expect(input.discovery).toBe("G1 → src/pay/Limit.java:40");
+    expect(input.rules.join("\n")).toContain("'codeMapping'");
+    expect(input.rules.join("\n")).toContain("N+1");
+    expect(input.rules.join("\n")).toContain("SEÇME");
+
+    const planner = fakes.recorded.llm.find((c) => c.schemaName === "implementation-plan");
+    expect(planner?.role).toBe("analyst");
+    const planInput = planner?.input as { discovery: string; analysis: { acceptanceCriteria: string[] }; rules: string[] };
+    expect(planInput.discovery).toBe("G1 → src/pay/Limit.java:40");
+    expect(planInput.analysis.acceptanceCriteria.length).toBeGreaterThan(0);
+    expect(planInput.rules.join("\n")).toContain("Sen plancısın");
+
+    expect(written.analysis.plan).toEqual(PLAN);
+    expect(fakes.journalStore.entries.map((e) => e.title)).toContain("uygulama planı yazıldı");
+    // Stored for the developer and the verifier.
+    expect(fakes.recorded.stored.map((s) => s.key)).toContain(`${run.runId}/analysis/analysis.json`);
+  });
+
+  it("an analysis-only run (no discovery) gets the no-repo rules and no planner call", async () => {
+    const fakes = makeFakes({ generateObject: bySchema({}) });
+    const written = await writeAnalysis(fakes.deps, "PAY-101");
+    const analyst = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc");
+    const input = analyst?.input as { discovery?: string; rules: string[] };
+    expect(input.discovery).toBeUndefined();
+    expect(input.rules.join("\n")).toContain("OKUNMADI");
+    expect(fakes.recorded.llm.some((c) => c.schemaName === "implementation-plan")).toBe(false);
+    expect(written.analysis.plan).toBeNull();
+  });
+
+  it("a planner that cannot produce a plan costs the plan, not the analysis", async () => {
+    // The fake answers every schema with an analysis document; parsed as a
+    // plan it fails, which is exactly the shape of a model that rambles.
+    const fakes = makeFakes({ generateObject: () => ({ status: "ok", value: analysisDoc("orta"), log: LOG }) });
+    await record(fakes.deps, await fakes.deps.runs.get("PAY-101"), {
+      kind: "discovery",
+      title: "repo keşfi",
+      detail: "1 dosya · 1 modül\nG1 → src/a.ts",
+      key: "discovery",
+    });
+    const written = await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    expect(written.analysis.plan).toBeNull();
+    expect(written.risk).toBe("orta");
+    expect(fakes.journalStore.entries.map((e) => e.title)).toContain("uygulama planı yazılamadı");
   });
 });

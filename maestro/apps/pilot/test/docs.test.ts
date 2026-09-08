@@ -1,6 +1,7 @@
 import { inflateRawSync } from "node:zlib";
 import { t } from "@maestro/config";
 import type { AnalysisDoc } from "@maestro/contracts";
+import { EMPTY_ANALYSIS_BRIEF } from "@maestro/contracts";
 import { stripLeadingNumber } from "@maestro/publish";
 import { describe, expect, it } from "vitest";
 import {
@@ -35,6 +36,7 @@ const RUN_ID = "pilot-20260810120000";
 const TURKISH = "İşçi ödemesi: kart limiti güncelleme — ağ geçidi ve şifre sıfırlama";
 
 const ANALYSIS: AnalysisDoc = {
+  ...EMPTY_ANALYSIS_BRIEF,
   templateVersion: "pilot-v3",
   language: "tr",
   purpose: `Amaç: ${TURKISH}`,

@@ -62,6 +62,8 @@ function renderScreen(session: Session): void {
 interface SeedAnswer {
   readonly status?: number;
   readonly body?: object;
+  /** Bound projects `/routing` answers with; default one bound OPS project. */
+  readonly projects?: object[];
 }
 
 /** A fetch stub that records POSTs and answers GET with the seeded rule. */
@@ -91,7 +93,11 @@ function stubFetch(rules: object[], seedAnswer: SeedAnswer = {}): ReturnType<typ
     }
     // The project dropdown reads bound projects from /routing.
     if (u.includes("/routing")) {
-      return Response.json({ projects: [{ projectKey: "OPS", trigger: "auto", apps: [], noteKey: "" }], rules: [], policy: null });
+      return Response.json({
+        projects: seedAnswer.projects ?? [{ projectKey: "OPS", trigger: "auto", apps: [], noteKey: "" }],
+        rules: [],
+        policy: null,
+      });
     }
     // The two agent dropdowns read the variant catalogue, filtered by role.
     if (u.includes("/variants")) {
@@ -111,6 +117,16 @@ function stubFetch(rules: object[], seedAnswer: SeedAnswer = {}): ReturnType<typ
 
 describe("ListeningScreen", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("with no bound project it says listening is OFF and hides the rule form", async () => {
+    stubFetch([SEED], { projects: [] });
+    renderScreen(ADMIN);
+    expect(await screen.findByText("Dinleme çalışmıyor: bağlı proje yok")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Uygulama ekle / proje bağla" })).toBeTruthy();
+    expect(screen.queryByText("Hangi ticket'lar")).toBeNull();
+    // The existing rules stay listed — nothing is hidden that already exists.
+    expect(await screen.findByText("Hata")).toBeTruthy();
+  });
 
   it("renders the rules from the endpoint", async () => {
     stubFetch([SEED]);

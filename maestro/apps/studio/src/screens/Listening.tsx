@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
@@ -94,6 +94,10 @@ export function ListeningScreen(): ReactNode {
     queryFn: ({ signal }) => api.get<RoutingView>("/routing", { signal }),
   });
   const boundProjects = routing.data?.projects?.map((p) => p.projectKey) ?? [];
+  // Bağlı proje yokken dinleme ÇALIŞMAZ: kural yazılsa bile hiçbir Jira
+  // projesi taranmaz. Bunu bir ipucu satırında değil, formun yerinde söyle —
+  // operatör kural yazıp "neden tetiklenmiyor" diye aramasın.
+  const unbound = routing.isSuccess && boundProjects.length === 0;
 
   // Etkin Jira bağlantıları: bot hesabı (bağlantı testinde öğrenilir) ve
   // değer listelerinin okunacağı bağlantı buradan.
@@ -440,7 +444,18 @@ export function ListeningScreen(): ReactNode {
         </div>
       </Card>
 
-      {canWrite && (
+      {unbound && (
+        <Card title={t("listening.unbound.title")}>
+          <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
+            {t("listening.unbound.body")}{" "}
+            <Link to="/projects?tab=onboard" className="scr-link">
+              {t("listening.unbound.action")}
+            </Link>
+          </p>
+        </Card>
+      )}
+
+      {canWrite && !unbound && (
         <RuleForm
           draft={draft}
           patch={patch}

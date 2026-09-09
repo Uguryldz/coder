@@ -43,7 +43,7 @@ interface Category {
 const CATEGORIES: readonly Category[] = [
   { id: "start", labelKey: "nav.group.start", pages: ["dash", "sandbox"] },
   { id: "ai", labelKey: "nav.group.ai", pages: ["variants", "knowledge", "template", "doctemplate"] },
-  { id: "projects", labelKey: "nav.group.projects", pages: ["projects"] },
+  { id: "projects", labelKey: "nav.group.projects", pages: ["projects", "listening"] },
   { id: "compliance", labelKey: "nav.group.compliance", pages: ["audit", "pii", "aiusage", "evidence"] },
   { id: "admin", labelKey: "nav.group.admin", pages: ["settings", "notify", "params", "users", "health"] },
   { id: "commands", labelKey: "help.tab.commands", pages: [] },
@@ -63,6 +63,7 @@ const FEATURES = ["autostart", "approval", "training", "clarify", "auditcsv"] as
 const PAGE_LINK: Readonly<Record<string, string>> = {
   dash: "/dash",
   projects: "/projects",
+  listening: "/projects?tab=listening",
   template: "/template",
   doctemplate: "/doctemplate",
   notify: "/notify",

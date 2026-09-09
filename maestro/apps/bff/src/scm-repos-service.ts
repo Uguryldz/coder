@@ -139,7 +139,7 @@ export async function listScmRepos(
         messageParams: { status: String(response.status) },
       };
     }
-    let batch: ScmRepo[];
+    let batch: readonly ScmRepo[];
     try {
       batch = source.parse(await response.json());
     } catch {

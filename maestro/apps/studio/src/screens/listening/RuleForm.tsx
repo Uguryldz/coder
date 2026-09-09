@@ -618,7 +618,7 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
     patch({ repoMapRows: rows.length === 1 ? [EMPTY_REPO_MAP_ROW] : rows.filter((_, i) => i !== index) });
   const fieldOptions = props.jiraFields.map((f) => ({
     value: f.id,
-    label: f.custom ? `${f.name} (${f.id})` : f.name,
+    label: `${f.custom ? `${f.name} (${f.id})` : f.name}${f.scope === "other" ? ` · ${t("listening.repomap.field_other")}` : ""}`,
   }));
   const incomplete = repoMapIncomplete(draft);
   const complete = rows.filter((r) => r.value.trim() !== "" && r.appId.trim() !== "").length;

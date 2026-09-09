@@ -48,6 +48,37 @@ export interface JiraFieldInfo {
   readonly custom: boolean;
   /** Jira schema type when reported (`option`, `string`, `array`, …). */
   readonly type: string | null;
+  /** "project" when the project's own screens carry the field; "other" for the rest of the instance. */
+  readonly scope?: "project" | "other";
+}
+
+/**
+ * Custom field TYPES Jira and its plugins add for their own machinery — rank,
+ * sprint, epic link, dev panel, team, issue colour, service-desk sessions.
+ * Nobody maps a repository on these; listing them buries the one field
+ * ("İş Ailesi") an operator is looking for.
+ */
+const INTERNAL_CUSTOM_TYPES = [
+  "gh-lexo-rank",
+  "gh-sprint",
+  "gh-epic-link",
+  "gh-epic-label",
+  "gh-epic-status",
+  "gh-epic-color",
+  "jsw-issue-color",
+  "jsw-story-points",
+  "devsummarycf",
+  "vulnerabilitycf",
+  "agent-sessions",
+  "atlassian-team",
+  "jpo-custom",
+  "sd-",
+  "servicedesk",
+];
+function internalCustomType(customType: string | null): boolean {
+  if (customType === null) return false;
+  const tail = customType.split(":").pop() ?? customType;
+  return INTERNAL_CUSTOM_TYPES.some((marker) => tail.startsWith(marker) || customType.includes(`:${marker}`));
 }
 
 /**
@@ -70,6 +101,8 @@ export function normalizeFieldList(raw: unknown): JiraFieldInfo[] {
     if (!custom && !MAPPABLE_SYSTEM_FIELDS.has(id)) continue;
     const schema = typeof record["schema"] === "object" && record["schema"] !== null ? (record["schema"] as Record<string, unknown>) : null;
     const type = schema !== null && typeof schema["type"] === "string" ? schema["type"] : null;
+    const customType = schema !== null && typeof schema["custom"] === "string" ? schema["custom"] : null;
+    if (custom && internalCustomType(customType)) continue;
     out.push({ id, name, custom, type });
   }
   return out.sort((a, b) => Number(b.custom) - Number(a.custom) || a.name.localeCompare(b.name, "tr"));

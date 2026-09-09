@@ -41,6 +41,17 @@ describe("normalizeFieldList", () => {
     expect(fields[0]).toEqual({ id: "customfield_10234", name: "İş Ailesi", custom: true, type: "option" });
     expect(normalizeFieldList({ not: "a list" })).toEqual([]);
   });
+
+  it("drops Jira's own machinery fields (rank, sprint, dev panel, team, issue colour)", () => {
+    const fields = normalizeFieldList([
+      { id: "customfield_10019", name: "Rank", custom: true, schema: { type: "any", custom: "com.pyxis.greenhopper.jira:gh-lexo-rank" } },
+      { id: "customfield_10000", name: "development", custom: true, schema: { type: "any", custom: "com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf" } },
+      { id: "customfield_10001", name: "Team", custom: true, schema: { type: "team", custom: "com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team" } },
+      { id: "customfield_10017", name: "Konu rengi", custom: true, schema: { type: "string", custom: "com.pyxis.greenhopper.jira:jsw-issue-color" } },
+      { id: "customfield_10234", name: "İş Ailesi", custom: true, schema: { type: "option", custom: "com.atlassian.jira.plugin.system.customfieldtypes:select" } },
+    ]);
+    expect(fields.map((f) => f.id)).toEqual(["customfield_10234"]);
+  });
 });
 
 describe("JiraDcWorkPort.readFields", () => {

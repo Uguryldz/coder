@@ -1115,6 +1115,7 @@
   "listening.repomap.incomplete_fixed": "No application picked. Pick one or turn the map off.",
   "listening.repomap.field": "Jira field",
   "listening.repomap.field_choose": "— pick a field —",
+  "listening.repomap.field_other": "from other projects",
   "listening.repomap.field_hint": "Read from the connection; custom fields first.",
   "listening.repomap.field_manual_hint": "The field list could not be read; type the field id (visible in Jira's field settings, e.g. customfield_10234).",
   "listening.repomap.value": "Field value",

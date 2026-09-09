@@ -78,6 +78,8 @@ export interface JiraFieldOption {
   readonly id: string;
   readonly name: string;
   readonly custom: boolean;
+  /** "project" = bu projenin ekranında; "other" = Jira'da tanımlı, bu projede görünmüyor. */
+  readonly scope?: "project" | "other";
 }
 
 /** `POST`/`PUT` gövdesi — kimlik hariç her alan (PUT tam değiştirmedir). */

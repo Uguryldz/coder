@@ -314,8 +314,17 @@ export async function listJiraFields(
     if (sample.ok) used = fieldIdsWithValues(sample.body);
   }
   if (used.size === 0) return { ok: true, fields };
-  const narrowed = fields.filter((field) => used.has(field.id));
-  return { ok: true, fields: narrowed.length === 0 ? fields : narrowed };
+  // ORDER, never hide: a field shared across projects ("İş Ailesi") may sit on
+  // no create screen of this project and still be the one the operator maps
+  // on. The project's own fields lead; the rest follow, marked.
+  const ranked = fields.map((field) => ({ ...field, scope: used.has(field.id) ? ("project" as const) : ("other" as const) }));
+  ranked.sort(
+    (a, b) =>
+      Number(a.scope === "other") - Number(b.scope === "other") ||
+      Number(b.custom) - Number(a.custom) ||
+      a.name.localeCompare(b.name, "tr"),
+  );
+  return { ok: true, fields: ranked };
 }
 
 export type JiraFieldValuesResult =

@@ -64,7 +64,7 @@ describe("listScmRepos", () => {
     }
     // URL from the STORED baseUrl; token under Bearer; never in the URL.
     expect(calls[0]?.url).toBe(
-      "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member",
+      "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member&page=1",
     );
     expect((calls[0]?.init?.headers as Record<string, string>).authorization).toBe(`Bearer ${TOKEN}`);
     expect(calls[0]?.url).not.toContain(TOKEN);
@@ -116,5 +116,27 @@ describe("listScmRepos", () => {
     const result = await listScmRepos(conn(), TOKEN, fetch);
     expect(result).toMatchObject({ ok: false, messageKey: "onboard.scm.unreachable" });
     expect(JSON.stringify(result)).not.toContain(TOKEN);
+  });
+});
+
+describe("listScmRepos — GitHub pagination", () => {
+  it("follows page=N until a short page, so a repository beyond the first hundred is listed", async () => {
+    const calls: string[] = [];
+    const fetch: ConnectorFetch = (url) => {
+      const href = String(url);
+      calls.push(href);
+      const page = Number(/[&?]page=(\d+)/.exec(href)?.[1] ?? "1");
+      const body = page === 1
+        ? Array.from({ length: 100 }, (_, i) => ({ id: i + 1, full_name: `org/repo-${String(i + 1)}` }))
+        : [{ id: 101, full_name: "org/aradigim-depo" }];
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    };
+    const result = await listScmRepos(conn(), TOKEN, fetch);
+    expect(calls).toHaveLength(2);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repos).toHaveLength(101);
+      expect(result.repos.at(-1)).toEqual({ id: "101", fullName: "org/aradigim-depo" });
+    }
   });
 });

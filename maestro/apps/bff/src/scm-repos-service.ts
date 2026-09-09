@@ -115,30 +115,42 @@ export async function listScmRepos(
     return { ok: false, messageKey: "onboard.scm.no_token" };
   }
 
-  const url = `${connection.baseUrl.replace(/\/+$/, "")}${source.path}`;
-  let response: Response;
-  try {
-    response = await fetchImpl(url, {
-      method: "GET",
-      headers: { accept: "application/json", ...source.header(token) },
-    });
-  } catch {
-    // The message is dropped whole: a fetch error can embed the URL and, on some
-    // runtimes, the request headers — where the token is.
-    return { ok: false, messageKey: "onboard.scm.unreachable" };
+  const base = connection.baseUrl.replace(/\/+$/, "");
+  // GitHub answers 100 repositories per page and a bank's organisation has
+  // more; the repository the operator wants must not be on a page nobody
+  // fetched. Follow `page=N` until a short page, up to MAX_PAGES.
+  const paged = connection.kind === "github";
+  const repos: ScmRepo[] = [];
+  for (let page = 1; page <= (paged ? MAX_PAGES : 1); page += 1) {
+    const url = `${base}${source.path}${paged ? `&page=${String(page)}` : ""}`;
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        method: "GET",
+        headers: { accept: "application/json", ...source.header(token) },
+      });
+    } catch {
+      return { ok: false, messageKey: "onboard.scm.unreachable" };
+    }
+    if (response.status < 200 || response.status >= 300) {
+      return {
+        ok: false,
+        messageKey: "onboard.scm.http_error",
+        messageParams: { status: String(response.status) },
+      };
+    }
+    let batch: ScmRepo[];
+    try {
+      batch = source.parse(await response.json());
+    } catch {
+      return { ok: false, messageKey: "onboard.scm.bad_response" };
+    }
+    repos.push(...batch);
+    if (!paged || batch.length < PAGE_SIZE) break;
   }
-
-  if (response.status < 200 || response.status >= 300) {
-    return {
-      ok: false,
-      messageKey: "onboard.scm.http_error",
-      messageParams: { status: String(response.status) },
-    };
-  }
-
-  try {
-    return { ok: true, repos: source.parse(await response.json()) };
-  } catch {
-    return { ok: false, messageKey: "onboard.scm.bad_response" };
-  }
+  const seen = new Set<string>();
+  return { ok: true, repos: repos.filter((r) => (seen.has(r.fullName) ? false : (seen.add(r.fullName), true))) };
 }
+
+const PAGE_SIZE = 100;
+const MAX_PAGES = 10;

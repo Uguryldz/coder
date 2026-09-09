@@ -1115,6 +1115,7 @@
   "listening.repomap.incomplete_fixed": "Uygulama seçilmedi. Seçin ya da eşlemeyi kapatın.",
   "listening.repomap.field": "Jira alanı",
   "listening.repomap.field_choose": "— alan seç —",
+  "listening.repomap.field_other": "diğer projelerden",
   "listening.repomap.field_hint": "Bağlantıdan okundu; özel alanlar önce gelir.",
   "listening.repomap.field_manual_hint": "Alan listesi okunamadı; alan kimliğini yazın (Jira'da alan ayarlarından görülür, ör. customfield_10234).",
   "listening.repomap.value": "Alan değeri",

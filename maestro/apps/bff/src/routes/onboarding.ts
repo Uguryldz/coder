@@ -115,7 +115,11 @@ function bodyIssues(error: z.ZodError): { issues: string[] } {
 
 /** The `?connectionId=` shared by the live SCM-repo and Jira-project listings. */
 const ConnectionIdQuery = z.object({ connectionId: z.string().trim().min(1).max(64) });
-const FieldsQuery = z.object({ connectionId: z.string().trim().min(1).max(64) });
+const FieldsQuery = z.object({
+  connectionId: z.string().trim().min(1).max(64),
+  /** Narrow the list to the fields this project actually shows. */
+  project: z.string().trim().min(1).max(64).optional(),
+});
 const FieldValuesQuery = z.object({
   connectionId: z.string().trim().min(1).max(64),
   project: z.string().trim().min(1).max(64),
@@ -421,7 +425,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     const connection = await store.get(parsed.data.connectionId);
     if (connection === null) throw badRequest("unknown_connection");
     const token = connection.secretRef === null ? null : await secrets.get(connection.secretRef).catch(() => null);
-    return reply.code(200).send(await listJiraFields(connection, token, deps.connectorFetch));
+    return reply.code(200).send(await listJiraFields(connection, token, deps.connectorFetch, parsed.data.project));
   });
 
   /** The values one field carries in a project: allowed values, else values in use. */

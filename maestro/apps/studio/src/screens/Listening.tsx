@@ -166,12 +166,13 @@ export function ListeningScreen(): ReactNode {
   // Depo eşlemesi için Jira alanları — yalnız bölüm açıkken ve bir bağlantı
   // varken okunur; okunamazsa alan kimliği elle yazılır.
   const jiraFields = useQuery({
-    queryKey: ["jira-fields", jiraConnId],
+    queryKey: ["jira-fields", jiraConnId, draft.projectKey],
     enabled: jiraConnId !== null && draft.repoMapOn,
     retry: false,
     queryFn: ({ signal }) =>
       api.get<{ ok: boolean; fields?: readonly JiraFieldOption[]; messageKey?: string }>(
-        `/onboarding/jira-fields?connectionId=${encodeURIComponent(jiraConnId ?? "")}`,
+        `/onboarding/jira-fields?connectionId=${encodeURIComponent(jiraConnId ?? "")}` +
+          (draft.projectKey.trim() === "" ? "" : `&project=${encodeURIComponent(draft.projectKey.trim())}`),
         { signal },
       ),
   });

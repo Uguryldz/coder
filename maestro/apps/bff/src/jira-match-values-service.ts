@@ -241,10 +241,46 @@ export type JiraFieldsResult =
  * The fields an operator can build a repo map on — `GET /rest/api/{2,3}/field`,
  * custom fields first. Same connection/token handling as the match values.
  */
+/**
+ * Field ids a PROJECT actually uses: its create screens (createmeta, every
+ * issue type) — and when that answers nothing, the fields carrying a value on
+ * the project's recent tickets. A bank's Jira defines hundreds of fields; the
+ * repo map only wants the handful this project shows.
+ */
+export function fieldIdsFromCreateMeta(raw: unknown): Set<string> {
+  const out = new Set<string>();
+  const body = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
+  const projects = body !== null && Array.isArray(body["projects"]) ? (body["projects"] as unknown[]) : [];
+  for (const project of projects) {
+    const types = typeof project === "object" && project !== null ? (project as Record<string, unknown>)["issuetypes"] : null;
+    for (const type of Array.isArray(types) ? types : []) {
+      const fields = typeof type === "object" && type !== null ? (type as Record<string, unknown>)["fields"] : null;
+      if (typeof fields === "object" && fields !== null) for (const id of Object.keys(fields)) out.add(id);
+    }
+  }
+  return out;
+}
+
+export function fieldIdsWithValues(raw: unknown): Set<string> {
+  const out = new Set<string>();
+  const body = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
+  const issues = body !== null && Array.isArray(body["issues"]) ? (body["issues"] as unknown[]) : [];
+  for (const issue of issues) {
+    const fields = typeof issue === "object" && issue !== null ? (issue as Record<string, unknown>)["fields"] : null;
+    if (typeof fields !== "object" || fields === null) continue;
+    for (const [id, value] of Object.entries(fields as Record<string, unknown>)) {
+      if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) continue;
+      out.add(id);
+    }
+  }
+  return out;
+}
+
 export async function listJiraFields(
   connection: ConnectionRecord,
   token: string | null,
   fetchImpl: ConnectorFetch,
+  projectKey?: string,
 ): Promise<JiraFieldsResult> {
   const source = jiraMatchSource(connection.kind);
   if (source === null) {
@@ -261,7 +297,25 @@ export async function listJiraFields(
   }
   const fields = normalizeFieldList(read.body);
   if (fields.length === 0) return { ok: false, messageKey: "onboard.jira.bad_response" };
-  return { ok: true, fields };
+  const key = projectKey?.trim() ?? "";
+  if (key === "") return { ok: true, fields };
+  // Narrow to the project: create screens first, then fields with values.
+  const headers = source.header(token, email);
+  const cloud = connection.kind === "jira_cloud";
+  const metaPath = `${cloud ? "/rest/api/3" : "/rest/api/2"}/issue/createmeta?projectKeys=${encodeURIComponent(key)}&expand=projects.issuetypes.fields`;
+  const meta = await readJson(`${base}${metaPath}`, headers, fetchImpl);
+  let used = meta.ok ? fieldIdsFromCreateMeta(meta.body) : new Set<string>();
+  if (used.size === 0) {
+    const jql = encodeURIComponent(`project = "${key.replace(/"/g, "")}" ORDER BY updated DESC`);
+    const searchPath = cloud
+      ? `/rest/api/3/search/jql?jql=${jql}&fields=*navigable&maxResults=50`
+      : `/rest/api/2/search?jql=${jql}&fields=*navigable&maxResults=50`;
+    const sample = await readJson(`${base}${searchPath}`, headers, fetchImpl);
+    if (sample.ok) used = fieldIdsWithValues(sample.body);
+  }
+  if (used.size === 0) return { ok: true, fields };
+  const narrowed = fields.filter((field) => used.has(field.id));
+  return { ok: true, fields: narrowed.length === 0 ? fields : narrowed };
 }
 
 export type JiraFieldValuesResult =

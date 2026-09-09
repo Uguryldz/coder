@@ -423,3 +423,35 @@ describe("listJiraFieldValues — a field's values for the repo map", () => {
     expect(await listJiraFieldValues(conn(), "OPS", "../x", TOKEN, fetch)).toEqual({ ok: false, messageKey: "onboard.jira.bad_response" });
   });
 });
+
+describe("listJiraFields — narrowed to a project", () => {
+  const ALL = [
+    { id: "customfield_10234", name: "İş Ailesi", custom: true },
+    { id: "customfield_10999", name: "Başka Takımın Alanı", custom: true },
+    { id: "components", name: "Component/s", custom: false },
+  ];
+  it("keeps only the fields on the project's create screens", async () => {
+    const meta = { projects: [{ key: "OTYT", issuetypes: [{ fields: { customfield_10234: {}, summary: {} } }] }] };
+    const { fetch } = router([
+      { match: "/field", status: 200, body: ALL },
+      { match: "/issue/createmeta?projectKeys=OTYT", status: 200, body: meta },
+    ]);
+    const got = await listJiraFields(conn(), TOKEN, fetch, "OTYT");
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.fields.map((f) => f.id)).toEqual(["customfield_10234"]);
+  });
+
+  it("falls back to fields carrying values on the project's tickets, and to the full list when nothing is known", async () => {
+    const sample = { issues: [{ fields: { customfield_10999: { value: "x" }, customfield_10234: null, components: [] } }] };
+    const { fetch } = router([
+      { match: "/field", status: 200, body: ALL },
+      { match: "/issue/createmeta", status: 200, body: { projects: [] } },
+      { match: "/search", status: 200, body: sample },
+    ]);
+    const got = await listJiraFields(conn(), TOKEN, fetch, "OTYT");
+    if (got.ok) expect(got.fields.map((f) => f.id)).toEqual(["customfield_10999"]);
+    const nothing = router([{ match: "/field", status: 200, body: ALL }]);
+    const all = await listJiraFields(conn(), TOKEN, nothing.fetch, "OTYT");
+    if (all.ok) expect(all.fields).toHaveLength(3);
+  });
+});

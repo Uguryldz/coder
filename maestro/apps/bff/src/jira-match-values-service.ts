@@ -263,3 +263,101 @@ export async function listJiraFields(
   if (fields.length === 0) return { ok: false, messageKey: "onboard.jira.bad_response" };
   return { ok: true, fields };
 }
+
+export type JiraFieldValuesResult =
+  | { ok: true; values: readonly string[]; source: "createmeta" | "sample" }
+  | { ok: false; messageKey: string; messageParams?: Record<string, string> };
+
+/** Walk a createmeta body for `fields[fieldId].allowedValues` in any project/issue type. */
+export function allowedValuesFromCreateMeta(raw: unknown, fieldId: string): string[] {
+  const out = new Set<string>();
+  const visit = (node: unknown): void => {
+    if (typeof node !== "object" || node === null) return;
+    const record = node as Record<string, unknown>;
+    const field = record[fieldId];
+    if (typeof field === "object" && field !== null && Array.isArray((field as Record<string, unknown>)["allowedValues"])) {
+      for (const option of (field as Record<string, unknown>)["allowedValues"] as unknown[]) {
+        const text = fieldOptionText(option);
+        if (text !== null) out.add(text);
+      }
+    }
+    for (const child of Object.values(record)) if (typeof child === "object" && child !== null) visit(child);
+  };
+  visit(raw);
+  return [...out];
+}
+
+function fieldOptionText(option: unknown): string | null {
+  if (typeof option === "string") return option.trim() === "" ? null : option.trim();
+  if (typeof option !== "object" || option === null) return null;
+  const record = option as Record<string, unknown>;
+  for (const key of ["value", "name"]) {
+    const text = record[key];
+    if (typeof text === "string" && text.trim() !== "") return text.trim();
+  }
+  return null;
+}
+
+/** Distinct values of `fieldId` across a search body's issues (used values). */
+export function sampledValuesFromSearch(raw: unknown, fieldId: string): string[] {
+  const body = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
+  const issues = body !== null && Array.isArray(body["issues"]) ? (body["issues"] as unknown[]) : [];
+  const out = new Set<string>();
+  for (const issue of issues) {
+    const fields = typeof issue === "object" && issue !== null ? ((issue as Record<string, unknown>)["fields"] as Record<string, unknown> | undefined) : undefined;
+    const value = fields?.[fieldId];
+    const items = Array.isArray(value) ? value : [value];
+    for (const item of items) {
+      const text = fieldOptionText(item);
+      if (text !== null) out.add(text);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * The values a repo map can pick for one field: Jira's allowed values when the
+ * field has a fixed option list (createmeta), otherwise the values actually
+ * used on the project's tickets (a bounded search). Either way the operator
+ * picks from what Jira really carries instead of typing "Krediler" by hand.
+ */
+export async function listJiraFieldValues(
+  connection: ConnectionRecord,
+  projectKey: string,
+  fieldId: string,
+  token: string | null,
+  fetchImpl: ConnectorFetch,
+): Promise<JiraFieldValuesResult> {
+  const source = jiraMatchSource(connection.kind);
+  if (source === null) {
+    return { ok: false, messageKey: "onboard.jira.not_listable", messageParams: { kind: connection.kind } };
+  }
+  if (token === null) return { ok: false, messageKey: "onboard.jira.no_token" };
+  const key = projectKey.trim();
+  const field = fieldId.trim();
+  if (key === "" || !/^[A-Za-z0-9_]+$/.test(field)) return { ok: false, messageKey: "onboard.jira.bad_response" };
+  const email = str((connection.config as { email?: unknown } | null)?.email) ?? "";
+  const base = connection.baseUrl.replace(/\/+$/, "");
+  const headers = source.header(token, email);
+  const cloud = connection.kind === "jira_cloud";
+  const metaPath = cloud
+    ? `/rest/api/3/issue/createmeta?projectKeys=${encodeURIComponent(key)}&expand=projects.issuetypes.fields`
+    : `/rest/api/2/issue/createmeta?projectKeys=${encodeURIComponent(key)}&expand=projects.issuetypes.fields`;
+  const meta = await readJson(`${base}${metaPath}`, headers, fetchImpl);
+  if (meta.ok) {
+    const allowed = allowedValuesFromCreateMeta(meta.body, field);
+    if (allowed.length > 0) return { ok: true, values: allowed.sort((a, b) => a.localeCompare(b, "tr")), source: "createmeta" };
+  }
+  const jql = encodeURIComponent(`project = "${key.replace(/"/g, "")}" ORDER BY updated DESC`);
+  const searchPath = cloud
+    ? `/rest/api/3/search/jql?jql=${jql}&fields=${encodeURIComponent(field)}&maxResults=200`
+    : `/rest/api/2/search?jql=${jql}&fields=${encodeURIComponent(field)}&maxResults=200`;
+  const sample = await readJson(`${base}${searchPath}`, headers, fetchImpl);
+  if (!sample.ok) {
+    const failed = failure(sample);
+    return failed.ok ? { ok: false, messageKey: "onboard.jira.bad_response" } : failed;
+  }
+  const used = sampledValuesFromSearch(sample.body, field);
+  if (used.length === 0) return { ok: false, messageKey: "onboard.jira.field_no_values" };
+  return { ok: true, values: used.sort((a, b) => a.localeCompare(b, "tr")), source: "sample" };
+}

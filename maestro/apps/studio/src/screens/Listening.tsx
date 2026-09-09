@@ -176,6 +176,21 @@ export function ListeningScreen(): ReactNode {
       ),
   });
   const jiraFieldOptions = jiraFields.data?.ok ? (jiraFields.data.fields ?? []) : [];
+  // Seçilen alanın DEĞERLERİ: Jira'nın izin verdiği liste, yoksa projede
+  // kullanılanlar. Operatör "Krediler"i yazmaz, seçer.
+  const fieldValues = useQuery({
+    queryKey: ["jira-field-values", jiraConnId, draft.projectKey, draft.repoMapField],
+    enabled: jiraConnId !== null && draft.repoMapOn && draft.repoMapMode === "field" && draft.repoMapField.trim() !== "" && draft.projectKey.trim() !== "",
+    retry: false,
+    queryFn: ({ signal }) =>
+      api.get<{ ok: boolean; values?: readonly string[]; source?: string; messageKey?: string }>(
+        `/onboarding/jira-field-values?connectionId=${encodeURIComponent(jiraConnId ?? "")}` +
+          `&project=${encodeURIComponent(draft.projectKey)}&field=${encodeURIComponent(draft.repoMapField)}`,
+        { signal },
+      ),
+  });
+  const fieldValueOptions = fieldValues.data?.ok ? (fieldValues.data.values ?? []) : [];
+  const fieldValuesSource = fieldValues.data?.ok ? fieldValues.data.source : undefined;
   const jiraFieldsDegradedKey =
     jiraFields.data !== undefined && !jiraFields.data.ok ? jiraFields.data.messageKey : undefined;
   // Seçili projeye bağlı uygulamalar — eşleme satırlarının hedefi.
@@ -487,6 +502,8 @@ export function ListeningScreen(): ReactNode {
           statusOptions={statusOptions}
           jiraFields={jiraFieldOptions}
           jiraFieldsDegradedKey={jiraFieldsDegradedKey}
+          fieldValueOptions={fieldValueOptions}
+          fieldValuesSource={fieldValuesSource}
           appOptions={appOptions}
           analystOptions={analystOptions}
           engineerOptions={engineerOptions}

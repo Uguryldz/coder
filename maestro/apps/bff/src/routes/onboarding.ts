@@ -17,7 +17,7 @@ import { isMasterApprover } from "../platform/master-approver.js";
 import { seedProjectDefaults } from "../listening-seed.js";
 import { listScmRepos } from "../scm-repos-service.js";
 import { listJiraProjects } from "../jira-projects-service.js";
-import { listJiraFields, listJiraMatchValues } from "../jira-match-values-service.js";
+import { listJiraFieldValues, listJiraFields, listJiraMatchValues } from "../jira-match-values-service.js";
 import type { ConnectionStore } from "../connection-store.js";
 import { engineIdentityWarning } from "../connection-service.js";
 import type { SecretPort } from "@maestro/ports";
@@ -116,6 +116,11 @@ function bodyIssues(error: z.ZodError): { issues: string[] } {
 /** The `?connectionId=` shared by the live SCM-repo and Jira-project listings. */
 const ConnectionIdQuery = z.object({ connectionId: z.string().trim().min(1).max(64) });
 const FieldsQuery = z.object({ connectionId: z.string().trim().min(1).max(64) });
+const FieldValuesQuery = z.object({
+  connectionId: z.string().trim().min(1).max(64),
+  project: z.string().trim().min(1).max(64),
+  field: z.string().trim().min(1).max(128),
+});
 const MatchValuesQuery = z.object({
   connectionId: z.string().trim().min(1).max(64),
   project: z.string().trim().min(1).max(64),
@@ -417,6 +422,20 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     if (connection === null) throw badRequest("unknown_connection");
     const token = connection.secretRef === null ? null : await secrets.get(connection.secretRef).catch(() => null);
     return reply.code(200).send(await listJiraFields(connection, token, deps.connectorFetch));
+  });
+
+  /** The values one field carries in a project: allowed values, else values in use. */
+  app.get("/onboarding/jira-field-values", { preHandler }, async (request, reply) => {
+    const store = connectorStore(deps);
+    const secrets = connectorSecrets(deps);
+    const parsed = FieldValuesQuery.safeParse(request.query);
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
+    const connection = await store.get(parsed.data.connectionId);
+    if (connection === null) throw badRequest("unknown_connection");
+    const token = connection.secretRef === null ? null : await secrets.get(connection.secretRef).catch(() => null);
+    return reply
+      .code(200)
+      .send(await listJiraFieldValues(connection, parsed.data.project, parsed.data.field, token, deps.connectorFetch));
   });
 
   app.get("/onboarding/jira-match-values", { preHandler }, async (request, reply) => {

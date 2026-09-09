@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  listJiraFieldValues,
   listJiraFields,
   listJiraMatchValues,
   parseCreateMetaIssueTypes,
@@ -384,5 +385,41 @@ describe("listJiraFields — the fields a repo map can use", () => {
     expect(got.ok).toBe(false);
     if (!got.ok) expect(got.messageKey).toBe("onboard.jira.http_error");
     expect(await listJiraFields(conn(), null, empty.fetch)).toEqual({ ok: false, messageKey: "onboard.jira.no_token" });
+  });
+});
+
+describe("listJiraFieldValues — a field's values for the repo map", () => {
+  const META = {
+    projects: [{ key: "OPS", issuetypes: [
+      { name: "Görev", fields: { customfield_10234: { name: "İş Ailesi", allowedValues: [{ value: "Krediler" }, { value: "Kartlar" }] } } },
+      { name: "Hata", fields: { customfield_10234: { allowedValues: [{ value: "Sigorta" }, { value: "Krediler" }] } } },
+    ] }],
+  };
+  it("prefers Jira's allowed values, de-duplicated across issue types", async () => {
+    const { fetch } = router([{ match: "/issue/createmeta?projectKeys=OPS", status: 200, body: META }]);
+    const got = await listJiraFieldValues(conn({ kind: "jira_dc", authKind: "bearer" }), "OPS", "customfield_10234", TOKEN, fetch);
+    expect(got).toEqual({ ok: true, values: ["Kartlar", "Krediler", "Sigorta"], source: "createmeta" });
+  });
+
+  it("falls back to the values in use on the project's tickets", async () => {
+    const SEARCH = { issues: [
+      { fields: { customfield_10234: { value: "Krediler" } } },
+      { fields: { customfield_10234: null } },
+      { fields: { customfield_10234: [{ value: "Kartlar" }, { value: "Krediler" }] } },
+    ] };
+    const { fetch, urls } = router([
+      { match: "/issue/createmeta", status: 200, body: { projects: [] } },
+      { match: "/search", status: 200, body: SEARCH },
+    ]);
+    const got = await listJiraFieldValues(conn(), "OPS", "customfield_10234", TOKEN, fetch);
+    expect(got).toEqual({ ok: true, values: ["Kartlar", "Krediler"], source: "sample" });
+    expect(urls[1]).toContain("/rest/api/3/search/jql?jql=");
+    expect(urls[1]).toContain("fields=customfield_10234");
+  });
+
+  it("says so when the field carries no value anywhere, and refuses a bad field id", async () => {
+    const { fetch } = router([{ match: "/issue/createmeta", status: 200, body: {} }, { match: "/search", status: 200, body: { issues: [] } }]);
+    expect(await listJiraFieldValues(conn(), "OPS", "customfield_1", TOKEN, fetch)).toEqual({ ok: false, messageKey: "onboard.jira.field_no_values" });
+    expect(await listJiraFieldValues(conn(), "OPS", "../x", TOKEN, fetch)).toEqual({ ok: false, messageKey: "onboard.jira.bad_response" });
   });
 });

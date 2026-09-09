@@ -452,7 +452,7 @@ seçilen uygulamaya gider; tetik zaten depoyu ayırıyorsa, ör. iş tipi ya da 
 
 1. Alanı seçin (liste Jira bağlantısından okunur, özel alanlar önce gelir; okunamazsa alan kimliğini
    yazın, ör. `customfield_10234`).
-2. Her değeri bir uygulamaya eşleyin: `Krediler → bank/kredi`, `Kartlar → bank/kart`. İsteğe bağlı
+2. Değerler Jira'dan gelir (alanın izin verilen listesi, yoksa projede kullanılan değerler); her değeri bir uygulamaya eşleyin: `Krediler → bank/kredi`, `Kartlar → bank/kart`. İsteğe bağlı
    hedef dal (ortam) yazılır.
 3. Uygulamalar önce "Proje bağlama"da kayıtlı olmalı; eşlemedeki uygulama kimliği oradaki kimliktir.
 

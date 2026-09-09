@@ -42,6 +42,9 @@ export interface RuleFormProps {
   /** Jira alanları (depo eşlemesi için), bağlantıdan canlı; okunamadıysa boş + gerekçe anahtarı. */
   readonly jiraFields: readonly JiraFieldOption[];
   readonly jiraFieldsDegradedKey: string | undefined;
+  /** Seçili alanın Jira'daki değerleri (izin verilenler ya da kullanılanlar); boşsa elle yazılır. */
+  readonly fieldValueOptions: readonly string[];
+  readonly fieldValuesSource: string | undefined;
   /** Seçili projeye bağlı uygulama kimlikleri — eşleme satırlarındaki hedef. */
   readonly appOptions: readonly string[];
   readonly onSubmit: () => void;
@@ -719,12 +722,26 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
             <div className="scr-stack">
               {rows.map((row, index) => (
                 <div key={index} className="scr-grid scr-grid--3">
-                  <Input
-                    label={t("listening.repomap.value")}
-                    value={row.value}
-                    onChange={(e) => setRow(index, { value: e.target.value })}
-                    placeholder={t("listening.repomap.value_placeholder")}
-                  />
+                  {props.fieldValueOptions.length > 0 ? (
+                    <Select
+                      label={t("listening.repomap.value")}
+                      value={row.value}
+                      onChange={(e) => setRow(index, { value: e.target.value })}
+                      placeholder={t("listening.repomap.value_choose")}
+                      options={[
+                        ...props.fieldValueOptions.map((v) => ({ value: v, label: v })),
+                        ...(row.value !== "" && !props.fieldValueOptions.includes(row.value) ? [{ value: row.value, label: row.value }] : []),
+                      ]}
+                      hint={t(props.fieldValuesSource === "sample" ? "listening.repomap.value_hint_sample" : "listening.repomap.value_hint_allowed")}
+                    />
+                  ) : (
+                    <Input
+                      label={t("listening.repomap.value")}
+                      value={row.value}
+                      onChange={(e) => setRow(index, { value: e.target.value })}
+                      placeholder={t("listening.repomap.value_placeholder")}
+                    />
+                  )}
                   {props.appOptions.length > 0 ? (
                     <Select
                       label={t("listening.repomap.app")}

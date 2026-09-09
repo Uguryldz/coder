@@ -388,6 +388,34 @@ describe("listJiraFields — the fields a repo map can use", () => {
   });
 });
 
+describe("listJiraFieldValues — a select field that is not on the create screen", () => {
+  it("reads the whole option list from a recent ticket's edit screen (editmeta)", async () => {
+    const search = { issues: [{ key: "OTYT-7", fields: { customfield_10234: null } }] };
+    const editmeta = { fields: { customfield_10234: { name: "İş Ailesi", allowedValues: [{ value: "Sigorta" }, { value: "Krediler" }, { value: "Kartlar" }] } } };
+    const { fetch, urls } = router([
+      { match: "/issue/createmeta", status: 200, body: { projects: [] } },
+      { match: "/search", status: 200, body: search },
+      { match: "/issue/OTYT-7/editmeta", status: 200, body: editmeta },
+    ]);
+    const got = await listJiraFieldValues(conn({ kind: "jira_dc", authKind: "bearer" }), "OTYT", "customfield_10234", TOKEN, fetch);
+    expect(got).toEqual({ ok: true, values: ["Kartlar", "Krediler", "Sigorta"], source: "editmeta" });
+    expect(urls.some((u) => u.includes("/rest/api/2/issue/OTYT-7/editmeta"))).toBe(true);
+  });
+
+  it("on Cloud falls back to the field's context options, before the values in use", async () => {
+    const search = { issues: [{ key: "OPS-1", fields: { customfield_10234: { value: "Krediler" } } }] };
+    const { fetch } = router([
+      { match: "/issue/createmeta", status: 200, body: { projects: [] } },
+      { match: "/search", status: 200, body: search },
+      { match: "/editmeta", status: 200, body: { fields: {} } },
+      { match: "/field/customfield_10234/context?", status: 200, body: { values: [{ id: "10100" }] } },
+      { match: "/context/10100/option", status: 200, body: { isLast: true, values: [{ value: "Krediler" }, { value: "Kartlar" }, { value: "Eski", disabled: true }] } },
+    ]);
+    const got = await listJiraFieldValues(conn(), "OPS", "customfield_10234", TOKEN, fetch);
+    expect(got).toEqual({ ok: true, values: ["Kartlar", "Krediler"], source: "options" });
+  });
+});
+
 describe("listJiraFieldValues — a field's values for the repo map", () => {
   const META = {
     projects: [{ key: "OPS", issuetypes: [

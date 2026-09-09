@@ -328,7 +328,7 @@ export async function listJiraFields(
 }
 
 export type JiraFieldValuesResult =
-  | { ok: true; values: readonly string[]; source: "createmeta" | "sample" }
+  | { ok: true; values: readonly string[]; source: "createmeta" | "editmeta" | "options" | "sample" }
   | { ok: false; messageKey: string; messageParams?: Record<string, string> };
 
 /** Walk a createmeta body for `fields[fieldId].allowedValues` in any project/issue type. */
@@ -406,11 +406,16 @@ export async function listJiraFieldValues(
   const metaPath = cloud
     ? `/rest/api/3/issue/createmeta?projectKeys=${encodeURIComponent(key)}&expand=projects.issuetypes.fields`
     : `/rest/api/2/issue/createmeta?projectKeys=${encodeURIComponent(key)}&expand=projects.issuetypes.fields`;
+  const sorted = (values: readonly string[]): string[] => [...values].sort((a, b) => a.localeCompare(b, "tr"));
+  // 1. The create screens' option list (createmeta).
   const meta = await readJson(`${base}${metaPath}`, headers, fetchImpl);
   if (meta.ok) {
     const allowed = allowedValuesFromCreateMeta(meta.body, field);
-    if (allowed.length > 0) return { ok: true, values: allowed.sort((a, b) => a.localeCompare(b, "tr")), source: "createmeta" };
+    if (allowed.length > 0) return { ok: true, values: sorted(allowed), source: "createmeta" };
   }
+  // 2. A select field that lives on the EDIT screen only ("İş Ailesi" filled
+  //    after creation) is absent from createmeta; the edit screen of any
+  //    recent ticket of the project still carries the whole option list.
   const jql = encodeURIComponent(`project = "${key.replace(/"/g, "")}" ORDER BY updated DESC`);
   const searchPath = cloud
     ? `/rest/api/3/search/jql?jql=${jql}&fields=${encodeURIComponent(field)}&maxResults=200`
@@ -420,7 +425,66 @@ export async function listJiraFieldValues(
     const failed = failure(sample);
     return failed.ok ? { ok: false, messageKey: "onboard.jira.bad_response" } : failed;
   }
+  const api = cloud ? "/rest/api/3" : "/rest/api/2";
+  for (const issueKey of issueKeysFromSearch(sample.body).slice(0, 3)) {
+    const edit = await readJson(`${base}${api}/issue/${encodeURIComponent(issueKey)}/editmeta`, headers, fetchImpl);
+    if (!edit.ok) continue;
+    const allowed = allowedValuesFromCreateMeta(edit.body, field);
+    if (allowed.length > 0) return { ok: true, values: sorted(allowed), source: "editmeta" };
+  }
+  // 3. Cloud: the field's own contexts and options — the full list even when
+  //    no ticket carries a value yet (needs Jira admin on the token).
+  if (cloud) {
+    const options = await cloudFieldOptions(base, field, headers, fetchImpl);
+    if (options.length > 0) return { ok: true, values: sorted(options), source: "options" };
+  }
+  // 4. Last: the values in use on the project's tickets.
   const used = sampledValuesFromSearch(sample.body, field);
   if (used.length === 0) return { ok: false, messageKey: "onboard.jira.field_no_values" };
-  return { ok: true, values: used.sort((a, b) => a.localeCompare(b, "tr")), source: "sample" };
+  return { ok: true, values: sorted(used), source: "sample" };
+}
+
+/** Issue keys of a search body, newest first as the query ordered them. */
+export function issueKeysFromSearch(raw: unknown): string[] {
+  const body = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
+  const issues = body !== null && Array.isArray(body["issues"]) ? (body["issues"] as unknown[]) : [];
+  return issues
+    .map((issue) => (typeof issue === "object" && issue !== null ? (issue as Record<string, unknown>)["key"] : undefined))
+    .filter((key): key is string => typeof key === "string" && key.trim() !== "");
+}
+
+/** Cloud: every option of every context of a select field. */
+async function cloudFieldOptions(
+  base: string,
+  fieldId: string,
+  headers: Record<string, string>,
+  fetchImpl: ConnectorFetch,
+): Promise<string[]> {
+  const contexts = await readJson(`${base}/rest/api/3/field/${encodeURIComponent(fieldId)}/context?maxResults=50`, headers, fetchImpl);
+  if (!contexts.ok) return [];
+  const list = (contexts.body as { values?: unknown } | null)?.values;
+  const ids = Array.isArray(list)
+    ? list.map((c) => (typeof c === "object" && c !== null ? (c as Record<string, unknown>)["id"] : undefined)).filter((id): id is string | number => typeof id === "string" || typeof id === "number")
+    : [];
+  const out = new Set<string>();
+  for (const id of ids.slice(0, 5)) {
+    for (let start = 0; start < 1000; start += 100) {
+      const page = await readJson(
+        `${base}/rest/api/3/field/${encodeURIComponent(fieldId)}/context/${encodeURIComponent(String(id))}/option?maxResults=100&startAt=${String(start)}`,
+        headers,
+        fetchImpl,
+      );
+      if (!page.ok) break;
+      const body = page.body as { values?: unknown; isLast?: unknown } | null;
+      const values = Array.isArray(body?.values) ? body.values : [];
+      for (const option of values) {
+        const record = typeof option === "object" && option !== null ? (option as Record<string, unknown>) : {};
+        if (record["disabled"] === true) continue;
+        const text = fieldOptionText(option);
+        if (text !== null) out.add(text);
+      }
+      if (body?.isLast !== false || values.length === 0) break;
+    }
+  }
+  return [...out];
 }

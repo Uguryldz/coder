@@ -54,9 +54,16 @@ export interface JiraFieldInfo {
 
 /**
  * Custom field TYPES Jira and its plugins add for their own machinery — rank,
- * sprint, epic link, dev panel, team, issue colour, service-desk sessions.
+ * sprint, epic link, dev panel, issue colour, service-desk sessions.
  * Nobody maps a repository on these; listing them buries the one field
  * ("İş Ailesi") an operator is looking for.
+ *
+ * `atlassian-team` is NOT here, and that is deliberate. It was, and on a live
+ * instance whose only other custom fields were a date picker and a one-option
+ * checkbox, dropping it left the operator with nothing to map on. "Which team
+ * owns this ticket" is a REAL routing rule — a team maps onto a repository the
+ * way a business family does — so the field belongs in the list even though
+ * Jira ships it.
  */
 const INTERNAL_CUSTOM_TYPES = [
   "gh-lexo-rank",
@@ -70,7 +77,6 @@ const INTERNAL_CUSTOM_TYPES = [
   "devsummarycf",
   "vulnerabilitycf",
   "agent-sessions",
-  "atlassian-team",
   "jpo-custom",
   "sd-",
   "servicedesk",

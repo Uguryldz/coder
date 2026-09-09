@@ -42,7 +42,7 @@ describe("normalizeFieldList", () => {
     expect(normalizeFieldList({ not: "a list" })).toEqual([]);
   });
 
-  it("drops Jira's own machinery fields (rank, sprint, dev panel, team, issue colour)", () => {
+  it("drops Jira's own machinery fields (rank, dev panel, issue colour) but KEEPS team", () => {
     const fields = normalizeFieldList([
       { id: "customfield_10019", name: "Rank", custom: true, schema: { type: "any", custom: "com.pyxis.greenhopper.jira:gh-lexo-rank" } },
       { id: "customfield_10000", name: "development", custom: true, schema: { type: "any", custom: "com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf" } },
@@ -50,7 +50,9 @@ describe("normalizeFieldList", () => {
       { id: "customfield_10017", name: "Konu rengi", custom: true, schema: { type: "string", custom: "com.pyxis.greenhopper.jira:jsw-issue-color" } },
       { id: "customfield_10234", name: "İş Ailesi", custom: true, schema: { type: "option", custom: "com.atlassian.jira.plugin.system.customfieldtypes:select" } },
     ]);
-    expect(fields.map((f) => f.id)).toEqual(["customfield_10234"]);
+    // "Which team owns this" is a real routing rule, so the team field stays;
+    // an instance may have no other custom field worth mapping on.
+    expect(fields.map((f) => f.id)).toEqual(["customfield_10234", "customfield_10001"]);
   });
 });
 

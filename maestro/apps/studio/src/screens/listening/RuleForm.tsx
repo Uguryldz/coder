@@ -621,7 +621,9 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
     ? t("listening.repomap.summary_off")
     : incomplete
       ? t("listening.repomap.summary_incomplete")
-      : t("listening.repomap.summary_count", { count: String(complete), field: draft.repoMapFieldName || draft.repoMapField });
+      : draft.repoMapMode === "fixed"
+        ? t("listening.repomap.summary_fixed", { app: rows[0]?.appId.trim() ?? "" })
+        : t("listening.repomap.summary_count", { count: String(complete), field: draft.repoMapFieldName || draft.repoMapField });
   return (
     <details
       className="scr-adv"
@@ -643,6 +645,55 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
           {t("listening.repomap.enable")}
         </label>
         {draft.repoMapOn && (
+          <div className="scr-checklist">
+            <label className="scr-check">
+              <input type="radio" name="repomap-mode" checked={draft.repoMapMode === "fixed"} onChange={() => patch({ repoMapMode: "fixed" })} />
+              {t("listening.repomap.mode_fixed")}
+            </label>
+            <label className="scr-check">
+              <input type="radio" name="repomap-mode" checked={draft.repoMapMode === "field"} onChange={() => patch({ repoMapMode: "field" })} />
+              {t("listening.repomap.mode_field")}
+            </label>
+          </div>
+        )}
+        {draft.repoMapOn && draft.repoMapMode === "fixed" && (
+          <div className="scr-grid scr-grid--2">
+            {props.appOptions.length > 0 ? (
+              <Select
+                label={t("listening.repomap.fixed_app")}
+                value={rows[0]?.appId ?? ""}
+                onChange={(e) => setRow(0, { appId: e.target.value })}
+                placeholder={t("listening.repomap.app_choose")}
+                options={[
+                  ...props.appOptions.map((id) => ({ value: id, label: id })),
+                  ...((rows[0]?.appId ?? "") !== "" && !props.appOptions.includes(rows[0]!.appId) ? [{ value: rows[0]!.appId, label: rows[0]!.appId }] : []),
+                ]}
+                hint={t("listening.repomap.fixed_app_hint")}
+              />
+            ) : (
+              <Input
+                label={t("listening.repomap.fixed_app")}
+                value={rows[0]?.appId ?? ""}
+                onChange={(e) => setRow(0, { appId: e.target.value })}
+                placeholder="bank/kredi"
+                hint={t("listening.repomap.fixed_app_hint")}
+              />
+            )}
+            <Input
+              label={t("listening.repomap.branch")}
+              value={rows[0]?.targetBranch ?? ""}
+              onChange={(e) => setRow(0, { targetBranch: e.target.value })}
+              placeholder="develop"
+              hint={t("listening.repomap.branch_hint")}
+            />
+          </div>
+        )}
+        {draft.repoMapOn && draft.repoMapMode === "fixed" && incomplete && (
+          <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
+            {t("listening.repomap.incomplete_fixed")}
+          </p>
+        )}
+        {draft.repoMapOn && draft.repoMapMode === "field" && (
           <>
             {fieldOptions.length > 0 ? (
               <Select

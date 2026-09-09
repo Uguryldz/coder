@@ -901,6 +901,31 @@ describe("repo map (depo eşlemesi)", () => {
     });
   });
 
+  it("fixed mode: this rule's tickets go to one application, POSTed as a '*' map", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    // Fixed mode is the default; the bound project has no apps in this stub → typed.
+    await userEvent.type(await screen.findByLabelText("Uygulama (depo)"), "bank/kart");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string).repoMap).toEqual({
+        field: "*",
+        entries: [{ value: "*", appId: "bank/kart" }],
+      });
+    });
+  });
+
   it("maps a field value to an application and POSTs the map with the rule", async () => {
     const fn = stubFetch([]);
     renderScreen(ADMIN);
@@ -912,6 +937,7 @@ describe("repo map (depo eşlemesi)", () => {
 
     await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
     await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.click(screen.getByLabelText("Ticket'taki bir alanın değerine göre seçilsin (ör. İş Ailesi)"));
     // No field list from Jira in this stub → the id is typed by hand.
     await userEvent.type(await screen.findByLabelText("Jira alanı"), "customfield_10234");
     await userEvent.type(screen.getByLabelText("Alan değeri"), "Krediler");

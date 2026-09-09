@@ -447,7 +447,8 @@ eksik olduğunda" → örn. `todo`, ya da talep sahibine geri atama) oynar. Bunu
 
 Bir Jira projesi "Proje bağlama"da TEK uygulamaya bağlanır. Aynı projede birden çok depo varsa
 (React ön yüz, Java servis, Linux betikleri) hangi depoya gidileceğini ticket'taki bir alan söyler,
-bankada bu **İş Ailesi** özel alanı. Dinleme kuralında **Depo eşlemesi** bölümünü açın:
+bankada bu **İş Ailesi** özel alanı. Dinleme kuralında **Depo eşlemesi** bölümünü açın. İki kip var: **sabit** (bu kuralın her ticket'ı
+seçilen uygulamaya gider; tetik zaten depoyu ayırıyorsa, ör. iş tipi ya da etiket) ve **alana göre**:
 
 1. Alanı seçin (liste Jira bağlantısından okunur, özel alanlar önce gelir; okunamazsa alan kimliğini
    yazın, ör. `customfield_10234`).

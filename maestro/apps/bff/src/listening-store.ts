@@ -212,11 +212,23 @@ export function repoMapValueMatches(a: string, b: string): boolean {
   return a.trim().toLocaleLowerCase("tr") === b.trim().toLocaleLowerCase("tr");
 }
 
-/** The row a ticket's field value selects, or null. */
+/**
+ * `field: "*"` — no Jira field at all: EVERY ticket of this rule goes to the
+ * one application in the first row. The "this rule → this repo" mapping an
+ * operator wants when the trigger (issue type, label, status) already tells
+ * the repository apart, without a custom field.
+ */
+export const FIXED_APP_FIELD = "*";
+export function isFixedRepoMap(map: RepoMap): boolean {
+  return map.field === FIXED_APP_FIELD;
+}
+
+/** The row a ticket's field value selects, or null; a fixed map's row needs no value. */
 export function resolveRepoMapEntry(
   map: RepoMap,
   fieldValue: string | undefined,
 ): RepoMap["entries"][number] | null {
+  if (isFixedRepoMap(map)) return map.entries[0] ?? null;
   if (fieldValue === undefined) return null;
   return map.entries.find((entry) => repoMapValueMatches(entry.value, fieldValue)) ?? null;
 }

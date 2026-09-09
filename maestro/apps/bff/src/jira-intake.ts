@@ -7,7 +7,7 @@ import { resolveGateSteps } from "./gate-defaults.js";
 import { flowDecisionFor, statusGateOf, type FlowDecision } from "./flow-decision.js";
 import { decisionLogLine, decisionLogMarkdown, type IntakeDecisionFacts } from "./intake-decision-log.js";
 import type { ListeningRuleRecord } from "./listening-store.js";
-import { resolveRepoMapEntry } from "./listening-store.js";
+import { isFixedRepoMap, resolveRepoMapEntry } from "./listening-store.js";
 
 /**
  * Intake: the decision to put a ticket on the workflow engine, and every
@@ -470,6 +470,12 @@ export async function resolveRepoMap(
   }
   const map = rule?.repoMap ?? null;
   if (map === null) return null;
+  if (isFixedRepoMap(map)) {
+    const fixed = resolveRepoMapEntry(map, undefined);
+    if (fixed === null) return null;
+    console.info(`[maestro] ${ticket}: dinleme kuralı ${ruleId} sabit uygulamaya bağlı → ${fixed.appId}${fixed.targetBranch === undefined ? "" : ` (${fixed.targetBranch})`}.`);
+    return { appId: fixed.appId, ...(fixed.targetBranch === undefined ? {} : { targetBranch: fixed.targetBranch }), field: map.field, value: "*" };
+  }
   const readFields = deps.work.readFields?.bind(deps.work);
   if (readFields === undefined) {
     console.warn(`[maestro] ${ticket}: dinleme kuralı ${ruleId} depo eşlemesi taşıyor ama bu Jira sürücüsü alan okuyamıyor — proje bağlamasının uygulaması kullanılıyor.`);

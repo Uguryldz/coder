@@ -39,6 +39,14 @@ async function deliver(h: Awaited<ReturnType<typeof harness>>, ticket: string): 
 }
 
 describe("intake — repo map picks the application", () => {
+  it("a fixed map sends every ticket of the rule to its application without reading any field", async () => {
+    const h = await harness({
+      listeningRules: [rule({ repoMap: { field: "*", entries: [{ value: "*", appId: "bank/kart", targetBranch: "test" }] } })],
+    });
+    expect((await deliver(h, "UGURPAY-9"))?.appId).toBe("bank/kart");
+    expect(h.work.fieldReads).toEqual([]);
+  });
+
   it("routes the ticket to the app its field value maps to (case/whitespace tolerant)", async () => {
     const h = await harness({ listeningRules: [rule()] });
     h.work.putFields("UGURPAY-1", { customfield_10234: " krediler " });

@@ -66,6 +66,8 @@ export interface RuleDraft {
   readonly gatePanelOpen: boolean;
   /** Depo eşlemesi: açık mı, hangi Jira alanı, satırlar. */
   readonly repoMapOn: boolean;
+  /** "fixed": her ticket tek uygulamaya; "field": ticket'taki alanın değerine göre. */
+  readonly repoMapMode: "fixed" | "field";
   readonly repoMapField: string;
   readonly repoMapFieldName: string;
   readonly repoMapRows: readonly RepoMapRowDraft[];
@@ -103,6 +105,7 @@ export function emptyDraft(projectKey = ""): RuleDraft {
     gateOwnerless: false,
     gatePanelOpen: false,
     repoMapOn: false,
+    repoMapMode: "fixed",
     repoMapField: "",
     repoMapFieldName: "",
     repoMapRows: [EMPTY_REPO_MAP_ROW],
@@ -141,7 +144,8 @@ export function draftFromRule(rule: ListeningRule, jiraConnectionId: string): Ru
     gateOwnerless: gates?.ownerless === true,
     gatePanelOpen: gates !== null,
     repoMapOn: (rule.repoMap ?? null) !== null,
-    repoMapField: rule.repoMap?.field ?? "",
+    repoMapMode: rule.repoMap === undefined || rule.repoMap === null || rule.repoMap.field === "*" ? "fixed" : "field",
+    repoMapField: rule.repoMap?.field === "*" ? "" : (rule.repoMap?.field ?? ""),
     repoMapFieldName: rule.repoMap?.fieldName ?? "",
     repoMapRows:
       rule.repoMap === undefined || rule.repoMap === null
@@ -189,7 +193,15 @@ export function priorityOf(text: string): number | null {
 /** Tele giden durum eşlemesi — formun BUGÜN kaydedeceği hâliyle. */
 /** The map as it will be saved: only complete rows; null when off or empty. */
 export function repoMapOf(d: RuleDraft): RepoMap | null {
-  if (!d.repoMapOn || d.repoMapField.trim() === "") return null;
+  if (!d.repoMapOn) return null;
+  if (d.repoMapMode === "fixed") {
+    const first = d.repoMapRows[0];
+    const appId = first?.appId.trim() ?? "";
+    if (appId === "") return null;
+    const targetBranch = first?.targetBranch.trim() ?? "";
+    return { field: "*", entries: [{ value: "*", appId, ...(targetBranch === "" ? {} : { targetBranch }) }] };
+  }
+  if (d.repoMapField.trim() === "") return null;
   const entries = d.repoMapRows
     .map((row) => ({ value: row.value.trim(), appId: row.appId.trim(), targetBranch: row.targetBranch.trim() }))
     .filter((row) => row.value !== "" && row.appId !== "")

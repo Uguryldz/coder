@@ -260,6 +260,87 @@ describe("developer brief (step 6a)", () => {
     expect(task).toContain("ilk tur");
   });
 
+  /**
+   * ── "CEVAP TİCKET YORUMLARINDA" ARTIK DOĞRU BİR CÜMLE ────────────────────
+   *
+   * `developerBrief` açık soruların altına "cevap ticket yorumlarında" yazıyor
+   * ve bu, bu testler yazılana kadar bir YALANDI: `engineering.ts`te yorum
+   * okuyan tek satır yoktu. Ajana kendisine hiç verilmemiş bir yere bakması
+   * söyleniyordu — kapıda cevaplanmış bir soru geliştirici turunda yine açık
+   * sayılıyordu.
+   */
+  const humanComment = (author: string, body: string) => ({ author: { accountId: author }, body });
+
+  it("FRESH oturum ticket yorumlarını da görür — brifingin işaret ettiği yer artık dolu", async () => {
+    const fakes = makeFakes({
+      runTurn: () => ok(),
+      comments: [humanComment("po@bank", "Bu iş payments-api'de yapılacak, ledger'a dokunmayın.")],
+      botUserId: "maestro-bot",
+    });
+    await stored(fakes);
+    await runEngineering(fakes.deps, "PAY-101", null, "planı uygula");
+    const task = fakes.recorded.turns[0]?.context.task ?? "";
+    expect(task).toContain("Ticket yorumları");
+    expect(task).toContain("po@bank: Bu iş payments-api'de yapılacak, ledger'a dokunmayın.");
+    // Ve plan hâlâ orada: yorumlar brifingi EKLER, değiştirmez.
+    expect(task).toContain("ONAYLI PLAN");
+  });
+
+  it("yorum YOKKEN brifing bugünküyle bit bit aynı kalır — blok hiç yazılmaz", async () => {
+    const withComments = makeFakes({ runTurn: () => ok(), comments: [] });
+    await stored(withComments);
+    await runEngineering(withComments.deps, "PAY-101", null, "planı uygula");
+    const withBlock = withComments.recorded.turns[0]?.context.task ?? "";
+
+    // `comments` seam'i HİÇ bağlı değil: sürücü yokken de aynı metin çıkmalı.
+    const without = makeFakes({ runTurn: () => ok() });
+    await stored(without);
+    await runEngineering(without.deps, "PAY-101", null, "planı uygula");
+
+    expect(withBlock).not.toContain("Ticket yorumları");
+    expect(withBlock).toBe(without.recorded.turns[0]?.context.task);
+  });
+
+  it("DEVAM EDEN turda yorumlar TEKRAR gönderilmez — plan gibi, oturumun geçmişinde duruyor", async () => {
+    const fakes = makeFakes({
+      runTurn: () => ok(),
+      comments: [humanComment("po@bank", "payments-api")],
+    });
+    await stored(fakes);
+    await runEngineering(fakes.deps, "PAY-101", "session-1", "review bulgularını düzelt");
+    const task = fakes.recorded.turns[0]?.context.task ?? "";
+    expect(task).not.toContain("Ticket yorumları");
+    expect(task).not.toContain("payments-api");
+  });
+
+  it("bot'un kendi notu ve komut zarfı elenir — ajan kendi çıktısını cevap sanmaz", async () => {
+    const fakes = makeFakes({
+      runTurn: () => ok(),
+      comments: [
+        humanComment("maestro-bot", "Netleştirme: bu hangi serviste yapılacak?"),
+        humanComment("lead@bank", "/approve"),
+        humanComment("lead@bank", "payments-api'de."),
+      ],
+      botUserId: "maestro-bot",
+    });
+    await stored(fakes);
+    await runEngineering(fakes.deps, "PAY-101", null, "planı uygula");
+    const task = fakes.recorded.turns[0]?.context.task ?? "";
+    expect(task).toContain("lead@bank: payments-api'de.");
+    expect(task).not.toContain("Netleştirme:");
+    expect(task).not.toContain("/approve");
+  });
+
+  it("Jira yorum okuması PATLARSA tur düşmez — yorumlar bir ÜST KATMAN", async () => {
+    const fakes = makeFakes({ runTurn: () => ok(), comments: new Error("jira 503") });
+    await stored(fakes);
+    const result = await runEngineering(fakes.deps, "PAY-101", null, "planı uygula");
+    expect(result.ok).toBe(true);
+    const task = fakes.recorded.turns[0]?.context.task ?? "";
+    expect(task).not.toContain("Ticket yorumları");
+    expect(task).toContain("ONAYLI PLAN");
+  });
+
   it("every PLAN SAPMASI line the developer wrote becomes its own journal entry", async () => {
     const fakes = makeFakes({
       runTurn: () =>

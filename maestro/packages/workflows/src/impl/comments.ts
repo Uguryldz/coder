@@ -193,6 +193,37 @@ export function withComments(
   };
 }
 
+/**
+ * Geliştiricinin gördüğü yorum bloğunun başlığı.
+ *
+ * `COMMENT_BLOCK_TITLE`den AYRI, çünkü okuyucu ayrı: intake yorumları ticket
+ * metninin devamı olarak okur ("reporter ne dedi"); geliştirici onları BİR
+ * CEVAP LİSTESİ olarak okumalı. `brief.ts` geliştiriciye "açık soruların cevabı
+ * ticket yorumlarında" diye yazıyordu ve o yorumlar prompta HİÇ girmiyordu —
+ * yani ajana var olmayan bir yere bakması söyleniyordu. Başlıktaki cümle o
+ * boşluğun kapandığını söyleyen taraf.
+ */
+export const DEVELOPER_COMMENT_BLOCK_TITLE =
+  "### Ticket yorumları (insan yanıtları — açık soruların cevabı buradaysa buradadır)";
+
+/**
+ * Yorumları TEK bir metin bloğuna çevirir, ya da `undefined`.
+ *
+ * Ayrı bir işlev, çünkü `withComments` bir `TicketSnapshot` üretiyor ve
+ * geliştirici turunun elinde snapshot YOK: brifing düz metin olarak göreve
+ * ekleniyor. Aynı satır biçimi (`- yazar: metin`) bilerek korunuyor — intake ve
+ * analizin gördüğü yorumla geliştiricinin gördüğü aynı şekilde okunmalı.
+ *
+ * Kırpma/limit YOK, çünkü zaten yapılmış: `humanCommentsOf` son
+ * `MAX_COMMENTS` yorumu bırakır ve her birini `MAX_COMMENT_TEXT` karakterde
+ * keser. Burada ikinci bir sınır koymak, iki farklı tüketicinin farklı
+ * yorumları görmesi demek olurdu.
+ */
+export function commentsBlock(comments: readonly HumanComment[]): string | undefined {
+  if (comments.length === 0) return undefined;
+  return [DEVELOPER_COMMENT_BLOCK_TITLE, ...comments.map((c) => `- ${c.author}: ${c.text}`)].join("\n");
+}
+
 /** Önceki koşuların özetinin açıklamaya eklenirken kullandığı başlık. */
 export const PRIOR_WORK_BLOCK_TITLE =
   "--- ÖNCEKİ DENEMELER (bu ticket daha önce çalışıldı; aynı işi TEKRARLAMA) ---";

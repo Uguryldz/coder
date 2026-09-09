@@ -8,6 +8,7 @@ import { engineerVariantOf } from "./deps.js";
 import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
 import { developerBrief, loadAnalysis, planDeviations, ruleChecklist } from "./brief.js";
+import { commentsBlock, readHumanComments } from "./comments.js";
 import { roleVariantId, trainingFor } from "./persona.js";
 
 /**
@@ -197,6 +198,26 @@ export async function runEngineering(
  * (files, endpoint contract, DTO fields, business rules) goes out once, with
  * the fresh session, from the stored analysis; without a stored analysis the
  * turn reads exactly as it did before this brief existed.
+ *
+ * ── TİCKET YORUMLARI — NEDEN BURADA ─────────────────────────────────────────
+ * `developerBrief` açık soruların altına "cevap ticket yorumlarında" yazıyor.
+ * O cümle bir YALANDI: bu dosyada yorum okuyan tek satır yoktu, yani ajana
+ * kendisine hiç verilmemiş bir yere bakması söyleniyordu. Sonuç, kapıda
+ * cevaplanmış bir sorunun geliştirici turunda YİNE açık sayılması — insan
+ * cevabı yazmış, kod yazan onu görmemiş.
+ *
+ * Yalnız FRESH oturumda, `developerBrief`in kendisiyle aynı gerekçeyle: devam
+ * eden bir turda o metin zaten oturumun geçmişinde duruyor, tekrar göndermek
+ * her turda büyüyen bir prompt ve modelin aynı bağlamı iki kez okuması demek.
+ *
+ * Yorumlar açık soru OLMASA DA gider: insan kapıda yalnız soruları cevaplamaz —
+ * kapsam daraltır, bir karardan vazgeçer, bir dosyayı işaret eder. Gürültü
+ * sınırı `humanCommentsOf`un kendi limiti (son 10 yorum, her biri 2000 karakter)
+ * — burada ikinci bir sınır koymak, geliştiricinin analizden farklı bir yorum
+ * kümesi görmesi olurdu.
+ *
+ * Fail-soft: `readHumanComments` ATMAZ (bkz. `comments.ts`). Sürücü yoksa ya da
+ * Jira düşerse liste boş döner ve brifing bugünküyle bit bit aynı kalır.
  */
 async function engineeringTask(deps: ActivityDeps, run: RunContext, task: string, fresh: boolean): Promise<string> {
   // The developer agent's TRAINING (its Studio persona, else the shipped
@@ -205,7 +226,18 @@ async function engineeringTask(deps: ActivityDeps, run: RunContext, task: string
   const training = await trainingFor(deps, run, "engineer");
   const rules = deps.translate(run.locale, "agent.engineering_brief", { ticket: run.ticket });
   const doc = fresh ? await loadAnalysis(deps, run) : null;
-  return [training, rules, ...(doc === null ? [] : [developerBrief(doc)]), `## Bu turun görevi\n${task}`]
+  // Uyarı satırı "geliştirme" der: başarısız bir okumada operatör kendi adımına
+  // baksın, intake'e ya da analize değil.
+  const comments = fresh
+    ? commentsBlock(await readHumanComments(deps, run.ticket, undefined, "geliştirme"))
+    : undefined;
+  return [
+    training,
+    rules,
+    ...(doc === null ? [] : [developerBrief(doc)]),
+    ...(comments === undefined ? [] : [comments]),
+    `## Bu turun görevi\n${task}`,
+  ]
     .filter((part) => part !== "")
     .join("\n\n");
 }

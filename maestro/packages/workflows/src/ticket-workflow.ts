@@ -557,7 +557,55 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   // yalnız GİRDİDEN türüyor, yani replay'de aynı cevabı verir.
   const required = gatesFor(state.risk, input.gateSteps);
   const plan = planFor(input.flow);
-  const analysisGates = plan.analysisGate ? required.filter((g) => g === "4" || g === "5") : [];
+  const chosenAnalysisGates = plan.analysisGate ? required.filter((g) => g === "4" || g === "5") : [];
+  /**
+   * ── AÇIK SORU VARSA KAPI AÇILIR — risk ve kural seçimi ne derse desin ─────
+   *
+   * Sıra şu: tamlık kontrolü (adım 2) kodu GÖRMEDEN sorar, 2b'de cevaplanır,
+   * sonra keşif ve analiz gelir. Analiz ajanı kodu OKUDUKTAN sonra yeni sorular
+   * bulur ("bu hangi serviste yapılacak") ve onları `openQuestions`a yazar. O
+   * sorular bugüne kadar yalnız BELGEYE yazılıyordu, kimseye SORULMUYORDU:
+   * tasarım "nasıl olsa insan onay kapısında görür" varsayıyordu ama üç yoldan
+   * da kaçıyordu — düşük riskte analiz kapısı hiç açılmıyor
+   * (`GATES_BY_RISK.dusuk = ["5","12"]`), kural `gateSteps: []` derse hiçbir
+   * kapı açılmıyor, ve geliştirici brifingi cevapları "ticket yorumlarında"
+   * sanıyor. Sonuç: cevabı olmayan bir soruyla kod yazılıyor.
+   *
+   * Zorlanan kapı "5" (teknik lider), çünkü `GATES_BY_RISK`in HER katmanında
+   * var — yani hiçbir risk seviyesi için yabancı bir kapı değil, ve soruların
+   * türü (hangi servis, hangi katman) teknik liderin cevaplayacağı türden.
+   *
+   * DETERMİNİZM: karar yalnız GİRDİDEN (`input.flow`, `input.gateSteps`,
+   * `state.risk`) ve ZATEN ALINMIŞ bir aktivite sonucundan (`written.analysis`)
+   * türüyor. Yeni aktivite yok, yeni yan etki yok — replay aynı cevabı verir.
+   *
+   * `duzeltme` akışında kapı YİNE AÇILMAZ: o akışta analiz kapısı olmaması
+   * bilinçli bir karar (`planFor`), ve onu açık soru diye ezmek küçük
+   * düzeltmelerin tamamını insan kuyruğuna sokardı.
+   */
+  const openQuestions = written.analysis.openQuestions;
+  const forcedByQuestions =
+    plan.analysisGate && openQuestions.length > 0 && !chosenAnalysisGates.includes("5");
+  // "5" SONA eklenir ve bu sıra tesadüf değil: `chosenAnalysisGates` yalnız
+  // `[]`, `["4"]` ya da `["4","5"]` olabilir (5 zaten içindeyse zorlama hiç
+  // çalışmaz), dolayısıyla arkaya eklemek akış sırasını (4 → 5) korur.
+  const analysisGates: readonly StepId[] = forcedByQuestions
+    ? [...chosenAnalysisGates, "5" as StepId]
+    : chosenAnalysisGates;
+  if (forcedByQuestions) {
+    // Operatör "ben bu kapıyı seçmemiştim, koşu neden durdu" diye soracak.
+    // Cevabın defterde durması şart: sebep, soru sayısı ve soruların kendisi.
+    await acts.journal(
+      ticket,
+      "gate",
+      "kapı 5 açık soru nedeniyle açıldı",
+      [
+        `analiz ${openQuestions.length} açık soru bıraktı — cevaplanmadan kod yazılamaz`,
+        "bu kapı risk katmanından ya da kural seçiminden gelmedi, açık sorular zorladı",
+        ...openQuestions.map((q, index) => `S${String(index + 1)}. ${q}`),
+      ].join(" · "),
+    );
+  }
   // Once, on the way INTO the gate set, not once per gate: `onReview` says
   // "a human is now looking at this", and a `yuksek` ticket that opens 4 and
   // then 5 has not stopped being reviewed in between. A per-gate call would

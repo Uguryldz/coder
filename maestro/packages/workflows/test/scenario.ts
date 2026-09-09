@@ -106,6 +106,15 @@ export type GatePolicy =
 
 export interface ScenarioOptions {
   risk?: RiskTier;
+  /**
+   * Analiz belgesinin bıraktığı AÇIK SORULAR — analiz ajanı kodu okuduktan
+   * sonra bulduğu, cevabı belgede olmayan sorular.
+   *
+   * Yokluk boş liste demek, yani bu dosyadaki her eski senaryonun hâli: açık
+   * soru yokken kapı seçimi bugünkü davranışını birebir sürdürür. Dolu bir
+   * liste, "bu sorular cevaplanmadan kod yazılamaz" dalını ölçtüren tek girdi.
+   */
+  openQuestions?: readonly string[];
   /** What the listening rule asked for; absent is the full pipeline. */
   flow?: FlowType;
   /**
@@ -308,7 +317,13 @@ export function makeActivities(
       scenario.discoveries.push(appId);
       return { files: 12, modules: ["pay-core"] };
     },
-    writeAnalysis: async () => ({ analysis: analysisDoc(scenario.risk), risk: scenario.risk }),
+    writeAnalysis: async () => ({
+      analysis: {
+        ...analysisDoc(scenario.risk),
+        openQuestions: [...(scenario.options.openQuestions ?? [])],
+      },
+      risk: scenario.risk,
+    }),
     publishAnalysis: async () => {},
     fanOutChildren: async () => [],
 

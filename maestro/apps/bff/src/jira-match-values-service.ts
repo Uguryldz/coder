@@ -488,3 +488,92 @@ async function cloudFieldOptions(
   }
   return [...out];
 }
+
+export interface JiraUser {
+  /** What a listening rule stores in `assigneeAccountId` and compares against. */
+  readonly accountId: string;
+  readonly displayName: string;
+  readonly email?: string;
+  readonly active: boolean;
+}
+
+export type JiraUsersResult =
+  | { ok: true; users: readonly JiraUser[] }
+  | { ok: false; messageKey: string; messageParams?: Record<string, string> };
+
+/**
+ * One user out of a search body, across the two flavours' identifier schemes.
+ *
+ * Cloud has `accountId` (the 24-hex GUID an operator otherwise hand-copies).
+ * DC never issues one: its stable handle is `key`, with `name` (the login) as
+ * the older equivalent — `flow-decision.ts` compares whatever the webhook's
+ * assignee carries, so the SAME field the deployment reports is the one we
+ * store. Taking Cloud-only here would leave DC with a dropdown of blanks.
+ */
+function parseJiraUser(raw: unknown): JiraUser | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  const accountId = str(record["accountId"]) ?? str(record["key"]) ?? str(record["name"]);
+  if (accountId === undefined) return null;
+  // A display name is presentation only; falling back to the id keeps a user
+  // pickable on a deployment that hides names rather than dropping the row.
+  const displayName = str(record["displayName"]) ?? accountId;
+  const email = str(record["emailAddress"]) ?? str(record["email"]);
+  // Absent `active` means active: DC omits it on some builds, and treating the
+  // omission as "disabled" would empty the list on exactly those deployments.
+  const active = record["active"] !== false;
+  return { accountId: accountId.trim(), displayName: displayName.trim(), ...(email === undefined ? {} : { email: email.trim() }), active };
+}
+
+/**
+ * The Jira users a listening rule's "bot account" can be picked from — so the
+ * operator selects a person instead of typing a 24-character account id, where
+ * one wrong character means the rule silently matches nothing forever.
+ *
+ * An empty `query` is legal and asks Jira for its first page; the caller's
+ * screen uses it to show something before the operator has typed anything.
+ * Same connection/token discipline as the rest of this module: the token is
+ * resolved by the caller and failures are secret-free catalog keys.
+ */
+export async function listJiraUsers(
+  connection: ConnectionRecord,
+  query: string,
+  token: string | null,
+  fetchImpl: ConnectorFetch,
+): Promise<JiraUsersResult> {
+  const source = jiraMatchSource(connection.kind);
+  if (source === null) {
+    return { ok: false, messageKey: "onboard.jira.not_listable", messageParams: { kind: connection.kind } };
+  }
+  if (token === null) return { ok: false, messageKey: "onboard.jira.no_token" };
+
+  const email = str((connection.config as { email?: unknown } | null)?.email) ?? "";
+  const base = connection.baseUrl.replace(/\/+$/, "");
+  const q = encodeURIComponent(query.trim());
+  // The two flavours disagree on both the version and the parameter name:
+  // Cloud's `/api/3/user/search` takes `query` (name OR email), DC's
+  // `/api/2/user/search` takes `username`.
+  const path =
+    connection.kind === "jira_cloud"
+      ? `/rest/api/3/user/search?query=${q}&maxResults=50`
+      : `/rest/api/2/user/search?username=${q}&maxResults=50`;
+
+  const read = await readJson(`${base}${path}`, source.header(token, email), fetchImpl);
+  if (!read.ok) {
+    const failed = failure(read);
+    return failed.ok ? { ok: false, messageKey: "onboard.jira.bad_response" } : failed;
+  }
+  if (!Array.isArray(read.body)) return { ok: false, messageKey: "onboard.jira.bad_response" };
+
+  const seen = new Set<string>();
+  const users: JiraUser[] = [];
+  for (const entry of read.body) {
+    const user = parseJiraUser(entry);
+    // Deactivated accounts are dropped: a rule pointed at one can never fire,
+    // so offering it is offering a silent failure.
+    if (user === null || !user.active || seen.has(user.accountId)) continue;
+    seen.add(user.accountId);
+    users.push(user);
+  }
+  return { ok: true, users };
+}

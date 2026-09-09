@@ -49,6 +49,10 @@ export interface RuleFormProps {
   readonly appOptions: readonly string[];
   /** SCM bağlantılarındaki, projeye henüz kayıtlı olmayan depolar — seçilirse kaydedilir. */
   readonly scmRepoOptions: readonly string[];
+  /** Repo full name → its branches, for the target-branch picker. Missing = free text. */
+  readonly branchesByRepo: Record<string, readonly string[]>;
+  /** Jira accounts the rule may listen for. Empty = the deployment cannot search users. */
+  readonly jiraUserOptions: readonly { readonly accountId: string; readonly displayName: string }[];
   readonly onSubmit: () => void;
   readonly onTest: () => void;
   readonly onCancelEdit: () => void;
@@ -150,15 +154,39 @@ function TriggerGroup(props: RuleFormProps): ReactNode {
           hint={t("listening.form.project_none_hint")}
         />
       )}
-      <Input
-        label={t("listening.form.assignee")}
-        value={draft.assigneeAccountId}
-        onChange={(e) => patch({ assigneeAccountId: e.target.value, assigneeTouched: true })}
-        placeholder="712020:…"
-        hint={
-          props.botAccountId ? t("listening.form.assignee_hint_auto") : t("listening.form.assignee_hint")
-        }
-      />
+      {/* Bot hesabı: LİSTEDEN. Bir Jira account id'si 24 karakterlik bir GUID ve
+          elle yazıldığında hatası gözle görülmüyordu — kural kaydediliyor,
+          taramanın kurduğu JQL o id'yi arıyor ve hiçbir ticket dönmüyordu.
+          Kullanıcı araması yapamayan bir kurulumda liste boş gelir ve alan
+          eskisi gibi metin kutusu olur; kayıtlı değer her iki halde de korunur. */}
+      {props.jiraUserOptions.length > 0 ? (
+        <Select
+          label={t("listening.form.assignee")}
+          value={draft.assigneeAccountId}
+          onChange={(e) => patch({ assigneeAccountId: e.target.value, assigneeTouched: true })}
+          placeholder={t("listening.form.assignee_choose")}
+          options={[
+            ...props.jiraUserOptions.map((u) => ({ value: u.accountId, label: u.displayName })),
+            ...(draft.assigneeAccountId !== "" &&
+            !props.jiraUserOptions.some((u) => u.accountId === draft.assigneeAccountId)
+              ? [{ value: draft.assigneeAccountId, label: draft.assigneeAccountId }]
+              : []),
+          ]}
+          hint={
+            props.botAccountId ? t("listening.form.assignee_hint_auto") : t("listening.form.assignee_hint")
+          }
+        />
+      ) : (
+        <Input
+          label={t("listening.form.assignee")}
+          value={draft.assigneeAccountId}
+          onChange={(e) => patch({ assigneeAccountId: e.target.value, assigneeTouched: true })}
+          placeholder="712020:…"
+          hint={
+            props.botAccountId ? t("listening.form.assignee_hint_auto") : t("listening.form.assignee_hint")
+          }
+        />
+      )}
       {/* Birden çok Jira bağlantısı: değer listeleri HANGİSİNDEN okunsun. Tek
           bağlantıda soru yok — cevabı belli. */}
       {props.jiraConnections.length > 1 && (
@@ -608,6 +636,53 @@ function StatusSection(props: RuleFormProps): ReactNode {
  * uygulama satırlarını kurar. Kapalıyken kural eskisi gibi proje bağlamasının
  * uygulamasına gider; açık ama satırsızken kaydedilmez, uyarı çıkar.
  */
+/**
+ * The target branch of ONE map row: a list when the repository's branches could
+ * be read, a text box when they could not.
+ *
+ * A typed branch name used to survive every check and fail at clone time, after
+ * the ticket had already started — so the list is the point. But the fallback
+ * is not a degradation to hide: a repository the token cannot see, or one the
+ * SCM kind cannot list, must still be mappable, and the operator who knows the
+ * branch name types it. `value` is always kept as an option so a name saved
+ * before the repo became unreadable is never silently dropped from the box.
+ */
+function BranchPicker(props: {
+  readonly value: string;
+  readonly repo: string;
+  readonly branchesByRepo: Record<string, readonly string[]>;
+  readonly onChange: (branch: string) => void;
+}): ReactNode {
+  const t = useT();
+  const known = props.branchesByRepo[props.repo.trim()] ?? [];
+  if (known.length === 0) {
+    return (
+      <Input
+        label={t("listening.repomap.branch")}
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        placeholder="develop"
+        hint={t("listening.repomap.branch_hint")}
+      />
+    );
+  }
+  return (
+    <Select
+      label={t("listening.repomap.branch")}
+      value={props.value}
+      onChange={(e) => props.onChange(e.target.value)}
+      placeholder={t("listening.repomap.branch_default")}
+      options={[
+        ...known.map((branch) => ({ value: branch, label: branch })),
+        ...(props.value !== "" && !known.includes(props.value)
+          ? [{ value: props.value, label: props.value }]
+          : []),
+      ]}
+      hint={t("listening.repomap.branch_hint")}
+    />
+  );
+}
+
 function RepoMapSection(props: RuleFormProps): ReactNode {
   const t = useT();
   const { draft, patch } = props;
@@ -685,12 +760,11 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
                 hint={t("listening.repomap.fixed_app_hint")}
               />
             )}
-            <Input
-              label={t("listening.repomap.branch")}
+            <BranchPicker
               value={rows[0]?.targetBranch ?? ""}
-              onChange={(e) => setRow(0, { targetBranch: e.target.value })}
-              placeholder="develop"
-              hint={t("listening.repomap.branch_hint")}
+              repo={rows[0]?.appId ?? ""}
+              branchesByRepo={props.branchesByRepo}
+              onChange={(branch) => setRow(0, { targetBranch: branch })}
             />
           </div>
         )}
@@ -766,12 +840,11 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
                     />
                   )}
                   <div>
-                    <Input
-                      label={t("listening.repomap.branch")}
+                    <BranchPicker
                       value={row.targetBranch}
-                      onChange={(e) => setRow(index, { targetBranch: e.target.value })}
-                      placeholder="develop"
-                      hint={t("listening.repomap.branch_hint")}
+                      repo={row.appId}
+                      branchesByRepo={props.branchesByRepo}
+                      onChange={(branch) => setRow(index, { targetBranch: branch })}
                     />
                     <p className="scr-mini" style={{ marginTop: -6 }}>
                       <button type="button" className="scr-linkbtn scr-link" onClick={() => removeRow(index)}>

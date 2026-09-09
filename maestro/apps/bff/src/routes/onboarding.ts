@@ -17,7 +17,7 @@ import { isMasterApprover } from "../platform/master-approver.js";
 import { seedProjectDefaults } from "../listening-seed.js";
 import { listScmBranches, listScmRepos } from "../scm-repos-service.js";
 import { listJiraProjects } from "../jira-projects-service.js";
-import { listJiraFieldValues, listJiraFields, listJiraMatchValues } from "../jira-match-values-service.js";
+import { listJiraFieldValues, listJiraFields, listJiraMatchValues, listJiraUsers } from "../jira-match-values-service.js";
 import type { ConnectionStore } from "../connection-store.js";
 import { engineIdentityWarning } from "../connection-service.js";
 import type { SecretPort } from "@maestro/ports";
@@ -135,6 +135,11 @@ const FieldValuesQuery = z.object({
   connectionId: z.string().trim().min(1).max(64),
   project: z.string().trim().min(1).max(64),
   field: z.string().trim().min(1).max(128),
+});
+const JiraUsersQuery = z.object({
+  connectionId: z.string().trim().min(1).max(64),
+  /** Empty is legal — Jira then answers with its first page of users. */
+  q: z.string().trim().max(100).optional(),
 });
 const MatchValuesQuery = z.object({
   connectionId: z.string().trim().min(1).max(64),
@@ -474,6 +479,24 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     return reply
       .code(200)
       .send(await listJiraFieldValues(connection, parsed.data.project, parsed.data.field, token, deps.connectorFetch));
+  });
+
+  /**
+   * The Jira users a listening rule's "bot account" can be picked from. The
+   * field is free text today, so an operator hand-copies a 24-character account
+   * id and one wrong character makes the rule match nothing, silently.
+   */
+  app.get("/onboarding/jira-users", { preHandler }, async (request, reply) => {
+    const store = connectorStore(deps);
+    const secrets = connectorSecrets(deps);
+    const parsed = JiraUsersQuery.safeParse(request.query);
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
+    const connection = await store.get(parsed.data.connectionId);
+    if (connection === null) throw badRequest("unknown_connection");
+    const token = connection.secretRef === null ? null : await secrets.get(connection.secretRef).catch(() => null);
+    return reply
+      .code(200)
+      .send(await listJiraUsers(connection, parsed.data.q ?? "", token, deps.connectorFetch));
   });
 
   app.get("/onboarding/jira-match-values", { preHandler }, async (request, reply) => {

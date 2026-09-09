@@ -3,6 +3,7 @@ import {
   listJiraFieldValues,
   listJiraFields,
   listJiraMatchValues,
+  listJiraUsers,
   parseCreateMetaIssueTypes,
 } from "../src/jira-match-values-service.js";
 import { fetchSeedIssueTypes } from "../src/listening-seed.js";
@@ -487,5 +488,98 @@ describe("listJiraFields — narrowed to a project", () => {
     const nothing = router([{ match: "/field", status: 200, body: ALL }]);
     const all = await listJiraFields(conn(), TOKEN, nothing.fetch, "OTYT");
     if (all.ok) expect(all.fields).toHaveLength(3);
+  });
+});
+
+/**
+ * The rule form's "bot hesabı" was free text: an operator hand-copied a
+ * 24-character account id and one wrong character made the rule match nothing,
+ * silently and forever. These tests pin the list that replaces the box —
+ * including DC, whose users carry no `accountId` at all.
+ */
+describe("listJiraUsers — the bot account a rule can be pointed at", () => {
+  const CLOUD_BODY = [
+    { accountId: "5b10a2844c20165700ede21g", displayName: "Otomasyon Botu", emailAddress: "bot@ugurbank.local", active: true },
+    { accountId: "5b10ac8d82e05b22cc7d4ef5", displayName: "Ayşe Yılmaz", active: true },
+  ];
+
+  it("normalises a Cloud body onto accountId / displayName / email", async () => {
+    const { fetch, urls } = router([{ match: "/user/search", status: 200, body: CLOUD_BODY }]);
+    const got = await listJiraUsers(conn(), "bot", TOKEN, fetch);
+    expect(got).toEqual({
+      ok: true,
+      users: [
+        { accountId: "5b10a2844c20165700ede21g", displayName: "Otomasyon Botu", email: "bot@ugurbank.local", active: true },
+        { accountId: "5b10ac8d82e05b22cc7d4ef5", displayName: "Ayşe Yılmaz", active: true },
+      ],
+    });
+    expect(urls[0]).toContain("/rest/api/3/user/search?query=bot");
+    expect(urls[0]).toContain("maxResults=50");
+  });
+
+  it("reads a Data Center body, where the identifier is `key` or `name`, off the v2 `username` endpoint", async () => {
+    const DC_BODY = [
+      { key: "JIRAUSER10100", name: "botuser", displayName: "Otomasyon Botu", emailAddress: "bot@ugurbank.local", active: true },
+      { name: "ayse", displayName: "Ayşe Yılmaz", active: true },
+    ];
+    const { fetch, urls } = router([{ match: "/user/search", status: 200, body: DC_BODY }]);
+    const spy: ConnectorFetch = (url, init) => {
+      expect((init?.headers as Record<string, string>)["authorization"]).toBe(`Bearer ${TOKEN}`);
+      return fetch(url, init);
+    };
+    const got = await listJiraUsers(conn({ kind: "jira_dc", authKind: "bearer" }), "bot", TOKEN, spy);
+    expect(got).toEqual({
+      ok: true,
+      users: [
+        { accountId: "JIRAUSER10100", displayName: "Otomasyon Botu", email: "bot@ugurbank.local", active: true },
+        { accountId: "ayse", displayName: "Ayşe Yılmaz", active: true },
+      ],
+    });
+    expect(urls[0]).toContain("/rest/api/2/user/search?username=bot");
+  });
+
+  it("drops deactivated accounts — a rule pointed at one could never fire", async () => {
+    const { fetch } = router([
+      {
+        match: "/user/search",
+        status: 200,
+        body: [
+          { accountId: "live", displayName: "Çalışan", active: true },
+          { accountId: "gone", displayName: "Ayrılan", active: false },
+          { accountId: "assumed", displayName: "İşareti Olmayan" },
+        ],
+      },
+    ]);
+    const got = await listJiraUsers(conn(), "", TOKEN, fetch);
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.users.map((u) => u.accountId)).toEqual(["live", "assumed"]);
+  });
+
+  it("refuses a connection with no token, and a kind that cannot list", async () => {
+    const { fetch, urls } = router([{ match: "/user/search", status: 200, body: CLOUD_BODY }]);
+    expect(await listJiraUsers(conn(), "bot", null, fetch)).toEqual({ ok: false, messageKey: "onboard.jira.no_token" });
+    expect(await listJiraUsers(conn({ kind: "github" }), "bot", TOKEN, fetch)).toMatchObject({
+      ok: false,
+      messageKey: "onboard.jira.not_listable",
+    });
+    expect(urls).toHaveLength(0);
+  });
+
+  it("reports a provider failure as a secret-free key and never echoes the token", async () => {
+    const http = router([{ match: "/user/search", status: 403, body: { message: `denied for ${TOKEN}` } }]);
+    const denied = await listJiraUsers(conn(), "bot", TOKEN, http.fetch);
+    expect(denied).toEqual({ ok: false, messageKey: "onboard.jira.http_error", messageParams: { status: "403" } });
+    expect(JSON.stringify(denied)).not.toContain(TOKEN);
+
+    const down: ConnectorFetch = () => Promise.reject(new Error(`connect failed to ${TOKEN}`));
+    const unreachable = await listJiraUsers(conn(), "bot", TOKEN, down);
+    expect(unreachable).toEqual({ ok: false, messageKey: "onboard.jira.unreachable" });
+    expect(JSON.stringify(unreachable)).not.toContain(TOKEN);
+
+    const junk = router([{ match: "/user/search", status: 200, body: { values: [] } }]);
+    expect(await listJiraUsers(conn(), "bot", TOKEN, junk.fetch)).toEqual({
+      ok: false,
+      messageKey: "onboard.jira.bad_response",
+    });
   });
 });

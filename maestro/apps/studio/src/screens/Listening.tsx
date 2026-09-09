@@ -219,6 +219,76 @@ export function ListeningScreen(): ReactNode {
   });
   const scmRepoOptions = (scmRepos.data ?? []).filter((name) => !appOptions.includes(name));
 
+  /**
+   * The BRANCHES of every repository the map's rows name — so the branch box is
+   * a list, not a typed string.
+   *
+   * Keyed on the SORTED, DEDUPED repo set rather than on the rows themselves:
+   * typing in an unrelated column, reordering rows or adding an empty one must
+   * not refetch, and two rows on the same repository share one request. The
+   * result is a map so a row looks up its own repository's branches directly.
+   *
+   * Fail-soft per repository: a repo the token cannot see leaves its entry out,
+   * and `RuleForm` falls back to a free-text box for that row alone instead of
+   * blocking the form.
+   */
+  const mapRepos = [
+    ...new Set(
+      draft.repoMapRows
+        .map((row) => row.appId.trim())
+        .filter((appId) => appId !== ""),
+    ),
+  ].sort();
+  const branches = useQuery({
+    queryKey: ["listening-branches", mapRepos.join(",")],
+    enabled: draft.repoMapOn && mapRepos.length > 0,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const { connections } = await api.get<{ connections: readonly { id: string }[] }>(
+        "/onboarding/scm-connections",
+        { signal },
+      );
+      const byRepo: Record<string, readonly string[]> = {};
+      for (const repo of mapRepos) {
+        for (const connection of connections) {
+          const result = await api
+            .get<{ ok: boolean; branches?: readonly string[] }>(
+              `/onboarding/scm-branches?connectionId=${encodeURIComponent(connection.id)}&repo=${encodeURIComponent(repo)}`,
+              { signal },
+            )
+            .catch(() => ({ ok: false as const }));
+          if (result.ok && (result.branches ?? []).length > 0) {
+            byRepo[repo] = result.branches ?? [];
+            break;
+          }
+        }
+      }
+      return byRepo;
+    },
+  });
+  const branchesByRepo = branches.data ?? {};
+
+  /**
+   * The Jira accounts a rule may listen for — so the bot account is picked, not
+   * typed as a 24-character id nobody can verify by eye.
+   *
+   * Read once per connection and cached by react-query: the list is small,
+   * changes rarely, and a search box per keystroke would hammer Jira for a
+   * field the operator sets once. A deployment whose token cannot search users
+   * simply gets an empty list and `RuleForm` falls back to the text box.
+   */
+  const jiraUsers = useQuery({
+    queryKey: ["jira-users", jiraConnId],
+    enabled: jiraConnId !== null,
+    retry: false,
+    queryFn: ({ signal }) =>
+      api.get<{ ok: boolean; users?: readonly { accountId: string; displayName: string }[] }>(
+        `/onboarding/jira-users?connectionId=${encodeURIComponent(jiraConnId ?? "")}`,
+        { signal },
+      ),
+  });
+  const jiraUserOptions = jiraUsers.data?.ok ? (jiraUsers.data.users ?? []) : [];
+
   const matchValues = useQuery({
     queryKey: ["jira-match-values", jiraConnId, draft.projectKey, draft.matchKind],
     enabled:
@@ -546,6 +616,8 @@ export function ListeningScreen(): ReactNode {
           fieldValuesSource={fieldValuesSource}
           appOptions={appOptions}
           scmRepoOptions={scmRepoOptions}
+          branchesByRepo={branchesByRepo}
+          jiraUserOptions={jiraUserOptions}
           analystOptions={analystOptions}
           engineerOptions={engineerOptions}
           onSubmit={onSubmit}

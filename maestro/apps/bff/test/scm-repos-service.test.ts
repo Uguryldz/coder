@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listScmRepos } from "../src/scm-repos-service.js";
+import { listScmBranches, listScmRepos } from "../src/scm-repos-service.js";
 import type { ConnectionRecord } from "../src/connection-store.js";
 import type { ConnectorFetch } from "../src/connection-service.js";
 
@@ -138,5 +138,70 @@ describe("listScmRepos — GitHub pagination", () => {
       expect(result.repos).toHaveLength(101);
       expect(result.repos.at(-1)).toEqual({ id: "101", fullName: "org/aradigim-depo" });
     }
+  });
+});
+
+/**
+ * Branch listing — the repo-map row's target branch, picked from a list.
+ *
+ * The repository name is the ONE piece of caller data that reaches a URL in
+ * this file, so its validation is the first property under test: anything but
+ * two plain segments is refused BEFORE a request is made.
+ */
+describe("listScmBranches", () => {
+  it("lists GitHub branches, default names first", async () => {
+    const s = stub(200, [{ name: "release/2026.9" }, { name: "feature/x" }, { name: "main" }, { name: "develop" }]);
+    const out = await listScmBranches(conn(), "yaylagrup/billing", TOKEN, s.fetch);
+    expect(out).toEqual({ ok: true, branches: ["main", "develop", "feature/x", "release/2026.9"] });
+    expect(s.calls[0]!.url).toBe("https://api.github.com/repos/yaylagrup/billing/branches?per_page=100");
+  });
+
+  it("strips refs/heads/ from ADO refs", async () => {
+    const s = stub(200, { value: [{ name: "refs/heads/develop" }, { name: "refs/heads/main" }] });
+    const out = await listScmBranches(
+      conn({ kind: "ado", baseUrl: "https://dev.azure.com/bank" }),
+      "Core/payments",
+      TOKEN,
+      s.fetch,
+    );
+    expect(out).toEqual({ ok: true, branches: ["main", "develop"] });
+    expect(s.calls[0]!.url).toContain("/Core/_apis/git/repositories/payments/refs?filter=heads/");
+  });
+
+  it("refuses a repo name that is not owner/repo, without calling out", async () => {
+    const s = stub(200, []);
+    for (const bad of ["../etc", "one", "a/b/c", "owner/repo?x=1", ""]) {
+      expect(await listScmBranches(conn(), bad, TOKEN, s.fetch)).toEqual({
+        ok: false,
+        messageKey: "onboard.scm.bad_repo_name",
+      });
+    }
+    expect(s.calls).toHaveLength(0);
+  });
+
+  it("reports an empty repository as a named key, not an empty list", async () => {
+    const s = stub(200, []);
+    expect(await listScmBranches(conn(), "yaylagrup/empty", TOKEN, s.fetch)).toEqual({
+      ok: false,
+      messageKey: "onboard.scm.no_branches",
+    });
+  });
+
+  it("never leaks the token on a provider error", async () => {
+    const s = stub(404, { message: "Not Found" });
+    const out = await listScmBranches(conn(), "yaylagrup/gone", TOKEN, s.fetch);
+    expect(out).toEqual({ ok: false, messageKey: "onboard.scm.http_error", messageParams: { status: "404" } });
+    expect(JSON.stringify(out)).not.toContain(TOKEN);
+  });
+
+  it("refuses without a token and for a kind that cannot list", async () => {
+    const s = stub(200, []);
+    expect(await listScmBranches(conn(), "a/b", null, s.fetch)).toEqual({ ok: false, messageKey: "onboard.scm.no_token" });
+    expect(await listScmBranches(conn({ kind: "jira_cloud" }), "a/b", TOKEN, s.fetch)).toEqual({
+      ok: false,
+      messageKey: "onboard.scm.not_listable",
+      messageParams: { kind: "jira_cloud" },
+    });
+    expect(s.calls).toHaveLength(0);
   });
 });

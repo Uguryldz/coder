@@ -15,7 +15,7 @@ import {
 import { assertWritable, FOUR_EYES_GROUP } from "../platform/propose.js";
 import { isMasterApprover } from "../platform/master-approver.js";
 import { seedProjectDefaults } from "../listening-seed.js";
-import { listScmRepos } from "../scm-repos-service.js";
+import { listScmBranches, listScmRepos } from "../scm-repos-service.js";
 import { listJiraProjects } from "../jira-projects-service.js";
 import { listJiraFieldValues, listJiraFields, listJiraMatchValues } from "../jira-match-values-service.js";
 import type { ConnectionStore } from "../connection-store.js";
@@ -125,6 +125,11 @@ const FieldsQuery = z.object({
   connectionId: z.string().trim().min(1).max(64),
   /** Narrow the list to the fields this project actually shows. */
   project: z.string().trim().min(1).max(64).optional(),
+});
+const BranchesQuery = z.object({
+  connectionId: z.string().trim().min(1).max(64),
+  /** `owner/repo` — the row's repository, re-validated by the service. */
+  repo: z.string().trim().min(3).max(201),
 });
 const FieldValuesQuery = z.object({
   connectionId: z.string().trim().min(1).max(64),
@@ -342,6 +347,29 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
         : await secrets.get(connection.secretRef).catch(() => null);
     const result = await listScmRepos(connection, token, deps.connectorFetch);
     return reply.code(200).send(result);
+  });
+
+  /**
+   * One repository's BRANCHES — so the repo-map row picks a target branch from
+   * a list instead of typing it. A typo used to survive every check and fail at
+   * clone time, after the ticket had already started.
+   */
+  app.get("/onboarding/scm-branches", { preHandler }, async (request, reply) => {
+    const store = connectorStore(deps);
+    const secrets = connectorSecrets(deps);
+    const parsed = BranchesQuery.safeParse(request.query);
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
+
+    const connection = await store.get(parsed.data.connectionId);
+    if (connection === null) throw badRequest("unknown_connection");
+
+    const token =
+      connection.secretRef === null
+        ? null
+        : await secrets.get(connection.secretRef).catch(() => null);
+    return reply
+      .code(200)
+      .send(await listScmBranches(connection, parsed.data.repo, token, deps.connectorFetch));
   });
 
   /**

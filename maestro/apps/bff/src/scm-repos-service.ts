@@ -154,3 +154,121 @@ export async function listScmRepos(
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
+
+/**
+ * A repository's BRANCH names, for the repo-map row's "target branch" field.
+ *
+ * ── NEDEN LİSTE, NEDEN SERBEST METİN DEĞİL ───────────────────────────────────
+ * Dal adı bugüne kadar operatörün elle yazdığı bir metindi, ve yanlış yazılmış
+ * bir ad hiçbir kapıda yakalanmıyordu: kural kaydediliyor, koşu açılıyor ve
+ * hata ancak KLONLAMA anında, `git clone --branch <yok-böyle-dal>` ile
+ * patlıyordu — yani ticket işlenmeye başladıktan sonra. Operatörün deponun
+ * dallarını ezbere bilmesini beklemek de gerçekçi değil.
+ *
+ * Depo adı ÇAĞIRANDAN geliyor (ekranda seçilen satırın deposu), bu yüzden
+ * `owner/repo` biçimi burada DOĞRULANIR: bir yol parçası enjekte edilemesin,
+ * `..` ile başka bir uca gidilemesin. Bu, bu dosyanın diğer okumalarındaki
+ * "hiçbir çağıran verisi isteğe girmez" kuralının tek istisnası ve bu yüzden
+ * dar tutuluyor.
+ */
+export type ScmBranchesResult =
+  | { readonly ok: true; readonly branches: readonly string[] }
+  | { readonly ok: false; readonly messageKey: string; readonly messageParams?: Record<string, string> };
+
+/**
+ * `owner/repo` (GitHub) or `project/repo` (ADO) — two plain segments.
+ *
+ * Each segment must START with a letter or digit. A bare `[A-Za-z0-9._-]+`
+ * accepted `../etc` — the dot is a legal name character, so `..` passed as a
+ * segment and the encoded path would have walked up a level. The lead-character
+ * rule is what makes traversal unrepresentable rather than merely unlikely.
+ */
+const REPO_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._-]{0,99}";
+const REPO_FULL_NAME = new RegExp(`^${REPO_SEGMENT}\\/${REPO_SEGMENT}$`);
+
+/** Branch listing per kind; `null` when the kind cannot list branches. */
+function branchSource(kind: ConnectionKind, fullName: string): { path: string; header(token: string): Record<string, string>; parse(body: unknown): readonly string[] } | null {
+  switch (kind) {
+    case "github": {
+      const [owner, repo] = fullName.split("/");
+      return {
+        path: `/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}/branches?per_page=100`,
+        header: (token) => ({ authorization: `Bearer ${token}`, "user-agent": "maestro" }),
+        parse: (body) => (Array.isArray(body) ? body.flatMap((e) => {
+          const name = str((e as Record<string, unknown> | null)?.["name"]);
+          return name === undefined ? [] : [name];
+        }) : []),
+      };
+    }
+    case "ado": {
+      const [project, repo] = fullName.split("/");
+      return {
+        // `filter=heads/` keeps tags out; ADO returns refs, so the prefix is stripped below.
+        path: `/${encodeURIComponent(project!)}/_apis/git/repositories/${encodeURIComponent(repo!)}/refs?filter=heads/&api-version=7.1`,
+        header: (token) => ({ authorization: `Basic ${Buffer.from(`:${token}`).toString("base64")}` }),
+        parse: (body) => {
+          const value = (body as { value?: unknown } | null)?.value;
+          if (!Array.isArray(value)) return [];
+          return value.flatMap((e) => {
+            const name = str((e as Record<string, unknown> | null)?.["name"]);
+            return name === undefined ? [] : [name.replace(/^refs\/heads\//, "")];
+          });
+        },
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The branches of one repository, sorted with the usual default names first.
+ *
+ * Fail-soft by contract: a repository the token cannot see, a kind that does
+ * not list, or a provider error all yield `ok:false` with a secret-free key —
+ * the screen then falls back to a free-text box rather than blocking the row.
+ */
+export async function listScmBranches(
+  connection: ConnectionRecord,
+  fullName: string,
+  token: string | null,
+  fetchImpl: ConnectorFetch,
+): Promise<ScmBranchesResult> {
+  const name = fullName.trim();
+  if (!REPO_FULL_NAME.test(name)) return { ok: false, messageKey: "onboard.scm.bad_repo_name" };
+  const source = branchSource(connection.kind, name);
+  if (source === null) {
+    return { ok: false, messageKey: "onboard.scm.not_listable", messageParams: { kind: connection.kind } };
+  }
+  if (token === null) return { ok: false, messageKey: "onboard.scm.no_token" };
+
+  const base = connection.baseUrl.replace(/\/+$/, "");
+  let response: Response;
+  try {
+    response = await fetchImpl(`${base}${source.path}`, {
+      method: "GET",
+      headers: { accept: "application/json", ...source.header(token) },
+    });
+  } catch {
+    return { ok: false, messageKey: "onboard.scm.unreachable" };
+  }
+  if (response.status < 200 || response.status >= 300) {
+    return { ok: false, messageKey: "onboard.scm.http_error", messageParams: { status: String(response.status) } };
+  }
+  let branches: readonly string[];
+  try {
+    branches = source.parse(await response.json());
+  } catch {
+    return { ok: false, messageKey: "onboard.scm.bad_response" };
+  }
+  if (branches.length === 0) return { ok: false, messageKey: "onboard.scm.no_branches" };
+  // The branch an operator wants is almost always the default one, and on a
+  // repo with fifty release branches it would otherwise sit mid-list.
+  const lead = ["main", "master", "develop", "development"];
+  const sorted = [...new Set(branches)].sort(
+    (a, b) =>
+      (lead.indexOf(a) === -1 ? lead.length : lead.indexOf(a)) - (lead.indexOf(b) === -1 ? lead.length : lead.indexOf(b)) ||
+      a.localeCompare(b, "tr"),
+  );
+  return { ok: true, branches: sorted };
+}

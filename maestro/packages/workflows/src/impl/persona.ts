@@ -139,6 +139,27 @@ export async function rolePersona(
   }
 }
 
+/**
+ * The agent definition that serves `role` on this run: the analyst and the
+ * engineer are pinned per run; the planner and the verifier are the
+ * installation's agent for that role, and — when none is defined — fall back
+ * to the analyst (planner) or the engineer (verifier) so the call still runs
+ * on a model the operator chose.
+ */
+export async function roleVariantId(deps: ActivityDeps, run: RunContext, role: string): Promise<string> {
+  if (role === "analyst") return run.variantId;
+  if (role === "engineer") return engineerVariantOf(run);
+  const fallback = role === "dev_reviewer" ? engineerVariantOf(run) : run.variantId;
+  const reader = deps.persona;
+  if (reader?.activeVariantIdForRole === undefined) return fallback;
+  try {
+    const id = (await reader.activeVariantIdForRole(role))?.trim() ?? "";
+    return id === "" ? fallback : id;
+  } catch {
+    return fallback;
+  }
+}
+
 /** The agent's training: its Studio persona, else the shipped text for the role. */
 export async function trainingFor(deps: ActivityDeps, run: RunContext, role: string): Promise<string> {
   const persona = await rolePersona(deps, run, role);

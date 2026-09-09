@@ -79,7 +79,7 @@ export class PrismaVariantModelReader {
    * lowest id, so "planner-default" wins until an operator defines another.
    * Null when no agent of that role exists, or the table is not wired.
    */
-  async activePersonaForRole(role: string): Promise<string | null> {
+  async activeVariantIdForRole(role: string): Promise<string | null> {
     if (this.variants === undefined) return null;
     const known = LlmRole.safeParse(role);
     if (!known.success) return null;
@@ -88,7 +88,12 @@ export class PrismaVariantModelReader {
       orderBy: { id: "asc" },
       select: { id: true },
     });
-    return row === null ? null : this.activePersona(row.id);
+    return row?.id ?? null;
+  }
+
+  async activePersonaForRole(role: string): Promise<string | null> {
+    const id = await this.activeVariantIdForRole(role);
+    return id === null ? null : this.activePersona(id);
   }
 
   private activeRow(variantId: string): Promise<VariantVersionModelRow | undefined> {

@@ -8,7 +8,7 @@ import { engineerVariantOf } from "./deps.js";
 import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
 import { developerBrief, loadAnalysis, planDeviations, ruleChecklist } from "./brief.js";
-import { trainingFor } from "./persona.js";
+import { roleVariantId, trainingFor } from "./persona.js";
 
 /**
  * Steps 6a, 6c, 7, 8 and 10: the doing role and the roles that judge it.
@@ -227,6 +227,7 @@ async function verifierSession(
   // The verifier's own agent definition (role `dev_reviewer`): training
   // first, then the task with this run's rules and commands.
   const training = await trainingFor(deps, run, "dev_reviewer");
+  const verifierVariant = await roleVariantId(deps, run, "dev_reviewer");
   let outcome: Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>>;
   try {
     outcome = await deps.llm.agentSession({
@@ -238,7 +239,7 @@ async function verifierSession(
       })}`,
       mcpServers: [],
       dataClass: run.dataClass,
-      variantId: engineerVariantOf(run),
+      variantId: verifierVariant,
     });
   } catch {
     return null;
@@ -266,11 +267,12 @@ async function verifyChanges(deps: ActivityDeps, ticket: TicketKey, attempt: num
   const rules = doc === null ? [] : ruleChecklist(doc);
   const session = await verifierSession(deps, run, rules);
   if (session === null) return review(deps, ticket, "dev_reviewer", "diff-review", attempt);
+  const verifierVariant = await roleVariantId(deps, run, "dev_reviewer");
   const outcome = await guardModelCall(deps, run, "dev_reviewer", () =>
     deps.llm.generateObject(
       {
         role: "dev_reviewer",
-        variantId: engineerVariantOf(run),
+        variantId: verifierVariant,
         dataClass: run.dataClass,
         schemaName: "diff-review",
         input: { ticket, rules: VERIFY_DIGEST_RULES, businessRules: rules, report: session.finalText },

@@ -505,6 +505,12 @@ export interface PersonaReader {
    * without it makes those roles fall back to the shipped training.
    */
   activePersonaForRole?(role: string): Promise<string | null>;
+  /**
+   * The id of the agent defined for `role` (planner, verifier), so the call
+   * runs on THAT agent's model and is logged under it — not on the analyst's
+   * or the engineer's. Null when none is defined; optional like the above.
+   */
+  activeVariantIdForRole?(role: string): Promise<string | null>;
 }
 
 export interface ActivityDeps {

@@ -84,6 +84,8 @@ export interface FakeOptions {
   notifyEnabled?: boolean;
   /** Persona of the installation's agent per ROLE (planner, dev_reviewer). */
   personaByRole?: Record<string, string>;
+  /** Agent id per ROLE (planner, dev_reviewer); absent = none defined. */
+  variantByRole?: Record<string, string>;
   /** Makes `assign` reject, for the fail-soft delivery path. */
   assignFails?: boolean;
   /** Returns an Error to make THAT `createLinkedIssue` call reject (fan-out fail-soft path). */
@@ -383,7 +385,7 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     // her test bugünkü davranışı görmeye devam eder (rol promptu, overlay yok).
     // `persona` seçeneği verildiğinde varyant → metin eşlemesi olur; bir varyant
     // için `Error` verilirse okuma o varyantta patlar (erişilemez Postgres).
-    ...(options.persona === undefined && options.personaByRole === undefined
+    ...(options.persona === undefined && options.personaByRole === undefined && options.variantByRole === undefined
       ? {}
       : {
           persona: {
@@ -395,6 +397,9 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
             ...(options.personaByRole === undefined
               ? {}
               : { activePersonaForRole: (role: string) => Promise.resolve(options.personaByRole?.[role] ?? null) }),
+            ...(options.variantByRole === undefined
+              ? {}
+              : { activeVariantIdForRole: (role: string) => Promise.resolve(options.variantByRole?.[role] ?? null) }),
           },
         }),
     // "Öğrenme kaynakları" notları. Persona ile aynı kalıp: verilmezse bağlı

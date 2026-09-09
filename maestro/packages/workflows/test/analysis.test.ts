@@ -595,4 +595,22 @@ describe("agent trainings reach the sessions", () => {
     expect(planner?.role).toBe("planner");
     expect((planner?.input as { persona: string }).persona).toBe("PLANCI-EĞİTİMİ");
   });
+
+  it("the planner call runs on the PLANNER agent's id when one is defined, else the analyst's", async () => {
+    const PLAN = { files: [{ path: "a.ts", change: "x" }], endpoints: [], dtos: [], conventions: [], notes: "" };
+    const answer = (schemaName: string) =>
+      schemaName === "implementation-plan"
+        ? { status: "ok" as const, value: PLAN, log: LOG }
+        : { status: "ok" as const, value: analysisDoc("orta"), log: LOG };
+    const seed = async (fakes: ReturnType<typeof makeFakes>) =>
+      record(fakes.deps, await fakes.deps.runs.get("PAY-101"), { kind: "discovery", title: "repo keşfi", detail: "1 dosya\nG1 → a.ts", key: "discovery" });
+    const own = makeFakes({ variantByRole: { planner: "planner-default" }, generateObject: answer });
+    await seed(own);
+    await writeAnalysis(own.deps, "PAY-101", "pay");
+    expect(own.recorded.llm.find((c) => c.schemaName === "implementation-plan")?.variantId).toBe("planner-default");
+    const none = makeFakes({ generateObject: answer });
+    await seed(none);
+    await writeAnalysis(none.deps, "PAY-101", "pay");
+    expect(none.recorded.llm.find((c) => c.schemaName === "implementation-plan")?.variantId).toBe("v1");
+  });
 });

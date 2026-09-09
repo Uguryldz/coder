@@ -18,7 +18,7 @@ import { analystGuidance } from "./guidance.js";
 import { ticketAttachments } from "./attachments.js";
 import { analysisInstructions, analysisRules, briefRules, planRules } from "./analysis-template.js";
 import { discoveryNotes, storeAnalysis } from "./brief.js";
-import { analystPersona, trainingFor } from "./persona.js";
+import { analystPersona, roleVariantId, trainingFor } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
 /**
@@ -503,13 +503,14 @@ async function writePlan(
   // The PLANNER's own agent definition (role `planner`) — its training is
   // the persona; the field rules below explain the JSON shape.
   const persona = await trainingFor(deps, run, "planner");
+  const plannerVariant = await roleVariantId(deps, run, "planner");
   const guidance = await analystGuidance(deps, run);
   try {
     const outcome = await guardModelCall(deps, run, "plan", () =>
       deps.llm.generateObject(
         {
           role: "planner",
-          variantId: run.variantId,
+          variantId: plannerVariant,
           dataClass: run.dataClass,
           schemaName: "implementation-plan",
           input: {

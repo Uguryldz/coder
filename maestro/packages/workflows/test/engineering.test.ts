@@ -392,4 +392,21 @@ describe("agent trainings reach the doing-role sessions", () => {
     expect(task.startsWith("DOĞRULAYICI-EĞİTİMİ\n\n")).toBe(true);
     expect(task).toContain("agent.verify_task(PAY-101");
   });
+
+  it("the verifier session and digest run on the VERIFIER agent's id when one is defined", async () => {
+    let sessionVariant = "";
+    const fakes = makeFakes({
+      variantByRole: { dev_reviewer: "verifier-default" },
+      agentSession: () => ({ status: "ok", value: { resumeToken: "verify-1", finalText: "ok", log: LOG as never }, log: LOG }),
+      generateObject: () => ({ status: "ok", value: { approved: true, findings: [] }, log: LOG }),
+    });
+    const spy = fakes.deps.llm.agentSession;
+    fakes.deps.llm.agentSession = (opts) => {
+      sessionVariant = opts.variantId ?? "";
+      return spy(opts);
+    };
+    await reviewDiff(fakes.deps, "PAY-101");
+    expect(sessionVariant).toBe("verifier-default");
+    expect(fakes.recorded.llm.find((c) => c.schemaName === "diff-review")?.variantId).toBe("verifier-default");
+  });
 });

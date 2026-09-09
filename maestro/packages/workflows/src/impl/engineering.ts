@@ -217,6 +217,41 @@ async function engineeringTask(deps: ActivityDeps, run: RunContext, task: string
  * no workspace or the session could not be opened; the caller then falls
  * back to the ticket-only structured review this step always had.
  */
+/**
+ * The verifier in the SANDBOX (same fleet as the developer): a fresh turn on
+ * the verifier's agent with the run's verification commands, so "run the
+ * build and the tests" is a command it can actually execute; the command
+ * results go into its report. Null when there is no sandbox fleet or the
+ * turn could not open — the caller falls back to the read-only workspace
+ * session, which can read the diff and check rules but cannot build.
+ */
+async function verifierTurn(
+  deps: ActivityDeps,
+  run: RunContext,
+  task: string,
+): Promise<{ finalText: string } | null> {
+  const variantId = await roleVariantId(deps, run, "dev_reviewer");
+  let outcome: AgentTurnResult;
+  try {
+    outcome = await deps.execution.runTurn({
+      context: await turnContext(deps, run, task),
+      dataClass: run.dataClass,
+      variantId,
+      verification: run.verification,
+    });
+  } catch {
+    return null;
+  }
+  if (outcome.status !== "ok") return null;
+  const report = outcome.report;
+  const commands = report.commands.map(
+    (c) => `- ${c.name} (${c.command.join(" ")}): exit ${String(c.exitCode)}${c.stderrTail.trim() === "" ? "" : ` — ${c.stderrTail.trim().slice(0, 400)}`}`,
+  );
+  return {
+    finalText: [report.finalText, "", "## Sandbox'ta çalıştırılan doğrulama komutları", ...(commands.length === 0 ? ["- (tanımlı komut yok)"] : commands)].join("\n"),
+  };
+}
+
 async function verifierSession(
   deps: ActivityDeps,
   run: RunContext,
@@ -265,7 +300,14 @@ async function verifyChanges(deps: ActivityDeps, ticket: TicketKey, attempt: num
   const run = await deps.runs.get(ticket);
   const doc = await loadAnalysis(deps, run);
   const rules = doc === null ? [] : ruleChecklist(doc);
-  const session = await verifierSession(deps, run, rules);
+  // Sandbox first (build + tests really run), read-only workspace session second.
+  const commands = run.verification.map((spec) => `- ${spec.name}: ${spec.command.join(" ")}`).join("\n");
+  const verifyTask = `${await trainingFor(deps, run, "dev_reviewer")}\n\n${deps.translate(run.locale, "agent.verify_task", {
+    ticket: run.ticket,
+    rules: rules.length === 0 ? "- (analizde iş kuralı yok — kabul kriterlerini ticket'tan al)" : rules.join("\n"),
+    commands: commands === "" ? "- (tanımlı komut yok)" : commands,
+  })}`;
+  const session = (await verifierTurn(deps, run, verifyTask)) ?? (await verifierSession(deps, run, rules));
   if (session === null) return review(deps, ticket, "dev_reviewer", "diff-review", attempt);
   const verifierVariant = await roleVariantId(deps, run, "dev_reviewer");
   const outcome = await guardModelCall(deps, run, "dev_reviewer", () =>

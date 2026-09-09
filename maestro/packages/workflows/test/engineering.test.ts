@@ -278,6 +278,28 @@ describe("developer brief (step 6a)", () => {
 });
 
 describe("verifier (step 6c)", () => {
+  it("runs in the sandbox when a fleet answers: the build commands' exit codes reach the digest, no read-only session is opened", async () => {
+    let sessionOpened = false;
+    const fakes = makeFakes({
+      runTurn: () =>
+        ok({
+          finalText: "K1 PASS\nK2 PASS",
+          commands: [{ name: "build", command: ["mvn", "-q", "compile"], exitCode: 1, stdoutTail: "", stderrTail: "3 errors", durationMs: 5 }],
+        }),
+      agentSession: () => {
+        sessionOpened = true;
+        return { status: "ok", value: { resumeToken: "v", finalText: "x", log: LOG as never }, log: LOG };
+      },
+      generateObject: () => ({ status: "ok", value: { approved: true, findings: [], build: { status: "fail", detail: "3 errors" }, rules: [] }, log: LOG }),
+    });
+    const verdict = await reviewDiff(fakes.deps, "PAY-101");
+    expect(sessionOpened).toBe(false);
+    const digest = fakes.recorded.llm.find((c) => c.schemaName === "diff-review");
+    expect((digest?.input as { report: string }).report).toContain("mvn -q compile): exit 1 — 3 errors");
+    expect(verdict.approved).toBe(false);
+    expect(fakes.recorded.turns[0]?.context.task).toContain("agent.verify_task(PAY-101");
+  });
+
   const verifierSession = () => ({
     status: "ok" as const,
     value: { resumeToken: "verify-1", finalText: "derleme ok\nK1 PASS\nK2 FAIL Limit.java:40", log: LOG as never },

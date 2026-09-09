@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { catalogKeys } from "@maestro/config";
+import { SELECTABLE_GATES } from "@maestro/contracts";
 
 /**
  * Every message key the Studio source names LITERALLY — `t("dash.title")`,
@@ -76,6 +77,36 @@ describe("studio catalog coverage", () => {
       const text = readFileSync(file, "utf8");
       for (const key of literalKeys(text)) {
         if (!tr.has(key) || !en.has(key)) missing.push(`${key}  (${file.slice(SRC.length + 1)})`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  /**
+   * Keys DERIVED from a fixed list with a constant suffix — `t(`${gate.titleKey}.hint`)`
+   * over `SELECTABLE_GATES`. The scan above skips them as dynamic, and that gap
+   * shipped: every `gates.meaning.*.hint` was missing, so opening the listening
+   * rule form (and the setup pane) threw `MissingMessageError` and the screen
+   * went red on a live install.
+   *
+   * The suffix is a literal in the source, so the key set is knowable here:
+   * take the list's own `titleKey` values and require base + suffix in both
+   * locales. Only this one derivation is covered, deliberately — a general
+   * template resolver would be a second, weaker copy of the compiler.
+   */
+  it("has every suffixed key derived from SELECTABLE_GATES in both locales", () => {
+    const tr = new Set(catalogKeys("tr"));
+    const en = new Set(catalogKeys("en"));
+    const suffixes = new Set<string>();
+    for (const file of sources(SRC)) {
+      for (const match of readFileSync(file, "utf8").matchAll(/\$\{gate\.titleKey\}(\.[a-z0-9_]+)/g)) {
+        suffixes.add(match[1]!);
+      }
+    }
+    const missing: string[] = [];
+    for (const gate of SELECTABLE_GATES) {
+      for (const key of [gate.titleKey, ...[...suffixes].map((s) => `${gate.titleKey}${s}`)]) {
+        if (!tr.has(key) || !en.has(key)) missing.push(key);
       }
     }
     expect(missing).toEqual([]);

@@ -53,6 +53,12 @@ export const ONBOARDING_PROPOSAL_PREFIX = "onboarding.binding";
  * unknown field rather than dropping it, so a client sending `mergeMode: auto`
  * under a misspelled key is told, not quietly given a human merge.
  */
+const AddRepoBody = z.object({
+  jiraProject: z.string().trim().min(1).max(32),
+  adoRepo: z.string().trim().min(1).max(128),
+  platform: z.string().trim().min(1).max(32),
+  displayName: z.string().trim().max(128).optional(),
+});
 const DraftBody = z
   .object({
     jiraProject: z.string().trim().min(1).max(32),
@@ -573,6 +579,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
         adoProject: halves.adoProject,
         adoRepo: halves.adoRepo,
         platform: repoHalf.platform,
+        jiraProjectKey: scopeRef,
       });
       // The inventory write is its own audited fact, separate from the binding
       // proposal below: one records that the app now exists, the other that a
@@ -675,6 +682,52 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
    * submitted package sat in it invisibly and nobody could approve it. This is
    * the list the "Jira bağlantısı & eşleme" screen renders so an admin can act.
    */
+  /**
+   * ── Bir projeye İKİNCİ (üçüncü…) depo ────────────────────────────────────
+   * The binding names ONE default application; a bank's project spans several
+   * repositories. This registers another repository under an already-bound
+   * project — no new binding, no approval round: the project's approval stands,
+   * the repo is inventory. Audited like the onboarding registration. The
+   * listening rule's repo map then picks among the project's repositories.
+   */
+  app.post("/onboarding/apps", { preHandler }, async (request, reply) => {
+    const parsed = AddRepoBody.safeParse(request.body);
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
+    await assertWritable(deps);
+    if (deps.appRegistry === undefined) unwired("appRegistry");
+    const binding = await deps.bindings.resolve(parsed.data.jiraProject);
+    if (binding === null) throw notFound("unbound_project", { projectKey: parsed.data.jiraProject });
+    const halves = splitRepoFullName(parsed.data.adoRepo);
+    if (halves === null) throw badRequest("invalid_repo_name", { repo: parsed.data.adoRepo });
+    const actor = sessionActor(sessionOf(request));
+    const at = deps.clock.now().toISOString();
+    const appId = parsed.data.adoRepo;
+    await deps.appRegistry.register({
+      appId,
+      displayName: parsed.data.displayName?.trim() || appId,
+      adoProject: halves.adoProject,
+      adoRepo: halves.adoRepo,
+      platform: parsed.data.platform,
+      jiraProjectKey: parsed.data.jiraProject,
+    });
+    await deps.audit.append({
+      actor,
+      action: "PARAM_CHANGED",
+      subject: `application:${appId}`,
+      at,
+      meta: {
+        registered: "application",
+        appId,
+        adoProject: halves.adoProject,
+        adoRepo: halves.adoRepo,
+        platform: parsed.data.platform,
+        jiraProjectKey: parsed.data.jiraProject,
+        createdVia: "add-repo",
+      },
+    });
+    return reply.code(201).send({ appId, projectKey: parsed.data.jiraProject });
+  });
+
   app.get("/onboarding/pending", { preHandler }, async (_request, reply) => {
     const open = (await deps.params.pending()).filter(
       (candidate) => candidate.key === ONBOARDING_PROPOSAL_PREFIX,

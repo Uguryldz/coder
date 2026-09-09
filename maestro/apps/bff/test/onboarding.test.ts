@@ -1238,3 +1238,42 @@ describe("the analysis-only onboarding draft — no repository", () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe("POST /onboarding/apps — more than one repository under a bound project", () => {
+  it("registers the repo under the project without a new binding, audited", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/apps",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { jiraProject: "UGURPAY", adoRepo: "Uguryldz/kredi-servis", platform: "linux-node" },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({ appId: "Uguryldz/kredi-servis", projectKey: "UGURPAY" });
+    const after = await app.read.onboarding.options({ limit: 200, cursor: null });
+    expect(after.repos.find((repo) => repo.appId === "Uguryldz/kredi-servis")).toBeDefined();
+    const events = await app.auditStore.read();
+    const reg = events.find((event) => event.subject === "application:Uguryldz/kredi-servis");
+    expect(reg?.meta).toMatchObject({ jiraProjectKey: "UGURPAY", createdVia: "add-repo" });
+  });
+
+  it("refuses a project that is not bound, and a repo name that is not owner/repo", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+    const unbound = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/apps",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { jiraProject: "NOPE", adoRepo: "Uguryldz/x", platform: "linux-node" },
+    });
+    expect(unbound.statusCode).toBe(404);
+    const bad = await app.app.inject({
+      method: "POST",
+      url: "/onboarding/apps",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { jiraProject: "UGURPAY", adoRepo: "no-owner", platform: "linux-node" },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+});

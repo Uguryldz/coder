@@ -408,7 +408,7 @@ export async function main(): Promise<void> {
       model: env.LLM_MODEL,
       apiKeyRef: env.LLM_API_KEY_REF,
     }),
-    routing: new PrismaRoutingReader(db.jiraProjectBinding, db.routingRule),
+    routing: new PrismaRoutingReader(db.jiraProjectBinding, db.routingRule, db.application),
     // Postgres-backed, where it used to be an `InMemoryKillSwitchStore` (Dalga
     // E, migration 0008). This is the store `assertStoresDurable` refused a
     // prod boot without: a process-local brake reverts to `off` on the restart

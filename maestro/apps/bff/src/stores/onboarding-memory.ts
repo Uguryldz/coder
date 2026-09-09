@@ -90,9 +90,12 @@ export class InMemoryOnboardingReader implements OnboardingReader {
  * offline as it does live.
  */
 export class InMemoryAppRegistryWriter implements AppRegistryWriter {
+  /** Every registration as sent — a test asserts the project a repo was filed under. */
+  readonly registrations: AppRegistration[] = [];
   constructor(private readonly reader: InMemoryOnboardingReader) {}
 
   register(app: AppRegistration): Promise<void> {
+    this.registrations.push({ ...app });
     this.reader.addRepo({
       appId: app.appId,
       repo: `${app.adoProject}/_git/${app.adoRepo}`,

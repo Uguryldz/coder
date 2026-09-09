@@ -6,7 +6,7 @@ import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole, hasRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Badge, Button, Card, Modal, Table, useToast } from "../ui/index.ts";
+import { Badge, Button, Card, Modal, Select, Table, useToast } from "../ui/index.ts";
 import type {
   ApplicationRecord,
   DataClassPolicy,
@@ -79,6 +79,7 @@ export function RoutingScreen(): ReactNode {
   const [pendingBy, setPendingBy] = useState<string | null>(null);
   // Which bound project's "Düzenle" is open, or null. See `BindingEdit`.
   const [editingBinding, setEditingBinding] = useState<string | null>(null);
+  const [addingRepoFor, setAddingRepoFor] = useState<string | null>(null);
 
   const routing = useQuery({
     queryKey: ["routing"],
@@ -292,9 +293,14 @@ export function RoutingScreen(): ReactNode {
                 // `BindingEdit`: a save button here would file nothing.
                 cell: (row) =>
                   canEditBinding ? (
-                    <Button size="sm" onClick={() => setEditingBinding(row.projectKey)}>
-                      {t("routing.action.edit_binding")}
-                    </Button>
+                    <div className="scr-actions" style={{ margin: 0 }}>
+                      <Button size="sm" onClick={() => setAddingRepoFor(row.projectKey)}>
+                        {t("routing.action.add_repo")}
+                      </Button>
+                      <Button size="sm" onClick={() => setEditingBinding(row.projectKey)}>
+                        {t("routing.action.edit_binding")}
+                      </Button>
+                    </div>
                   ) : null,
               },
               {
@@ -411,6 +417,18 @@ export function RoutingScreen(): ReactNode {
         </div>
       </details>
 
+      {addingRepoFor !== null && (
+        <AddRepoModal
+          projectKey={addingRepoFor}
+          onClose={() => setAddingRepoFor(null)}
+          onAdded={() => {
+            void queryClient.invalidateQueries({ queryKey: ["routing"] });
+            void queryClient.invalidateQueries({ queryKey: ["studio-apps"] });
+            setAddingRepoFor(null);
+          }}
+        />
+      )}
+
       {editingBinding !== null && (
         <BindingEdit
           projectKey={editingBinding}
@@ -477,6 +495,118 @@ function BindingEdit({
       <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
         <p style={{ margin: 0 }}>{t("routing.edit.binding_locked")}</p>
         <p style={{ margin: "8px 0 0" }}>{t("routing.edit.workaround")}</p>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * "Depo ekle": a second (third…) repository under an already-bound project.
+ * The binding keeps its default application; this only files another repo
+ * in the inventory, tagged with the project, so the listening rule's repo map
+ * can pick among them. Same pickers as onboarding: SCM connection → repo
+ * list → platform.
+ */
+function AddRepoModal({
+  projectKey,
+  onClose,
+  onAdded,
+}: {
+  readonly projectKey: string;
+  readonly onClose: () => void;
+  readonly onAdded: () => void;
+}): ReactNode {
+  const t = useT();
+  const api = useApi();
+  const toast = useToast();
+  const [connectionId, setConnectionId] = useState("");
+  const [repoFullName, setRepoFullName] = useState("");
+  const [platform, setPlatform] = useState("");
+  const connections = useQuery({
+    queryKey: ["onboarding-scm-connections"],
+    queryFn: ({ signal }) =>
+      api.get<{ connections: readonly { id: string; kind: string; displayName: string }[] }>("/onboarding/scm-connections", { signal }),
+  });
+  const repos = useQuery({
+    queryKey: ["onboarding-scm-repos", connectionId],
+    enabled: connectionId !== "",
+    retry: false,
+    queryFn: ({ signal }) =>
+      api.get<{ ok: boolean; repos?: readonly { id: string; fullName: string }[]; messageKey?: string }>(
+        `/onboarding/scm-repos?connectionId=${encodeURIComponent(connectionId)}`,
+        { signal },
+      ),
+  });
+  const options = useQuery({
+    queryKey: ["onboarding-options"],
+    queryFn: ({ signal }) => api.get<{ platforms: readonly string[] }>("/onboarding/options", { signal }),
+  });
+  const list = connections.data?.connections ?? [];
+  // One connection: nothing to ask.
+  const effectiveConnection = connectionId !== "" ? connectionId : list.length === 1 ? (list[0]?.id ?? "") : "";
+  if (effectiveConnection !== connectionId && effectiveConnection !== "") setConnectionId(effectiveConnection);
+  const repoRows = repos.data?.ok ? (repos.data.repos ?? []) : [];
+  const add = useMutation({
+    mutationFn: () =>
+      api.post<{ appId: string }>("/onboarding/apps", { jiraProject: projectKey, adoRepo: repoFullName, platform }),
+    onSuccess: (body) => {
+      toast.show("success", t("routing.add_repo.done", { app: body.appId, project: projectKey }));
+      onAdded();
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+  const blocked = repoFullName === "" || platform === "";
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t("routing.add_repo.title", { project: projectKey })}
+      closeLabel={t("action.close")}
+      footer={
+        <>
+          <Button onClick={onClose}>{t("action.cancel")}</Button>
+          <Button variant="primary" busy={add.isPending} disabled={blocked} onClick={() => add.mutate()}>
+            {t("routing.add_repo.submit")}
+          </Button>
+        </>
+      }
+    >
+      <p className="scr-prose">{t("routing.add_repo.body")}</p>
+      <div className="scr-grid scr-grid--2">
+        {list.length > 1 && (
+          <Select
+            label={t("onboard.field.scm_connection")}
+            value={connectionId}
+            onChange={(event) => {
+              setConnectionId(event.target.value);
+              setRepoFullName("");
+            }}
+            options={[
+              { value: "", label: t("onboard.field.choose") },
+              ...list.map((c) => ({ value: c.id, label: `${c.displayName} · ${t(`onboard.scm.kind.${c.kind}`)}` })),
+            ]}
+          />
+        )}
+        <Select
+          label={t("onboard.field.scm_repo")}
+          value={repoFullName}
+          onChange={(event) => setRepoFullName(event.target.value)}
+          disabled={connectionId === "" || repos.isPending || repoRows.length === 0}
+          options={[
+            { value: "", label: repos.data !== undefined && !repos.data.ok ? t(repos.data.messageKey ?? "onboard.field.choose") : t("onboard.field.choose") },
+            ...repoRows.map((r) => ({ value: r.fullName, label: r.fullName })),
+          ]}
+        />
+        <Select
+          label={t("onboard.field.platform")}
+          value={platform}
+          onChange={(event) => setPlatform(event.target.value)}
+          options={[
+            { value: "", label: t("onboard.field.choose") },
+            ...(options.data?.platforms ?? []).map((value) => ({ value, label: t(`platform.${value}`) })),
+          ]}
+          hint={t("onboard.field.platform_hint")}
+        />
       </div>
     </Modal>
   );

@@ -48,6 +48,14 @@ export interface RoutingRuleListDelegate {
   }): Promise<RoutingRuleRow[]>;
 }
 
+/** The `Application` table, as far as "which project owns this repo" needs. */
+export interface ApplicationProjectDelegate {
+  findMany(args: {
+    where: { jiraProjectKey: { not: null } };
+    select: { appId: true; jiraProjectKey: true };
+  }): Promise<{ appId: string; jiraProjectKey: string | null }[]>;
+}
+
 export class PrismaRoutingReader implements RoutingReader {
   constructor(
     private readonly bindings: RoutingBindingListDelegate,
@@ -56,6 +64,8 @@ export class PrismaRoutingReader implements RoutingReader {
      * `rules()`, and a field of the same name would shadow it.
      */
     private readonly ruleRows: RoutingRuleListDelegate,
+    /** The `Application` table, for the repositories filed under each project. */
+    private readonly applications?: ApplicationProjectDelegate,
   ) {}
 
   /**
@@ -67,15 +77,20 @@ export class PrismaRoutingReader implements RoutingReader {
    * platform can reach one.
    */
   async projects(): Promise<readonly RoutingProjectView[]> {
-    const [rows, rules] = await Promise.all([
+    const [rows, rules, owned] = await Promise.all([
       this.bindings.findMany({ orderBy: { projectKey: "asc" } }),
       this.ruleRows.findMany({ orderBy: [{ priority: "asc" }, { ruleId: "asc" }] }),
+      this.applications === undefined
+        ? Promise.resolve([])
+        : this.applications.findMany({ where: { jiraProjectKey: { not: null } }, select: { appId: true, jiraProjectKey: true } }),
     ]);
 
     return rows.map((row) => {
       const apps = new Set<string>();
       const fallback = appIdOf(row.defaultsJson);
       if (fallback !== null) apps.add(fallback);
+      // Every repository filed under this project (Application.jiraProjectKey).
+      for (const app of owned) if (app.jiraProjectKey === row.projectKey) apps.add(app.appId);
       for (const rule of rules) {
         // `null` projectKey is an org-wide rule and applies to every project.
         if (rule.projectKey !== null && rule.projectKey !== row.projectKey) continue;

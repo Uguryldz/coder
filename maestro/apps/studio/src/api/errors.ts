@@ -191,6 +191,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   // 404
   no_run: "error.no_run",
   unknown_param: "error.unknown_param",
+  unbound_project: "error.unbound_project",
   unknown_role: "error.unknown_role",
   no_default_training: "error.no_default_training",
   not_found: "error.not_found",

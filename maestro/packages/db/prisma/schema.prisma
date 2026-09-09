@@ -438,6 +438,10 @@ model Application {
   /// enum identifiers; contracts' PlatformProfile is the validator.
   platform           String      @db.VarChar(32)
   jiraComponent      String?     @db.VarChar(128)
+  /// Bu deponun ait olduğu Jira projesi. Bir proje birden çok depo taşıyabilir;
+  /// proje bağlaması yalnız VARSAYILAN uygulamayı söyler, dinleme kuralının depo
+  /// eşlemesi bu projedeki uygulamalar arasından seçer. NULL = eski kayıt.
+  jiraProjectKey     String?     @db.VarChar(32)
   maestroYamlPresent Boolean     @default(false)
   createdVia         CreatedViaE
 

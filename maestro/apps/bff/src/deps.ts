@@ -674,6 +674,8 @@ export interface AppRegistration {
   adoProject: string;
   adoRepo: string;
   platform: string;
+  /** The Jira project this repository belongs to; a project may own several. */
+  jiraProjectKey?: string;
 }
 
 /**

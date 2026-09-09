@@ -454,7 +454,9 @@ seçilen uygulamaya gider; tetik zaten depoyu ayırıyorsa, ör. iş tipi ya da 
    yazın, ör. `customfield_10234`).
 2. Değerler Jira'dan gelir (alanın izin verilen listesi, yoksa projede kullanılan değerler); her değeri bir uygulamaya eşleyin: `Krediler → bank/kredi`, `Kartlar → bank/kart`. İsteğe bağlı
    hedef dal (ortam) yazılır.
-3. Uygulamalar önce "Proje bağlama"da kayıtlı olmalı; eşlemedeki uygulama kimliği oradaki kimliktir.
+3. Uygulamalar önce kayıtlı olmalı: "Proje bağlama"daki bağlı projeler tablosunda **Depo ekle** ile aynı projeye
+   ikinci, üçüncü depoyu ekleyin (SCM bağlantısı → depo listesi → platform; onay turu yok, denetim kaydı var).
+   Bağlama varsayılan uygulamayı söyler, eşleme bu projedeki depolar arasından seçer (migration 0030).
 
 Satırdaki **hedef dal** koşuya taşınır: klon o daldan açılır ve PR o dala açılır; boşsa deponun kendi varsayılan dalı.
 Eşleşmeyen değer ya da boş alan proje bağlamasının uygulamasına gider (eskisi gibi). `/ai-assign`

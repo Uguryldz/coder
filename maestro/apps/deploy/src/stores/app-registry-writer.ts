@@ -28,13 +28,14 @@ export interface ApplicationWriteRow {
   adoRepo: string;
   platform: string;
   createdVia: "onboarding" | "import";
+  jiraProjectKey?: string | null;
 }
 
 export interface ApplicationUpsertDelegate {
   upsert(args: {
     where: { appId: string };
     create: ApplicationWriteRow & { maestroYamlPresent: boolean };
-    update: { displayName: string; adoProject: string; adoRepo: string; platform: string };
+    update: { displayName: string; adoProject: string; adoRepo: string; platform: string; jiraProjectKey?: string };
   }): Promise<unknown>;
 }
 
@@ -54,6 +55,7 @@ export class PrismaAppRegistryWriter implements AppRegistryWriter {
         // the observer flips this true when it first sees one (M52).
         maestroYamlPresent: false,
         createdVia: "onboarding",
+        ...(app.jiraProjectKey === undefined ? {} : { jiraProjectKey: app.jiraProjectKey }),
       },
       // Re-onboarding may correct the display name, owner, repo or platform; it
       // never re-stamps `createdVia` or the policy/component columns.
@@ -62,6 +64,7 @@ export class PrismaAppRegistryWriter implements AppRegistryWriter {
         adoProject: app.adoProject,
         adoRepo: app.adoRepo,
         platform: app.platform,
+        ...(app.jiraProjectKey === undefined ? {} : { jiraProjectKey: app.jiraProjectKey }),
       },
     });
   }

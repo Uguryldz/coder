@@ -2,7 +2,10 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { prepareWorkspace, WorkspaceError } from "../src/stores/workspace-prepare.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { checkedOutBranch, prepareWorkspace, WorkspaceError } from "../src/stores/workspace-prepare.js";
+const sh = promisify(execFile);
 
 /**
  * The checkout step 3ö reads.
@@ -65,5 +68,25 @@ describe("prepareWorkspace", () => {
     expect(error).toBeInstanceOf(WorkspaceError);
     expect((error as WorkspaceError).message).toContain("maestro-test/does-not-exist");
     expect((error as WorkspaceError).message).not.toContain("extraheader");
+  });
+});
+
+describe("environment branch", () => {
+  it("refuses a branch name that is not a plain git ref before touching the network", async () => {
+    for (const bad of ["-x", "a b", "../main", "$(rm)"]) {
+      await expect(
+        prepareWorkspace({ repo: "maestro-test/repo", root: await root(), runId: "r1", branch: bad }),
+      ).rejects.toBeInstanceOf(WorkspaceError);
+    }
+  });
+
+  it("reads the branch a checkout is on, and null for a directory that is not a repository", async () => {
+    const dir = await root();
+    const repo = join(dir, "r1");
+    await mkdir(repo, { recursive: true });
+    await sh("git", ["-C", repo, "init", "-q", "-b", "develop"]);
+    await sh("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "ilk"]);
+    expect(await checkedOutBranch(repo)).toBe("develop");
+    expect(await checkedOutBranch(dir)).toBeNull();
   });
 });

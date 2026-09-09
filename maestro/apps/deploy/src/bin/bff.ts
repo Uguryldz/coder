@@ -73,7 +73,7 @@ import {
   type ClarifyReentryStatus,
 } from "../listening-banner.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
-import { prepareWorkspace } from "../stores/workspace-prepare.js";
+import { checkedOutBranch, prepareWorkspace } from "../stores/workspace-prepare.js";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
 import { statusMoverFor } from "../stores/status-mover.js";
@@ -232,7 +232,10 @@ export async function main(): Promise<void> {
       // it but still correct, and a repository that cannot be cloned must not
       // stop a ticket from being analysed at all — `discoverRepo` already
       // treats a missing session as degraded and carries on.
-      const workspacePath = await checkoutOrNull(env, secrets, run);
+      const checkout = await checkoutOrNull(env, secrets, run);
+      // The branch the PR targets and the clone starts from: the rule's repo
+      // map when it named one, else whatever the repository checked out.
+      const targetBranch = run.targetBranch ?? checkout?.branch ?? null;
       await runContext.create({
         runId: run.runId,
         ticket: run.ticket,
@@ -243,7 +246,8 @@ export async function main(): Promise<void> {
         variantId,
         engineerVariantId,
         templateVersion,
-        ...(workspacePath === null ? {} : { workspacePath }),
+        ...(checkout === null ? {} : { workspacePath: checkout.path }),
+        ...(targetBranch === null ? {} : { targetBranch }),
       });
     },
   });
@@ -1572,8 +1576,8 @@ function notifyChannels(deployment: { selection: { notify: { driver: string; con
 async function checkoutOrNull(
   env: DeployEnv,
   secrets: SecretPort,
-  run: { runId: string; appId: string | null },
-): Promise<string | null> {
+  run: { runId: string; appId: string | null; targetBranch?: string | null },
+): Promise<{ path: string; branch: string | null } | null> {
   // An analysis-only run has no repository to check out — that is the
   // binding's deliberate shape, not a clone failure, so there is nothing to
   // warn about either. The skip is journaled by the workflow itself at 3ö.
@@ -1585,10 +1589,12 @@ async function checkoutOrNull(
   try {
     const token = tokenRef === undefined || tokenRef === "" ? undefined : await secrets.get(tokenRef);
     const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
-    return await prepareWorkspace({
+    const branch = run.targetBranch?.trim() ?? "";
+    const path = await prepareWorkspace({
       repo: run.appId,
       root,
       runId: run.runId,
+      ...(branch === "" ? {} : { branch }),
       /**
        * Blank is ABSENT, not a host.
        *
@@ -1602,6 +1608,7 @@ async function checkoutOrNull(
       ...(scmHost === "" ? {} : { host: scmHost }),
       ...(token === undefined ? {} : { token }),
     });
+    return { path, branch: await checkedOutBranch(path) };
   } catch (error) {
     console.warn(
       `[maestro] ${run.runId}: depo çekilemedi, analiz depoyu görmeden yapılacak — ${String(error)}`,

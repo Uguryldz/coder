@@ -30,12 +30,12 @@ function rule(over: Partial<ListeningRuleRecord> = {}): ListeningRuleRecord {
   };
 }
 
-async function deliver(h: Awaited<ReturnType<typeof harness>>, ticket: string): Promise<{ appId?: string } | undefined> {
+async function deliver(h: Awaited<ReturnType<typeof harness>>, ticket: string): Promise<{ appId?: string; targetBranch?: string } | undefined> {
   const before = h.runs.started.length;
   const delivery = signed(issueEvent({ ticket, issueType: "Hata" }));
   const response = await h.app.inject({ method: "POST", url: "/webhooks/jira", headers: delivery.headers, payload: delivery.payload });
   expect(response.statusCode).toBe(202);
-  return h.runs.started[before] as { appId?: string } | undefined;
+  return h.runs.started[before] as { appId?: string; targetBranch?: string } | undefined;
 }
 
 describe("intake — repo map picks the application", () => {
@@ -52,13 +52,16 @@ describe("intake — repo map picks the application", () => {
     h.work.putFields("UGURPAY-1", { customfield_10234: " krediler " });
     const started = await deliver(h, "UGURPAY-1");
     expect(started?.appId).toBe("bank/kredi");
+    expect(started?.targetBranch).toBe("develop");
     expect(h.work.fieldReads).toEqual([{ ticket: "UGURPAY-1", fieldIds: ["customfield_10234"] }]);
   });
 
   it("keeps the project binding's app when the value matches no row", async () => {
     const h = await harness({ listeningRules: [rule()] });
     h.work.putFields("UGURPAY-2", { customfield_10234: "Sigorta" });
-    expect((await deliver(h, "UGURPAY-2"))?.appId).toBe("ugurpay");
+    const started = await deliver(h, "UGURPAY-2");
+    expect(started?.appId).toBe("ugurpay");
+    expect(started?.targetBranch).toBeUndefined();
   });
 
   it("keeps the project binding's app when the rule has no map, and reads no field", async () => {

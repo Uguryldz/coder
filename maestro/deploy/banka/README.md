@@ -456,6 +456,7 @@ seçilen uygulamaya gider; tetik zaten depoyu ayırıyorsa, ör. iş tipi ya da 
    hedef dal (ortam) yazılır.
 3. Uygulamalar önce "Proje bağlama"da kayıtlı olmalı; eşlemedeki uygulama kimliği oradaki kimliktir.
 
+Satırdaki **hedef dal** koşuya taşınır: klon o daldan açılır ve PR o dala açılır; boşsa deponun kendi varsayılan dalı.
 Eşleşmeyen değer ya da boş alan proje bağlamasının uygulamasına gider (eskisi gibi). `/ai-assign`
 komutu eşlemeyi ezer. Webhook, tarama ve "Kuralı test et" aynı eşlemeyi okur; koşu günlüğünde
 `depo eşlemesi İş Ailesi = "Krediler" → bank/kredi` satırı görünür. Migration 0029 kolonu ekler.

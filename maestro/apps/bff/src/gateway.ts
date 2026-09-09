@@ -106,6 +106,12 @@ export interface StartRunInput {
   analystVariantId?: string;
   /** {@link analystVariantId}'nin mühendislik (kod yazan) tarafı. */
   engineerVariantId?: string;
+  /**
+   * The branch the work lands on (environment): the listening rule's repo map
+   * names it per row ("Krediler → bank/kredi, develop"). Absent = the
+   * repository's own default branch, read from the clone at run start.
+   */
+  targetBranch?: string;
 }
 
 export interface SignalWithStartInput extends StartRunInput {

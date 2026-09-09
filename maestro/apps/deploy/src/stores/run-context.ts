@@ -327,6 +327,8 @@ export interface NewRun {
    * analysed.
    */
   readonly workspacePath?: string;
+  /** The PR's target (environment) branch; absent = "" until something sets it. */
+  readonly targetBranch?: string;
 }
 
 /**
@@ -554,6 +556,9 @@ export class PrismaRunContextStore implements RunContextStore {
           ...(input.workspacePath === undefined
             ? {}
             : { workspacePath: input.workspacePath, workspacePresent: true }),
+          ...(input.targetBranch === undefined || input.targetBranch.trim() === ""
+            ? {}
+            : { targetBranch: input.targetBranch.trim() }),
         },
       });
     } catch (error) {

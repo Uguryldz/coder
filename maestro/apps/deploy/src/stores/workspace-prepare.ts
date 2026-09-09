@@ -36,6 +36,22 @@ export interface CloneRequest {
   /** Bearer token for a private repository; omitted for a public one. */
   readonly token?: string | undefined;
   readonly timeoutMs?: number;
+  /** Branch to check out (the rule's environment branch); absent = the repo's default. */
+  readonly branch?: string;
+}
+
+/** A git branch name we are willing to put on a command line. */
+const BRANCH_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,200}$/;
+
+/** The branch a checkout is on (`git rev-parse --abbrev-ref HEAD`), or null when unreadable. */
+export async function checkedOutBranch(path: string): Promise<string | null> {
+  try {
+    const { stdout } = await run("git", ["-C", path, "rev-parse", "--abbrev-ref", "HEAD"], { timeout: 10_000 });
+    const name = stdout.trim();
+    return name === "" || name === "HEAD" ? null : name;
+  } catch {
+    return null;
+  }
 }
 
 export class WorkspaceError extends Error {
@@ -59,6 +75,10 @@ export async function prepareWorkspace(request: CloneRequest): Promise<string> {
     throw new WorkspaceError(`repository must be "owner/repo", got "${repo}"`);
   }
   const path = join(root, runId);
+  const branch = request.branch?.trim() ?? "";
+  if (branch !== "" && (!BRANCH_NAME.test(branch) || branch.includes(".."))) {
+    throw new WorkspaceError(`branch name "${branch}" is not a plain git ref`);
+  }
 
   if (await isCheckout(path)) return path;
 
@@ -95,6 +115,7 @@ export async function prepareWorkspace(request: CloneRequest): Promise<string> {
     "--depth",
     "1",
     "--single-branch",
+    ...(branch === "" ? [] : ["--branch", branch]),
     `https://${host}/${repo}.git`,
     path,
   ];

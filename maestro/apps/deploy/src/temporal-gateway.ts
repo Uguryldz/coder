@@ -88,6 +88,8 @@ export interface OpenedRun {
   readonly analystVariantId: string | null;
   /** {@link analystVariantId}'nin mühendislik (kod yazan) tarafı. */
   readonly engineerVariantId: string | null;
+  /** The environment branch the rule's repo map named, or null = the repo's default. */
+  readonly targetBranch: string | null;
 }
 
 export class TemporalRunGateway implements RunGateway {
@@ -122,6 +124,7 @@ export class TemporalRunGateway implements RunGateway {
       // sorgulaması gerekir. `appId` de tam olarak böyle taşınıyor.
       analystVariantId: input.analystVariantId ?? null,
       engineerVariantId: input.engineerVariantId ?? null,
+      targetBranch: input.targetBranch ?? null,
     });
   }
 

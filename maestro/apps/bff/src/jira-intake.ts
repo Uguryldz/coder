@@ -259,6 +259,8 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     // what the workflow reads as "no application", and `StartRunInput` has no
     // null to give it.
     ...(appId === null || appId === undefined ? {} : { appId }),
+    // The repo map's row may also name the environment branch (see gateway.ts).
+    ...(mapped?.targetBranch === undefined ? {} : { targetBranch: mapped.targetBranch }),
     mode: binding.mode,
     dataClass: binding.dataClass,
     ...(flowDecision.flow === null ? {} : { flow: flowDecision.flow }),

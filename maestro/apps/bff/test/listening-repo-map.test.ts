@@ -1,5 +1,6 @@
 import type { LightMyRequestResponse } from "fastify";
 import { describe, expect, it } from "vitest";
+import { resolveRepoMapEntry } from "../src/listening-store.js";
 import { auth, harness, type Harness } from "./helpers.js";
 
 async function admin(h: Harness): Promise<string> {
@@ -57,5 +58,49 @@ describe("listening rule repo map", () => {
     expect(
       (await post(h, "/studio/listening-rules", token, { ...BASE, repoMap: { ...MAP, entries: [{ value: " ", appId: "x" }] } })).statusCode,
     ).toBe(400);
+  });
+});
+
+/**
+ * MULTI-VALUE FIELDS — labels, checkboxes, components.
+ *
+ * `fieldText` renders a ticket's `["maestro", "app:ekstre"]` as the single
+ * string "maestro, app:ekstre", and a mapping row holds ONE value. Comparing
+ * the joined text against one row matched nothing, which silently disabled
+ * every map built on labels — the field that, on a live instance, already
+ * carried the repository names (`app:ekstre-uretim-servisi`).
+ *
+ * So the ticket's value is read as a LIST: split on commas, and a row matches
+ * when it equals any member. A single-valued field is a list of one and keeps
+ * behaving exactly as before.
+ */
+describe("resolveRepoMapEntry with multi-value fields", () => {
+  const map = {
+    field: "labels",
+    fieldName: "Etiketler",
+    entries: [
+      { value: "app:ekstre-uretim-servisi", appId: "bank/ekstre" },
+      { value: "app:kart", appId: "bank/kart" },
+    ],
+  };
+
+  it("matches one label out of a comma-joined list", () => {
+    expect(resolveRepoMapEntry(map, "maestro, app:ekstre-uretim-servisi")?.appId).toBe("bank/ekstre");
+    expect(resolveRepoMapEntry(map, "app:kart, maestro-bekliyor")?.appId).toBe("bank/kart");
+  });
+
+  it("still matches a single value, with or without stray spaces", () => {
+    expect(resolveRepoMapEntry(map, "app:kart")?.appId).toBe("bank/kart");
+    expect(resolveRepoMapEntry(map, "  app:kart  ")?.appId).toBe("bank/kart");
+  });
+
+  it("matches case-insensitively in Turkish", () => {
+    const tr = { field: "customfield_1", entries: [{ value: "İş Ailesi", appId: "bank/x" }] };
+    expect(resolveRepoMapEntry(tr, "iş ailesi")?.appId).toBe("bank/x");
+  });
+
+  it("returns null when no member matches", () => {
+    expect(resolveRepoMapEntry(map, "maestro, maestro-bekliyor")).toBeNull();
+    expect(resolveRepoMapEntry(map, undefined)).toBeNull();
   });
 });

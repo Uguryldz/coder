@@ -213,6 +213,24 @@ export function repoMapValueMatches(a: string, b: string): boolean {
 }
 
 /**
+ * A ticket's field value, as the MEMBERS an operator would recognise.
+ *
+ * `fieldText` renders a multi-value field (labels, checkboxes, components) as
+ * "maestro, app:ekstre" — one string, comma-joined. A mapping row holds a
+ * single value, so comparing the joined text against a row matched nothing and
+ * every map built on labels silently fell through to the project binding.
+ *
+ * Splitting on commas is safe here: Jira label values cannot contain one, and
+ * an option value that does is still matched whole by the first member below
+ * (the unsplit string is kept as a candidate).
+ */
+function valueMembers(fieldValue: string): readonly string[] {
+  const whole = fieldValue.trim();
+  const parts = whole.split(",").map((part) => part.trim()).filter((part) => part !== "");
+  return parts.length <= 1 ? [whole] : [whole, ...parts];
+}
+
+/**
  * `field: "*"` — no Jira field at all: EVERY ticket of this rule goes to the
  * one application in the first row. The "this rule → this repo" mapping an
  * operator wants when the trigger (issue type, label, status) already tells
@@ -230,7 +248,8 @@ export function resolveRepoMapEntry(
 ): RepoMap["entries"][number] | null {
   if (isFixedRepoMap(map)) return map.entries[0] ?? null;
   if (fieldValue === undefined) return null;
-  return map.entries.find((entry) => repoMapValueMatches(entry.value, fieldValue)) ?? null;
+  const members = valueMembers(fieldValue);
+  return map.entries.find((entry) => members.some((member) => repoMapValueMatches(entry.value, member))) ?? null;
 }
 
 /**

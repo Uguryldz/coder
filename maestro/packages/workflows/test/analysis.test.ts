@@ -37,6 +37,15 @@ describe("discoverRepo (step 3ö, M100)", () => {
     expect(fakes.patches).toContainEqual({ resumeToken: "session-9" });
   });
 
+  it("a driver that cannot open a session is written to the journal, not swallowed", async () => {
+    // No agentSession scripted: the fake throws, as the gateway does without an agent runner.
+    const fakes = makeFakes();
+    expect(await discoverRepo(fakes.deps, "PAY-101", "pay")).toEqual({ files: 0, modules: [] });
+    const entry = fakes.journalStore.entries.find((e) => e.title === "repo keşfi yapılamadı");
+    expect(entry?.detail).toContain("pay deposu açılamadı");
+    expect(entry?.detail).toContain("CLAUDE_BIN_PATH");
+  });
+
   it("a degraded gateway costs the discovery, not the ticket", async () => {
     const fakes = makeFakes({
       agentSession: () => ({ status: "degraded", messageKey: "llm.degraded", dataClass: "gizli" }),

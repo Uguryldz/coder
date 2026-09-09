@@ -120,7 +120,18 @@ async function agentSessionOrNull(
 ): Promise<Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>> | null> {
   try {
     return await openSession(deps, run, ticket, appId);
-  } catch {
+  } catch (error) {
+    // CANLI BULGU: the agent driver was not wired (no CLAUDE_BIN_PATH) and every
+    // run answered "0 dosya" without a word — the operator could not tell a
+    // repository that was read from one that was never opened. The journal
+    // says it now, and says what to fix.
+    await record(deps, run, {
+      kind: "discovery",
+      actor: "system",
+      title: "repo keşfi yapılamadı",
+      detail: `${appId} deposu açılamadı: ${String(error).slice(0, 300)} — analiz keşifsiz (kod karşılığı ve plan olmadan) devam ediyor. Ajan sürücüsü (CLAUDE_BIN_PATH) ve depo erişimini kontrol edin.`,
+      key: "discovery:unavailable",
+    });
     return null;
   }
 }

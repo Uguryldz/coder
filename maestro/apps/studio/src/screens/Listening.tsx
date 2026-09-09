@@ -196,6 +196,28 @@ export function ListeningScreen(): ReactNode {
     jiraFields.data !== undefined && !jiraFields.data.ok ? jiraFields.data.messageKey : undefined;
   // Seçili projeye bağlı uygulamalar — eşleme satırlarının hedefi.
   const appOptions = routing.data?.projects?.find((p) => p.projectKey === draft.projectKey)?.apps ?? [];
+  // SCM bağlantılarındaki TÜM depolar: operatör projeye henüz bağlamadığı bir
+  // depoyu da seçebilir; kural kaydedilirken o depo projeye kaydedilir.
+  const scmRepos = useQuery({
+    queryKey: ["listening-scm-repos"],
+    enabled: draft.repoMapOn,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const { connections } = await api.get<{ connections: readonly { id: string }[] }>("/onboarding/scm-connections", { signal });
+      const names = new Set<string>();
+      for (const connection of connections) {
+        const result = await api
+          .get<{ ok: boolean; repos?: readonly { fullName: string }[] }>(
+            `/onboarding/scm-repos?connectionId=${encodeURIComponent(connection.id)}`,
+            { signal },
+          )
+          .catch(() => ({ ok: false as const }));
+        if (result.ok) for (const repo of result.repos ?? []) names.add(repo.fullName);
+      }
+      return [...names].sort();
+    },
+  });
+  const scmRepoOptions = (scmRepos.data ?? []).filter((name) => !appOptions.includes(name));
 
   const matchValues = useQuery({
     queryKey: ["jira-match-values", jiraConnId, draft.projectKey, draft.matchKind],
@@ -298,8 +320,25 @@ export function ListeningScreen(): ReactNode {
       return;
     }
     const body = bodyFromDraft(draft, priority);
-    if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
-    else create.mutate(body);
+    // Depo eşlemesinde projeye henüz kayıtlı olmayan bir depo seçildiyse önce
+    // projeye kaydedilir (varsayılan profil: Linux/Node — imaj Java/Maven'ı da
+    // taşır); kayıt başarısızsa kural kaydedilmez.
+    const unknownRepos = [...new Set((body.repoMap?.entries ?? []).map((e) => e.appId))].filter(
+      (appId) => !appOptions.includes(appId) && scmRepoOptions.includes(appId),
+    );
+    void (async () => {
+      for (const adoRepo of unknownRepos) {
+        try {
+          await api.post<{ appId: string }>("/onboarding/apps", { jiraProject: body.projectKey, adoRepo, platform: "linux-node" });
+          void queryClient.invalidateQueries({ queryKey: ["routing"] });
+        } catch (error) {
+          toast.show("error", t(messageKeyOf(error)));
+          return;
+        }
+      }
+      if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
+      else create.mutate(body);
+    })();
   };
 
   /** Tablodan forma: kural olduğu gibi yüklenir, form ekrana getirilir. */
@@ -506,6 +545,7 @@ export function ListeningScreen(): ReactNode {
           fieldValueOptions={fieldValueOptions}
           fieldValuesSource={fieldValuesSource}
           appOptions={appOptions}
+          scmRepoOptions={scmRepoOptions}
           analystOptions={analystOptions}
           engineerOptions={engineerOptions}
           onSubmit={onSubmit}

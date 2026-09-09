@@ -64,6 +64,8 @@ interface SeedAnswer {
   readonly body?: object;
   /** Bound projects `/routing` answers with; default one bound OPS project. */
   readonly projects?: object[];
+  /** SCM repositories the connection lists (repo map picker). */
+  readonly scmRepos?: string[];
 }
 
 /** A fetch stub that records POSTs and answers GET with the seeded rule. */
@@ -86,6 +88,15 @@ function stubFetch(rules: object[], seedAnswer: SeedAnswer = {}): ReturnType<typ
     }
     if (u.includes("/studio/listening-rules") && method === "PUT") {
       return Response.json({ rule: { ...SEED } }, { status: 200 });
+    }
+    if (u.includes("/onboarding/scm-connections")) {
+      return Response.json({ connections: seedAnswer.scmRepos === undefined ? [] : [{ id: "gh", kind: "github", displayName: "GitHub" }] });
+    }
+    if (u.includes("/onboarding/scm-repos")) {
+      return Response.json({ ok: true, repos: (seedAnswer.scmRepos ?? []).map((fullName) => ({ id: fullName, fullName })) });
+    }
+    if (u.includes("/onboarding/apps") && method === "POST") {
+      return Response.json({ appId: "bank/kredi", projectKey: "OPS" }, { status: 201 });
     }
     // The assignee field pre-fills from a tested Jira connection's botAccountId.
     if (u.includes("/onboarding/jira-connections")) {
@@ -956,5 +967,33 @@ describe("repo map (depo eşlemesi)", () => {
         entries: [{ value: "Krediler", appId: "bank/kredi", targetBranch: "develop" }],
       });
     });
+  });
+});
+
+describe("repo map — repositories straight from the SCM connection", () => {
+  it("offers unbound SCM repos in the picker and registers the chosen one before saving the rule", async () => {
+    const fn = stubFetch([], { scmRepos: ["bank/kredi", "bank/kart"] });
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    // Fixed mode: the SCM repos appear as a select, marked as not yet registered.
+    const select = await screen.findByLabelText("Uygulama (depo)");
+    await screen.findByRole("option", { name: "bank/kredi · SCM · kaydedilecek" });
+    await userEvent.selectOptions(select, "bank/kredi");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    await waitFor(() => {
+      const calls = fn.mock.calls.map((c) => `${(c[1] as RequestInit)?.method ?? "GET"} ${String(c[0])}`);
+      const register = calls.findIndex((c) => c.startsWith("POST") && c.includes("/onboarding/apps"));
+      const save = calls.findIndex((c) => c.startsWith("POST") && c.includes("/studio/listening-rules") && !c.includes("/test"));
+      expect(register).toBeGreaterThanOrEqual(0);
+      expect(save).toBeGreaterThan(register);
+    });
+    const registerCall = fn.mock.calls.find((c) => String(c[0]).includes("/onboarding/apps"));
+    expect(JSON.parse((registerCall![1] as RequestInit).body as string)).toEqual({ jiraProject: "OPS", adoRepo: "bank/kredi", platform: "linux-node" });
   });
 });

@@ -47,6 +47,8 @@ export interface RuleFormProps {
   readonly fieldValuesSource: string | undefined;
   /** Seçili projeye bağlı uygulama kimlikleri — eşleme satırlarındaki hedef. */
   readonly appOptions: readonly string[];
+  /** SCM bağlantılarındaki, projeye henüz kayıtlı olmayan depolar — seçilirse kaydedilir. */
+  readonly scmRepoOptions: readonly string[];
   readonly onSubmit: () => void;
   readonly onTest: () => void;
   readonly onCancelEdit: () => void;
@@ -661,7 +663,7 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
         )}
         {draft.repoMapOn && draft.repoMapMode === "fixed" && (
           <div className="scr-grid scr-grid--2">
-            {props.appOptions.length > 0 ? (
+            {props.appOptions.length + props.scmRepoOptions.length > 0 ? (
               <Select
                 label={t("listening.repomap.fixed_app")}
                 value={rows[0]?.appId ?? ""}
@@ -669,7 +671,8 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
                 placeholder={t("listening.repomap.app_choose")}
                 options={[
                   ...props.appOptions.map((id) => ({ value: id, label: id })),
-                  ...((rows[0]?.appId ?? "") !== "" && !props.appOptions.includes(rows[0]!.appId) ? [{ value: rows[0]!.appId, label: rows[0]!.appId }] : []),
+                  ...props.scmRepoOptions.map((id) => ({ value: id, label: `${id} · ${t("listening.repomap.app_scm_suffix")}` })),
+                  ...((rows[0]?.appId ?? "") !== "" && !props.appOptions.includes(rows[0]!.appId) && !props.scmRepoOptions.includes(rows[0]!.appId) ? [{ value: rows[0]!.appId, label: rows[0]!.appId }] : []),
                 ]}
                 hint={t("listening.repomap.fixed_app_hint")}
               />
@@ -742,7 +745,7 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
                       placeholder={t("listening.repomap.value_placeholder")}
                     />
                   )}
-                  {props.appOptions.length > 0 ? (
+                  {props.appOptions.length + props.scmRepoOptions.length > 0 ? (
                     <Select
                       label={t("listening.repomap.app")}
                       value={row.appId}
@@ -750,7 +753,8 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
                       placeholder={t("listening.repomap.app_choose")}
                       options={[
                         ...props.appOptions.map((id) => ({ value: id, label: id })),
-                        ...(row.appId !== "" && !props.appOptions.includes(row.appId) ? [{ value: row.appId, label: row.appId }] : []),
+                        ...props.scmRepoOptions.map((id) => ({ value: id, label: `${id} · ${t("listening.repomap.app_scm_suffix")}` })),
+                        ...(row.appId !== "" && !props.appOptions.includes(row.appId) && !props.scmRepoOptions.includes(row.appId) ? [{ value: row.appId, label: row.appId }] : []),
                       ]}
                     />
                   ) : (

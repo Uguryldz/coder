@@ -61,6 +61,8 @@ export interface VolumeRequest {
   mountPath: string;
   /** False for a read-only mount: nothing writes to it, so nothing must own it. */
   writable: boolean;
+  /** Host directory the volume binds to (`workspace.bindHostRoot`); absent = plain named volume. */
+  bindDevice?: string;
 }
 
 export class SandboxProvisioner {
@@ -91,12 +93,18 @@ export class SandboxProvisioner {
     // lands on the configured (encrypted, M31) volume driver, carries the
     // labels the M65 sweeper needs — and is OWNED by the sandbox uid, or the
     // job cannot clone, build or write its Agent SDK session (M30).
+    const bindRoot = this.#deps.config.workspace.bindHostRoot;
+    if (bindRoot !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.job.workspaceKey)) {
+      throw new RunnerConfigError(`workspace key "${request.job.workspaceKey}" cannot name a host directory`);
+    }
     await this.ensureVolume({
       name: workspaceVolume,
       labels: {
         [`${labelPrefix}.workspace-key`]: request.job.workspaceKey,
         [`${labelPrefix}.layer`]: "workspace",
+        ...(bindRoot === undefined ? {} : { [`${labelPrefix}.bind`]: "true" }),
       },
+      ...(bindRoot === undefined ? {} : { bindDevice: `${bindRoot.replace(/\/+$/, "")}/${request.job.workspaceKey}` }),
       image,
       mountPath: WORKSPACE_MOUNT_PATH,
       writable: true,
@@ -173,12 +181,18 @@ export class SandboxProvisioner {
           ...(request.writable ? { [`${config.labelPrefix}.owner`]: owner } : {}),
           ...request.labels,
         },
-        config.workspace.volumeDriver,
-        config.workspace.volumeOptions,
+        // A bound workspace is a `local` volume pointed at the host directory
+        // (`o=bind`): the sandbox sees the tree the agent edited, not a copy.
+        request.bindDevice === undefined ? config.workspace.volumeDriver : "local",
+        request.bindDevice === undefined
+          ? config.workspace.volumeOptions
+          : { type: "none", o: "bind", device: request.bindDevice },
       );
     } else if (!request.writable || existing.labels[`${config.labelPrefix}.owner`] === owner) {
       return false;
     }
+    // Never chown a bound host tree: that rewrites the operator's clone.
+    if (request.bindDevice !== undefined) return false;
     if (!request.writable || !config.workspace.prepareOwnership) return false;
     await this.#prepare(request, owner);
     return true;

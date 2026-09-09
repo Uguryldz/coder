@@ -521,6 +521,27 @@ gerekirse düzenleyip yayınlayın. Plancı ve doğrulayıcı ajanları güncell
 (migration 0028 `planner` rolünü açar). Tamlık kontrolü kuralları `packages/agent-roles/data/prompts.tr.json`,
 şablon bölüm talimatları Studio "Analiz şablonu".
 
+### 5.9 Sandbox (geliştirici ve doğrulayıcı için çalıştırıcı imajı)
+
+Analist ve plancı sandbox istemez. **Geliştirici** ve **doğrulayıcı** ister: kod konteynerde
+derlenir/test edilir (`RUNNER_IMAGE_LINUX`, digest sabitli). İmaj `deploy/docker/Dockerfile.runner-linux`
+ile üretilir (Node 22, git, JDK 17, Maven, Python, make/g++; model yok). Üç değişken birlikte
+ayarlanır:
+
+```
+WORKSPACE_ROOT="/srv/maestro/workspaces"            # BFF/worker'ın klon kökü
+RUNNER_WORKSPACE_HOST_ROOT="/srv/maestro/workspaces" # aynı ağacın Docker KONAĞINDAKİ yolu
+RUNNER_SANDBOX_USER="1000:1000"                      # klonun sahibi
+RUNNER_IMAGE_LINUX="docker.io/uguryldz/maestro-runner-linux@sha256:c328e21013a4e4cc419b9c98f2b2a79f73a4a41ef35a1e8c72325140d99218e1"
+```
+
+Ajan (Claude CLI) konakta koşar ve klonu düzenler; sandbox aynı klonu bağlı hacimden görür,
+`git diff` ile korumalı yolları denetler ve doğrulama komutlarını koşar. `RUNNER_WORKSPACE_HOST_ROOT`
+yoksa sandbox boş bir hacimde çalışır ve hiçbir şeyi doğrulamaz. Ağ: `RUNNER_NETWORK` verilmezse
+sandbox ağsızdır (Maven bağımlılığı indiremez); banka için iç ağ + proxy tanımlayın.
+Ajan sürücüsü için `CLAUDE_BIN_PATH` (Claude Code koltuğu) gerekir; yalnız gpt-oss ile depoyu
+gezen ajanlar çalışmaz.
+
 ## 6. Sessiz arızalar — belirtiye göre teşhis
 
 ### 6.0 Önce bunu çalıştırın: tek dosyalık tanı raporu

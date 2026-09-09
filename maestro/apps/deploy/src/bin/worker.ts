@@ -409,9 +409,20 @@ export function buildTurnRunner(env: DeployEnv, db: Db, ports: TurnPorts): Built
      * named opt-in rather than a default, and why production refuses it
      * outright no matter what this variable says.
      */
-    ...(env.RUNNER_ALLOW_UNSAFE === undefined
+    ...(env.RUNNER_ALLOW_UNSAFE === undefined && env.RUNNER_SANDBOX_USER === undefined
       ? {}
-      : { sandbox: { allowUnsafeProfile: env.RUNNER_ALLOW_UNSAFE.split(",").map((entry) => entry.trim()) } }),
+      : {
+          sandbox: {
+            ...(env.RUNNER_ALLOW_UNSAFE === undefined
+              ? {}
+              : { allowUnsafeProfile: env.RUNNER_ALLOW_UNSAFE.split(",").map((entry) => entry.trim()) }),
+            ...(env.RUNNER_SANDBOX_USER === undefined ? {} : { user: env.RUNNER_SANDBOX_USER }),
+          },
+        }),
+    // The sandbox must see the clone the agent edits (see env.ts).
+    ...(env.RUNNER_WORKSPACE_HOST_ROOT === undefined
+      ? {}
+      : { workspace: { bindHostRoot: env.RUNNER_WORKSPACE_HOST_ROOT } }),
   };
   const fleet = createDockerLinuxRunner(runnerConfig);
 

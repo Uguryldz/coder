@@ -85,7 +85,18 @@ export async function discoverRepo(
    * produced, and the alternative — failing the run — turns a degraded
    * analysis into no analysis at all.
    */
-  if (run.workspacePath.trim() === "") return { files: 0, modules: [] };
+  if (run.workspacePath.trim() === "") {
+    // CANLI BULGU: no WORKSPACE_ROOT → no clone → discovery answered "0 dosya"
+    // and nobody could tell it never looked. Say so.
+    await record(deps, run, {
+      kind: "discovery",
+      actor: "system",
+      title: "repo keşfi yapılamadı",
+      detail: `${appId} için çalışma alanı yok (klon açılmamış): BFF'te WORKSPACE_ROOT ayarlı mı ve depo erişimi var mı kontrol edin — analiz keşifsiz (kod karşılığı ve plan olmadan) devam ediyor.`,
+      key: "discovery:no-workspace",
+    });
+    return { files: 0, modules: [] };
+  }
 
   /**
    * A session backend that cannot run is the same answer as one that refuses.

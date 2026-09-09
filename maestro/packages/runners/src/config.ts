@@ -176,6 +176,18 @@ export const WorkspaceConfig = z.object({
    * fail, never escalate, so it is safe to expose.
    */
   prepareOwnership: z.boolean().default(true),
+  /**
+   * ── Konak klonuna BAĞLI çalışma alanı ────────────────────────────────────
+   * The agent (Claude CLI on the worker host) edits the run's clone under
+   * `WORKSPACE_ROOT/<runId>`; the sandbox probes and builds a volume named
+   * after the same key. With a plain named volume those are two different
+   * trees and the sandbox verifies an EMPTY directory. Set this to the
+   * Docker HOST path of that root and each workspace volume becomes a bind
+   * of `<bindHostRoot>/<workspaceKey>` — the very tree the agent changed.
+   * Ownership preparation is skipped for a bound tree (chown would rewrite
+   * the host clone): `sandbox.user` must match the clone's owner.
+   */
+  bindHostRoot: z.string().regex(/^\/[^\0]+$/, "bindHostRoot must be an absolute host path").optional(),
 });
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfig>;
 

@@ -37,6 +37,14 @@ describe("discoverRepo (step 3ö, M100)", () => {
     expect(fakes.patches).toContainEqual({ resumeToken: "session-9" });
   });
 
+  it("a run with no workspace (no WORKSPACE_ROOT) says so in the journal instead of '0 dosya'", async () => {
+    const fakes = makeFakes({ context: { workspacePath: "" } });
+    expect(await discoverRepo(fakes.deps, "PAY-101", "pay")).toEqual({ files: 0, modules: [] });
+    const entry = fakes.journalStore.entries.find((e) => e.title === "repo keşfi yapılamadı");
+    expect(entry?.detail).toContain("WORKSPACE_ROOT");
+    expect(fakes.recorded.llm).toHaveLength(0);
+  });
+
   it("a driver that cannot open a session is written to the journal, not swallowed", async () => {
     // No agentSession scripted: the fake throws, as the gateway does without an agent runner.
     const fakes = makeFakes();

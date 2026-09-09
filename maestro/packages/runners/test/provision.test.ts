@@ -250,3 +250,28 @@ describe("the dependency cache has a defined write path (M31 layer ①)", () => 
     expect(rigged.matching("/containers/create")).toHaveLength(3);
   });
 });
+
+describe("bound workspaces (workspace.bindHostRoot)", () => {
+  it("creates the workspace volume as a bind of <root>/<workspaceKey> and skips the chown container", async () => {
+    const rigged = rig({}, { ...TEST_CONFIG, workspace: { bindHostRoot: "/srv/maestro-workspaces" } });
+    const lease = await rigged.runner.acquire("linux-node");
+    await rigged.runner.runSession(lease, TEST_JOB);
+    const created = rigged.matching("/volumes/create").map((r) => JSON.parse(r.body ?? "{}") as Record<string, unknown>);
+    const workspace = created.find((v) => {
+      const labels = (v["Labels"] ?? {}) as Record<string, string>;
+      return Object.entries(labels).some(([key, value]) => key.endsWith(".layer") && value === "workspace");
+    });
+    expect(workspace?.["Driver"]).toBe("local");
+    expect(workspace?.["DriverOpts"]).toEqual({ type: "none", o: "bind", device: "/srv/maestro-workspaces/UGURPAY-1042" });
+    const labels = workspace?.["Labels"] as Record<string, string>;
+    expect(Object.entries(labels).some(([key, value]) => key.endsWith(".bind") && value === "true")).toBe(true);
+    expect(rigged.matching("/containers/create").filter((r) => r.path.includes("-prep-"))).toHaveLength(0);
+  });
+
+  it("refuses a workspace key that could escape the root", async () => {
+    const rigged = rig({}, { ...TEST_CONFIG, workspace: { bindHostRoot: "/srv/ws" } });
+    const lease = await rigged.runner.acquire("linux-node");
+    // The key is refused before it can name a directory (RunnerKeyError from the key check).
+    await expect(rigged.runner.runSession(lease, { ...TEST_JOB, workspaceKey: "../etc" })).rejects.toThrow(/key/);
+  });
+});

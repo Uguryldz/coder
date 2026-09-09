@@ -184,6 +184,14 @@ export const DeployEnvSchema = z.object({
    */
   RUNNER_NETWORK: optionalSetting(),
   /**
+   * Docker HOST path of `WORKSPACE_ROOT`. Set it and every sandbox workspace
+   * becomes a bind of the run's clone (the tree the agent edits) instead of an
+   * empty named volume — without it the sandbox verifies nothing real.
+   */
+  RUNNER_WORKSPACE_HOST_ROOT: optionalSetting(),
+  /** `uid:gid` the sandbox runs as; with a bound workspace it must own the clone (default 10001:10001). */
+  RUNNER_SANDBOX_USER: optionalSetting(),
+  /**
    * Sandbox hardening an operator has deliberately switched off, comma-separated
    * (`readonly-rootfs`, `no-new-privileges`, `cap-add`, `seccomp`,
    * `direct-egress`).

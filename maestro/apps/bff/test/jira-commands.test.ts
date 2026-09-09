@@ -334,6 +334,50 @@ describe("Jira command path (M105)", () => {
       expect(started?.statusMap).toEqual(RULE.statusMap);
     });
 
+    /**
+     * TAKIM YÖNETİMLİ (next-gen) PROJEDE ELLE BAŞLATMA.
+     *
+     * ── CANLI ÖLÇÜM ─────────────────────────────────────────────────────────
+     * O tür projede JQL adları çözmüyor (`issuetype = "Görev"` → 0 ticket,
+     * `issuetype = 10008` → 14) ve panel kurala İD kaydediyor. `/ai-start`
+     * yolunun bildiği tek şey bir ticket anahtarı; alanları
+     * `classifyingFields` snapshot'tan okuyor. Snapshot tip KİMLİĞİNİ
+     * taşımasaydı, İD tutan kural elle başlatılan hiçbir ticket'ı
+     * eşleştiremez ve koşu — hiçbir hata vermeden — kurulum varsayılanına
+     * düşerdi. `defaultFlow` bilerek `analiz`, yani kuralın akışından FARKLI:
+     * ikisi ancak böyle ayırt edilebilir.
+     */
+    it("takım yönetimli projede İD tutan kuralı elle başlatmada da eşleştirir", async () => {
+      const h = await harness({
+        listeningRules: [{ ...RULE, matchValue: "10008" }],
+        deps: { config: { actorDomain: "ugurbank.local", defaultFlow: "analiz" } },
+      });
+      // Snapshot ADI "Görev", kural ise `10008` tutuyor: eşleşme ancak KİMLİK
+      // üzerinden olabilir, ada düşen bir karşılaştırma bu ticket'ı elerdi.
+      h.work.putTicket({ ...SNAP, issueType: "Görev", issueTypeId: "10008" });
+
+      const response = await deliver(h, "/ai-start");
+
+      expect(response.json()).toMatchObject({ accepted: true, command: "ai-start" });
+      const started = h.runs.started[0] as { flow?: unknown; statusMap?: unknown } | undefined;
+      expect(started?.flow).toBe("duzeltme");
+      // Kuralın panosu da geliyor: OPS-57'yi hareketsiz bırakan kayıp tam buydu.
+      expect(started?.statusMap).toEqual(RULE.statusMap);
+    });
+
+    /**
+     * REGRESYON: kimliksiz bir snapshot, adla yazılmış kuralla eşleşmeye
+     * devam eder. Kurulumların çoğunluğu bu ve hiçbiri bozulmamalı.
+     */
+    it("kimliksiz snapshot, adlı kuralla eşleşmeye devam eder", async () => {
+      const h = await commandHarness();
+
+      await deliver(h, "/ai-start");
+
+      const started = h.runs.started[0] as { flow?: unknown } | undefined;
+      expect(started?.flow).toBe("duzeltme");
+    });
+
     it("classifies /ai-assign too — naming an application does not name the flow", async () => {
       const h = await commandHarness();
 

@@ -13,6 +13,9 @@ describe("issue mapping", () => {
       key: "UGURPAY-501",
       projectKey: "UGURPAY",
       issueType: "Story",
+      // Adın yanında Jira'nın kendi kimliği: takım yönetimli bir projede
+      // dinleme kuralı bu değeri tutar (`flow-decision.ts`).
+      issueTypeId: "10001",
       reporter: "ayse.kaya",
       assignee: "mert.demir",
       components: ["auth-service", "web-frontend"],
@@ -32,6 +35,24 @@ describe("issue mapping", () => {
     expect(snapshot.parentKey).toBeNull();
     expect(snapshot.components).toEqual([]);
     expect(TicketSnapshot.parse(snapshot).labels).toEqual(["maestro"]);
+  });
+
+  /**
+   * Kimliği olmayan bir belge kimlik UYDURMAZ: alan sözleşmede opsiyonel ve
+   * yokluğu "bu belge söylemedi" demek. `""` ya da `null` yazmak, ölçülmemiş
+   * bir şeyi ölçülmüş gibi göstermek olurdu — ve `NonEmpty` bir boş dizeyi
+   * zaten reddederdi.
+   */
+  it("omits issueTypeId when the payload carries no issue-type id", () => {
+    const raw = structuredClone(fixture("issue-get")) as {
+      fields: { issuetype: Record<string, unknown> };
+    };
+    delete raw.fields.issuetype["id"];
+    const snapshot = mapIssueToSnapshot(raw);
+
+    expect(snapshot.issueType).toBe("Story");
+    expect(snapshot.issueTypeId).toBeUndefined();
+    expect(() => TicketSnapshot.parse(snapshot)).not.toThrow();
   });
 
   it("reports which field is missing instead of dying inside zod", () => {

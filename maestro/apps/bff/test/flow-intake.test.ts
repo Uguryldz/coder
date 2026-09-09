@@ -31,7 +31,15 @@ function rule(over: Partial<ListeningRuleRecord> = {}): ListeningRuleRecord {
 /** Deliver a signed issue event and return the run input the engine received. */
 async function deliver(
   h: Harness,
-  options: { ticket: string; issueType?: string; status?: string; assignee?: string },
+  options: {
+    ticket: string;
+    issueType?: string;
+    status?: string;
+    assignee?: string;
+    /** Takım yönetimli projede kuralın tuttuğu değerler — Jira'nın `{id, name}`i. */
+    issueTypeId?: string;
+    statusId?: string;
+  },
 ): Promise<{ flow?: unknown; ticket: string } | undefined> {
   const before = h.runs.started.length;
   const delivery = signed(issueEvent(options));
@@ -432,5 +440,94 @@ describe("the analysis-only binding — no application, and only analiz may run"
     // In words, not a null a SIEM query would drop: "which app?" must be
     // answerable with "none — ticket-text analysis" months later.
     expect(entry?.meta?.["appId"]).toBe("yok (analiz, ticket metninden)");
+  });
+});
+
+/**
+ * TAKIM YÖNETİMLİ (next-gen) PROJE — uçtan uca.
+ *
+ * ── CANLI ÖLÇÜM ─────────────────────────────────────────────────────────────
+ * Bağlı OPS projesi `style: "next-gen"` ve orada JQL adları çözmüyor:
+ * `issuetype = "Görev"` sıfır ticket döner, `issuetype = 10008` on dört. Panel
+ * bu yüzden o projede kurala İD kaydediyor.
+ *
+ * Buradaki testin `flow-decision.test.ts`'e EKLENDİĞİ şey zincirin kendisi:
+ * teslimat → `work-events.ts` (kimliği okuyor mu?) → `WorkEvent` → webhook
+ * rotası (geçiriyor mu?) → `IntakeRequest` → `decideFlow` → `matches()`. O
+ * zincirin herhangi bir halkası kimliği düşürürse kural, kendisini bulan
+ * ticket'ı eşleştiremez — ve arıza SESSİZDİR: koşu başlar, ama yanlış akışla.
+ */
+describe("intake — takım yönetimli projede kural İD tutar", () => {
+  it("İD tutan kural, İD taşıyan bir teslimatı eşleştirir", async () => {
+    const h = await harness({
+      listeningRules: [
+        rule({ ruleId: "lr_id", matchKind: "issuetype", matchValue: "10008", flowType: "analiz" }),
+      ],
+    });
+
+    const started = await deliver(h, {
+      ticket: "UGURPAY-40",
+      issueType: "Görev",
+      issueTypeId: "10008",
+    });
+
+    // Kural eşleşti: akış kuralın söylediği, kurulum varsayılanı DEĞİL.
+    expect(started?.flow).toBe("analiz");
+  });
+
+  it("statü kuralı da İD ile uçtan uca eşleşir", async () => {
+    const h = await harness({
+      listeningRules: [
+        rule({ ruleId: "lr_st", matchKind: "status", matchValue: "10004", flowType: "analiz" }),
+      ],
+    });
+
+    const started = await deliver(h, {
+      ticket: "UGURPAY-41",
+      status: "Yapılacaklar",
+      statusId: "10004",
+    });
+
+    expect(started?.flow).toBe("analiz");
+  });
+
+  /**
+   * ARIZANIN KENDİSİ, uçtan uca: kimliksiz teslimat.
+   *
+   * Ticket'ın ADI kuralın hedeflediği tipin adı ve yine de eşleşmiyor —
+   * çünkü kural `10008` tutuyor. Bu, üretici uçlar kimliği doldurmadan önceki
+   * hâl ve testin kırılması, zincirde bir halkanın kimliği düşürdüğünü değil,
+   * `matches()`'in ada düştüğünü gösterirdi.
+   */
+  it("İD tutan kural, kimliksiz bir teslimatı eşleştirmez — ada DÜŞMEZ", async () => {
+    const h = await harness({
+      listeningRules: [
+        rule({ ruleId: "lr_id", matchKind: "issuetype", matchValue: "10008", flowType: "analiz" }),
+      ],
+    });
+
+    const started = await deliver(h, { ticket: "UGURPAY-42", issueType: "Görev" });
+
+    expect(started?.flow).not.toBe("analiz");
+  });
+
+  /**
+   * REGRESYON: şirket yönetimli proje, kimlik taşısa bile ADLA eşleşmeye
+   * devam eder. Kurulumların ezici çoğunluğu bu ve hiçbiri bozulmamalı.
+   */
+  it("adlı kural, kimlik de taşıyan bir teslimatta ADLA eşleşmeye devam eder", async () => {
+    const h = await harness({
+      listeningRules: [
+        rule({ ruleId: "lr_ad", matchKind: "issuetype", matchValue: "Hata", flowType: "duzeltme" }),
+      ],
+    });
+
+    const started = await deliver(h, {
+      ticket: "UGURPAY-43",
+      issueType: "Hata",
+      issueTypeId: "10008",
+    });
+
+    expect(started?.flow).toBe("duzeltme");
   });
 });

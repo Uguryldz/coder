@@ -133,3 +133,67 @@ describe("karar dökümü (.md)", () => {
     expect(md).toContain("yalnızca yorum modu");
   });
 });
+
+/**
+ * KİMLİKLER DÖKÜMDE — "neden eşleşmedi" sorusunun aranacağı yer burası.
+ *
+ * ── CANLI ÖLÇÜM ─────────────────────────────────────────────────────────────
+ * Takım yönetimli (next-gen) bir projede JQL adları çözmüyor
+ * (`issuetype = "Görev"` → 0 ticket, `issuetype = 10008` → 14) ve panel kurala
+ * İD kaydediyor. Döküm yalnız adları gösterseydi, operatör tabloda
+ * `tip = "Görev"` görüp kuralında `10008` yazdığı için sorunu bulamazdı:
+ * karşılaştırılan iki değerden biri ekranda hiç yazmıyor olurdu.
+ */
+describe("karar dökümü — Jira kimlikleri", () => {
+  it("tabloda tip ve statü kimliklerini ADLARIN yanında gösterir", () => {
+    const md = decisionLogMarkdown(
+      facts({ issueType: "Görev", issueTypeId: "10008", status: "Yapılacaklar", statusId: "10004" }),
+      AT,
+    );
+    expect(md).toContain("10008");
+    expect(md).toContain("10004");
+    // Adlar KAYBOLMUYOR: kimlik adın yerine geçmiyor.
+    expect(md).toContain("Görev");
+    expect(md).toContain("Yapılacaklar");
+  });
+
+  /**
+   * OKUNMAMIŞ KİMLİK, bir tahmin değil bir ÖLÇÜM olarak yazılır — ve tek
+   * başına "hiçbir kural eşleşmedi" sonucunu açıklar. Bu satır olmadan
+   * operatör kuralın DOĞRU olduğunu görüp yolu aramaya hiç başlamaz.
+   */
+  it("kimliği okunmamış bir yolu 'neden eşleşmedi' bölümünde adlandırır", () => {
+    const md = decisionLogMarkdown(
+      facts({
+        issueType: "Görev",
+        status: "Yapılacaklar",
+        decision: { flow: null, reason: "none" },
+      }),
+      AT,
+    );
+    expect(md).toContain("Neden hiçbir kural eşleşmedi");
+    expect(md).toContain("issuetype.id");
+    expect(md).toContain("status.id");
+    expect(md).toMatch(/next-gen|[Tt]akım yönetimli/u);
+  });
+
+  /** Kural EŞLEŞTİYSE kimlik uyarısı yazılmaz — açıklanacak bir şey yok. */
+  it("kural eşleştiğinde kimlik uyarısı yazmaz", () => {
+    const md = decisionLogMarkdown(facts({ issueType: "Görev" }), AT);
+    expect(md).not.toContain("issuetype.id` bu yolda okunmadı");
+  });
+
+  /**
+   * TİPİ HİÇ OKUNMAMIŞ bir yol için kimlik uyarısı EKLENMEZ: yukarıdaki
+   * "tipi bilinmiyor" maddesi operatörü zaten aynı yere gönderiyor ve ikinci
+   * bir madde, doğru cevabı gürültüye boğardı.
+   */
+  it("tipi hiç okunmamış yolda ayrıca kimlik uyarısı eklemez", () => {
+    const md = decisionLogMarkdown(
+      facts({ issueType: null, status: null, decision: { flow: null, reason: "none" } }),
+      AT,
+    );
+    expect(md).toContain("TİPİ bu yolda bilinmiyor");
+    expect(md).not.toContain("TİP KİMLİĞİ");
+  });
+});

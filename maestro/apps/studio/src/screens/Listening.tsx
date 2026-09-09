@@ -32,6 +32,7 @@ import {
   type SweepStatus,
   type VariantOption,
   type JiraFieldOption,
+  type MatchValueOption,
 } from "./listening/types.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { invalidateRun } from "./shared/runs.ts";
@@ -297,13 +298,35 @@ export function ListeningScreen(): ReactNode {
       (draft.matchKind === "status" || draft.matchKind === "issuetype"),
     retry: false,
     queryFn: ({ signal }) =>
-      api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(
-        matchValuesUrl(draft.matchKind),
-        { signal },
-      ),
+      api.get<{
+        ok: boolean;
+        values?: readonly string[];
+        options?: readonly MatchValueOption[];
+        teamManaged?: boolean;
+        degradedKey?: string;
+      }>(matchValuesUrl(draft.matchKind), { signal }),
   });
   const valueOptions = matchValues.data?.ok ? (matchValues.data.values ?? []) : [];
   const valuesDegradedKey = matchValues.data?.ok ? matchValues.data.degradedKey : undefined;
+  /**
+   * WHICH FORM THE RULE SAVES — the id or the name.
+   *
+   * On a TEAM-MANAGED Jira project ("next-gen"), JQL matches issue types and
+   * statuses by ID ONLY. Measured live on OPS, same ticket set:
+   *
+   *   issuetype = "Görev" -> 0 tickets     issuetype = 10008 -> 14 tickets
+   *   status in ("Yapılacaklar") -> 0      status = 10004    -> 12 tickets
+   *
+   * Nothing errors; the sweep just comes back empty forever. So on such a
+   * project the value STORED is the id, while the operator keeps reading the
+   * name. A company-managed project keeps saving the name, which is what has
+   * always worked there.
+   *
+   * `?? false` is the fail-soft: a BFF that could not read the project resource
+   * reports nothing, and "nothing" must mean today's behaviour.
+   */
+  const valueIdOptions = matchValues.data?.ok ? (matchValues.data.options ?? []) : [];
+  const valuesTeamManaged = (matchValues.data?.ok ? matchValues.data.teamManaged : false) ?? false;
 
   // Projenin STATÜ adları — statü kapısı ve durum eşlemesi için, `matchKind`den
   // bağımsız (iş tipine tetiklenen kural da ticket'ı statülerde gezdirir).
@@ -608,6 +631,8 @@ export function ListeningScreen(): ReactNode {
           botAccountId={botAccountId}
           jiraConnections={connections}
           valueOptions={valueOptions}
+          valueIdOptions={valueIdOptions}
+          valuesTeamManaged={valuesTeamManaged}
           valuesDegradedKey={valuesDegradedKey}
           statusOptions={statusOptions}
           jiraFields={jiraFieldOptions}

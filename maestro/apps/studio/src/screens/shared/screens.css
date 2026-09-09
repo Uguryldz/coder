@@ -1042,3 +1042,255 @@
   border-radius: 0 0 8px 8px;
   background: var(--panel);
 }
+
+/* ── Dinleme kuralı tahtası (listening/RuleBoard) ────────────────────────── */
+
+/* Tahta + ayar paneli. Tasarımın iki sütunu; dar ekranda alt alta, çünkü bir
+ * pano ile bir formu 900px'e yan yana sıkıştırmak ikisini de okunmaz yapar. */
+.scr-board-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .scr-board-wrap {
+    grid-template-columns: 1fr;
+  }
+}
+
+.scr-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* "Bağlı olmayan ajanlar" havuzu — adımından çıkarılan rozetler burada bekler. */
+.scr-board__palette {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 12.5px;
+}
+
+.scr-board__pool {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Sütun başlıkları: solda statü, sağda adım. Şeritlerle aynı ızgara. */
+.scr-board__heads,
+.scr-board__lane {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.scr-board__heads span {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Bir Jira statüsü ve o statünün hizasındaki adımlar. */
+.scr-board__status {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.scr-board__status b {
+  font-size: 13.5px;
+}
+
+.scr-board__status i {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* Hiçbir statüye eşlenmemiş adımlar — kesikli, çünkü ticket orada taşınmaz. */
+.scr-board__status--none {
+  border-style: dashed;
+  background: var(--panel2);
+}
+
+.scr-board__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.scr-board__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+/* Onay kapısı: insan karar verir, ve renk yalnız o durumu anlatır. */
+.scr-board__step--gate {
+  border-color: var(--amber);
+  background: var(--amber-bg);
+}
+
+/* Bu kuralda kapalı — kapı seçilmedi ya da ajan adımdan çıkarıldı. */
+.scr-board__step--off {
+  border-style: dashed;
+  background: var(--panel2);
+  color: var(--muted);
+}
+
+.scr-board__step--sel {
+  outline: 2px solid var(--blue);
+  outline-offset: -1px;
+}
+
+/* Adımın adı bir düğme: tıklanınca ayarları yan panelde açılır. */
+.scr-board__pick {
+  flex: 1;
+  min-width: 140px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.scr-board__pick b {
+  font-weight: 560;
+  font-size: 13px;
+}
+
+/* Ajan rozeti — sürüklenebilir, ve yalnız kendi adımına geri takılabilir. */
+.scr-board__agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border: 1px solid var(--purple);
+  border-radius: 6px;
+  background: var(--purple-bg);
+  color: var(--purple);
+  font-size: 11.5px;
+  font-weight: 560;
+  white-space: nowrap;
+  cursor: grab;
+}
+
+.scr-board__agent:active {
+  cursor: grabbing;
+}
+
+.scr-board__rm {
+  padding: 0 0 0 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+.scr-board__rm:hover {
+  opacity: 1;
+}
+
+/* Ajanın çıkarıldığı boşluk — geri bırakma hedefi. */
+.scr-board__slot {
+  padding: 2px 7px;
+  border: 1px dashed var(--border2);
+  border-radius: 6px;
+  color: var(--faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.scr-board__slot--over {
+  border-color: var(--blue);
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+.scr-board__who {
+  color: var(--amber);
+  font-size: 11.5px;
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+/* Kapı aç/kapa — GERÇEK bir ayar: `draft.gateSteps`e yazar. */
+.scr-board__gate {
+  padding: 2px 8px;
+  border: 1px solid var(--amber);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+.scr-board__gate--off {
+  border-color: var(--border2);
+  border-style: dashed;
+  color: var(--faint);
+}
+
+.scr-board__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.scr-board__legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.scr-board__sw {
+  width: 18px;
+  height: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.scr-board__sw--bot {
+  border-color: var(--purple);
+  background: var(--purple-bg);
+}
+
+.scr-board__sw--human {
+  border-color: var(--amber);
+  background: var(--amber-bg);
+}
+
+.scr-board__sw--off {
+  border-style: dashed;
+  background: var(--panel2);
+}

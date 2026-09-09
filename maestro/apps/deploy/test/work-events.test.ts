@@ -59,6 +59,57 @@ describe("jiraWorkEventReader", () => {
     expect(event.status).toBeUndefined();
     expect(event.issueType).toBeUndefined();
     expect(event.assignee).toBeUndefined();
+    // Kimlikler de aynı kurala tabi: yokluk uydurulmaz.
+    expect(event.statusId).toBeUndefined();
+    expect(event.issueTypeId).toBeUndefined();
+  });
+
+  /**
+   * TAKIM YÖNETİMLİ (next-gen) PROJE — teslimatın taşıdığı KİMLİKLER.
+   *
+   * ── CANLI ÖLÇÜM ───────────────────────────────────────────────────────────
+   * O tür projede JQL adları çözmüyor (`issuetype = "Görev"` → 0 ticket,
+   * `issuetype = 10008` → 14) ve panel kurala İD kaydediyor. `matches()` de
+   * sayısal bir `matchValue`'yu ticket'ın İD'siyle karşılaştırıyor. Teslimat
+   * `fields.status.id` ile `fields.issuetype.id`'yi zaten taşıyor; okumamak,
+   * o projedeki her kuralın bir tek ticket'ı bile eşleştirememesi demekti.
+   */
+  it("takım yönetimli projede kimlikleri de okur — adların YANINDA", () => {
+    const event = jiraWorkEventReader().read(
+      issue({
+        labels: [],
+        status: { id: "10004", name: "Yapılacaklar" },
+        issuetype: { id: "10008", name: "Görev" },
+      }),
+    );
+
+    expect(event.statusId).toBe("10004");
+    expect(event.issueTypeId).toBe("10008");
+    // Kimlik adın YERİNE geçmiyor: şirket yönetimli projede eşleşme hâlâ ada
+    // düşüyor ve o yol bozulmamalı.
+    expect(event.status).toBe("Yapılacaklar");
+    expect(event.issueType).toBe("Görev");
+  });
+
+  /**
+   * Jira kimliği SAYI olarak da gönderebiliyor, kuralın `matchValue`'su ise
+   * her zaman metin. Çevirmeyen bir okuyucuda eşleşme `10008 === "10008"`
+   * üzerinden sessizce düşerdi.
+   */
+  it("sayı olarak gelen kimliği metne çevirir", () => {
+    const event = jiraWorkEventReader().read(
+      issue({ labels: [], issuetype: { id: 10008, name: "Görev" } }),
+    );
+    expect(event.issueTypeId).toBe("10008");
+  });
+
+  /** Adı olan ama kimliği olmayan alan: ad okunur, kimlik UYDURULMAZ. */
+  it("adı olup kimliği olmayan alanda kimliği yazmaz", () => {
+    const event = jiraWorkEventReader().read(
+      issue({ labels: [], issuetype: { name: "Görev" } }),
+    );
+    expect(event.issueType).toBe("Görev");
+    expect(event.issueTypeId).toBeUndefined();
   });
 
   it("treats an unassigned ticket and a whitespace-only name as unassigned", () => {

@@ -128,6 +128,34 @@ describe("jqlFor", () => {
     }
   });
 
+  /**
+   * CANLI BULGU (`style: "next-gen"`): takım yönetimli bir projede AD ile
+   * daraltma boş döner — `issuetype = "Görev"` sıfır, `issuetype = 10008` on
+   * dört ticket. Hata vermez, yani `issuetype`/`status` kuralları sessizce hiç
+   * eşleşmiyordu. Rakamdan ibaret bir değer artık TIRNAKSIZ geçer; rakamdan
+   * ibaret bir statü ADI olmadığı için ad ile çalışan kurulumlar etkilenmez.
+   */
+  it("sayısal id'yi tırnaksız yazar — takım yönetimli projede ad çalışmıyor", () => {
+    expect(jqlFor({ ...RULE, matchKind: "issuetype", matchValue: "10008" })).toBe(
+      'project = "OPS" AND assignee in (712020:bot) AND issuetype = 10008',
+    );
+    expect(jqlFor({ ...RULE, matchKind: "status", matchValue: "10004" })).toBe(
+      'project = "OPS" AND assignee in (712020:bot) AND status = 10004',
+    );
+  });
+
+  it("statü kapısında da id tırnaksız, ad tırnaklı — ikisi bir arada", () => {
+    expect(
+      jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*", allowedStatuses: ["10004", "İNCELEMEDE"] }),
+    ).toBe('project = "OPS" AND assignee in (712020:bot) AND status in (10004, "İNCELEMEDE")');
+  });
+
+  it("adı olan değer tırnaklı kalır — mevcut kurulumların davranışı değişmez", () => {
+    expect(jqlFor({ ...RULE, matchKind: "issuetype", matchValue: "Görev" })).toBe(
+      'project = "OPS" AND assignee in (712020:bot) AND issuetype = "Görev"',
+    );
+  });
+
   it("sadece boşluktan oluşan statü adlarını atar, sorguyu bozmaz", () => {
     expect(
       jqlFor({ ...RULE, matchKind: "assigned", matchValue: "*", allowedStatuses: ["  ", "Analiz"] }),
@@ -797,6 +825,98 @@ describe("discoverOnce", () => {
    */
   it("keeps an empty label list distinct from an absent one", () => {
     expect(classifyingFieldsOf({ key: "OPS-91", fields: { labels: [] } })).toEqual({ labels: [] });
+  });
+
+  /**
+   * TAKIM YÖNETİMLİ (next-gen) PROJE — turun okuduğu şey kuralın tuttuğu şey.
+   *
+   * ── CANLI ÖLÇÜM ───────────────────────────────────────────────────────────
+   * `issuetype = "Görev"` → 0 ticket, `issuetype = 10008` → 14. `jqlFor` bu
+   * yüzden sayısal değeri tırnaksız yazıyor; yani tur, ticket'ı KİMLİKLE
+   * buluyor. Ama `classifyingFieldsOf` kimliği okumazsa `matches()` ada düşer
+   * ve tur, KENDİ sorgusunun getirdiği ticket'ı kendi kuralıyla eşleştiremez —
+   * arıza "hiç bulunmuyor"dan "bulunuyor ama işlenmiyor"a taşınır, ikisi de
+   * sessiz. Bu test tam olarak o gidiş-dönüşü kapatıyor.
+   *
+   * Arama zaten `fields: ["status", "issuetype", ...]` istiyor ve Jira ikisini
+   * de `{id, name}` olarak döndürüyor: kimlik ek bir istek DEĞİL.
+   */
+  it("takım yönetimli projede kimliği okur ve İD tutan kuralla eşleşir", () => {
+    const issue = {
+      key: "OPS-41",
+      fields: {
+        status: { id: "10004", name: "Yapılacaklar" },
+        issuetype: { id: "10008", name: "Görev" },
+        assignee: { accountId: "712020:bot" },
+        labels: [],
+      },
+    };
+
+    const handed = classifyingFieldsOf(issue);
+    expect(handed.issueTypeId).toBe("10008");
+    expect(handed.statusId).toBe("10004");
+    // Adlar da AYNEN duruyor: kimlik, adın yerine geçmiyor — şirket yönetimli
+    // projede eşleşme hâlâ ada düşüyor.
+    expect(handed.issueType).toBe("Görev");
+    expect(handed.status).toBe("Yapılacaklar");
+
+    for (const [matchKind, matchValue] of [
+      ["issuetype", "10008"],
+      ["status", "10004"],
+    ] as const) {
+      const decided = flowDecisionFor(
+        [
+          {
+            ruleId: "lr_id",
+            projectKey: "OPS",
+            assigneeAccountId: "",
+            matchKind,
+            matchValue,
+            flowType: "analiz",
+            priority: 100,
+            enabled: true,
+            analystVariantId: null,
+            engineerVariantId: null,
+            statusMap: null,
+          },
+        ] as never,
+        {
+          projectKey: "OPS",
+          status: handed.status ?? null,
+          statusId: handed.statusId ?? null,
+          issueType: handed.issueType ?? null,
+          issueTypeId: handed.issueTypeId ?? null,
+          assignee: handed.assignee ?? null,
+          labels: handed.labels ?? null,
+        } as never,
+        null,
+      );
+      expect(decided.reason, `${matchKind} = ${matchValue} eşleşmedi`).toBe("rule");
+    }
+  });
+
+  /**
+   * Jira kimliği SAYI olarak da gönderebiliyor; kuralın `matchValue`'su ise
+   * her zaman metin. Okuyucu ikisini aynı yere getirmezse eşleşme
+   * `10008 === "10008"` üzerinden sessizce düşerdi.
+   */
+  it("sayı olarak gelen kimliği de metne çevirir", () => {
+    const handed = classifyingFieldsOf({
+      key: "OPS-42",
+      fields: { issuetype: { id: 10008, name: "Görev" } },
+    });
+    expect(handed.issueTypeId).toBe("10008");
+  });
+
+  /** Kimliksiz belge kimlik UYDURMAZ — yokluk "sormadık" demeye devam eder. */
+  it("kimlik taşımayan bir belgede kimlik alanlarını hiç yazmaz", () => {
+    const handed = classifyingFieldsOf({
+      key: "OPS-43",
+      fields: { issuetype: { name: "Görev" }, status: { name: "Yapılacaklar" } },
+    });
+    expect(handed).toEqual({ issueType: "Görev", status: "Yapılacaklar" });
+    expect("issueTypeId" in handed).toBe(false);
+    expect("statusId" in handed).toBe(false);
   });
 
   it("never sends a search for a rule with no bot account", async () => {

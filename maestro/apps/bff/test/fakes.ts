@@ -148,6 +148,12 @@ export class FakeWorkEventReader implements WorkEventReader {
       // driving a real signed delivery exercises the real payload shape.
       const status = nameOf(event.issue, "status");
       const issueType = nameOf(event.issue, "issuetype");
+      // KİMLİKLER de gerçek okuyucudaki gibi: takım yönetimli (next-gen) bir
+      // projede kural ADI değil İD'yi tutar ve eşleşme id üzerinden yapılır
+      // (`flow-decision.ts`). Fake bunları düşürseydi, o projeyi anlatan uçtan
+      // uca test gerçek zinciri değil fake'in eksiğini ölçerdi.
+      const statusId = idOf(event.issue, "status");
+      const issueTypeId = idOf(event.issue, "issuetype");
       const assignee = assigneeOf(event.issue);
       // Değişikliği yapan kişi — gerçek okuyucu (`apps/deploy/src/work-events.ts`)
       // ile aynı şekilde taşınıyor, çünkü netleştirme yeniden girişinin yankı
@@ -158,7 +164,9 @@ export class FakeWorkEventReader implements WorkEventReader {
         ticketKey: event.ticketKey,
         labels: labelsOf(event.issue),
         ...(status === null ? {} : { status }),
+        ...(statusId === null ? {} : { statusId }),
         ...(issueType === null ? {} : { issueType }),
+        ...(issueTypeId === null ? {} : { issueTypeId }),
         ...(assignee === null ? {} : { assignee }),
         ...(actor === null ? {} : { actor }),
       };
@@ -182,6 +190,14 @@ function nameOf(issue: unknown, field: string): string | null {
   const value = fieldsOf(issue)?.[field];
   const name = typeof value === "object" && value !== null ? (value as Record<string, unknown>)["name"] : undefined;
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
+}
+
+/** `<field>.id` — `nameOf`'un kimlik ikizi, gerçek okuyucudaki ile aynı gramer. */
+function idOf(issue: unknown, field: string): string | null {
+  const value = fieldsOf(issue)?.[field];
+  const id = typeof value === "object" && value !== null ? (value as Record<string, unknown>)["id"] : undefined;
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return typeof id === "string" && id.trim().length > 0 ? id.trim() : null;
 }
 
 function assigneeOf(issue: unknown): string | null {

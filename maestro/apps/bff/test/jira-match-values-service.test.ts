@@ -112,7 +112,7 @@ describe("listJiraMatchValues — Cloud issue types", () => {
     const { fetch, urls } = router([CREATEMETA, STATUSES]);
     const result = await listJiraMatchValues(conn(), "OPS", "issuetype", TOKEN, fetch);
 
-    expect(result).toEqual({ ok: true, values: ["Görev", "Hata", "Hikaye", "Subtask"] });
+    expect(result).toMatchObject({ ok: true, values: ["Görev", "Hata", "Hikaye", "Subtask"] });
     // The names the statuses payload would have produced must NOT appear: those
     // are the ones that silently match no ticket.
     if (result.ok) {
@@ -120,8 +120,10 @@ describe("listJiraMatchValues — Cloud issue types", () => {
       expect(result.values).not.toContain("Bug");
       expect(result.values).not.toContain("Story");
     }
-    // Only createmeta was called — the fallback costs a request we did not need.
+    // Only the project probe (which form to save) and createmeta were called —
+    // the /statuses fallback costs a request we did not need.
     expect(urls).toEqual([
+      "https://ugurbank.atlassian.net/rest/api/3/project/OPS",
       "https://ugurbank.atlassian.net/rest/api/3/issue/createmeta/OPS/issuetypes",
     ]);
   });
@@ -132,7 +134,7 @@ describe("listJiraMatchValues — Cloud issue types", () => {
       STATUSES,
     ]);
     const result = await listJiraMatchValues(conn(), "OPS", "issuetype", TOKEN, fetch);
-    expect(result).toEqual({ ok: true, values: ["Görev", "Hata", "Hikaye", "Subtask"] });
+    expect(result).toMatchObject({ ok: true, values: ["Görev", "Hata", "Hikaye", "Subtask"] });
   });
 
   it("presents Basic auth with the stored email and never puts the token in the URL", async () => {
@@ -166,8 +168,9 @@ describe("listJiraMatchValues — degradation when createmeta cannot answer", ()
       expect(result.degraded).toBe(true);
       expect(result.degradedKey).toBe("onboard.jira.issuetypes_degraded");
     }
-    expect(urls).toHaveLength(2);
-    expect(urls[1]).toContain("/project/OPS/statuses");
+    // project probe, createmeta, then the fallback.
+    expect(urls).toHaveLength(3);
+    expect(urls[2]).toContain("/project/OPS/statuses");
   });
 
   it("falls back when createmeta 404s (an older deployment without the endpoint)", async () => {
@@ -224,11 +227,14 @@ describe("listJiraMatchValues — status branch (regression lock)", () => {
     const { fetch, urls } = router([CREATEMETA, STATUSES]);
     const result = await listJiraMatchValues(conn(), "OPS", "status", TOKEN, fetch);
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       values: ["Yapılacaklar", "Devam Ediyor", "Tamam", "İNCELEMEDE"],
     });
-    expect(urls).toEqual(["https://ugurbank.atlassian.net/rest/api/3/project/OPS/statuses"]);
+    expect(urls).toEqual([
+      "https://ugurbank.atlassian.net/rest/api/3/project/OPS",
+      "https://ugurbank.atlassian.net/rest/api/3/project/OPS/statuses",
+    ]);
     // No `degraded` flag ever appears on the status path.
     expect(result.ok && "degraded" in result).toBe(false);
   });
@@ -260,19 +266,141 @@ describe("listJiraMatchValues — Data Center stays on its verified source", () 
     };
     const result = await listJiraMatchValues(conn({ kind: "jira_dc" }), "OPS", "issuetype", TOKEN, spy);
 
-    expect(result).toEqual({ ok: true, values: ["Task", "Bug", "Story", "Subtask"] });
-    expect(urls).toEqual(["https://ugurbank.atlassian.net/rest/api/2/project/OPS/statuses"]);
-    expect(urls[0]).not.toContain("createmeta");
+    expect(result).toMatchObject({ ok: true, values: ["Task", "Bug", "Story", "Subtask"] });
+    expect(urls).toEqual([
+      "https://ugurbank.atlassian.net/rest/api/2/project/OPS",
+      "https://ugurbank.atlassian.net/rest/api/2/project/OPS/statuses",
+    ]);
+    expect(urls.join(" ")).not.toContain("createmeta");
     expect(calls[0]).toBe(`Bearer ${TOKEN}`);
   });
 
   it("reads DC statuses off the same endpoint, unchanged", async () => {
     const { fetch } = router([STATUSES]);
     const result = await listJiraMatchValues(conn({ kind: "jira_dc" }), "OPS", "status", TOKEN, fetch);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       values: ["Yapılacaklar", "Devam Ediyor", "Tamam", "İNCELEMEDE"],
     });
+  });
+});
+
+describe("listJiraMatchValues — team-managed projects need IDS, not names", () => {
+  /**
+   * Measured live on OPS (team-managed: `style: "next-gen"`, `simplified:
+   * true`), over one and the same ticket set:
+   *
+   *   issuetype = "Görev"        ->  0 tickets      issuetype = 10008 -> 14
+   *   status in ("Yapılacaklar") ->  0 tickets      status = 10004    -> 12
+   *
+   * No error, just an empty page. So the screen must be able to save the ID,
+   * which means the list has to carry it and the answer has to say which kind
+   * of project this is.
+   */
+  const NEXT_GEN = {
+    match: "/project/OPS",
+    status: 200,
+    body: { id: "10100", key: "OPS", name: "Ops", style: "next-gen", simplified: true },
+  };
+  const CLASSIC = {
+    match: "/project/OPS",
+    status: 200,
+    body: { id: "10100", key: "OPS", name: "Ops", style: "classic", simplified: false },
+  };
+  /** `/project/OPS` and `/project/OPS/statuses` both match "/project/OPS", so
+   *  the more specific route must be listed FIRST for the stub to serve it. */
+  const routes = (project: { match: string; status: number; body: unknown }) => [
+    CREATEMETA,
+    STATUSES,
+    project,
+  ];
+
+  it("reports teamManaged and the issue-type ids the JQL needs", async () => {
+    const { fetch } = router(routes(NEXT_GEN));
+    const result = await listJiraMatchValues(conn(), "OPS", "issuetype", TOKEN, fetch);
+    expect(result).toMatchObject({
+      ok: true,
+      teamManaged: true,
+      values: ["Görev", "Hata", "Hikaye", "Subtask"],
+      options: [
+        { name: "Görev", id: "10001" },
+        { name: "Hata", id: "10004" },
+        { name: "Hikaye", id: "10002" },
+        { name: "Subtask", id: "10005" },
+      ],
+    });
+  });
+
+  it("reports teamManaged and the STATUS ids off /project/{key}/statuses", async () => {
+    const { fetch } = router(routes(NEXT_GEN));
+    const result = await listJiraMatchValues(conn(), "OPS", "status", TOKEN, fetch);
+    expect(result).toMatchObject({
+      ok: true,
+      teamManaged: true,
+      options: [
+        { name: "Yapılacaklar", id: "10000" },
+        { name: "Devam Ediyor", id: "10001" },
+        { name: "Tamam", id: "10002" },
+        { name: "İNCELEMEDE", id: "10003" },
+      ],
+    });
+    // `values` keeps its old meaning for every caller that never asked for ids.
+    if (result.ok) expect(result.values).toEqual(["Yapılacaklar", "Devam Ediyor", "Tamam", "İNCELEMEDE"]);
+  });
+
+  it("says teamManaged:false for a company-managed project, ids still reported", async () => {
+    const { fetch } = router(routes(CLASSIC));
+    const issueTypes = await listJiraMatchValues(conn(), "OPS", "issuetype", TOKEN, fetch);
+    expect(issueTypes).toMatchObject({ ok: true, teamManaged: false });
+    if (issueTypes.ok) expect(issueTypes.options?.[0]).toEqual({ name: "Görev", id: "10001" });
+    const statuses = await listJiraMatchValues(conn(), "OPS", "status", TOKEN, fetch);
+    expect(statuses).toMatchObject({ ok: true, teamManaged: false });
+  });
+
+  it("accepts either marker alone — older Cloud sends only `simplified`", async () => {
+    const only = (body: unknown) => ({ match: "/project/OPS", status: 200, body });
+    for (const body of [{ simplified: true }, { style: "next-gen" }, { style: "NEXT-GEN" }]) {
+      const { fetch } = router([CREATEMETA, STATUSES, only(body)]);
+      expect(await listJiraMatchValues(conn(), "OPS", "status", TOKEN, fetch)).toMatchObject({
+        teamManaged: true,
+      });
+    }
+    for (const body of [{}, { style: "classic" }, { simplified: false }]) {
+      const { fetch } = router([CREATEMETA, STATUSES, only(body)]);
+      expect(await listJiraMatchValues(conn(), "OPS", "status", TOKEN, fetch)).toMatchObject({
+        teamManaged: false,
+      });
+    }
+  });
+
+  it("FAIL-SOFT: an unreadable project resource means company-managed, not a failed list", async () => {
+    // The project probe 404s (unmatched); the list must still come back.
+    const { fetch } = router([CREATEMETA, STATUSES]);
+    const result = await listJiraMatchValues(conn(), "OPS", "issuetype", TOKEN, fetch);
+    expect(result).toMatchObject({ ok: true, teamManaged: false });
+    if (result.ok) expect(result.values).toEqual(["Görev", "Hata", "Hikaye", "Subtask"]);
+  });
+
+  it("serialises a numeric id as a string, the form a rule stores", async () => {
+    const { fetch } = router([
+      { match: "/issue/createmeta/", status: 200, body: { issueTypes: [{ id: 10008, name: "Görev" }] } },
+      STATUSES,
+      NEXT_GEN,
+    ]);
+    const result = await listJiraMatchValues(conn(), "OPS", "issuetype", TOKEN, fetch);
+    if (result.ok) expect(result.options).toEqual([{ name: "Görev", id: "10008" }]);
+  });
+
+  it("degraded fallback still carries the group's issue-type id", async () => {
+    const { fetch } = router([
+      { match: "/issue/createmeta/", status: 403, body: {} },
+      { match: "/project/OPS/statuses", status: 200, body: [{ id: "10011", name: "Task", statuses: [] }] },
+      NEXT_GEN,
+    ]);
+    const result = await listJiraMatchValues(conn(), "OPS", "issuetype", TOKEN, fetch);
+    expect(result).toMatchObject({ ok: true, degraded: true, teamManaged: true });
+    // The GROUP's name may be the wrong localisation; its id is not.
+    if (result.ok) expect(result.options).toEqual([{ name: "Task", id: "10011" }]);
   });
 });
 

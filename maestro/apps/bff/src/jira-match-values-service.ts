@@ -32,14 +32,62 @@ import type { ConnectorFetch } from "./connection-service.js";
  * payload says `Task` and matches NOTHING, silently, forever. Issue types are
  * therefore read from `createmeta/{key}/issuetypes`, whose names agree with the
  * issue resource. One extra call, and only for `kind=issuetype`.
+ *
+ * ── THE SECOND TRAP: TEAM-MANAGED PROJECTS TAKE IDS, NOT NAMES ─────────────
+ *
+ * The names above are right for the WEBHOOK path (`flow-decision.ts` string
+ * compare), but the DISCOVERY path builds JQL, and on a team-managed project
+ * ("next-gen", `simplified: true`) JQL does not accept issue-type or status
+ * NAMES at all. It does not error either — it returns an empty page. Measured
+ * live on OPS over one and the same ticket set:
+ *
+ *   issuetype = "Görev"          ->  0 tickets
+ *   issuetype = 10008            -> 14 tickets
+ *   status in ("Yapılacaklar")   ->  0 tickets
+ *   status = 10004               -> 12 tickets
+ *
+ * So on such a project a rule whose `matchValue` is a NAME scans nothing,
+ * forever, with no error anywhere. `jira-discovery.ts`'s `jqlFor` already
+ * writes a numeric `matchValue` unquoted, so the fix is upstream of it: the
+ * operator must be able to SAVE the id. This module therefore reports, next to
+ * every value, the `id` Jira gave it (`options`), plus whether the project is
+ * team-managed (`teamManaged`) so the screen knows which of the two to store.
+ * `values` stays names-only for every existing caller.
  */
 
 export type MatchValueKind = "status" | "issuetype";
+
+/**
+ * One selectable value with BOTH of its identities: the `name` an operator
+ * reads and the `id` JQL wants on a team-managed project. `id` may be absent
+ * only where the source truly carries none (the degraded statuses fallback for
+ * issue types) — an option without an id is still pickable, it just cannot be
+ * saved in the id form.
+ */
+export interface MatchValueOption {
+  readonly name: string;
+  readonly id: string;
+}
 
 export type MatchValuesResult =
   | {
       ok: true;
       values: readonly string[];
+      /**
+       * The same values as `values`, each with its Jira id. Additive on
+       * purpose: `values` predates this and every existing caller still reads
+       * names off it, while a caller that must build JQL on a team-managed
+       * project reads the id from here.
+       */
+      options?: readonly MatchValueOption[];
+      /**
+       * `true` when Jira reports the project as team-managed ("next-gen" /
+       * `simplified`), where JQL matches issue types and statuses ONLY by id.
+       * The screen picks which form to store from this. Fail-soft: an
+       * unreadable project resource reports `false`, which is the behaviour
+       * that shipped before this field existed.
+       */
+      teamManaged?: boolean;
       /**
        * Set when the issue-type list came from the FALLBACK source, so the
        * names may be the wrong localisation (see the module comment). The
@@ -96,16 +144,27 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+/** `id` as a string, whether Jira serialised it as `"10008"` or `10008`. */
+function idOf(record: Record<string, unknown>): string {
+  const raw = record["id"];
+  if (typeof raw === "string") return raw.trim();
+  if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+  return "";
+}
+
 /**
- * Issue-type NAMES out of a createmeta issuetypes body.
+ * Issue-type NAME + ID pairs out of a createmeta issuetypes body.
  *
  * The array has lived under two keys across Jira versions — `issueTypes` on
  * current Cloud, `values` on the paginated shape — so both are accepted rather
  * than pinning to whichever one this site happens to serve today. Anything else
  * is `null`, which the caller reads as "this source did not answer" and
  * degrades on, not as "this project has no issue types".
+ *
+ * The id rides along because a team-managed project's JQL only matches on it
+ * (see the module comment's live measurement).
  */
-export function parseCreateMetaIssueTypes(raw: unknown): string[] | null {
+export function parseCreateMetaIssueTypeOptions(raw: unknown): MatchValueOption[] | null {
   const body = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
   if (body === null) return null;
   const list = Array.isArray(body["issueTypes"])
@@ -116,21 +175,27 @@ export function parseCreateMetaIssueTypes(raw: unknown): string[] | null {
   if (list === null) return null;
 
   const seen = new Set<string>();
-  const out: string[] = [];
+  const out: MatchValueOption[] = [];
   for (const entry of list) {
-    const name = str((typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : {})["name"]);
-    const trimmed = name?.trim();
+    const record = typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : {};
+    const trimmed = str(record["name"])?.trim();
     // Subtask types are KEPT — a rule may legitimately target one, same call
     // the adapter's `normalizeProjectIssueTypes` makes.
     if (trimmed !== undefined && trimmed.length > 0 && !seen.has(trimmed)) {
       seen.add(trimmed);
-      out.push(trimmed);
+      out.push({ name: trimmed, id: idOf(record) });
     }
   }
   // An empty-but-well-formed page is still an answer we refuse to trust over
   // the fallback: a project always has at least one creatable issue type, so
   // zero here means the caller lacks create permission, not that none exist.
   return out.length > 0 ? out : null;
+}
+
+/** Names-only view of the above — the shape this module exported before ids. */
+export function parseCreateMetaIssueTypes(raw: unknown): string[] | null {
+  const options = parseCreateMetaIssueTypeOptions(raw);
+  return options === null ? null : options.map((option) => option.name);
 }
 
 /** One GET with the flavour's auth; `null` on anything that is not a 2xx body. */
@@ -153,6 +218,35 @@ async function readJson(
   } catch {
     return { ok: false, reason: "body" };
   }
+}
+
+/**
+ * Is this project TEAM-MANAGED? `GET /project/{key}` reports it two ways —
+ * `style: "next-gen"` and `simplified: true` — and either alone is enough,
+ * because older Cloud builds carry only `simplified` while some payloads carry
+ * only `style`. It matters because a team-managed project's JQL matches issue
+ * types and statuses by id ONLY (see the module comment).
+ *
+ * FAIL-SOFT: any failure answers `false`. A company-managed project is what the
+ * whole feature assumed before this probe existed, and a read that could not be
+ * made must not silently flip every rule of a working deployment to ids.
+ */
+export function isTeamManagedProject(raw: unknown): boolean {
+  const body = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
+  if (body === null) return false;
+  return body["simplified"] === true || str(body["style"])?.trim().toLowerCase() === "next-gen";
+}
+
+async function readTeamManaged(
+  base: string,
+  projectKey: string,
+  kind: ConnectionKind,
+  headers: Record<string, string>,
+  fetchImpl: ConnectorFetch,
+): Promise<boolean> {
+  const api = kind === "jira_cloud" ? "/rest/api/3" : "/rest/api/2";
+  const read = await readJson(`${base}${api}/project/${encodeURIComponent(projectKey)}`, headers, fetchImpl);
+  return read.ok ? isTeamManagedProject(read.body) : false;
 }
 
 /**
@@ -180,12 +274,21 @@ export async function listJiraMatchValues(
   const key = projectKey.trim();
   const headers = source.header(token, email);
 
+  // Whether the project is team-managed decides which FORM the screen saves —
+  // id or name — so it is answered on the same call that hands over the list.
+  // One extra GET, fail-soft; deliberately not a second endpoint, because a
+  // screen that had to ask twice could render a list before it knew what to do
+  // with it.
+  const teamManaged = await readTeamManaged(base, key, connection.kind, headers, fetchImpl);
+
   // ── issue types: the createmeta source first, the statuses payload as a net ──
   if (kind === "issuetype" && source.issueTypePath !== undefined) {
     const meta = await readJson(`${base}${source.issueTypePath(key)}`, headers, fetchImpl);
     if (meta.ok) {
-      const names = parseCreateMetaIssueTypes(meta.body);
-      if (names !== null) return { ok: true, values: names };
+      const options = parseCreateMetaIssueTypeOptions(meta.body);
+      if (options !== null) {
+        return { ok: true, values: options.map((o) => o.name), options, teamManaged };
+      }
     }
     // createmeta is missing (older deployment), forbidden (no create permission
     // in this project), or shaped in a way we do not recognise. Fall through to
@@ -201,6 +304,8 @@ export async function listJiraMatchValues(
       return {
         ok: true,
         values: [...new Set(names)],
+        options: issueTypeOptionsFromStatuses(fallback.body, names),
+        teamManaged,
         degraded: true,
         degradedKey: "onboard.jira.issuetypes_degraded",
       };
@@ -213,15 +318,39 @@ export async function listJiraMatchValues(
   const read = await readJson(`${base}${source.path(key)}`, headers, fetchImpl);
   if (!read.ok) return failure(read);
   try {
-    const values =
-      kind === "status"
-        ? normalizeProjectStatuses(read.body).map((s) => s.name)
-        : normalizeProjectIssueTypes(read.body);
-    // De-duplicate status names (the endpoint repeats a status per issue type).
-    return { ok: true, values: [...new Set(values)] };
+    if (kind === "status") {
+      // De-duplicate status names (the endpoint repeats a status per issue
+      // type); `normalizeProjectStatuses` already de-duplicates BY ID, so the
+      // options list is one entry per real status and carries the id JQL needs.
+      const statuses = normalizeProjectStatuses(read.body);
+      const options = statuses.map((status) => ({ name: status.name, id: status.id }));
+      return { ok: true, values: [...new Set(statuses.map((s) => s.name))], options, teamManaged };
+    }
+    const names = [...new Set(normalizeProjectIssueTypes(read.body))];
+    return { ok: true, values: names, options: issueTypeOptionsFromStatuses(read.body, names), teamManaged };
   } catch {
     return { ok: false, messageKey: "onboard.jira.bad_response" };
   }
+}
+
+/**
+ * Issue-type ids off a `/project/{key}/statuses` body, paired with the names
+ * the adapter already extracted from it. Used only where createmeta could not
+ * answer: the group's own `id` IS the issue-type id even though the group's
+ * `name` may be the wrong localisation, so the id half of the pair stays usable
+ * exactly where the name half is not. A group with no id yields `""`, which the
+ * screen treats as "no id form available for this one".
+ */
+function issueTypeOptionsFromStatuses(raw: unknown, names: readonly string[]): MatchValueOption[] {
+  const byName = new Map<string, string>();
+  if (Array.isArray(raw)) {
+    for (const group of raw) {
+      const record = typeof group === "object" && group !== null ? (group as Record<string, unknown>) : {};
+      const name = str(record["name"])?.trim();
+      if (name !== undefined && name !== "" && !byName.has(name)) byName.set(name, idOf(record));
+    }
+  }
+  return names.map((name) => ({ name, id: byName.get(name) ?? "" }));
 }
 
 /** A failed read as the same secret-free catalog keys this module always spoke. */

@@ -34,6 +34,14 @@ export function issueEvent(options: {
   issueType?: string;
   /** Status name, as a listening rule's `matchKind: "status"` reads it. */
   status?: string;
+  /**
+   * AYNI İKİ ALANIN Jira KİMLİKLERİ — takım yönetimli (next-gen) bir projede
+   * kuralın tuttuğu değerler. Jira her ikisini de `{id, name}` olarak
+   * gönderiyor; ayrı seçenek, çünkü şirket yönetimli projeyi anlatan testler
+   * kimliksiz teslimatı aynen sürdürmeli.
+   */
+  issueTypeId?: string;
+  statusId?: string;
   /** Assignee accountId, as `ListeningRule.assigneeAccountId` stores it. */
   assignee?: string;
   /**
@@ -52,8 +60,22 @@ export function issueEvent(options: {
         labels: [...(options.labels ?? [])],
         // Shaped exactly as Jira sends them: objects with a `name`, and an
         // assignee identified by `accountId` on Cloud.
-        ...(options.issueType === undefined ? {} : { issuetype: { name: options.issueType } }),
-        ...(options.status === undefined ? {} : { status: { name: options.status } }),
+        ...(options.issueType === undefined && options.issueTypeId === undefined
+          ? {}
+          : {
+              issuetype: {
+                ...(options.issueType === undefined ? {} : { name: options.issueType }),
+                ...(options.issueTypeId === undefined ? {} : { id: options.issueTypeId }),
+              },
+            }),
+        ...(options.status === undefined && options.statusId === undefined
+          ? {}
+          : {
+              status: {
+                ...(options.status === undefined ? {} : { name: options.status }),
+                ...(options.statusId === undefined ? {} : { id: options.statusId }),
+              },
+            }),
         ...(options.assignee === undefined ? {} : { assignee: { accountId: options.assignee } }),
       },
     },

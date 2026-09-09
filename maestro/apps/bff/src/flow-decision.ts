@@ -30,6 +30,24 @@ export interface ClassifiableTicket {
   status: string | null;
   issueType: string | null;
   /**
+   * The SAME two fields as Jira's own ids — because on a TEAM-MANAGED project
+   * a rule stores the id, not the name.
+   *
+   * ── CANLI BULGU ─────────────────────────────────────────────────────────────
+   * Takım yönetimli (`style: "next-gen"`) bir projede JQL adları çözmüyor:
+   * `issuetype = "Görev"` sıfır döner, `issuetype = 10008` on dört. `jqlFor`
+   * bu yüzden sayısal değeri tırnaksız yazar ve panel o projede kurala İD
+   * kaydeder. Ama eşleşme burada ADI karşılaştırıyordu — yani sorgu ticket'ı
+   * BULUYOR, `matches()` hepsini ELİYOR (`"Görev" === "10008"`). Arıza "hiç
+   * bulunmuyor"dan "bulunuyor ama işlenmiyor"a taşınırdı; ikisi de sessiz.
+   *
+   * Opsiyonel, çünkü dört üretici ucun bir kısmı bu alanlardan önce yazıldı ve
+   * yokluk `null` ile aynı anlama gelmek zorunda: id'yi okumamış bir çağıran
+   * için kural ADLA karşılaştırılmaya devam eder (bugünkü davranış).
+   */
+  statusId?: string | null;
+  issueTypeId?: string | null;
+  /**
    * Who the ticket is assigned to. A rule with a non-empty `assigneeAccountId`
    * only matches when the ticket is assigned to that account — that is how "the
    * Maestro Bot was given this ticket" is expressed. `null` is "unassigned".
@@ -249,6 +267,20 @@ function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean
     return labels.some((label) => label.trim() === rule.matchValue);
   }
 
+  /**
+   * A NUMERIC `matchValue` is a Jira id, and it is compared against the
+   * ticket's id — never against its name. The rule is the same one `jqlFor`'s
+   * `term()` applies, and it must stay the same one: the query and the filter
+   * disagreeing is how a ticket gets fetched and then silently dropped.
+   *
+   * There is no status or issue-type NAME made only of digits, so this split
+   * cannot misread a company-managed project's rule.
+   */
+  const wantedValue = rule.matchValue.trim();
+  if (/^[0-9]+$/u.test(wantedValue)) {
+    const id = rule.matchKind === "status" ? (ticket.statusId ?? null) : (ticket.issueTypeId ?? null);
+    return id !== null && id === wantedValue;
+  }
   const field = fieldOf(rule.matchKind, ticket);
   // A field the payload did not carry matches NOTHING. Treating a missing
   // status as an empty string would let a rule with an empty `matchValue`

@@ -43,6 +43,22 @@ export interface IntakeDecisionFacts {
    */
   readonly status: string | null;
   readonly issueType: string | null;
+  /**
+   * AYNI İKİ ALANIN Jira KİMLİKLERİ — takım yönetimli projede kuralın
+   * gerçekten karşılaştırdığı değerler.
+   *
+   * O tür projede JQL adları çözmüyor (`issuetype = "Görev"` → 0 ticket,
+   * `issuetype = 10008` → 14), panel kurala İD kaydediyor ve
+   * `flow-decision.ts` sayısal bir `matchValue`'yu ADLA değil İD'yle
+   * karşılaştırıyor. Döküm yalnızca adları gösterseydi, operatör tabloda
+   * `tip = "Görev"` görüp kuralında `10008` yazdığı için sorunu bulamazdı —
+   * karşılaştırılan iki değerden biri ekranda hiç yazmıyor olurdu.
+   *
+   * `null` burada da "bu yol bu alanı okumadı" demek, ve tek başına
+   * "sayısal kural eşleşmedi" sonucunu açıklar.
+   */
+  readonly statusId?: string | null;
+  readonly issueTypeId?: string | null;
   readonly assignee: string | null;
   /**
    * Ticket'ın ETİKETLERİ — dördüncü tetikleme tipinin (0023) baktığı alan.
@@ -189,6 +205,29 @@ function whyNoMatch(facts: IntakeDecisionFacts): readonly string[] {
       "Ticket'ın TİPİ bu yolda bilinmiyor. `matchKind: \"issuetype\"` olan bir kural eşleşemez.",
     );
   }
+  /**
+   * SAYISAL KURAL + KİMLİKSİZ TİCKET — takım yönetimli projenin kendi sessiz
+   * arızası, ve tam olarak bu satır olmadan görünmez olanı.
+   *
+   * O projede kural İD tutar; ticket'ın kimliği okunmamışsa `matches()` kuralı
+   * eler ve tablo `tip = "Görev"` yazdığı için operatör kuralın DOĞRU
+   * olduğunu görüp yolu aramaya hiç başlamaz. Kimlik yokluğu tek başına
+   * cevaptır, ama yalnızca adın da bilindiği durumda söylenmeye değer: tipi
+   * hiç okunmamış bir yol için yukarıdaki madde zaten aynı yere gönderiyor.
+   */
+  if (facts.issueType !== null && (facts.issueTypeId === null || facts.issueTypeId === undefined)) {
+    notes.push(
+      "Ticket'ın TİP KİMLİĞİ (`issuetype.id`) bu yolda okunmadı. Takım yönetimli " +
+        "(next-gen) bir projede kural ADI değil İD'yi tutar — böyle bir kural, tipin " +
+        "adı doğru olsa bile eşleşemez.",
+    );
+  }
+  if (facts.status !== null && (facts.statusId === null || facts.statusId === undefined)) {
+    notes.push(
+      "Ticket'ın STATÜ KİMLİĞİ (`status.id`) bu yolda okunmadı. Takım yönetimli bir " +
+        "projede İD tutan bir `matchKind: \"status\"` kuralı eşleşemez.",
+    );
+  }
   if (facts.assignee === null) {
     notes.push(
       "Ticket'ın ATANANI bu yolda bilinmiyor. Bot hesabı yazılmış her kural elenir — " +
@@ -297,7 +336,12 @@ export function decisionLogMarkdown(facts: IntakeDecisionFacts, at: Date): strin
     "| Alan | Değer |",
     "| --- | --- |",
     `| durum (status) | ${orUnknown(facts.status)} |`,
+    `| durum kimliği (status.id) | ${orUnknown(facts.statusId)} |`,
     `| tip (issuetype) | ${orUnknown(facts.issueType)} |`,
+    // Kimlikler ADLARIN yanında, ayrı satırda: takım yönetimli projede kuralın
+    // karşılaştırdığı değer bu, ve iki değerden biri ekranda yoksa döküm
+    // "neden eşleşmedi" sorusunu cevaplayamaz.
+    `| tip kimliği (issuetype.id) | ${orUnknown(facts.issueTypeId)} |`,
     `| atanan (assignee) | ${orUnknown(facts.assignee)} |`,
     // Etiketler tek bir hücrede, ama üç farklı cevabı ayrı ayrı: okunmadı /
     // yok / şunlar. "(bilinmiyor)" ile "(etiketi yok)" arasındaki fark,

@@ -24,6 +24,26 @@ export interface RuleTableProps {
   readonly deleting: boolean;
 }
 
+/**
+ * Bir statü/konu türü değeri ID biçiminde mi saklanmış?
+ *
+ * Takım yönetimli ("next-gen") bir projede kural, JQL'in tek kabul ettiği şeyi
+ * saklar: id (gerekçe `RuleForm`daki `MatchValuePicker`da, canlı ölçümle). Bu
+ * tablo bütün projelerin kurallarını yan yana gösterir, dolayısıyla elinde tek
+ * bir projenin ad↔id listesi yoktur ve id'yi ADA çeviremez — başka projenin
+ * listesiyle çevirmek yanlış ad yazmak olurdu, ham id'den kötü.
+ *
+ * Yapabileceği ve yapması gereken şey: o değerin bir AD OLMADIĞINI söylemek.
+ * Ayırt etme kuralı `jira-discovery.ts`'in JQL'i kurarken kullandığıyla aynı:
+ * yalnız rakamdan ibaret bir statü/tip ADI yoktur.
+ */
+function isIdValue(rule: ListeningRule): boolean {
+  return (
+    (rule.matchKind === "status" || rule.matchKind === "issuetype") &&
+    /^[0-9]+$/u.test(rule.matchValue.trim())
+  );
+}
+
 /** Tetikleyici, tek satırda: tür · değer · (İngilizce adı). */
 function TriggerCell({ rule }: { readonly rule: ListeningRule }): ReactNode {
   const t = useT();
@@ -35,6 +55,7 @@ function TriggerCell({ rule }: { readonly rule: ListeningRule }): ReactNode {
   return (
     <>
       <span className="scr-hint">{t(`listening.match.${rule.matchKind}`)}</span> <b>{rule.matchValue}</b>
+      {isIdValue(rule) && <span className="scr-hint"> {t("listening.match.id_aside")}</span>}
       {english !== null && <span className="scr-hint"> {t("jira.english.aside", { english })}</span>}
     </>
   );

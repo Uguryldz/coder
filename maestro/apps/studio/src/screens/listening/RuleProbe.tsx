@@ -126,6 +126,17 @@ function JqlBox({ jql }: { readonly jql: string }): ReactNode {
   );
 }
 
+/**
+ * Bir alanın adı ve — varsa — Jira kimliği: `Görev (10008)`.
+ *
+ * Kimlik yoksa yalnız ad yazılır; boş bir parantez, ölçülmemiş bir şeyi
+ * ölçülmüş gibi gösterirdi.
+ */
+function withId(name: string | null, id: string | null): string {
+  if (name === null) return id === null ? "—" : id;
+  return id === null ? name : `${name} (${id})`;
+}
+
 /** Bir ticket listesi — kuralın karşılaştırdığı DÖRT alan, ticket metni yok. */
 function ProbeTable({ rows }: { readonly rows: readonly ProbeTicket[] }): ReactNode {
   const t = useT();
@@ -149,12 +160,16 @@ function ProbeTable({ rows }: { readonly rows: readonly ProbeTicket[] }): ReactN
     {
       key: "issueType",
       header: t("listening.probe.col.type"),
-      cell: (r) => <span className="scr-mono">{r.issueType ?? "—"}</span>,
+      // KİMLİK, ADIN YANINDA. Takım yönetimli bir projede kural adı değil
+      // id'yi tutar (`jqlFor`/`flow-decision.ts`), yani operatörün kuralda
+      // gördüğü değer bu parantezin içindekidir. Yalnız adı göstermek, iki
+      // doğru satıra bakıp eşleşmemenin sebebini göremez hâlde bırakırdı.
+      cell: (r) => <span className="scr-mono">{withId(r.issueType, r.issueTypeId ?? null)}</span>,
     },
     {
       key: "status",
       header: t("listening.probe.col.status"),
-      cell: (r) => <span className="scr-mono">{r.status ?? "—"}</span>,
+      cell: (r) => <span className="scr-mono">{withId(r.status, r.statusId ?? null)}</span>,
     },
     {
       key: "assignee",

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
@@ -11,12 +12,14 @@ import {
   type StatusPoint,
 } from "../common/status-map.ts";
 import { EMPTY_REPO_MAP_ROW, gateMirrorOf, repoMapIncomplete, type RepoMapRowDraft, type RuleDraft } from "./draft.ts";
+import { RuleBoard } from "./RuleBoard.tsx";
 import { RuleProbe } from "./RuleProbe.tsx";
 import {
   FLOW_TYPES,
   MATCH_KINDS,
   type JiraConnectionOption,
   type MatchKind,
+  type MatchValueOption,
   type ProbeResult,
   type VariantOption,
   type JiraFieldOption,
@@ -34,6 +37,10 @@ export interface RuleFormProps {
   readonly jiraConnections: readonly JiraConnectionOption[];
   /** Jira'dan canlı okunan değerler (statü/iş tipi), `matchKind`e göre. */
   readonly valueOptions: readonly string[];
+  /** Aynı değerler, Jira'daki id'leriyle; takım yönetimli projede KAYDEDİLEN budur. */
+  readonly valueIdOptions: readonly MatchValueOption[];
+  /** Proje takım yönetimli mi ("next-gen") — kaydedilecek biçimi bu belirler. */
+  readonly valuesTeamManaged: boolean;
   readonly valuesDegradedKey: string | undefined;
   /** Projenin statü adları — statü kapısı ve durum eşlemesi için. */
   readonly statusOptions: readonly string[];
@@ -70,13 +77,26 @@ export interface RuleFormProps {
  * ajanlar, etkin/öncelik), onay kapıları (katlı), Jira durumu (katlı, içinde
  * kapı aynası). "Test et" ile "Kaydet" AYNI alanları okur — test edilen ile
  * kaydedilen arasında ikinci bir form olsaydı ikisi er ya da geç ayrışırdı.
+ *
+ * ── TAHTA ──────────────────────────────────────────────────────────────────
+ * Statüler Jira'dan okunabildiğinde formun ÜSTÜNDE `RuleBoard` durur: solda
+ * gerçek statüler, sağda o statünün hizasında koşan adımlar. Tahta formun
+ * yerini almaz, ONA BAKAR — aynı `draft`i okur, `gateSteps` dışında bir şey
+ * yazmaz, ve statü listesi okunamadığında hiç çizilmez (fail-soft): eksik bir
+ * listeyle çizilen bir tahta, kuralın yapmadığı bir şeyi yapıyormuş gibi
+ * gösterirdi.
  */
 export function RuleForm(props: RuleFormProps): ReactNode {
   const t = useT();
   const { draft, editingRuleId } = props;
   const editing = editingRuleId !== null;
   const trigger =
-    draft.matchKind === "assigned" ? t("listening.match.assigned") : draft.matchValue;
+    draft.matchKind === "assigned"
+      ? t("listening.match.assigned")
+      : displayMatchValue(draft.matchValue, props.valueIdOptions);
+  // Seçili adım yalnız GÖRÜNÜM: taslakta karşılığı yok, kaydedilmez.
+  const [selectedStep, setSelectedStep] = useState<string | null>(null);
+  const boardOn = props.statusOptions.length > 0;
 
   return (
     <div ref={props.formRef}>
@@ -100,11 +120,26 @@ export function RuleForm(props: RuleFormProps): ReactNode {
             </div>
           )}
 
-          <TriggerGroup {...props} />
-          <ActionGroup {...props} />
-          <GatesSection {...props} />
-          <RepoMapSection {...props} />
-          <StatusSection {...props} />
+          {/* Tahta + yan panel: tasarım dosyasındaki iki sütun. Tahta yoksa
+              (statü listesi okunamadı) panel tek başına eski formdur. */}
+          <div className={boardOn ? "scr-board-wrap" : undefined}>
+            {boardOn && (
+              <RuleBoard
+                draft={draft}
+                patch={props.patch}
+                statusOptions={props.statusOptions}
+                selectedStep={selectedStep}
+                onSelectStep={setSelectedStep}
+              />
+            )}
+            <div className="scr-stack">
+              <TriggerGroup {...props} />
+              <ActionGroup {...props} />
+              <GatesSection {...props} />
+              <RepoMapSection {...props} />
+              <StatusSection {...props} />
+            </div>
+          </div>
 
           <div className="scr-actions">
             <Button busy={props.testing} onClick={props.onTest}>
@@ -212,21 +247,7 @@ function TriggerGroup(props: RuleFormProps): ReactNode {
       {/* "Bota atanan her ticket"ın değeri yok: alan gri değil, YOK. */}
       {conditioned &&
         (props.valueOptions.length > 0 ? (
-          <Select
-            label={t("listening.form.matchValue")}
-            value={draft.matchValue}
-            onChange={(e) => patch({ matchValue: e.target.value })}
-            placeholder={t("listening.form.matchValue_choose")}
-            // `value` Jira'nın sunduğu ve kuralın sakladığı ad; `label` yanına
-            // İngilizcesini ekler. BİLEREK farklı: "Görev (Task)" değerli bir
-            // kural hiçbir ticket'a uymaz.
-            options={props.valueOptions.map((v) => ({ value: v, label: matchValueLabel(v) }))}
-            hint={
-              props.valuesDegradedKey !== undefined
-                ? t(props.valuesDegradedKey)
-                : t("listening.form.matchValue_hint_auto")
-            }
-          />
+          <MatchValuePicker {...props} />
         ) : (
           <Input
             label={t("listening.form.matchValue")}
@@ -242,6 +263,85 @@ function TriggerGroup(props: RuleFormProps): ReactNode {
         ))}
       <AllowedStatuses {...props} />
     </FieldGroup>
+  );
+}
+
+/**
+ * Kayıtlı `matchValue`nun EKRANDA görünecek hâli.
+ *
+ * Kural bir id tutuyor olabilir (aşağıdaki `MatchValuePicker`in gerekçesine
+ * bakın) ve operatöre "10008" göstermek, listeye bakıp anlamını çıkaramayacağı
+ * bir kural demektir. Listede karşılığı varsa ADI gösterilir; yoksa değer
+ * olduğu gibi kalır — tanımadığımız bir değeri tahmin edip yanlış ad yazmak,
+ * ham id göstermekten kötüdür.
+ */
+export function displayMatchValue(
+  value: string,
+  options: readonly MatchValueOption[],
+): string {
+  const byId = options.find((option) => option.id !== "" && option.id === value);
+  return byId?.name ?? value;
+}
+
+/**
+ * TETİKLEME DEĞERİ — kullanıcı ADI görür, kural gerektiğinde ID kaydeder.
+ *
+ * Takım yönetimli ("next-gen", `simplified: true`) bir Jira projesinde JQL,
+ * konu türünü ve statüyü YALNIZ id ile eşler. Hata da vermez, boş döner. Canlı
+ * ölçüm (proje OPS, aynı ticket kümesi):
+ *
+ *   issuetype = "Görev"         ->  0 ticket      issuetype = 10008 -> 14
+ *   status in ("Yapılacaklar")  ->  0 ticket      status = 10004    -> 12
+ *
+ * Yani böyle bir projede ADLA kaydedilen kural sonsuza dek hiçbir ticket
+ * bulmaz ve panelde "kural arandı, 0 ticket" yazar. Bu yüzden proje takım
+ * yönetimliyse kutunun `value`su id'dir; şirket yönetimliyse bugüne kadar
+ * çalışan ad kaydedilmeye devam eder.
+ *
+ * Kutuda GÖRÜNEN her iki hâlde de addır: `label` adı yazar, ve kayıtlı bir
+ * kural id tutuyorsa o id'nin adı seçili görünür. Operatör bir kimlik numarası
+ * okumaz.
+ *
+ * Id'si olmayan bir seçenek (bozulmuş iş tipi listesi) takım yönetimli projede
+ * de ADIYLA kaydedilir: elde id yokken uydurmak yerine, bugünkü davranış.
+ */
+function MatchValuePicker(props: RuleFormProps): ReactNode {
+  const t = useT();
+  const { draft, patch } = props;
+  const byName = new Map(props.valueIdOptions.map((option) => [option.name, option]));
+  /** Bir ADIN kaydedilecek hâli: takım yönetimliyse id (varsa), değilse ad. */
+  const storedFor = (name: string): string => {
+    const id = byName.get(name)?.id ?? "";
+    return props.valuesTeamManaged && id !== "" ? id : name;
+  };
+  const options = props.valueOptions.map((name) => ({
+    // `value` kaydedilen; `label` okunan. BİLEREK farklı: `matchValueLabel`
+    // "Görev (Task)" üretir ve o metinle bir kural hiçbir ticket'a uymaz.
+    value: storedFor(name),
+    label: matchValueLabel(name),
+  }));
+  // Kayıtlı değer listede yoksa (proje değişti, statü silindi) kutudan sessizce
+  // düşmesin: kendi seçeneği olarak, okunabilir hâliyle kalır.
+  const current = draft.matchValue;
+  const extra =
+    current !== "" && !options.some((option) => option.value === current)
+      ? [{ value: current, label: matchValueLabel(displayMatchValue(current, props.valueIdOptions)) }]
+      : [];
+  return (
+    <Select
+      label={t("listening.form.matchValue")}
+      value={current}
+      onChange={(e) => patch({ matchValue: e.target.value })}
+      placeholder={t("listening.form.matchValue_choose")}
+      options={[...options, ...extra]}
+      hint={
+        props.valuesDegradedKey !== undefined
+          ? t(props.valuesDegradedKey)
+          : props.valuesTeamManaged
+            ? t("listening.form.matchValue_hint_team_managed")
+            : t("listening.form.matchValue_hint_auto")
+      }
+    />
   );
 }
 

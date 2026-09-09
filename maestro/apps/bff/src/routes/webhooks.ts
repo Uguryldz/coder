@@ -337,6 +337,10 @@ export async function webhookRoutes(app: FastifyInstance, deps: ResolvedDeps): P
       // `TicketSnapshot` has no such field.
       ...(event.status !== undefined ? { status: event.status } : {}),
       ...(event.issueType !== undefined ? { issueType: event.issueType } : {}),
+      // Kimlikler de geçiyor: takım yönetimli projede kural İD tutar ve
+      // eşleşme adla değil id'yle yapılır (`flow-decision.ts`).
+      ...(event.statusId !== undefined ? { statusId: event.statusId } : {}),
+      ...(event.issueTypeId !== undefined ? { issueTypeId: event.issueTypeId } : {}),
       ...(event.assignee !== undefined ? { assignee: event.assignee } : {}),
       actor: SYSTEM_ACTOR,
     });

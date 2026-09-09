@@ -22,6 +22,17 @@ function nameOf(value: unknown): string | null {
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
 }
 
+/**
+ * `<field>.id` — Jira'nın kendi sayısal kimliği. DC eşleyicisindeki
+ * `idOf` ile aynı gerekçe: takım yönetimli projede kural İD tutar
+ * (`flow-decision.ts`), ve bu proje türü tam olarak Cloud'un `next-gen`'i.
+ */
+function idOf(value: unknown): string | null {
+  const id = record(value)?.["id"];
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return typeof id === "string" && id.trim().length > 0 ? id.trim() : null;
+}
+
 function stringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((s) => s.trim())
@@ -72,10 +83,14 @@ export function mapCloudIssueToSnapshot(raw: unknown): TicketSnapshot {
   const parent = record(fields["parent"]);
   const parentKey = typeof parent?.["key"] === "string" && parent["key"].length > 0 ? parent["key"] : null;
 
+  const issueTypeId = idOf(fields["issuetype"]);
+
   const candidate = {
     key,
     projectKey,
     issueType: nameOf(fields["issuetype"]) ?? "",
+    // Yokluğu HİÇ yazılmaz — DC eşleyicisiyle aynı gerekçe.
+    ...(issueTypeId === null ? {} : { issueTypeId }),
     summary: typeof fields["summary"] === "string" ? fields["summary"] : "",
     description: cloudDescriptionText(fields["description"]),
     reporter: cloudUserIdOf(fields["reporter"]) ?? "",

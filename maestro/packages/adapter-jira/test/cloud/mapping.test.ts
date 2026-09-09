@@ -30,6 +30,17 @@ describe("mapCloudIssueToSnapshot", () => {
     expect(snapshot.key).toBe("OPS-6");
     expect(snapshot.projectKey).toBe("OPS");
     expect(snapshot.issueType).toBe("Görev");
+    /**
+     * TİP KİMLİĞİ — takım yönetimli (next-gen) projenin tek çalışan anahtarı.
+     *
+     * Kayıtlı fixture bu projenin ta kendisi (uyildiz.atlassian.net / OPS) ve
+     * canlı ölçüm buradan: `issuetype = "Görev"` sıfır ticket döner,
+     * `issuetype = 10008` on dört. O projede dinleme kuralı ADI değil bu
+     * değeri tutar ve `flow-decision.ts` sayısal bir `matchValue`'yu ticket'ın
+     * İD'siyle karşılaştırır — snapshot yalnız adı taşısaydı, elle başlatılan
+     * bir ticket kuralıyla eşleşemezdi.
+     */
+    expect(snapshot.issueTypeId).toBe("10008");
     expect(snapshot.summary).toBe("(Örnek) Ödeme Onayı");
     expect(snapshot.reporter).toBe(ACCOUNT_ID);
     expect(snapshot.assignee).toBeNull();

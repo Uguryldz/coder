@@ -560,6 +560,20 @@ export interface WorkEvent {
   /** The issue type name, e.g. "Hata"/"Bug" — the other thing a rule may key on. */
   issueType?: string;
   /**
+   * AYNI İKİ ALANIN Jira KİMLİKLERİ (`fields.status.id`, `fields.issuetype.id`).
+   *
+   * Takım yönetimli (`style: "next-gen"`) bir projede JQL adları çözmüyor —
+   * `issuetype = "Görev"` sıfır ticket döner, `issuetype = 10008` on dört — ve
+   * o projede dinleme kuralı ADI değil İD'yi tutar. `flow-decision.ts` sayısal
+   * bir `matchValue`'yu ticket'ın İD'siyle karşılaştırdığı için, teslimatın
+   * taşıdığı bu iki alan okunmazsa kural bir tek ticket'ı bile eşleştiremez.
+   *
+   * Yokluğu, adların yokluğuyla aynı anlamda: "teslimat söylemedi" — ve o
+   * durumda eşleşme ada düşer, yani bu alanlardan önceki davranış.
+   */
+  statusId?: string;
+  issueTypeId?: string;
+  /**
    * Who the issue is assigned to, in the same account form the listening rules
    * store. A rule naming an assignee only fires for tickets actually handed to
    * that account.
@@ -852,6 +866,21 @@ export type ProbeTicket = {
   readonly key: string;
   readonly status: string | null;
   readonly issueType: string | null;
+  /**
+   * AYNI İKİ ALANIN Jira KİMLİKLERİ.
+   *
+   * Denemenin bütün değeri "kuralın değeri ile ticket'ın değerini yan yana
+   * koymak"; takım yönetimli bir projede kuralın değeri `10008`, tablonun
+   * gösterdiği ise `"Görev"`dir. Kimlik sütunu olmadan operatör iki DOĞRU
+   * satıra bakıp neden eşleşmediğini göremez — karşılaştırılan değerlerden
+   * biri ekranda hiç yazmıyor olurdu.
+   *
+   * `null`/yokluk "arama sonucu bu alanı taşımadı" demek; opsiyonel, çünkü bu
+   * alanlardan önce yazılmış deneme çağıranları ikisini de doldurmuyor ve
+   * ekran o durumda bugünkü gibi yalnız adı gösterir.
+   */
+  readonly statusId?: string | null;
+  readonly issueTypeId?: string | null;
   readonly assignee: string | null;
   readonly labels: readonly string[];
   /**

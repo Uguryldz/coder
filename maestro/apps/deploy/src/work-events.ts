@@ -43,6 +43,13 @@ export function jiraWorkEventReader(): WorkEventReader {
       // to learn it — and it would be a different read of a moving ticket.
       const status = nameOf(event.issue, "status");
       const issueType = nameOf(event.issue, "issuetype");
+      // AYNI İKİ ALANIN KİMLİKLERİ. Takım yönetimli (next-gen) bir projede JQL
+      // adları çözmediği için kural İD tutar, ve `flow-decision.ts` sayısal bir
+      // `matchValue`'yu ticket'ın İD'siyle karşılaştırır. Teslimat ikisini de
+      // taşıyor (`fields.status.id`, `fields.issuetype.id`); okumamak, kuralın
+      // bulduğu ticket'ı kuralın kendisiyle eşleştirememek olurdu.
+      const statusId = idOf(event.issue, "status");
+      const issueTypeId = idOf(event.issue, "issuetype");
       const assignee = assigneeOf(event.issue);
       // Değişikliği YAPAN kişi. Yalnız issue olaylarında var ve tek bir iş
       // için taşınıyor: netleştirme yeniden girişinde Maestro'nun kendi
@@ -53,7 +60,9 @@ export function jiraWorkEventReader(): WorkEventReader {
         ticketKey: event.ticketKey,
         ...(labels === null ? {} : { labels }),
         ...(status === null ? {} : { status }),
+        ...(statusId === null ? {} : { statusId }),
         ...(issueType === null ? {} : { issueType }),
+        ...(issueTypeId === null ? {} : { issueTypeId }),
         ...(assignee === null ? {} : { assignee }),
         ...(actor === null ? {} : { actor }),
       };
@@ -88,6 +97,24 @@ export function nameOf(issue: unknown, field: string): string | null {
   const fields = asRecord(asRecord(issue)?.["fields"]);
   const name = asRecord(fields?.[field])?.["name"];
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
+}
+
+/**
+ * `issue.fields.<field>.id`, or `null` when the payload carries none.
+ *
+ * `nameOf`'un kimlik ikizi ve aynı gerekçeyle EXPORT: teslimat ile arama
+ * sonucu aynı belge, ve iki yüzeyin aynı belgeyi iki el yazması gramerle
+ * okuması, aynı ticket'ı farklı sınıflandırmalarının kestirme yolu.
+ *
+ * Jira id'yi hem metin hem sayı olarak gönderebiliyor; ikisi de metne
+ * çevriliyor, çünkü kuralın `matchValue`'su metin ve karşılaştırma
+ * (`flow-decision.ts`) metin üzerinden yapılıyor.
+ */
+export function idOf(issue: unknown, field: string): string | null {
+  const fields = asRecord(asRecord(issue)?.["fields"]);
+  const id = asRecord(fields?.[field])?.["id"];
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return typeof id === "string" && id.trim().length > 0 ? id.trim() : null;
 }
 
 /**

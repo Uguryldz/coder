@@ -1,6 +1,6 @@
 import { type ResolvedDeps, runIntake } from "@maestro/bff";
 import type { TicketKey } from "@maestro/contracts";
-import { assigneeOf, labelsOf, nameOf } from "./work-events.js";
+import { assigneeOf, idOf, labelsOf, nameOf } from "./work-events.js";
 
 /**
  * Finding tickets by ASKING Jira, instead of waiting to be told.
@@ -442,6 +442,11 @@ const DEFAULT_MAX_AUTO_RESTARTS = 3;
  */
 export function jqlFor(rule: DiscoveryRule): string | null {
   const quoted = (value: string): string => `"${value.replace(/"/gu, '\\"')}"`;
+  /** A status / issue-type term: a bare numeric id, else the quoted name. See below. */
+  const term = (value: string): string => {
+    const trimmed = value.trim();
+    return /^[0-9]+$/u.test(trimmed) ? trimmed : quoted(trimmed);
+  };
   /**
    * The assignee is matched as an ACCOUNT ID, not as a quoted name.
    *
@@ -497,11 +502,33 @@ export function jqlFor(rule: DiscoveryRule): string | null {
   const statuses = (rule.allowedStatuses ?? [])
     .map((name) => name.trim())
     .filter((name) => name !== "");
-  const gate = statuses.length === 0 ? "" : ` AND status in (${statuses.map(quoted).join(", ")})`;
+  const gate = statuses.length === 0 ? "" : ` AND status in (${statuses.map(term).join(", ")})`;
 
   const base = `project = ${quoted(rule.projectKey)} AND assignee in (${account})${gate}`;
-  if (rule.matchKind === "status") return `${base} AND status = ${quoted(rule.matchValue)}`;
-  if (rule.matchKind === "issuetype") return `${base} AND issuetype = ${quoted(rule.matchValue)}`;
+  /**
+   * ── CANLI BULGU: TAKIM YÖNETİMLİ PROJEDE AD İLE DARALTMA BOŞ DÖNER ──────────
+   * Ölçüldü (`style: "next-gen"`, OPS): aynı ticket kümesi üzerinde
+   *   issuetype = "Görev"        → 0      issuetype = 10008 → 14
+   *   status in ("Yapılacaklar") → 0      status = 10004    → 12
+   * Ad, o projenin kendi şemasında global bir ada çözülmüyor; hata da vermiyor,
+   * BOŞ dönüyor. Yani `issuetype` ve `status` kuralları sessizce hiç eşleşmiyor
+   * ve panel "kural arandı, 0 ticket" diyordu — bu fonksiyonun var olma sebebi
+   * olan sessiz-sonsuz hatanın aynısı.
+   *
+   * SAYISAL DEĞER TIRNAKSIZ GEÇER. Bir ad ile bir id'yi ayıran şey basit: id
+   * yalnız rakamdır. Şirket yönetimli projeler ADLA çalışmaya devam eder (orada
+   * ad global ve tırnaklı biçim doğru olan); takım yönetimli bir projede
+   * operatör değeri id olarak yazdığında o id buradan tırnaksız geçer ve sorgu
+   * tutar. İki dünyayı tek satır karşılar, ve hiçbir kurulumun davranışı
+   * bozulmaz — çünkü rakamdan ibaret bir STATÜ ADI yoktur.
+   *
+   * Daraltma yine de bir OPTİMİZASYONDUR, doğruluk şartı değil: taramanın
+   * bulduğu her ticket `runIntake` → `decideFlow` → `matches()` elemesinden
+   * geçiyor ve ORASI ticket'ın ADINI karşılaştırıyor. JQL geniş dönse bile
+   * yanlış ticket işlenmez; dar dönmesi yalnız Jira'ya daha az yük demek.
+   */
+  if (rule.matchKind === "status") return `${base} AND status = ${term(rule.matchValue)}`;
+  if (rule.matchKind === "issuetype") return `${base} AND issuetype = ${term(rule.matchValue)}`;
   /**
    * A LABEL rule (0023) — the opt-in label, now a rule kind instead of a
    * project-wide gate.
@@ -1188,17 +1215,34 @@ function issueKeyOf(issue: unknown): string | null {
  */
 export function classifyingFieldsOf(issue: unknown): {
   status?: string;
+  statusId?: string;
   issueType?: string;
+  issueTypeId?: string;
   assignee?: string;
   labels?: readonly string[];
 } {
   const status = nameOf(issue, "status");
   const issueType = nameOf(issue, "issuetype");
+  /**
+   * KİMLİKLER de okunuyor — takım yönetimli projede kuralın gerçekten
+   * karşılaştırdığı değerler.
+   *
+   * Arama zaten `fields: ["status", "issuetype", ...]` istiyor ve Jira her
+   * ikisini de `{id, name}` olarak döndürüyor: kimlik ek bir istek DEĞİL,
+   * cevapta hâlihazırda duran ama okunmayan alan. O projede kural `10008`
+   * tutar, `"Görev"` değil (`jqlFor` `term()`), ve `flow-decision.ts` sayısal
+   * bir `matchValue`'yu id ile karşılaştırır — okunmadıklarında tur, kuralın
+   * KENDİ sorgusuyla bulduğu ticket'ı aynı kuralla eşleştiremezdi.
+   */
+  const statusId = idOf(issue, "status");
+  const issueTypeId = idOf(issue, "issuetype");
   const assignee = assigneeOf(issue);
   const labels = labelsOf(issue);
   return {
     ...(status === null ? {} : { status }),
+    ...(statusId === null ? {} : { statusId }),
     ...(issueType === null ? {} : { issueType }),
+    ...(issueTypeId === null ? {} : { issueTypeId }),
     ...(assignee === null ? {} : { assignee }),
     ...(labels === null ? {} : { labels }),
   };

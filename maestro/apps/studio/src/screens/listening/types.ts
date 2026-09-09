@@ -82,6 +82,19 @@ export interface JiraFieldOption {
   readonly scope?: "project" | "other";
 }
 
+/**
+ * Bir tetikleme değeri, İKİ kimliğiyle: operatörün okuduğu `name` ve takım
+ * yönetimli bir projede JQL'in tek kabul ettiği `id`.
+ *
+ * `/onboarding/jira-match-values` uçunun `options` alanı. `id` boş olabilir —
+ * kaynağın id vermediği tek hâl, iş tipi listesinin bozulmuş (degraded)
+ * kaynaktan gelmesi; o değer yine seçilir, yalnız id biçiminde kaydedilemez.
+ */
+export interface MatchValueOption {
+  readonly name: string;
+  readonly id: string;
+}
+
 /** `POST`/`PUT` gövdesi — kimlik hariç her alan (PUT tam değiştirmedir). */
 export type RuleBody = Omit<ListeningRule, "ruleId">;
 
@@ -116,6 +129,13 @@ export interface ProbeTicket {
   readonly key: string;
   readonly status: string | null;
   readonly issueType: string | null;
+  /**
+   * Kimlikler — takım yönetimli projede kuralın TUTTUĞU değerler. Kural
+   * `10008` yazarken tablo `"Görev"` gösterirse, iki doğru satır arasında
+   * eşleşmemenin sebebi görünmez olur.
+   */
+  readonly statusId?: string | null;
+  readonly issueTypeId?: string | null;
   readonly assignee: string | null;
   readonly labels: readonly string[];
   /** Bu ticket'ın zaten bir koşusu var — "0 alındı" yanılgısının tek çaresi. */

@@ -137,6 +137,13 @@ function probeTicketOf(issue: unknown, known: ReadonlySet<string>): ProbeTicket 
     key,
     status: fields.status ?? null,
     issueType: fields.issueType ?? null,
+    // Kimlikler de sütuna: takım yönetimli projede kuralın karşılaştırdığı
+    // değer bu, ve deneme ekranının işi tam olarak o karşılaştırmayı göstermek.
+    // Okunamayan kimlik HİÇ yazılmaz — `classifyingFieldsOf`'un aynı kuralı:
+    // yokluk "arama sonucu söylemedi" demek, açık bir `null` ise aynı şeyi
+    // ölçülmüş bir cevap gibi gösterirdi.
+    ...(fields.statusId === undefined ? {} : { statusId: fields.statusId }),
+    ...(fields.issueTypeId === undefined ? {} : { issueTypeId: fields.issueTypeId }),
     assignee: fields.assignee ?? null,
     labels: fields.labels ?? [],
     alreadyKnown: known.has(key),

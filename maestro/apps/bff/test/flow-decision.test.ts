@@ -706,3 +706,96 @@ describe("flowDecisionFor — statü kapısı her kuralda sorulur", () => {
     expect(statusGateOf(gated, " Analiz ")).toBe("open");
   });
 });
+
+/**
+ * TAKIM YÖNETİMLİ (next-gen) PROJE — kuralın İD tuttuğu hâl.
+ *
+ * ── CANLI ÖLÇÜM ─────────────────────────────────────────────────────────────
+ * Bağlı OPS projesi `style: "next-gen"` ve orada JQL adları çözmüyor:
+ *
+ *     issuetype = "Görev"        → 0 ticket      issuetype = 10008 → 14
+ *     status in ("Yapılacaklar") → 0 ticket      status = 10004    → 12
+ *
+ * `jqlFor` bu yüzden sayısal değeri tırnaksız yazıyor ve panel o projede
+ * kurala İD kaydediyor. Eşleşme ADI karşılaştırsaydı sorgu ticket'ı BULUR,
+ * `matches()` hepsini ELERDİ (`"Görev" === "10008"`) — arıza "hiç bulunmuyor"
+ * dan "bulunuyor ama işlenmiyor"a taşınırdı, ikisi de sessiz.
+ */
+describe("flowDecisionFor — takım yönetimli projede kural İD tutar", () => {
+  it("sayısal kural, İD taşıyan ticket'ı eşleştirir", () => {
+    const rules = [rule({ ruleId: "lr_id", matchKind: "issuetype", matchValue: "10008" })];
+    const decision = flowDecisionFor(
+      rules,
+      ticket({ issueType: "Görev", issueTypeId: "10008" }),
+      null,
+    );
+    expect(decision.reason).toBe("rule");
+    expect(decision.ruleId).toBe("lr_id");
+  });
+
+  it("statü kuralı da İD ile eşleşir", () => {
+    const rules = [rule({ ruleId: "lr_st", matchKind: "status", matchValue: "10004" })];
+    const decision = flowDecisionFor(
+      rules,
+      ticket({ status: "Yapılacaklar", statusId: "10004" }),
+      null,
+    );
+    expect(decision.ruleId).toBe("lr_st");
+  });
+
+  /**
+   * ARIZANIN TA KENDİSİ: kural id tutuyor, ticket id taşımıyor.
+   *
+   * Üretici uçlar kimliği doldurmadan önceki hâl. Eşleşme OLMAMALI — ama
+   * "olmasın" derken sebebi doğru olmalı: ada düşülüp `"Görev" === "10008"`
+   * karşılaştırılması da aynı sonucu verirdi, o yüzden ticket'ın ADI kuralın
+   * beklediği tipin adı ve yine de eşleşmiyor.
+   */
+  it("sayısal kural, İD TAŞIMAYAN ticket'ı eşleştirmez — ada DÜŞMEZ", () => {
+    const rules = [rule({ ruleId: "lr_id", matchKind: "issuetype", matchValue: "10008" })];
+    expect(flowDecisionFor(rules, ticket({ issueType: "Görev" }), null).reason).toBe("none");
+    expect(
+      flowDecisionFor(rules, ticket({ issueType: "Görev", issueTypeId: null }), null).reason,
+    ).toBe("none");
+  });
+
+  it("sayısal kural, BAŞKA bir İD taşıyan ticket'ı eşleştirmez", () => {
+    const rules = [rule({ matchKind: "issuetype", matchValue: "10008" })];
+    expect(
+      flowDecisionFor(rules, ticket({ issueType: "Görev", issueTypeId: "10001" }), null).reason,
+    ).toBe("none");
+  });
+
+  /**
+   * REGRESYON: şirket yönetimli projede hiçbir şey değişmedi.
+   *
+   * Kimliği taşıyan ama kuralı ADLA yazılmış bir ticket, kimlik alanları
+   * eklenmeden önce nasıl eşleşiyorsa öyle eşleşmeye devam eder — ve id'yi hiç
+   * okumamış bir çağıran için de aynısı geçerli.
+   */
+  it("adlı kural, adla eşleşmeye devam eder — İD taşınsın taşınmasın", () => {
+    const rules = [rule({ ruleId: "lr_ad", matchKind: "issuetype", matchValue: "Hata" })];
+    expect(flowDecisionFor(rules, ticket({ issueType: "Hata" }), null).ruleId).toBe("lr_ad");
+    expect(
+      flowDecisionFor(rules, ticket({ issueType: "Hata", issueTypeId: "10008" }), null).ruleId,
+    ).toBe("lr_ad");
+  });
+
+  /**
+   * Kimlik karşılaştırması KENDİ alanına bakar: bir `status` kuralı tip
+   * kimliğine, bir `issuetype` kuralı statü kimliğine bakmaz. İkisi de sayı
+   * olduğu için bu karışma sessiz ve tam da bu yüzden yazılıyor.
+   */
+  it("statü kuralı TİP kimliğiyle, tip kuralı STATÜ kimliğiyle eşleşmez", () => {
+    const statusRule = [rule({ matchKind: "status", matchValue: "10008" })];
+    expect(
+      flowDecisionFor(statusRule, ticket({ issueTypeId: "10008", status: "Yapılacaklar" }), null)
+        .reason,
+    ).toBe("none");
+
+    const typeRule = [rule({ matchKind: "issuetype", matchValue: "10004" })];
+    expect(
+      flowDecisionFor(typeRule, ticket({ statusId: "10004", issueType: "Görev" }), null).reason,
+    ).toBe("none");
+  });
+});

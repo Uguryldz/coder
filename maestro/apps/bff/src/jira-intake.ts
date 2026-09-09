@@ -37,6 +37,21 @@ export interface IntakeRequest {
   status?: string;
   /** The ticket's issue-type name, when the caller knows it. */
   issueType?: string;
+  /**
+   * AYNI İKİ ALAN, Jira'nın kendi kimlikleriyle.
+   *
+   * Takım yönetimli (`style: "next-gen"`) bir projede JQL adları çözmüyor —
+   * `issuetype = "Görev"` sıfır ticket, `issuetype = 10008` on dört döner — ve
+   * panel o projede kurala ADI değil İD'yi kaydeder. `flow-decision.ts`
+   * `matches()` bu yüzden sayısal bir `matchValue`'yu ticket'ın İD'siyle
+   * karşılaştırır; id'yi taşımayan bir çağıranda kural bir tek ticket'ı bile
+   * eşleştiremezdi — sorgu bulur, filtre eler, ikisi de sessiz.
+   *
+   * Opsiyonel: id'yi okumamış bir çağıran için alan `undefined` kalır ve
+   * eşleşme ADA düşer, yani bugünkü davranış. Kimse bozulmaz.
+   */
+  statusId?: string;
+  issueTypeId?: string;
   /** The account the ticket is assigned to, when the caller knows it. */
   assignee?: string;
 }
@@ -94,7 +109,7 @@ export async function classifyingFields(
   deps: ResolvedDeps,
   ticket: TicketKey,
   onError: (error: unknown) => void = () => {},
-): Promise<Pick<IntakeRequest, "issueType" | "labels" | "assignee">> {
+): Promise<Pick<IntakeRequest, "issueType" | "issueTypeId" | "labels" | "assignee">> {
   let snapshot: TicketSnapshot;
   try {
     snapshot = await deps.work.getTicket(ticket);
@@ -104,6 +119,18 @@ export async function classifyingFields(
   }
   return {
     issueType: snapshot.issueType,
+    /**
+     * TİP KİMLİĞİ, adının yanında — takım yönetimli projenin tek çalışan
+     * anahtarı. O projede kural `10008` tutar, `"Görev"` değil; yalnız adı
+     * göndermek, elle başlatılan bir ticket'ı adıyla eşleşmeyen bir kuralla
+     * karşılaştırıp sessizce elemek olurdu.
+     *
+     * `statusId` burada YOK, `status`'ün olmadığı gerekçenin aynısıyla: donmuş
+     * `TicketSnapshot` (M46/M102) bir statü alanı taşımıyor, dolayısıyla
+     * kimliği de yok. `matchKind: "status"` kuralı bu yollarda ne adla ne de
+     * id ile eşleşir — uydurmak, bilmediğini söylemekten kötü olurdu.
+     */
+    ...(snapshot.issueTypeId === undefined ? {} : { issueTypeId: snapshot.issueTypeId }),
     labels: snapshot.labels,
     // Omitted rather than sent as null, for the reason `flow` and `statusMap`
     // are omitted below: `assignee` is an OPTIONAL field whose absence already
@@ -190,6 +217,11 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     source: sourceOf(request),
     status: request.status ?? null,
     issueType: request.issueType ?? null,
+    // Kimlikler de dökümde: "kuralım 10008 diyor, ticket 10001 taşıyor" ya da
+    // "ticket hiç id taşımıyor" cevabı ancak burada okunabilir, ve operatörün
+    // sorusu ("kural doğru görünüyor, neden eşleşmedi?") tam olarak bu.
+    statusId: request.statusId ?? null,
+    issueTypeId: request.issueTypeId ?? null,
     assignee: request.assignee ?? null,
     // `null` ile `[]` farkı burada da korunuyor — döküm bu ikisini AYRI
     // cümlelerle anlatıyor ve operatörü ayrı yerlere gönderiyor.
@@ -528,6 +560,18 @@ async function decideFlow(deps: ResolvedDeps, request: IntakeRequest, projectKey
     projectKey,
     status: request.status ?? null,
     issueType: request.issueType ?? null,
+    /**
+     * KİMLİKLER de karara giriyor — takım yönetimli projenin tek çalışan
+     * anahtarı (`flow-decision.ts` `matches`). Bunlar olmadan o projedeki
+     * kural, kendisini bulan sorgunun getirdiği ticket'ı bile eleyerek
+     * ADA düşen bir karşılaştırmaya takılırdı.
+     *
+     * Yokluk `null`'a çevriliyor — `labels`'ta olduğu gibi: bir kural,
+     * kimsenin okumadığı bir alan üzerinden ateşlememeli, ve `matches()`
+     * sayısal bir kuralı `null` kimlikle eşleştirmez.
+     */
+    statusId: request.statusId ?? null,
+    issueTypeId: request.issueTypeId ?? null,
     assignee: request.assignee ?? null,
     /**
      * ETİKETLER, karara giden yolda.

@@ -37,6 +37,20 @@ function nameOf(value: unknown): string | null {
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : null;
 }
 
+/**
+ * `<field>.id` — Jira'nın kendi sayısal kimliği, adının yanında.
+ *
+ * Takım yönetimli projede JQL adları çözmediği için dinleme kuralı İD tutar;
+ * `flow-decision.ts` sayısal bir `matchValue`'yu ticket'ın İD'siyle karşılaştırır.
+ * Jira id'yi sayı olarak da gönderebildiği için sayı da kabul edilip metne
+ * çevriliyor — karşılaştırma her iki uçta da metin üzerinden yapılıyor.
+ */
+function idOf(value: unknown): string | null {
+  const id = record(value)?.["id"];
+  if (typeof id === "number" && Number.isFinite(id)) return String(id);
+  return typeof id === "string" && id.trim().length > 0 ? id.trim() : null;
+}
+
 function stringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((s) => s.trim())
@@ -62,10 +76,16 @@ export function mapIssueToSnapshot(raw: unknown): TicketSnapshot {
     ? fields["components"].map((c) => nameOf(c)).filter((c): c is string => c !== null)
     : [];
 
+  const issueTypeId = idOf(fields["issuetype"]);
+
   const candidate = {
     key,
     projectKey,
     issueType: nameOf(fields["issuetype"]) ?? "",
+    // Yokluğu HİÇ yazılmaz, `null` olarak değil: sözleşmede alan opsiyonel ve
+    // yokluk "bu yol id'yi okumadı" demek — açık bir `null` aynı şeyi birinin
+    // ölçtüğü bir cevap gibi gösterirdi.
+    ...(issueTypeId === null ? {} : { issueTypeId }),
     summary: typeof fields["summary"] === "string" ? fields["summary"] : "",
     // DC returns wiki markup text (or null when the reporter left it empty).
     description: typeof fields["description"] === "string" ? fields["description"] : "",

@@ -997,3 +997,302 @@ describe("repo map — repositories straight from the SCM connection", () => {
     expect(JSON.parse((registerCall![1] as RequestInit).body as string)).toEqual({ jiraProject: "OPS", adoRepo: "bank/kredi", platform: "linux-node" });
   });
 });
+
+/**
+ * ── TAHTA ──────────────────────────────────────────────────────────────────
+ *
+ * Kuralın yeni görünümü: solda Jira'nın gerçek statüleri, sağda o statünün
+ * hizasında koşan adımlar. Buradaki testlerin tuttuğu dört şey:
+ *
+ *  1. Statü listesi OKUNAMADIĞINDA tahta çizilmez ve ekran eski forma düşer —
+ *     yukarıdaki blokların hepsi bu daldan geçiyor, ve o dal bir yedek değil,
+ *     bu ekranın çalışmaya devam etme garantisi.
+ *  2. Adımın hangi statü hizasında durduğunu `statusMap` söyler; eşlenmemiş
+ *     adımlar "Taşıma yok" grubunda toplanır — uydurma bir statüye konmaz.
+ *  3. Akış tipi hangi adımların ÇİZİLECEĞİNİ belirler ve bu `planFor` ile
+ *     birebir aynı: `analiz`de kod adımları yok, `duzeltme`de analiz kapıları.
+ *  4. Kapı kutusu GERÇEK bir ayar: tıklamak `gateSteps`e yazar ve kaydedilir.
+ *     Ajan rozetleri ise DEĞİL, ve tahta bunu açıkça yazıyor.
+ */
+describe("kural tahtası (RuleBoard)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Jira'nın statü listesini de cevaplayan stub — tahtanın tek koşulu. */
+  function stubWithStatuses(statuses: readonly string[], rules: object[] = []): ReturnType<typeof vi.fn> {
+    const base = stubFetch(rules);
+    const fn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes("/onboarding/jira-match-values")) {
+        return Response.json({ ok: true, values: statuses });
+      }
+      if (String(url).includes("/onboarding/jira-connections")) {
+        return Response.json({ connections: [{ id: "jira", displayName: "Jira", botAccountId: null }] });
+      }
+      return base(url, init);
+    });
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+
+  it("statü listesi okunamadığında tahtayı ÇİZMEZ — ekran eski form düzeninde kalır", async () => {
+    stubFetch([]); // hiçbir statü uçtan gelmiyor
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+
+    expect(screen.queryByText("Jira statüsü")).toBeNull();
+    // Ve formun kendisi yerinde: alanların hiçbiri tahtaya taşınmadı.
+    expect(screen.getByLabelText("Ne yapılsın (akış)")).toBeTruthy();
+    expect(screen.getByLabelText("Proje")).toBeTruthy();
+  });
+
+  it("statüler geldiğinde tahtayı çizer ve eşlenmemiş adımları 'Taşıma yok'ta toplar", async () => {
+    stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+
+    expect(await screen.findByText("Jira statüsü")).toBeTruthy();
+    expect(screen.getByText("Maestro adımları")).toBeTruthy();
+    // Durum eşlemesi kapalı: hiçbir adımın statüsü yok, hepsi tek grupta.
+    expect(screen.getByText("Taşıma yok")).toBeTruthy();
+    expect(screen.getByText("Analiz + etki matrisi")).toBeTruthy();
+  });
+
+  it("adımı `statusMap`teki statünün HİZASINA koyar", async () => {
+    stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await screen.findByText("Jira statüsü");
+
+    // Operatör hattı çizer: "iş başladığında Devam Ediyor".
+    await userEvent.click(screen.getByText("Jira durumunu da değiştir (isteğe bağlı)"));
+    await userEvent.click(screen.getByLabelText(/Jira durumunu da değiştir$/));
+    await userEvent.selectOptions(await screen.findByLabelText("İş başladığında"), "Devam Ediyor");
+
+    // Statü artık tahtada bir şerit, ve keşif/analiz adımları onun hizasında.
+    // `getAllByText` bilerek: "Devam Ediyor" statü listesinde de bir seçenek —
+    // aranan, tahtadaki ŞERİT başlığı.
+    const lane = await waitFor(() => {
+      const found = screen
+        .getAllByText("Devam Ediyor")
+        .map((el) => el.closest(".scr-board__lane"))
+        .find((el) => el !== null);
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    expect(within(lane).getByText("Analiz + etki matrisi")).toBeTruthy();
+    // Ve "Taşıma yok" grubunda artık o adım YOK — şeride taşındı.
+    const orphan = screen.getByText("Taşıma yok").closest(".scr-board__lane") as HTMLElement;
+    expect(within(orphan).queryByText("Analiz + etki matrisi")).toBeNull();
+  });
+
+  it("akış tipine göre adımları eler — `planFor` ile aynı", async () => {
+    stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await screen.findByText("Jira statüsü");
+
+    // `analiz` (varsayılan): analiz kapıları var, kod adımları YOK.
+    expect(screen.getByText("PO onayı")).toBeTruthy();
+    expect(screen.queryByText("Geliştirme (sandbox)")).toBeNull();
+
+    // `duzeltme`: kod adımları var, analiz kapıları YOK.
+    await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "duzeltme");
+    expect(screen.queryByText("PO onayı")).toBeNull();
+    expect(screen.getByText("Geliştirme (sandbox)")).toBeTruthy();
+
+    // `gelistirme`: ikisi de.
+    await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "gelistirme");
+    expect(screen.getByText("PO onayı")).toBeTruthy();
+    expect(screen.getByText("Geliştirme (sandbox)")).toBeTruthy();
+  });
+
+  it("kapı kutusuna tıklamak GERÇEK bir ayar — seçim `gateSteps` olarak kaydedilir", async () => {
+    const fn = stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await userEvent.type(screen.getByLabelText("Bot kullanıcısı"), "712020:bot");
+    await screen.findByText("Jira statüsü");
+    await userEvent.selectOptions(screen.getByLabelText("Neye göre eşleşsin"), "assigned");
+
+    // Seçim yokken kapılar "onay beklenir" (bugünkü davranış: risk seviyesine
+    // göre). Analiz kapısının kutusuna basmak onu SEÇER.
+    const gateLane = screen.getByText("PO onayı").closest(".scr-board__step") as HTMLElement;
+    await userEvent.click(within(gateLane).getByRole("button", { name: "onay beklenir" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST" && !String(c[0]).includes("seed-defaults"),
+      );
+      expect(posted).toBeTruthy();
+      const body = JSON.parse((posted![1] as RequestInit).body as string) as Record<string, unknown>;
+      // Kutuya dokunmak bir SEÇİMDİR: `null` (seçim yok) değil, dizi gider.
+      expect(body.gateSteps).toEqual({ steps: ["4"] });
+    });
+  });
+
+  it("ajan rozetini çıkarmak kaydedilmez, ve tahta bunu SÖYLÜYOR", async () => {
+    stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await screen.findByText("Jira statüsü");
+
+    // Uyarı ilk anda ekranda: sahte bir kalıcılık gösterilmiyor.
+    expect(screen.getByText(/Ajan rozetlerini çıkarmak\/geri takmak ŞU AN KAYDEDİLMİYOR/)).toBeTruthy();
+
+    // Rozet çıkarılabilir ve havuza düşer; adım "ajan bırak" boşluğuna döner.
+    expect(screen.getByText("hepsi bağlı")).toBeTruthy();
+    const step = screen.getByText("Analiz + etki matrisi").closest(".scr-board__step") as HTMLElement;
+    await userEvent.click(within(step).getByRole("button", { name: "Analist ajanını bu adımdan çıkar" }));
+    expect(within(step).getByText("ajan bırak")).toBeTruthy();
+    expect(screen.queryByText("hepsi bağlı")).toBeNull();
+
+    // Ve geri takılabilir — kendi adımına.
+    await userEvent.click(screen.getByRole("button", { name: "Analist ajanını adımına geri tak" }));
+    expect(screen.getByText("hepsi bağlı")).toBeTruthy();
+  });
+});
+
+/**
+ * ── TAKIM YÖNETİMLİ PROJE: KURAL ID SAKLAR ─────────────────────────────────
+ *
+ * Takım yönetimli ("next-gen", `simplified: true`) bir Jira projesinde JQL,
+ * konu türünü ve statüyü YALNIZ id ile eşler. Hata vermez, boş döner. Canlı
+ * ölçüm (proje OPS, aynı ticket kümesi):
+ *
+ *   issuetype = "Görev"        ->  0 ticket      issuetype = 10008 -> 14
+ *   status in ("Yapılacaklar") ->  0 ticket      status = 10004    -> 12
+ *
+ * Yani adla kaydedilen bir kural o projede sonsuza dek hiçbir ticket bulmaz.
+ * Bu blok üç şeyi tutuyor: takım yönetimlide POST gövdesindeki `matchValue`
+ * ID'dir, şirket yönetimlide ADDIR, ve kullanıcı iki hâlde de ADI görür.
+ */
+describe("tetikleme değeri — id mi ad mı kaydedilir", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const ISSUE_TYPES = {
+    values: ["Görev", "Hata"],
+    options: [
+      { name: "Görev", id: "10008" },
+      { name: "Hata", id: "10004" },
+    ],
+  };
+  const STATUSES = {
+    values: ["Yapılacaklar", "Tamam"],
+    options: [
+      { name: "Yapılacaklar", id: "10004" },
+      { name: "Tamam", id: "10006" },
+    ],
+  };
+
+  /**
+   * `/onboarding/jira-match-values` cevabını `kind`e göre veren stub — ekran
+   * ikisini de (seçili tür + statü kapısı için statüler) aynı anda çeker.
+   */
+  function stubMatchValues(teamManaged: boolean, rules: object[] = []): ReturnType<typeof vi.fn> {
+    const base = stubFetch(rules);
+    const fn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/onboarding/jira-match-values")) {
+        const payload = u.includes("kind=status") ? STATUSES : ISSUE_TYPES;
+        return Response.json({ ok: true, teamManaged, ...payload });
+      }
+      if (u.includes("/onboarding/jira-connections")) {
+        return Response.json({ connections: [{ id: "jira", displayName: "Jira", botAccountId: null }] });
+      }
+      return base(u, init);
+    });
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+
+  /** Formu doldurup kaydeder ve POST gövdesini döndürür. */
+  async function addRuleAndReadBody(fn: ReturnType<typeof vi.fn>, pick: string): Promise<Record<string, unknown>> {
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await userEvent.type(screen.getAllByRole("textbox")[0]!, "712020:bot");
+    // Değer kutusu artık bir açılır liste — seçim ADIYLA yapılır.
+    await userEvent.selectOptions(await screen.findByLabelText("Değer"), screen.getByRole("option", { name: pick }));
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    return await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      return JSON.parse((posted![1] as RequestInit).body as string) as Record<string, unknown>;
+    });
+  }
+
+  it("takım yönetimli projede seçilen değerin ID'sini POST eder", async () => {
+    const fn = stubMatchValues(true);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+    const body = await addRuleAndReadBody(fn, "Görev (Task)");
+    // "Görev" DEĞİL: o değerle kurulan JQL canlıda 0 ticket döndürüyor.
+    expect(body.matchValue).toBe("10008");
+    expect(body.matchKind).toBe("issuetype");
+  });
+
+  it("şirket yönetimli projede bugünkü gibi ADI POST eder", async () => {
+    const fn = stubMatchValues(false);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+    const body = await addRuleAndReadBody(fn, "Görev (Task)");
+    expect(body.matchValue).toBe("Görev");
+  });
+
+  it("statü kuralında da ID'yi kaydeder — aynı JQL tuzağı statüde de var", async () => {
+    const fn = stubMatchValues(true);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await userEvent.selectOptions(screen.getByLabelText("Neye göre eşleşsin"), "status");
+    await userEvent.type(screen.getAllByRole("textbox")[0]!, "712020:bot");
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Değer"),
+      await screen.findByRole("option", { name: "Yapılacaklar (To Do)" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    const body = await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      return JSON.parse((posted![1] as RequestInit).body as string) as Record<string, unknown>;
+    });
+    expect(body.matchValue).toBe("10004");
+    expect(body.matchKind).toBe("status");
+  });
+
+  it("kullanıcı ID GÖRMEZ: kutuda adlar yazar, kayıtlı id'nin ADI seçili gelir", async () => {
+    // Kayıtlı kural id tutuyor — düzenlemeye alındığında kutu "Görev" göstermeli.
+    stubMatchValues(true, [{ ...SEED, matchKind: "issuetype", matchValue: "10008" }]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+
+    const select = (await screen.findByLabelText("Değer")) as HTMLSelectElement;
+    // Etiketler ad; değerler id (kaydedilen taraf).
+    await waitFor(() => {
+      const labels = [...select.options].map((o) => o.textContent);
+      expect(labels).toContain("Görev (Task)");
+      expect(labels).not.toContain("10008");
+      expect([...select.options].map((o) => o.value)).toContain("10008");
+    });
+  });
+
+  it("takım yönetimli olmadığında kutunun DEĞERLERİ de addır", async () => {
+    stubMatchValues(false);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const select = (await screen.findByLabelText("Değer")) as HTMLSelectElement;
+    await waitFor(() => expect([...select.options].map((o) => o.value)).toContain("Görev"));
+    expect([...select.options].map((o) => o.value)).not.toContain("10008");
+  });
+});

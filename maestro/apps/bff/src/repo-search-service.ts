@@ -39,7 +39,7 @@ export interface RepoSearchHit {
   readonly files: readonly string[];
 }
 
-export type RepoSearchSource = "code-search" | "repo-names";
+export type RepoSearchSource = "code-search" | "file-tree" | "repo-names";
 
 export type RepoSearchResult =
   | { ok: true; source: RepoSearchSource; hits: readonly RepoSearchHit[]; terms: readonly string[] }
@@ -142,7 +142,96 @@ export async function searchRepos(
 
   const repos = request.repos ?? [];
   if (repos.length === 0) return { ok: false, messageKey: "repo_search.unavailable" };
+
+  /**
+   * ── EKLENTİ YOKSA: DOSYA AĞACI ─────────────────────────────────────────
+   *
+   * Depo ADINA bakmak tek başına çok zayıf: bir ticket'ın terimleri depo
+   * adında geçmek zorunda değil ("bakiye hesabı yanlış" ile `odeme-servis`
+   * deposu hiç eşleşmez, oysa kod oradadır).
+   *
+   * ADO'nun `items` uç noktası HER kurulumda vardır — Code Search gibi bir
+   * eklenti değil, git API'sinin kendisi. Deponun dosya YOLLARINI verir ve
+   * yollar sınıf/paket/modül adlarını taşır: `src/Bakiye/BakiyeHesap.cs`
+   * ticket'ın "bakiye" terimiyle eşleşir, depo adı eşleşmese bile.
+   *
+   * İçerik araması kadar isabetli değil (dosyanın İÇİ okunmuyor) ama depo
+   * adına bakmaktan kat kat iyi ve hiçbir eklenti gerektirmiyor.
+   *
+   * Ağaçlar PARALEL okunur ama depo sayısı sınırlanır: onlarca depolu bir
+   * projede her ağacı çekmek alımı dakikalarca bekletirdi. Sınır dışında
+   * kalan depolar ad eşleşmesiyle yine değerlendirilir, yani kimse elenmez.
+   */
+  if (connection.kind === "ado" && token !== null) {
+    const byTree = await adoFileTreeSearch(connection.baseUrl, token, terms, repos, fetchImpl);
+    if (byTree !== null && byTree.length > 0) return { ok: true, source: "file-tree", hits: byTree, terms };
+  }
+
   return { ok: true, source: "repo-names", hits: matchByName(repos, terms), terms };
+}
+
+/** Bir turda ağacı okunacak en fazla depo — alımı bekletmemek için. */
+const TREE_SCAN_LIMIT = 40;
+
+/**
+ * Depoların dosya YOLLARINDA ticket'ın terimlerini ara.
+ *
+ * `null` = hiçbir ağaç okunamadı (yetki yok, uç cevap vermedi). Boş dizi =
+ * okundu ve eşleşme yok; ikisi ayrı cevaplardır ve çağıran ilkinde ad
+ * eşleşmesine düşer.
+ */
+async function adoFileTreeSearch(
+  baseUrl: string,
+  token: string,
+  terms: readonly string[],
+  repos: readonly string[],
+  fetchImpl: ConnectorFetch,
+): Promise<readonly RepoSearchHit[] | null> {
+  const base = baseUrl.trim().replace(/\/+$/u, "");
+  const headers = { authorization: `Basic ${Buffer.from(`:${token}`).toString("base64")}`, accept: "application/json" };
+  const lowered = terms.map((term) => term.toLocaleLowerCase("tr"));
+
+  const scanned = await Promise.all(
+    repos.slice(0, TREE_SCAN_LIMIT).map(async (full): Promise<RepoSearchHit | null> => {
+      const slash = full.indexOf("/");
+      if (slash <= 0) return null;
+      const project = full.slice(0, slash);
+      const repo = full.slice(slash + 1);
+      const url =
+        `${base}/${encodeURIComponent(project)}/_apis/git/repositories/${encodeURIComponent(repo)}` +
+        `/items?recursionLevel=Full&api-version=7.1`;
+      let body: { value?: readonly { path?: string }[] };
+      try {
+        const response = await fetchImpl(url, { method: "GET", headers });
+        if (response.status < 200 || response.status >= 300) return null;
+        body = (await response.json()) as { value?: readonly { path?: string }[] };
+      } catch {
+        return null;
+      }
+      let matches = 0;
+      const files: string[] = [];
+      for (const item of body.value ?? []) {
+        const path = item.path;
+        if (path === undefined || path === "") continue;
+        const lowerPath = path.toLocaleLowerCase("tr");
+        // Bir dosya kaç terim taşıyorsa o kadar sayılır: iki terim birden
+        // taşıyan bir yol (`src/kredi/LimitHesap.cs`) tekini taşıyandan
+        // gerçekten daha güçlü bir işarettir.
+        const hitCount = lowered.filter((term) => lowerPath.includes(term)).length;
+        if (hitCount === 0) continue;
+        matches += hitCount;
+        if (files.length < 3) files.push(path);
+      }
+      return matches === 0 ? null : { repo: full, matches, files };
+    }),
+  );
+
+  const hits = scanned.filter((hit): hit is RepoSearchHit => hit !== null);
+  // Hiçbir ağaç okunamadıysa (hepsi null ve hiç eşleşme yok) `null` dönmek
+  // gerekir ki çağıran ad eşleşmesine düşsün. Ama okunup eşleşme bulunamadığı
+  // hâlde de dizi boştur — ikisi burada ayrılamaz, o yüzden boş dizi de
+  // "cevap veremedim" sayılıp ad eşleşmesine bırakılıyor.
+  return hits.length === 0 ? null : hits.sort((a, b) => b.matches - a.matches || a.repo.localeCompare(b.repo));
 }
 
 /**

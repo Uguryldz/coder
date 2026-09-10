@@ -174,9 +174,36 @@ export type StatusMap = z.infer<typeof StatusMapSchema>;
  * environment branch the work lands on (develop/test), per row.
  */
 const FieldId = z.string().trim().min(1).max(128);
+/**
+ * "PROJEYİ SEÇ, DEPOYU SİSTEM BULSUN" — üçüncü kip.
+ *
+ * İlk iki kip operatörden bir DEPO adı ister: ya sabit bir depo, ya alan
+ * değerine göre bir depo. Onlarca depolu bir Azure DevOps projesinde ikisi de
+ * cevaplanamaz — sahada söylendiği gibi, ticket'ın hangi depoyu ilgilendirdiğini
+ * kimse bilmiyor.
+ *
+ * Bu kipte operatör yalnız PROJEYİ söyler; hangi depo olduğunu ticket geldiğinde
+ * kod araması bulur (`repo-search-service.ts`). Sabit kipin `field: "*"`
+ * damgasıyla aynı hizada duran bir damga: `field: "?"` — "sorulacak" demek.
+ *
+ * `entries[0].value` yine `"*"`, `appId` ise ARANACAK PROJE. Şeklin sabit kiple
+ * aynı kalması kasıtlı: okuyan her yer (`isFixedRepoMap`, `resolveRepoMapEntry`,
+ * prova, tanı raporu) tek bir `entries[0]` biçimini biliyor ve üçüncü bir şekil
+ * öğrenmek zorunda kalmıyor.
+ */
+export const SEARCH_REPO_MAP_FIELD = "?";
+
+/** Bu eşleme "projeyi ara" kipinde mi — depo adı yerine proje adı taşır. */
+export function isSearchRepoMap(map: { readonly field: string } | null | undefined): boolean {
+  return map?.field === SEARCH_REPO_MAP_FIELD;
+}
+
 export const RepoMapSchema = z
   .object({
-    /** Jira field id (`customfield_10234`) or a mappable system field (`components`). */
+    /**
+     * Jira field id (`customfield_10234`), a mappable system field
+     * (`components`), `"*"` (sabit depo) ya da `"?"` (projeyi ara).
+     */
     field: FieldId,
     /** The field's display name, for the screen; never used to match. */
     fieldName: z.string().trim().max(128).optional(),

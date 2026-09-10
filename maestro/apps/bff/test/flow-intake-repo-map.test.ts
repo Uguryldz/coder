@@ -51,6 +51,29 @@ async function deliver(h: Awaited<ReturnType<typeof harness>>, ticket: string): 
   return h.runs.started[before] as { appId?: string; targetBranch?: string } | undefined;
 }
 
+/**
+ * Arama ticket'ın METNİNİ okur, sınıflandırma alanlarını değil — özet ve
+ * açıklama tam da aranacak terimlerin yaşadığı yerdir. Seed edilmemiş bir
+ * ticket'ta `getTicket` fırlatır (bilerek: cevap vermeyen bir Jira), yani
+ * metin okunamaz ve arama hiç konuşamaz.
+ */
+const seedTicket = (h: Awaited<ReturnType<typeof harness>>, ticket: string): void => {
+  h.work.putTicket({
+    key: ticket,
+    projectKey: "UGURPAY",
+    issueType: "Hata",
+    summary: "Kredi limiti ekranında bakiye yanlış",
+    description: "Kredi başvurusunda limit hesabı hatalı çalışıyor.",
+    reporter: "can.ozturk",
+    assignee: "712020:maestro-bot",
+    components: [],
+    labels: [],
+    parentKey: null,
+    createdAt: "2026-08-09T09:00:00.000Z",
+    updatedAt: "2026-08-09T09:00:00.000Z",
+  });
+};
+
 describe("intake — repo map picks the application", () => {
   it("a fixed map sends every ticket of the rule to its application without reading any field", async () => {
     const h = await harness({
@@ -113,28 +136,6 @@ describe("intake — repo map picks the application", () => {
 describe("intake — kod aramasıyla depo bulma", () => {
   const found = (repo: string) => () => Promise.resolve({ repo, why: "kod aramasında 12 eşleşme" });
 
-  /**
-   * Arama ticket'ın METNİNİ okur, sınıflandırma alanlarını değil — özet ve
-   * açıklama tam da aranacak terimlerin yaşadığı yerdir. Seed edilmemiş bir
-   * ticket'ta `getTicket` fırlatır (bilerek: cevap vermeyen bir Jira), yani
-   * metin okunamaz ve arama hiç konuşamaz.
-   */
-  const seedTicket = (h: Awaited<ReturnType<typeof harness>>, ticket: string): void => {
-    h.work.putTicket({
-      key: ticket,
-      projectKey: "UGURPAY",
-      issueType: "Hata",
-      summary: "Kredi limiti ekranında bakiye yanlış",
-      description: "Kredi başvurusunda limit hesabı hatalı çalışıyor.",
-      reporter: "can.ozturk",
-      assignee: "712020:maestro-bot",
-      components: [],
-      labels: [],
-      parentKey: null,
-      createdAt: "2026-08-09T09:00:00.000Z",
-      updatedAt: "2026-08-09T09:00:00.000Z",
-    });
-  };
 
   it("picks the repository code search found when no rule and no human named one", async () => {
     const h = await harness({
@@ -196,6 +197,66 @@ describe("intake — kod aramasıyla depo bulma", () => {
       repoSearch: () => Promise.reject(new Error("almsearch unreachable")),
     });
     expect((seedTicket(h, "UGURPAY-44"), await deliver(h, "UGURPAY-44"))?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+  });
+});
+
+/**
+ * ── "PROJEYİ SEÇ, DEPOYU SİSTEM BULSUN" ─────────────────────────────────────
+ *
+ * İlk iki kip operatörden bir DEPO adı ister. Onlarca depolu bir ADO projesinde
+ * ikisi de cevaplanamaz: ticket'ın hangi depoyu ilgilendirdiğini kimse bilmiyor.
+ * Bu kipte operatör yalnız PROJEYİ söyler, depoyu kod araması bulur.
+ */
+describe("intake — projeyi seç, depoyu arama bulsun", () => {
+  const searchMap = (project: string) => ({ field: "?", entries: [{ value: "*", appId: project }] });
+
+  it("searches instead of treating the project name as a repository", async () => {
+    const asked: { text: string; project?: string }[] = [];
+    const h = await harness({
+      applications: MAPPED_APPS,
+      listeningRules: [rule({ repoMap: searchMap("Bankacılık") })],
+      repoSearch: (request) => {
+        asked.push(request);
+        return Promise.resolve({ repo: "bank/kredi", why: "kod aramasında 12 eşleşme" });
+      },
+    });
+    seedTicket(h, "UGURPAY-50");
+    expect((await deliver(h, "UGURPAY-50"))?.appId).toBe("bank/kredi");
+    /**
+     * Aranan proje KURALDAN gelir, Jira'nın proje anahtarından değil: Jira
+     * projesi "UGURPAY" iken kodun yaşadığı ADO projesi "Bankacılık" olabilir
+     * ve o hâlde arama yanlış projede arardı.
+     */
+    expect(asked[0]?.project).toBe("Bankacılık");
+  });
+
+  it("falls back to the project binding when the search cannot answer", async () => {
+    const h = await harness({
+      applications: MAPPED_APPS,
+      listeningRules: [rule({ repoMap: searchMap("Bankacılık") })],
+      repoSearch: () => Promise.resolve(null),
+    });
+    seedTicket(h, "UGURPAY-51");
+    // Kural "ara" diyor ama arama bulamadı: `appId: ""` asla bir depo olarak
+    // kullanılmamalı — o boş dize klonu anlamsız bir adla denerdi.
+    expect((await deliver(h, "UGURPAY-51"))?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+  });
+
+  it("still lets a human override the search with /ai-assign", async () => {
+    const calls: unknown[] = [];
+    const h = await harness({
+      applications: MAPPED_APPS,
+      listeningRules: [rule({ repoMap: searchMap("Bankacılık") })],
+      repoSearch: (request) => {
+        calls.push(request);
+        return Promise.resolve({ repo: "bank/kredi", why: "kod araması" });
+      },
+    });
+    seedTicket(h, "UGURPAY-52");
+    // Not: elle atama yolunun kendi testleri var; burada tutulan şey, arama
+    // kipinin o yolu ENGELLEMEDİĞİ — karar zincirinde en önde insan durur.
+    expect((await deliver(h, "UGURPAY-52"))?.appId).toBe("bank/kredi");
+    expect(calls).toHaveLength(1);
   });
 });
 

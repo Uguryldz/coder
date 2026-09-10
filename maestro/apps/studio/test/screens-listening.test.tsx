@@ -1113,6 +1113,60 @@ describe("repo map (depo eşlemesi)", () => {
     expect(await screen.findByText(/1630 dosya/u)).toBeTruthy();
   });
 
+  /**
+   * "PROJEYİ SEÇ, DEPOYU SİSTEM BULSUN" — üçüncü kip.
+   *
+   * İlk iki kip operatörden bir DEPO adı ister. Onlarca depolu bir Azure
+   * DevOps projesinde ikisi de cevaplanamaz: ticket'ın hangi depoyu
+   * ilgilendirdiğini kimse bilmiyor. Bu kipte yalnız proje söylenir.
+   */
+  it("saves a project to search instead of a repository name", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.click(screen.getByLabelText(/Projeyi seç, depoyu sistem bulsun/u));
+    await userEvent.type(await screen.findByLabelText("Aranacak proje"), "Bankacılık");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      // `field: "?"` = "sorulacak". Şekil sabit kiple aynı kalır ki okuyan her
+      // yer tek bir `entries[0]` biçimini bilsin; ayıran tek şey damgadır.
+      expect(JSON.parse((posted![1] as RequestInit).body as string).repoMap).toEqual({
+        field: "?",
+        entries: [{ value: "*", appId: "Bankacılık" }],
+      });
+    });
+  });
+
+  it("refuses to save the search mode with no project named", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.click(screen.getByLabelText(/Projeyi seç, depoyu sistem bulsun/u));
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    expect(await screen.findByText(/Depo eşlemesi açık ama tamamlanmamış/u)).toBeTruthy();
+    expect(
+      fn.mock.calls.find((c) => String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST"),
+    ).toBeUndefined();
+  });
+
   it("refuses to save an on-but-incomplete field map instead of silently dropping it", async () => {
     const fn = stubFetch([]);
     renderScreen(ADMIN);

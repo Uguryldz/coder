@@ -810,9 +810,11 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
     ? t("listening.repomap.summary_off")
     : incomplete
       ? t("listening.repomap.summary_incomplete")
-      : draft.repoMapMode === "fixed"
-        ? t("listening.repomap.summary_fixed", { app: rows[0]?.appId.trim() ?? "" })
-        : t("listening.repomap.summary_count", { count: String(complete), field: draft.repoMapFieldName || draft.repoMapField });
+      : draft.repoMapMode === "search"
+        ? t("listening.repomap.summary_search", { project: rows[0]?.appId.trim() ?? "" })
+        : draft.repoMapMode === "fixed"
+          ? t("listening.repomap.summary_fixed", { app: rows[0]?.appId.trim() ?? "" })
+          : t("listening.repomap.summary_count", { count: String(complete), field: draft.repoMapFieldName || draft.repoMapField });
   return (
     <details
       className="scr-adv"
@@ -843,7 +845,35 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
               <input type="radio" name="repomap-mode" checked={draft.repoMapMode === "field"} onChange={() => patch({ repoMapMode: "field" })} />
               {t("listening.repomap.mode_field")}
             </label>
+            {/*
+              Üçüncü kip, ilk ikisinin CEVAPLAYAMADIĞI soru için: onlarca depolu
+              bir Azure DevOps projesinde ticket'ın hangi depoyu ilgilendirdiğini
+              kimse bilmiyor. Operatör yalnız projeyi söyler.
+            */}
+            <label className="scr-check">
+              <input type="radio" name="repomap-mode" checked={draft.repoMapMode === "search"} onChange={() => patch({ repoMapMode: "search" })} />
+              {t("listening.repomap.mode_search")}
+            </label>
           </div>
+        )}
+        {draft.repoMapOn && draft.repoMapMode === "search" && (
+          <div className="scr-stack">
+            <p className="scr-hint" style={{ margin: 0 }}>
+              {t("listening.repomap.search_explain")}
+            </p>
+            <Input
+              label={t("listening.repomap.search_project")}
+              value={rows[0]?.appId ?? ""}
+              onChange={(e) => setRow(0, { appId: e.target.value })}
+              placeholder="Bankacılık"
+              hint={t("listening.repomap.search_project_hint")}
+            />
+          </div>
+        )}
+        {draft.repoMapOn && draft.repoMapMode === "search" && incomplete && (
+          <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
+            {t("listening.repomap.incomplete_search")}
+          </p>
         )}
         {draft.repoMapOn && draft.repoMapMode === "fixed" && (
           <div className="scr-grid scr-grid--2">

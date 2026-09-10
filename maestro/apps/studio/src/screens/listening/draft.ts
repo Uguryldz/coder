@@ -66,8 +66,15 @@ export interface RuleDraft {
   readonly gatePanelOpen: boolean;
   /** Depo eşlemesi: açık mı, hangi Jira alanı, satırlar. */
   readonly repoMapOn: boolean;
-  /** "fixed": her ticket tek uygulamaya; "field": ticket'taki alanın değerine göre. */
-  readonly repoMapMode: "fixed" | "field";
+  /**
+   * "fixed": her ticket tek uygulamaya; "field": ticket'taki alanın değerine
+   * göre; "search": operatör yalnız PROJEYİ söyler, depoyu kod araması bulur.
+   *
+   * Üçüncüsü, ilk ikisinin cevaplayamadığı bir soru için var: onlarca depolu
+   * bir Azure DevOps projesinde ticket'ın hangi depoyu ilgilendirdiğini kimse
+   * bilmiyor — ne operatör, ne kural.
+   */
+  readonly repoMapMode: "fixed" | "field" | "search";
   readonly repoMapField: string;
   readonly repoMapFieldName: string;
   readonly repoMapRows: readonly RepoMapRowDraft[];
@@ -144,7 +151,14 @@ export function draftFromRule(rule: ListeningRule, jiraConnectionId: string): Ru
     gateOwnerless: gates?.ownerless === true,
     gatePanelOpen: gates !== null,
     repoMapOn: (rule.repoMap ?? null) !== null,
-    repoMapMode: rule.repoMap === undefined || rule.repoMap === null || rule.repoMap.field === "*" ? "fixed" : "field",
+    repoMapMode:
+      rule.repoMap === undefined || rule.repoMap === null
+        ? "fixed"
+        : rule.repoMap.field === "*"
+          ? "fixed"
+          : rule.repoMap.field === "?"
+            ? "search"
+            : "field",
     repoMapField: rule.repoMap?.field === "*" ? "" : (rule.repoMap?.field ?? ""),
     repoMapFieldName: rule.repoMap?.fieldName ?? "",
     repoMapRows:
@@ -194,6 +208,16 @@ export function priorityOf(text: string): number | null {
 /** The map as it will be saved: only complete rows; null when off or empty. */
 export function repoMapOf(d: RuleDraft): RepoMap | null {
   if (!d.repoMapOn) return null;
+  if (d.repoMapMode === "search") {
+    /**
+     * "Projeyi seç, depoyu sistem bulsun": `entries[0].appId` bir depo DEĞİL,
+     * aranacak projedir. Şeklin sabit kiple aynı kalması kasıtlı — okuyan her
+     * yer tek bir `entries[0]` biçimini biliyor.
+     */
+    const project = d.repoMapRows[0]?.appId.trim() ?? "";
+    if (project === "") return null;
+    return { field: "?", entries: [{ value: "*", appId: project }] };
+  }
   if (d.repoMapMode === "fixed") {
     const first = d.repoMapRows[0];
     const appId = first?.appId.trim() ?? "";

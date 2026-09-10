@@ -7,7 +7,7 @@ import { resolveGateSteps } from "./gate-defaults.js";
 import { flowDecisionFor, statusGateOf, type FlowDecision } from "./flow-decision.js";
 import { decisionLogLine, decisionLogMarkdown, type IntakeDecisionFacts } from "./intake-decision-log.js";
 import type { ListeningRuleRecord } from "./listening-store.js";
-import { isFixedRepoMap, resolveRepoMapEntry } from "./listening-store.js";
+import { isFixedRepoMap, isSearchRepoMap, resolveRepoMapEntry } from "./listening-store.js";
 
 /**
  * Intake: the decision to put a ticket on the workflow engine, and every
@@ -274,9 +274,18 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
    * Bulunamazsa (arama kurulu değil, eşleşme yok, uç cevap vermedi) zincir
    * eskisi gibi bağlamaya düşer: arama bir EK, bir koşul değil.
    */
+  /**
+   * Kural "projeyi seç, depoyu bul" diyorsa aranacak proje ONDAN gelir; yoksa
+   * Jira'nın proje anahtarı kullanılır. İkisi aynı şey değil: bir Jira projesi
+   * "OPS" olabilirken kodun yaşadığı ADO projesi "Bankacılık" olabilir, ve o
+   * hâlde arama yanlış projede arardı.
+   */
+  const searchProject = searchRepoMapProject(deps, flowDecision.ruleId);
   const searched =
-    request.appId !== undefined || mapped !== null ? null : await searchRepoFor(deps, request, projectKey);
-  const appId = request.appId ?? mapped?.appId ?? searched?.appId ?? binding.appId;
+    request.appId !== undefined || (mapped !== null && !mapped.search)
+      ? null
+      : await searchRepoFor(deps, request, (await searchProject) ?? projectKey);
+  const appId = request.appId ?? (mapped?.search === true ? undefined : mapped?.appId) ?? searched?.appId ?? binding.appId;
   if (appId === null || appId === undefined) {
     // Tier ③ of M99, narrowed to the flows it was written for: no rule matched
     // an application and no human said which one, so a flow that WRITES CODE
@@ -599,6 +608,25 @@ export /**
  * Her hata `null`'a düşer ve alım devam eder: bir arama arızası, ticket'ın
  * hiç işlenmemesine yol açmamalı.
  */
+/**
+ * "Projeyi ara" kipindeki kuralın ARANACAK PROJESİ — ya da `null`.
+ *
+ * Bu kipte `entries[0].appId` bir depo değil, bir PROJE adıdır: operatör
+ * hangi depo olduğunu bilmiyor, hangi proje olduğunu biliyor.
+ */
+async function searchRepoMapProject(deps: ResolvedDeps, ruleId: string | undefined): Promise<string | null> {
+  if (ruleId === undefined || deps.listening === undefined) return null;
+  try {
+    const rule = await deps.listening.get(ruleId);
+    const map = rule?.repoMap ?? null;
+    if (!isSearchRepoMap(map)) return null;
+    const project = map?.entries[0]?.appId.trim() ?? "";
+    return project === "" ? null : project;
+  } catch {
+    return null;
+  }
+}
+
 async function searchRepoFor(
   deps: ResolvedDeps,
   request: IntakeRequest,
@@ -624,7 +652,7 @@ async function resolveRepoMap(
   deps: ResolvedDeps,
   ticket: TicketKey,
   ruleId: string | undefined,
-): Promise<{ appId: string; targetBranch?: string; field: string; value: string } | null> {
+): Promise<{ appId: string; targetBranch?: string; field: string; value: string; search?: boolean } | null> {
   if (ruleId === undefined || deps.listening === undefined) return null;
   let rule: ListeningRuleRecord | null;
   try {
@@ -634,6 +662,16 @@ async function resolveRepoMap(
   }
   const map = rule?.repoMap ?? null;
   if (map === null) return null;
+  /**
+   * "PROJEYİ SEÇ, DEPOYU SİSTEM BULSUN" kipinde `entries[0].appId` bir depo
+   * DEĞİL, aranacak projedir. Buradan bir depo dönemez; `search: true` ile
+   * çağırana "bu kural aramayı istiyor" denir ve karar zinciri aramayı çalıştırır.
+   */
+  if (isSearchRepoMap(map)) {
+    const project = map.entries[0]?.appId.trim() ?? "";
+    console.info(`[maestro] ${ticket}: dinleme kuralı ${ruleId} depoyu ARAMAYLA seçecek (proje: ${project === "" ? "—" : project}).`);
+    return { appId: "", field: map.field, value: "*", search: true };
+  }
   if (isFixedRepoMap(map)) {
     const fixed = resolveRepoMapEntry(map, undefined);
     if (fixed === null) return null;

@@ -287,6 +287,17 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
       <p className="scr-hint" style={{ margin: 0 }}>
         {t("listening.board.intro")}
       </p>
+      {/*
+        HANGİ AJANLARIN KOŞTUĞU, AKIŞ TİPİNE GÖRE — ve neden diğerlerinin
+        GÖRÜNMEDİĞİ. Tahta koşmayacak bir adımı çizmiyor (doğru), ama bunu
+        söylemeden çizmemek operatöre "dört ajan vardı, ikisi nerede" dedirtti:
+        `analiz` akışında kod hiç yazılmadığı için geliştirici ve doğrulayıcı
+        koşmaz, `duzeltme` akışında analiz kapıları açılmaz. Eksikliği
+        adlandırmak, onu görünmez bırakmaktan iyidir.
+      */}
+      <p className="scr-hint scr-board__flow" style={{ margin: 0 }}>
+        {t(`listening.board.flow_note.${draft.flowType}`)}
+      </p>
 
       {/* BAĞLI OLMAYAN AJANLAR — adımından çıkarılanlar burada bekler. */}
       <div className="scr-board__palette">

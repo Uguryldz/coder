@@ -53,3 +53,15 @@ export * from "./stores/read-memory.js";
 export * from "./stores/settings-env.js";
 export * from "./stores/settings-wiring.js";
 export * from "./stores/variant-memory.js";
+
+/**
+ * Kural→akış kararı, TEŞHİS için dışa veriliyor.
+ *
+ * `runIntake` bunu kendi içinde çağırıyor ve dışarıdan çağıran yok — ama
+ * "bu kural hangi ticket'ları alır" sorusunu ajana hiçbir şey göndermeden
+ * cevaplayabilmek, sahada tekrar tekrar ihtiyaç duyulan şey oldu
+ * (`apps/deploy/src/bin/kural-provasi.ts`). Kararı ikinci kez yazmak yerine
+ * ASIL fonksiyonu prova ettirmek, provanın motorla ayrışmasını imkânsız kılar.
+ */
+export { flowDecisionFor, statusGateOf } from "./flow-decision.js";
+export type { ClassifiableTicket, FlowDecision } from "./flow-decision.js";

@@ -1207,6 +1207,15 @@
  * Sürüklenemez, o yüzden `grab` imleci yalan olurdu; solgun kenar da onu
  * "çıkarılabilir" sanmayı önlüyor.
  */
+/* Akış notu: hangi ajanların koştuğunu ve neden diğerlerinin çizilmediğini
+   söyler. Tahtanın üstünde, rozetlerden önce okunmalı. */
+.scr-board__flow {
+  padding: 7px 10px;
+  border-left: 2px solid var(--purple);
+  background: var(--purple-bg);
+  border-radius: 0 5px 5px 0;
+}
+
 .scr-board__agent--fixed {
   cursor: default;
   border-style: dashed;

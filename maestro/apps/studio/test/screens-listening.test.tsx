@@ -145,7 +145,7 @@ describe("ListeningScreen", () => {
     expect(await screen.findByText("Hata")).toBeTruthy();
     // The flow type is localized — it appears in the row badge (and also in the
     // admin form's dropdown), so assert at least one occurrence.
-    expect(screen.getAllByText("Düzeltme").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Düzeltme (eski akış)").length).toBeGreaterThan(0);
   });
 
   it("shows the add-form to an admin", async () => {
@@ -689,20 +689,18 @@ describe("ListeningScreen", () => {
       const DEAD_REASON =
         "Hata düzeltme akışında analiz onayı adımı yoktur; bu an hiç gerçekleşmez.";
 
-      it("disables the analysis-approval points while düzeltme is selected, and revives them on switch back", async () => {
-        stubFetch([]);
+      /**
+       * `duzeltme` YENİ kurallarda artık sunulmuyor (kapı kutuları aynı işi
+       * görerek yapıyor), ama KAYITLI kurallarda yaşıyor ve o kuralı düzenleyen
+       * operatör aynı dürüst formu görmeli. Test bu yüzden kayıtlı bir
+       * `duzeltme` kuralını AÇIYOR — seçicide kendi değeri duruyor.
+       */
+      it("disables the analysis-approval points on a stored düzeltme rule, and revives them on switch away", async () => {
+        stubFetch([SEED]); // SEED.flowType === "duzeltme"
         renderScreen(ADMIN);
-        await screen.findByText("Yeni kural ekle");
+        await userEvent.click(await screen.findByRole("button", { name: "Düzenle" }));
+        await screen.findByLabelText("Ne yapılsın (akış)");
         await optIn();
-
-        // The default flow (analiz) walks the gate: all five points are live.
-        const onReview = (await screen.findByLabelText(
-          "Analiz onaya çıktığında",
-        )) as HTMLInputElement;
-        expect(onReview.disabled).toBe(false);
-        expect(screen.queryByText(DEAD_REASON)).toBeNull();
-
-        await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "duzeltme");
         expect(
           (screen.getByLabelText("Analiz onaya çıktığında") as HTMLInputElement).disabled,
         ).toBe(true);
@@ -1078,6 +1076,56 @@ describe("kural tahtası (RuleBoard)", () => {
     expect(screen.queryByText("Analist")).toBeNull();
   });
 
+  /**
+   * Tahta koşmayacak adımı çizmiyor (doğru) ama bunu SÖYLEMEDEN çizmemek
+   * operatöre "dört ajan vardı, ikisi nerede" dedirtti. `analiz` akışında kod
+   * yazılmadığı için geliştirici ve doğrulayıcı yok; not bunu adlandırıyor ve
+   * ne yapılacağını söylüyor.
+   */
+  /**
+   * `duzeltme` yeni kurallarda SUNULMUYOR: motorda tek yaptığı kapı 4/5'i
+   * kapatmaktı ve operatör aynı sonucu tahtadaki kutulardan, hangisinin kapalı
+   * olduğunu GÖREREK alıyor. Ama kayıtlı kurallarda yaşıyor — seçicide kendi
+   * değerini görmeyen bir kural, kaydet'e basıldığında sessizce akış değiştirirdi.
+   */
+  it("yeni kuralda iki akış sunar; kayıtlı bir düzeltme kuralı kendi değerini görür", async () => {
+    stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByText("Yeni kural ekle");
+    const picker = screen.getByLabelText("Ne yapılsın (akış)");
+    const offered = [...picker.querySelectorAll("option")].map((o) => o.textContent);
+    expect(offered).toEqual(["Yalnız analiz belgesi", "Analiz + kod + PR"]);
+  });
+
+  it("kayıtlı düzeltme kuralı açıldığında seçenek listesine kendi değeri eklenir", async () => {
+    stubFetch([SEED]); // SEED.flowType === "duzeltme"
+    renderScreen(ADMIN);
+    await userEvent.click(await screen.findByRole("button", { name: "Düzenle" }));
+    const picker = await screen.findByLabelText("Ne yapılsın (akış)");
+    const offered = [...picker.querySelectorAll("option")].map((o) => o.textContent);
+    expect(offered).toContain("Düzeltme (eski akış)");
+    expect((picker as HTMLSelectElement).value).toBe("duzeltme");
+  });
+
+  it("akış notu hangi ajanların koştuğunu ve eksiklerin NEDEN yok olduğunu yazar", async () => {
+    stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await screen.findByText("Jira statüsü");
+
+    // Varsayılan akış analiz: kod ajanları yok, ve not sebebini söylüyor.
+    expect(screen.getByText(/kod YAZMAZ/)).toBeTruthy();
+    expect(screen.getByText(/geliştirici ve doğrulayıcı bu akışta hiç koşmaz/)).toBeTruthy();
+    expect(screen.queryByText("Geliştirici · kod yazımı")).toBeNull();
+
+    // Geliştirmeye çevirince dördü de görünür ve not değişir.
+    await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "gelistirme");
+    expect(await screen.findByText("Geliştirici · kod yazımı")).toBeTruthy();
+    expect(screen.getByText("Doğrulayıcı · kural denetimi")).toBeTruthy();
+    expect(screen.getByText(/dört ajan da koşar/)).toBeTruthy();
+  });
+
   it("adımı `statusMap`teki statünün HİZASINA koyar", async () => {
     stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
     renderScreen(ADMIN);
@@ -1118,10 +1166,8 @@ describe("kural tahtası (RuleBoard)", () => {
     expect(screen.getByText("PO onayı")).toBeTruthy();
     expect(screen.queryByText("Geliştirme (sandbox)")).toBeNull();
 
-    // `duzeltme`: kod adımları var, analiz kapıları YOK.
-    await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "duzeltme");
-    expect(screen.queryByText("PO onayı")).toBeNull();
-    expect(screen.getByText("Geliştirme (sandbox)")).toBeTruthy();
+    // `duzeltme` YENİ kuralda sunulmuyor; kayıtlı kuraldaki davranışı aşağıda
+    // kendi testinde doğrulanıyor. Burada kalan iki akış yeter.
 
     // `gelistirme`: ikisi de.
     await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "gelistirme");

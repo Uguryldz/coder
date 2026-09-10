@@ -22,6 +22,37 @@ export type MatchKind = "status" | "issuetype" | "assigned" | "label";
 export const MATCH_KINDS: readonly MatchKind[] = ["status", "issuetype", "assigned", "label"];
 export const FLOW_TYPES: readonly FlowType[] = ["analiz", "duzeltme", "gelistirme"];
 
+/**
+ * Yeni bir kuralda SUNULAN akışlar — üçün ikisi.
+ *
+ * `duzeltme` listede YOK ve bu bir eksik değil: motorda tek yaptığı şey kapı
+ * 4 ve 5'i kapatmak (`planFor` → `analysisGate: false`, ve o bayrak
+ * `ticket-workflow.ts`'te YALNIZ o iki kapıyı filtrelemek için okunuyor —
+ * başka hiçbir yerde etkisi yok). Operatör aynı sonucu tahtadaki kapı
+ * kutularına tıklayarak alıyor, üstelik hangi kapının kapandığını GÖREREK;
+ * akış tipiyle kapatmak onları sessizce yok ediyordu ve "kapılarım nerede"
+ * sorusunu üretiyordu.
+ *
+ * `analiz` ile `gelistirme` ayrı kalıyor, çünkü aralarındaki fark kapı ayarıyla
+ * İFADE EDİLEMİYOR: kod adımlarının (6a, 6c) kapısı yok, dolayısıyla "kod
+ * yazılmasın" ancak akış tipiyle söylenebilir.
+ *
+ * `FLOW_TYPES` üç değerli KALIYOR: `duzeltme` yazan mevcut kurallar aynen
+ * çalışır ve düzenlenirken kendi değerini seçenek olarak görür (aşağıdaki
+ * `flowOptions`). Yalnız YENİ seçim olarak sunulmaz.
+ */
+export const OFFERED_FLOW_TYPES: readonly FlowType[] = ["analiz", "gelistirme"];
+
+/**
+ * Bu kuralın seçicisinde görünecek akışlar: sunulanlar, artı kuralın KENDİ
+ * değeri. Kayıtlı bir `duzeltme` kuralı açıldığında değeri listede olmasaydı
+ * seçici onu boşa düşürür ve kaydet'e basan kişi farkında olmadan akışı
+ * değiştirirdi.
+ */
+export function flowOptions(current: FlowType): readonly FlowType[] {
+  return OFFERED_FLOW_TYPES.includes(current) ? OFFERED_FLOW_TYPES : [...OFFERED_FLOW_TYPES, current];
+}
+
 /** BFF'in `assigned` kural için sakladığı değer. */
 export const ASSIGNED_MATCH_VALUE = "*";
 

@@ -15,7 +15,7 @@ import { EMPTY_REPO_MAP_ROW, gateMirrorOf, repoMapIncomplete, type RepoMapRowDra
 import { RuleBoard } from "./RuleBoard.tsx";
 import { RuleProbe } from "./RuleProbe.tsx";
 import {
-  FLOW_TYPES,
+  flowOptions,
   MATCH_KINDS,
   type JiraConnectionOption,
   type MatchKind,
@@ -414,7 +414,7 @@ function ActionGroup(props: RuleFormProps): ReactNode {
         label={t("listening.form.flow")}
         value={draft.flowType}
         onChange={(e) => patch({ flowType: e.target.value as RuleDraft["flowType"] })}
-        options={FLOW_TYPES.map((flow) => ({ value: flow, label: t(`listening.flow.${flow}`) }))}
+        options={flowOptions(draft.flowType).map((flow) => ({ value: flow, label: t(`listening.flow.${flow}`) }))}
         hint={t(`listening.flow.hint.${draft.flowType}`)}
       />
       <Select

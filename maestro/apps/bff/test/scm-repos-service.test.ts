@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listScmBranches, listScmRepos } from "../src/scm-repos-service.js";
+import { listScmBranches, listScmRepos, SCM_CONNECTION_KINDS, isScmConnectionKind, scmRepoSource } from "../src/scm-repos-service.js";
 import type { ConnectionRecord } from "../src/connection-store.js";
 import type { ConnectorFetch } from "../src/connection-service.js";
 
@@ -203,5 +203,39 @@ describe("listScmBranches", () => {
       messageParams: { kind: "jira_cloud" },
     });
     expect(s.calls).toHaveLength(0);
+  });
+});
+
+/**
+ * BAĞLANTI TÜRÜNÜN ADI, SÖZLEŞMEDEKİ ADIN AYNISI OLMALI.
+ *
+ * Bu liste bir dönem dört ayrı yerde elle yazılıydı ve dördü de
+ * `"azure_devops"` diyordu — sözleşmedeki tür ise `"ado"`. Hiçbir eşleşme
+ * tutmuyordu ve sonuç sessizdi: ADO kurulumunda klon jetonu panelden
+ * okunamıyor, tanı raporu "jeton yok" diyor, depo listesi boş kalıyordu. Bir
+ * tür adının tutmaması hata üretmez, yalnızca filtreyi boşa düşürür — bu
+ * yüzden test şart.
+ *
+ * Bağ `scmRepoSource` üzerinden kuruluyor: depo listeleyebilen her tür bu
+ * listede olmalı, listedeki her tür de gerçekten listeleyebilmeli.
+ */
+describe("SCM bağlantı türleri — sözleşmeyle aynı ad", () => {
+  it("names exactly the kinds that can list repositories", () => {
+    for (const kind of SCM_CONNECTION_KINDS) {
+      expect(scmRepoSource(kind), `${kind} listeleyebilmeli`).not.toBeNull();
+    }
+    // Ters yön: listeleyebilen ama listede olmayan bir tür, jetonu panelden
+    // okunamayan bir SCM demektir.
+    for (const kind of ["github", "ado"] as const) {
+      expect(SCM_CONNECTION_KINDS, `${kind} listede olmalı`).toContain(kind);
+    }
+  });
+
+  it("rejects the name that was wrong in four places", () => {
+    // `azure_devops` hiçbir zaman geçerli bir tür olmadı; sözleşme `ado` der.
+    expect(isScmConnectionKind("azure_devops")).toBe(false);
+    expect(isScmConnectionKind("ado")).toBe(true);
+    expect(isScmConnectionKind("github")).toBe(true);
+    expect(isScmConnectionKind("jira_cloud")).toBe(false);
   });
 });

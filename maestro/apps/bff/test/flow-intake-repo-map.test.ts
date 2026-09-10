@@ -98,6 +98,107 @@ describe("intake — repo map picks the application", () => {
  * hic acilmaz. Bu, "hata daha nazik" ile "hata artik olusmuyor" arasindaki
  * farkin kendisi.
  */
+/**
+ * ── TICKET HANGİ DEPOYU İLGİLENDİRİYOR — KODA SORARAK ───────────────────────
+ *
+ * Depo eşlemesi operatöre "hangi depo" diye sorar ve bu, on depolu bir projede
+ * işler. Sahada kırıldığı yer: bir Azure DevOps projesinde ONLARCA depo var ve
+ * ticket'ın hangisini ilgilendirdiğini kimse bilmiyor — ne operatör, ne kural.
+ * Eşleme yazamayan operatörün elinde bugüne kadar proje bağlamasının varsayılan
+ * deposu vardı, yani neredeyse her zaman YANLIŞ depo.
+ *
+ * Buradaki testlerin tuttuğu asıl şey SIRA: arama bir TAHMİNDİR ve bir tahmin,
+ * insanın ya da operatörün açık kararını asla ezmemelidir.
+ */
+describe("intake — kod aramasıyla depo bulma", () => {
+  const found = (repo: string) => () => Promise.resolve({ repo, why: "kod aramasında 12 eşleşme" });
+
+  /**
+   * Arama ticket'ın METNİNİ okur, sınıflandırma alanlarını değil — özet ve
+   * açıklama tam da aranacak terimlerin yaşadığı yerdir. Seed edilmemiş bir
+   * ticket'ta `getTicket` fırlatır (bilerek: cevap vermeyen bir Jira), yani
+   * metin okunamaz ve arama hiç konuşamaz.
+   */
+  const seedTicket = (h: Awaited<ReturnType<typeof harness>>, ticket: string): void => {
+    h.work.putTicket({
+      key: ticket,
+      projectKey: "UGURPAY",
+      issueType: "Hata",
+      summary: "Kredi limiti ekranında bakiye yanlış",
+      description: "Kredi başvurusunda limit hesabı hatalı çalışıyor.",
+      reporter: "can.ozturk",
+      assignee: "712020:maestro-bot",
+      components: [],
+      labels: [],
+      parentKey: null,
+      createdAt: "2026-08-09T09:00:00.000Z",
+      updatedAt: "2026-08-09T09:00:00.000Z",
+    });
+  };
+
+  it("picks the repository code search found when no rule and no human named one", async () => {
+    const h = await harness({
+      applications: MAPPED_APPS,
+      listeningRules: [rule({ repoMap: null })],
+      repoSearch: found("bank/kredi"),
+    });
+    expect((seedTicket(h, "UGURPAY-40"), await deliver(h, "UGURPAY-40"))?.appId).toBe("bank/kredi");
+  });
+
+  /**
+   * SIRA: kuralın eşlemesi aramanın ÖNÜNDE. Operatör bir satır yazdıysa
+   * cevabını biliyor demektir; bir tahminin onu ezmesi, ayarı sessizce
+   * geçersiz kılmak olurdu.
+   */
+  it("never overrides the rule's own map", async () => {
+    const calls: string[] = [];
+    const h = await harness({
+      applications: MAPPED_APPS,
+      listeningRules: [rule()],
+      repoSearch: (request) => {
+        calls.push(request.text);
+        return Promise.resolve({ repo: "bank/kart", why: "kod araması" });
+      },
+    });
+    seedTicket(h, "UGURPAY-41");
+    h.work.putFields("UGURPAY-41", { customfield_10234: "Krediler" });
+    expect((seedTicket(h, "UGURPAY-41"), await deliver(h, "UGURPAY-41"))?.appId).toBe("bank/kredi");
+    // Eşleme cevap verdiği için arama HİÇ çağrılmadı: gereksiz bir ağ çağrısı
+    // değil, gereksiz bir tahmin de yok.
+    expect(calls).toEqual([]);
+  });
+
+  /**
+   * "Aradım, bulamadım" ile "arama kurulu değil" AYRI hâllerdir ama ikisi de
+   * aynı yere düşer: proje bağlaması. Arama bir EK, bir koşul değil — bir
+   * arama arızası ticket'ın hiç işlenmemesine yol açmamalı.
+   */
+  it("falls back to the project binding when the search finds nothing", async () => {
+    const h = await harness({
+      applications: MAPPED_APPS,
+      listeningRules: [rule({ repoMap: null })],
+      repoSearch: () => Promise.resolve(null),
+    });
+    seedTicket(h, "UGURPAY-42");
+    const started = await deliver(h, "UGURPAY-42");
+    expect(started?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+  });
+
+  it("behaves exactly as before when no search is wired at all", async () => {
+    const h = await harness({ applications: MAPPED_APPS, listeningRules: [rule({ repoMap: null })] });
+    expect((seedTicket(h, "UGURPAY-43"), await deliver(h, "UGURPAY-43"))?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+  });
+
+  it("a search failure does not stop the ticket from being processed", async () => {
+    const h = await harness({
+      applications: MAPPED_APPS,
+      listeningRules: [rule({ repoMap: null })],
+      repoSearch: () => Promise.reject(new Error("almsearch unreachable")),
+    });
+    expect((seedTicket(h, "UGURPAY-44"), await deliver(h, "UGURPAY-44"))?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+  });
+});
+
 describe("intake — an unregistered application stops the run BEFORE it starts", () => {
   it("refuses by name and never calls signalWithStart, so no clone is opened", async () => {
     // Sabit esleme `bank/kart`i gosteriyor ama envanterde YOK — canliyi

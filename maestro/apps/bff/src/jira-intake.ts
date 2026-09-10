@@ -258,7 +258,25 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
   // explicit `/ai-assign` still wins; a ticket whose value matches no row
   // keeps the project binding's app, exactly as before the map existed.
   const mapped = await resolveRepoMap(deps, request.ticket, flowDecision.ruleId);
-  const appId = request.appId ?? mapped?.appId ?? binding.appId;
+  /**
+   * ── DEPOYU KOD ARAMASIYLA BUL ────────────────────────────────────────────
+   *
+   * Sıradaki yerine dikkat: elle söylenen (`request.appId`) ve kuralın
+   * eşlemesi (`mapped`) HER İKİSİ de aramanın ÖNÜNDE. Arama bir tahmindir ve
+   * bir tahmin, insanın ya da operatörün açık kararını asla ezmemelidir.
+   *
+   * Arama yalnız ikisi de susunca konuşur — ve tam olarak o hâl, sahada
+   * bildirilen hâldir: "bir projede çok fazla repo var, aradığım analiz kodu
+   * hangisinde bilmiyorum". Eşleme yazamayan operatörün elinde bugüne kadar
+   * proje bağlamasının varsayılan deposu vardı, yani neredeyse her zaman
+   * YANLIŞ depo.
+   *
+   * Bulunamazsa (arama kurulu değil, eşleşme yok, uç cevap vermedi) zincir
+   * eskisi gibi bağlamaya düşer: arama bir EK, bir koşul değil.
+   */
+  const searched =
+    request.appId !== undefined || mapped !== null ? null : await searchRepoFor(deps, request, projectKey);
+  const appId = request.appId ?? mapped?.appId ?? searched?.appId ?? binding.appId;
   if (appId === null || appId === undefined) {
     // Tier ③ of M99, narrowed to the flows it was written for: no rule matched
     // an application and no human said which one, so a flow that WRITES CODE
@@ -571,7 +589,38 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
  * null: no rule, no map, driver cannot read fields, field empty, no row.
  * Never throws — a Jira hiccup here must not turn into a refused intake.
  */
-export async function resolveRepoMap(
+export /**
+ * Ticket'ın metnini koda sorup bir depo önerir — ya da `null`.
+ *
+ * Ticket metni BURADA okunur, `classifyingFields`in verdiği alanlarla değil:
+ * o anlık görüntü sınıflandırma alanlarını taşır (tip, etiket, atanan), özet
+ * ve açıklamayı değil. Aranacak terimler tam da orada yaşıyor.
+ *
+ * Her hata `null`'a düşer ve alım devam eder: bir arama arızası, ticket'ın
+ * hiç işlenmemesine yol açmamalı.
+ */
+async function searchRepoFor(
+  deps: ResolvedDeps,
+  request: IntakeRequest,
+  projectKey: string,
+): Promise<{ appId: string } | null> {
+  const search = deps.repoSearch;
+  if (search === undefined) return null;
+  try {
+    const snapshot = await deps.work.getTicket(request.ticket);
+    const text = `${snapshot.summary ?? ""}\n${snapshot.description ?? ""}`.trim();
+    if (text === "") return null;
+    const found = await search({ text, project: projectKey });
+    if (found === null) return null;
+    console.info(`[maestro] ${request.ticket}: depo kod aramasıyla seçildi → ${found.repo} (${found.why}).`);
+    return { appId: found.repo };
+  } catch (error) {
+    console.warn(`[maestro] ${request.ticket}: depo araması yapılamadı: ${String(error)} — eşleme/bağlama kullanılacak.`);
+    return null;
+  }
+}
+
+async function resolveRepoMap(
   deps: ResolvedDeps,
   ticket: TicketKey,
   ruleId: string | undefined,

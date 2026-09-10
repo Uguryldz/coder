@@ -13,6 +13,7 @@ import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { PrismaConnectionStore } from "../stores/connections.js";
 import { prismaSqlExecutor } from "../stores/sql.js";
 import { workspaceRootFrom } from "../stores/workspace-prepare.js";
+import { isScmConnectionKind } from "@maestro/bff";
 
 /** `git --version` gibi kısa yoklamalar için — tanı raporu hiçbir şey yazmaz. */
 const execFileAsync = promisify(execFile);
@@ -371,7 +372,7 @@ async function yapilandirmaBulgulari(options: {
         rows.find(
           (row) =>
             row.enabled !== false &&
-            ["github", "gitlab", "azure_devops"].includes(row.kind) &&
+            isScmConnectionKind(row.kind) &&
             row.secretRef !== null,
         ),
       )

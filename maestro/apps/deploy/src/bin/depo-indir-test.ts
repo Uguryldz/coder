@@ -19,6 +19,7 @@
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { prepareWorkspace, checkedOutBranch, workspaceRootFrom } from "../stores/workspace-prepare.js";
+import { isScmConnectionKind } from "@maestro/bff";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { rm } from "node:fs/promises";
@@ -61,7 +62,7 @@ if (tokenRef !== "") {
   console.log(`jeton: .env (SCM_TOKEN_REF)`);
 } else {
   const scm = (await db.connection.findMany()).find(
-    (row) => row.enabled !== false && ["github", "gitlab", "azure_devops"].includes(row.kind) && row.secretRef !== null,
+    (row) => row.enabled !== false && isScmConnectionKind(row.kind) && row.secretRef !== null,
   );
   if (scm?.secretRef != null) {
     token = await secrets.get(scm.secretRef).catch(() => undefined);

@@ -77,7 +77,7 @@ import {
 } from "../listening-banner.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { checkedOutBranch, prepareWorkspace, workspaceRootFrom } from "../stores/workspace-prepare.js";
-import type { RepoCloneProbeResult } from "@maestro/bff";
+import { isScmConnectionKind, listScmRepos, searchRepos, type RepoCloneProbeResult } from "@maestro/bff";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
 import { statusMoverFor } from "../stores/status-mover.js";
@@ -546,6 +546,50 @@ export async function main(): Promise<void> {
             reason: "probe_not_available",
           })
         : listeningProbe(draft),
+    /**
+     * TICKET HANGİ DEPOYU İLGİLENDİRİYOR — koda sorarak.
+     *
+     * Eşleme yazamayan operatörün elinde bugüne kadar proje bağlamasının
+     * varsayılan deposu vardı: onlarca depolu bir Azure DevOps projesinde bu,
+     * neredeyse her zaman YANLIŞ depo demekti. Burada ticket'ın metni
+     * projedeki depolarda aranır ve en çok eşleşen depo önerilir.
+     *
+     * Yalnız bir ÖNERİ: alım zinciri bunu elle söylenenin ve kuralın
+     * eşlemesinin ARKASINA koyar (`jira-intake.ts`), yani bir tahmin insanın
+     * kararını hiçbir zaman ezmez.
+     */
+    repoSearch: async ({ text, project }) => {
+      try {
+        const rows = await connections.list();
+        const scm = rows.find((row) => row.enabled !== false && isScmConnectionKind(row.kind));
+        if (scm === undefined) return null;
+        const token = scm.secretRef === null ? null : await connectorSecrets.get(scm.secretRef).catch(() => null);
+        // Ad eşleşmesi yoluna düşülürse aday liste gerekir; Code Search
+        // kuruluysa bu okuma boşa gitmez, yalnız kullanılmaz.
+        const listed = await listScmRepos(scm, token, fetch).catch(() => ({ ok: false as const }));
+        const repos = listed.ok ? listed.repos.map((repo) => repo.fullName) : [];
+        const result = await searchRepos(scm, token, { text, ...(project === undefined ? {} : { project }), repos }, fetch);
+        if (!result.ok || result.hits.length === 0) return null;
+        const best = result.hits[0]!;
+        /**
+         * BERABERLİK BİR CEVAP DEĞİLDİR.
+         *
+         * İki depo aynı puanı taşıyorsa arama hangisi olduğunu BİLMİYOR
+         * demektir, ve ikisinden birini seçmek yazı-tura atmaktır. O hâlde
+         * öneri geri çekilir ve zincir proje bağlamasına düşer — yanlış bir
+         * depoyu emin gibi sunmak, hiç sunmamaktan kötüdür.
+         */
+        const second = result.hits[1];
+        if (second !== undefined && second.matches === best.matches) return null;
+        const why =
+          result.source === "code-search"
+            ? `kod aramasında ${String(best.matches)} eşleşme${best.files.length === 0 ? "" : `, ör. ${best.files[0]!}`}`
+            : `depo adı ticket'ın terimleriyle eşleşti (${result.terms.slice(0, 3).join(", ")})`;
+        return { repo: best.repo, why };
+      } catch {
+        return null;
+      }
+    },
     /**
      * "DEPOYU İNDİRMEYİ DENE" — depo eşlemesi satırının kuru provası.
      *
@@ -1739,7 +1783,7 @@ async function scmCloneToken(
   try {
     const rows = await connections.list();
     const scm = rows.find(
-      (row) => row.enabled !== false && SCM_CONNECTION_KINDS.includes(row.kind) && row.secretRef !== null,
+      (row) => row.enabled !== false && isScmConnectionKind(row.kind) && row.secretRef !== null,
     );
     if (scm?.secretRef === undefined || scm.secretRef === null) return undefined;
     return await secrets.get(scm.secretRef).catch(() => undefined);
@@ -1747,9 +1791,6 @@ async function scmCloneToken(
     return undefined;
   }
 }
-
-/** Kod deposu taşıyan bağlantı türleri — klon jetonu bunlardan okunur. */
-const SCM_CONNECTION_KINDS = ["github", "gitlab", "azure_devops"];
 
 async function checkoutOrNull(
   env: DeployEnv,

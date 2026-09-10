@@ -14,11 +14,11 @@
  */
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
-import { listScmRepos } from "@maestro/bff";
+import { isScmConnectionKind, listScmRepos } from "@maestro/bff";
 
 const db = createDb(process.env["DATABASE_URL"] ?? "");
 const conns = await db.connection.findMany();
-const scm = conns.filter((c) => c.kind === "github" || c.kind === "gitlab" || c.kind === "azure_devops");
+const scm = conns.filter((c) => isScmConnectionKind(c.kind));
 if (scm.length === 0) throw new Error("SCM bağlantısı yok.");
 
 const secrets = new EncryptedSecretStore(

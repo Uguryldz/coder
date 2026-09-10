@@ -5,6 +5,7 @@ export * from "./config-health.js";
 export * from "./connection-health.js";
 export * from "./connection-service.js";
 export * from "./scm-repos-service.js";
+export * from "./repo-search-service.js";
 export * from "./jira-projects-service.js";
 export * from "./jira-match-values-service.js";
 export * from "./connection-store.js";

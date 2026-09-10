@@ -1021,6 +1021,21 @@ export interface BffDeps {
    */
   listeningProbe?: ListeningProbe;
   /**
+   * TICKET HANGİ DEPOYU İLGİLENDİRİYOR — koda sorarak.
+   *
+   * Depo eşlemesi operatöre "hangi depo" diye sorar ve bu, on depolu bir
+   * projede işler. Sahada kırıldığı yer: bir Azure DevOps projesinde ONLARCA
+   * depo var ve ticket'ın hangisini ilgilendirdiğini kimse bilmiyor — ne
+   * operatör, ne kural. Bu seam o soruyu kodun kendisine sorar.
+   *
+   * Yokluğunda hiçbir şey değişmez: karar zinciri eskisi gibi eşlemeye ve
+   * proje bağlamasına düşer. Arama bir EK, bir koşul değil.
+   */
+  repoSearch?: (request: {
+    readonly text: string;
+    readonly project?: string;
+  }) => Promise<{ readonly repo: string; readonly why: string } | null>;
+  /**
    * See {@link RepoCloneProbe} — "depoyu indirmeyi dene", the repo map's dry run.
    *
    * Absent where the install has no clone root; the route says so by name

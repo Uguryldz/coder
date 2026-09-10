@@ -430,6 +430,14 @@ export interface HarnessOptions {
   managedConnections?: readonly ConnectionRecord[];
   /** Seed the listening-rules store. */
   listeningRules?: readonly ListeningRuleRecord[];
+  /**
+   * Kod aramasının cevabı — `undefined` ise arama HİÇ kurulu değildir.
+   *
+   * İkisi ayrı hâllerdir: kurulu olmayan arama alım zincirine hiç girmez,
+   * kurulu olup `null` dönen arama "aradım, bulamadım" der. Testler ikisini de
+   * ayrı ayrı tutuyor.
+   */
+  repoSearch?: (request: { text: string; project?: string }) => Promise<{ repo: string; why: string } | null>;
   /** Stub the connector live-test transport; defaults to a 200-with-no-body fetch. */
   connectorFetch?: ConnectorFetch;
   notifyDrivers?: readonly NotifyDriverView[];
@@ -535,6 +543,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     listening,
     guidance,
     read,
+    ...(options.repoSearch === undefined ? {} : { repoSearch: options.repoSearch }),
     messages: testCatalog,
     clock,
     config: { actorDomain: "ugurbank.local" },

@@ -49,6 +49,26 @@ function str(value: unknown): string | undefined {
  * `connection-service.ts`'s `probeFor` exactly — GitHub bearer, ADO Basic with an
  * empty username.
  */
+/**
+ * KOD DEPOSU TAŞIYAN BAĞLANTI TÜRLERİ — TEK KAYNAK.
+ *
+ * Bu liste dört ayrı yerde elle yazılmıştı ve dördünde de `"azure_devops"`
+ * diyordu. Sözleşmedeki tür ise `"ado"` (packages/contracts/src/connection.ts).
+ * Yani hiçbir eşleşme tutmuyordu: ADO kurulumunda klon jetonu panelden
+ * OKUNAMIYOR, tanı raporu "jeton yok" diyor ve depo listesi boş kalıyordu —
+ * üçü de sessizce, çünkü bir tür adının tutmaması hata üretmez, yalnızca
+ * filtreyi boşa düşürür.
+ *
+ * `scmRepoSource` zaten hangi türün depo listeleyebildiğinin tek doğru
+ * cevabıdır; liste ondan TÜRETİLİYOR, yanına ikinci bir kopya yazılmıyor.
+ */
+export const SCM_CONNECTION_KINDS: readonly ConnectionKind[] = ["github", "ado"];
+
+/** Bu bağlantı kod deposu taşıyor mu — jeton ve liste okumaları bunu sorar. */
+export function isScmConnectionKind(kind: string): boolean {
+  return (SCM_CONNECTION_KINDS as readonly string[]).includes(kind);
+}
+
 export function scmRepoSource(kind: ConnectionKind): RepoSource | null {
   switch (kind) {
     case "github":

@@ -853,6 +853,43 @@ export type DiscoveryRunner = () => Promise<readonly string[]>;
  * ya da tarama hiç kurulmamışsa sessizce boş sonuç göstermek, bu ekranın var
  * olma sebebi olan sessiz-yanlışın aynısı olurdu.
  */
+
+/**
+ * "DEPOYU İNDİRMEYİ DENE" — depo eşlemesinin kuru provası.
+ *
+ * Depo eşlemesi sahada üç kez "çalışmıyor" diye bildirildi ve üçünde de arıza
+ * eşlemede DEĞİLDİ: bir kez imajda `git` yoktu, bir kez `WORKSPACE_ROOT`
+ * tanımsızdı, bir kez jetonun o organizasyona erişimi yoktu. Üçü de aynı
+ * belirtiyi üretir — analiz kodu görmeden yazılır — ve üçünü ayırmanın tek
+ * yolu bir koşuyu baştan sona izlemekti.
+ *
+ * Bu prova o üçünü saniyeler içinde ayırır: klonu GERÇEKTEN dener, sonucu
+ * adıyla söyler (kaç dosya indi, hangi dal, hangi commit) ve başarısızsa
+ * git'in kendi gerekçesini MASKELENMİŞ olarak verir. Koşu açmaz, ajana bir şey
+ * göndermez, kredi harcamaz; açtığı klonu siler.
+ */
+export interface RepoCloneProbeResult {
+  readonly ok: boolean;
+  /** Denenen depo, `owner/repo`. */
+  readonly repo: string;
+  /** Klonun oturduğu dal — başarılıysa. */
+  readonly branch?: string;
+  /** `<kısa-sha> <konu>` — indirilenin GERÇEKTEN o depo olduğunun kanıtı. */
+  readonly head?: string;
+  /** `.git` dışındaki dosya sayısı. Sıfır, "indi ama boş" halini ayırır. */
+  readonly fileCount?: number;
+  /** Klon süresi, milisaniye. */
+  readonly durationMs?: number;
+  /** Başarısızlığın panelin çevirebileceği adı. */
+  readonly messageKey?: string;
+  /** git'in kendi cümlesi, jeton ve Authorization başlığı maskelenmiş. */
+  readonly detail?: string;
+}
+export type RepoCloneProbe = (request: {
+  readonly repo: string;
+  readonly branch?: string;
+}) => Promise<RepoCloneProbeResult>;
+
 export type ListeningProbe = (draft: {
   readonly projectKey: string;
   readonly assigneeAccountId: string;
@@ -983,6 +1020,14 @@ export interface BffDeps {
    * Absent where the work driver cannot search; the route says so by name.
    */
   listeningProbe?: ListeningProbe;
+  /**
+   * See {@link RepoCloneProbe} — "depoyu indirmeyi dene", the repo map's dry run.
+   *
+   * Absent where the install has no clone root; the route says so by name
+   * rather than answering "başarısız", which would send the operator to look
+   * for a permissions problem that is not there.
+   */
+  repoCloneProbe?: RepoCloneProbe;
   /**
    * Whether a sweep is wired, asked at call time.
    *

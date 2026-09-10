@@ -161,6 +161,15 @@
   color: var(--text);
 }
 
+/* Green: a check that PASSED — the clone probe's proof, not decoration. */
+.scr-hint--ok {
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: var(--green-bg);
+  color: var(--text);
+}
+
 /* Red: something is broken or dangerous. */
 .scr-note--danger {
   border: 1px solid var(--red);

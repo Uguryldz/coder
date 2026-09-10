@@ -251,6 +251,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
    * operatörü iki farklı yere gönderir.
    */
   probe_not_available: "error.probe_not_available",
+  clone_probe_not_available: "error.clone_probe_not_available",
 };
 
 export function errorMessageKey(code: string): string {

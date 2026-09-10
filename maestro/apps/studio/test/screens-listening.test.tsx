@@ -979,6 +979,46 @@ describe("repo map (depo eşlemesi)", () => {
    * Test iki şeyi birden tutuyor: POST atılmadığını (yani kural kaybolan
    * ayarla kaydedilmediğini) ve kullanıcıya sebebin söylendiğini.
    */
+  /**
+   * "DEPOYU İNDİRMEYİ DENE" — eşlemenin kuru provası.
+   *
+   * Depo eşlemesi sahada üç kez "çalışmıyor" diye bildirildi ve üçünde de arıza
+   * eşlemede DEĞİLDİ: imajda `git` yokluğu, tanımsız `WORKSPACE_ROOT`, jetonun
+   * organizasyona erişimsizliği. Üçü de tek bir belirti üretir — analiz kodu
+   * görmeden yazılır — ve operatörün elinde ayıracak hiçbir şey yoktu.
+   *
+   * Test düğmenin GERÇEKTEN denediğini ve sonucu adıyla söylediğini tutuyor.
+   */
+  it("tries the clone for the row's own repository and reports what came down", async () => {
+    const fn = stubFetch([], { scmRepos: ["bank/kredi"] });
+    fn.mockImplementation(((url: string, init?: RequestInit) => {
+      if (String(url).includes("/listening-rules/clone-test")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ ok: true, repo: "bank/kredi", branch: "main", head: "abc1234 ilk", fileCount: 1630, durationMs: 1500 }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return stubFetch([], { scmRepos: ["bank/kredi"] })(url, init) as Promise<Response>;
+    }) as never);
+
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.selectOptions(await screen.findByLabelText("Uygulama (depo)"), "bank/kredi");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Depoyu indirmeyi dene" }));
+
+    // Kanıt: kaç dosya, hangi dal, hangi commit — "başarılı" demek yetmez.
+    expect(await screen.findByText(/1630 dosya/u)).toBeTruthy();
+    expect(screen.getByText(/abc1234/u)).toBeTruthy();
+    const call = fn.mock.calls.find((c) => String(c[0]).includes("/clone-test"));
+    expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ repo: "bank/kredi" });
+  });
+
   it("refuses to save an on-but-incomplete field map instead of silently dropping it", async () => {
     const fn = stubFetch([]);
     renderScreen(ADMIN);

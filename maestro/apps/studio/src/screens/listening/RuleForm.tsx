@@ -12,6 +12,7 @@ import {
   type StatusPoint,
 } from "../common/status-map.ts";
 import { EMPTY_REPO_MAP_ROW, gateMirrorOf, repoMapIncomplete, type RepoMapRowDraft, type RuleDraft } from "./draft.ts";
+import { CloneTest } from "./CloneTest.tsx";
 import { RuleBoard } from "./RuleBoard.tsx";
 import { RuleProbe } from "./RuleProbe.tsx";
 import {
@@ -866,6 +867,8 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
               branchesByRepo={props.branchesByRepo}
               onChange={(branch) => setRow(0, { targetBranch: branch })}
             />
+            {/* Sabit kipte de aynı prova: tek depo da inmeyebilir. */}
+            <CloneTest repo={rows[0]?.appId ?? ""} branch={rows[0]?.targetBranch ?? ""} />
           </div>
         )}
         {draft.repoMapOn && draft.repoMapMode === "fixed" && incomplete && (
@@ -951,6 +954,13 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
                         {t("listening.repomap.remove_row")}
                       </button>
                     </p>
+                    {/*
+                      Satırın KENDİ deposunu dener — kuralı kaydetmeden.
+                      Eşlemenin yanlış çalıştığı sanılan üç vakada da arıza
+                      eşlemede değildi (git yok / klon kökü yok / jetonun org
+                      izni yok); üçünü ayıran tek şey gerçek bir klon denemesi.
+                    */}
+                    <CloneTest repo={row.appId} branch={row.targetBranch} />
                   </div>
                 </div>
               ))}

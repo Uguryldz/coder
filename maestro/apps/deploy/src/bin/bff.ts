@@ -1,4 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { AuditChain } from "@maestro/audit";
 import {
@@ -74,6 +77,7 @@ import {
 } from "../listening-banner.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
 import { checkedOutBranch, prepareWorkspace } from "../stores/workspace-prepare.js";
+import type { RepoCloneProbeResult } from "@maestro/bff";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
 import { statusMoverFor } from "../stores/status-mover.js";
@@ -542,6 +546,86 @@ export async function main(): Promise<void> {
             reason: "probe_not_available",
           })
         : listeningProbe(draft),
+    /**
+     * "DEPOYU İNDİRMEYİ DENE" — depo eşlemesi satırının kuru provası.
+     *
+     * Koşunun klonuyla AYNI kodu (`prepareWorkspace`), AYNI jetonu ve AYNI
+     * ortamı kullanır; başka türlüsü "provada indi, koşuda inmedi" der ve
+     * provanın anlamı kalmaz. Açtığı klonu siler — bu bir deneme, bir çalışma
+     * alanı değil.
+     *
+     * `WORKSPACE_ROOT` yoksa `undefined` döner ve uç 503-by-name verir:
+     * kurulmamış bir keşfi "başarısız" göstermek, operatörü olmayan bir yetki
+     * sorununu aramaya gönderirdi.
+     */
+    ...(((): { repoCloneProbe?: (r: { repo: string; branch?: string }) => Promise<RepoCloneProbeResult> } => {
+      const root = env.source["WORKSPACE_ROOT"]?.trim() ?? "";
+      if (root === "") return {};
+      return {
+        repoCloneProbe: async (request) => {
+          const tokenRef = env.source["SCM_TOKEN_REF"]?.trim() ?? "";
+          const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
+          const runId = `deneme-${randomBytes(6).toString("hex")}`;
+          const started = Date.now();
+          let path: string | null = null;
+          try {
+            const token = tokenRef === "" ? undefined : await secrets.get(tokenRef);
+            path = await prepareWorkspace({
+              repo: request.repo,
+              root,
+              runId,
+              ...(request.branch === undefined || request.branch === "" ? {} : { branch: request.branch }),
+              ...(scmHost === "" ? {} : { host: scmHost }),
+              ...(token === undefined ? {} : { token }),
+              timeoutMs: 120_000,
+            });
+            const [head, count, branch] = await Promise.all([
+              gitLine(path, ["log", "-1", "--format=%h %s"]),
+              countFiles(path),
+              checkedOutBranch(path),
+            ]);
+            return {
+              ok: true,
+              repo: request.repo,
+              ...(branch === null ? {} : { branch }),
+              ...(head === null ? {} : { head }),
+              fileCount: count,
+              durationMs: Date.now() - started,
+            };
+          } catch (error) {
+            /**
+             * git'in KENDİ gerekçesi, maskelenmiş.
+             *
+             * `prepareWorkspace` ham stderr'i bilerek yutar (komut satırı
+             * Authorization başlığında jeton taşır) ve geriye "clone failed"
+             * kalır — "depo yok", "jeton yetkisiz" ve "CA bozuk" hallerini tek
+             * cümlede birleştiren, teşhis edilemez bir mesaj. Burada `cause`
+             * açılıp jeton damgalanarak veriliyor; sahada bu üç hali ayırmak
+             * saatler aldı.
+             */
+            const cause = (error as { cause?: unknown }).cause;
+            const raw = String((cause as { stderr?: unknown } | undefined)?.stderr ?? cause ?? error);
+            const detail = raw
+              .replace(/Basic\s+[A-Za-z0-9+/=]+/gu, "Basic ***")
+              .replace(/x-access-token:[^@\s]*/gu, "x-access-token:***")
+              .replace(/:\/\/[^@\s]*@/gu, "://***@")
+              .trim()
+              .split("\n")
+              .slice(0, 4)
+              .join(" ");
+            return {
+              ok: false,
+              repo: request.repo,
+              messageKey: "listening.repomap.clone_test.failed",
+              ...(detail === "" ? {} : { detail }),
+            };
+          } finally {
+            // Bir deneme, bir çalışma alanı değil: açılan her şey silinir.
+            if (path !== null) await rm(path, { recursive: true, force: true }).catch(() => undefined);
+          }
+        },
+      };
+    })()),
     /**
      * Which absence it is. The driver check happens further down (it needs the
      * work port), so this reads the holder at call time like the runner does.
@@ -1573,6 +1657,39 @@ function notifyChannels(deployment: { selection: { notify: { driver: string; con
  * The failure is logged rather than swallowed: an operator who expected the
  * analyst to read the repository needs to know it did not.
  */
+/** Klon provasının okuduğu tek satırlık git çıktısı; okunamazsa `null`. */
+const execFileAsync = promisify(execFile);
+async function gitLine(path: string, args: readonly string[]): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", path, ...args], { timeout: 15_000 });
+    const line = stdout.trim();
+    return line === "" ? null : line;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `.git` DIŞINDAKİ dosya sayısı.
+ *
+ * Sayı, provanın "indi ama boş" halini ayıran tek işareti: yarım kalmış bir
+ * klon da dizin bırakır, `.git` de taşır, ama içinde çalışılacak hiçbir şey
+ * yoktur — sahada bu hal bir kez "indi" sanıldı.
+ */
+async function countFiles(path: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync(
+      "sh",
+      ["-c", `find ${JSON.stringify(path)} -type f -not -path '*/.git/*' | wc -l`],
+      { timeout: 60_000 },
+    );
+    const n = Number(stdout.trim());
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function checkoutOrNull(
   env: DeployEnv,
   secrets: SecretPort,

@@ -172,6 +172,26 @@ const TestBody = z
   .strict();
 
 /**
+ * "Depoyu indirmeyi dene" isteği.
+ *
+ * `repo` biçimi BURADA da doğrulanır, klonlayan tarafta da: bu değer bir git
+ * komut satırına gider ve `..` taşıyan bir ad dizin ağacında yukarı çıkabilir.
+ * İki katmanın da bakması gereksiz tekrar değil — biri kaldırılırsa öteki
+ * hâlâ tutar.
+ */
+const CloneTestBody = z
+  .object({
+    repo: z
+      .string()
+      .trim()
+      .min(3)
+      .max(200)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/u),
+    branch: z.string().trim().max(200).optional(),
+  })
+  .strict();
+
+/**
  * The rule as it is STORED, from the rule as it was sent.
  *
  * One normalisation, and it exists for the unique index rather than for taste.
@@ -456,6 +476,43 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
      * ekranın kendisi yerine genel bir hata kutusu gösterirdi. Sebep serbest
      * metin değil ki panel kendi katalogundan çevirebilsin.
      */
+    return reply.code(200).send(result);
+  });
+
+  /**
+   * "DEPOYU İNDİRMEYİ DENE" — depo eşlemesi satırının kuru provası.
+   *
+   * Depo eşlemesi sahada üç kez "çalışmıyor" diye bildirildi ve üçünde de arıza
+   * eşlemede DEĞİLDİ: imajda `git` yokluğu, tanımsız `WORKSPACE_ROOT`, jetonun
+   * o organizasyona erişimsizliği. Üçü de tek bir belirti üretir — analiz kodu
+   * görmeden yazılır — ve ayırmanın tek yolu bir koşuyu baştan sona izlemekti.
+   * Bu uç o üçünü saniyeler içinde ayırır.
+   *
+   * Koşu açmaz, ajana bir şey göndermez, kredi harcamaz.
+   */
+  app.post("/studio/listening-rules/clone-test", { preHandler: writeHandler }, async (request, reply) => {
+    const probe = deps.repoCloneProbe;
+    if (probe === undefined) {
+      /**
+       * Sessiz "başarısız" YOK. Klon kökü kurulmamış bir kurulumda denemeyi
+       * başarısız göstermek, operatörü olmayan bir yetki sorununu aramaya
+       * gönderirdi — oysa denenen bir şey yoktur.
+       */
+      return reply.code(503).send({
+        error: "clone_probe_not_available",
+        messageKey: "listening.repomap.clone_test.unavailable",
+      });
+    }
+
+    const body = CloneTestBody.safeParse(request.body);
+    if (!body.success) throw badRequest("invalid_listening_rule");
+
+    const result = await probe({
+      repo: body.data.repo,
+      ...(body.data.branch === undefined || body.data.branch === "" ? {} : { branch: body.data.branch }),
+    });
+    // Başarısız deneme de 200'dür, gövdesinde adlandırılmış sebebiyle — kuralı
+    // deneme ucuyla aynı gerekçe.
     return reply.code(200).send(result);
   });
 

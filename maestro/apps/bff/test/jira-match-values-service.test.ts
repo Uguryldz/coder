@@ -5,6 +5,7 @@ import {
   listJiraMatchValues,
   listJiraUsers,
   parseCreateMetaIssueTypes,
+  sampledValuesFromSearch,
 } from "../src/jira-match-values-service.js";
 import { fetchSeedIssueTypes } from "../src/listening-seed.js";
 import type { ConnectionRecord } from "../src/connection-store.js";
@@ -709,5 +710,51 @@ describe("listJiraUsers — the bot account a rule can be pointed at", () => {
       ok: false,
       messageKey: "onboard.jira.bad_response",
     });
+  });
+});
+
+/**
+ * DEĞER KUTUSU KULLANICI ALANLARINDA DA DOLU GELMELİ.
+ *
+ * Örnekleme bir dönem yalnız `value` ve `name` anahtarlarını okuyordu. Canlıda
+ * ölçüldü: "Atanan Kişi" ve "Raporlayan" alanlarında değer kutusu boş
+ * geliyordu, çünkü Jira bir kullanıcıyı `{ displayName, accountId }` olarak
+ * döner — ikisini de taşımaz. Alan seçilebiliyor ama seçenek çıkmıyordu.
+ *
+ * Anahtar sırası `fieldText` ile aynı olmalı: biri operatöre listelenen metni
+ * üretir, öteki ticket geldiğinde eşleştirilecek metni. Ayrışırlarsa operatör
+ * listeden seçer, motor başka metinle karşılaştırır, eşleşme hiç tutmaz.
+ */
+describe("sampledValuesFromSearch — Jira'nın her değer şekli", () => {
+  const issues = (fields: Record<string, unknown>[]): unknown => ({
+    issues: fields.map((f) => ({ fields: f })),
+  });
+
+  it("reads a user field through displayName — the assignee box used to come up empty", () => {
+    const body = issues([
+      { assignee: { accountId: "712020:a", displayName: "Uğur Yıldız" } },
+      { assignee: { accountId: "712020:b", displayName: "Ayşe Demir" } },
+      { assignee: { accountId: "712020:a", displayName: "Uğur Yıldız" } },
+      { assignee: null },
+    ]);
+    expect(sampledValuesFromSearch(body, "assignee").sort()).toEqual(["Ayşe Demir", "Uğur Yıldız"]);
+  });
+
+  it("reads a parent/epic through key when it carries no value or name", () => {
+    const body = issues([{ parent: { id: "10001", key: "OPS-1" } }, { parent: { id: "10002", key: "OPS-2" } }]);
+    expect(sampledValuesFromSearch(body, "parent").sort()).toEqual(["OPS-1", "OPS-2"]);
+  });
+
+  it("still prefers value over name, and name over displayName", () => {
+    const body = issues([
+      { f: { value: "Krediler", name: "yanlış", displayName: "yanlış" } },
+      { f: { name: "Kartlar", displayName: "yanlış" } },
+    ]);
+    expect(sampledValuesFromSearch(body, "f").sort()).toEqual(["Kartlar", "Krediler"]);
+  });
+
+  it("flattens a multi-value field and drops the empties", () => {
+    const body = issues([{ labels: ["depo-platform", "acil"] }, { labels: ["depo-platform"] }, { labels: [] }]);
+    expect(sampledValuesFromSearch(body, "labels").sort()).toEqual(["acil", "depo-platform"]);
   });
 });

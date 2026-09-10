@@ -479,11 +479,26 @@ export function allowedValuesFromCreateMeta(raw: unknown, fieldId: string): stri
   return [...out];
 }
 
+/**
+ * DÖRT ANAHTAR, ÜÇ DEĞİL — ve sırası `fieldText` ile AYNI.
+ *
+ * Bu fonksiyon bir dönem yalnız `value` ve `name` okuyordu. Sonuç sahada
+ * ölçüldü: "Atanan Kişi" ve "Raporlayan" alanlarında değer kutusu BOŞ
+ * geliyordu, çünkü Jira bir kullanıcıyı `{ displayName, accountId }` olarak
+ * döner — ne `value` ne `name` taşır. Alan listede duruyor, tıklanıyor, ama
+ * seçenek çıkmıyordu; operatörün gördüğü şey "bu alan çalışmıyor"du.
+ *
+ * Anahtar sırası `fieldText` ile birebir aynı tutuluyor (`value`, `name`,
+ * `displayName`, `key`) ve bu tesadüf değil: BURASI operatöre listelenen
+ * metni üretir, ORASI ise ticket geldiğinde eşleştirilecek metni. İkisi
+ * ayrışırsa operatör listeden bir şey seçer, motor başka bir metinle
+ * karşılaştırır ve eşleşme hiçbir zaman tutmaz — sessizce, hatasız.
+ */
 function fieldOptionText(option: unknown): string | null {
   if (typeof option === "string") return option.trim() === "" ? null : option.trim();
   if (typeof option !== "object" || option === null) return null;
   const record = option as Record<string, unknown>;
-  for (const key of ["value", "name"]) {
+  for (const key of ["value", "name", "displayName", "key"]) {
     const text = record[key];
     if (typeof text === "string" && text.trim() !== "") return text.trim();
   }

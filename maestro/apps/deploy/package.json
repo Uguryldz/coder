@@ -16,7 +16,9 @@
     "test": "vitest run",
     "tani": "tsx src/bin/tani.ts",
     "kural-provasi": "tsx src/bin/kural-provasi.ts",
-    "mini-test": "tsx src/bin/mini-test.ts"
+    "mini-test": "tsx src/bin/mini-test.ts",
+    "alan-listesi": "tsx src/bin/alan-listesi.ts",
+    "alan-degerleri": "tsx src/bin/alan-degerleri.ts"
   },
   "dependencies": {
     "@maestro/adapter-ado": "workspace:*",

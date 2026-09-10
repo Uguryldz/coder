@@ -88,12 +88,75 @@ function internalCustomType(customType: string | null): boolean {
 }
 
 /**
- * `GET /rest/api/{2,3}/field` → the fields an operator can map on. Custom
- * fields first (that is where "İş Ailesi" lives), then the system fields that
- * make sense to map on; the rest of the system fields (summary, description,
- * dates) are noise for a mapping and are left out.
+ * SİSTEM ALANLARINDA ELEME BEYAZ LİSTE DEĞİL, KARA LİSTEDİR.
+ *
+ * Bir dönem burada altı adlık bir beyaz liste vardı (components, labels,
+ * priority, issuetype, fixVersions, versions). Sahada ölçüldü: 52 alanlık bir
+ * Jira'da eşlemede yalnız 9 alan seçilebiliyordu, ve elenenlerin arasında
+ * eşleme için GERÇEKTEN anlamlı olanlar vardı — "Atanan Kişi", "Raporlayan",
+ * "Ortam", "Çözüm", "Üst Öğe", "Güvenlik Düzeyi". Operatörün istediği alan
+ * listede olmayınca sistem bozuk görünüyordu; oysa motor `map.field` ne olursa
+ * olsun Jira'dan okuyabiliyor — kısıt yalnızca bu listedeydi.
+ *
+ * Yön tersine çevrildi: bir sistem alanı, ELENMESİ için bir sebep olmadıkça
+ * listeye girer. Elenenler iki kümedir ve ikisi de eşlenemez olduğu için
+ * elenir, "gereksiz" olduğu için değil:
+ *
+ *  1. SAYAÇ ve ZAMAN DAMGASI — her ticket'ta farklı bir değer taşır, yani bir
+ *     eşleme satırı hiçbir zaman ikinci bir ticket'a uymaz (`created`,
+ *     `updated`, `timespent`, `workratio`, `progress`, `votes`…).
+ *  2. SERBEST METİN ve KOLEKSİYON — bir depo adına eşlenecek ayrık bir değeri
+ *     yoktur (`summary`, `description`, `comment`, `attachment`, `worklog`,
+ *     `issuelinks`, `subtasks`, `thumbnail`).
+ *
+ * `status`, `assignee`, `reporter`, `resolution`, `environment`, `parent`,
+ * `security` bu iki kümede DEĞİLDİR ve artık listeye girerler: her biri ayrık
+ * bir değer taşır ve "bu takımın/bu ortamın ticket'ları şu depoya" biçiminde
+ * gerçek bir yönlendirme kuralıdır.
  */
-const MAPPABLE_SYSTEM_FIELDS = new Set(["components", "labels", "priority", "issuetype", "fixVersions", "versions"]);
+const UNMAPPABLE_SYSTEM_FIELDS = new Set([
+  // 1) Sayaç / zaman damgası — her ticket'ta farklı, eşleşme tutmaz.
+  "created",
+  "updated",
+  "lastViewed",
+  "resolutiondate",
+  "statuscategorychangedate",
+  "duedate",
+  "timespent",
+  "timeestimate",
+  "timeoriginalestimate",
+  "timetracking",
+  "aggregatetimespent",
+  "aggregatetimeestimate",
+  "aggregatetimeoriginalestimate",
+  "workratio",
+  "progress",
+  "aggregateprogress",
+  "votes",
+  "watches",
+  // 2) Serbest metin / koleksiyon — eşlenecek ayrık değeri yok.
+  "summary",
+  "description",
+  "comment",
+  "attachment",
+  "worklog",
+  "issuelinks",
+  "subtasks",
+  "thumbnail",
+  // 3) Eşlemeye konu olamayacak kimlik alanları: proje zaten kuralın kendisiyle
+  //    seçilidir, anahtar her ticket'ta tekildir.
+  "project",
+  "issuekey",
+  "creator",
+  "issuerestriction",
+  "statusCategory",
+]);
+
+/**
+ * `GET /rest/api/{2,3}/field` → the fields an operator can map on. Custom
+ * fields first (that is where "İş Ailesi" lives), then every system field that
+ * carries a discrete, repeatable value.
+ */
 export function normalizeFieldList(raw: unknown): JiraFieldInfo[] {
   if (!Array.isArray(raw)) return [];
   const out: JiraFieldInfo[] = [];
@@ -104,7 +167,7 @@ export function normalizeFieldList(raw: unknown): JiraFieldInfo[] {
     const name = typeof record["name"] === "string" ? record["name"].trim() : "";
     if (id === "" || name === "") continue;
     const custom = record["custom"] === true || id.startsWith("customfield_");
-    if (!custom && !MAPPABLE_SYSTEM_FIELDS.has(id)) continue;
+    if (!custom && UNMAPPABLE_SYSTEM_FIELDS.has(id)) continue;
     const schema = typeof record["schema"] === "object" && record["schema"] !== null ? (record["schema"] as Record<string, unknown>) : null;
     const type = schema !== null && typeof schema["type"] === "string" ? schema["type"] : null;
     const customType = schema !== null && typeof schema["custom"] === "string" ? schema["custom"] : null;

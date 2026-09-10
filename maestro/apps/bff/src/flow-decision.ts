@@ -210,11 +210,32 @@ export type StatusGate = "open" | "closed" | "ungated" | "unknown_status";
 export function statusGateOf(
   rule: Pick<ListeningRuleRecord, "allowedStatuses">,
   status: string | null,
+  statusId?: string | null,
 ): StatusGate {
   if (hasNoStatusGate(rule)) return "ungated";
-  if (status === null) return "unknown_status";
-  const wanted = status.trim();
-  return rule.allowedStatuses!.some((name) => name.trim() === wanted) ? "open" : "closed";
+  if (status === null && (statusId ?? null) === null) return "unknown_status";
+  /**
+   * Kapı hem ADLA hem İD'yle açılır — `matches()`'in `matchValue` için
+   * uyguladığı kuralın aynısı, aynı sebeple.
+   *
+   * ── CANLI BULGU ─────────────────────────────────────────────────────────────
+   * Takım yönetimli projede `status in ("Yapılacaklar")` sıfır döner,
+   * `status in (10004)` bir. Bu yüzden panel o projede kapıya İD yazıyor. Ama
+   * burası yalnız ADI karşılaştırıyordu: tarama ticket'ı BULUYOR, kapı onu
+   * ELİYOR (`"Yapılacaklar" !== "10004"`). Sahada tam bu görüldü — prova
+   * "1 ticket bulundu, 0'ı kurala düştü" dedi.
+   *
+   * Salt rakam olan bir izin değeri İD'yle, geri kalanı ADLA karşılaştırılır;
+   * rakamdan ibaret bir statü ADI olmadığı için ikisi çakışmaz.
+   */
+  const name = status?.trim() ?? "";
+  const id = statusId?.trim() ?? "";
+  return rule.allowedStatuses!.some((allowed) => {
+    const wanted = allowed.trim();
+    return /^[0-9]+$/u.test(wanted) ? wanted === id : wanted === name;
+  })
+    ? "open"
+    : "closed";
 }
 
 /** Whether one rule matches one ticket. */
@@ -237,7 +258,7 @@ function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean
    * erken çıkar ve kapı altta olsaydı o kural için hiç sorulmazdı — yani tam
    * olarak operatörün kapatmak istediği delik açık kalırdı.
    */
-  const gate = statusGateOf(rule, ticket.status);
+  const gate = statusGateOf(rule, ticket.status, ticket.statusId);
   if (gate === "closed" || gate === "unknown_status") return false;
 
   // `assigned` is the whole rule: the assignment check above IS the condition,

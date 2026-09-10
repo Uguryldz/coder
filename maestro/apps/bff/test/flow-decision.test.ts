@@ -700,6 +700,35 @@ describe("flowDecisionFor — statü kapısı her kuralda sorulur", () => {
     expect(statusGateOf(gated, null)).toBe("unknown_status");
   });
 
+  /**
+   * SAHADA GÖRÜLDÜ: takım yönetimli projede `status in ("Yapılacaklar")` sıfır
+   * döner, `status in (10004)` bir — panel bu yüzden kapıya İD yazıyor. Kapı
+   * yalnız ADI karşılaştırdığı sürece tarama ticket'ı BULUYOR, kapı ELİYOR
+   * ("1 ticket bulundu, 0'ı kurala düştü"). `matchValue` için uygulanan
+   * kuralın aynısı burada da geçerli.
+   */
+  it("kapı İD ile de açılır — takım yönetimli projede ad çalışmıyor", () => {
+    const byId = rule({ allowedStatuses: ["10004"] });
+    expect(statusGateOf(byId, "Yapılacaklar", "10004")).toBe("open");
+    // İd tutan bir kural, ADI aynı olsa bile id tutmayan bir ticket'ı açmaz.
+    expect(statusGateOf(byId, "Yapılacaklar", "10009")).toBe("closed");
+    expect(statusGateOf(byId, "Yapılacaklar")).toBe("closed");
+  });
+
+  it("ad tutan kural ID'siz ticket'ta da çalışır — mevcut kurulumlar bozulmaz", () => {
+    const byName = rule({ allowedStatuses: ["Analiz"] });
+    expect(statusGateOf(byName, "Analiz")).toBe("open");
+    expect(statusGateOf(byName, "Analiz", "10004")).toBe("open");
+    expect(statusGateOf(byName, "Tamam", "10004")).toBe("closed");
+  });
+
+  it("statüsü hiç okunmamış ticket kapalıdır — id de yoksa", () => {
+    const byId = rule({ allowedStatuses: ["10004"] });
+    expect(statusGateOf(byId, null, null)).toBe("unknown_status");
+    // Ama YALNIZ id okunmuşsa kapı kararını verebilir.
+    expect(statusGateOf(byId, null, "10004")).toBe("open");
+  });
+
   it("statü karşılaştırması baştaki/sondaki boşluğa takılmaz", () => {
     const gated = rule({ allowedStatuses: ["  Analiz  "] });
     expect(statusGateOf(gated, "Analiz")).toBe("open");

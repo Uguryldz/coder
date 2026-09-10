@@ -607,7 +607,7 @@ async function decideFlow(deps: ResolvedDeps, request: IntakeRequest, projectKey
   const statusBlocked: { ruleId: string; allowed: readonly string[] }[] = [];
   const ungatedRuleIds: string[] = [];
   for (const rule of mine) {
-    const gate = statusGateOf(rule, ticket.status);
+    const gate = statusGateOf(rule, ticket.status, ticket.statusId);
     if (gate === "ungated") ungatedRuleIds.push(rule.ruleId);
     // `unknown_status` de kapalı sayılır ve kapalı olarak RAPORLANIR: kapının
     // fail-closed yönü dökümde de aynı yönde okunmalı, yoksa statüsü hiç

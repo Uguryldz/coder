@@ -165,7 +165,7 @@ const RejectBody = z
  * slash, or an empty half, is not a repository this platform can bind, so it is
  * refused by name rather than written as a row with a blank column.
  */
-function splitRepoFullName(
+export function splitRepoFullName(
   fullName: string,
 ): { adoProject: string; adoRepo: string } | null {
   const slash = fullName.indexOf("/");

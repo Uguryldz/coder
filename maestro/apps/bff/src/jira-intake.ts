@@ -8,6 +8,7 @@ import { flowDecisionFor, statusGateOf, type FlowDecision } from "./flow-decisio
 import { decisionLogLine, decisionLogMarkdown, type IntakeDecisionFacts } from "./intake-decision-log.js";
 import type { ListeningRuleRecord } from "./listening-store.js";
 import { isFixedRepoMap, isSearchRepoMap, resolveRepoMapEntry } from "./listening-store.js";
+import { splitRepoFullName } from "./routes/onboarding.js";
 
 /**
  * Intake: the decision to put a ticket on the workflow engine, and every
@@ -376,6 +377,54 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
         `[maestro] ${request.ticket}: uygulama envanteri okunamadı (${appId}): ${String(error)} — kayıt kontrolü atlandı, koşu bugünkü gibi açılıyor.`,
       );
       known = true;
+    }
+    /**
+     * ── ARAMANIN BULDUĞU DEPO KENDİLİĞİNDEN KAYDEDİLİR ──────────────────────
+     *
+     * Bu kapı kayıtsız bir depoya koşu açmayı engeller ve doğru yapar: kayıtsız
+     * bir appId'yle açılan koşu `WorkflowRun_appId_fkey` ile patlıyordu, üstelik
+     * klon AÇILDIKTAN sonra (OPS-121).
+     *
+     * Ama kapı, appId'nin bir insan ya da bir kural tarafından SEÇİLDİĞİ
+     * dünyada yazıldı. Kod araması o dünyayı değiştirdi: aramanın var olma
+     * sebebi ÖNCEDEN BİLİNMEYEN bir depoyu bulmaktır ve önceden bilinmeyen bir
+     * depo, doğası gereği envantere kaydedilmiş olamaz. Sahada tam olarak bu
+     * oldu — arama `HayatPay/utility-payment-service`i buldu, kapı "kayıtlı
+     * değil" deyip ticket'ı reddetti ve operatöre kaydetmesini söyledi. Oysa
+     * kaydedecek bir şey seçmemişti; arama seçmişti.
+     *
+     * Bu yüzden ARAMANIN bulduğu depo burada kaydedilir. Kaydetmek bir onay
+     * değil, bir kayıt: depo zaten SCM'de var (arama onu orada buldu), bağlama
+     * zaten bu projeye ait, ve kaydın kendisi denetim zincirine yazılıyor.
+     *
+     * Elle ya da kuralla SEÇİLEN bir depo bu yoldan geçmez ve kapı ona aynen
+     * uygulanır: orada kayıtsızlık bir yazım hatasının işaretidir, ve sessizce
+     * kaydetmek o hatayı kalıcı hâle getirirdi.
+     */
+    if (!known && searched?.appId === appId && deps.appRegistry !== undefined) {
+      const halves = splitRepoFullName(appId);
+      if (halves !== null) {
+        try {
+          await deps.appRegistry.register({
+            appId,
+            displayName: appId,
+            adoProject: halves.adoProject,
+            adoRepo: halves.adoRepo,
+            // Envanterin varsayılan profili; imaj Java/Maven'ı da taşır ve
+            // analiz akışı zaten derleme yapmaz.
+            platform: "linux-node",
+            jiraProjectKey: projectKey,
+          });
+          console.info(
+            `[maestro] ${request.ticket}: kod aramasının bulduğu "${appId}" envantere kaydedildi (arama seçti, operatör değil).`,
+          );
+          known = true;
+        } catch (error) {
+          console.warn(
+            `[maestro] ${request.ticket}: "${appId}" envantere kaydedilemedi: ${String(error)} — koşu açılmayacak.`,
+          );
+        }
+      }
     }
     if (!known) {
       console.warn(

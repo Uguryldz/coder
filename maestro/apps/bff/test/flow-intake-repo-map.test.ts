@@ -260,6 +260,57 @@ describe("intake — projeyi seç, depoyu arama bulsun", () => {
   });
 });
 
+/**
+ * ── ARAMANIN BULDUĞU DEPO KENDİLİĞİNDEN KAYDEDİLİR ─────────────────────────
+ *
+ * Envanter kapısı kayıtsız bir depoya koşu açmayı engeller ve doğru yapar
+ * (OPS-121: kayıtsız appId, klon AÇILDIKTAN sonra yabancı anahtarla
+ * patlıyordu). Ama kapı, appId'nin bir insan ya da kural tarafından SEÇİLDİĞİ
+ * dünyada yazılmıştı.
+ *
+ * Kod araması o dünyayı değiştirdi: aramanın var olma sebebi ÖNCEDEN
+ * BİLİNMEYEN bir depoyu bulmaktır, ve önceden bilinmeyen bir depo doğası
+ * gereği envantere kaydedilmiş olamaz. Sahada tam olarak bu oldu — arama
+ * "HayatPay/utility-payment-service"i buldu, kapı reddetti ve operatöre
+ * kaydetmesini söyledi. Oysa kaydedecek bir şey SEÇMEMİŞTİ; arama seçmişti.
+ */
+describe("intake — aramanın bulduğu depo envantere kaydedilir", () => {
+  it("registers the repository the search found and starts the run", async () => {
+    const h = await harness({
+      applications: TEST_APPLICATIONS,
+      listeningRules: [rule({ repoMap: { field: "?", entries: [{ value: "*", appId: "HayatPay" }] } })],
+      repoSearch: () => Promise.resolve({ repo: "HayatPay/utility-payment-service", why: "kod araması" }),
+    });
+    seedTicket(h, "UGURPAY-60");
+    // Kapı bunu bir dönem reddediyordu; aramanın seçtiği depo kaydedilir.
+    expect((await deliver(h, "UGURPAY-60"))?.appId).toBe("HayatPay/utility-payment-service");
+  });
+
+  /**
+   * SEÇİLEN bir depo bu yoldan geçmez ve kapı ona AYNEN uygulanır: orada
+   * kayıtsızlık bir yazım hatasının işaretidir, ve sessizce kaydetmek o hatayı
+   * kalıcı hâle getirirdi.
+   */
+  it("does NOT auto-register a repository the rule's map named by hand", async () => {
+    const h = await harness({
+      applications: TEST_APPLICATIONS,
+      listeningRules: [rule({ repoMap: { field: "*", entries: [{ value: "*", appId: "banka/yazim-hatasi" }] } })],
+    });
+    seedTicket(h, "UGURPAY-61");
+    const before = h.runs.started.length;
+    const delivery = signed(issueEvent({ ticket: "UGURPAY-61", issueType: "Hata" }));
+    const response = await h.app.inject({
+      method: "POST",
+      url: "/webhooks/jira",
+      headers: delivery.headers,
+      payload: delivery.payload,
+    });
+    expect(response.statusCode).toBe(202);
+    // Koşu AÇILMADI: yazım hatası sessizce kalıcı hâle getirilmedi.
+    expect(h.runs.started).toHaveLength(before);
+  });
+});
+
 describe("intake — an unregistered application stops the run BEFORE it starts", () => {
   it("refuses by name and never calls signalWithStart, so no clone is opened", async () => {
     // Sabit esleme `bank/kart`i gosteriyor ama envanterde YOK — canliyi

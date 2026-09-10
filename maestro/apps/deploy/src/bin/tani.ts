@@ -789,7 +789,33 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       log: { servisler, dikkat },
     };
 
-    process.stdout.write(taniHtml(rapor));
+    /**
+     * Rapor NEREYE gider: `--out <yol>` verilmişse dosyaya, yoksa stdout'a.
+     *
+     * Prod'da rapor bir DOSYA olarak isteniyor — operatör onu indirip
+     * paylaşabilsin diye. `> rapor.html` ile yönlendirmek de çalışır ama iki
+     * şeyi bozar: çıkış kodu kaybolur (kritik bulgu sinyali), ve konteyner
+     * içinde çalışan bir komutta kabuk yönlendirmesi her zaman elde değildir.
+     * Bayrak ikisini de çözer; yol yazılamıyorsa stdout'a düşer, çünkü
+     * yazılamayan bir dosya yüzünden teşhisin KAYBOLMASI en kötü sonuç olurdu.
+     */
+    const html = taniHtml(rapor);
+    const outIdx = process.argv.indexOf("--out");
+    const outPath = outIdx >= 0 ? process.argv[outIdx + 1] : undefined;
+    if (outPath !== undefined && outPath !== "") {
+      try {
+        const { writeFile, mkdir } = await import("node:fs/promises");
+        const { dirname } = await import("node:path");
+        await mkdir(dirname(outPath), { recursive: true });
+        await writeFile(outPath, html, "utf8");
+        process.stderr.write(`[maestro] tanı raporu yazıldı: ${outPath}\n`);
+      } catch (error) {
+        process.stderr.write(`[maestro] tanı raporu "${outPath}" yazılamadı (${String(error)}); rapor aşağıda.\n`);
+        process.stdout.write(html);
+      }
+    } else {
+      process.stdout.write(html);
+    }
 
     // Çıkış kodu betiğin operatöre ne diyeceğini belirler: 3 = kritik bulgu
     // VAR (rapor yine üretildi), tıpkı ajan-modelleri.sh'in 3'ü gibi.

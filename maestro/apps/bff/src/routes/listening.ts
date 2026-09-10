@@ -4,6 +4,7 @@ import { z } from "zod";
 import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { ListeningRuleRecord, ListeningStore } from "../listening-store.js";
+import { isSearchRepoMap } from "../listening-store.js";
 import {
   ASSIGNED_MATCH_VALUE,
   AllowedStatusesSchema,
@@ -250,6 +251,20 @@ async function assertMappedAppsExist(
   repoMap: ListeningRuleRecord["repoMap"],
 ): Promise<void> {
   if (repoMap === null || repoMap === undefined) return;
+  /**
+   * "PROJEYİ SEÇ, DEPOYU SİSTEM BULSUN" KİPİ BU KAPIDAN GEÇMEZ.
+   *
+   * Bu kontrol `entries[].appId`'nin her zaman KAYITLI BİR DEPO olduğunu
+   * varsayarak yazıldı ve o gün doğruydu. Sonra üçüncü kip geldi: orada
+   * `appId` bir depo değil, ARANACAK PROJEDİR — hangi deponun ilgili olduğu
+   * ticket geldiğinde bulunacaktır, dolayısıyla `Application` tablosunda bir
+   * satırı olması ne beklenir ne de mümkündür.
+   *
+   * Kontrol o kipi tanımadığı için kural KAYDEDİLEMİYORDU: operatör "Bankacılık"
+   * projesini seçiyor, ekran "tanımlı olmayan uygulama" diyordu. Kipin var olma
+   * sebebi (depo adını bilmemek) kapının reddettiği şeyin ta kendisiydi.
+   */
+  if (isSearchRepoMap(repoMap)) return;
   // Tekilleştirilmiş, çünkü aynı depoyu gösteren beş satır operatöre beş kez
   // aynı ismi göstermemeli; sırası korunuyor ki mesaj gövdedeki sırayı izlesin.
   const appIds = [...new Set(repoMap.entries.map((entry) => entry.appId))];

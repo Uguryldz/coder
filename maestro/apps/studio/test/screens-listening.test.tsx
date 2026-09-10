@@ -1193,6 +1193,66 @@ describe("repo map (depo eşlemesi)", () => {
     ).toBeUndefined();
   });
 
+  /**
+   * KAYITSIZ DEPO ÖNCE KAYDEDİLİR — SCM LİSTESİNDE GÖRÜNMESE BİLE.
+   *
+   * Filtre bir dönem `scmRepoOptions.includes(appId)` şartını taşıyordu: yalnız
+   * SCM listesinde GÖRÜNEN depolar kaydediliyordu. Liste okunamadığında ya da
+   * depo listenin dışında kaldığında (sayfalama, yeni açılmış depo) kayıt hiç
+   * denenmiyor, istek doğrudan sunucuya gidiyor ve oradaki kapı "tanımlı
+   * olmayan bir uygulama var" diyerek kuralı reddediyordu — operatörün elinde
+   * DOĞRU bir depo adı varken.
+   */
+  it("registers a repository the SCM list does not show before saving the rule", async () => {
+    // SCM listesi BOŞ: bağlantı okunamamış hâli. Depo adı yine de geçerli.
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.type(await screen.findByLabelText("Uygulama (depo)"), "banka/ekstre");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    await waitFor(() => {
+      const calls = fn.mock.calls.map((c) => `${(c[1] as RequestInit)?.method ?? "GET"} ${String(c[0])}`);
+      const register = calls.findIndex((c) => c.startsWith("POST") && c.includes("/onboarding/apps"));
+      const save = calls.findIndex((c) => c.startsWith("POST") && c.endsWith("/studio/listening-rules"));
+      // Kayıt DENENDİ ve kaydetmeden ÖNCE geldi.
+      expect(register).toBeGreaterThanOrEqual(0);
+      expect(save).toBeGreaterThan(register);
+    });
+  });
+
+  /**
+   * "Projeyi seç" kipinde `entries[0].appId` bir depo değil PROJE adıdır;
+   * kaydedilecek bir şey yoktur ve `/onboarding/apps` çağrılmamalıdır.
+   */
+  it("does not try to register anything in the search mode", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.click(screen.getByLabelText(/Projeyi seç, depoyu sistem bulsun/u));
+    await userEvent.type(await screen.findByLabelText("Aranacak proje"), "Bankacılık");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    await waitFor(() => {
+      expect(
+        fn.mock.calls.find((c) => String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST"),
+      ).toBeTruthy();
+    });
+    expect(fn.mock.calls.find((c) => String(c[0]).includes("/onboarding/apps"))).toBeUndefined();
+  });
+
   it("refuses to save an on-but-incomplete field map instead of silently dropping it", async () => {
     const fn = stubFetch([]);
     renderScreen(ADMIN);

@@ -464,9 +464,30 @@ export function ListeningScreen(): ReactNode {
     // Depo eşlemesinde projeye henüz kayıtlı olmayan bir depo seçildiyse önce
     // projeye kaydedilir (varsayılan profil: Linux/Node — imaj Java/Maven'ı da
     // taşır); kayıt başarısızsa kural kaydedilmez.
-    const unknownRepos = [...new Set((body.repoMap?.entries ?? []).map((e) => e.appId))].filter(
-      (appId) => !appOptions.includes(appId) && scmRepoOptions.includes(appId),
-    );
+    /**
+     * KAYITSIZ DEPO ÖNCE KAYDEDİLİR — SCM LİSTESİNDE GÖRÜNMESE BİLE.
+     *
+     * Bu filtre `scmRepoOptions.includes(appId)` şartını taşıyordu: yalnız SCM
+     * listesinde GÖRÜNEN depolar kaydediliyordu. Sahada kırıldığı yer buydu —
+     * liste okunamadığında (bağlantı arızası) ya da depo listenin dışında
+     * kaldığında (sayfalama sınırı, yeni açılmış depo) kayıt hiç denenmiyor,
+     * istek doğrudan sunucuya gidiyor ve oradaki kapı "tanımlı olmayan bir
+     * uygulama var" diyerek kuralı reddediyordu. Operatörün elinde doğru bir
+     * depo adı vardı ama kaydedemiyordu.
+     *
+     * Şart kaldırıldı: projeye kayıtlı OLMAYAN her depo kaydedilmeye çalışılır.
+     * Depo gerçekten yoksa `/onboarding/apps` zaten kendi adıyla reddeder —
+     * yani doğrulama kaybolmuyor, yalnız DOĞRU katmana taşınıyor.
+     *
+     * "Projeyi seç" kipinde `entries[0].appId` bir depo değil PROJE adıdır ve
+     * kaydedilecek bir şey yoktur; o kip burada da atlanır.
+     */
+    const unknownRepos =
+      body.repoMap?.field === "?"
+        ? []
+        : [...new Set((body.repoMap?.entries ?? []).map((e) => e.appId))].filter(
+            (appId) => !appOptions.includes(appId),
+          );
     void (async () => {
       for (const adoRepo of unknownRepos) {
         try {

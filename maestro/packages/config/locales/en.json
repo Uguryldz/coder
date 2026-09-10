@@ -592,7 +592,7 @@
   "error.invalid_killswitch_body": "The kill switch request is not valid.",
   "error.invalid_listening_rule": "Invalid listening rule — check the fields.",
   "error.invalid_listening_rule_id": "Invalid listening rule id.",
-  "error.listening_repo_map_unknown_app": "The repository map names an application that is not registered: {appIds}. The rule was not saved — add the repository to the project first, or fix the name in the map.",
+  "error.listening_repo_map_unknown_app": "The repository map names a repository that cannot be found: {appIds}. The rule was not saved. The name must be the full name in the SCM (\"project/repo\" or \"owner/repo\"); picking it from the box fills the right name in, and an unregistered repository is registered as the rule is saved. If you typed it by hand, it may be a typo. If you do not know the repository name, use the \"pick the project and let the system find the repository\" mode.",
   "error.invalid_listening_seed": "Could not load the ready-made rules — a valid project key is required.",
   "error.invalid_login_body": "The sign-in details are missing or malformed.",
   "error.invalid_mode": "The work mode is not valid.",

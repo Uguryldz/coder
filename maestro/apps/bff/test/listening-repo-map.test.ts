@@ -154,6 +154,47 @@ describe("listening rule repo map — unregistered application is refused on wri
     });
   });
 
+  /**
+   * "PROJEYİ SEÇ, DEPOYU SİSTEM BULSUN" KİPİ BU KAPIDAN GEÇMEZ.
+   *
+   * Kapı `entries[].appId`'nin her zaman KAYITLI BİR DEPO olduğunu varsayarak
+   * yazıldı ve o gün doğruydu. Üçüncü kipte `appId` bir depo değil, ARANACAK
+   * PROJEDİR — hangi deponun ilgili olduğu ticket geldiğinde bulunur, yani
+   * `Application` tablosunda bir satırı olması ne beklenir ne mümkündür.
+   *
+   * Kapı o kipi tanımadığı için kural KAYDEDİLEMİYORDU: operatör projeyi
+   * seçiyor, ekran "tanımlı olmayan uygulama" diyordu. Kipin var olma sebebi
+   * (depo adını bilmemek) kapının reddettiği şeyin ta kendisiydi.
+   */
+  it("lets the search mode through — its appId is a PROJECT, not a repository", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    const response = await post(h, "/studio/listening-rules", token, {
+      ...BASE,
+      repoMap: { field: "?", entries: [{ value: "*", appId: "Bankacılık" }] },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      rule: { repoMap: { field: "?", entries: [{ appId: "Bankacılık" }] } },
+    });
+  });
+
+  /** Sabit ve alan kiplerinde kapı AYNEN duruyor — muafiyet yalnız arama kipine. */
+  it("still refuses an unregistered repository in the FIXED mode", async () => {
+    const h = await harness();
+    const token = await admin(h);
+
+    const response = await post(h, "/studio/listening-rules", token, {
+      ...BASE,
+      repoMap: { field: "*", entries: [{ value: "*", appId: "bank/yok" }] },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: "listening_repo_map_unknown_app" });
+  });
+
   it("names EVERY unknown app, not just the first", async () => {
     const h = await harness({ applications: [...TEST_APPLICATIONS, testApplication("bank/kart", "bank", "kart")] });
     const token = await admin(h);

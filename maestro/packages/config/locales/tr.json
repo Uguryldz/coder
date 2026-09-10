@@ -592,7 +592,7 @@
   "error.invalid_killswitch_body": "Kill-switch isteği geçersiz.",
   "error.invalid_listening_rule": "Dinleme kuralı geçersiz — alanları kontrol edin.",
   "error.invalid_listening_rule_id": "Dinleme kuralı kimliği geçersiz.",
-  "error.listening_repo_map_unknown_app": "Depo eşlemesinde tanımlı olmayan bir uygulama var: {appIds}. Kural kaydedilmedi — depoyu önce projeye ekleyin ya da eşlemedeki adı düzeltin.",
+  "error.listening_repo_map_unknown_app": "Depo eşlemesinde tanınmayan bir depo var: {appIds}. Kural kaydedilmedi. Depo adı SCM'deki tam adı olmalı (\"proje/depo\" ya da \"sahip/depo\"); kutudan seçerseniz doğru ad kendiliğinden gelir ve depo kayıtlı değilse kaydetme anında kaydedilir. Elle yazdıysanız bir harf hatası olabilir. Depo adını bilmiyorsanız \"Projeyi seç, depoyu sistem bulsun\" kipini kullanın.",
   "error.invalid_listening_seed": "Hazır kurallar yüklenemedi — geçerli bir proje anahtarı gerekli.",
   "error.invalid_login_body": "Giriş bilgileri eksik veya hatalı.",
   "error.invalid_mode": "Çalışma modu geçersiz.",

@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { caEnv, checkedOutBranch, prepareWorkspace, WorkspaceError } from "../src/stores/workspace-prepare.js";
+import {
+  caEnv,
+  checkedOutBranch,
+  DEFAULT_WORKSPACE_ROOT,
+  prepareWorkspace,
+  workspaceRootFrom,
+  WorkspaceError,
+} from "../src/stores/workspace-prepare.js";
 const sh = promisify(execFile);
 
 /**
@@ -30,6 +37,44 @@ async function root(): Promise<string> {
 }
 
 describe("prepareWorkspace", () => {
+  /**
+   * AZURE DEVOPS'UN KENDİ BİÇİMİ KABUL EDİLİR.
+   *
+   * Sistemin geri kalanı bir ADO deposunu ZATEN `<proje>/_git/<repo>` diye
+   * taşıyor (`read-onboarding.ts`, Studio'nun seçim kutusu, tanı raporu) ama
+   * buradaki isim kontrolü yalnız iki segmentli şekli tanıyordu. Hata sessizdi
+   * ve en kötü türdendi: `checkoutOrNull` yakalayıp `null` dönüyor, koşu
+   * klonsuz devam ediyor, analiz kod tabanını hiç görmeden yazılıyordu.
+   */
+  it("accepts Azure DevOps' project/_git/repo form", async () => {
+    const dir = await root();
+    const error = await prepareWorkspace({
+      repo: "BankaProje/_git/ekstre",
+      root: dir,
+      runId: "run-ado",
+      host: "127.0.0.1:1",
+      timeoutMs: 5_000,
+    }).catch((cause: unknown) => cause);
+
+    // Ağ yok, yani klon başarısız — ama BİÇİM yüzünden değil. Ayrım burada:
+    // reddedilen bir ad "must be" der, denenip düşen bir klon "clone failed".
+    expect(error).toBeInstanceOf(WorkspaceError);
+    expect((error as WorkspaceError).message).toContain("clone failed");
+    expect((error as WorkspaceError).message).not.toContain("must be");
+  });
+
+  it("still refuses names that could climb the directory tree", async () => {
+    // Genişletme güvenliği bozmamalı: `_git` SABİT bir ayraç, serbest bir
+    // üçüncü segment değil — serbest bırakmak `a/../b` gibi yolları da komut
+    // satırına taşırdı.
+    const dir = await root();
+    for (const repo of ["../etc/passwd", "a/../b", "org/proje/repo", "x/_git/../y", "a//b"]) {
+      const error = await prepareWorkspace({ repo, root: dir, runId: "run-bad" }).catch((c: unknown) => c);
+      expect(error, repo).toBeInstanceOf(WorkspaceError);
+      expect((error as WorkspaceError).message, repo).toContain("must be");
+    }
+  });
+
   it("refuses a repository name that is not owner/repo", async () => {
     // The value reaches a command line. A name with a slash too many — or a
     // shell metacharacter — must be rejected before it gets there.
@@ -133,6 +178,33 @@ describe("prepareWorkspace", () => {
       expect(withCa("/etc/maestro/kurum-ca.pem", caEnv)).toEqual({ GIT_SSL_CAINFO: "/etc/maestro/kurum-ca.pem" });
       expect(withCa("  /etc/maestro/kurum-ca.pem  ", caEnv)).toEqual({ GIT_SSL_CAINFO: "/etc/maestro/kurum-ca.pem" });
     });
+  });
+});
+
+/**
+ * KLON KÖKÜ ELLE TANIMLANMAZ.
+ *
+ * Bu yol bir dönem yalnız `.env`'den okunuyordu ve tanımsızken keşif SESSİZCE
+ * kapalıydı: koşu klon açmıyor, analiz kod tabanını hiç görmeden yazılıyor,
+ * bunu söyleyen tek satır yok. Oysa tanımlanacak bir şey yoktu — her kurulum
+ * bff ve worker'a `/workspace` birimini zaten bağlıyor, tam da klonlar için.
+ *
+ * `.env` artık yalnızca ÜSTÜNE YAZMAK için: birimini başka yere bağlamış bir
+ * kurulum kendi yolunu söyler, geri kalan hiçbir şey yazmaz.
+ */
+describe("klon kökü", () => {
+  it("falls back to the volume every install already mounts", () => {
+    expect(workspaceRootFrom({})).toBe(DEFAULT_WORKSPACE_ROOT);
+    // Compose değişkeni `${WORKSPACE_ROOT:-}` ile geçirir: tanımsız bir
+    // değişken konteynere BOŞ DİZE olarak girer, `undefined` olmaz. Boş ile
+    // yok aynı şeydir ve ikisi de varsayılana düşmelidir.
+    expect(workspaceRootFrom({ WORKSPACE_ROOT: "" })).toBe(DEFAULT_WORKSPACE_ROOT);
+    expect(workspaceRootFrom({ WORKSPACE_ROOT: "   " })).toBe(DEFAULT_WORKSPACE_ROOT);
+  });
+
+  it("lets an install that mounted the volume elsewhere say so", () => {
+    expect(workspaceRootFrom({ WORKSPACE_ROOT: "/veri/klonlar" })).toBe("/veri/klonlar");
+    expect(workspaceRootFrom({ WORKSPACE_ROOT: "  /veri/klonlar  " })).toBe("/veri/klonlar");
   });
 });
 

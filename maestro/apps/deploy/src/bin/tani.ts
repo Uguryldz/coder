@@ -12,6 +12,7 @@ import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { PrismaConnectionStore } from "../stores/connections.js";
 import { prismaSqlExecutor } from "../stores/sql.js";
+import { workspaceRootFrom } from "../stores/workspace-prepare.js";
 
 /** `git --version` gibi kısa yoklamalar için — tanı raporu hiçbir şey yazmaz. */
 const execFileAsync = promisify(execFile);
@@ -333,7 +334,9 @@ async function yapilandirmaBulgulari(options: {
    * binary olmaması ile PATH'in yanlış olması aynı sonucu doğurur ve ikisini
    * ayırmak operatörün işine yaramaz — klon ya açılabiliyordur ya değil.
    */
-  const klonKok = (env.source["WORKSPACE_ROOT"] ?? "").trim();
+  // `.env` ne diyorsa o, yoksa kurulumun zaten bağladığı `/workspace` birimi.
+  // Elle tanımlama gerekmez; bu yüzden "tanımlı değil" diye bir bulgu da yok.
+  const klonKok = workspaceRootFrom(env.source);
   const gitVar = await (async (): Promise<boolean> => {
     try {
       await execFileAsync("git", ["--version"], { timeout: 10_000 });
@@ -343,18 +346,7 @@ async function yapilandirmaBulgulari(options: {
     }
   })();
 
-  if (klonKok === "") {
-    bulgular.push({
-      baslik: "Depo keşfi (klon)",
-      seviye: "kritik",
-      sonuc:
-        "WORKSPACE_ROOT tanımlı DEĞİL — hiçbir koşu depoyu klonlamaz ve analiz kod tabanını GÖRMEDEN yazılır. " +
-        "Bu bir çökme üretmez; çıktı sessizce eksilir.",
-      cozum:
-        '.env\'e WORKSPACE_ROOT="/workspace" yazın (compose bu yolu bff ve worker\'a bağlar). Özel depolar için ayrıca ' +
-        "SCM_TOKEN_REF'i doldurun; github.com dışı bir SCM için SCM_HOST. Sonra: docker compose up -d bff worker",
-    });
-  } else if (!gitVar) {
+  if (!gitVar) {
     bulgular.push({
       baslik: "Depo keşfi (klon)",
       seviye: "kritik",
@@ -366,21 +358,41 @@ async function yapilandirmaBulgulari(options: {
         "servisleri yeniden başlatın.",
     });
   } else {
+    /**
+     * JETON: `.env` bir adres söylüyorsa o, yoksa PANELDE kayıtlı kod deposu
+     * bağlantısının kendi jetonu. İkisi de yoksa yalnız herkese açık depolar
+     * iner — ve rapor bunu ADIYLA söyler, çünkü özel bir depo o hâlde sessizce
+     * boş klonlanır (dizin açılır, içerik gelmez).
+     */
     const jetonRefScm = (env.source["SCM_TOKEN_REF"] ?? "").trim();
+    const scmBaglanti = await db.connection
+      .findMany()
+      .then((rows) =>
+        rows.find(
+          (row) =>
+            row.enabled !== false &&
+            ["github", "gitlab", "azure_devops"].includes(row.kind) &&
+            row.secretRef !== null,
+        ),
+      )
+      .catch(() => undefined);
+    const jetonKaynak =
+      jetonRefScm !== ""
+        ? `jeton .env'den (SCM_TOKEN_REF: ${jetonRefScm}; değer yazılmadı)`
+        : scmBaglanti !== undefined
+          ? `jeton panelde kayıtlı "${scmBaglanti.id}" (${scmBaglanti.kind}) bağlantısından — elle tanımlama gerekmedi`
+          : "JETON YOK: ne .env'de SCM_TOKEN_REF var ne de panelde jetonlu bir kod deposu bağlantısı";
+    const jetonVar = jetonRefScm !== "" || scmBaglanti !== undefined;
     bulgular.push({
       baslik: "Depo keşfi (klon)",
-      seviye: "iyi",
-      sonuc:
-        `AÇIK — klon kökü ${klonKok}, git kurulu. ` +
-        (jetonRefScm === ""
-          ? "SCM_TOKEN_REF boş: yalnız herkese açık depolar inebilir."
-          : `SCM_TOKEN_REF tanımlı (referans: ${jetonRefScm}; değer yazılmadı).`),
-      ...(jetonRefScm === ""
-        ? {
+      seviye: jetonVar ? "iyi" : "uyari",
+      sonuc: `AÇIK — klon kökü ${klonKok}, git kurulu. ${jetonKaynak}.`,
+      ...(jetonVar
+        ? {}
+        : {
             cozum:
-              "Özel bir depo klonlanacaksa SCM_TOKEN_REF'i doldurun; boşken özel depo klonu kimlik doğrulaması olmadan reddedilir.",
-          }
-        : {}),
+              "Yalnız herkese açık depolar inebilir. Özel bir depo için panelden bir kod deposu bağlantısı ekleyin (jetonuyla birlikte); ayrıca .env'e bir şey yazmanız gerekmez.",
+          }),
     });
   }
 

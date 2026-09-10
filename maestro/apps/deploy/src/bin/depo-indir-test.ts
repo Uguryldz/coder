@@ -18,7 +18,7 @@
  */
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
-import { prepareWorkspace, checkedOutBranch } from "../stores/workspace-prepare.js";
+import { prepareWorkspace, checkedOutBranch, workspaceRootFrom } from "../stores/workspace-prepare.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { rm } from "node:fs/promises";
@@ -40,22 +40,36 @@ if (repo === undefined) {
   process.exit(2);
 }
 
-const root = process.env["WORKSPACE_ROOT"]?.trim() ?? "";
-if (root === "") {
-  console.error("✗ WORKSPACE_ROOT tanımlı DEĞİL — koşular klon açamaz, analiz depoyu görmeden yapılır.");
-  console.error("  Bu, indirme zincirinin kopuk olduğu tek noktadır ve kodla değil ORTAMLA düzelir.");
-  process.exit(3);
-}
-console.log(`WORKSPACE_ROOT = ${root}`);
+// `.env` ne diyorsa o, yoksa kurulumun zaten bağladığı `/workspace` birimi.
+const root = workspaceRootFrom(process.env);
+console.log(`klon kökü = ${root}`);
 
 const db = createDb(process.env["DATABASE_URL"] ?? "");
 const secrets = new EncryptedSecretStore(
   resolveMasterKey({ envValue: process.env["CONNECTOR_MASTER_KEY"], isProduction: false }),
   db.connectorSecret,
 );
+/**
+ * Jeton: `.env` bir adres söylüyorsa o, yoksa PANELDE kayıtlı kod deposu
+ * bağlantısının kendi jetonu — koşunun yaptığının aynısı (`scmCloneToken`).
+ * Elle tanımlama gerekmez.
+ */
 const tokenRef = process.env["SCM_TOKEN_REF"]?.trim() ?? "";
-if (tokenRef === "") console.log("⚠ SCM_TOKEN_REF boş — yalnız herkese açık depolar inebilir.");
-const token = tokenRef === "" ? undefined : await secrets.get(tokenRef);
+let token: string | undefined;
+if (tokenRef !== "") {
+  token = await secrets.get(tokenRef).catch(() => undefined);
+  console.log(`jeton: .env (SCM_TOKEN_REF)`);
+} else {
+  const scm = (await db.connection.findMany()).find(
+    (row) => row.enabled !== false && ["github", "gitlab", "azure_devops"].includes(row.kind) && row.secretRef !== null,
+  );
+  if (scm?.secretRef != null) {
+    token = await secrets.get(scm.secretRef).catch(() => undefined);
+    console.log(`jeton: panelde kayıtlı "${scm.id}" (${scm.kind}) bağlantısından`);
+  } else {
+    console.log("⚠ jeton yok — yalnız herkese açık depolar inebilir.");
+  }
+}
 const scmHost = process.env["SCM_HOST"]?.trim() ?? "";
 
 const runId = `indirme-testi-${Date.now()}`;

@@ -76,7 +76,7 @@ import {
   type ClarifyReentryStatus,
 } from "../listening-banner.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
-import { checkedOutBranch, prepareWorkspace } from "../stores/workspace-prepare.js";
+import { checkedOutBranch, prepareWorkspace, workspaceRootFrom } from "../stores/workspace-prepare.js";
 import type { RepoCloneProbeResult } from "@maestro/bff";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
@@ -236,7 +236,7 @@ export async function main(): Promise<void> {
       // it but still correct, and a repository that cannot be cloned must not
       // stop a ticket from being analysed at all — `discoverRepo` already
       // treats a missing session as degraded and carries on.
-      const checkout = await checkoutOrNull(env, secrets, run);
+      const checkout = await checkoutOrNull(env, secrets, connections, run);
       // The branch the PR targets and the clone starts from: the rule's repo
       // map when it named one, else whatever the repository checked out.
       const targetBranch = run.targetBranch ?? checkout?.branch ?? null;
@@ -559,17 +559,18 @@ export async function main(): Promise<void> {
      * sorununu aramaya gönderirdi.
      */
     ...(((): { repoCloneProbe?: (r: { repo: string; branch?: string }) => Promise<RepoCloneProbeResult> } => {
-      const root = env.source["WORKSPACE_ROOT"]?.trim() ?? "";
-      if (root === "") return {};
+      // Klon kökü artık her kurulumda var (compose `/workspace` birimini bağlar)
+      // ve jeton panelde kayıtlı kod deposu bağlantısından okunur — prova bu
+      // yüzden koşulsuz açık.
+      const root = workspaceRootFrom(env.source);
       return {
         repoCloneProbe: async (request) => {
-          const tokenRef = env.source["SCM_TOKEN_REF"]?.trim() ?? "";
           const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
           const runId = `deneme-${randomBytes(6).toString("hex")}`;
           const started = Date.now();
           let path: string | null = null;
           try {
-            const token = tokenRef === "" ? undefined : await secrets.get(tokenRef);
+            const token = await scmCloneToken(env, connectorSecrets, connections);
             path = await prepareWorkspace({
               repo: request.repo,
               root,
@@ -1711,42 +1712,68 @@ async function countFiles(path: string): Promise<number> {
   }
 }
 
+/**
+ * KLON JETONU — ELLE VERİLMESİ GEREKMEZ.
+ *
+ * Jeton bir dönem YALNIZCA `SCM_TOKEN_REF` ile veriliyordu: operatörün `.env`'e
+ * bir sır ADRESİ yazması, o adresi bir de sır deposuna koyması gerekiyordu.
+ * Oysa panelde zaten bir KOD DEPOSU BAĞLANTISI var — jetonuyla birlikte,
+ * şifreli, test edilmiş. Aynı sırrı ikinci kez, başka bir yere yazdırmak
+ * operatörü yormaktan başka bir şey yapmıyordu; unutulduğunda da keşif sessizce
+ * yarım kalıyordu (özel depo klonu kimlik doğrulamasız reddedilir).
+ *
+ * Sıra: `.env` bir adres söylüyorsa o kazanır (kurumsal kurulumların sır
+ * deposunu `.env` üzerinden bağladığı hâl korunur); söylemiyorsa panelde
+ * KAYITLI ve ETKİN kod deposu bağlantısının kendi jetonu kullanılır.
+ *
+ * Okuma hatası jetonsuz devam eder, çökmez: jetonsuz klon herkese açık
+ * depolarda çalışır ve bir sır okuma arızası bütün keşfi durdurmamalı.
+ */
+async function scmCloneToken(
+  env: DeployEnv,
+  secrets: SecretPort,
+  connections: PrismaConnectionStore,
+): Promise<string | undefined> {
+  const ref = env.source["SCM_TOKEN_REF"]?.trim() ?? "";
+  if (ref !== "") return secrets.get(ref).catch(() => undefined);
+  try {
+    const rows = await connections.list();
+    const scm = rows.find(
+      (row) => row.enabled !== false && SCM_CONNECTION_KINDS.includes(row.kind) && row.secretRef !== null,
+    );
+    if (scm?.secretRef === undefined || scm.secretRef === null) return undefined;
+    return await secrets.get(scm.secretRef).catch(() => undefined);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Kod deposu taşıyan bağlantı türleri — klon jetonu bunlardan okunur. */
+const SCM_CONNECTION_KINDS = ["github", "gitlab", "azure_devops"];
+
 async function checkoutOrNull(
   env: DeployEnv,
   secrets: SecretPort,
+  connections: PrismaConnectionStore,
   run: { runId: string; appId: string | null; targetBranch?: string | null },
 ): Promise<{ path: string; branch: string | null } | null> {
   // An analysis-only run has no repository to check out — that is the
   // binding's deliberate shape, not a clone failure, so there is nothing to
   // warn about either. The skip is journaled by the workflow itself at 3ö.
   if (run.appId === null) return null;
-  const root = env.source["WORKSPACE_ROOT"]?.trim();
   /**
-   * KAPALI KEŞİF SESSİZ KALMAZ — ARTIK.
+   * KLON KÖKÜ ELLE TANIMLANMAZ.
    *
-   * Bu dal bir dönem çıplak `return null`'dı. Kurulumda `WORKSPACE_ROOT`
-   * tanımlanmamışsa (compose onu `${WORKSPACE_ROOT:-}` ile boş dize olarak
-   * geçirir, yani "yok" ile "boş" aynı görünür) hiçbir koşu klon açmıyor,
-   * analiz depoyu HİÇ görmeden yazılıyor ve bunu söyleyen tek bir satır
-   * yoktu. Sahada aylarca böyle çalıştı: ölçüldü, klon klasörlerinin en
-   * yenisi kurulumdan haftalar öncesine aitti ve operatörün gördüğü tek şey
-   * "analiz kodla ilgisiz" oldu.
-   *
-   * Eksik yapılandırma bir HATA değil (keşifsiz kurulum geçerli bir seçim),
-   * ama SESSİZ olmamalı: koşu başına bir kez, koşunun kimliğiyle yazılır.
+   * Burası bir dönem `.env`'i şart koşuyordu ve tanımsızken keşif sessizce
+   * kapalıydı — analiz kod tabanını hiç görmeden yazılıyor, bunu söyleyen tek
+   * satır yok. Oysa tanımlanacak bir şey YOKTU: her kurulum bff ve worker'a
+   * `/workspace` birimini zaten bağlıyor, tam da klonlar için. Varsayılan artık
+   * odur; `.env` yalnızca ÜSTÜNE YAZMAK için (bkz. `workspaceRootFrom`).
    */
-  if (root === undefined || root === "") {
-    console.warn(
-      `[maestro] ${run.runId}: WORKSPACE_ROOT tanımlı DEĞİL — ${run.appId} klonlanmayacak ve analiz ` +
-        `depoyu görmeden yapılacak. Açmak için .env'e WORKSPACE_ROOT="/workspace" (özel depo için ayrıca ` +
-        `SCM_TOKEN_REF) yazıp servisleri yeniden başlatın.`,
-    );
-    return null;
-  }
+  const root = workspaceRootFrom(env.source);
 
-  const tokenRef = env.source["SCM_TOKEN_REF"]?.trim();
   try {
-    const token = tokenRef === undefined || tokenRef === "" ? undefined : await secrets.get(tokenRef);
+    const token = await scmCloneToken(env, secrets, connections);
     const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
     const branch = run.targetBranch?.trim() ?? "";
     const path = await prepareWorkspace({
@@ -1769,8 +1796,25 @@ async function checkoutOrNull(
     });
     return { path, branch: await checkedOutBranch(path) };
   } catch (error) {
+    /**
+     * SESSİZ YUTMA YOK — ve "en kötü hal" burada geçti.
+     *
+     * Bu dal her klon arızasını aynı cümleyle geçiştiriyordu. Sahada ADO
+     * kurulumunda şu oldu: depo adı `<proje>/_git/<repo>` biçimindeydi, isim
+     * kontrolü bunu tanımıyordu, hata buraya düştü, koşu klonsuz devam etti ve
+     * analiz kod tabanını HİÇ görmeden yazıldı. Operatörün gördüğü tek şey
+     * "analiz depoyla ilgisiz" oldu — hangi katmanda ne kırıldığını söyleyen
+     * tek satır yoktu.
+     *
+     * Artık hangi depo, hangi dal ve hangi host denendiği de yazılıyor: bir
+     * biçim hatası ile bir yetki hatasını ayıran şey tam olarak bunlar.
+     */
+    const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
+    const branch = run.targetBranch?.trim() ?? "";
     console.warn(
-      `[maestro] ${run.runId}: depo çekilemedi, analiz depoyu görmeden yapılacak — ${String(error)}`,
+      `[maestro] ${run.runId}: depo çekilemedi, analiz depoyu GÖRMEDEN yapılacak. ` +
+        `depo="${run.appId ?? "-"}" dal="${branch === "" ? "(deponun varsayılanı)" : branch}" ` +
+        `host="${scmHost === "" ? "github.com (varsayılan)" : scmHost}" — ${String(error)}`,
     );
     return null;
   }

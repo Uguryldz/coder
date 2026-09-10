@@ -89,15 +89,72 @@ export class WorkspaceError extends Error {
  * git CA'ya hiç bakmaz (bağlantı hatası önce gelir), yani bu karar süreç
  * üzerinden sınanamaz. Buradan sınanır.
  */
+/**
+ * KLON KÖKÜ — ELLE TANIMLANMASI GEREKMEZ.
+ *
+ * Bu yol bir dönem YALNIZCA `.env`'den okunuyordu ve tanımsızken keşif sessizce
+ * kapalıydı: koşu klon açmıyor, analiz kod tabanını hiç görmeden yazılıyor,
+ * bunu söyleyen tek satır yok. Sahada aylarca böyle çalıştı ve operatörün
+ * gördüğü tek şey "analiz depoyla ilgisiz" oldu.
+ *
+ * Oysa tanımlanacak bir şey YOKTU: her kurulum bff ve worker'a `/workspace`
+ * adında bir birim zaten bağlıyor (`docker-compose.yml`, `x-workspace-volumes`)
+ * — tam da klonlar için, doğru uid ile. `.env`'e o yolu bir kez daha yazdırmak,
+ * kurulumun zaten bildiği bir şeyi operatöre sordurmaktı.
+ *
+ * Artık varsayılan odur. `.env` yalnızca ÜSTÜNE YAZMAK için vardır: birimini
+ * başka yere bağlamış bir kurulum kendi yolunu söyler, geri kalan hiçbir şey
+ * yazmaz. Depoya erişecek jeton da elle verilmez; `SCM_TOKEN_REF` boşsa panelde
+ * kayıtlı kod deposu bağlantısının kendi jetonu kullanılır (bkz. `bin/bff.ts`).
+ */
+export const DEFAULT_WORKSPACE_ROOT = "/workspace";
+
+/** `.env` ne diyorsa o, yoksa kurulumun zaten bağladığı birim. */
+export function workspaceRootFrom(source: Record<string, string | undefined>): string {
+  const configured = source["WORKSPACE_ROOT"]?.trim() ?? "";
+  return configured === "" ? DEFAULT_WORKSPACE_ROOT : configured;
+}
+
 export function caEnv(): Record<string, string> {
   const ca = process.env["NODE_EXTRA_CA_CERTS"]?.trim() ?? "";
   return ca === "" ? {} : { GIT_SSL_CAINFO: ca };
 }
 
+/**
+ * BİR SEGMENT: harf/rakamla başlar, git yolunda güvenli karakterlerle sürer.
+ *
+ * Baştaki karakterin sınırlanması kasıtlı: `.` ile başlayan bir segment `..`
+ * olabilir ve klon yolunu dizin ağacında yukarı taşırdı. Aynı gerekçe
+ * `REPO_SEGMENT`te (scm-repos-service) de var ve bu ikisi ayrışmamalı.
+ */
+const PATH_SEGMENT = "[A-Za-z0-9][A-Za-z0-9._-]*";
+
+/**
+ * DEPO ADININ İKİ MEŞRU ŞEKLİ — ve ikincisi uzun süre REDDEDİLİYORDU.
+ *
+ * GitHub/GitLab bir depoyu `owner/repo` diye adlandırır. Azure DevOps ise
+ * `<proje>/_git/<repo>` der, ve sistemin geri kalanı depoyu ZATEN bu şekilde
+ * taşıyor (`read-onboarding.ts`, Studio'nun seçim kutusu, tanı raporu). Ama
+ * buradaki kontrol yalnız iki segmentli şekli tanıyordu:
+ *
+ *   ✓ Uguryldz/maestro-pilot
+ *   ✗ BankaProje/_git/ekstre      ← ADO'nun kendi biçimi
+ *
+ * Sonuç sessizdi ve en kötü türdendi: `prepareWorkspace` fırlatıyor,
+ * `checkoutOrNull` (bin/bff.ts) hatayı yakalayıp `null` dönüyor, koşu klonsuz
+ * devam ediyor ve analiz kod tabanını HİÇ görmeden yazılıyor. Operatörün
+ * gördüğü tek şey "analiz depoyla ilgisiz" oluyordu.
+ *
+ * `_git` ayracı sabit yazılıyor, serbest bir üçüncü segment olarak değil: ADO
+ * yolunun ayracı odur ve serbest bırakmak, `a/b/c` gibi anlamı olmayan
+ * yolların da komut satırına ulaşmasına izin verirdi.
+ */
+const REPO_NAME = new RegExp(`^${PATH_SEGMENT}\\/(?:_git\\/)?${PATH_SEGMENT}$`, "u");
+
 export async function prepareWorkspace(request: CloneRequest): Promise<string> {
   const { repo, root, runId } = request;
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-    throw new WorkspaceError(`repository must be "owner/repo", got "${repo}"`);
+  if (!REPO_NAME.test(repo)) {
+    throw new WorkspaceError(`repository must be "owner/repo" or "project/_git/repo", got "${repo}"`);
   }
   const path = join(root, runId);
   const branch = request.branch?.trim() ?? "";

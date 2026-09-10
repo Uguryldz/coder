@@ -24,8 +24,17 @@ import { promisify } from "node:util";
 import { rm } from "node:fs/promises";
 const run = promisify(execFile);
 
-const repo = process.argv[2];
-const branch = process.argv[3]?.trim() ?? "";
+/**
+ * Bayraklar konumsal argümanlardan AYRILIR.
+ *
+ * `depo-indir-test <repo> --sakla` çağrısı `--sakla`yı dal adı sanıp
+ * "not a plain git ref" ile düşüyordu: dal kontrolü doğru çalışıyordu ama
+ * yanlış şeye bakıyordu. Bayrakları önce eleyip geriye kalanı konumsal
+ * okumak, bu sınıfın tamamını kapatır.
+ */
+const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const repo = args[0];
+const branch = args[1]?.trim() ?? "";
 if (repo === undefined) {
   console.error("Kullanım: depo-indir-test <owner/repo> [dal]");
   process.exit(2);

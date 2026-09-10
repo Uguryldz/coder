@@ -100,14 +100,36 @@ const saniye = ((Date.now() - started) / 1000).toFixed(1);
 /** Klonun GERÇEKTEN istenen depo olduğunu origin'den doğrula — ad benzerliği yetmez. */
 const { stdout: origin } = await run("git", ["-C", path, "remote", "get-url", "origin"], { timeout: 10_000 });
 const { stdout: sayım } = await run("sh", ["-c", `find ${JSON.stringify(path)} -type f -not -path '*/.git/*' | wc -l`], { timeout: 60_000 });
-const { stdout: head } = await run("git", ["-C", path, "log", "-1", "--format=%h %s"], { timeout: 10_000 });
+/**
+ * BOŞ KLON ÇÖKME DEĞİL, BULGUDUR.
+ *
+ * `git clone` erişemediği bir depoda bile çıkış kodu 0 verip dizin
+ * bırakabilir: `.git` var, dal adı var, commit yok. `git log` o zaman
+ * "does not have any commits yet" diye 128 döner ve bu aracın kendisi
+ * çöküyordu — oysa tam da RAPORLAMASI gereken hal bu.
+ */
+const head = await run("git", ["-C", path, "log", "-1", "--format=%h %s"], { timeout: 10_000 })
+  .then((r) => r.stdout.trim())
+  .catch(() => "");
 const { stdout: üst } = await run("sh", ["-c", `ls ${JSON.stringify(path)} | head -12`], { timeout: 10_000 });
+const dosyaSayısı = Number(sayım.trim());
+
+if (head === "" || dosyaSayısı === 0) {
+  console.error(`\n✗ KLON BOŞ — dizin açıldı ama içinde commit/dosya yok.`);
+  console.error(`  Bu, jetonun bu depoya erişemediği hallerde görülür: git dizini kurar, içeriği çekemez.`);
+  console.error(`  yol   : ${path}`);
+  console.error(`  dal   : ${(await checkedOutBranch(path)) ?? "-"}`);
+  console.error(`  dosya : ${dosyaSayısı}`);
+  await rm(path, { recursive: true, force: true });
+  await db.$disconnect();
+  process.exit(1);
+}
 
 console.log(`\n✓ KLON AÇILDI (${saniye} sn)`);
 console.log(`  yol    : ${path}`);
 console.log(`  origin : ${origin.trim().replace(/:\/\/[^@]*@/u, "://***@")}`);
 console.log(`  dal    : ${(await checkedOutBranch(path)) ?? "-"}`);
-console.log(`  HEAD   : ${head.trim()}`);
+console.log(`  HEAD   : ${head}`);
 console.log(`  dosya  : ${sayım.trim()}`);
 console.log(`  üst dizin:\n${üst.trimEnd().split("\n").map((l) => `    ${l}`).join("\n")}`);
 

@@ -1203,6 +1203,7 @@
   "listening.repomap.clone_test.button": "Try downloading the repository",
   "listening.repomap.clone_test.busy": "downloading…",
   "listening.repomap.clone_test.ok": "✓ {repo} cloned — {files} files, branch {branch}, last commit {head} ({seconds}s). The clone was deleted; this was a trial.",
+  "listening.repomap.clone_test.empty": "✗ A directory was created for {repo} but it is EMPTY — no commit or file came down. This usually means the token cannot reach this repository (an organisation-owned one in particular): git sets the directory up but cannot fetch the content. Grant the SCM connection's token read access to this repository.",
   "listening.repomap.clone_test.failed": "✗ {repo} could not be cloned.",
   "listening.repomap.clone_test.unavailable": "This installation has no clone root, so a download cannot be tried. Add WORKSPACE_ROOT=\"/workspace\" (and SCM_TOKEN_REF for private repositories) to .env and restart the services.",
   "listening.repomap.incomplete": "The map is on but has no complete row (value + application). Fill a row or turn the map off.",

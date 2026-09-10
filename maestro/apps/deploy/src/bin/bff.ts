@@ -584,11 +584,32 @@ export async function main(): Promise<void> {
               countFiles(path),
               checkedOutBranch(path),
             ]);
+            /**
+             * BOŞ KLON BAŞARI DEĞİLDİR.
+             *
+             * `git clone` bir depoya erişemediğinde bile çıkış kodu 0 verip
+             * DİZİN BIRAKABİLİR: `.git` kurulmuş, dal adı yazılmış, tek commit
+             * yok. Ölçüldü — jetonun erişemediği bir organizasyon deposunda
+             * tam olarak bu oldu ve dizin varlığına bakan bir kontrol "indi"
+             * der. Operatörün gördüğü şey yine "analiz kodu görmedi" olurdu,
+             * bu sefer provanın yeşiline rağmen.
+             *
+             * Commit yoksa ya da tek dosya inmediyse bu bir başarısızlıktır.
+             */
+            if (head === null || count === 0) {
+              return {
+                ok: false,
+                repo: request.repo,
+                messageKey: "listening.repomap.clone_test.empty",
+                ...(branch === null ? {} : { branch }),
+                fileCount: count,
+              };
+            }
             return {
               ok: true,
               repo: request.repo,
               ...(branch === null ? {} : { branch }),
-              ...(head === null ? {} : { head }),
+              head,
               fileCount: count,
               durationMs: Date.now() - started,
             };

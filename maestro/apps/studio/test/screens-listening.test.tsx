@@ -1019,6 +1019,48 @@ describe("repo map (depo eşlemesi)", () => {
     expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ repo: "bank/kredi" });
   });
 
+  /**
+   * BOŞ KLON YEŞİL GÖRÜNMEZ.
+   *
+   * `git clone` erişemediği bir depoda bile çıkış kodu 0 verip dizin
+   * bırakabilir: `.git` kurulmuş, dal adı yazılmış, commit yok. Canlıda
+   * ölçüldü — jetonun erişemediği bir organizasyon deposunda tam olarak bu
+   * oldu. Dizin varlığına bakan bir prova "indi" derdi ve operatör yine
+   * kodsuz bir analizle karşılaşırdı, bu sefer yeşil bir onaya rağmen.
+   */
+  it("reports an empty clone as a failure, with the token as the likely cause", async () => {
+    const fn = stubFetch([], { scmRepos: ["org/gizli"] });
+    fn.mockImplementation(((url: string, init?: RequestInit) => {
+      if (String(url).includes("/listening-rules/clone-test")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ok: false,
+              repo: "org/gizli",
+              messageKey: "listening.repomap.clone_test.empty",
+              branch: "main",
+              fileCount: 0,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return stubFetch([], { scmRepos: ["org/gizli"] })(url, init) as Promise<Response>;
+    }) as never);
+
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.selectOptions(await screen.findByLabelText("Uygulama (depo)"), "org/gizli");
+    await userEvent.click(await screen.findByRole("button", { name: "Depoyu indirmeyi dene" }));
+
+    // Sebep tahmini de yazılmalı: "boş indi" tek başına ne yapılacağını söylemez.
+    expect(await screen.findByText(/İÇİ BOŞ/u)).toBeTruthy();
+    expect(screen.getByText(/jetonun bu depoya/u)).toBeTruthy();
+  });
+
   it("refuses to save an on-but-incomplete field map instead of silently dropping it", async () => {
     const fn = stubFetch([]);
     renderScreen(ADMIN);

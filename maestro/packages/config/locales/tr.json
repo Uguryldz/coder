@@ -1203,6 +1203,7 @@
   "listening.repomap.clone_test.button": "Depoyu indirmeyi dene",
   "listening.repomap.clone_test.busy": "indiriliyor…",
   "listening.repomap.clone_test.ok": "✓ {repo} indi — {files} dosya, dal {branch}, son commit {head} ({seconds} sn). Klon silindi; bu bir denemeydi.",
+  "listening.repomap.clone_test.empty": "✗ {repo} için dizin açıldı ama İÇİ BOŞ — commit ya da dosya inmedi. Bu genellikle jetonun bu depoya (özellikle bir organizasyona ait olana) erişemediği anlamına gelir: git dizini kurar, içeriği çekemez. SCM bağlantısındaki jetona bu deponun okuma iznini verin.",
   "listening.repomap.clone_test.failed": "✗ {repo} indirilemedi.",
   "listening.repomap.clone_test.unavailable": "Bu kurulumda klon kökü tanımlı değil, indirme denenemez. .env dosyasına WORKSPACE_ROOT=\"/workspace\" (özel depolar için ayrıca SCM_TOKEN_REF) yazıp servisleri yeniden başlatın.",
   "listening.repomap.incomplete": "Eşleme açık ama tam bir satır yok (değer + uygulama). Satır doldurun ya da eşlemeyi kapatın.",

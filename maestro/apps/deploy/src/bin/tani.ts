@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { auditVariantModels, createDb, type Db } from "@maestro/db";
 import { maskEndpointCredentials, resolveBotIdentity } from "@maestro/bff";
 import type { TicketKey } from "@maestro/contracts";
@@ -10,6 +12,9 @@ import { connectionSecretsFrom } from "../stores/connection-secrets.js";
 import { tlsSkipFlagFrom } from "../stores/connection-tls.js";
 import { PrismaConnectionStore } from "../stores/connections.js";
 import { prismaSqlExecutor } from "../stores/sql.js";
+
+/** `git --version` gibi kısa yoklamalar için — tanı raporu hiçbir şey yazmaz. */
+const execFileAsync = promisify(execFile);
 import { connectTemporal } from "../temporal-gateway.js";
 import { insanOkunur } from "../temporal-retention.js";
 import {
@@ -312,6 +317,70 @@ async function yapilandirmaBulgulari(options: {
       seviye: "bilinmiyor",
       sonuc: `Denetim okunamadı: ${hataMetni(error)}`,
       cozum: "Veritabanı erişilebilir mi? docker compose logs postgres",
+    });
+  }
+
+  /**
+   * ── DEPO KEŞFİ: KLON KÖKÜ ve GIT ──────────────────────────────────────────
+   *
+   * Bu bulgu, sahada en pahalı sessizliğin karşılığı. Keşif üç şeye birden
+   * bağlı ve üçü de eksikken sistem HATA VERMEZ — analizi depoyu görmeden
+   * yazar, operatör de "analiz kodla ilgisiz" der. Ölçüldü: canlı kurulumda
+   * `WORKSPACE_ROOT` hiç tanımlanmamıştı ve imajda `git` yoktu; bunu ortaya
+   * çıkarmak bir koşuyu baştan sona izlemeyi gerektirdi.
+   *
+   * `git`in varlığı ÇALIŞTIRILARAK ölçülür, PATH'e bakılarak değil: imajda
+   * binary olmaması ile PATH'in yanlış olması aynı sonucu doğurur ve ikisini
+   * ayırmak operatörün işine yaramaz — klon ya açılabiliyordur ya değil.
+   */
+  const klonKok = (env.source["WORKSPACE_ROOT"] ?? "").trim();
+  const gitVar = await (async (): Promise<boolean> => {
+    try {
+      await execFileAsync("git", ["--version"], { timeout: 10_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  if (klonKok === "") {
+    bulgular.push({
+      baslik: "Depo keşfi (klon)",
+      seviye: "kritik",
+      sonuc:
+        "WORKSPACE_ROOT tanımlı DEĞİL — hiçbir koşu depoyu klonlamaz ve analiz kod tabanını GÖRMEDEN yazılır. " +
+        "Bu bir çökme üretmez; çıktı sessizce eksilir.",
+      cozum:
+        '.env\'e WORKSPACE_ROOT="/workspace" yazın (compose bu yolu bff ve worker\'a bağlar). Özel depolar için ayrıca ' +
+        "SCM_TOKEN_REF'i doldurun; github.com dışı bir SCM için SCM_HOST. Sonra: docker compose up -d bff worker",
+    });
+  } else if (!gitVar) {
+    bulgular.push({
+      baslik: "Depo keşfi (klon)",
+      seviye: "kritik",
+      sonuc:
+        `WORKSPACE_ROOT dolu (${klonKok}) ama bu konteynerde git YOK — klon komutu hiç çalışamaz. ` +
+        'Hata koşuda "clone failed" diye görünür, ki bu yetki ya da ağ sorunu gibi okunur.',
+      cozum:
+        "Bu, imajın eksikliğidir; yapılandırmayla düzelmez. git taşıyan bir sürüme geçin (1.0.72 ve sonrası) ve " +
+        "servisleri yeniden başlatın.",
+    });
+  } else {
+    const jetonRefScm = (env.source["SCM_TOKEN_REF"] ?? "").trim();
+    bulgular.push({
+      baslik: "Depo keşfi (klon)",
+      seviye: "iyi",
+      sonuc:
+        `AÇIK — klon kökü ${klonKok}, git kurulu. ` +
+        (jetonRefScm === ""
+          ? "SCM_TOKEN_REF boş: yalnız herkese açık depolar inebilir."
+          : `SCM_TOKEN_REF tanımlı (referans: ${jetonRefScm}; değer yazılmadı).`),
+      ...(jetonRefScm === ""
+        ? {
+            cozum:
+              "Özel bir depo klonlanacaksa SCM_TOKEN_REF'i doldurun; boşken özel depo klonu kimlik doğrulaması olmadan reddedilir.",
+          }
+        : {}),
     });
   }
 

@@ -53,8 +53,20 @@ ENV PNPM_HOME=/pnpm \
 # "failed to detect the libssl/openssl version to use" and falls back to a
 # guess. The guess happened to work here; a wrong guess is a runtime failure in
 # the engine rather than a build error, which is the worst place to find out.
+#
+# GIT, for the discovery clone — and it was MISSING for a long time.
+#
+# `prepareWorkspace` (apps/deploy/src/stores/workspace-prepare.js) shells out to
+# `git clone` to put the ticket's repository on disk; step 3ö then reads that
+# checkout. Without the binary the spawn fails and the error surfaces as
+# `WorkspaceError: clone failed for <repo>` — a message that reads like a
+# permissions or network problem, because the raw stderr is deliberately
+# swallowed there (the git command line carries the token in an Authorization
+# header). Measured on the live stack: every image up to 1.0.71 answered
+# `command -v git` with nothing, so no run could ever open a checkout and every
+# analysis was written WITHOUT the code, silently.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && apt-get install -y --no-install-recommends openssl ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /app

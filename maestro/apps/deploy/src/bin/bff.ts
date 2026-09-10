@@ -1583,7 +1583,28 @@ async function checkoutOrNull(
   // warn about either. The skip is journaled by the workflow itself at 3ö.
   if (run.appId === null) return null;
   const root = env.source["WORKSPACE_ROOT"]?.trim();
-  if (root === undefined || root === "") return null;
+  /**
+   * KAPALI KEŞİF SESSİZ KALMAZ — ARTIK.
+   *
+   * Bu dal bir dönem çıplak `return null`'dı. Kurulumda `WORKSPACE_ROOT`
+   * tanımlanmamışsa (compose onu `${WORKSPACE_ROOT:-}` ile boş dize olarak
+   * geçirir, yani "yok" ile "boş" aynı görünür) hiçbir koşu klon açmıyor,
+   * analiz depoyu HİÇ görmeden yazılıyor ve bunu söyleyen tek bir satır
+   * yoktu. Sahada aylarca böyle çalıştı: ölçüldü, klon klasörlerinin en
+   * yenisi kurulumdan haftalar öncesine aitti ve operatörün gördüğü tek şey
+   * "analiz kodla ilgisiz" oldu.
+   *
+   * Eksik yapılandırma bir HATA değil (keşifsiz kurulum geçerli bir seçim),
+   * ama SESSİZ olmamalı: koşu başına bir kez, koşunun kimliğiyle yazılır.
+   */
+  if (root === undefined || root === "") {
+    console.warn(
+      `[maestro] ${run.runId}: WORKSPACE_ROOT tanımlı DEĞİL — ${run.appId} klonlanmayacak ve analiz ` +
+        `depoyu görmeden yapılacak. Açmak için .env'e WORKSPACE_ROOT="/workspace" (özel depo için ayrıca ` +
+        `SCM_TOKEN_REF) yazıp servisleri yeniden başlatın.`,
+    );
+    return null;
+  }
 
   const tokenRef = env.source["SCM_TOKEN_REF"]?.trim();
   try {

@@ -127,6 +127,41 @@ describe("searchRepos — Code Search varsa o, yoksa ad eşleşmesi", () => {
     expect(result.hits[0]?.repo).toBe("Banka/ekstre-servis");
   });
 
+  /**
+   * PROJE FİLTRESİ HER KADEMEDE.
+   *
+   * Canlıda ölçüldü: `project: "tecnoi-global"` verilen bir arama, ad
+   * eşleşmesi kademesinde `Uguryldz/wp-platform`u da aday gösteriyordu —
+   * komşu hesabın deposunu. Filtre yalnız Code Search'e geçiyordu. O depo
+   * seçilseydi koşu YANLIŞ kod tabanını klonlardı ve bunu söyleyen hiçbir
+   * satır olmazdı.
+   */
+  it("keeps the search inside the named project on every tier", async () => {
+    const http: ConnectorFetch = () => Promise.resolve(new Response("not found", { status: 404 }));
+    const result = await searchRepos(
+      conn(),
+      TOKEN,
+      { text: "wp-platform sorunu", project: "tecnoi-global", repos: ["tecnoi-global/wp-platform", "Uguryldz/wp-platform"] },
+      http,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.hits.map((h) => h.repo)).toEqual(["tecnoi-global/wp-platform"]);
+  });
+
+  it("searches everywhere when no project is named", async () => {
+    const http: ConnectorFetch = () => Promise.resolve(new Response("not found", { status: 404 }));
+    const result = await searchRepos(
+      conn(),
+      TOKEN,
+      { text: "wp-platform sorunu", repos: ["tecnoi-global/wp-platform", "Uguryldz/wp-platform"] },
+      http,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.hits).toHaveLength(2);
+  });
+
   it("says so by name when neither path can answer", async () => {
     const http: ConnectorFetch = () => Promise.resolve(new Response("nope", { status: 404 }));
     const result = await search(http, []);

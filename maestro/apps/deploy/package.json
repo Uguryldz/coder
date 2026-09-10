@@ -21,7 +21,8 @@
     "alan-degerleri": "tsx src/bin/alan-degerleri.ts",
     "depo-listesi": "tsx src/bin/depo-listesi.ts",
     "test-ticket": "tsx src/bin/test-ticket.ts",
-    "depo-indir-test": "tsx src/bin/depo-indir-test.ts"
+    "depo-indir-test": "tsx src/bin/depo-indir-test.ts",
+    "depo-arama-test": "tsx src/bin/depo-arama-test.ts"
   },
   "dependencies": {
     "@maestro/adapter-ado": "workspace:*",

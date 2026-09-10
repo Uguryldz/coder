@@ -140,7 +140,28 @@ export async function searchRepos(
     }
   }
 
-  const repos = request.repos ?? [];
+  /**
+   * PROJE FİLTRESİ HER KADEMEDE UYGULANIR — canlıda ölçülene kadar YALNIZ
+   * Code Search'te uygulanıyordu.
+   *
+   * Ölçüm: `project: "tecnoi-global"` verilen bir arama, ad eşleşmesi
+   * kademesinde `Uguryldz/wp-platform`u da aday gösterdi — komşu hesabın
+   * deposunu. O depo seçilseydi koşu YANLIŞ kod tabanını klonlar ve analiz
+   * ilgisiz çıkardı; üstelik bunu söyleyen hiçbir satır olmazdı.
+   *
+   * Filtre `proje/depo` biçiminin ilk yarısına bakar. Bir depo bu biçimde
+   * değilse (tek parçalı ad) elenmez: filtrelenemeyen bir adı elemek, aramayı
+   * sessizce boşaltmak olurdu.
+   */
+  const wanted = request.project?.trim() ?? "";
+  const all = request.repos ?? [];
+  const repos =
+    wanted === ""
+      ? all
+      : all.filter((full) => {
+          const slash = full.indexOf("/");
+          return slash <= 0 || full.slice(0, slash).toLocaleLowerCase("tr") === wanted.toLocaleLowerCase("tr");
+        });
   if (repos.length === 0) return { ok: false, messageKey: "repo_search.unavailable" };
 
   /**

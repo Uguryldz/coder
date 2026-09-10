@@ -285,6 +285,20 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     request.appId !== undefined || (mapped !== null && !mapped.search)
       ? null
       : await searchRepoFor(deps, request, (await searchProject) ?? projectKey);
+  /**
+   * ── ZİNCİRİN SON HALKASI BAĞLAMADIR, VE ÖYLE KALIYOR ─────────────────────
+   *
+   * Bu satırdan `binding.appId` bir kez çıkarıldı ("depo tek yerden gelsin")
+   * ve ÖLÇÜLDÜ: 38 test kırıldı. Kırılanlar bozuk test değildi, davranışın
+   * gerçek yüzüydü — depo eşlemesi olmayan her `gelistirme`/`duzeltme` kuralı
+   * ticket işlemeyi bırakıyordu. Canlı bir kurulumda bu, çalışan kuralların
+   * sessizce durması demek.
+   *
+   * Asıl şikayet ("iki yerde uygulama seçmek saçma") ekranın sorunuydu ve
+   * ekranda çözüldü: "Depo ekle" düğmesi proje bağlamasından kaldırıldı, depo
+   * dinleme ayarlarından seçiliyor. Bağlamadaki uygulama artık operatörün
+   * doldurduğu ikinci bir kutu değil, yalnızca zincirin son çaresi.
+   */
   const appId = request.appId ?? (mapped?.search === true ? undefined : mapped?.appId) ?? searched?.appId ?? binding.appId;
   if (appId === null || appId === undefined) {
     // Tier ③ of M99, narrowed to the flows it was written for: no rule matched

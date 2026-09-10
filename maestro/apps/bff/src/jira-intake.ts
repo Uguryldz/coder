@@ -56,7 +56,24 @@ export interface IntakeRequest {
   assignee?: string;
 }
 
-export type IntakeRefusal = "unbound" | "not_opted_in" | "kill_switch" | "no_application";
+/**
+ * `no_application` ile `unknown_application` AYRI, ve ayrı olmaları gerekiyor.
+ *
+ * `no_application`: hiçbir yer bir uygulama SÖYLEMEDİ — ne komut, ne eşleme,
+ * ne proje bağlaması. Operatörün yapacağı şey ticket'ı birine atamak.
+ *
+ * `unknown_application`: bir uygulama söylendi ama `Application` tablosunda
+ * KAYITLI DEĞİL. Operatörün yapacağı şey bambaşka: depoyu envantere eklemek ya
+ * da kuralın eşlemesini düzeltmek. İkisini tek isme sıkıştırmak, operatöre
+ * yanlış işi yaptırırdı — "atama bekliyor" diyen bir yorumun altında, aslında
+ * atanmış ama kayıtsız bir depo dururdu.
+ */
+export type IntakeRefusal =
+  | "unbound"
+  | "not_opted_in"
+  | "kill_switch"
+  | "no_application"
+  | "unknown_application";
 
 export type IntakeOutcome =
   | { accepted: true; workflowId: string; started: boolean }
@@ -268,6 +285,70 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
        */
       writeDecisionLog(deps, facts({ accepted: false, refusedReason: "no_application" }));
       return { accepted: false, reason: "no_application" };
+    }
+  }
+
+  /**
+   * ── SEÇİLEN UYGULAMA GERÇEKTEN KAYITLI MI ────────────────────────────────
+   *
+   * CANLIDA ÖLÇÜLDÜ (OPS-121). Kuralın depo eşlemesi `Application` tablosunda
+   * satırı olmayan bir depoyu gösterdi. Sıra şuydu:
+   *
+   *   1. eşleme doğru çözüldü, log da yazdı ("… sabit uygulamaya bağlı →
+   *      Uguryldz/maestro-platform")
+   *   2. `signalWithStart` çağrıldı, workflow açıldı, DEPO KLONLANDI
+   *      (`checkoutOrNull` → `prepareWorkspace`, `apps/deploy/src/bin/bff.ts`)
+   *   3. koşu satırı yazılamadı:
+   *      "OPS-121 alınmadı: PrismaClientKnownRequestError: Foreign key
+   *       constraint violated on the constraint: WorkflowRun_appId_fkey"
+   *
+   *   Sonuç: disk harcandı, ticket işlenmedi, ve operatörün elinde ham bir
+   *   Prisma hatasından başka bir şey kalmadı. Klonlar da birikti.
+   *
+   * KONTROLÜN YERİ, düzeltmenin yarısı. `signalWithStart`tan ÖNCE, çünkü klon
+   * onun ARDINDAN açılıyor: burada durursak klon hiç açılmaz. Aynı kontrolü
+   * `checkoutOrNull` içine ya da koşu yazımına koymak, diski zaten harcadıktan
+   * sonra "olmaz" demek olurdu — yani bugünkü davranışın nazikçe yazılmış hâli.
+   *
+   * `no_application` ile aynı KALIP, ayrı SEBEP: ticket'a bir yorum düşer,
+   * karar dökümüne sebep yazılır, koşu AÇILMAZ. Yabancı anahtar hatası artık
+   * hiç oluşmaz, çünkü o hataya götüren yazma denemesi hiç yapılmaz.
+   *
+   * "KAYIT YOK" ile "OKUYAMADIM" AYRI, ve ayrılmaları şart.
+   *
+   * Registry `null` döndüyse bu bir ÖLÇÜM: satır arandı, bulunamadı, ve o
+   * koşuyu açmak yabancı anahtar hatasına koşmak demek. Reddediyoruz.
+   *
+   * `get` ATARSA hiçbir şey ölçülmemiştir. O hâlde reddetmek, geçici bir
+   * veritabanı arızasını "hiçbir ticket alınmıyor"a çevirirdi — yani bir
+   * teşhis kontrolü, engellediği arızadan daha büyük bir arıza üretirdi.
+   * Bu yüzden okunamayan bir envanterde BUGÜNKÜ davranışa düşülür (koşu açılır)
+   * ve sebep log'a yazılır; kayıtsız depo hâli zaten KATMAN 1'de, kural
+   * yazılırken de yakalanıyor.
+   */
+  if (appId !== null && appId !== undefined) {
+    let known: boolean;
+    try {
+      known = (await deps.read.apps.get(appId)) !== null;
+    } catch (error) {
+      console.warn(
+        `[maestro] ${request.ticket}: uygulama envanteri okunamadı (${appId}): ${String(error)} — kayıt kontrolü atlandı, koşu bugünkü gibi açılıyor.`,
+      );
+      known = true;
+    }
+    if (!known) {
+      console.warn(
+        `[maestro] ${request.ticket}: seçilen uygulama "${appId}" uygulama envanterinde kayıtlı değil — koşu açılmadı, depo klonlanmadı.`,
+      );
+      await deps.work.addComment(
+        request.ticket,
+        deps.messages.t(deps.config.locale, BFF_MESSAGE_KEYS.unknownApplication, {
+          ticket: request.ticket,
+          appId,
+        }),
+      );
+      writeDecisionLog(deps, facts({ accepted: false, refusedReason: "unknown_application" }));
+      return { accepted: false, reason: "unknown_application" };
     }
   }
 

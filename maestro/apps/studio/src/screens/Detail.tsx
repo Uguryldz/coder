@@ -1,17 +1,19 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useParams } from "react-router";
-import { useT } from "../i18n/I18nProvider.tsx";
-import { ButtonLink, Card, TabPanel, Tabs } from "../ui/index.ts";
+import { useI18n, useT } from "../i18n/I18nProvider.tsx";
+import { Button, ButtonLink, Card, TabPanel, Tabs } from "../ui/index.ts";
 import { AnalysisTab } from "./detail/AnalysisTab.tsx";
 import { CostTab } from "./detail/CostTab.tsx";
 import { JournalTab } from "./detail/JournalTab.tsx";
 import { RunSidebar } from "./detail/RunSidebar.tsx";
 import { StepList } from "./detail/StepList.tsx";
+import { raporDosyaAdi, raporHtml, type RaporMaliyet } from "./detail/rapor.ts";
 import { isTerminal, recentErrorsOf } from "./detail/run-state.ts";
 import { NotAvailable, QueryState } from "./shared/QueryState.tsx";
 import { RunStatusCell } from "./shared/RunStatusCell.tsx";
-import { useRunDetail } from "./shared/runs.ts";
+import { useJournal, useRunDetail, type RunDetail } from "./shared/runs.ts";
 
 /**
  * Screen: detail/:ticket — one workflow, in full. The URL is the state, so a
@@ -27,6 +29,11 @@ import { useRunDetail } from "./shared/runs.ts";
  * and analysis (`/journal`), consumption (`/cost`). There is no change-summary
  * or test-result endpoint, so there is no tab for them — a tab that can only
  * say "elsewhere" is not a tab.
+ *
+ * "Tanı raporunu indir" turns everything already loaded here into ONE shareable
+ * HTML file (`detail/rapor.ts`). It opens no endpoint of its own: an operator
+ * saying "this ticket is stuck" needs the answer that is on this screen, in a
+ * form they can attach to a message — not a second, differently-sourced answer.
  */
 
 const TAB_IDS = ["steps", "journal", "analysis", "cost"] as const;
@@ -34,10 +41,44 @@ type TabId = (typeof TAB_IDS)[number];
 
 export function DetailScreen(): ReactNode {
   const t = useT();
+  const { locale } = useI18n();
+  const queryClient = useQueryClient();
   const { ticket } = useParams<{ ticket: string }>();
   const [tab, setTab] = useState<TabId>("steps");
 
   const { data: detail, isPending, error, refetch } = useRunDetail(ticket);
+  // Defterin kendisi zaten üç sekmenin altında çekiliyor (aynı anahtar, tek
+  // istek). Rapor onu yeniden istemez: raporun anlattığı geçmiş, ekranın
+  // gösterdiği geçmişin AYNISI olmak zorunda.
+  const { data: journal } = useJournal(ticket);
+
+  /**
+   * Bu koşunun tanı raporunu indir.
+   *
+   * Ağa çıkmaz — `rapor.ts` ekranda YÜKLÜ veriden bir HTML üretir, ve tüketim
+   * satırları yalnız sekme bir kez açıldıysa önbellekte durur. Yoksa rapor o
+   * bölümü çizmez ("veri yoksa bölüm yok"); eksik bölüm, uydurulmuş bir tablodan
+   * dürüsttür.
+   */
+  const raporIndir = (body: RunDetail): void => {
+    const cost = queryClient.getQueryData<RaporMaliyet>(["studio-run-cost", body.run.ticketKey]);
+    const html = raporHtml({
+      detail: body,
+      errors: recentErrorsOf(body),
+      journal: journal?.items,
+      cost,
+      t,
+      locale,
+      now: new Date(),
+    });
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = raporDosyaAdi(body.run.ticketKey);
+    anchor.click();
+    // Sekme kapanana kadar bellekte kalmasın; tıklama senkron başladı.
+    URL.revokeObjectURL(url);
+  };
 
   if (ticket === undefined || ticket === "") {
     return <NotAvailable detailKey="detail.no_ticket" />;
@@ -54,6 +95,11 @@ export function DetailScreen(): ReactNode {
             <b className="scr-mono">{detail.run.ticketKey}</b>
             <span>{detail.run.title}</span>
             <RunStatusCell status={detail.state?.status ?? null} />
+            {/* Başlığın yanında, çünkü bu düğmeye basılan an "bu ticket
+                takıldı" denen andır — bir sekmenin altında aranacak şey değil. */}
+            <Button size="sm" onClick={() => raporIndir(detail)}>
+              {t("detail.rapor.action")}
+            </Button>
           </div>
 
           <div className="scr-grid scr-grid--detail">

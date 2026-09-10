@@ -30,6 +30,14 @@ export const BFF_MESSAGE_KEYS = {
   commandUnknownActor: "command.unknown_actor",
   pendingAssignment: "match.pending_assignment",
   /**
+   * Bir uygulama SEÇİLDİ ama envanterde kayıtlı değil — `pendingAssignment`ten
+   * ayrı bir cümle, çünkü operatörün yapacağı iş ayrı: ticket'ı birine atamak
+   * değil, depoyu envantere eklemek ya da kuralın eşlemesini düzeltmek.
+   * Canlıda (OPS-121) bu durumun tek izi ham bir `WorkflowRun_appId_fkey`
+   * hatasıydı ve ticket'ta hiçbir şey yazmıyordu.
+   */
+  unknownApplication: "match.unknown_application",
+  /**
    * Intake refused the ticket, and the person who typed `/ai-start` is told
    * why ON THE TICKET.
    *

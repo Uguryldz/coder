@@ -298,7 +298,8 @@ async function intakeCommand(
     /**
      * Answer ON THE TICKET, where the person who typed the command is looking.
      *
-     * `kill_switch` and `no_application` already comment from inside intake;
+     * `kill_switch`, `no_application` and `unknown_application` already
+     * comment from inside intake;
      * these two returned in silence, so a `/ai-start` on a fresh install
      * produced no comment, no run and no visible trace — the operator's first
      * attempt simply vanished. Refusing is fine; refusing invisibly is not.

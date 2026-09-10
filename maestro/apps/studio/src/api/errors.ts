@@ -146,6 +146,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   no_pending_binding: "error.no_pending_binding",
   self_approval: "error.self_approval",
   invalid_listening_rule: "error.invalid_listening_rule",
+  listening_repo_map_unknown_app: "error.listening_repo_map_unknown_app",
   invalid_listening_rule_id: "error.invalid_listening_rule_id",
   invalid_listening_seed: "error.invalid_listening_seed",
   // Seed-defaults 409s: deployment facts the operator can act on.

@@ -1,6 +1,6 @@
 import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
 import { t } from "@maestro/config";
-import type { CiResultSignal, Locale, ParamDefinition } from "@maestro/contracts";
+import type { ApplicationRecord, CiResultSignal, Locale, ParamDefinition } from "@maestro/contracts";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { InMemoryUserDirectory, LocalIdentityProvider } from "../src/auth/local-identity.js";
 import { InMemorySessionStore } from "../src/auth/sessions.js";
@@ -103,6 +103,44 @@ export const UGURPAY_BINDING: JiraBinding = {
   mode: "full_auto",
   dataClass: "dahili",
 };
+
+/**
+ * UYGULAMA ENVANTERI, VARSAYILAN OLARAK DOLU — ve dolu olmasi gerekiyor.
+ *
+ * `runIntake` artik kosuyu acmadan once secilen appId'nin `Application`
+ * tablosunda oldugunu dogruluyor (OPS-121: kayitsiz bir depo, klon acildiktan
+ * SONRA `WorkflowRun_appId_fkey` ile patliyordu). Canlida bir projeye bagli
+ * uygulama tanimi geregi kayitlidir — baglamayi yazan yol (`assertBindable`)
+ * zaten kayitsiz bir depoyu kabul etmez.
+ *
+ * Bos bir registry ile calisan bir harness bu gercegi TERSINE cevirirdi:
+ * bagli-ama-kayitsiz, canlida imkansiz bir hal. Bu yuzden varsayilan baglama
+ * ile depo esleme fixture'larinin gosterdigi uygulamalar burada seedleniyor.
+ * `applications: []` gecen bir test, kasitli olarak kayitsiz depo halini
+ * (yani hatanin ta kendisini) kurar.
+ */
+function application(appId: string, adoProject: string, adoRepo: string): ApplicationRecord {
+  return {
+    appId,
+    displayName: appId,
+    adoProject,
+    adoRepo,
+    platform: "linux-node",
+    jiraComponent: null,
+    maestroYamlPresent: true,
+    createdVia: "onboarding",
+  };
+}
+
+export const TEST_APPLICATIONS: readonly ApplicationRecord[] = [
+  // Varsayilan baglamanin (`UGURPAY_BINDING`) uygulamasi.
+  application("ugurpay", "Odeme", "ugurpay"),
+  // `/ai-assign ugurweb` testlerinin adiyla cagirdigi ikinci uygulama.
+  application("ugurweb", "Odeme", "ugurweb"),
+];
+
+/** Fixture uretecini disari acar: kendi deposunu seedleyen test bunu kullanir. */
+export { application as testApplication };
 
 export const PARAM_DEFINITIONS: ParamDefinition[] = [
   {
@@ -378,6 +416,11 @@ export interface HarnessOptions {
   samples?: ReadonlyMap<string, readonly OnboardingSampleTicket[]>;
   /** `.maestro.yaml` records per application (M52). */
   policies?: readonly RepoPolicyRecord[];
+  /**
+   * Uygulama envanteri — varsayilan `TEST_APPLICATIONS`. `[]` gecmek, alimin
+   * "secilen uygulama kayitli degil" reddini (OPS-121) kuran haldir.
+   */
+  applications?: readonly ApplicationRecord[];
   /** Uploaded corporate `.docx` versions; empty by default — most tests upload one. */
   docTemplates?: readonly DocTemplateRecord[];
   /** Documents already produced, for the template screen's output list. */
@@ -449,7 +492,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     runs: new InMemoryRunCatalog(),
     journal: new InMemoryJournalReader(),
     gates: new InMemoryGateBoard(),
-    apps: new InMemoryAppRegistry(),
+    apps: new InMemoryAppRegistry(options.applications ?? TEST_APPLICATIONS),
     knowledge: new InMemoryKnowledgeIndex(),
     runners: new InMemoryRunnerFleet(),
     quota: options.accounts ?? new InMemoryQuotaReader(),

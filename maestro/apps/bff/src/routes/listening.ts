@@ -199,6 +199,47 @@ function assertPoolExits(record: Pick<ListeningRuleRecord, "allowedStatuses" | "
   if (missing.length > 0) throw badRequest("listening_pool_without_exit", { missing });
 }
 
+/**
+ * DEPO EŞLEMESİNİN GÖSTERDİĞİ HER UYGULAMA KAYITLI OLMAK ZORUNDA.
+ *
+ * CANLIDA ÖLÇÜLDÜ (OPS-121). Bir kuralın `repoMap`i `Application` tablosunda
+ * satırı OLMAYAN bir depoyu gösteriyordu. Alım tarafı eşlemeyi doğru çözdü,
+ * log'u da yazdı — "dinleme kuralı sabit uygulamaya bağlı →
+ * Uguryldz/maestro-platform" — depoyu KLONLADI, ve ancak koşu satırı
+ * yazılırken patladı:
+ *
+ *   OPS-121 alınmadı: PrismaClientKnownRequestError:
+ *   Foreign key constraint violated on the constraint: WorkflowRun_appId_fkey
+ *
+ * Yani disk harcandı, ticket işlenmedi ve operatörün gördüğü tek şey ham bir
+ * Prisma hatası oldu. Hatanın kaynağı ise saatler önce, kural KAYDEDİLİRKEN
+ * oradaydı — o yüzden burada, yazma anında reddediliyor.
+ *
+ * Studio'da bir koruma zaten var (`Listening.tsx`: bilinmeyen SCM deposunu
+ * `POST /onboarding/apps` ile kaydeder), ama o YALNIZ ARAYÜZDE: API'ye
+ * doğrudan yazılan bir kural ya da sonradan silinmiş bir depo aynı hatayı
+ * üretir. Bir veri bütünlüğü kuralının tek uygulayıcısı bir ekran olamaz.
+ *
+ * `notFound` değil `badRequest`, ve bilerek: eksik olan istenen KAYNAK değil,
+ * gönderilen GÖVDE — kuralın kendisi burada yok, bir alanı geçersiz. Bilinmeyen
+ * appId'ler `details.appIds` içinde ADLANDIRILIYOR: "bir şey yanlış" operatörün
+ * düzeltebileceği bir cevap değil, "bank/kredi kayıtlı değil" ise öyle.
+ */
+async function assertMappedAppsExist(
+  deps: ResolvedDeps,
+  repoMap: ListeningRuleRecord["repoMap"],
+): Promise<void> {
+  if (repoMap === null || repoMap === undefined) return;
+  // Tekilleştirilmiş, çünkü aynı depoyu gösteren beş satır operatöre beş kez
+  // aynı ismi göstermemeli; sırası korunuyor ki mesaj gövdedeki sırayı izlesin.
+  const appIds = [...new Set(repoMap.entries.map((entry) => entry.appId))];
+  const unknown: string[] = [];
+  for (const appId of appIds) {
+    if ((await deps.read.apps.get(appId)) === null) unknown.push(appId);
+  }
+  if (unknown.length > 0) throw badRequest("listening_repo_map_unknown_app", { appIds: unknown });
+}
+
 function storedRule<T extends { matchKind: string; matchValue: string }>(body: T): T {
   return body.matchKind === "assigned" ? { ...body, matchValue: ASSIGNED_MATCH_VALUE } : body;
 }
@@ -432,6 +473,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
     };
     assertPoolExits(record);
+    await assertMappedAppsExist(deps, record.repoMap);
     try {
       await store.put(record);
     } catch (error) {
@@ -607,6 +649,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
     };
     assertPoolExits(record);
+    await assertMappedAppsExist(deps, record.repoMap);
     try {
       await store.put(record);
     } catch (error) {

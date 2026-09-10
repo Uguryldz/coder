@@ -1,4 +1,4 @@
-import type { JournalEntry, WorkflowRunState } from "@maestro/contracts";
+import type { JournalEntry } from "@maestro/contracts";
 import type { RunDetail } from "../shared/runs.ts";
 import type { RunFailure } from "./run-state.ts";
 

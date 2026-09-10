@@ -69,6 +69,31 @@ export class WorkspaceError extends Error {
  * every retry into a fresh network fetch. An existing directory with a `.git`
  * in it is taken as the checkout this run already made.
  */
+/**
+ * Klonun CA ortamı — BOŞ DİZE "YOK" DEMEKTİR, "boş bir yol" DEĞİL.
+ *
+ * Bu karar bir dönem `=== undefined` ile veriliyordu ve canlıda sessizce
+ * yanlış cevap verdi: compose değişkeni `${NODE_EXTRA_CA_CERTS:-}` biçiminde
+ * geçirir, yani hiç tanımlanmamış bir değişken konteynere BOŞ DİZE olarak
+ * girer — `undefined` olmaz. O zaman `GIT_SSL_CAINFO=""` yazılıyor ve git'e
+ * "CA paketin şu dosyada" demiş oluyoruz: var olmayan bir dosyada. Sistemin
+ * kendi CA paketi kullanıma girmiyor ve her klon şununla düşüyor:
+ *
+ *   fatal: unable to access '...': Problem with the SSL CA cert
+ *                                   (path? access rights?)
+ *
+ * Kurumsal CA taşımayan, tamamen olağan bir kurulumda klonun HİÇ çalışmaması
+ * bundandı — hata sertifika kurulumunu işaret ettiği için yanlış yerde arandı.
+ *
+ * Ayrı bir fonksiyon olmasının sebebi ölçülebilirlik: erişilemeyen bir host'ta
+ * git CA'ya hiç bakmaz (bağlantı hatası önce gelir), yani bu karar süreç
+ * üzerinden sınanamaz. Buradan sınanır.
+ */
+export function caEnv(): Record<string, string> {
+  const ca = process.env["NODE_EXTRA_CA_CERTS"]?.trim() ?? "";
+  return ca === "" ? {} : { GIT_SSL_CAINFO: ca };
+}
+
 export async function prepareWorkspace(request: CloneRequest): Promise<string> {
   const { repo, root, runId } = request;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
@@ -126,9 +151,7 @@ export async function prepareWorkspace(request: CloneRequest): Promise<string> {
       env: {
         PATH: process.env["PATH"] ?? "/usr/bin:/bin",
         GIT_TERMINAL_PROMPT: "0",
-        ...(process.env["NODE_EXTRA_CA_CERTS"] === undefined
-          ? {}
-          : { GIT_SSL_CAINFO: process.env["NODE_EXTRA_CA_CERTS"] }),
+        ...caEnv(),
       },
     });
   } catch (cause) {

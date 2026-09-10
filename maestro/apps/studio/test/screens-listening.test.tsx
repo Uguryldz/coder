@@ -966,6 +966,42 @@ describe("repo map (depo eşlemesi)", () => {
       });
     });
   });
+
+  /**
+   * YARIM BİR EŞLEME KAYDEDİLMEZ — SESSİZCE DÜŞMEZ.
+   *
+   * `repoMapOf` yarım bir taslakta `null` döner. Bu testten önce kaydetme
+   * yolu buna bakmıyordu: operatör alan kipini seçip satırı yarım bırakınca
+   * kural KAYDEDİLİYOR ama eşleme `null` gidiyordu, ve sonrasında her ticket
+   * proje bağlamasının varsayılan deposuna düşüyordu. Ekranda "alana göre
+   * depo seçtim" görünürken motorun eline hiçbir eşleme geçmiyordu.
+   *
+   * Test iki şeyi birden tutuyor: POST atılmadığını (yani kural kaybolan
+   * ayarla kaydedilmediğini) ve kullanıcıya sebebin söylendiğini.
+   */
+  it("refuses to save an on-but-incomplete field map instead of silently dropping it", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.click(screen.getByLabelText("Ticket'taki bir alanın değerine göre seçilsin (ör. İş Ailesi)"));
+    // Alan yazıldı ama satırın uygulaması boş bırakıldı — eşleme yarım.
+    await userEvent.type(await screen.findByLabelText("Jira alanı"), "customfield_10234");
+    await userEvent.type(screen.getByLabelText("Alan değeri"), "Krediler");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    expect(await screen.findByText(/Depo eşlemesi açık ama tamamlanmamış/u)).toBeTruthy();
+    const posted = fn.mock.calls.find(
+      (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+    );
+    expect(posted).toBeUndefined();
+  });
 });
 
 describe("repo map — repositories straight from the SCM connection", () => {

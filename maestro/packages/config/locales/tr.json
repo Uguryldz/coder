@@ -1183,6 +1183,7 @@
   "listening.repomap.fixed_app_hint": "Proje bağlamasındaki uygulama yerine bu kuralın ticket'ları buraya gider.",
   "listening.repomap.summary_fixed": "sabit: {app}",
   "listening.repomap.incomplete_fixed": "Uygulama seçilmedi. Seçin ya da eşlemeyi kapatın.",
+  "listening.repomap.incomplete_blocked": "Depo eşlemesi açık ama tamamlanmamış: kaydedilse eşleme boş gider ve her ticket proje bağlamasının deposuna düşerdi. Alanı ve en az bir satırı (değer + uygulama) doldurun ya da eşlemeyi kapatın.",
   "listening.repomap.field": "Jira alanı",
   "listening.repomap.field_choose": "— alan seç —",
   "listening.repomap.field_other": "diğer projelerden",

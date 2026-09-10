@@ -15,6 +15,7 @@ import {
   emptyDraft,
   priorityOf,
   probeDraftOf,
+  repoMapIncomplete,
   type RuleDraft,
 } from "./listening/draft.ts";
 import { RuleForm } from "./listening/RuleForm.tsx";
@@ -405,6 +406,24 @@ export function ListeningScreen(): ReactNode {
   const onSubmit = (): void => {
     if (draftIncomplete(draft)) {
       toast.show("error", t("listening.form.incomplete"));
+      return;
+    }
+    /**
+     * AÇIK AMA BOŞ BİR DEPO EŞLEMESİ KAYDEDİLMEZ.
+     *
+     * `repoMapOf` üç halde sessizce `null` döner: alan seçilmemiş, hiçbir satır
+     * tam değil, ya da sabit kipte uygulama boş. Form bunu sarı bir uyarıyla
+     * SÖYLÜYORDU ama kaydetmeyi engellemiyordu — operatör alan kipini seçip
+     * satırı yarım bırakınca kural eşlemesiz kaydediliyor, sonra her ticket
+     * proje bağlamasının varsayılan deposuna gidiyordu. Sahadaki şikayet tam
+     * buydu: "alana göre depo seçimi çalışmıyor".
+     *
+     * Motor tarafında bir hata yok (ölçüldü: alan kipi doğru depoyu klonluyor);
+     * kaybolan şey operatörün girdisiydi. Kapıyı buraya koymak, kaydedilmemiş
+     * bir ayarı kaydedilmiş gibi göstermenin tek çaresi.
+     */
+    if (repoMapIncomplete(draft)) {
+      toast.show("error", t("listening.repomap.incomplete_blocked"));
       return;
     }
     const priority = priorityOf(draft.priority);

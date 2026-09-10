@@ -1183,6 +1183,7 @@
   "listening.repomap.fixed_app_hint": "This rule's tickets go here instead of the project binding's application.",
   "listening.repomap.summary_fixed": "fixed: {app}",
   "listening.repomap.incomplete_fixed": "No application picked. Pick one or turn the map off.",
+  "listening.repomap.incomplete_blocked": "The repository map is on but incomplete: saving it would store an empty map and every ticket would fall back to the project binding's repository. Fill in the field and at least one row (value + application), or turn the map off.",
   "listening.repomap.field": "Jira field",
   "listening.repomap.field_choose": "— pick a field —",
   "listening.repomap.field_other": "from other projects",

@@ -179,7 +179,9 @@ describe("ListeningScreen", () => {
 
     await waitFor(() => {
       const posted = fn.mock.calls.find(
-        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+        // `/clone-test` ve `/test` de bu ön eki taşır; aranan KURALIN kendisidir.
+        (c) =>
+          String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
       );
       expect(posted).toBeTruthy();
       const body = JSON.parse((posted![1] as RequestInit).body as string);
@@ -225,7 +227,9 @@ describe("ListeningScreen", () => {
 
     await waitFor(() => {
       const posted = fn.mock.calls.find(
-        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+        // `/clone-test` ve `/test` de bu ön eki taşır; aranan KURALIN kendisidir.
+        (c) =>
+          String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
       );
       expect(posted).toBeTruthy();
       const body = JSON.parse((posted![1] as RequestInit).body as string);
@@ -903,7 +907,9 @@ describe("repo map (depo eşlemesi)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
     await waitFor(() => {
       const posted = fn.mock.calls.find(
-        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+        // `/clone-test` ve `/test` de bu ön eki taşır; aranan KURALIN kendisidir.
+        (c) =>
+          String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
       );
       expect(posted).toBeTruthy();
       expect(JSON.parse((posted![1] as RequestInit).body as string).repoMap).toBeNull();
@@ -925,7 +931,9 @@ describe("repo map (depo eşlemesi)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
     await waitFor(() => {
       const posted = fn.mock.calls.find(
-        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+        // `/clone-test` ve `/test` de bu ön eki taşır; aranan KURALIN kendisidir.
+        (c) =>
+          String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
       );
       expect(posted).toBeTruthy();
       expect(JSON.parse((posted![1] as RequestInit).body as string).repoMap).toEqual({
@@ -956,7 +964,9 @@ describe("repo map (depo eşlemesi)", () => {
 
     await waitFor(() => {
       const posted = fn.mock.calls.find(
-        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+        // `/clone-test` ve `/test` de bu ön eki taşır; aranan KURALIN kendisidir.
+        (c) =>
+          String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
       );
       expect(posted).toBeTruthy();
       const body = JSON.parse((posted![1] as RequestInit).body as string);
@@ -1059,6 +1069,48 @@ describe("repo map (depo eşlemesi)", () => {
     // Sebep tahmini de yazılmalı: "boş indi" tek başına ne yapılacağını söylemez.
     expect(await screen.findByText(/İÇİ BOŞ/u)).toBeTruthy();
     expect(screen.getByText(/jetonun bu depoya/u)).toBeTruthy();
+  });
+
+  /**
+   * KAYDEDİLEN DEPO KENDİLİĞİNDEN DENENİR.
+   *
+   * Elle bir "dene" düğmesi vardı ve yetmedi: operatör basmayınca eşleme
+   * kaydedilmiş ama HİÇ SINANMAMIŞ oluyordu, arıza da ancak günler sonra
+   * kodsuz bir analizle ortaya çıkıyordu. Kaydetmek zaten "bu depo doğru"
+   * demektir; sınamayı ayrı bir düğmeye bağlamak o cümleyi bir kez daha
+   * sordurmaktı.
+   */
+  it("verifies the mapped repository by itself once the rule is saved", async () => {
+    const base = stubFetch([], { scmRepos: ["bank/kredi"] });
+    const fn = vi.fn(((url: string, init?: RequestInit) => {
+      if (String(url).includes("/listening-rules/clone-test")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ ok: true, repo: "bank/kredi", branch: "main", fileCount: 1630 }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return base(url, init) as Promise<Response>;
+    }) as never);
+    vi.stubGlobal("fetch", fn);
+
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.selectOptions(await screen.findByLabelText("Uygulama (depo)"), "bank/kredi");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+
+    // Hiçbir "dene" düğmesine BASILMADAN sınama yapıldı ve sonucu söylendi.
+    await waitFor(() => {
+      expect(fn.mock.calls.some((c) => String(c[0]).includes("/clone-test"))).toBe(true);
+    });
+    expect(await screen.findByText(/1630 dosya/u)).toBeTruthy();
   });
 
   it("refuses to save an on-but-incomplete field map instead of silently dropping it", async () => {
@@ -1405,7 +1457,9 @@ describe("tetikleme değeri — id mi ad mı kaydedilir", () => {
     await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
     return await waitFor(() => {
       const posted = fn.mock.calls.find(
-        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+        // `/clone-test` ve `/test` de bu ön eki taşır; aranan KURALIN kendisidir.
+        (c) =>
+          String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
       );
       expect(posted).toBeTruthy();
       return JSON.parse((posted![1] as RequestInit).body as string) as Record<string, unknown>;
@@ -1445,7 +1499,9 @@ describe("tetikleme değeri — id mi ad mı kaydedilir", () => {
     await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
     const body = await waitFor(() => {
       const posted = fn.mock.calls.find(
-        (c) => String(c[0]).includes("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+        // `/clone-test` ve `/test` de bu ön eki taşır; aranan KURALIN kendisidir.
+        (c) =>
+          String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
       );
       expect(posted).toBeTruthy();
       return JSON.parse((posted![1] as RequestInit).body as string) as Record<string, unknown>;

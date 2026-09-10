@@ -207,6 +207,16 @@ export function ListeningScreen(): ReactNode {
     queryFn: async ({ signal }) => {
       const { connections } = await api.get<{ connections: readonly { id: string }[] }>("/onboarding/scm-connections", { signal });
       const names = new Set<string>();
+      /**
+       * OKUNAMAYAN BAĞLANTI SESSİZ KALMAZ.
+       *
+       * Bu döngü her hatayı yutuyordu ve sonuç sahada "bir depo görüyorum"
+       * oldu: liste boş kalınca kutuda yalnız projeye zaten bağlı uygulama
+       * kalıyor, oysa bağlantı 113 depo görüyor. Operatör bunu bir yapılandırma
+       * sanıyor, oysa okuma ARIZASI. Hangi bağlantının okunamadığı biriktirilip
+       * ekrana yazılıyor.
+       */
+      const failed: string[] = [];
       for (const connection of connections) {
         const result = await api
           .get<{ ok: boolean; repos?: readonly { fullName: string }[] }>(
@@ -215,11 +225,30 @@ export function ListeningScreen(): ReactNode {
           )
           .catch(() => ({ ok: false as const }));
         if (result.ok) for (const repo of result.repos ?? []) names.add(repo.fullName);
+        else failed.push(connection.id);
       }
-      return [...names].sort();
+      return { repos: [...names].sort(), failed, connectionCount: connections.length };
     },
   });
-  const scmRepoOptions = (scmRepos.data ?? []).filter((name) => !appOptions.includes(name));
+  const scmRepoOptions = (scmRepos.data?.repos ?? []).filter((name) => !appOptions.includes(name));
+  /**
+   * Depo kutusunun NEDEN kısa olduğunu söyleyen not.
+   *
+   * Üç ayrı hâl aynı boş listeyi üretir ve operatörü üç ayrı yere gönderir:
+   * hiç SCM bağlantısı yok (panelden ekle), bağlantı var ama okunamadı
+   * (jeton/ağ), bağlantı okundu ve gerçekten bu kadar depo var. Ayrımı
+   * yapmayan bir ekran, üçüncü hâlde bile operatöre "sistem bozuk" dedirtir.
+   */
+  const scmNoticeKey =
+    !draft.repoMapOn || scmRepos.isPending
+      ? null
+      : scmRepos.data === undefined
+        ? "listening.repomap.scm_unreadable"
+        : scmRepos.data.connectionCount === 0
+          ? "listening.repomap.scm_none"
+          : scmRepos.data.failed.length > 0
+            ? "listening.repomap.scm_partial"
+            : null;
 
   /**
    * The BRANCHES of every repository the map's rows name — so the branch box is
@@ -450,6 +479,49 @@ export function ListeningScreen(): ReactNode {
       }
       if (editingRuleId !== null) update.mutate({ ruleId: editingRuleId, body });
       else create.mutate(body);
+
+      /**
+       * KAYDEDİLEN DEPO KENDİLİĞİNDEN DENENİR.
+       *
+       * Elle bir "dene" düğmesi vardı ve yetmedi: operatörün ona basması
+       * gerekiyordu, basmayınca depo eşlemesi kaydedilmiş ama HİÇ SINANMAMIŞ
+       * oluyordu. Arıza ancak günler sonra, kodsuz bir analizle ortaya
+       * çıkıyordu — sahada tam olarak böyle oldu (git yok / jetonun org izni
+       * yok / ADO biçimi reddediliyor; üçü de aynı sessiz sonucu verir).
+       *
+       * Kaydetmek zaten operatörün "bu depo doğru" demesidir; sınamayı ayrı
+       * bir düğmeye bağlamak, o cümleyi bir kez daha sordurmaktı. Artık kayıt
+       * başarılıysa eşlemedeki her AYRI depo bir kez denenir ve sonuç bir
+       * bildirimle söylenir.
+       *
+       * `void`: kaydetmeyi BEKLETMEZ. Klon saniyeler sürebilir ve kural zaten
+       * kaydedildi; deneme bir doğrulamadır, kaydın koşulu değil. Sunucu
+       * denemeyi sunmuyorsa (503) sessiz kalınır — söylenecek bir arıza yok.
+       */
+      const repos = [...new Set((body.repoMap?.entries ?? []).map((e) => e.appId))];
+      for (const repo of repos) {
+        const branch = body.repoMap?.entries.find((e) => e.appId === repo)?.targetBranch;
+        void api
+          .post<{ ok: boolean; fileCount?: number; branch?: string; messageKey?: string; detail?: string }>(
+            "/studio/listening-rules/clone-test",
+            { repo, ...(branch === undefined || branch === "" ? {} : { branch }) },
+          )
+          .then((result) => {
+            if (result.ok) {
+              toast.show("success", t("listening.repomap.autotest.ok", {
+                repo,
+                files: String(result.fileCount ?? 0),
+                branch: result.branch ?? "-",
+              }));
+            } else {
+              toast.show("error", t("listening.repomap.autotest.failed", {
+                repo,
+                detail: result.detail ?? t(result.messageKey ?? "listening.repomap.clone_test.failed", { repo }),
+              }));
+            }
+          })
+          .catch(() => undefined);
+      }
     })();
   };
 
@@ -660,6 +732,7 @@ export function ListeningScreen(): ReactNode {
           fieldValuesSource={fieldValuesSource}
           appOptions={appOptions}
           scmRepoOptions={scmRepoOptions}
+          scmNoticeKey={scmNoticeKey}
           branchesByRepo={branchesByRepo}
           jiraUserOptions={jiraUserOptions}
           analystOptions={analystOptions}

@@ -57,6 +57,14 @@ export interface RuleFormProps {
   readonly appOptions: readonly string[];
   /** SCM bağlantılarındaki, projeye henüz kayıtlı olmayan depolar — seçilirse kaydedilir. */
   readonly scmRepoOptions: readonly string[];
+  /**
+   * Depo listesi NEDEN kısa — bağlantı yok / okunamadı / kısmen okundu.
+   *
+   * `null` ise söylenecek bir şey yoktur. Sahada bu ayrım olmadığı için boş
+   * bir liste "bir depo görüyorum" diye bildirildi: okuma arızası, eksik
+   * bağlantı ve gerçekten kısa liste aynı görünüyordu.
+   */
+  readonly scmNoticeKey: string | null;
   /** Repo full name → its branches, for the target-branch picker. Missing = free text. */
   readonly branchesByRepo: Record<string, readonly string[]>;
   /** Jira accounts the rule may listen for. Empty = the deployment cannot search users. */
@@ -977,6 +985,11 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
             {incomplete && (
               <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
                 {t("listening.repomap.incomplete")}
+              </p>
+            )}
+            {props.scmNoticeKey !== null && (
+              <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
+                {t(props.scmNoticeKey)}
               </p>
             )}
           </>

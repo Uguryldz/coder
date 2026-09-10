@@ -804,6 +804,25 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
     value: f.id,
     label: `${f.custom ? `${f.name} (${f.id})` : f.name}${f.scope === "other" ? ` · ${t("listening.repomap.field_other")}` : ""}`,
   }));
+  /**
+   * PROJELER, DEPO LİSTESİNİN ÜST DİZİNİ.
+   *
+   * Depo listesi `proje/depo` biçiminde gelir (ADO'da gerçekten iki katman;
+   * GitHub'da `owner/repo`). "Projeyi seç" kipinin ihtiyacı tam da o ilk yarı.
+   * Ayrı bir uç eklemek yerine eldeki listeden türetiliyor: ekran zaten
+   * biliyorsa ikinci bir çağrı, tutarsız kalabilecek ikinci bir kaynak demektir.
+   *
+   * Depo SAYISI da yanında gösteriliyor — "çok depolu proje" bu kipin var olma
+   * sebebi, ve operatörün doğru projeyi seçtiğini anlamasının en hızlı yolu.
+   */
+  const projectRepoCounts: Record<string, number> = {};
+  for (const full of [...props.appOptions, ...props.scmRepoOptions]) {
+    const slash = full.indexOf("/");
+    if (slash <= 0) continue;
+    const project = full.slice(0, slash);
+    projectRepoCounts[project] = (projectRepoCounts[project] ?? 0) + 1;
+  }
+  const projectOptions = Object.keys(projectRepoCounts).sort((a, b) => a.localeCompare(b, "tr"));
   const incomplete = repoMapIncomplete(draft);
   const complete = rows.filter((r) => r.value.trim() !== "" && r.appId.trim() !== "").length;
   const summaryState = !draft.repoMapOn
@@ -861,13 +880,41 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
             <p className="scr-hint" style={{ margin: 0 }}>
               {t("listening.repomap.search_explain")}
             </p>
-            <Input
-              label={t("listening.repomap.search_project")}
-              value={rows[0]?.appId ?? ""}
-              onChange={(e) => setRow(0, { appId: e.target.value })}
-              placeholder="Bankacılık"
-              hint={t("listening.repomap.search_project_hint")}
-            />
+            {/*
+              PROJE SEÇİLİR, YAZILMAZ.
+              Depo listesi zaten `proje/depo` biçiminde geliyor; projeler onun
+              ÜST DİZİNİ. Elle yazdırmak, ekranın zaten bildiği bir adı
+              operatöre hatırlatmaktı — ve bir harf hatası aramayı sessizce
+              boşa düşürürdü (var olmayan projede arama sıfır sonuç verir).
+              Liste okunamadığında kutu yine metne düşer: bilinmeyen bir kuruluma
+              "seçecek bir şey yok" demektense yazdırmak yeğdir.
+            */}
+            {projectOptions.length > 0 ? (
+              <Select
+                label={t("listening.repomap.search_project")}
+                value={rows[0]?.appId ?? ""}
+                onChange={(e) => setRow(0, { appId: e.target.value })}
+                hint={t("listening.repomap.search_project_hint")}
+                options={[
+                  { value: "", label: t("listening.repomap.search_project_choose") },
+                  ...projectOptions.map((id) => ({
+                    value: id,
+                    label: `${id} · ${t("listening.repomap.search_project_count", { count: String(projectRepoCounts[id] ?? 0) })}`,
+                  })),
+                  ...((rows[0]?.appId ?? "") !== "" && !projectOptions.includes(rows[0]!.appId)
+                    ? [{ value: rows[0]!.appId, label: rows[0]!.appId }]
+                    : []),
+                ]}
+              />
+            ) : (
+              <Input
+                label={t("listening.repomap.search_project")}
+                value={rows[0]?.appId ?? ""}
+                onChange={(e) => setRow(0, { appId: e.target.value })}
+                placeholder="Bankacılık"
+                hint={t("listening.repomap.search_project_manual_hint")}
+              />
+            )}
           </div>
         )}
         {draft.repoMapOn && draft.repoMapMode === "search" && incomplete && (

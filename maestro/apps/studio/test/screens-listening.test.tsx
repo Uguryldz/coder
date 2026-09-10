@@ -1120,6 +1120,32 @@ describe("repo map (depo eşlemesi)", () => {
    * DevOps projesinde ikisi de cevaplanamaz: ticket'ın hangi depoyu
    * ilgilendirdiğini kimse bilmiyor. Bu kipte yalnız proje söylenir.
    */
+  /**
+   * PROJE SEÇİLİR, YAZILMAZ.
+   *
+   * Bu alan bir dönem serbest metindi ve sahada söylendi: "repo depo eklemede
+   * project gelmiyor, hep repolar geliyor, üst dizin seçemiyorum". Depo listesi
+   * zaten `proje/depo` biçiminde gelir; projeler onun ÜST DİZİNİDİR. Elle
+   * yazdırmak, ekranın zaten bildiği bir adı operatöre hatırlatmaktı — ve bir
+   * harf hatası aramayı sessizce boşa düşürürdü.
+   */
+  it("offers the PROJECTS behind the repository list, with how many repos each holds", async () => {
+    stubFetch([], { scmRepos: ["Bankacilik/ekstre", "Bankacilik/kredi", "Odeme/kart"] });
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.click(screen.getByLabelText(/Projeyi seç, depoyu sistem bulsun/u));
+
+    // Depo değil PROJE listeleniyor, ve depo sayısı yanında: "çok depolu proje"
+    // bu kipin var olma sebebi, sayı da doğru projeyi seçmenin en hızlı yolu.
+    expect(await screen.findByRole("option", { name: "Bankacilik · 2 depo" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Odeme · 1 depo" })).toBeTruthy();
+    // Depo adları bu kutuda YOK — seçilen şey üst dizindir.
+    expect(screen.queryByRole("option", { name: /ekstre/u })).toBeNull();
+  });
+
   it("saves a project to search instead of a repository name", async () => {
     const fn = stubFetch([]);
     renderScreen(ADMIN);

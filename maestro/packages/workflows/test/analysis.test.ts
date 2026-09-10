@@ -46,6 +46,64 @@ describe("discoverRepo (step 3ö, M100)", () => {
     expect(fakes.recorded.llm).toHaveLength(0);
   });
 
+  /**
+   * ── ÇALIŞMA ALANI SİLİNMİŞSE YENİDEN AÇILIR ──────────────────────────────
+   *
+   * Klon bir dönem YALNIZCA koşu başlarken açılıyordu; bu, klonun koşu boyunca
+   * yerinde durduğu varsayımına dayanıyordu. Varsayım sahada yıkıldı:
+   * `/workspace` bir TMPFS birimidir ve konteyner her yeniden başladığında
+   * silinir — bir sürüm yükseltmesi, bir çökme, bir `docker compose up` yeter.
+   *
+   * O zaman koşu satırı hâlâ bir yol taşıyor ama dizin YOK; adım farkı
+   * göremiyor, oturum var olmayan dizinde açılıyor ve künye "okunamadı"
+   * diyordu. Operatörün gördüğü tek şey "analiz ticket metninden üretildi"
+   * oluyordu — sebebi söyleyen tek satır olmadan.
+   */
+  it("re-clones a workspace the tmpfs volume dropped, and says so", async () => {
+    const asked: { runId: string; appId: string }[] = [];
+    const fakes = makeFakes({
+      agentSession: session,
+      generateObject: () => ({ status: "ok", value: { files: 12, modules: ["pay-core"] }, log: LOG }),
+      ensureWorkspace: (request) => {
+        asked.push({ runId: request.runId, appId: request.appId });
+        return Promise.resolve("/workspace/yeniden-acildi");
+      },
+    });
+
+    expect(await discoverRepo(fakes.deps, "PAY-101", "pay")).toEqual({ files: 12, modules: ["pay-core"] });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.appId).toBe("pay");
+    // Yeni yol koşuya YAMANIR: sonraki adımlar aynı dizini okumalı.
+    expect(fakes.patches).toContainEqual({ workspacePath: "/workspace/yeniden-acildi" });
+    // Ve SESSİZ olmaz — "analizim neden bu kadar sürdü" sorusunun cevabı budur.
+    const entry = fakes.journalStore.entries.find((e) => e.title === "çalışma alanı yeniden açıldı");
+    expect(entry?.detail).toContain("diskte yoktu");
+  });
+
+  it("does not touch a workspace that is already in place", async () => {
+    const fakes = makeFakes({
+      agentSession: session,
+      generateObject: () => ({ status: "ok", value: { files: 12, modules: ["pay-core"] }, log: LOG }),
+      context: { workspacePath: "/workspace/yerinde" },
+      // `prepareWorkspace` var olan bir checkout'u yeniden klonlamaz; AYNI yolu
+      // döndürmesi "dokunmadım" demektir ve koşu satırı yamanMAmalıdır.
+      ensureWorkspace: () => Promise.resolve("/workspace/yerinde"),
+    });
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    expect(fakes.patches.find((p) => "workspacePath" in p)).toBeUndefined();
+    expect(fakes.journalStore.entries.find((e) => e.title === "çalışma alanı yeniden açıldı")).toBeUndefined();
+  });
+
+  it("carries on without discovery when the workspace cannot be re-opened", async () => {
+    const fakes = makeFakes({
+      ensureWorkspace: () => Promise.reject(new Error("clone failed for pay")),
+      context: { workspacePath: "" },
+    });
+    expect(await discoverRepo(fakes.deps, "PAY-101", "pay")).toEqual({ files: 0, modules: [] });
+    const entry = fakes.journalStore.entries.find((e) => e.title === "çalışma alanı açılamadı");
+    expect(entry?.detail).toContain("clone failed");
+  });
+
   it("a driver that cannot open a session is written to the journal, not swallowed", async () => {
     // No agentSession scripted: the fake throws, as the gateway does without an agent runner.
     const fakes = makeFakes();

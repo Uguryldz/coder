@@ -1,11 +1,12 @@
 import { createDb, type Db } from "@maestro/db";
 import { defaultPiiPolicy } from "@maestro/pii";
-import type { LlmPort, StoragePort } from "@maestro/ports";
+import { PortRegistry, type LlmPort, type ScmPort, type SecretPort, type StoragePort } from "@maestro/ports";
 import { createDockerLinuxRunner } from "@maestro/runners";
 import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/workflows";
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
+import { prepareWorkspace, workspaceRootFrom } from "../stores/workspace-prepare.js";
 import { analysisTemplateReaderFor } from "../stores/analysis-template-reader.js";
 import { attachmentReaderFor } from "../stores/attachment-reader.js";
 import { PrismaTemplateStore } from "../stores/template.js";
@@ -228,7 +229,7 @@ export async function main(): Promise<void> {
       await startMaestroWorker({
         address,
         taskQueue,
-        registry: deployment.registry,
+        registry: withWorkspaceCloning(deployment.registry, env, deployment.ports.secrets),
         ports: deployment.selection,
         core: workerCore,
         /**
@@ -460,4 +461,67 @@ const DEFAULT_MAX_TAIL_BYTES = 16_384;
 
 if (isEntrypoint(import.meta.url)) {
   await main().catch(fail);
+}
+
+/**
+ * ÇALIŞMA ALANI KOŞU BOYUNCA YERİNDE DURMAZ — VE DURDUĞU VARSAYILIYORDU.
+ *
+ * Klon bir dönem YALNIZCA koşu başlarken açılıyordu (`bin/bff.ts`,
+ * `checkoutOrNull`). Bu, klonun koşu bitene kadar diskte kaldığı varsayımına
+ * dayanıyordu ve varsayım sahada yıkıldı: `/workspace` bir TMPFS birimidir
+ * (`docker-compose.yml`, `maestro-workspace`) ve konteyner her yeniden
+ * başladığında silinir. Bir sürüm yükseltmesi, bir çökme, bir
+ * `docker compose up` yeter — bu oturumda onlarca kez oldu.
+ *
+ * O zaman koşu satırı hâlâ bir yol taşıyor (`workspacePath` dolu,
+ * `workspacePresent: true`) ama dizin YOK. Keşif adımı yalnız yolun boş olup
+ * olmadığına baktığı için farkı göremiyor; ajan oturumu var olmayan bir
+ * dizinde açılıyor ve künye "okunamadı" diyor. Operatörün gördüğü tek şey
+ * "analiz ticket metninden üretildi, kod karşılığı yok" oluyordu — sebebi
+ * söyleyen tek satır olmadan, HER yeniden başlatmadan sonra.
+ *
+ * Bu sarmalayıcı `ScmPort`a `ensureWorkspace` ekler: keşif adımı kodu okumadan
+ * önce çalışma alanını VAR EDER. Yerindeyse `prepareWorkspace` zaten dokunmaz
+ * (var olan bir checkout'u yeniden klonlamaz); silinmişse yeniden klonlar.
+ *
+ * Sarmalayıcı olmasının sebebi katman: klonlama `apps/deploy`'un işidir
+ * (jeton çözümü, `.env`, kurulumun klon kökü), `@maestro/adapter-github`in
+ * değil. Sürücü kendi sözleşmesini korur; yetenek burada, birleştirme
+ * noktasında takılır.
+ */
+function withWorkspaceCloning(registry: PortRegistry, env: DeployEnv, secrets: SecretPort): PortRegistry {
+  const root = workspaceRootFrom(env.source);
+  const wrapped = new PortRegistry();
+  for (const port of ["work", "scm", "llm", "scan", "storage", "secret", "notify", "publish"]) {
+    for (const driver of registry.drivers(port)) {
+      const factory = registry.resolve<unknown>(port, driver);
+      if (port !== "scm") {
+        wrapped.register(port, driver, factory);
+        continue;
+      }
+      wrapped.register(port, driver, (config: unknown) => {
+        const base = factory(config) as ScmPort;
+        return {
+          ...base,
+          ensureWorkspace: async (request) => {
+            const tokenRef = env.source["SCM_TOKEN_REF"]?.trim() ?? "";
+            const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
+            const branch = request.targetBranch?.trim() ?? "";
+            const token = tokenRef === "" ? undefined : await secrets.get(tokenRef).catch(() => undefined);
+            return prepareWorkspace({
+              repo: request.appId,
+              root,
+              runId: request.runId,
+              ...(branch === "" ? {} : { branch }),
+              // Boş dize "yok" demektir, bir host değil — aynı tuzak
+              // `checkoutOrNull`da da belgeli.
+              ...(scmHost === "" ? {} : { host: scmHost }),
+              ...(token === undefined ? {} : { token }),
+            });
+          },
+        } satisfies ScmPort;
+      });
+    }
+  }
+  return wrapped;
 }

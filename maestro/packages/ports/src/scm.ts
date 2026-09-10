@@ -54,6 +54,34 @@ export interface ScmPort {
    */
   deleteBranch?(repo: RepoRef, name: string): Promise<void>;
   /**
+   * ÇALIŞMA ALANINI VAR ET — klon diskte yoksa yeniden aç.
+   *
+   * Klon bir dönem YALNIZCA koşu başlarken açılıyordu ve bu, klonun koşu
+   * boyunca yerinde DURDUĞU varsayımına dayanıyordu. Varsayım sahada
+   * yıkıldı: `/workspace` bir tmpfs birimidir (compose, `maestro-workspace`)
+   * ve konteyner her yeniden başladığında SİLİNİR. Bir sürüm yükseltmesi,
+   * bir çökme, bir `docker compose up` yeter.
+   *
+   * O zaman koşu satırı hâlâ bir yol taşır (`workspacePath` dolu,
+   * `workspacePresent: true`) ama dizin YOKTUR. Keşif adımı yalnız yolun boş
+   * olup olmadığına baktığı için farkı göremez; ajan oturumu var olmayan bir
+   * dizinde açılır ve künye "okunamadı" der. Operatörün gördüğü tek şey
+   * "analiz ticket metninden üretildi, kod karşılığı yok" olur — sebebi
+   * söyleyen tek satır olmadan.
+   *
+   * Bu yetenek o boşluğu kapatır: adım kodu okumadan ÖNCE çalışma alanının
+   * gerçekten yerinde olduğunu sorar, değilse yeniden klonlanır. OPSİYONEL,
+   * çünkü klonlamayan bir sürücü (sahte ADO) bunu sunmaz ve çağıran eski
+   * davranışa düşer.
+   *
+   * Dönen değer klonun yolu, ya da açılamadıysa `null`.
+   */
+  ensureWorkspace?(request: {
+    readonly runId: string;
+    readonly appId: string;
+    readonly targetBranch?: string | null;
+  }): Promise<string | null>;
+  /**
    * Read the aggregate CI verdict for a commit (B14 — real GitHub Checks/commit
    * status). OPTIONAL: a driver with no real CI (the fake ADO prop) omits it and
    * the caller falls back to its existing signal. Adding it as optional keeps

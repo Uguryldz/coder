@@ -86,7 +86,34 @@ export async function discoverRepo(
    * produced, and the alternative — failing the run — turns a degraded
    * analysis into no analysis at all.
    */
-  if (run.workspacePath.trim() === "") {
+  /**
+   * ── ÇALIŞMA ALANI GERÇEKTEN YERİNDE Mİ ───────────────────────────────────
+   *
+   * Bu kontrol bir dönem yalnız `workspacePath` BOŞ MU diye bakıyordu ve o,
+   * klonun koşu boyunca yerinde durduğu varsayımına dayanıyordu. Varsayım
+   * sahada yıkıldı: `/workspace` bir tmpfs birimidir ve konteyner her yeniden
+   * başladığında SİLİNİR — bir sürüm yükseltmesi, bir çökme, bir
+   * `docker compose up` yeter.
+   *
+   * O zaman koşu satırı hâlâ bir yol taşıyor (dolu, `present: true`) ama dizin
+   * YOK. Kontrol farkı göremiyor, ajan oturumu var olmayan bir dizinde
+   * açılıyor ve künye "okunamadı" diyordu. Operatörün gördüğü tek şey "analiz
+   * ticket metninden üretildi, kod karşılığı yok" oluyordu — sebebi söyleyen
+   * tek satır olmadan, üstelik HER yeniden başlatmadan sonra.
+   *
+   * Artık adım kodu okumadan önce çalışma alanını VAR EDİYOR: yerindeyse
+   * dokunmaz, silinmişse yeniden klonlar. Yetenek sunulmayan bir kurulumda
+   * (klonlamayan sürücü) eski davranışa düşülür.
+   */
+  const ensured = await ensureWorkspaceOrKeep(deps, run, ticket, appId);
+  if (ensured !== null && ensured !== run.workspacePath) {
+    await deps.runs.patch(ticket, { workspacePath: ensured });
+  }
+  // Bu adımın geri kalanı YOLU okur; koşu satırı yamandı ama eldeki nesne
+  // değişmedi, o yüzden yerel bir görünüm tutuluyor.
+  const workspacePath = ensured ?? run.workspacePath;
+
+  if (workspacePath.trim() === "") {
     // CANLI BULGU: no WORKSPACE_ROOT → no clone → discovery answered "0 dosya"
     // and nobody could tell it never looked. Say so.
     await record(deps, run, {
@@ -117,7 +144,7 @@ export async function discoverRepo(
    * the digest, the context write — must still fail loudly, because those are
    * steps whose absence would silently change what the analyst is told.
    */
-  const session = await agentSessionOrNull(deps, run, ticket, appId);
+  const session = await agentSessionOrNull(deps, run, ticket, appId, workspacePath);
   if (session === null) {
     await stamp(deps, run, appId, { read: false, note: "depo oturumu açılamadı (ajan sürücüsü ya da depo erişimi)" });
     return { files: 0, modules: [] };
@@ -170,9 +197,11 @@ async function agentSessionOrNull(
   run: RunContext,
   ticket: TicketKey,
   appId: string,
+  /** Adımın VAR ETTİĞİ dizin — bkz. `openSession`. */
+  workspacePath: string,
 ): Promise<Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>> | null> {
   try {
-    return await openSession(deps, run, ticket, appId);
+    return await openSession(deps, run, ticket, appId, workspacePath);
   } catch (error) {
     // CANLI BULGU: the agent driver was not wired (no CLAUDE_BIN_PATH) and every
     // run answered "0 dosya" without a word — the operator could not tell a
@@ -189,14 +218,64 @@ async function agentSessionOrNull(
   }
 }
 
+/**
+ * Çalışma alanını var eder; dokunamıyorsa `null` döner (çağıran eski yola düşer).
+ *
+ * Yeniden klonlama SESSİZ değil: deftere yazılır, çünkü "analizim neden bu
+ * kadar sürdü" ve "klon neden iki kez açıldı" sorularının cevabı burasıdır.
+ */
+async function ensureWorkspaceOrKeep(
+  deps: ActivityDeps,
+  run: RunContext,
+  ticket: TicketKey,
+  appId: string,
+): Promise<string | null> {
+  const ensure = deps.scm.ensureWorkspace?.bind(deps.scm);
+  if (ensure === undefined) return null;
+  try {
+    const path = await ensure({
+      runId: run.runId,
+      appId,
+      ...(run.targetBranch === undefined || run.targetBranch === null ? {} : { targetBranch: run.targetBranch }),
+    });
+    if (path !== null && path !== run.workspacePath) {
+      await record(deps, run, {
+        kind: "discovery",
+        actor: "system",
+        title: "çalışma alanı yeniden açıldı",
+        detail: `${appId} klonu diskte yoktu (çalışma alanı geçici bir birimdir ve servis yeniden başlayınca silinir) — keşiften önce yeniden klonlandı.`,
+        key: "discovery:reclone",
+      });
+    }
+    return path;
+  } catch (error) {
+    await record(deps, run, {
+      kind: "discovery",
+      actor: "system",
+      title: "çalışma alanı açılamadı",
+      detail: `${appId} yeniden klonlanamadı: ${String(error)} — analiz keşifsiz sürüyor.`,
+      key: "discovery:reclone-failed",
+    });
+    return null;
+  }
+}
+
 async function openSession(
   deps: ActivityDeps,
   run: RunContext,
   ticket: TicketKey,
   appId: string,
+  /**
+   * Oturumun açılacağı dizin — koşu satırındaki yol DEĞİL, adımın az önce VAR
+   * ETTİĞİ yol. İkisi ayrışabilir: çalışma alanı geçici bir birimdir ve servis
+   * yeniden başlayınca silinir, o zaman adım yeniden klonlar ve yeni yolu bu
+   * parametreyle taşır. Satırdaki eski yolu okumak, oturumu var olmayan bir
+   * dizinde açmak olurdu — sahada tam olarak bu oluyordu.
+   */
+  workspacePath: string,
 ): ReturnType<ActivityDeps["llm"]["agentSession"]> {
   return deps.llm.agentSession({
-    workspacePath: run.workspacePath,
+    workspacePath,
     // The analysis agent's TRAINING (its Studio persona, else the shipped
     // text) leads; the task line below it names the ticket and the repo.
     task: `${await trainingFor(deps, run, "analyst")}\n\n${deps.translate(run.locale, "agent.discovery_task", { ticket, appId })}`,

@@ -72,6 +72,13 @@ export interface Fakes {
 
 export interface FakeOptions {
   context?: Partial<RunContext>;
+  /**
+   * `ScmPort.ensureWorkspace`in cevabı — `undefined` ise yetenek HİÇ sunulmaz.
+   *
+   * İkisi ayrı hâllerdir: yeteneği sunmayan bir kurulum (klonlamayan sürücü)
+   * eski davranışa düşer; sunan ama `null` dönen bir kurulum "açamadım" der.
+   */
+  ensureWorkspace?: (request: { runId: string; appId: string; targetBranch?: string | null }) => Promise<string | null>;
   generateObject?: (schemaName: string) => LlmOutcome<unknown>;
   agentSession?: () => LlmOutcome<{ resumeToken: string; finalText: string; log: never }>;
   runTurn?: (req: AgentTurnRequest) => AgentTurnResult;
@@ -257,6 +264,7 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     },
     scm: {
       resolveRepo: () => Promise.resolve(repo),
+      ...(options.ensureWorkspace === undefined ? {} : { ensureWorkspace: options.ensureWorkspace }),
       createBranch: () => Promise.resolve(),
       getPushCredential: NOT_WIRED("getPushCredential"),
       openPr: () => Promise.resolve({ prId: 77 }),

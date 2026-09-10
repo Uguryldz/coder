@@ -1057,6 +1057,27 @@ describe("kural tahtası (RuleBoard)", () => {
     expect(screen.getByText("Analiz + etki matrisi")).toBeTruthy();
   });
 
+  /**
+   * Rozet, ROLÜ değil o adımda YAPILAN İŞİ söyler. Analist iki adımda koşuyor
+   * (keşif ve analiz) ve ikisinde de "Analist" yazsaydı operatör aynı rozeti
+   * iki yerde görüp ne yaptığını ayırt edemezdi. Plancının ayrı adımı yok —
+   * analiz adımının ikinci yarısı — ama rozeti var, yoksa o adımda iki ajanın
+   * çalıştığı gizlenmiş olurdu.
+   */
+  it("rozetler adımda yapılan işi yazar; plancı analiz adımında ikinci rozet olarak görünür", async () => {
+    stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
+    renderScreen(ADMIN);
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    await screen.findByText("Jira statüsü");
+
+    expect(screen.getByText("Analist · depo keşfi")).toBeTruthy();
+    expect(screen.getByText("Analist · analiz belgesi")).toBeTruthy();
+    expect(screen.getByText("Plancı · uygulama planı")).toBeTruthy();
+    // Çıplak rol adı artık rozet olarak çizilmiyor: her rozet bir iş anlatıyor.
+    expect(screen.queryByText("Analist")).toBeNull();
+  });
+
   it("adımı `statusMap`teki statünün HİZASINA koyar", async () => {
     stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
     renderScreen(ADMIN);

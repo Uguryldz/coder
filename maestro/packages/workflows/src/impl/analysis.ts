@@ -1,6 +1,7 @@
 import { AppId } from "@maestro/contracts";
 import {
   AnalysisDoc,
+  type DiscoveryStamp,
   ImplementationPlan,
   NonEmpty,
   PublishTarget,
@@ -17,7 +18,7 @@ import { guardModelCall, resolveOutcome } from "./outcome.js";
 import { analystGuidance } from "./guidance.js";
 import { ticketAttachments } from "./attachments.js";
 import { analysisInstructions, analysisRules, briefRules, planRules } from "./analysis-template.js";
-import { discoveryNotes, storeAnalysis } from "./brief.js";
+import { discoveryNotes, loadDiscoveryStamp, storeAnalysis, storeDiscoveryStamp } from "./brief.js";
 import { analystPersona, roleVariantId, trainingFor } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
 
@@ -95,6 +96,9 @@ export async function discoverRepo(
       detail: `${appId} için çalışma alanı yok (klon açılmamış): BFF'te WORKSPACE_ROOT ayarlı mı ve depo erişimi var mı kontrol edin — analiz keşifsiz (kod karşılığı ve plan olmadan) devam ediyor.`,
       key: "discovery:no-workspace",
     });
+    // Deftere yazılan cümlenin makine-okunur ikizi: belge "OKUNAMADI: çalışma
+    // alanı yok" der ve operatör bunu ilk bakışta görür.
+    await stamp(deps, run, appId, { read: false, note: "çalışma alanı yok (klon açılmamış)" });
     return { files: 0, modules: [] };
   }
 
@@ -114,12 +118,50 @@ export async function discoverRepo(
    * steps whose absence would silently change what the analyst is told.
    */
   const session = await agentSessionOrNull(deps, run, ticket, appId);
-  if (session === null) return { files: 0, modules: [] };
+  if (session === null) {
+    await stamp(deps, run, appId, { read: false, note: "depo oturumu açılamadı (ajan sürücüsü ya da depo erişimi)" });
+    return { files: 0, modules: [] };
+  }
 
   const explored = await resolveOutcome(deps, run, "discovery", session);
-  if (explored.status === "degraded") return { files: 0, modules: [] };
+  if (explored.status === "degraded") {
+    // Politika reddi de "okunmadı"nın bir hâli: oturum açıldı ama bulgu yok.
+    await stamp(deps, run, appId, { read: false, note: "keşif oturumu kısıtlandı (politika/kota) — bulgu alınamadı" });
+    return { files: 0, modules: [] };
+  }
 
   return finishDiscovery(deps, run, ticket, appId, explored.value);
+}
+
+/**
+ * KEŞİF KÜNYESİ — üç çıkışın da geçtiği TEK yer.
+ *
+ * `discoverRepo`'nun üç çıkışı var (çalışma alanı yok / oturum kurulamadı /
+ * başarılı) ve üçü de künye üretir; `read` alanı farkı söyler. Künye YENİ bir
+ * bilgi toplamaz: depo adı çalışmanın kendi bağlamından (`run.app`), dal
+ * `run.targetBranch`'ten, sayılar zaten deftere yazılan digest'ten gelir —
+ * yani ekstra bir Jira/git/SCM çağrısı YOK.
+ *
+ * Depo adı `<adoProject>/<adoRepo>`: operatörün SCM'de gördüğü ad budur.
+ * Kayıt okunamıyorsa (deposuz koşu, eski satır) `appId`'ye düşer — "hangi
+ * depo" sorusunun cevapsız kalmasındansa kaba bir cevabı yeğdir.
+ */
+async function stamp(
+  deps: ActivityDeps,
+  run: RunContext,
+  appId: string,
+  found: { read: boolean; files?: number; modules?: readonly string[]; note?: string },
+): Promise<void> {
+  const app = run.app;
+  const built: DiscoveryStamp = {
+    repo: app === null ? appId : `${app.adoProject}/${app.adoRepo}`,
+    branch: run.targetBranch.trim(),
+    files: found.files ?? 0,
+    modules: [...(found.modules ?? [])].slice(0, 50),
+    read: found.read,
+    note: (found.note ?? "").slice(0, 300),
+  };
+  await storeDiscoveryStamp(deps, run, built);
 }
 
 /** The session, or `null` when this deployment has no way to open one. */
@@ -210,11 +252,38 @@ async function finishDiscovery(
     detail: `${value.files} dosya · ${value.modules.length} modül${notes === "" ? "" : `\n${notes}`}`,
     key: "discovery",
   });
+  // Künye, deftere yazılan AYNI sayılardan: belge "14 dosya, 3 modül okundu"
+  // derken defteri tekrar eder, ayrı bir ölçüm uydurmaz.
+  // Digest düşerse depo YİNE okundu (oturum açıldı, ajan gezdi) ama sayı
+  // kalmadı: `read: true` doğru, "0 dosya" yanıltıcı olurdu — künye bunu
+  // sayıyı susturup notta söyler.
+  await stamp(
+    deps,
+    run,
+    appId,
+    resolved.status === "degraded"
+      ? { read: true, note: "depo okundu; bulgu özeti alınamadı (dosya/modül sayısı yok)" }
+      : { read: true, files: value.files, modules: value.modules },
+  );
   return { files: value.files, modules: [...value.modules] };
 }
 
+/**
+ * ANALİSTİN ŞEMASI — belgenin şeması EKSİ keşif künyesi.
+ *
+ * `AnalysisDoc.omit({ discovery: true })`: `.strict()` korunur, yani model
+ * `discovery` alanını çıktısına koyarsa belge AYRIŞMAZ. Künyeyi modelin
+ * uydurmasını engelleyen şey bir prompt cümlesi değil — alanın modelin
+ * gördüğü şemada hiç bulunmaması, ve fazladan alanın şemayı düşürmesi.
+ * Alan `writeAnalysis` sonunda kod tarafından, adım 3ö'nün ölçümünden
+ * doldurulur.
+ */
+const ANALYST_DOC_SCHEMA = AnalysisDoc.omit({ discovery: true });
+/** The document as the MODEL writes it: everything but the stamp. */
+type AnalystDoc = z.infer<typeof ANALYST_DOC_SCHEMA>;
+
 /** M83/M59: the pinned template and the project's language are not negotiable. */
-function assertDocument(run: RunContext, doc: AnalysisDoc): void {
+function assertDocument(run: RunContext, doc: AnalystDoc): void {
   if (doc.templateVersion !== run.templateVersion) {
     throw ApplicationFailure.create({
       message: `analysis used template ${doc.templateVersion}, the run is pinned to ${run.templateVersion}`,
@@ -474,13 +543,13 @@ export async function writeAnalysis(
           ...(priorNote === undefined ? {} : { priorWork: priorNote }),
         },
       },
-      AnalysisDoc,
+      ANALYST_DOC_SCHEMA,
     ),
   );
   const resolved = await resolveOutcome(deps, run, "analysis", outcome);
   if (resolved.status === "degraded") throw aiAssistRequired("analysis", resolved.messageKey);
 
-  const written = AnalysisDoc.parse(resolved.value);
+  const written = ANALYST_DOC_SCHEMA.parse(resolved.value);
   assertDocument(run, written);
   await deps.runs.patch(ticket, { risk: written.riskTier });
   await record(deps, run, {
@@ -504,7 +573,21 @@ export async function writeAnalysis(
     discovery === null || (appId === undefined && run.app === null)
       ? null
       : await writePlan(deps, run, snapshot, written, discovery);
-  const analysis: AnalysisDoc = { ...written, plan };
+  /**
+   * KÜNYEYİ MODEL DEĞİL, KOD KOYAR.
+   *
+   * `discovery` alanı `ANALYST_DOC_SCHEMA`'da YOK — model onu üretemez, çünkü
+   * üretebilseydi uydururdu: bir keşif hiç çalışmamışken de "depoyu okudum"
+   * cümlesini kurabilen taraf o. Burada okunan künye adım 3ö'nün kendi
+   * ölçümü (`storeDiscoveryStamp`), yani belgeye giren şey bir beyan değil
+   * kayıt.
+   *
+   * `null` iki halde: bu koşuda keşif adımı hiç çalışmadı (deposuz analiz
+   * koşusu — workflow `discoverRepo`'yu çağırmaz) ya da künye depodan
+   * okunamadı. İkisinde de bölüm hiç çizilmez; belge bugünküyle aynı kalır.
+   */
+  const stampRead = await loadDiscoveryStamp(deps, run);
+  const analysis: AnalysisDoc = { ...written, plan, discovery: stampRead };
   await storeAnalysis(deps, run, analysis);
   return { analysis, risk: analysis.riskTier };
 }
@@ -519,7 +602,7 @@ async function writePlan(
   deps: ActivityDeps,
   run: RunContext,
   snapshot: { summary: string; description: string },
-  analysis: AnalysisDoc,
+  analysis: AnalystDoc,
   discovery: string,
 ): Promise<ImplementationPlan | null> {
   // The PLANNER's own agent definition (role `planner`) — its training is

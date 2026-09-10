@@ -26,9 +26,20 @@ import type { TicketStatusMap, TicketWorkflowInput } from "../src/ticket-workflo
 export const TICKET = "PAY-101";
 export const REPO = { adoProject: "BANK", adoRepo: "pay" } as const;
 
-export function analysisDoc(risk: RiskTier): AnalysisDoc {
+/**
+ * The document a MODEL answers with: every section, no keşif künyesi.
+ *
+ * `discovery` is deliberately absent rather than `null`: the analyst's schema
+ * is `AnalysisDoc.omit({ discovery: true })` and it is `.strict()`, so a
+ * fixture that carried the field would be a model answer the real gateway
+ * REFUSES. Consumers that want a finished document (the renderer, the
+ * developer brief) parse it or spread `discovery` in themselves — which is
+ * what `writeAnalysis` does in production, from the discovery stamp.
+ */
+export function analysisDoc(risk: RiskTier): Omit<AnalysisDoc, "discovery"> {
+  const { discovery: _stamp, ...brief } = EMPTY_ANALYSIS_BRIEF;
   return {
-    ...EMPTY_ANALYSIS_BRIEF,
+    ...brief,
     templateVersion: "analysis@1.0.0",
     language: "tr",
     purpose: "ödeme akışında hata düzeltmesi",
@@ -42,6 +53,15 @@ export function analysisDoc(risk: RiskTier): AnalysisDoc {
     riskReason: "sınırlı kapsam",
     clarificationsUsed: [],
   };
+}
+
+/**
+ * The FINISHED document, as `writeAnalysis` returns it: the model's answer plus
+ * the keşif künyesi the code stamped on. Default `null` = the run had no
+ * discovery step (deposuz analiz koşusu), which is what most fixtures mean.
+ */
+export function finishedDoc(risk: RiskTier, over: Partial<AnalysisDoc> = {}): AnalysisDoc {
+  return { ...analysisDoc(risk), discovery: null, ...over };
 }
 
 export function approval(step: StepId, over: Partial<GateDecision> = {}): GateDecision {
@@ -319,7 +339,7 @@ export function makeActivities(
     },
     writeAnalysis: async () => ({
       analysis: {
-        ...analysisDoc(scenario.risk),
+        ...finishedDoc(scenario.risk),
         openQuestions: [...(scenario.options.openQuestions ?? [])],
       },
       risk: scenario.risk,

@@ -8,7 +8,7 @@ import {
 } from "../src/impl/analysis-docs.js";
 import { deliverAnalysis } from "../src/impl/delivery.js";
 import { fakeDocBytes, makeFakes } from "./fakes.js";
-import { analysisDoc } from "./harness.js";
+import { finishedDoc } from "./harness.js";
 
 /**
  * The analysis Word/PDF on the ticket (M103r) — the capability the pilot proved
@@ -20,7 +20,7 @@ import { analysisDoc } from "./harness.js";
  * onto the ticket.
  */
 
-const DOC = analysisDoc("orta");
+const DOC = finishedDoc("orta");
 
 describe("deliverAnalysisDocs (M103r)", () => {
   it("renders BOTH documents through the publish port and puts them on the ticket", async () => {

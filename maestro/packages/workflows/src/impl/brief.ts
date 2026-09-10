@@ -1,4 +1,4 @@
-import { AnalysisDoc } from "@maestro/contracts";
+import { AnalysisDoc, DiscoveryStamp } from "@maestro/contracts";
 import type { ActivityDeps, RunContext } from "./deps.js";
 
 /**
@@ -11,11 +11,14 @@ import type { ActivityDeps, RunContext } from "./deps.js";
  * onaylanır; geliştirici planı uygular ve plan dışına çıktığını LOGLAR;
  * doğrulayıcı her iş kuralını TEK TEK PASS/FAIL raporlar. Bu zincirin her
  * halkası bir öncekinin ÇIKTISINI okumak zorunda — ve Temporal yolunda
- * aktiviteler birbirinin belleğini görmez. Buradaki iki köprü bunu sağlar:
+ * aktiviteler birbirinin belleğini görmez. Buradaki üç köprü bunu sağlar:
  *
  *   · Keşif notları DEFTERE yazılır (`discoveryNotes`), analist ve plancı
  *     oradan okur. Yeni bir aktivite, yeni bir kolon, yeni bir workflow adımı
  *     gerekmez — replay güvenliği bozulmaz.
+ *   · Keşif KÜNYESİ (hangi depo, okundu mu, okunmadıysa neden) JSON olarak
+ *     depoya konur (`storeDiscoveryStamp`), analiz adımı `loadDiscoveryStamp`
+ *     ile geri okuyup belgeye KOD olarak yazar — gerekçesi aşağıda.
  *   · Analiz belgesi JSON olarak depoya konur (`storeAnalysis`), geliştirici
  *     ve doğrulayıcı aktiviteleri `loadAnalysis` ile geri okur. Depo
  *     okunamazsa her tüketici bugünkü davranışına düşer (fail-soft): plan
@@ -25,6 +28,59 @@ import type { ActivityDeps, RunContext } from "./deps.js";
 /** Where the run's latest analysis document lives, as JSON. */
 export function analysisObjectKey(runId: string): string {
   return `${runId}/analysis/analysis.json`;
+}
+
+/** Where the discovery stamp (`DiscoveryStamp`) lives, as JSON. */
+export function discoveryStampKey(runId: string): string {
+  return `${runId}/analysis/discovery.json`;
+}
+
+/**
+ * ── KÜNYE NEDEN DEFTERE DEĞİL, DEPOYA YAZILIYOR ──────────────────────────────
+ *
+ * Adım 3ö (`discoverRepo`) ile adım 3 (`writeAnalysis`) iki AYRI Temporal
+ * aktivitesi; biri diğerinin belleğini görmez, ve künyeyi workflow üzerinden
+ * taşımak `ticket-workflow.ts`'in komut dizisini değiştirirdi (yeni dönüş tipi
+ * → yeni argüman → replay riski). Geriye iki köprü kalıyor ve bu dosya ikisini
+ * de tanıyor:
+ *
+ *   · DEFTER (`discoveryNotes`) — serbest metin için doğru kanal. Künye için
+ *     DEĞİL: `appendJournal` her satırı PII maskeleyicisinden geçirir
+ *     (`packages/memory/src/journal.ts`), yani depo adı ya da dal adı
+ *     maskelenebilir ve yapılandırılmış bir JSON gövdesi bozulabilir. Künyenin
+ *     tek işi GERÇEĞİ söylemek; yolda değişebilen bir kanal bu işi yapamaz.
+ *   · DEPO (burası) — `storeAnalysis` ile birebir aynı desen: JSON koy, geri
+ *     oku, okunamazsa bugünkü davranışa düş. Künye zaten deftere de yazılan
+ *     bilgiden türüyor (dosya/modül sayısı ve hata cümlesi), yani yeni bir
+ *     Jira/git çağrısı yok — yalnız aynı olgunun makine-okunur kopyası.
+ *
+ * Fail-soft: yazılamazsa ya da okunamazsa künye `null` olur ve belge künye
+ * bölümünü hiç çizmez — bugünkü davranış. Depo hatası bir analizi düşürmez.
+ */
+export async function storeDiscoveryStamp(
+  deps: ActivityDeps,
+  run: RunContext,
+  stamp: DiscoveryStamp,
+): Promise<boolean> {
+  try {
+    await deps.storage.put(discoveryStampKey(run.runId), new TextEncoder().encode(JSON.stringify(stamp)), {
+      contentType: "application/json",
+    });
+    return true;
+  } catch (error) {
+    console.warn(`[maestro] brief: keşif künyesi depoya yazılamadı (${String(error)}) — belge künyesiz çıkar.`);
+    return false;
+  }
+}
+
+/** The stamp this run's discovery left, or null when there is none. */
+export async function loadDiscoveryStamp(deps: ActivityDeps, run: RunContext): Promise<DiscoveryStamp | null> {
+  try {
+    const bytes = await deps.storage.get(discoveryStampKey(run.runId));
+    return DiscoveryStamp.parse(JSON.parse(new TextDecoder().decode(bytes)));
+  } catch {
+    return null;
+  }
 }
 
 /** Persist the document for the doing-role activities; never throws. */

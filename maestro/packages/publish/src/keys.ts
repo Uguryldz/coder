@@ -32,6 +32,13 @@ export const MSG = {
   sectionScopeOptions: "publish.section.scope_options",
   sectionOpenQuestions: "publish.section.open_questions",
   sectionPlan: "publish.section.plan",
+  // Keşif künyesi (analiz belgesinin "Kod karşılığı" bölümünden ÖNCE gelir).
+  sectionDiscovery: "publish.section.discovery",
+  labelDiscoveryRepo: "publish.label.discovery_repo",
+  labelDiscoveryBranch: "publish.label.discovery_branch",
+  labelDiscoveryDefaultBranch: "publish.label.discovery_default_branch",
+  noteDiscoveryRead: "publish.note.discovery_read",
+  noteDiscoveryUnread: "publish.note.discovery_unread",
   labelPlanFiles: "publish.label.plan_files",
   labelPlanEndpoints: "publish.label.plan_endpoints",
   labelPlanDtos: "publish.label.plan_dtos",

@@ -24,11 +24,14 @@ type BoardStepId = "2" | "2b" | "3o" | "3" | "4" | "5" | "6a" | "6c" | "9" | "11
 /**
  * Adımı hangi ajan koşar — rozet buradan çizilir.
  *
- * Plancı ajanı (`agent.training.planner`) listede YOK ve bu bir eksik değil:
- * motorda ayrı bir "plan" adımı yok, plan analiz adımının (`3`) çıktısı. Ona
- * kendi kutusunu vermek, operatöre koşmayan bir adım göstermek olurdu.
+ * Plancının KENDİ ADIMI YOK ama rozeti VAR, ve bu ayrım bilerek: motorda plan
+ * ayrı bir adım değil, analiz adımının (`3`) ikinci yarısı — analist belgeyi
+ * yazar, plancı planı onun üstüne ekler (`impl/analysis.ts`, `writePlan`).
+ * Ona kendi kutusunu vermek koşmayan bir adım göstermek olurdu; rozetini
+ * gizlemek ise o adımda İKİ ajanın çalıştığını saklamak olurdu. Bu yüzden
+ * adım başına rozet LİSTESİ tutuluyor, tek rozet değil.
  */
-type AgentKind = "analyst" | "developer" | "verifier";
+type AgentKind = "analyst" | "planner" | "developer" | "verifier";
 
 /**
  * Adımı hangi statü noktasının hizasına koyacağız.
@@ -47,6 +50,12 @@ interface BoardStep {
   readonly lane: LanePoint;
   /** Adımı koşan ajan; yoksa insan adımı ya da sistem adımı. */
   readonly agent?: AgentKind;
+  /**
+   * Aynı adımda koşan İKİNCİ ajan — bugün yalnız analiz adımı (`3`) için:
+   * analist belgeyi yazar, plancı planı onun üstüne ekler. Sürüklenip
+   * çıkarılamaz, çünkü kendi adımı yok; yalnız kimin koştuğunu söyler.
+   */
+  readonly also?: AgentKind;
   /** Onay kapısı: seçilebilir, seçimi `gateSteps`e yazılır. */
   readonly gate?: boolean;
   /** İnsanın beklendiği adım (kapı ya da soru) — rozet yerine "insan" yazar. */
@@ -70,7 +79,7 @@ const BOARD_STEPS: readonly BoardStep[] = [
   { id: "2", titleKey: "steps.2", lane: "onStart" },
   { id: "2b", titleKey: "steps.2b", lane: "onStart", human: true },
   { id: "3o", titleKey: "steps.3o", lane: "onStart", agent: "analyst" },
-  { id: "3", titleKey: "steps.3", lane: "onStart", agent: "analyst" },
+  { id: "3", titleKey: "steps.3", lane: "onStart", agent: "analyst", also: "planner" },
   { id: "4", titleKey: "steps.4", lane: "onReview", gate: true, human: true, analysisGate: true },
   { id: "5", titleKey: "steps.5", lane: "onReview", gate: true, human: true, analysisGate: true },
   { id: "6a", titleKey: "steps.6a", lane: "onReview", agent: "developer", engineering: true },
@@ -237,7 +246,7 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
                 setOverStep(null);
               }}
             >
-              {t(`listening.board.agent.${agent}`)}
+              {t(`listening.board.role.${step.id}`)}
               <button
                 type="button"
                 className="scr-board__rm"
@@ -248,6 +257,14 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
               </button>
             </span>
           ))}
+          {/* İkinci ajan: aynı adımda koşar, kendi adımı olmadığı için
+              sürüklenemez. Rozetsiz bırakmak, o adımda iki ajanın çalıştığını
+              saklamak olurdu. */}
+          {step.also !== undefined && !gone && (
+            <span className="scr-board__agent scr-board__agent--fixed">
+              {t(`listening.board.role.${step.id}_also`)}
+            </span>
+          )}
         {step.human === true && agent === undefined && (
           <span className="scr-board__who">{t("listening.board.human")}</span>
         )}
@@ -295,7 +312,7 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
                     setOverStep(null);
                   }}
                 >
-                  {t(`listening.board.agent.${agent}`)}
+                  {t(`listening.board.role.${step}`)}
                   <button
                     type="button"
                     className="scr-board__rm"

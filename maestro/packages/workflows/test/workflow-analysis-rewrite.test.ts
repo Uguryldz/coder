@@ -6,7 +6,7 @@ import type { AnalysisDoc } from "@maestro/contracts";
 import type { AnalysisRewriteContext, MaestroActivities } from "../src/activities.js";
 import type { WorkflowHandle } from "@temporalio/client";
 import type { StepId } from "@maestro/contracts";
-import { TICKET, Scenario, analysisDoc, createTestEnv, makeActivities, runTicket } from "./harness.js";
+import { TICKET, Scenario, createTestEnv, finishedDoc, makeActivities, runTicket } from "./harness.js";
 import { ticketWorkflow as legacyWorkflow } from "./legacy/ticket-workflow-v1020.js";
 
 /**
@@ -64,7 +64,7 @@ async function runLegacyToGate(): Promise<Awaited<ReturnType<WorkflowHandle["fet
         opened.push(step);
         return "tech-leads";
       },
-      writeAnalysis: async () => ({ analysis: analysisDoc(risk), risk }),
+      writeAnalysis: async () => ({ analysis: finishedDoc(risk), risk }),
     }),
   });
   const running = worker.run();
@@ -111,7 +111,7 @@ function spy(): {
     override: {
       writeAnalysis: async (_ticket, _appId, rewrite) => {
         calls.push(rewrite);
-        return { analysis: analysisDoc(risk), risk };
+        return { analysis: finishedDoc(risk), risk };
       },
     },
   };
@@ -235,7 +235,7 @@ describe("analiz yeniden yazılırken GEÇMİŞ modele geçiyor", () => {
           turn += 1;
           // Her tur AYIRT EDİLEBİLİR bir belge üretir, ki bir sonrakinin
           // gerçekten bir ÖNCEKİNİ gördüğü ölçülebilsin.
-          const doc: AnalysisDoc = { ...analysisDoc("dusuk"), riskReason: `tur-${turn}` };
+          const doc: AnalysisDoc = { ...finishedDoc("dusuk"), riskReason: `tur-${turn}` };
           return { analysis: doc, risk: "dusuk" };
         },
       },

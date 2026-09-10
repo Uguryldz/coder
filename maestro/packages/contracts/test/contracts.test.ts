@@ -41,6 +41,53 @@ describe("AnalysisDoc (M43, fail-closed)", () => {
   it("rejects unknown extra fields (strict)", () => {
     expect(AnalysisDoc.safeParse({ ...validAnalysis, extra: "x" }).success).toBe(false);
   });
+
+  /**
+   * Keşif künyesi — belgeyi okuyan kişinin "bu depo gerçekten okundu mu"
+   * sorusunun cevabı. Opsiyonel: künyesiz yazılmış her eski belge ve her
+   * deposuz analiz koşusu aynen ayrışmaya devam etmeli.
+   */
+  it("keşif künyesi opsiyonel — künyesiz eski belgeler bozulmaz", () => {
+    const parsed = AnalysisDoc.parse(validAnalysis);
+    expect(parsed.discovery).toBeNull();
+  });
+
+  it("künye üç şeyi taşır: hangi depo, okundu mu, okunmadıysa neden", () => {
+    const parsed = AnalysisDoc.parse({
+      ...validAnalysis,
+      discovery: { repo: "BANK/pay", files: 0, read: false, note: "çalışma alanı yok" },
+    });
+    expect(parsed.discovery).toEqual({
+      repo: "BANK/pay",
+      branch: "", // "" = deponun varsayılan dalı
+      files: 0,
+      modules: [],
+      read: false,
+      note: "çalışma alanı yok",
+    });
+  });
+
+  it("künyede 'hangi depo' ve 'okundu mu' ZORUNLU — yarım künye kabul edilmez", () => {
+    expect(AnalysisDoc.safeParse({ ...validAnalysis, discovery: { files: 3, read: true } }).success).toBe(false);
+    expect(AnalysisDoc.safeParse({ ...validAnalysis, discovery: { repo: "BANK/pay", files: 3 } }).success).toBe(false);
+  });
+
+  /**
+   * Model künyeyi ÜRETMEZ: `writeAnalysis` modele `AnalysisDoc.omit({
+   * discovery: true })` verir ve `.strict()` korunduğu için uydurulmuş bir
+   * künye belgeyi düşürür. Alanın modelin şemasında hiç bulunmaması, bir
+   * kural cümlesinden daha sert bir çittir.
+   */
+  it("analistin şeması künyeyi TANIMAZ — model uydurursa belge düşer", () => {
+    const analystSchema = AnalysisDoc.omit({ discovery: true });
+    expect(analystSchema.safeParse(validAnalysis).success).toBe(true);
+    expect(
+      analystSchema.safeParse({
+        ...validAnalysis,
+        discovery: { repo: "uydurma/depo", files: 99, read: true },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("gates (M51)", () => {

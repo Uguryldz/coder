@@ -1202,6 +1202,17 @@
   cursor: grabbing;
 }
 
+/*
+ * Kendi adımı olmayan ajan (bugün: plancı, analiz adımının ikinci yarısı).
+ * Sürüklenemez, o yüzden `grab` imleci yalan olurdu; solgun kenar da onu
+ * "çıkarılabilir" sanmayı önlüyor.
+ */
+.scr-board__agent--fixed {
+  cursor: default;
+  border-style: dashed;
+  opacity: 0.85;
+}
+
 .scr-board__rm {
   padding: 0 0 0 2px;
   border: 0;

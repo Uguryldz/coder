@@ -4,7 +4,7 @@ import { fanOutChildren, writeAnalysis } from "../src/impl/analysis.js";
 import { ANALYSIS_FIELDS, analysisInstructions, analysisRules, sectionTitlesOf } from "../src/impl/analysis-template.js";
 import { runContext } from "./doubles.js";
 import { makeFakes } from "./fakes.js";
-import { analysisDoc } from "./harness.js";
+import { analysisDoc, finishedDoc } from "./harness.js";
 
 /**
  * Üretim analisti Studio şablonunu görüyor ve deposuz koşuda etki matrisi
@@ -110,7 +110,7 @@ describe("fanOutChildren", () => {
   it("'ticket' kaynaklı ya da kayıt biçiminde olmayan bir hücre için alt ticket AÇMAZ", async () => {
     const fakes = makeFakes({ context: { app: null } });
     const doc = {
-      ...analysisDoc("orta"),
+      ...finishedDoc("orta"),
       impactMatrix: [
         { appId: "BOA", impacted: true, summary: "rapor ekranı", source: "ticket" as const },
         { appId: "kredi-tahsis", impacted: true, summary: "limit", source: "ticket" as const },

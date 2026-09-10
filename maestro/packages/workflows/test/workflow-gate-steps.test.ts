@@ -8,7 +8,7 @@ import { GATES_BY_RISK } from "@maestro/contracts";
 import {
   Scenario,
   TICKET,
-  analysisDoc,
+  finishedDoc,
   approval,
   createTestEnv,
   makeActivities,
@@ -345,7 +345,7 @@ async function runLegacyToGate(): Promise<Awaited<ReturnType<WorkflowHandle["fet
         opened.push(step);
         return "tech-leads";
       },
-      writeAnalysis: async () => ({ analysis: analysisDoc(risk), risk }),
+      writeAnalysis: async () => ({ analysis: finishedDoc(risk), risk }),
     }),
   });
   const running = worker.run();

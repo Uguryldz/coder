@@ -11,7 +11,7 @@ import {
 import { record } from "../src/impl/record.js";
 import { runContext } from "./doubles.js";
 import { makeFakes } from "./fakes.js";
-import { analysisDoc } from "./harness.js";
+import { analysisDoc, finishedDoc } from "./harness.js";
 
 /**
  * The hand-offs between the four agents: analysis → plan → developer →
@@ -22,7 +22,9 @@ describe("brief — analysis document hand-off", () => {
   it("round-trips the document through storage for the doing-role activities", async () => {
     const { deps } = makeFakes();
     const run = runContext();
-    const doc = { ...analysisDoc("orta"), businessRules: ["Limit 500.000 TL'yi aşamaz"] };
+    // A FINISHED document: `analysisDoc` is the model's answer (no keşif
+    // künyesi), and `writeAnalysis` is what stamps it before storing.
+    const doc = { ...analysisDoc("orta"), businessRules: ["Limit 500.000 TL'yi aşamaz"], discovery: null };
     expect(await storeAnalysis(deps, run, doc)).toBe(true);
     expect(await loadAnalysis(deps, run)).toEqual(doc);
   });
@@ -53,7 +55,7 @@ describe("brief — discovery notes", () => {
 
 describe("brief — developer brief and verifier checklist", () => {
   const doc = {
-    ...analysisDoc("orta"),
+    ...finishedDoc("orta"),
     requirements: ["Ekstre 'son 3 ay' filtresi"],
     businessRules: ["Filtre yalnız son 3 ayı listeler"],
     gaps: ["Tarih filtresi endpoint'i yok"],
@@ -82,7 +84,7 @@ describe("brief — developer brief and verifier checklist", () => {
   });
 
   it("without a plan it still carries the acceptance criteria — today's task, made explicit", () => {
-    const brief = developerBrief({ ...analysisDoc("orta"), ...EMPTY_ANALYSIS_BRIEF });
+    const brief = developerBrief({ ...finishedDoc("orta"), ...EMPTY_ANALYSIS_BRIEF });
     expect(brief).toContain("Kabul kriterleri");
     expect(brief).not.toContain("ONAYLI PLAN");
     expect(brief).not.toContain("İş kuralları");
@@ -90,7 +92,7 @@ describe("brief — developer brief and verifier checklist", () => {
 
   it("the verifier's checklist is the business rules, or the acceptance criteria when there are none", () => {
     expect(ruleChecklist(doc)).toEqual(["K1. Filtre yalnız son 3 ayı listeler"]);
-    const noRules = { ...analysisDoc("orta"), ...EMPTY_ANALYSIS_BRIEF };
+    const noRules = { ...finishedDoc("orta"), ...EMPTY_ANALYSIS_BRIEF };
     expect(ruleChecklist(noRules)[0]).toMatch(/^A1\. /);
   });
 });

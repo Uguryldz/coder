@@ -119,6 +119,63 @@ describe("analysis document (M43)", () => {
     expect(hostile).toContain("\\# Sahte başlık");
   });
 
+  /**
+   * ── KEŞİF KÜNYESİ ─────────────────────────────────────────────────────────
+   * "Kod karşılığı" bölümünün güvenilirliğini söyleyen bölüm: hangi deponun
+   * `src/ekstre.js`'i, gerçekten okundu mu. Canlıda keşif hiç çalışmazken de
+   * belge üretildi; künye bunu ilk bakışta görünür kılar.
+   */
+  describe("keşif künyesi", () => {
+    const STAMP = { repo: "Uguryldz/maestro-pilot", branch: "main", files: 14, modules: ["ekstre", "rapor"], read: true, note: "" };
+    const MAPPED = { ...ANALYSIS, codeMapping: [{ requirement: "G1", location: "src/ekstre.js:12", status: "karsilar" as const, note: "" }] };
+
+    it("künye yokken bölüm HİÇ çizilmez — sorulmamış soruya cevap yazılmaz", () => {
+      const md = renderAnalysisMarkdown(ANALYSIS, ctx);
+      expect(ANALYSIS.discovery).toBeNull();
+      expect(md).not.toContain(esc("tr:publish.section.discovery"));
+    });
+
+    it("okundu halinde depoyu, dalı ve sayıları yazar", () => {
+      const md = renderAnalysisMarkdown({ ...MAPPED, discovery: STAMP }, ctx);
+      expect(md).toContain(esc("tr:publish.section.discovery"));
+      expect(md).toContain("Uguryldz/maestro-pilot");
+      expect(md).toContain(esc("tr:publish.note.discovery_read(files=14,modules=2)"));
+      expect(md).not.toContain(esc("tr:publish.note.discovery_unread"));
+    });
+
+    it("künye 'Kod karşılığı' bölümünün ÖNÜNDE gelir — onun güvenilirliğini o belirler", () => {
+      const md = renderAnalysisMarkdown({ ...MAPPED, discovery: STAMP }, ctx);
+      const stampAt = md.indexOf(esc("tr:publish.section.discovery"));
+      const mappingAt = md.indexOf(esc("tr:publish.section.code_mapping"));
+      expect(stampAt).toBeGreaterThan(-1);
+      expect(mappingAt).toBeGreaterThan(-1);
+      expect(stampAt).toBeLessThan(mappingAt);
+    });
+
+    it("okunamadı halinde UYARI çıkar: analiz yalnız ticket metninden üretildi", () => {
+      const md = renderAnalysisMarkdown(
+        { ...ANALYSIS, discovery: { ...STAMP, files: 0, modules: [], read: false, note: "çalışma alanı yok (klon açılmamış)" } },
+        ctx,
+      );
+      expect(md).toContain(esc("tr:publish.note.discovery_unread(reason=çalışma alanı yok (klon açılmamış))"));
+      expect(md).not.toContain(esc("tr:publish.note.discovery_read"));
+    });
+
+    it("dal boşken deponun varsayılan dalı denir, boş backtick basılmaz", () => {
+      const md = renderAnalysisMarkdown({ ...ANALYSIS, discovery: { ...STAMP, branch: "" } }, ctx);
+      expect(md).toContain(esc("tr:publish.label.discovery_default_branch"));
+      expect(md).not.toContain("``");
+    });
+
+    it("okundu ama sayılamadı: sayı yerine sebep de yazılır", () => {
+      const md = renderAnalysisMarkdown(
+        { ...ANALYSIS, discovery: { ...STAMP, files: 0, modules: [], note: "depo okundu; bulgu özeti alınamadı" } },
+        ctx,
+      );
+      expect(md).toContain("depo okundu; bulgu özeti alınamadı");
+    });
+  });
+
   it("marks an empty optional list instead of leaving a blank section", () => {
     const bare = renderAnalysisMarkdown({ ...ANALYSIS, clarificationsUsed: [], scope: { included: ["x"], excluded: [] } }, ctx);
     expect(bare).toContain(esc("tr:publish.label.none"));

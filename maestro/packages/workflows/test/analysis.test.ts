@@ -2,9 +2,10 @@ import type { AnalysisDoc, LlmCallLog } from "@maestro/contracts";
 import { EMPTY_ANALYSIS_BRIEF } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import { discoverRepo, fanOutChildren, publishAnalysis, writeAnalysis } from "../src/impl/analysis.js";
+import { loadDiscoveryStamp } from "../src/impl/brief.js";
 import { record } from "../src/impl/record.js";
 import { makeFakes } from "./fakes.js";
-import { analysisDoc } from "./harness.js";
+import { analysisDoc, finishedDoc } from "./harness.js";
 
 const LOG: LlmCallLog = {
   at: "2026-08-09T09:00:00+03:00",
@@ -62,6 +63,112 @@ describe("discoverRepo (step 3ö, M100)", () => {
   });
 });
 
+/**
+ * ── KEŞİF KÜNYESİ ──────────────────────────────────────────────────────────
+ * Canlıda keşif hiç çalışmadan belge üretildi ve okuyan kişi farkı anlayamadı.
+ * Künye bu farkın ÖLÇÜSÜ: hangi depo, okundu mu, okunmadıysa neden — ve
+ * `discoverRepo`'nun ÜÇ çıkışının da bir künye bırakması gerekir, yoksa
+ * "künye yok" ile "okunamadı" aynı görünür.
+ */
+describe("keşif künyesi (discovery stamp)", () => {
+  const stampOf = async (fakes: ReturnType<typeof makeFakes>) =>
+    loadDiscoveryStamp(fakes.deps, await fakes.deps.runs.get("PAY-101"));
+
+  it("başarılı keşif: depo, dal ve sayılar defterdeki ile aynı, read=true", async () => {
+    const fakes = makeFakes({
+      agentSession: session,
+      generateObject: () => ({ status: "ok", value: { files: 14, modules: ["pay-core", "pay-api"] }, log: LOG }),
+    });
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    // The counts are the journal's own, not a second measurement.
+    const entry = fakes.journalStore.entries.find((e) => e.kind === "discovery");
+    expect(entry?.detail).toContain("14 dosya · 2 modül");
+    expect(await stampOf(fakes)).toEqual({
+      repo: "BANK/pay",
+      branch: "main",
+      files: 14,
+      modules: ["pay-core", "pay-api"],
+      read: true,
+      note: "",
+    });
+  });
+
+  it("çalışma alanı yok: read=false ve sebep künyede", async () => {
+    const fakes = makeFakes({ context: { workspacePath: "" } });
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    const stamp = await stampOf(fakes);
+    expect(stamp?.read).toBe(false);
+    expect(stamp?.repo).toBe("BANK/pay");
+    expect(stamp?.files).toBe(0);
+    expect(stamp?.note).toContain("çalışma alanı yok");
+  });
+
+  it("oturum kurulamadı: read=false ve sebep ayrı bir cümle", async () => {
+    // No agentSession scripted: the fake throws, as a host without an agent runner does.
+    const fakes = makeFakes();
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    const stamp = await stampOf(fakes);
+    expect(stamp?.read).toBe(false);
+    expect(stamp?.note).toContain("depo oturumu açılamadı");
+    // The two failures must be distinguishable — an operator fixes different things.
+    expect(stamp?.note).not.toContain("çalışma alanı yok");
+  });
+
+  it("depo okundu ama özet alınamadı: read=true, sayı yok, sebep notta", async () => {
+    const fakes = makeFakes({
+      agentSession: session,
+      generateObject: () => ({ status: "degraded", messageKey: "llm.degraded", dataClass: "gizli" }),
+    });
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    const stamp = await stampOf(fakes);
+    expect(stamp?.read).toBe(true);
+    expect(stamp?.files).toBe(0);
+    expect(stamp?.note).toContain("bulgu özeti alınamadı");
+  });
+
+  it("uygulama kaydı yoksa künye appId'ye düşer — 'hangi depo' cevapsız kalmaz", async () => {
+    const fakes = makeFakes({ context: { app: null, workspacePath: "" } });
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    expect((await stampOf(fakes))?.repo).toBe("pay");
+  });
+
+  it("belgeye künyeyi KOD koyar, model değil", async () => {
+    const fakes = makeFakes({
+      agentSession: session,
+      generateObject: (schemaName) =>
+        schemaName === "repo-discovery"
+          ? { status: "ok" as const, value: { files: 9, modules: ["pay-core"], notes: "G1 → src/a.ts:4" }, log: LOG }
+          : { status: "ok" as const, value: analysisDoc("orta"), log: LOG },
+    });
+    await discoverRepo(fakes.deps, "PAY-101", "pay");
+    const written = await writeAnalysis(fakes.deps, "PAY-101", "pay");
+    expect(written.analysis.discovery).toMatchObject({ repo: "BANK/pay", files: 9, read: true });
+    // The analyst was never shown the field — it cannot invent one.
+    const analyst = fakes.recorded.llm.find((c) => c.schemaName === "analysis-doc");
+    expect(JSON.stringify(analyst?.input)).not.toContain("\"discovery\":{");
+  });
+
+  it("modelin uydurduğu bir künye belgeyi DÜŞÜRÜR — alan analistin şemasında yok", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ({
+        status: "ok",
+        value: {
+          ...analysisDoc("orta"),
+          discovery: { repo: "uydurma/depo", branch: "main", files: 99, modules: [], read: true, note: "" },
+        },
+        log: LOG,
+      }),
+    });
+    await expect(writeAnalysis(fakes.deps, "PAY-101", "pay")).rejects.toThrow();
+  });
+
+  it("keşif hiç çalışmadıysa künye null — bölüm belgede hiç çizilmez", async () => {
+    const fakes = makeFakes({ generateObject: () => ({ status: "ok", value: analysisDoc("orta"), log: LOG }) });
+    const written = await writeAnalysis(fakes.deps, "PAY-101");
+    expect(written.analysis.discovery).toBeNull();
+  });
+});
+
 describe("writeAnalysis (step 3, M43/M51/M83)", () => {
   const okDoc = (over: Partial<AnalysisDoc> = {}) => ({
     status: "ok" as const,
@@ -113,8 +220,8 @@ describe("writeAnalysis (step 3, M43/M51/M83)", () => {
 describe("publishAnalysis (M47)", () => {
   it("renders the document once and publishes it once, however often it is retried", async () => {
     const fakes = makeFakes();
-    await publishAnalysis(fakes.deps, "PAY-101", analysisDoc("orta"));
-    await publishAnalysis(fakes.deps, "PAY-101", analysisDoc("orta"));
+    await publishAnalysis(fakes.deps, "PAY-101", finishedDoc("orta"));
+    await publishAnalysis(fakes.deps, "PAY-101", finishedDoc("orta"));
 
     expect(fakes.recorded.published).toHaveLength(1);
     expect(fakes.recorded.published[0]?.doc).toBe("analysis");
@@ -133,7 +240,7 @@ describe("fanOutChildren (M100)", () => {
       createLinkedIssueFails: (parent, fields) => (fields.summary.includes("ugurweb") ? new Error("Jira POST /rest/api/2/issue failed with HTTP 400 — issuetype: invalid") : null),
     });
     const doc = {
-      ...analysisDoc("orta"),
+      ...finishedDoc("orta"),
       impactMatrix: [
         { appId: "ugurweb", impacted: true, summary: "banner", source: "repo_card" as const },
         { appId: "ugurmobil", impacted: true, summary: "ekran", source: "repo_card" as const },
@@ -147,7 +254,7 @@ describe("fanOutChildren (M100)", () => {
   });
 
   const withImpact = (): AnalysisDoc => ({
-    ...analysisDoc("orta"),
+    ...finishedDoc("orta"),
     impactMatrix: [
       { appId: "pay", impacted: true, summary: "ana repo", source: "primary_repo_discovery" },
       { appId: "ledger", impacted: true, summary: "muhasebe kaydı", source: "repo_card" },
@@ -385,7 +492,7 @@ describe("analiz yeniden yazılırken geçmişi görüyor", () => {
    */
   it("önceki analizden risk gerekçesi ve kabul kriterleri gidiyor, belgenin tamamı DEĞİL", async () => {
     const fakes = makeFakes({ generateObject: () => ok() });
-    const previous = { ...analysisDoc("kritik"), riskReason: "ödeme akışına dokunuyor" };
+    const previous = { ...finishedDoc("kritik"), riskReason: "ödeme akışına dokunuyor" };
     await writeAnalysis(fakes.deps, "PAY-101", "pay", { previous });
     const note = String(inputOf(fakes)["rewrite"]);
     expect(note).toContain("kritik");

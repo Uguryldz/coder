@@ -102,6 +102,40 @@ export const ImplementationPlan = z.object({
 export type ImplementationPlan = z.infer<typeof ImplementationPlan>;
 
 /**
+ * ── KEŞİF KÜNYESİ ────────────────────────────────────────────────────────────
+ * Ajanın depoyu GERÇEKTEN okuyup okumadığının ölçüsü.
+ *
+ * ── Neden var: canlı bulgu ──────────────────────────────────────────────────
+ * Keşif uzun süre hiç çalışmadı (klon token'ı yoktu, `WORKSPACE_ROOT` boştu,
+ * ajan sürücüsü bağlı değildi) ve belge YİNE üretildi — "Kod karşılığı"
+ * bölümü ya boş kaldı ya da yalnız ticket metninden çıkarılmış cümlelerle
+ * doldu. Belgeyi okuyan kişi ikisini AYIRT EDEMEDİ: `src/ekstre.js` hangi
+ * deponun dosyası, o dosyaya gerçekten bakıldı mı, kaç dosya görüldü.
+ *
+ * ── Neden modele SORULMUYOR ─────────────────────────────────────────────────
+ * Bu bir ÖLÇÜM, ajanın beyanı değil. Model "depoyu okudum, 14 dosya gördüm"
+ * cümlesini bir keşif hiç çalışmamışken de kurabilir — kurdu da. Bu yüzden
+ * alan `writeAnalysis`'te modelin çıktısı ayrıştırıldıktan SONRA, kod
+ * tarafından yazılır (`packages/workflows/src/impl/analysis.ts`); modele
+ * giden şema `AnalysisDoc.omit({ discovery: true })`'dir, yani model bu alanı
+ * üretemez — uydurmasını engelleyen şey bir kural cümlesi değil, alanın
+ * modelin görebildiği şemada HİÇ BULUNMAMASI.
+ */
+export const DiscoveryStamp = z.object({
+  /** Okunan depo — `<adoProject>/<adoRepo>`, yoksa `appId`. */
+  repo: NonEmpty.max(200),
+  /** Hedef dal; "" = deponun varsayılan dalı (koşuda ayrıca belirtilmemiş). */
+  branch: z.string().max(200).default(""),
+  files: z.number().int().min(0),
+  modules: z.array(NonEmpty.max(200)).max(50).default([]),
+  /** false = klon açılamadı / oturum kurulamadı: aşağıdaki analiz kodsuzdur. */
+  read: z.boolean(),
+  /** Okunamadıysa SEBEBİ — operatörün neyi düzelteceğini söyleyen cümle. */
+  note: z.string().max(300).default(""),
+});
+export type DiscoveryStamp = z.infer<typeof DiscoveryStamp>;
+
+/**
  * Analysis document (M43): seven mandatory sections, validated fail-closed —
  * a missing section never reaches a human gate. Template version is pinned
  * per run (M83); language follows project parameter (M59/M104).
@@ -149,6 +183,13 @@ export const AnalysisDoc = z
     openQuestions: z.array(NonEmpty.max(800)).max(100).default([]),
     /** 15. The implementation plan (repo-bound runs), by the planner call. */
     plan: ImplementationPlan.nullable().default(null),
+    /**
+     * Keşif künyesi — hangi depo okundu, okunabildi mi, okunamadıysa neden.
+     * `null`: bu koşuda keşif adımı HİÇ çalışmadı (deposuz analiz koşusu) ya
+     * da belge bu alan var olmadan yazıldı; bölüm o zaman hiç çizilmez.
+     * Modelin değil, KODUN yazdığı alan (bkz. `DiscoveryStamp`).
+     */
+    discovery: DiscoveryStamp.nullable().default(null),
   })
   .strict();
 export type AnalysisDoc = z.infer<typeof AnalysisDoc>;
@@ -167,4 +208,5 @@ export const EMPTY_ANALYSIS_BRIEF = {
   scopeOptions: [] as ScopeOption[],
   openQuestions: [] as string[],
   plan: null as ImplementationPlan | null,
+  discovery: null as DiscoveryStamp | null,
 };

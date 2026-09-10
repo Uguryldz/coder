@@ -147,6 +147,46 @@ export function renderAnalysisMarkdown(input: AnalysisDoc, ctx: DocContext): str
     md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionBusinessRules)}`);
     md.bullets(doc.businessRules.map((item, index) => `K${String(index + 1)}. ${item}`));
   }
+  /**
+   * KEŞİF KÜNYESİ — "Kod karşılığı"nın ÖNÜNDE, çünkü onun güvenilirliğini bu
+   * belirler.
+   *
+   * `packages/publish/src/documents.ts:150` gibi bir satır, hangi deponun
+   * hangi dalında, kaç dosya okunarak bulunduğu söylenmezse doğrulanamaz bir
+   * iddiadır — canlıda keşif hiç çalışmazken de belge üretildi ve okuyan kişi
+   * farkı anlayamadı. Künye bu farkı ilk bakışta görünür kılar; `read: false`
+   * halinde bölüm, altındaki analizin YALNIZ ticket metninden üretildiğini
+   * söyler.
+   *
+   * Künye yoksa (`null`) bölüm hiç çizilmez — diğer koşullu bölümlerin deseni:
+   * sorulmamış bir soruya "yok" cevabı yazmayız.
+   */
+  if (doc.discovery !== null) {
+    const found = doc.discovery;
+    md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionDiscovery)}`);
+    const branch =
+      found.branch === ""
+        ? label(tr, locale, MSG.labelDiscoveryDefaultBranch)
+        : `\`${found.branch}\``;
+    md.paragraph(
+      `${label(tr, locale, MSG.labelDiscoveryRepo)}: \`${found.repo}\` · ${label(tr, locale, MSG.labelDiscoveryBranch)}: ${branch}`,
+    );
+    if (found.read) {
+      md.paragraph(
+        label(tr, locale, MSG.noteDiscoveryRead, {
+          files: String(found.files),
+          modules: String(found.modules.length),
+        }),
+      );
+      if (found.modules.length > 0) md.bullets(found.modules.map((module) => `\`${module}\``));
+      // A read that could not be counted still says WHY the numbers are zero.
+      if (found.note !== "") md.paragraph(found.note);
+    } else {
+      // The one line a committee must not miss: the analysis below has no code
+      // behind it, and here is what to fix.
+      md.paragraph(label(tr, locale, MSG.noteDiscoveryUnread, { reason: found.note }));
+    }
+  }
   if (doc.codeMapping.length > 0) {
     md.heading(2, `${String(n++)}. ${label(tr, locale, MSG.sectionCodeMapping)}`);
     md.bullets(

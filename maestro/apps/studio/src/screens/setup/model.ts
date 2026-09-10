@@ -19,6 +19,21 @@ export const FLOW_TYPES = ["analiz", "duzeltme", "gelistirme"] as const;
 export type FlowType = (typeof FLOW_TYPES)[number];
 
 /**
+ * Sihirbazın SUNDUĞU akışlar — üçün ikisi.
+ *
+ * `duzeltme` yok: motorda tek yaptığı kapı 4/5'i kapatmak (`planFor` →
+ * `analysisGate: false`, ve o bayrak yalnız o iki kapıyı filtrelemek için
+ * okunuyor). Operatör aynı sonucu dinleme kuralındaki kapı kutularından,
+ * hangisinin kapandığını GÖREREK alıyor. Sihirbaz ilk kurulumu yapıyor:
+ * orada bir kavram öğretip sonra gereksiz olduğunu söylemek, öğrenilecek
+ * şeyi artırmaktan başka işe yaramaz.
+ *
+ * `FLOW_TYPES` üç değerli kalıyor — kayıtlı `duzeltme` kuralları çalışmaya
+ * devam ediyor ve dinleme formunda kendi değerlerini görüyorlar.
+ */
+export const OFFERED_FLOW_TYPES: readonly FlowType[] = ["analiz", "gelistirme"];
+
+/**
  * Which flows touch a repository — and therefore need a repository connection
  * before the wizard may offer them.
  *

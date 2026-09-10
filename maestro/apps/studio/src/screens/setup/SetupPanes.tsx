@@ -14,7 +14,7 @@ import {
 import {
   COMMAND_INTAKES,
   DATA_CLASSES,
-  FLOW_TYPES,
+  OFFERED_FLOW_TYPES,
   MAX_POLL_SECONDS,
   MIN_POLL_SECONDS,
   flowNeedsRepository,
@@ -130,7 +130,15 @@ export function FlowPane({ draft, data, onChange }: PaneProps): ReactNode {
   const t = useT();
   return (
     <div className="setup-choices" role="radiogroup" aria-label={t("setup.flow.title")}>
-      {FLOW_TYPES.map((flow) => {
+      {/*
+        `duzeltme` KARTI YOK: motorda tek yaptığı kapı 4/5'i kapatmaktı ve
+        operatör aynı sonucu dinleme kuralındaki kapı kutularından, hangisinin
+        kapandığını görerek alıyor. Sihirbaz ilk kurulumu yapıyor — orada bir
+        kavramı öğretip sonra "aslında gerek yoktu" demek, öğrenilecek şeyi
+        artırmaktan başka bir işe yaramaz. Kayıtlı `duzeltme` kuralları
+        etkilenmez (bkz. `flowOptions`, listening/types.ts).
+      */}
+      {OFFERED_FLOW_TYPES.map((flow) => {
         // A flow this install cannot run is shown, selectable and explained —
         // never hidden — and "İleri" stops until the gap is resolved.
         const blocked = flowUnavailableReason(flow, data.scmConnectionCount);

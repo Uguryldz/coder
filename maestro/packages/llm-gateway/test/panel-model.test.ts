@@ -8,7 +8,7 @@ import {
   NO_ENDPOINT_CONFIGURED,
   type ResolvedModel,
 } from "../src/index.js";
-import { fakeClock, gatewayDeps, stubFetch, stubSecrets } from "./helpers.js";
+import { fakeClock, gatewayDeps, stubFetch, stubRunner, stubSecrets } from "./helpers.js";
 
 /**
  * A model added in the panel is the model a run actually dials (M107).
@@ -461,5 +461,65 @@ describe("a deployment that still configures its model in .env", () => {
     expect(out.status).toBe("ok");
     expect(stub.calls[0]?.url).toBe("https://from-env.invalid/v1/chat/completions");
     expect((stub.calls[0]?.body as { model: string }).model).toBe("env-model");
+  });
+});
+
+/**
+ * AJAN OTURUMU DA PANELİN MODELİNİ KULLANIR — `generateObject` gibi.
+ *
+ * ── CANLI BULGU ───────────────────────────────────────────────────────────────
+ * `agentSession` panelin modelini ÇÖZÜYOR ama KULLANMIYORDU: oturum
+ * `decision.model`'e, yani `.env`'in `LLM_MODEL`'ine gidiyordu. O değişken boş
+ * bırakılmış bir kurulumda varsayılan `gpt-4o-mini` devreye girip Claude CLI
+ * koltuğuna gönderiliyordu:
+ *   [claude-code:unrecognized_model] {"model":"gpt-4o-mini"}
+ * Panelde analiste model seçilmiş olsa bile keşif oturumu açılmıyor, defter
+ * "repo keşfi yapılamadı" diyordu — ve sebebi kimse okumadan analiz kodu
+ * görmeden yazılıyordu.
+ */
+describe("agentSession ve panelin modeli", () => {
+  const opts = {
+    workspacePath: "/work/OPS-119",
+    task: "depoyu incele",
+    mcpServers: [],
+    dataClass: "dahili",
+    variantId: "analyst-default",
+  } as const;
+
+  it("oturumu PANELDEKİ modelle açar, .env varsayılanıyla değil", async () => {
+    const agentRunner = stubRunner([{ finalText: "ok", tokensIn: 5, tokensOut: 2, vendorSessionId: "v1" }]);
+    const gateway = createLlmGateway(
+      config({ agentRole: "analyst" }),
+      gatewayDeps(stubFetch([]), fakeClock(), {
+        agentRunner,
+        resolveModel: () => Promise.resolve(panelModel({ model: "claude-sonnet-4-5" })),
+        log: () => {},
+      }),
+    );
+
+    const out = await gateway.agentSession(opts);
+
+    expect(out.status).toBe("ok");
+    // Çalıştırıcıya giden model: panelin satırı. `.env` ne derse desin.
+    expect(agentRunner.inputs[0]?.model).toBe("claude-sonnet-4-5");
+    // Denetim satırı da cevaplayanı yazar, config dosyasının dediğini değil.
+    expect(out.status === "ok" && out.log.model).toBe("claude-sonnet-4-5");
+  });
+
+  it("panelde satır YOKSA yapılandırmanın modeline düşer — bugünkü davranış", async () => {
+    const agentRunner = stubRunner([{ finalText: "ok", tokensIn: 5, tokensOut: 2, vendorSessionId: "v1" }]);
+    const gateway = createLlmGateway(
+      config({ agentRole: "analyst" }),
+      gatewayDeps(stubFetch([]), fakeClock(), {
+        agentRunner,
+        resolveModel: () => Promise.resolve(null),
+        log: () => {},
+      }),
+    );
+
+    const out = await gateway.agentSession(opts);
+
+    expect(out.status).toBe("ok");
+    expect(agentRunner.inputs[0]?.model).toBe("env-model");
   });
 });

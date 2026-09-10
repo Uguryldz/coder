@@ -255,10 +255,26 @@ export class LlmGateway implements LlmPort {
     // Re-resolved per turn, exactly like the policy is: a model changed in the
     // panel mid-session must be seen here, and the pin check below is what
     // decides whether the session may continue on it.
-    await this.#activeModel(variantId);
+    const active = await this.#activeModel(variantId);
     const decision = this.policy.resolve(role, variantId, dataClass);
     if (decision.kind !== "allow") return haltedFrom(decision);
-    const pin: SessionPin = { driver: decision.driver, model: decision.model, dataClass, masked: decision.masked };
+    /**
+     * PANELDEKİ MODEL, `.env` VARSAYILANINI EZER — `generateObject`'te olduğu gibi.
+     *
+     * ── CANLI BULGU ─────────────────────────────────────────────────────────────
+     * `active` çözülüyor ama KULLANILMIYORDU: oturum modeli `decision.model`'den,
+     * yani `.env`'in `LLM_MODEL`'inden geliyordu. O değişken boş bırakılmış bir
+     * kurulumda varsayılan `gpt-4o-mini` devreye giriyor ve Claude CLI koltuğuna
+     * gönderiliyordu:
+     *   [claude-code:unrecognized_model] {"model":"gpt-4o-mini"}
+     * Sonuç: panelde analiste model seçilmiş olsa bile keşif oturumu AÇILMIYOR,
+     * ve defter "repo keşfi yapılamadı" diyordu.
+     *
+     * `generateObject` bu ezmeyi `overrideFor` ile zaten yapıyor; iki yolun
+     * farklı modele gitmesi için hiçbir sebep yok — aynı ajanın aynı rolü.
+     */
+    const model = active === null ? decision.model : active.model;
+    const pin: SessionPin = { driver: decision.driver, model, dataClass, masked: decision.masked };
     if (existing && !samePin(existing, pin)) {
       throw new SessionPolicyChangedError(existing.resumeToken, describePin(existing), describePin(pin));
     }

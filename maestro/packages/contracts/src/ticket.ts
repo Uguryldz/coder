@@ -28,6 +28,31 @@ export const TicketSnapshot = z.object({
    * cevaplar ve `labels`'ın `null`/`[]` ayrımıyla aynı gerekçeyle korunuyor.
    */
   issueTypeId: NonEmpty.optional(),
+  /**
+   * `fields.status.name` ve `fields.status.id` — ticket'ın O ANKİ statüsü.
+   *
+   * ── CANLI BULGU ─────────────────────────────────────────────────────────────
+   * Bu iki alan bir dönem BİLEREK yoktu ("donmuş anlık görüntü statü taşımaz")
+   * ve o karar bir yolu sessizce kırıyordu: yeniden başlatma
+   * (`restartDeadRun` → `classifyingFields`) ticket'ı anlık görüntüden okur,
+   * yani statüsüz okurdu. Statü kapısı taşıyan bir kural
+   * (`allowedStatuses`) ise bilinmeyen statüde KAPANIR (`statusGateOf`,
+   * fail-closed) — dolayısıyla yeniden başlatmada HİÇBİR KURAL eşleşmez.
+   *
+   * Zincirin tamamı ölçüldü (OPS-123): kural eşleşmeyince `ruleId` yok, o
+   * yüzden depo eşlemesi HİÇ SORULMAZ ve koşu proje bağlamasının varsayılan
+   * deposuyla açılır. Aynı ticket webhook yolundan `tecnoi-global/wendoc`
+   * alırken, yeniden başlatma yolundan `maestro-pilot` alıyordu — tek fark
+   * giriş yoluydu. Operatörün gördüğü ise "yeniden başlat aynı çıktıyı
+   * veriyor" ve "eşleme çalışmıyor" oluyordu.
+   *
+   * OPSİYONEL ve yokluğu `undefined`: bu alanlardan önce yazılmış bir çağıran
+   * statüyü okumamış olabilir ve o durumda davranış eskisi gibi kalır.
+   * `issueTypeId` ile birebir aynı gerekçe — "Jira vermedi" ile "bu yol hiç
+   * sormadı" ayrı cevaplardır.
+   */
+  status: NonEmpty.optional(),
+  statusId: NonEmpty.optional(),
   summary: NonEmpty,
   description: z.string().default(""),
   reporter: NonEmpty,

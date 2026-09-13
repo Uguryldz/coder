@@ -2,7 +2,7 @@ import { createDb, type Db } from "@maestro/db";
 import { defaultPiiPolicy } from "@maestro/pii";
 import { PortRegistry, type LlmPort, type ScmPort, type SecretPort, type StoragePort } from "@maestro/ports";
 import { createDockerLinuxRunner } from "@maestro/runners";
-import { MAESTRO_TASK_QUEUE, startMaestroWorker, type CoreDeps } from "@maestro/workflows";
+import { MAESTRO_TASK_QUEUE, PORT_NAMES, startMaestroWorker, type CoreDeps } from "@maestro/workflows";
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
@@ -489,10 +489,29 @@ if (isEntrypoint(import.meta.url)) {
  * değil. Sürücü kendi sözleşmesini korur; yetenek burada, birleştirme
  * noktasında takılır.
  */
-function withWorkspaceCloning(registry: PortRegistry, env: DeployEnv, secrets: SecretPort): PortRegistry {
+export function withWorkspaceCloning(registry: PortRegistry, env: DeployEnv, secrets: SecretPort): PortRegistry {
   const root = workspaceRootFrom(env.source);
   const wrapped = new PortRegistry();
-  for (const port of ["work", "scm", "llm", "scan", "storage", "secret", "notify", "publish"]) {
+  /**
+   * PORT ADLARI PORT_NAMES'TEN GELİR — ELLE YAZILMAZ.
+   *
+   * Bu döngü bir kez elle yazılmış bir liste taşıyordu ve içindeki `"storage"`
+   * YANLIŞTI: registry'deki gerçek ad `"StoragePort"` (tarihsel yazım,
+   * `PORT_NAMES` bunu açıkça belgeliyor). Sonuç sessiz ve yıkıcıydı —
+   * sarmalayıcı `storage` adıyla hiçbir sürücü BULAMADI, kopyalamadı, ve
+   * worker açılışta şununla öldü:
+   *
+   *   startup failed: no driver "pg-blob" for port "StoragePort" — available: (none)
+   *
+   * Ölçüldü: worker 3793 kez yeniden başladı ve HİÇ çalışmadı. Klon zincirine
+   * yapılan her düzeltme (imaja git, CA yolu, klon kökü, yeniden klonlama)
+   * doğruydu ama ölü bir sürecin arkasında duruyordu; sahadaki "kodlar
+   * inmiyor" şikayetinin gerçek sebebi buydu.
+   *
+   * Liste artık `PORT_NAMES`in DEĞERLERİNDEN türüyor: ikinci bir kopya yok,
+   * dolayısıyla ayrışabilecek bir ad da yok.
+   */
+  for (const port of Object.values(PORT_NAMES)) {
     for (const driver of registry.drivers(port)) {
       const factory = registry.resolve<unknown>(port, driver);
       if (port !== "scm") {

@@ -117,17 +117,34 @@ export function projectKeyOf(ticket: TicketKey): string {
  * operator actually looks for it, in the `RUN_STARTED` audit entry, whose
  * `flowReason` reads `default` instead of `rule`.
  *
- * `status` is deliberately NOT among them. The frozen `TicketSnapshot`
- * (M46/M102) carries no status field, so a `matchKind: "status"` rule still
- * cannot match on these paths. Rules keyed on issue type or assignee — the
- * shape the platform seeds — now do, and inventing a status here would be
- * worse than admitting we do not know it.
+ * `status` BİR DÖNEM BİLEREK YOKTU, VE O KARAR BİR YOLU SESSİZCE KIRIYORDU.
+ *
+ * Gerekçe şuydu: donmuş `TicketSnapshot` (M46/M102) statü taşımaz, uydurmak
+ * bilmediğini söylemekten kötüdür. İkinci yarısı hâlâ doğru; birincisi artık
+ * değil — anlık görüntü statüyü TAŞIYOR (sözleşmeye eklendi, aynı
+ * `issueTypeId` gerekçesiyle).
+ *
+ * Kırığın zinciri uçtan uca ölçüldü (OPS-123):
+ *
+ *   yeniden başlatma → statü okunmadı
+ *   → `statusGateOf` bilinmeyen statüde KAPANIR (fail-closed)
+ *   → hiçbir kural eşleşmedi (`flowReason: "default"`)
+ *   → `ruleId` yok → depo eşlemesi HİÇ SORULMADI
+ *   → proje bağlamasının varsayılanı
+ *
+ * Aynı ticket, aynı etiket, aynı kural: webhook yolundan
+ * `tecnoi-global/wendoc`, yeniden başlatma yolundan `maestro-pilot`. Tek fark
+ * giriş yoluydu. Sahadaki iki ayrı şikayet — "yeniden başlat aynı çıktıyı
+ * veriyor" ve "eşleme çalışmıyor" — bu tek kırığın iki yüzüydü.
+ *
+ * Statü artık okunuyor. Adapter vermezse alan yine yazılmaz ve davranış
+ * eskisi gibi kalır: "bilmiyorum" demek hâlâ uydurmaktan iyidir.
  */
 export async function classifyingFields(
   deps: ResolvedDeps,
   ticket: TicketKey,
   onError: (error: unknown) => void = () => {},
-): Promise<Pick<IntakeRequest, "issueType" | "issueTypeId" | "labels" | "assignee">> {
+): Promise<Pick<IntakeRequest, "issueType" | "issueTypeId" | "labels" | "assignee" | "status" | "statusId">> {
   let snapshot: TicketSnapshot;
   try {
     snapshot = await deps.work.getTicket(ticket);
@@ -149,6 +166,10 @@ export async function classifyingFields(
      * id ile eşleşir — uydurmak, bilmediğini söylemekten kötü olurdu.
      */
     ...(snapshot.issueTypeId === undefined ? {} : { issueTypeId: snapshot.issueTypeId }),
+    // Statü kapısı bilinmeyen statüde kapanır; bu iki alan o kapının AÇILABİLİR
+    // olmasını sağlar. Adapter vermezse yazılmaz — bkz. yukarıdaki gerekçe.
+    ...(snapshot.status === undefined ? {} : { status: snapshot.status }),
+    ...(snapshot.statusId === undefined ? {} : { statusId: snapshot.statusId }),
     labels: snapshot.labels,
     // Omitted rather than sent as null, for the reason `flow` and `statusMap`
     // are omitted below: `assignee` is an OPTIONAL field whose absence already

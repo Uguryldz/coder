@@ -55,6 +55,42 @@ describe("issue mapping", () => {
     expect(() => TicketSnapshot.parse(snapshot)).not.toThrow();
   });
 
+  /**
+   * STATÜ — yeniden başlatma yolunun kuralı kaybetmemesi için.
+   *
+   * Anlık görüntü bir dönem statü taşımıyordu ve o karar `restartDeadRun`
+   * yolunu sessizce kırıyordu: statü kapısı taşıyan bir kural bilinmeyen
+   * statüde KAPANIR (fail-closed), dolayısıyla yeniden başlatmada hiçbir
+   * kural eşleşmez, `ruleId` olmaz ve depo eşlemesi hiç sorulmaz.
+   *
+   * Canlıda ölçüldü (OPS-123): aynı ticket webhook yolundan
+   * `tecnoi-global/wendoc`, yeniden başlatma yolundan proje varsayılanı
+   * alıyordu — tek fark giriş yoluydu.
+   */
+  it("carries the status name and id so a status-gated rule can match", () => {
+    const raw = structuredClone(fixture("issue-get")) as {
+      fields: Record<string, unknown>;
+    };
+    raw.fields["status"] = { id: "10004", name: "Yapılacaklar" };
+    const snapshot = mapIssueToSnapshot(raw);
+
+    expect(snapshot.status).toBe("Yapılacaklar");
+    expect(snapshot.statusId).toBe("10004");
+    expect(() => TicketSnapshot.parse(snapshot)).not.toThrow();
+  });
+
+  it("omits status entirely when the payload carries none", () => {
+    // "Jira vermedi" ile "bu yol hiç sormadı" ayrı cevaplardır: yokluk HİÇ
+    // yazılmaz, `null` olarak değil — `issueTypeId` ile birebir aynı gerekçe.
+    const raw = structuredClone(fixture("issue-get")) as { fields: Record<string, unknown> };
+    delete raw.fields["status"];
+    const snapshot = mapIssueToSnapshot(raw);
+
+    expect(snapshot.status).toBeUndefined();
+    expect(snapshot.statusId).toBeUndefined();
+    expect(() => TicketSnapshot.parse(snapshot)).not.toThrow();
+  });
+
   it("reports which field is missing instead of dying inside zod", () => {
     const broken = { key: "UGURPAY-1", fields: { created: "2026-01-01T00:00:00.000+0300", updated: "2026-01-01T00:00:00.000+0300" } };
     const error = (() => {

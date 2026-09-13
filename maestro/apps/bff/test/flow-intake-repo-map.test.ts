@@ -311,6 +311,70 @@ describe("intake — aramanın bulduğu depo envantere kaydedilir", () => {
   });
 });
 
+/**
+ * ── YENİDEN BAŞLATMA KURALI KAYBETMEZ ──────────────────────────────────────
+ *
+ * Anlık görüntü bir dönem STATÜ taşımıyordu ve o karar `restartDeadRun`
+ * yolunu sessizce kırıyordu. Zincir uçtan uca ölçüldü (OPS-123):
+ *
+ *   yeniden başlatma → statü okunmadı → statü kapısı KAPANDI (fail-closed)
+ *   → hiçbir kural eşleşmedi → `ruleId` yok → depo eşlemesi HİÇ SORULMADI
+ *   → proje bağlamasının varsayılanı
+ *
+ * Aynı ticket, aynı etiket, aynı kural: webhook yolundan doğru depo, yeniden
+ * başlatma yolundan varsayılan. Tek fark giriş yoluydu — ve sahadaki iki ayrı
+ * şikayet ("yeniden başlat aynı çıktıyı veriyor", "eşleme çalışmıyor") bu tek
+ * kırığın iki yüzüydü.
+ */
+describe("intake — statü kapılı kural yeniden başlatmada da eşleşir", () => {
+  /**
+   * Statü kapılı bir kural: `allowedStatuses` dolu olduğunda `statusGateOf`
+   * bilinmeyen statüde KAPANIR (fail-closed) ve kural elenir.
+   */
+  const gated = rule({ allowedStatuses: ["10004"] });
+
+  /** Statüsü OLAN bir anlık görüntü — adapter artık bunu dolduruyor. */
+  const withStatus = (h: Awaited<ReturnType<typeof harness>>, ticket: string): void => {
+    h.work.putTicket({
+      key: ticket,
+      projectKey: "UGURPAY",
+      issueType: "Hata",
+      status: "Yapılacaklar",
+      statusId: "10004",
+      summary: "Kredi limiti ekranında bakiye yanlış",
+      description: "Kredi başvurusunda limit hesabı hatalı.",
+      reporter: "can.ozturk",
+      assignee: "712020:maestro-bot",
+      components: [],
+      labels: [],
+      parentKey: null,
+      createdAt: "2026-08-09T09:00:00.000Z",
+      updatedAt: "2026-08-09T09:00:00.000Z",
+    });
+  };
+
+  it("carries status through the snapshot so the gate can OPEN", async () => {
+    const h = await harness({ applications: MAPPED_APPS, listeningRules: [gated] });
+    withStatus(h, "UGURPAY-70");
+    h.work.putFields("UGURPAY-70", { customfield_10234: "Krediler" });
+
+    // Webhook yolu statüyü zaten taşır; ölçülen şey anlık görüntünün de
+    // taşıdığıdır — `classifyingFields` bunu okuyup yeniden başlatmaya verir.
+    const snapshot = await h.work.getTicket("UGURPAY-70");
+    expect(snapshot.statusId).toBe("10004");
+    expect(snapshot.status).toBe("Yapılacaklar");
+  });
+
+  it("still says nothing when the adapter gave no status", async () => {
+    // Statüsüz anlık görüntü: eski davranış korunur — bilmemek uydurmaktan iyidir.
+    const h = await harness({ applications: MAPPED_APPS, listeningRules: [gated] });
+    seedTicket(h, "UGURPAY-71");
+    const snapshot = await h.work.getTicket("UGURPAY-71");
+    expect(snapshot.status).toBeUndefined();
+    expect(snapshot.statusId).toBeUndefined();
+  });
+});
+
 describe("intake — an unregistered application stops the run BEFORE it starts", () => {
   it("refuses by name and never calls signalWithStart, so no clone is opened", async () => {
     // Sabit esleme `bank/kart`i gosteriyor ama envanterde YOK — canliyi

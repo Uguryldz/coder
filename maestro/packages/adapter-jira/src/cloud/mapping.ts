@@ -84,6 +84,18 @@ export function mapCloudIssueToSnapshot(raw: unknown): TicketSnapshot {
   const parentKey = typeof parent?.["key"] === "string" && parent["key"].length > 0 ? parent["key"] : null;
 
   const issueTypeId = idOf(fields["issuetype"]);
+  /**
+   * STATÜ — yeniden başlatma yolunun kuralı kaybetmemesi için.
+   *
+   * Anlık görüntü bir dönem statü taşımıyordu ve o karar `restartDeadRun`
+   * yolunu sessizce kırıyordu: statü kapısı taşıyan bir kural bilinmeyen
+   * statüde KAPANIR, dolayısıyla yeniden başlatmada hiçbir kural eşleşmez,
+   * `ruleId` olmaz ve depo eşlemesi hiç sorulmaz. Ölçüldü (OPS-123): aynı
+   * ticket webhook yolundan doğru depoyu, yeniden başlatma yolundan proje
+   * varsayılanını alıyordu.
+   */
+  const statusName = nameOf(fields["status"]);
+  const statusId = idOf(fields["status"]);
 
   const candidate = {
     key,
@@ -91,6 +103,9 @@ export function mapCloudIssueToSnapshot(raw: unknown): TicketSnapshot {
     issueType: nameOf(fields["issuetype"]) ?? "",
     // Yokluğu HİÇ yazılmaz — DC eşleyicisiyle aynı gerekçe.
     ...(issueTypeId === null ? {} : { issueTypeId }),
+    // Yokluk HİÇ yazılmaz — `issueTypeId` ile aynı gerekçe.
+    ...(statusName === null ? {} : { status: statusName }),
+    ...(statusId === null ? {} : { statusId }),
     summary: typeof fields["summary"] === "string" ? fields["summary"] : "",
     description: cloudDescriptionText(fields["description"]),
     reporter: cloudUserIdOf(fields["reporter"]) ?? "",

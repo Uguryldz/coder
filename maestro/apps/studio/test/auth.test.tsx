@@ -92,6 +92,7 @@ describe("cold load of a deep link", () => {
 
   beforeEach(() => {
     globalThis.sessionStorage.clear();
+    globalThis.localStorage.clear();
   });
 
   /**
@@ -185,6 +186,55 @@ describe("cold load of a deep link", () => {
       expect(statuses).toContain("authenticated");
     });
     expect(statuses).toEqual(["loading", "authenticated"]);
+  });
+
+  /**
+   * YENİ SEKME TEKRAR GİRİŞ İSTEMEZ.
+   *
+   * Bearer bir dönem `sessionStorage`'da duruyordu ve gerekçesi yazılıydı:
+   * "yenilemede oturum sürsün ama sekme kapanınca hayatta kalmasın". Niyet
+   * doğruydu, araç yanlıştı — `sessionStorage` sekme kapanmasında değil SEKME
+   * BAŞINA ayrışır. Panelde bir bağlantıyı yeni sekmede açan operatör (orta
+   * tık, "yeni sekmede aç", bir rapor bağlantısı) boş bir depoya düşüyor ve
+   * sunucudaki oturumu HÂLÂ GEÇERLİYKEN yeniden giriş isteniyordu.
+   *
+   * Yeni sekme, `localStorage`'ı paylaşan ama `sessionStorage`'ı boş olan bir
+   * bağlam demektir — test tam olarak o şekli kuruyor.
+   */
+  it("keeps a NEW TAB signed in: localStorage is shared, sessionStorage is not", async () => {
+    globalThis.localStorage.setItem(TOKEN_KEY, "tok");
+    // Yeni sekmenin sessionStorage'ı BOŞ — eski kodda burada giriş ekranı çıkardı.
+    expect(globalThis.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+
+    const statuses = renderCold(
+      "/change-password",
+      sessionFetch(() => new Response(JSON.stringify(SESSION), { status: 200 })),
+    );
+
+    expect(await screen.findByText("Parolanızı belirleyin")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Kullanıcı adı")).not.toBeInTheDocument();
+    // Ara bir `anonymous` bile olmamalı: o render RequireSession'ı /login'e
+    // yönlendiren render'dır.
+    await waitFor(() => expect(statuses).toContain("authenticated"));
+    expect(statuses).toEqual(["loading", "authenticated"]);
+  });
+
+  /**
+   * YÜKSELTME KÖPRÜSÜ — açık bir sekme düşmemeli.
+   *
+   * Bu sürüme geçen bir sekmenin token'ı eski anahtarda duruyor. Köprü
+   * olmasaydı yükseltme, giriş yapmış herkesi bir kez daha giriş yapmaya
+   * zorlardı — düzeltilen şeyin ta kendisi.
+   */
+  it("adopts a token left in the OLD store and moves it across", async () => {
+    globalThis.sessionStorage.setItem(TOKEN_KEY, "eski-tok");
+    expect(globalThis.localStorage.getItem(TOKEN_KEY)).toBeNull();
+
+    renderCold("/change-password", sessionFetch(() => new Response(JSON.stringify(SESSION), { status: 200 })));
+
+    expect(await screen.findByText("Parolanızı belirleyin")).toBeInTheDocument();
+    // Taşındı: bundan sonraki sekmeler token'ı paylaşılan depoda bulur.
+    await waitFor(() => expect(globalThis.localStorage.getItem(TOKEN_KEY)).toBe("eski-tok"));
   });
 
   it("DOES send a visitor with no stored token to /login", async () => {

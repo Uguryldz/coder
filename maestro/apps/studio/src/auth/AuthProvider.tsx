@@ -32,16 +32,42 @@ export interface AuthProviderProps {
 }
 
 /**
- * The bearer is kept in `sessionStorage` so a reload keeps the operator signed
- * in without surviving a tab close. Both helpers are guarded: `sessionStorage`
- * is absent under SSR and can throw in a locked-down browser, and neither case
- * should crash the app — a missing store simply means "no persisted token".
+ * BEARER `localStorage`'DA DURUR — ÇÜNKÜ `sessionStorage` SEKME BAŞINADIR.
+ *
+ * Burası bir dönem `sessionStorage` kullanıyordu ve gerekçesi yazılıydı:
+ * "yenilemede oturum sürsün ama sekme kapanınca hayatta kalmasın". Niyet
+ * doğruydu, seçilen araç yanlıştı — `sessionStorage` sekme kapanmasında değil,
+ * SEKME BAŞINA ayrışır. Panelde bir bağlantıyı yeni sekmede açan operatör
+ * (orta tık, "yeni sekmede aç", bir rapor bağlantısı) boş bir depoya düşüyor
+ * ve yeniden giriş isteniyordu — sunucudaki oturumu hâlâ geçerliyken.
+ *
+ * Ölçüldü: oturumlar sunucuda 8 saat yaşıyor (`SESSION_TTL_MS`) ve sunucu
+ * tarafında ÇEREZ YOK — kimlik saf bearer. Yani yeni sekmenin token'ı
+ * bulabileceği başka hiçbir yer yoktu; sekme sayısı kadar giriş demekti.
+ *
+ * `localStorage` sekmeler arasında paylaşılır ve oturumun asıl ömrünü zaten
+ * sunucu belirliyor: süresi dolmuş bir token 401 alır, `clear()` çağrılır ve
+ * operatör giriş ekranına döner. Yani kalıcılığı tarayıcıya değil sunucuya
+ * bırakmak, hem doğru katman hem de tek kaynak.
+ *
+ * ESKİ ANAHTAR OKUNUR: bu sürüme geçen bir sekme, `sessionStorage`'daki
+ * geçerli token'ıyla açık kalır ve token ilk okumada `localStorage`'a taşınır.
+ * Aksi hâlde yükseltme, herkesi bir kez daha giriş yapmaya zorlardı.
+ *
+ * Üç helper da korumalı: depolar SSR altında yok ve kilitli bir tarayıcıda
+ * atabilir; ikisi de uygulamayı çökertmemeli — eksik depo yalnızca
+ * "saklanmış token yok" demektir.
  */
 const TOKEN_KEY = "maestro.token";
 
 function readStoredToken(): string | null {
   try {
-    return globalThis.sessionStorage?.getItem(TOKEN_KEY) ?? null;
+    const stored = globalThis.localStorage?.getItem(TOKEN_KEY);
+    if (stored !== null && stored !== undefined) return stored;
+    // Yükseltme köprüsü: eski sekmenin token'ı düşmesin, taşınsın.
+    const legacy = globalThis.sessionStorage?.getItem(TOKEN_KEY) ?? null;
+    if (legacy !== null) writeStoredToken(legacy);
+    return legacy;
   } catch {
     return null;
   }
@@ -49,8 +75,14 @@ function readStoredToken(): string | null {
 
 function writeStoredToken(token: string | null): void {
   try {
-    if (token === null) globalThis.sessionStorage?.removeItem(TOKEN_KEY);
-    else globalThis.sessionStorage?.setItem(TOKEN_KEY, token);
+    if (token === null) {
+      globalThis.localStorage?.removeItem(TOKEN_KEY);
+      // Eski anahtar da silinir: çıkış yapan bir operatörün token'ı hiçbir
+      // depoda kalmamalı.
+      globalThis.sessionStorage?.removeItem(TOKEN_KEY);
+    } else {
+      globalThis.localStorage?.setItem(TOKEN_KEY, token);
+    }
   } catch {
     // A store that refuses writes just means no persistence; the in-memory
     // ref still carries the token for this page's lifetime.

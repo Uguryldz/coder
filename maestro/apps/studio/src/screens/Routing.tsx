@@ -447,6 +447,10 @@ export function RoutingScreen(): ReactNode {
           projectKey={editingBinding}
           onClose={() => setEditingBinding(null)}
           onOpenRules={(key) => void navigate(listeningPath(key))}
+          onSaved={() => {
+            void queryClient.invalidateQueries({ queryKey: ["routing"] });
+            setEditingBinding(null);
+          }}
         />
       )}
 
@@ -465,27 +469,80 @@ export function RoutingScreen(): ReactNode {
 }
 
 /**
- * "Düzenle" on a bound project — a panel, not a form.
+ * "Düzenle" on a bound project — ARTIK GERÇEK BİR FORM.
  *
- * The API was measured: `POST /onboarding` refuses an already-bound project
- * (`project_already_bound`) and there is no update endpoint, so trigger mode,
- * app/repo mapping and data class have nowhere to be saved to. A "Kaydet" over
- * that would file nothing and report success — on a four-eyes decision about
- * which repository an agent may push to, the worst possible lie. So the panel
- * does the two true things: it sends the operator to the one thing that IS
- * editable per project (its listening rules) and names the locked fields and
- * the way round them. It makes no request at all; opening it is not a change.
+ * Burası bir dönem form DEĞİLDİ ve gerekçesi yazılıydı: `POST /onboarding`
+ * zaten bağlı bir projeyi reddediyor, güncelleme ucu ise YOKTU. O hâlde bir
+ * "Kaydet" düğmesi hiçbir şey dosyalamayıp başarı bildirirdi — bir ajanın
+ * hangi depoya yazabileceğine dair dört-göz kararında mümkün olan en kötü
+ * yalan. Panel bu yüzden yalnız "dinleme kurallarına git" diyordu.
+ *
+ * Sahada bu "UI'da yetersiz" diye bildirildi ve haklıydı: tetikleme kipi,
+ * yayınlama kipi, veri sınıfı ve varsayılan uygulama bir kez yazıldıktan
+ * sonra değiştirilemiyordu; tek çare projeyi çözüp yeniden onboard etmek ve
+ * İKİNCİ bir onaydan geçmekti.
+ *
+ * `PATCH /onboarding/:projectKey` eklendi (bkz. `routes/onboarding.ts`) ve
+ * panel artık ona yazıyor. Yalnız DEĞİŞEN alanlar gönderiliyor: yokluk
+ * "dokunma" demek, ve tek bir alanı düzeltmek için ötekileri yeniden
+ * göndermek, eş zamanlı bir düzenlemeyi sessizce geri alırdı.
  */
 function BindingEdit({
   projectKey,
   onClose,
   onOpenRules,
+  onSaved,
 }: {
   readonly projectKey: string;
   readonly onClose: () => void;
   readonly onOpenRules: (projectKey: string) => void;
+  readonly onSaved: () => void;
 }): ReactNode {
   const t = useT();
+  const api = useApi();
+  const toast = useToast();
+  /**
+   * Başlangıç değeri BOŞ ("değiştirme"), mevcut değer DEĞİL.
+   *
+   * `/routing` bu ekrana bağlamanın tetikleme kipini, yayınlama kipini, veri
+   * sınıfını ve durumunu GÖNDERMİYOR — yalnız proje anahtarı, uygulamaları ve
+   * bir not. Kutuları uydurma bir varsayılanla doldurmak, operatöre "şu anda
+   * böyle" diye YANLIŞ bilgi verirdi; üstelik dokunmadığı bir kutu kaydederken
+   * gerçek değeri o uydurmayla ezerdi.
+   *
+   * Bu yüzden her kutu "— değiştirme —" ile açılır ve yalnız SEÇİLEN alanlar
+   * gönderilir. Sunucu da yokluğu "dokunma" diye okuyor.
+   */
+  const [trigger, setTrigger] = useState<string>("");
+  const [mode, setMode] = useState<string>("");
+  const [dataClass, setDataClass] = useState<string>("");
+  const [state, setState] = useState<string>("");
+
+  const save = useMutation({
+    mutationFn: () => {
+      /**
+       * Yalnız DEĞİŞENLER gönderilir.
+       *
+       * Hepsini göndermek kolay olurdu ama yanlış: bu ekran açıkken başka bir
+       * yönetici `dataClass`ı sıkılaştırmışsa, buradan gelen tam gövde onu
+       * sessizce geri alırdı. Sunucu da yokluğu "dokunma" diye okuyor.
+       */
+      const defaults: Record<string, string> = {};
+      if (mode !== "") defaults["mode"] = mode;
+      if (dataClass !== "") defaults["dataClass"] = dataClass;
+      return api.patch<void>(`/onboarding/${encodeURIComponent(projectKey)}`, {
+        ...(trigger === "" ? {} : { trigger }),
+        ...(state === "" ? {} : { state }),
+        ...(Object.keys(defaults).length === 0 ? {} : { defaults }),
+      });
+    },
+    onSuccess: () => {
+      toast.show("success", t("routing.edit.saved", { project: projectKey }));
+      onSaved();
+    },
+    onError: (error) => toast.show("error", t(messageKeyOf(error))),
+  });
+
   return (
     <Modal
       open
@@ -495,19 +552,61 @@ function BindingEdit({
       footer={
         <>
           <Button onClick={onClose}>{t("routing.edit.close")}</Button>
-          <Button variant="primary" onClick={() => onOpenRules(projectKey)}>
-            {t("routing.edit.open_rules")}
+          <Button onClick={() => onOpenRules(projectKey)}>{t("routing.edit.open_rules")}</Button>
+          <Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>
+            {t("action.save")}
           </Button>
         </>
       }
     >
-      {/* What IS editable, first — an operator who came to change which
-          tickets Maestro takes gets their answer before the bad news. */}
       <p className="scr-prose">{t("routing.edit.rules_body")}</p>
-      {/* What is NOT, named field by field rather than as "bazı ayarlar". */}
-      <div className="scr-note scr-note--warn" style={{ marginTop: 10 }}>
-        <p style={{ margin: 0 }}>{t("routing.edit.binding_locked")}</p>
-        <p style={{ margin: "8px 0 0" }}>{t("routing.edit.workaround")}</p>
+      <div className="scr-grid scr-grid--2" style={{ marginTop: 12 }}>
+        <Select
+          label={t("routing.edit.trigger")}
+          value={trigger}
+          onChange={(e) => setTrigger(e.target.value)}
+          hint={t("routing.edit.trigger_hint")}
+          options={[
+            { value: "", label: t("routing.edit.keep") },
+            { value: "auto", label: t("routing.edit.trigger.auto") },
+            { value: "label", label: t("routing.edit.trigger.label") },
+            { value: "command", label: t("routing.edit.trigger.command") },
+          ]}
+        />
+        <Select
+          label={t("onboard.field.merge_mode")}
+          value={mode}
+          onChange={(e) => setMode(e.target.value)}
+          hint={t("onboard.field.merge_hint")}
+          options={[
+            { value: "", label: t("routing.edit.keep") },
+            { value: "human_lead", label: t("onboard.merge.human") },
+            { value: "full_auto", label: t("onboard.merge.auto") },
+          ]}
+        />
+        <Select
+          label={t("routing.edit.data_class")}
+          value={dataClass}
+          onChange={(e) => setDataClass(e.target.value)}
+          hint={t("routing.edit.data_class_hint")}
+          options={[
+            { value: "", label: t("routing.edit.keep") },
+            { value: "acik", label: t("routing.data_class.acik") },
+            { value: "dahili", label: t("routing.data_class.dahili") },
+            { value: "gizli", label: t("routing.data_class.gizli") },
+          ]}
+        />
+        <Select
+          label={t("routing.edit.state")}
+          value={state}
+          onChange={(e) => setState(e.target.value)}
+          hint={t("routing.edit.state_hint")}
+          options={[
+            { value: "", label: t("routing.edit.keep") },
+            { value: "active", label: t("routing.edit.state.active") },
+            { value: "paused", label: t("routing.edit.state.paused") },
+          ]}
+        />
       </div>
     </Modal>
   );

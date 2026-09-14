@@ -1340,3 +1340,70 @@ describe("POST /onboarding/apps — more than one repository under a bound proje
     expect(bad.statusCode).toBe(400);
   });
 });
+
+/**
+ * ── BAĞLI BİR PROJENİN AYARLARI DEĞİŞTİRİLEBİLİR ───────────────────────────
+ *
+ * `PATCH /onboarding/:projectKey` bir dönem YOKTU ve sahada "UI'da yetersiz"
+ * diye bildirildi: `BindingEdit` paneli açılıyor, hiçbir uca istek yapmıyor ve
+ * operatöre "burada değiştirilecek bir şey yok" diyordu. Tetikleme kipi,
+ * yayınlama kipi, veri sınıfı ve durum bir kez yazıldıktan sonra
+ * değiştirilemiyordu; tek çare projeyi çözüp yeniden onboard etmek ve İKİNCİ
+ * bir onaydan geçmekti.
+ */
+describe("PATCH /onboarding/:projectKey", () => {
+  it("updates a bound project and audits WHICH fields were touched", async () => {
+    const h = await wizard();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "PATCH",
+      url: "/onboarding/UGURPAY",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { trigger: "auto", defaults: { dataClass: "gizli" } },
+    });
+
+    expect(response.statusCode).toBe(204);
+    // Denetim zincirinin ilk sorusu "neyi değiştirdi": alan ADLARI yazılır.
+    const entries = await h.auditStore.read();
+    const entry = entries.find((e) => e.subject === "binding:UGURPAY");
+    expect(entry?.meta).toMatchObject({ verb: "binding_updated", fields: "trigger,defaults" });
+    // Riskli alan ayrıca adıyla: bir denetçi neyin gevşetildiğini görmeli.
+    expect(entry?.meta).toMatchObject({ dataClass: "gizli" });
+  });
+
+  /**
+   * Bağlı OLMAYAN bir projeyi buradan kurmak, `POST /onboarding`in iki
+   * yöneticili onay kapısını atlamak olurdu — iki uç birbirinin tersi.
+   */
+  it("refuses a project that is not bound", async () => {
+    const h = await wizard();
+    const token = await adminToken(h);
+
+    const response = await h.app.inject({
+      method: "PATCH",
+      url: "/onboarding/YOKPROJE",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { trigger: "auto" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: "unbound_project" });
+  });
+
+  it("rejects a field the contract does not know instead of swallowing it", async () => {
+    const h = await wizard();
+    const token = await adminToken(h);
+
+    // Ekranın gönderdiği ama sunucunun bilmediği bir alan, operatöre
+    // kaydedilmiş gibi görünüp hiçbir şey yapmayan bir ayar üretirdi.
+    const response = await h.app.inject({
+      method: "PATCH",
+      url: "/onboarding/UGURPAY",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { uydurmaAlan: "x" },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+});

@@ -237,8 +237,45 @@ export interface BindingWrite {
   defaults: { appId: string | null; mode: WorkMode; dataClass: DataClass };
 }
 
+/**
+ * BAĞLI BİR PROJENİN AYARLARINI DEĞİŞTİRMEK — alanları TEK TEK, hepsi opsiyonel.
+ *
+ * Bu yol bir dönem HİÇ YOKTU ve sahada "UI'da yetersiz" diye bildirildi:
+ * `BindingEdit` paneli açılıyor, hiçbir uca istek yapmıyor ve operatöre
+ * "burada değiştirilecek bir şey yok, dinleme kurallarına gidin" diyordu.
+ * Tetikleme kipi, yayınlama kipi, veri sınıfı ve varsayılan uygulama bir kez
+ * yazıldıktan sonra DEĞİŞTİRİLEMİYORDU; tek çare projeyi çözüp yeniden
+ * onboard etmek ve ikinci bir onaydan geçmekti.
+ *
+ * `bind`ten AYRI bir metot, çünkü iki işlem farklı: `bind` YENİ bir bağlama
+ * kurar ve zaten bağlı bir projede `project_already_bound` ile reddedilir —
+ * doğru bir kapı, çünkü sessizce başkasının projesini devralmak M14/M99
+ * hatasının ta kendisi. Güncelleme ise var olan bir bağlamayı DÜZENLER ve
+ * projenin bağlı olmasını ŞART koşar.
+ *
+ * Her alan opsiyonel ve yokluk "dokunma" demek: bir alanı `null` yapmak ile
+ * hiç göndermemek ayrı cevaplardır. `defaults.appId` bu yüzden `null`
+ * kabul eder (varsayılan depoyu KALDIR) ama alanın kendisi atlanabilir.
+ */
+export interface BindingUpdate {
+  projectKey: string;
+  trigger?: "auto" | "label" | "command";
+  state?: "draft" | "dry_run" | "active" | "paused" | "unbound";
+  defaults?: {
+    appId?: string | null;
+    mode?: WorkMode;
+    dataClass?: DataClass;
+  };
+}
+
 export interface BindingWriter {
   bind(binding: BindingWrite): Promise<void>;
+  /**
+   * Var olan bir bağlamayı günceller. OPSİYONEL: sunmayan bir kurulum
+   * uçtan 503-by-name alır — "bu kurulumda bağlama düzenlenemez", ki bu
+   * "değiştirilecek bir şey yok"tan bambaşka bir cevap.
+   */
+  update?(update: BindingUpdate): Promise<void>;
 }
 
 // ── gate ownership (M71) ──────────────────────────────────────────────────────

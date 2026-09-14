@@ -1,4 +1,4 @@
-import type { BindingWrite, BindingWriter, JiraBinding, JiraProjectBindings } from "@maestro/bff";
+import type { BindingUpdate, BindingWrite, BindingWriter, JiraBinding, JiraProjectBindings } from "@maestro/bff";
 
 /**
  * The Postgres-backed `JiraProjectBindings` (M102).
@@ -34,6 +34,11 @@ export interface BindingRow {
 /** The one delegate method the READ store uses. */
 export interface BindingDelegate {
   findUnique(args: { where: { projectKey: string } }): Promise<BindingRow | null>;
+  /** Var olan bir satırı düzenler — `upsert` DEĞİL, bkz. `update` gerekçesi. */
+  update(args: {
+    where: { projectKey: string };
+    data: { trigger?: string; state?: string; defaultsJson?: unknown };
+  }): Promise<unknown>;
 }
 
 /**
@@ -144,6 +149,48 @@ export class PrismaBindingWriter implements BindingWriter {
         defaultsJson,
       },
       update: { trigger: binding.trigger, state: binding.state, defaultsJson },
+    });
+  }
+
+  /**
+   * VAR OLAN bir bağlamayı düzenler — verilen alanları, yalnız onları.
+   *
+   * `bind`ten iki yerde ayrılır ve ikisi de kasıtlı:
+   *
+   *  · `update`, `upsert` DEĞİL. Bağlı olmayan bir projeyi burada yaratmak,
+   *    `POST /onboarding`in iki yöneticili onay kapısını atlamak olurdu.
+   *    Satır yoksa Prisma adıyla hata verir ve uç onu 404'e çevirir.
+   *  · `defaultsJson` OKUNUP birleştirilir, üstüne yazılmaz. Alan tek bir
+   *    JSON sütunu; yalnız `dataClass` gönderen bir istek, ham yazımda
+   *    `appId` ve `mode`u sessizce SİLERDİ — projenin varsayılan deposunu
+   *    kaybettiren, hiçbir hata üretmeyen bir kayıp.
+   *
+   * Okuma ile yazma arasındaki yarış bilinçli olarak kabul ediliyor: bu ekran
+   * tek operatörün elindeki bir yönetim ayarı, saniyede iki kez yazılan bir
+   * yol değil. Kilit almak, kazandığından çok karmaşıklık getirirdi.
+   */
+  async update(update: BindingUpdate): Promise<void> {
+    const row = await this.bindings.findUnique({ where: { projectKey: update.projectKey } });
+    if (row === null) throw new Error(`binding not found: ${update.projectKey}`);
+
+    const current = parseDefaults(row.defaultsJson);
+    const defaults =
+      update.defaults === undefined
+        ? undefined
+        : {
+            // Yokluk "dokunma", `null` ise "kaldır" — ikisi ayrı cevaplar.
+            appId: update.defaults.appId === undefined ? current.appId : update.defaults.appId,
+            mode: update.defaults.mode ?? current.mode,
+            dataClass: update.defaults.dataClass ?? current.dataClass,
+          };
+
+    await this.bindings.update({
+      where: { projectKey: update.projectKey },
+      data: {
+        ...(update.trigger === undefined ? {} : { trigger: update.trigger }),
+        ...(update.state === undefined ? {} : { state: update.state }),
+        ...(defaults === undefined ? {} : { defaultsJson: defaults }),
+      },
     });
   }
 }

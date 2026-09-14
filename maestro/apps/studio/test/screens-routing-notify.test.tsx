@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -342,29 +342,59 @@ describe("routing screen", () => {
       expect(screen.queryByRole("button", { name: "Düzenle" })).not.toBeInTheDocument();
     });
 
-    it("routes to the one thing that IS editable, and names what is not", async () => {
+    /**
+     * ── PANEL ARTIK GERÇEK BİR FORM ────────────────────────────────────────
+     *
+     * Burası bir dönem form DEĞİLDİ ve iki test bunu tutuyordu: "kilitli
+     * alanlar" metni ve "hiçbir istek yapmaz". Gerekçe o gün doğruydu —
+     * güncelleme ucu YOKTU, bir "Kaydet" hiçbir şey dosyalamayıp başarı
+     * bildirirdi.
+     *
+     * Sahada bu "UI'da yetersiz" diye bildirildi: tetikleme kipi, yayınlama
+     * kipi, veri sınıfı ve durum bir kez yazıldıktan sonra değiştirilemiyordu;
+     * tek çare projeyi çözüp yeniden onboard etmek ve İKİNCİ bir onaydan
+     * geçmekti. `PATCH /onboarding/:projectKey` eklendi ve panel ona yazıyor.
+     */
+    it("saves ONLY the fields the operator actually changed", async () => {
+      const { fetchImpl, calls } = stubFetch([
+        ROUTING_BODY,
+        APPS_BODY,
+        { path: "/onboarding/UGURPAY", method: "PATCH", body: null, status: 204 },
+      ]);
+      renderScreen(<RoutingScreen />, { fetchImpl });
+      await screen.findByText("UgurPay Core");
+
+      await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+      expect(await screen.findByText("UGURPAY bağlamasını düzenle")).toBeInTheDocument();
+
+      // Kutular "değiştirme" ile açılır: `/routing` mevcut değerleri
+      // GÖNDERMİYOR ve uydurma bir varsayılan, dokunulmayan alanı ezerdi.
+      await userEvent.selectOptions(screen.getByLabelText("Veri sınıfı"), "gizli");
+      await userEvent.click(screen.getByRole("button", { name: "Kaydet" }));
+
+      await waitFor(() => {
+        const patch = calls.find((c) => c.method === "PATCH");
+        expect(patch, "PATCH gönderilmedi").toBeTruthy();
+        expect(patch!.url).toContain("/onboarding/UGURPAY");
+        // Yalnız DEĞİŞEN alan: hepsini göndermek, eş zamanlı bir düzenlemeyi
+        // sessizce geri alırdı.
+        expect(patch!.body).toEqual({ defaults: { dataClass: "gizli" } });
+      });
+    });
+
+    it("still offers the listening rules — the other half of the answer", async () => {
       const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY]);
       renderScreen(<RoutingScreen />, { fetchImpl });
       await screen.findByText("UgurPay Core");
 
       await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
-
-      // The project it is about is named, not implied.
-      expect(await screen.findByText("UGURPAY bağlamasını düzenle")).toBeInTheDocument();
-      // The editable half: listening rules, reachable in one click.
+      await screen.findByText("UGURPAY bağlamasını düzenle");
+      // "Hangi ticket'lar alınır" hâlâ dinleme kurallarının işi; panel oraya
+      // tek tıkla götürmeye devam ediyor.
       expect(screen.getByRole("button", { name: "Dinleme kurallarını aç" })).toBeInTheDocument();
-      // The locked half, named FIELD BY FIELD — "bazı ayarlar değiştirilemez"
-      // is the sentence that generates a support ticket instead of resolving
-      // one — and with the reason, so nobody hunts for a hidden button.
-      expect(
-        screen.getByText(/tetikleme kipi, uygulama\/depo eşlemesi ve veri sınıfı/),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/sunucuda bunu yapan bir uç nokta da yok/)).toBeInTheDocument();
-      // And crucially: NO save button, because there is nothing to save to.
-      expect(screen.queryByRole("button", { name: /Kaydet/ })).not.toBeInTheDocument();
     });
 
-    it("writes nothing at all — opening the panel is not a change", async () => {
+    it("writes nothing until the operator presses save — opening is not a change", async () => {
       const { fetchImpl, calls } = stubFetch([ROUTING_BODY, APPS_BODY]);
       renderScreen(<RoutingScreen />, { fetchImpl });
       await screen.findByText("UgurPay Core");
@@ -372,10 +402,9 @@ describe("routing screen", () => {
       await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
       await screen.findByText("UGURPAY bağlamasını düzenle");
 
-      // A binding is four-eyes governed; an "edit" screen that quietly filed a
-      // proposal on open would put a decision in front of an approver that
-      // nobody made.
-      expect(calls.filter((c) => c.method !== "GET")).toEqual([]);
+      // Bağlama dört-göz yönetilen bir karar; paneli AÇMAK bir değişiklik
+      // değildir ve sessizce hiçbir şey dosyalanmamalıdır.
+      expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
     });
   });
 });

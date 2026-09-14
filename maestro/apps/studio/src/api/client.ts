@@ -1,7 +1,7 @@
 import { ApiError, NetworkError, UnauthenticatedError } from "./errors.ts";
 
 export interface RequestOptions {
-  readonly method?: "GET" | "POST" | "PUT" | "DELETE";
+  readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   readonly body?: unknown;
   readonly query?: Readonly<Record<string, string | number | undefined>>;
   readonly signal?: AbortSignal | undefined;
@@ -54,6 +54,18 @@ export class ApiClient {
 
   put<T>(path: string, body?: unknown, options: Omit<RequestOptions, "method"> = {}): Promise<T> {
     return this.request<T>(path, { ...options, method: "PUT", body });
+  }
+
+  /**
+   * KISMİ güncelleme — gönderilmeyen alan "dokunma" demek.
+   *
+   * `put`tan ayrı, çünkü anlamları farklı: `PUT` kaynağın TAMAMINI değiştirir,
+   * `PATCH` yalnız adı geçen alanları. Bağlama düzenleme ekranı ikincisine
+   * muhtaç — tek bir alanı düzeltmek için ötekileri yeniden göndermek, eş
+   * zamanlı bir düzenlemeyi sessizce geri alırdı.
+   */
+  patch<T>(path: string, body?: unknown, options: Omit<RequestOptions, "method"> = {}): Promise<T> {
+    return this.request<T>(path, { ...options, method: "PATCH", body });
   }
 
   delete<T>(path: string, options: Omit<RequestOptions, "method" | "body"> = {}): Promise<T> {

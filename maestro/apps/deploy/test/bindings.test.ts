@@ -186,6 +186,15 @@ function writerOf(): { writer: PrismaBindingWriter; rows: Map<string, BindingWri
       );
       return Promise.resolve(rows.get(args.where.projectKey));
     },
+    findUnique: (args) => Promise.resolve((rows.get(args.where.projectKey) ?? null) as never),
+    update: (args) => {
+      const existing = rows.get(args.where.projectKey);
+      // Gerçek Prisma da olmayan satırda atar; `upsert` DEĞİL — bağlı olmayan
+      // bir projeyi burada yaratmak onay kapısını atlamak olurdu.
+      if (existing === undefined) throw new Error(`no row: ${args.where.projectKey}`);
+      rows.set(args.where.projectKey, { ...existing, ...args.data } as never);
+      return Promise.resolve(rows.get(args.where.projectKey));
+    },
   };
   return { writer: new PrismaBindingWriter(delegate), rows };
 }
@@ -204,6 +213,7 @@ describe("PrismaBindingWriter", () => {
     const row = rows.get("OPS")!;
     const binding = await new PrismaJiraProjectBindings({
       findUnique: () => Promise.resolve({ triggerLabel: "maestro", ...row } as BindingRow),
+      update: () => Promise.resolve(undefined),
     }).resolve("OPS");
 
     expect(binding).toEqual({
@@ -233,5 +243,79 @@ describe("PrismaBindingWriter", () => {
 
     expect(rows.size).toBe(1);
     expect(rows.get("OPS")).toMatchObject({ trigger: "label", state: "paused" });
+  });
+});
+
+/**
+ * ── BAĞLI BİR PROJENİN AYARLARI DEĞİŞTİRİLEBİLİR ───────────────────────────
+ *
+ * Bu yol bir dönem HİÇ YOKTU ve sahada "UI'da yetersiz" diye bildirildi:
+ * `BindingEdit` paneli açılıyor, hiçbir uca istek yapmıyor ve operatöre
+ * "burada değiştirilecek bir şey yok, dinleme kurallarına gidin" diyordu.
+ * Tetikleme kipi, yayınlama kipi, veri sınıfı ve varsayılan uygulama bir kez
+ * yazıldıktan sonra değiştirilemiyordu; tek çare projeyi çözüp yeniden
+ * onboard etmek ve İKİNCİ bir onaydan geçmekti.
+ */
+describe("PrismaBindingWriter.update", () => {
+  const seed = async (writer: PrismaBindingWriter): Promise<void> => {
+    await writer.bind({
+      projectKey: "OPS",
+      trigger: "label",
+      state: "active",
+      defaults: { appId: "Uguryldz/maestro-pilot", mode: "human_lead", dataClass: "dahili" },
+    });
+  };
+
+  it("changes ONLY the fields the request named", async () => {
+    const { writer, rows } = writerOf();
+    await seed(writer);
+
+    await writer.update({ projectKey: "OPS", trigger: "auto" });
+
+    const row = rows.get("OPS")!;
+    expect(row.trigger).toBe("auto");
+    // Dokunulmayanlar DURUR: yokluk "dokunma" demek.
+    expect(row.state).toBe("active");
+    expect(row.defaultsJson).toEqual({
+      appId: "Uguryldz/maestro-pilot",
+      mode: "human_lead",
+      dataClass: "dahili",
+    });
+  });
+
+  /**
+   * `defaultsJson` TEK bir JSON sütunu. Yalnız `dataClass` gönderen bir istek,
+   * ham yazımda `appId` ve `mode`u sessizce SİLERDİ — projenin varsayılan
+   * deposunu kaybettiren, hiçbir hata üretmeyen bir kayıp.
+   */
+  it("merges defaults instead of overwriting the whole JSON column", async () => {
+    const { writer, rows } = writerOf();
+    await seed(writer);
+
+    await writer.update({ projectKey: "OPS", defaults: { dataClass: "gizli" } });
+
+    expect(rows.get("OPS")!.defaultsJson).toEqual({
+      appId: "Uguryldz/maestro-pilot", // korundu
+      mode: "human_lead", // korundu
+      dataClass: "gizli", // değişti
+    });
+  });
+
+  it("tells `null` (remove the default repo) apart from absent (leave it alone)", async () => {
+    const { writer, rows } = writerOf();
+    await seed(writer);
+
+    await writer.update({ projectKey: "OPS", defaults: { appId: null } });
+
+    expect((rows.get("OPS")!.defaultsJson as { appId: unknown }).appId).toBeNull();
+  });
+
+  /**
+   * Bağlı OLMAYAN bir projeyi burada yaratmak, `POST /onboarding`in iki
+   * yöneticili onay kapısını atlamak olurdu. `upsert` DEĞİL, `update`.
+   */
+  it("refuses to create a binding that does not exist yet", async () => {
+    const { writer } = writerOf();
+    await expect(writer.update({ projectKey: "YOK", trigger: "auto" })).rejects.toThrow();
   });
 });

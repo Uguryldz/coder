@@ -526,13 +526,43 @@ describe("ugurdocker bundle: the audited variables reach the process that reads 
     );
   });
 
-  it("gives the workspace volume to uid 10001, or the clone dies on its first mkdir", () => {
-    // A plain named volume is born root-owned; the services run as 10001 and
-    // the checkout would fail EACCES — silently, into a repo-blind analysis.
+  /**
+   * ÇALIŞMA ALANI KALICI, VE SAHİBİ AÇILIŞTA VERİLİYOR.
+   *
+   * Bu test bir dönem volume'ün `uid=10001` taşıdığını tutuyordu, çünkü
+   * `maestro-workspace` bir TMPFS'ti — uid'i bağlarken verebilen taşınabilir
+   * tek yol. Ama bedeli sahada ölçüldü: RAM'de, 1 GB sınırlı ve her
+   * restart'ta SİLİNEN bir çalışma alanı. Koşu satırı hâlâ bir yol taşıyor
+   * ama dizin yok; keşif boş bir dizini okuyup "kod karşılığı yok" diyordu.
+   *
+   * Kalıcı bir named volume ROOT sahipli doğar ve servisler uid 10001 ile
+   * koşar — klon ilk `mkdir`de EACCES alırdı. Düğüm `workspace-init` ile
+   * çözüldü: açılışta bir kez root olarak sahiplik verir ve çıkar.
+   *
+   * Test artık O ZİNCİRİ tutuyor: volume kalıcı OLMALI (tmpfs değil), init
+   * konteyneri sahipliği vermeli, ve okuyan servisler onu BEKLEMELİ —
+   * sahipsiz bir dizine açılan servis ilk klonda düşer.
+   */
+  it("keeps the workspace on disk and hands its ownership over at start-up", () => {
     const volume = compose.volumes?.["maestro-workspace"] as
-      | { driver_opts?: { o?: string } }
+      | { driver_opts?: { type?: string } }
       | undefined;
-    expect(volume?.driver_opts?.o ?? "").toContain("uid=10001");
+    // Kalıcı: tmpfs sürücü seçenekleri KALMAMALI.
+    expect(volume?.driver_opts?.type ?? "").not.toBe("tmpfs");
+
+    const init = compose.services["workspace-init"] as
+      | { user?: string; command?: unknown; volumes?: readonly string[] }
+      | undefined;
+    expect(init, "workspace-init yok — kalıcı volume root sahipli kalır").toBeDefined();
+    expect(init?.user).toBe("0:0");
+    expect(JSON.stringify(init?.command ?? "")).toContain("chown 10001:10001 /workspace");
+    expect(init?.volumes ?? []).toContain("maestro-workspace:/workspace");
+
+    // Okuyan servisler BEKLEMELİ: sıra bozulursa klon sahipsiz dizine düşer.
+    for (const service of ["bff", "worker"]) {
+      const deps = compose.services[service]?.depends_on as Record<string, unknown> | undefined;
+      expect(deps?.["workspace-init"], `${service} workspace-init'i beklemiyor`).toBeDefined();
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { humanBehind } from "@maestro/audit";
+import { DataClass, ProjectKey, WorkMode } from "@maestro/contracts";
 import { sessionActor } from "../actor.js";
 import { authGuard, requireAnyRole, sessionOf } from "../auth/guard.js";
 import type { BindingWrite, ResolvedDeps } from "../deps.js";
@@ -59,6 +60,40 @@ const AddRepoBody = z.object({
   platform: z.string().trim().min(1).max(32),
   displayName: z.string().trim().max(128).optional(),
 });
+/**
+ * Bağlama düzenleme gövdesi — HER ALAN OPSİYONEL, ve bu kasıtlı.
+ *
+ * Yokluk "dokunma" demek: bir alanı göndermemek ile `null` göndermek ayrı
+ * cevaplardır. `defaults.appId` bu yüzden `null` KABUL eder (varsayılan
+ * depoyu kaldır) ama alanın kendisi atlanabilir — "varsayılanı kaldır" ile
+ * "varsayılana dokunma" bir kutuda toplanamaz.
+ *
+ * `.strict()`: tanımadığı bir alan sessizce yutulmaz. Ekranın gönderdiği ama
+ * sunucunun bilmediği bir alan, operatöre kaydedilmiş gibi görünüp hiçbir şey
+ * yapmayan bir ayar üretirdi — bu oturumda tam olarak o sınıf hata ölçüldü.
+ */
+const BindingPatchBody = z
+  .object({
+    trigger: z.enum(["auto", "label", "command"]).optional(),
+    state: z.enum(["draft", "dry_run", "active", "paused", "unbound"]).optional(),
+    defaults: z
+      .object({
+        appId: z.string().trim().min(1).max(200).nullable().optional(),
+        mode: WorkMode.optional(),
+        dataClass: DataClass.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+/** `/onboarding/:projectKey` yolunun proje anahtarı — sözleşmeyle doğrulanır. */
+function projectKeyParam(params: unknown): string {
+  const parsed = z.object({ projectKey: ProjectKey }).safeParse(params);
+  if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
+  return parsed.data.projectKey;
+}
+
 const DraftBody = z
   .object({
     jiraProject: z.string().trim().min(1).max(32),
@@ -611,6 +646,70 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
    * human confirms. Without the writer the endpoint keeps its older behaviour,
    * where `assertBindable` requires the repo to already exist.
    */
+  /**
+   * BAĞLI BİR PROJENİN AYARLARINI DEĞİŞTİR.
+   *
+   * Bu uç bir dönem HİÇ YOKTU ve sahada "UI'da yetersiz" diye bildirildi:
+   * `BindingEdit` paneli açılıyor, hiçbir uca istek yapmıyor ve operatöre
+   * "burada değiştirilecek bir şey yok" diyordu. Tetikleme kipi, yayınlama
+   * kipi, veri sınıfı ve varsayılan uygulama bir kez yazıldıktan sonra
+   * değiştirilemiyordu; tek çare projeyi çözüp yeniden onboard etmek ve
+   * ikinci bir onaydan geçmekti.
+   *
+   * `POST /onboarding`ten AYRI: o YENİ bir bağlama kurar ve zaten bağlı bir
+   * projeyi `project_already_bound` ile reddeder. Bu ise var olan bağlamayı
+   * düzenler ve projenin bağlı OLMASINI şart koşar — iki kapı birbirinin
+   * tersi ve tek uçta toplanamaz.
+   *
+   * ⚠ ONAY KUYRUĞUNA GİRMEZ, DOĞRUDAN YAZAR. Gerekçe: bağlamanın kendisi
+   * zaten iki yöneticinin onayından geçmiş durumda ve buradaki alanlar
+   * "hangi ticket'lar alınır" sorusunu değil, "alınan ticket nasıl işlenir"
+   * sorusunu cevaplıyor. Riskli olan alan (`dataClass`) ayrıca denetime
+   * yazılıyor — bir denetçi neyin ne zaman gevşetildiğini görebilmeli.
+   */
+  app.patch("/onboarding/:projectKey", { preHandler }, async (request, reply) => {
+    const projectKey = projectKeyParam(request.params);
+    const parsed = BindingPatchBody.safeParse(request.body);
+    if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));
+    await assertWritable(deps);
+
+    const writer = deps.bindingWriter;
+    // Sunmayan bir kurulum "değiştirilecek bir şey yok" DEMEZ; adıyla
+    // "bu kurulumda düzenlenemez" der.
+    if (writer?.update === undefined) unwired("bindingWriter.update");
+
+    // Bağlı OLMAYAN bir projeyi güncellemek, sessizce yeni bir bağlama
+    // kurmaya çalışmak olurdu — `POST /onboarding`in işi.
+    const binding = await deps.bindings.resolve(projectKey);
+    if (binding === null) throw notFound("unbound_project", { projectKey });
+
+    await writer.update({
+      projectKey,
+      ...(parsed.data.trigger === undefined ? {} : { trigger: parsed.data.trigger }),
+      ...(parsed.data.state === undefined ? {} : { state: parsed.data.state }),
+      ...(parsed.data.defaults === undefined ? {} : { defaults: parsed.data.defaults }),
+    });
+
+    await deps.audit.append({
+      actor: sessionActor(sessionOf(request)),
+      action: "PARAM_CHANGED",
+      subject: `binding:${projectKey}`,
+      at: deps.clock.now().toISOString(),
+      meta: {
+        surface: "onboarding",
+        verb: "binding_updated",
+        projectKey,
+        // Hangi alanların DOKUNULDUĞU yazılıyor, değerleri değil: bir
+        // denetçinin ilk sorusu "neyi değiştirdi", ikincisi "ne yaptı".
+        fields: Object.keys(parsed.data).join(","),
+        ...(parsed.data.defaults?.dataClass === undefined
+          ? {}
+          : { dataClass: parsed.data.defaults.dataClass }),
+      },
+    });
+    return reply.code(204).send();
+  });
+
   app.post("/onboarding", { preHandler }, async (request, reply) => {
     const parsed = DraftBody.safeParse(request.body);
     if (!parsed.success) throw badRequest("invalid_onboarding_body", bodyIssues(parsed.error));

@@ -587,6 +587,97 @@ describe("discoverOnce", () => {
   });
 
   /**
+   * ── BİTEN KOŞU + HAVUZDA KALAN TİCKET = YENİDEN İŞLE ─────────────────────
+   *
+   * CANLIDA ÖLÇÜLDÜ (OPS-119): koşu `done`, ticket kuralın izinli statüsünde
+   * ve bot'a atanmış duruyor. Tarama onu her turda buluyor ve her turda
+   * "atlandı: koşusu var (tamamlandı, adım 3)" diyordu. Sonsuza kadar.
+   * Operatör ticket'ı havuza geri verse bile hiçbir şey olmuyordu.
+   *
+   * Sebebi `liveRuns`ın `onlyRunning: false` okuması: KAPANMIŞ bir execution
+   * da `alive` kümesinde görünüyor, yani biten koşu "ölü" sayılmıyor ve
+   * yeniden başlatma dalına hiç girmiyordu.
+   *
+   * Yanlış olan çıkarımdı: "koşu bitti, demek ki iş bitti". Ticket havuzdaysa
+   * iş BİTMEMİŞTİR — operatörün kuralı net: "havuzda hiçbir zaman ticket
+   * kalamaz; işlem yapıldıktan sonra ileri ya da geri oynar".
+   */
+  it("koşusu BİTMİŞ ama havuzda kalmış ticket'ı yeniden işler", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, started, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-119"] },
+      known: [{ ticket: "OPS-119", step: "3", status: "done" }],
+      // Motor onu TANIYOR (kapanmış execution da listede) — eski kod bu yüzden
+      // atlıyordu. Yeni kod ticket'ın hâlâ havuzda olmasına bakıyor.
+      alive: ["OPS-119"],
+    });
+
+    expect(restarts).toEqual(["OPS-119"]);
+    expect(started).toContain("OPS-119");
+    const line = logs.find((l) => l.includes("OPS-119:"));
+    // Sebep DOĞRU yazılmalı: "motorda bulunamadı" burada düpedüz yanlış olurdu,
+    // koşu bulunuyordu — bitmişti.
+    expect(line).not.toContain("motorda bulunamadı");
+    expect(line).toContain("havuzda kaldı");
+    expect(line).toContain("1. yeniden başlatma");
+  });
+
+  it("aynı fren burada da geçerli: sınıra ulaşan ticket insana devredilir", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-119"] },
+      known: [{ ticket: "OPS-119", step: "3", status: "done" }],
+      alive: ["OPS-119"],
+      priorRestarts: { "OPS-119": 3 },
+    });
+
+    expect(restarts).toEqual([]);
+    expect(logs.some((l) => l.includes("İNSANA DEVREDİLDİ"))).toBe(true);
+    // Sınır satırı da sebebi doğru söylemeli.
+    expect(logs.find((l) => l.includes("YENİDEN BAŞLATILMADI"))).toContain("havuzda kaldı");
+  });
+
+  /**
+   * BİTEN İŞ BOŞUNA YENİDEN BAŞLAMAZ — bu düzeltmenin diğer yarısı.
+   *
+   * Ticket havuzdan ÇIKMIŞSA (statü eşlemesi onu ileri taşıdı, ya da biri
+   * atamayı aldı) kural onu zaten bulmaz — JQL `assignee = bot AND status in
+   * (...)` diyor. Yani bu senaryoda tur hiçbir şey görmez ve hiçbir şey
+   * başlatmaz. Düzeltmenin "her biten koşuyu yeniden başlatma" gibi bir yan
+   * etkisi OLMADIĞININ kanıtı budur.
+   */
+  it("havuzdan ÇIKMIŞ ticket yeniden başlatılmaz — kural onu hiç bulmaz", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, started } = await run({
+      rules: [RULE],
+      // Kural sorgusu boş dönüyor: ticket artık bot'a atanmış değil ya da
+      // izinli statüde değil — yani havuzdan çıkmış.
+      found: { [jql]: [] },
+      known: [{ ticket: "OPS-119", step: "3", status: "done" }],
+      alive: ["OPS-119"],
+    });
+
+    expect(restarts).toEqual([]);
+    expect(started).toEqual([]);
+  });
+
+  it("KAPIDA BEKLEYEN koşuya dokunulmaz — insan onayı çöpe atılmaz", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      // `gate` bitmiş bir durum DEĞİL: iş sürüyor, insan onayı bekliyor.
+      known: [{ ticket: "OPS-1", step: "5", status: "gate" }],
+      alive: ["OPS-1"],
+    });
+
+    expect(restarts).toEqual([]);
+    expect(logs.some((l) => l.includes("OPS-1 atlandı: koşusu var"))).toBe(true);
+  });
+
+  /**
    * CANLI KOŞUYA DOKUNULMAZ — frenlerin birincisi.
    *
    * Kapıda insan onayı bekleyen bir koşuyu yeniden başlatmak, o onayı sessizce

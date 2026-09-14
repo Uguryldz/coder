@@ -76,6 +76,31 @@ export interface ScmPort {
    *
    * Dönen değer klonun yolu, ya da açılamadıysa `null`.
    */
+  /**
+   * ÇALIŞMA ALANININ ÖZETİ — CLI KOLTUĞU OLMAYAN KURULUMLAR İÇİN.
+   *
+   * Keşif adımı (3ö) depoyu bir CLI ajan oturumunda okur. O koltuk YOKSA
+   * (`CLAUDE_BIN_PATH` boş — GPT-OSS ya da başka bir HTTP modeliyle çalışan
+   * kurulumların olağan hâli) `agentSession` atıyor ve adım "repo keşfi
+   * yapılamadı" yazıp KOD GÖRMEDEN devam ediyordu.
+   *
+   * Oysa kod diskte: klon zinciri o noktada çalışmış oluyor. Eksik olan tek
+   * şey, dosyaları modele TAŞIYACAK bir yol. Bu yetenek onu verir: dizin
+   * ağacını ve seçilmiş dosyaların içeriğini metin olarak döndürür, HTTP
+   * modeli de o metni okur.
+   *
+   * CLI oturumunun yerine geçmez — o oturum dosyaları kendi araçlarıyla
+   * gezebilir, bu ise sabit bir özet sunar. Ama "kod görmeden analiz" ile
+   * "sınırlı da olsa kodu okumuş analiz" arasındaki fark, operatörün
+   * şikayetinin tamamı.
+   *
+   * OPSİYONEL: sunmayan bir sürücüde davranış eskisi gibi kalır.
+   */
+  readWorkspaceDigest?(request: {
+    readonly workspacePath: string;
+    /** Özetin üst sınırı; aşan içerik kırpılır ve kırpıldığı söylenir. */
+    readonly maxBytes?: number;
+  }): Promise<{ readonly tree: string; readonly files: readonly { readonly path: string; readonly text: string }[]; readonly truncated: boolean } | null>;
   ensureWorkspace?(request: {
     readonly runId: string;
     readonly appId: string;

@@ -6,7 +6,16 @@ import { MAESTRO_TASK_QUEUE, PORT_NAMES, startMaestroWorker, type CoreDeps } fro
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
+import { PrismaConnectionStore } from "../stores/connections.js";
+import { isScmConnectionKind } from "@maestro/bff";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { prepareWorkspace, workspaceRootFrom } from "../stores/workspace-prepare.js";
+
+/** `git ls-files` gibi kısa okumalar için. */
+const execFileAsync = promisify(execFile);
 import { analysisTemplateReaderFor } from "../stores/analysis-template-reader.js";
 import { attachmentReaderFor } from "../stores/attachment-reader.js";
 import { PrismaTemplateStore } from "../stores/template.js";
@@ -229,7 +238,7 @@ export async function main(): Promise<void> {
       await startMaestroWorker({
         address,
         taskQueue,
-        registry: withWorkspaceCloning(deployment.registry, env, deployment.ports.secrets),
+        registry: withWorkspaceCloning(deployment.registry, env, deployment.ports.secrets, new PrismaConnectionStore(db.connection)),
         ports: deployment.selection,
         core: workerCore,
         /**
@@ -489,7 +498,64 @@ if (isEntrypoint(import.meta.url)) {
  * değil. Sürücü kendi sözleşmesini korur; yetenek burada, birleştirme
  * noktasında takılır.
  */
-export function withWorkspaceCloning(registry: PortRegistry, env: DeployEnv, secrets: SecretPort): PortRegistry {
+/**
+ * Klon jetonu: `.env` bir adres söylüyorsa o, yoksa panelde kayıtlı SCM
+ * bağlantısının jetonu. `apps/deploy/src/bin/bff.ts`'teki `scmCloneToken` ile
+ * AYNI sırayı izler — iki yol ayrışırsa biri klonlar öteki klonlayamaz ve bu,
+ * sahada boş bir klon olarak görünür (dizin var, içerik yok).
+ */
+async function scmCloneTokenFor(
+  env: DeployEnv,
+  secrets: SecretPort,
+  connections: PrismaConnectionStore | undefined,
+): Promise<string | undefined> {
+  const ref = env.source["SCM_TOKEN_REF"]?.trim() ?? "";
+  if (ref !== "") return secrets.get(ref).catch(() => undefined);
+  if (connections === undefined) return undefined;
+  try {
+    const rows = await connections.list();
+    const scm = rows.find(
+      (row) => row.enabled !== false && isScmConnectionKind(row.kind) && row.secretRef !== null,
+    );
+    if (scm?.secretRef === undefined || scm.secretRef === null) return undefined;
+    return await secrets.get(scm.secretRef).catch(() => undefined);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Kodun YAŞADIĞI dosyalar — depo kökünden göreli yollar.
+ *
+ * Eleme bütçe içindir: bir depo modelin bağlamından büyüktür ve kilit
+ * dosyaları, üretilmiş çıktılar, ikili dosyalar bütçeyi doldurup asıl kodu
+ * dışarı iterdi. `git ls-files` kullanılıyor çünkü `.gitignore`'u zaten
+ * biliyor — ikinci bir eleme listesi tutmak, o listeyle deponun gerçeği
+ * arasında ayrışma demekti.
+ */
+async function listSourceFiles(workspacePath: string): Promise<string[]> {
+  const { stdout } = await execFileAsync("git", ["-C", workspacePath, "ls-files"], {
+    timeout: 30_000,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  const skip =
+    /(^|\/)(node_modules|dist|build|target|vendor|\.git)\/|\.(png|jpe?g|gif|svg|ico|pdf|zip|jar|war|class|exe|dll|so|dylib|woff2?|ttf|eot|mp4|mp3|lock)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/iu;
+  return stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !skip.test(line));
+}
+
+export function withWorkspaceCloning(
+  registry: PortRegistry,
+  env: DeployEnv,
+  secrets: SecretPort,
+  /**
+   * Panelde kayıtlı kod deposu bağlantıları — klon jetonu `.env` susunca
+   * BURADAN okunur. Yokluğu (`undefined`) yalnız `.env` yolunu bırakır.
+   */
+  connections?: PrismaConnectionStore,
+): PortRegistry {
   const root = workspaceRootFrom(env.source);
   const wrapped = new PortRegistry();
   /**
@@ -522,11 +588,66 @@ export function withWorkspaceCloning(registry: PortRegistry, env: DeployEnv, sec
         const base = factory(config) as ScmPort;
         return {
           ...base,
+          /**
+           * ÇALIŞMA ALANININ ÖZETİ — CLI KOLTUĞU OLMAYAN KURULUMLAR İÇİN.
+           *
+           * Keşif adımı depoyu bir CLI ajan oturumunda okur; o koltuk yoksa
+           * (GPT-OSS ya da başka bir HTTP modeliyle çalışan olağan kurulum)
+           * oturum açılmaz ve analiz KOD GÖRMEDEN üretilirdi — oysa kod
+           * diskte, klon zinciri çalışmıştır.
+           *
+           * Burası o kodu metne çevirir. İki sınır bilinçli:
+           *
+           *  · BÜTÇE (`maxBytes`): bir depo modelin bağlamından büyüktür.
+           *    Kırpma sessiz değil — `truncated` ile söylenir ve defter yazar.
+           *  · SEÇİM: her dosya değil, kodun YAŞADIĞI dosyalar. Kilit
+           *    dosyaları, üretilmiş çıktılar ve ikili dosyalar bütçeyi
+           *    doldurup asıl kodu dışarı iterdi.
+           */
+          readWorkspaceDigest: async (request) => {
+            const budget = request.maxBytes ?? 200_000;
+            try {
+              const files = await listSourceFiles(request.workspacePath);
+              if (files.length === 0) return null;
+              const tree = `DİZİN AĞACI (${String(files.length)} kaynak dosya):\n${files.slice(0, 400).join("\n")}`;
+              const picked: { path: string; text: string }[] = [];
+              let used = tree.length;
+              for (const rel of files) {
+                if (used >= budget) break;
+                const text = await readFile(join(request.workspacePath, rel), "utf8").catch(() => null);
+                if (text === null) continue;
+                const slice = text.slice(0, Math.max(0, Math.min(20_000, budget - used)));
+                if (slice === "") break;
+                picked.push({ path: rel, text: slice });
+                used += slice.length;
+              }
+              return { tree, files: picked, truncated: used >= budget || picked.length < files.length };
+            } catch {
+              return null;
+            }
+          },
           ensureWorkspace: async (request) => {
-            const tokenRef = env.source["SCM_TOKEN_REF"]?.trim() ?? "";
             const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
             const branch = request.targetBranch?.trim() ?? "";
-            const token = tokenRef === "" ? undefined : await secrets.get(tokenRef).catch(() => undefined);
+            /**
+             * JETON `.env` SUSUNCA PANELDEN OKUNUR — BFF'TEKİYLE AYNI SIRA.
+             *
+             * Burası bir dönem YALNIZ `SCM_TOKEN_REF`e bakıyordu ve o, BFF'in
+             * `scmCloneToken`ından sessizce AYRIŞMIŞTI: BFF `.env` boşken
+             * panelde kayıtlı bağlantının jetonunu kullanıyor, worker
+             * kullanmıyordu.
+             *
+             * Sonuç en kötü türdendi: klon "başarılı" oluyor ama ÖZEL bir depo
+             * jetonsuz çekilemediği için dizin BOŞ kalıyordu — `git clone`
+             * erişemediği depoda bile çıkış kodu 0 verip dizin bırakabilir.
+             * Keşif o boş dizini okuyor, "kod karşılığı yok" diyor ve kimse
+             * sebebi göremiyordu. Ölçüldü: canlı worker'da
+             * `SCM_TOKEN_REF` boş.
+             *
+             * İki yol da aynı sırayı izlemeli, yoksa "BFF klonluyor, worker
+             * klonlayamıyor" gibi teşhis edilemez bir ayrışma doğar.
+             */
+            const token = await scmCloneTokenFor(env, secrets, connections);
             return prepareWorkspace({
               repo: request.appId,
               root,

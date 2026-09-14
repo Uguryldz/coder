@@ -207,13 +207,66 @@ async function agentSessionOrNull(
     // run answered "0 dosya" without a word — the operator could not tell a
     // repository that was read from one that was never opened. The journal
     // says it now, and says what to fix.
+    /**
+     * ── CLI KOLTUĞU YOKSA KOD YİNE DE OKUNUR ────────────────────────────────
+     *
+     * Bu dal bir dönem doğrudan "yapılamadı" yazıp dönüyordu ve o, CLI
+     * oturumunun TEK okuma yolu olduğu varsayımına dayanıyordu. Varsayım
+     * sahada yanlış çıktı: GPT-OSS (ya da başka bir HTTP modeli) ile çalışan
+     * bir kurulumda `CLAUDE_BIN_PATH` yoktur, `agentSession` atar ve analiz
+     * KOD GÖRMEDEN üretilir — oysa kod diskte, klon zinciri çalışmıştır.
+     *
+     * Eksik olan tek şey dosyaları modele taşıyacak yoldu. `readWorkspaceDigest`
+     * onu verir: dizin ağacı + seçilmiş dosya içerikleri metin olarak okunur ve
+     * HTTP modeli o metinle çalışır.
+     *
+     * CLI oturumunun yerine geçmez (o, dosyaları kendi araçlarıyla gezer; bu,
+     * sabit bir özet sunar) ama "kod görmeden analiz" ile "sınırlı da olsa kodu
+     * okumuş analiz" arasındaki fark, şikayetin tamamıdır.
+     */
+    const digest = await workspaceDigestOrNull(deps, run, appId);
+    if (digest !== null) return digest;
+
     await record(deps, run, {
       kind: "discovery",
       actor: "system",
       title: "repo keşfi yapılamadı",
-      detail: `${appId} deposu açılamadı: ${String(error).slice(0, 300)} — analiz keşifsiz (kod karşılığı ve plan olmadan) devam ediyor. Ajan sürücüsü (CLAUDE_BIN_PATH) ve depo erişimini kontrol edin.`,
+      detail: `${appId} deposu açılamadı: ${String(error).slice(0, 300)} — analiz keşifsiz (kod karşılığı ve plan olmadan) devam ediyor. Ajan sürücüsü (CLAUDE_BIN_PATH) ya da çalışma alanı okuyucusu ve depo erişimini kontrol edin.`,
       key: "discovery:unavailable",
     });
+    return null;
+  }
+}
+
+/**
+ * CLI oturumu açılamadığında dosyaları okuyup bir oturum SONUCU gibi döndürür.
+ *
+ * Dönen şekil `agentSession`ınkiyle aynı olmak ZORUNDA: çağıran iki yolu
+ * ayırmamalı, yoksa "hangi yoldan okundu" sorusu her adıma sızar. Fark tek bir
+ * yerde görünür — defterdeki satır, hangi yolun kullanıldığını söyler.
+ */
+async function workspaceDigestOrNull(
+  deps: ActivityDeps,
+  run: RunContext,
+  appId: string,
+): Promise<Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>> | null> {
+  const read = deps.scm.readWorkspaceDigest?.bind(deps.scm);
+  if (read === undefined) return null;
+  try {
+    const digest = await read({ workspacePath: run.workspacePath });
+    if (digest === null || digest.files.length === 0) return null;
+    await record(deps, run, {
+      kind: "discovery",
+      actor: "system",
+      title: "repo CLI'sız okundu",
+      detail:
+        `${appId}: ajan CLI koltuğu yok, depo doğrudan okundu — ${String(digest.files.length)} dosya` +
+        `${digest.truncated ? " (özet kırpıldı)" : ""}. Analiz kod tabanını görüyor.`,
+      key: "discovery:digest",
+    });
+    const body = `${digest.tree}\n\n${digest.files.map((f) => `--- ${f.path} ---\n${f.text}`).join("\n\n")}`;
+    return { status: "ok", value: { resumeToken: "", finalText: body }, log: null } as never;
+  } catch {
     return null;
   }
 }

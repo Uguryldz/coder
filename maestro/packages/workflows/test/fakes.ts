@@ -79,6 +79,12 @@ export interface FakeOptions {
    * eski davranışa düşer; sunan ama `null` dönen bir kurulum "açamadım" der.
    */
   ensureWorkspace?: (request: { runId: string; appId: string; targetBranch?: string | null }) => Promise<string | null>;
+  /** `ScmPort.readWorkspaceDigest` — CLI koltuğu olmayan kurulumun okuma yolu. */
+  readWorkspaceDigest?: (request: { workspacePath: string; maxBytes?: number }) => Promise<{
+    tree: string;
+    files: readonly { path: string; text: string }[];
+    truncated: boolean;
+  } | null>;
   generateObject?: (schemaName: string) => LlmOutcome<unknown>;
   agentSession?: () => LlmOutcome<{ resumeToken: string; finalText: string; log: never }>;
   runTurn?: (req: AgentTurnRequest) => AgentTurnResult;
@@ -265,6 +271,7 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
     scm: {
       resolveRepo: () => Promise.resolve(repo),
       ...(options.ensureWorkspace === undefined ? {} : { ensureWorkspace: options.ensureWorkspace }),
+      ...(options.readWorkspaceDigest === undefined ? {} : { readWorkspaceDigest: options.readWorkspaceDigest }),
       createBranch: () => Promise.resolve(),
       getPushCredential: NOT_WIRED("getPushCredential"),
       openPr: () => Promise.resolve({ prId: 77 }),

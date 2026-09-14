@@ -1,3 +1,4 @@
+import { MatchResult } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
 import {
   IncompleteRunContextError,
@@ -28,6 +29,7 @@ const APP: ApplicationRow = {
   adoRepo: "core-api",
   platform: "linux-node",
   jiraComponent: "payments",
+      jiraProjectKey: null,
   maestroYamlPresent: true,
   createdVia: "onboarding",
 };
@@ -542,6 +544,80 @@ describe("PrismaRunContextStore.create", () => {
     expect(recorded.creates).toHaveLength(1);
     expect(Object.hasOwn(recorded.creates[0] as object, "appId")).toBe(false);
     expect((recorded.creates[0] as RunCreate).status).toBe("running");
+  });
+
+  /**
+   * ── EŞLEŞME KARARI SATIRA YAZILIR (M99 `matchJson`) ───────────────────────
+   *
+   * SAHADA ÖLÇÜLDÜ: `WorkflowRun.matchJson` sütunu M99'dan beri şemadaydı ama
+   * hiçbir ÜRETİM kodu yazmıyordu — tek yazıcı demo seed'iydi
+   * (`packages/db/src/seed-demo.ts`). Sonuç ekranda duruyordu:
+   * `tierOf()` (`apps/bff/src/onboarding-service.ts`) her koşuda
+   * `MatchResult.safeParse(null)` ile başarısız olup `"unresolved"` dönüyor,
+   * `/onboarding/dry-run` 35 koşunun 35'ini "çözülemedi" kovasına atıyor, ve
+   * operatör "uygulamalar ekranı doğrulanamıyor" diyordu.
+   *
+   * Bu testler o sütunun gerçekten yazıldığını sabitliyor. Düzeltme geri
+   * alınırsa (alan `RunCreate`ten ya da `create`ten çıkarılırsa) ilki kırmızıya
+   * döner.
+   */
+  it("koşu açılırken eşleşme kararını matchJson'a YAZAR — dry-run'ın tek dayanağı", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create({
+      ...newRun,
+      match: { via: "rule", ruleId: "kural-odeme", appId: "payments" },
+    });
+
+    expect(recorded.creates).toHaveLength(1);
+    const created = recorded.creates[0] as RunCreate;
+    expect(created.matchJson).toEqual({ via: "rule", ruleId: "kural-odeme", appId: "payments" });
+    // Sütuna yazılan değer, OKUYANIN sözleşmesinden geçmeli: `tierOf` tam
+    // olarak bunu yapıyor ve geçemezse ticket'ı "çözülemedi" sayıyor.
+    expect(MatchResult.safeParse(created.matchJson).success).toBe(true);
+  });
+
+  it("insanın atadığı koşuyu 'human' olarak kaydeder — dry-run onu ikinci kademeye koyar", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create({
+      ...newRun,
+      match: { via: "human", appId: "payments", assignedBy: "ayse", channel: "jira_command" },
+    });
+
+    expect((recorded.creates[0] as RunCreate).matchJson).toEqual({
+      via: "human",
+      appId: "payments",
+      assignedBy: "ayse",
+      channel: "jira_command",
+    });
+  });
+
+  /**
+   * Eşleşme YOKSA sütun yazılmaz — analiz-yalnız koşu, ve M99'un beş `via`
+   * değerinin hiçbiri "uygulama yok" demiyor. Olmayan bir eşleşme uydurmak,
+   * dry run'a hiç yazmamaktan daha kötü bir yalan söylemek olurdu.
+   */
+  it("eşleşme yoksa sütuna DOKUNMAZ — uydurulmuş bir karar yazmaz", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create({ ...newRun, appId: null });
+
+    expect(Object.hasOwn(recorded.creates[0] as object, "matchJson")).toBe(false);
+  });
+
+  /**
+   * Sözleşmeyi tutturamayan bir değer sütuna GİRMEZ. Fail-closed: bozuk bir
+   * satırı kimin yazdığını sonradan bulmak, hiç yazmamaktan çok daha pahalı —
+   * ve dry run'ın cevabının tek dayanağı bu sütunun yazıldığı gibi okunması.
+   */
+  it("sözleşmeyi tutturamayan bir eşleşmeyi yazmaz — sütun güvenilir kalır", async () => {
+    const { delegate, recorded } = fakeDelegate(null);
+    await new PrismaRunContextStore(delegate).create({
+      ...newRun,
+      // `via` sözleşmede yok: yarım bir değer sütuna girerse `tierOf` onu
+      // ayrıştıramaz ve o satır bir daha asla yorumlanamaz.
+      match: { via: "telepati", appId: "payments" },
+    });
+
+    expect(Object.hasOwn(recorded.creates[0] as object, "matchJson")).toBe(false);
   });
 
   it("is a no-op when the ticket already has a live run", async () => {

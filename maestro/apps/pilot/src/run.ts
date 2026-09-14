@@ -180,6 +180,7 @@ const APPLICATION = {
   adoRepo: ADO_REPO,
   platform: "linux-node",
   jiraComponent: null,
+  jiraProjectKey: null,
   maestroYamlPresent: false,
   createdVia: "import",
 } as const;

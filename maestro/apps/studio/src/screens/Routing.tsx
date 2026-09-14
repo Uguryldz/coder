@@ -386,9 +386,31 @@ export function RoutingScreen(): ReactNode {
                 columns={[
                   { key: "app", header: t("routing.registry.col.app"), cell: (row) => <b>{row.displayName}</b> },
                   {
+                    /*
+                      HANGİ PROJEYE AİT — sahipliğin GERÇEK alanı.
+                      `/routing`in proje→uygulama listesi tam olarak bu kolona
+                      dayanıyor (`stores/routing.ts`) ama ekran onu hiç
+                      göstermiyordu. Canlıda ölçüldü: bir deponun değeri NULL
+                      (sahipsiz) iken, bağlamanın varsayılanı o olduğu için
+                      listede o projenin altında görünüyordu. Operatör deponun
+                      bağlı olduğunu sanıyordu — "proje bağlama tutarsız"
+                      şikayetinin kaynağı buydu. Artık sahipsizlik yazıyor.
+                    */
+                    key: "owner",
+                    header: t("routing.registry.col.owner"),
+                    cell: (row) =>
+                      row.jiraProjectKey === null ? (
+                        <span className="scr-hint scr-hint--warn" style={{ display: "inline", margin: 0, padding: "2px 6px" }}>
+                          {t("routing.registry.unowned")}
+                        </span>
+                      ) : (
+                        <code className="scr-mono">{row.jiraProjectKey}</code>
+                      ),
+                  },
+                  {
                     key: "repo",
                     header: t("routing.registry.col.repo"),
-                    cell: (row) => <code className="scr-mono">{`${row.adoProject}/${row.adoRepo}`}</code>,
+                    cell: (row) => <code className="scr-mono">{`${row.adoProject}/_git/${row.adoRepo}`}</code>,
                   },
                   {
                     key: "platform",

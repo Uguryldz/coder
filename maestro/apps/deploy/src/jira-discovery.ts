@@ -112,10 +112,38 @@ export interface KnownRun {
  * da çalışan koşu ihlal değildir — işi bitmemiştir.
  */
 const FINISHED_RUN_STATUSES: ReadonlySet<string> = new Set(["done", "fail", "failed", "handover", "cancelled"]);
-/** Kaydı "hatalı" olan koşu — yürütme düştü; tarama onu yeniden alır. */
+/**
+ * Kaydı "hatalı" ya da "insana devredilmiş" olan koşu — tarama onu yeniden alır.
+ *
+ * ── NEDEN `handover` DA BU LİSTEDE ──────────────────────────────────────────
+ * CANLIDA ÖLÇÜLDÜ: OPS-120/121/122/123 LLM 403'ü yüzünden insana devredildi ve
+ * bir daha HİÇ akışa girmedi. Devredilen koşunun yürütmesi Temporal'da KAPALI,
+ * ama `liveRuns` bilerek `onlyRunning: false` ile okuyor (kapanmış bir
+ * execution da motorun TANIDIĞI bir koşudur), yani ticket `alive` kümesinde
+ * görünüyor ve "ölü koşu" dalı ona hiç uğramıyordu. Sonuç, operatörün
+ * kuralının ("havuzda hiçbir zaman ticket kalamaz") tam ihlali: ticket havuzda
+ * duruyor, tarama her turda "atlandı: koşusu var" diyor, robot hiçbir şey
+ * yapmıyor.
+ *
+ * `fail` ile aynı muameleyi hak ediyor ve gerekçe aynı: ikisi de İŞİ BİTMEMİŞ
+ * koşular. Fark yalnız nerede durdukları — biri düştü, biri devredildi — ve
+ * ikisinde de havuzdaki ticket hâlâ yapılacak iş.
+ *
+ * ── NEDEN SONSUZ DÖNGÜ DEĞİL ────────────────────────────────────────────────
+ * Aynı üç fren geçerli ve DEĞİŞMEDİ: pencereli yeniden başlatma sayacı
+ * (`stuck.restart_window_hours`, varsayılan 24 saat) `maxAutoRestarts`a
+ * ulaşınca DURUYOR ve ticket insana devrediliyor — log satırı bunu adıyla
+ * söylüyor. Yani kalıcı bir hata (ör. hâlâ reddedilen bir model anahtarı)
+ * ticket'ı sonsuza kadar yeniden başlatmaz; sayaç emekli SATIRLARDAN okunduğu
+ * için süreç yeniden başlasa da sıfırlanmaz.
+ *
+ * Bunun karşılığında kazanılan şey, devrin SEBEBİ giderilebilir olduğunda
+ * (operatör anahtarı düzeltti, kotayı doldurdu) ticket'ın kendiliğinden akışa
+ * dönmesi — ve sahada ölçülen dört ticket tam olarak o durumdaydı.
+ */
 export function isFailedRun(run: KnownRun): boolean {
   const status = (run.status ?? "").trim();
-  return status === "fail" || status === "failed";
+  return status === "fail" || status === "failed" || status === "handover";
 }
 
 export function finishedButPooled(run: KnownRun): boolean {

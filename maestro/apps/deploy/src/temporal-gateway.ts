@@ -8,7 +8,7 @@ import type {
   StartOutcome,
 } from "@maestro/bff";
 import { workflowIdFor } from "@maestro/bff";
-import type { TicketKey, WorkflowRunState } from "@maestro/contracts";
+import type { MatchResult, TicketKey, WorkflowRunState } from "@maestro/contracts";
 import {
   Client,
   Connection,
@@ -90,6 +90,19 @@ export interface OpenedRun {
   readonly engineerVariantId: string | null;
   /** The environment branch the rule's repo map named, or null = the repo's default. */
   readonly targetBranch: string | null;
+  /**
+   * Ticket'ın uygulamasını NASIL bulduğu (M99 `MatchResult`), ya da `null`.
+   *
+   * `analystVariantId` ile aynı gerekçe ve aynı taşıma: karar alımda veriliyor
+   * (`runIntake`), satırı yazan taraf ise burası. Bu alan olmadan karar ikisi
+   * arasında düşüyordu ve `WorkflowRun.matchJson` ÜRETİMDE hiç yazılmıyordu —
+   * sahada ölçüldü: `/onboarding/dry-run` 35 koşunun 35'ini "çözülemedi"
+   * kovasına atıyordu.
+   *
+   * `null` = "uygulama yok" (analiz-yalnız koşu) ya da karar adlandırılamadı;
+   * her iki hâlde sütun `NULL` kalır, yani bu alan hiç yokken ne yazılıyorsa o.
+   */
+  readonly match: MatchResult | null;
 }
 
 export class TemporalRunGateway implements RunGateway {
@@ -125,6 +138,9 @@ export class TemporalRunGateway implements RunGateway {
       analystVariantId: input.analystVariantId ?? null,
       engineerVariantId: input.engineerVariantId ?? null,
       targetBranch: input.targetBranch ?? null,
+      // `appId` ve ajan iğneleriyle aynı biçim: yokluk `null`a çevrilir, çünkü
+      // `OpenedRun` bir OLGU kaydı ve okuyanın tek bir şekli sorgulaması gerekir.
+      match: input.match ?? null,
     });
   }
 

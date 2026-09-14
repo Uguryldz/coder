@@ -3,6 +3,7 @@ import type { AppRegistration, AppRegistryWriter } from "../deps.js";
 import type { PageRequest } from "../read-models.js";
 import type {
   OnboardingOptionsRecord,
+  OnboardingOptionsRequest,
   OnboardingProject,
   OnboardingReader,
   OnboardingSampleTicket,
@@ -53,7 +54,21 @@ export class InMemoryOnboardingReader implements OnboardingReader {
     this.platforms.add(entry.platform);
   }
 
-  options(request: PageRequest): Promise<OnboardingOptionsRecord> {
+  /**
+   * `request.projectKey` BURADA DİKKATE ALINMAZ, ve bu bilerek.
+   *
+   * Proje sahipliği `Application.jiraProjectKey` kolonunda yaşıyor; bu bellek
+   * mağazası ise `OnboardingRepo`nun üç alanını (appId/repo/platform) tutuyor
+   * ve o alan orada YOK. Uydurulmuş bir sahiplik alanı eklemek, bellek
+   * mağazasının Postgres okuyucusundan FARKLI bir cevap vermesi demek olurdu —
+   * ve bu mağazanın tek işi, veritabanı bağlanmamış bir kurulumda aynı
+   * cevabı verebilmek.
+   *
+   * Filtrelememek burada güvenli yön: bu mağaza yalnız kurulum öncesi
+   * (`bootstrap`) kullanılıyor, yani henüz hiçbir deponun hiçbir projeye
+   * bağlanmadığı an — filtreli bir liste zaten boş dönerdi.
+   */
+  options(request: OnboardingOptionsRequest): Promise<OnboardingOptionsRecord> {
     // The four platform PROFILES are a fixed contract set, not something that
     // grows out of past bindings — a fresh install has no bindings yet, so
     // deriving the list from `this.platforms` alone would leave the mandatory

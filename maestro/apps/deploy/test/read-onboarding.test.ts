@@ -27,12 +27,27 @@ function bindings(rows: readonly BindingListRow[]) {
   };
 }
 
+/**
+ * Bir `application.findMany` — verilen `where`i UYGULAR ve çağrıyı KAYDEDER.
+ *
+ * Filtreyi uygulaması şart: proje süzgeci SORGUDA yaşıyor (`stores/routing.ts`
+ * ile aynı yerde), yani `where`i yok sayan bir fake, filtrenin var olup
+ * olmadığını ölçemez — düzeltme geri alındığında test yine yeşil kalırdı.
+ */
 function applications(rows: readonly ApplicationListRow[]) {
-  return {
-    findMany: (_args: { orderBy: { appId: "asc" }; take: number }) => Promise.resolve([...rows]),
+  const queries: Array<{ where?: { jiraProjectKey: string } }> = [];
+  const delegate = {
+    queries,
+    findMany: (args: { where?: { jiraProjectKey: string }; orderBy: { appId: "asc" }; take: number }) => {
+      queries.push(args);
+      const owner = args.where?.jiraProjectKey;
+      const matched = owner === undefined ? rows : rows.filter((row) => row.jiraProjectKey === owner);
+      return Promise.resolve(matched.slice(0, args.take));
+    },
     findUnique: (args: { where: { appId: string } }) =>
       Promise.resolve(rows.find((row) => row.appId === args.where.appId) ?? null),
   };
+  return delegate;
 }
 
 /** A `workflowRun.findMany` that applies the filters it is handed, and records them. */
@@ -58,6 +73,14 @@ function runs(rows: readonly RunSampleRow[]) {
   };
 }
 
+/**
+ * İki depo, İKİ AYRI Jira projesine ait — ve biri sahipsiz.
+ *
+ * Üç hâlin üçü de gerçek: bir proje bağlanmış depo, BAŞKA bir projeye bağlanmış
+ * depo, ve henüz hiçbirine bağlanmamış depo (içe aktarılmış envanter satırı).
+ * Süzgecin ölçülebilmesi için üçü de gerekli — hepsi aynı projeye ait olsaydı,
+ * filtreli ve filtresiz liste aynı çıkar ve test hiçbir şey kanıtlamazdı.
+ */
 const APPS: ApplicationListRow[] = [
   {
     appId: "ugurpay",
@@ -65,6 +88,7 @@ const APPS: ApplicationListRow[] = [
     adoRepo: "ugurpay",
     platform: "linux-node",
     maestroYamlPresent: true,
+    jiraProjectKey: "UGURPAY",
   },
   {
     appId: "cards",
@@ -72,6 +96,17 @@ const APPS: ApplicationListRow[] = [
     adoRepo: "cards",
     platform: "linux-java",
     maestroYamlPresent: false,
+    jiraProjectKey: "KART",
+  },
+  {
+    // Sahipsiz: hiçbir projeye bağlanmamış. Bir hata değil, ama bir projenin
+    // listesinde GÖRÜNMEMELİ.
+    appId: "legacy",
+    adoProject: "Eski",
+    adoRepo: "legacy",
+    platform: "linux-node",
+    maestroYamlPresent: false,
+    jiraProjectKey: null,
   },
 ];
 
@@ -84,9 +119,13 @@ describe("PrismaOnboardingReader", () => {
     );
 
     const options = await reader.options({ limit: 50, cursor: null });
+    // Proje bağlamı VERİLMEDİ → süzgeç uygulanmaz, envanterin tamamı döner.
+    // Bu, sihirbazın ilk kurulumda gördüğü liste ve bilerek böyle: bir projenin
+    // henüz hiçbir depoya bağlı olmaması, sihirbazın var olma sebebi.
     expect(options.repos).toEqual([
       { appId: "ugurpay", repo: "Odeme/_git/ugurpay", platform: "linux-node" },
       { appId: "cards", repo: "Kart/_git/cards", platform: "linux-java" },
+      { appId: "legacy", repo: "Eski/_git/legacy", platform: "linux-node" },
     ]);
     // The whole contract enum, NOT just the profiles already in the registry:
     // deriving from existing apps made the first onboarding impossible (empty
@@ -98,6 +137,82 @@ describe("PrismaOnboardingReader", () => {
       "windows-dotnet",
     ]);
     expect(options.projects).toEqual([{ projectKey: "UGURPAY", state: "active" }]);
+  });
+
+  /**
+   * ── PROJE BAĞLAMI VERİLİRSE DEPOLAR O PROJEYE AİT OLANLAR ─────────────────
+   *
+   * ÖLÇÜLEN KIRIK: bu okuma bütün `Application` satırlarını döndürüyordu, proje
+   * ayrımı YOK. `/routing` ekranı ise aynı tabloyu `jiraProjectKey` ile
+   * filtreliyor (`apps/deploy/src/stores/routing.ts`). İki ekran farklı liste
+   * gösteriyor, ve başka bir Jira projesine ait depo bu projeye bağlanabilir
+   * GÖRÜNÜYORDU — bir bankada yanlış depoya yazma iznini açabilecek bir
+   * yanlış-anlatım.
+   */
+  it("proje bağlamı verilirse YALNIZ o projeye ait depoları döndürür", async () => {
+    const apps = applications(APPS);
+    const reader = new PrismaOnboardingReader(
+      bindings([{ projectKey: "UGURPAY", state: "active" }]),
+      apps,
+      runs([]).delegate,
+    );
+
+    const options = await reader.options({ limit: 50, cursor: null, projectKey: "UGURPAY" });
+    expect(options.repos.map((repo) => repo.appId)).toEqual(["ugurpay"]);
+    // BAŞKA bir projenin deposu ve sahipsiz depo listede YOK — kırığın tam
+    // olarak gösterdiği iki satır.
+    expect(options.repos.map((repo) => repo.appId)).not.toContain("cards");
+    expect(options.repos.map((repo) => repo.appId)).not.toContain("legacy");
+  });
+
+  /**
+   * SÜZGEÇ SORGUDA, BELLEKTE DEĞİL — ve `/routing` ile aynı alan üzerinden.
+   *
+   * Bir sayfa dolusu satırı çekip JS'te elemek `take` sınırıyla birleşince
+   * sessizce yanlış olurdu: ilk 50 satırın hiçbiri o projeye ait değilse liste
+   * boş dönerdi ve operatör "deposu yok" diye okurdu.
+   */
+  it("süzgeci SORGUYA koyar — sayfa sınırıyla birleşince bellekte elemek yanlış olurdu", async () => {
+    const apps = applications(APPS);
+    const reader = new PrismaOnboardingReader(bindings([]), apps, runs([]).delegate);
+
+    await reader.options({ limit: 50, cursor: null, projectKey: "KART" });
+    expect(apps.queries.at(-1)?.where).toEqual({ jiraProjectKey: "KART" });
+  });
+
+  /**
+   * ── PROJE BAĞLAMI YOKSA SÜZGEÇ DE YOK — üç çalışan çağıran bozulmasın ─────
+   *
+   * Sihirbaz (`Onboard.tsx`) ve ilk kurulum ekranı (`Setup.tsx`) listeyi proje
+   * SEÇİLMEDEN ÖNCE okuyor; `assertBindable` (`onboarding-service.ts`) ise
+   * projeden bağımsız bir soru soruyor ("böyle bir uygulama envanterde var
+   * mı"). Koşulsuz bir filtre üçünü birden bozardı: ilk kurulum imkânsız
+   * hâle gelir, ve hiçbir projeye bağlanmamış bir depo "bilinmeyen uygulama"
+   * diye reddedilirdi.
+   */
+  it("proje bağlamı yoksa envanterin TAMAMINI döndürür ve sorguya where koymaz", async () => {
+    const apps = applications(APPS);
+    const reader = new PrismaOnboardingReader(bindings([]), apps, runs([]).delegate);
+
+    const options = await reader.options({ limit: 50, cursor: null });
+    expect(options.repos.map((repo) => repo.appId)).toEqual(["ugurpay", "cards", "legacy"]);
+    // Anahtar HİÇ yazılmamalı: `where: undefined` ile "where yok" farklı iki
+    // şey, ve Prisma'nın ikisini ayırt etmesi gerekiyor.
+    expect(Object.hasOwn(apps.queries.at(-1) as object, "where")).toBe(false);
+  });
+
+  /**
+   * Boş bir proje anahtarı "bağlam yok" demektir, "hiçbir şeye ait olmayanlar"
+   * değil: bir tarayıcı boş bir seçim için `?projectKey=` gönderir, ve o isteğe
+   * boş liste dönmek, operatöre envanterin boş olduğunu söylemek olurdu.
+   */
+  it("boş bir proje anahtarını 'bağlam yok' sayar", async () => {
+    const apps = applications(APPS);
+    const reader = new PrismaOnboardingReader(bindings([]), apps, runs([]).delegate);
+
+    const options = await reader.options({ limit: 50, cursor: null, projectKey: "  " });
+    expect(options.repos).toHaveLength(3);
+    expect(Object.hasOwn(apps.queries.at(-1) as object, "where")).toBe(false);
   });
 
   it("keeps bound projects in the list, carrying their state", async () => {

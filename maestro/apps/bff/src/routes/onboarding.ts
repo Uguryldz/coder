@@ -307,7 +307,32 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
    * out why the project they came to connect is not there.
    */
   app.get("/onboarding/options", { preHandler }, async (request, reply) => {
-    const options = await deps.read.onboarding.options(pageOf(request.query));
+    /**
+     * ── `?projectKey=` VERİLİRSE DEPOLAR O PROJEYE AİT OLANLARLA SINIRLI ────
+     *
+     * ÖLÇÜLEN KIRIK: bu uç bütün `Application` satırlarını döndürüyordu, proje
+     * ayrımı YOK. `/routing` ekranı ise aynı tabloyu `jiraProjectKey` ile
+     * filtreliyor (`apps/deploy/src/stores/routing.ts`). İki ekran farklı
+     * liste gösteriyor, ve başka bir Jira projesine ait depo bu projeye
+     * bağlanabilir GÖRÜNÜYORDU.
+     *
+     * Parametre OPSİYONEL ve olmalı: sihirbaz (`Onboard.tsx`) ile ilk kurulum
+     * ekranı (`Setup.tsx`) bu listeyi proje SEÇİLMEDEN ÖNCE okuyor — ilk
+     * kurulumun var olma sebebi tam da bir projenin henüz hiçbir depoya bağlı
+     * olmaması. Zorunlu (ya da koşulsuz filtreli) bir uç, ilk kurulumu
+     * imkânsız hâle getirirdi. Verilmezse davranış bugünküyle birebir aynı.
+     *
+     * Doğrulama YOK, kırpma VAR: bilinmeyen bir proje anahtarı boş bir liste
+     * döndürür, ve bu doğru cevap — "o projeye ait depo yok". 400 döndürmek,
+     * henüz hiçbir deposu olmayan yeni bir projeyi bir HATA gibi gösterirdi.
+     */
+    const projectKey = (request.query as { projectKey?: unknown } | undefined)?.projectKey;
+    const options = await deps.read.onboarding.options({
+      ...pageOf(request.query),
+      ...(typeof projectKey === "string" && projectKey.trim() !== ""
+        ? { projectKey: projectKey.trim() }
+        : {}),
+    });
     const body = OptionsResponse.parse({
       jiraProjects: options.projects.map((project) => project.projectKey),
       adoRepos: options.repos.map((repo) => repo.appId),

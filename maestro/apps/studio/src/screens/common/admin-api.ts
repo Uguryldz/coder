@@ -508,6 +508,8 @@ export interface ApplicationRecord {
   readonly adoRepo: string;
   readonly platform: string;
   readonly jiraComponent: string | null;
+  /** Bu deponun ait olduğu Jira projesi; `null` = sahipsiz. Bkz. sözleşme. */
+  readonly jiraProjectKey: string | null;
   readonly maestroYamlPresent: boolean;
   readonly createdVia: "onboarding" | "import";
 }

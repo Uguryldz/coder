@@ -70,8 +70,47 @@ export interface OnboardingSampleTicket {
   readonly match: unknown;
 }
 
+/**
+ * `options`in isteği — sayfalama, ARTI isteğe bağlı bir proje bağlamı.
+ *
+ * ── NEDEN VAR: İKİ EKRAN İKİ FARKLI LİSTE GÖSTERİYORDU ──────────────────────
+ * `/onboarding/options` bütün `Application` satırlarını döndürüyordu, proje
+ * ayrımı YOK (`apps/deploy/src/stores/read-onboarding.ts`). `/routing` ekranı
+ * ise aynı tabloyu `jiraProjectKey` ile filtreliyor
+ * (`apps/deploy/src/stores/routing.ts`). Sonuç ölçülebilirdi: iki ekran farklı
+ * liste gösteriyor, ve başka bir Jira projesine ait depo da bu projeye
+ * bağlanabilir GÖRÜNÜYORDU — bir bankada yanlış depoya kod yazma iznini
+ * açabilecek bir yanlış-anlatım.
+ *
+ * ── NEDEN ZORUNLU DEĞİL, KOŞULLU ────────────────────────────────────────────
+ * Filtre koşulsuz olsaydı ÇALIŞAN üç çağıranı bozardı, ve üçü de haklı:
+ *
+ *  · Kurulum sihirbazı (`Onboard.tsx`) ve ilk kurulum ekranı (`Setup.tsx`)
+ *    listeyi proje SEÇİLMEDEN ÖNCE okuyor — sihirbazın var olma sebebi tam da
+ *    bir projenin henüz hiçbir depoya bağlı olmaması. Filtrelenmiş bir liste
+ *    orada boş dönerdi ve ilk kurulum imkânsız hâle gelirdi; `platforms`
+ *    alanının "kayıttan türetme" hatasıyla birebir aynı tuzak.
+ *  · `assertBindable` (`onboarding-service.ts`) seçilen deponun ENVANTERDE
+ *    olduğunu doğruluyor. Bu soru projeden bağımsız: "böyle bir uygulama var
+ *    mı", "bu projeye ait mi" değil. Filtrelenmiş bir listeyle, henüz hiçbir
+ *    projeye bağlanmamış bir depo "bilinmeyen uygulama" diye reddedilirdi.
+ *
+ * Bu yüzden alan opsiyonel: verilmezse bugünkü davranış (her şey), verilirse
+ * `/routing` ile AYNI filtre. Tek bir okuma yolu, iki soru.
+ */
+export interface OnboardingOptionsRequest extends PageRequest {
+  /**
+   * Yalnız bu Jira projesine AİT depolar dönsün (`Application.jiraProjectKey`).
+   *
+   * `/routing`in `stores/routing.ts` içindeki filtresiyle aynı alan ve aynı
+   * karşılaştırma — iki ekranın farklı cevap vermesinin sebebi buydu.
+   * Verilmezse filtre uygulanmaz.
+   */
+  readonly projectKey?: string;
+}
+
 export interface OnboardingReader {
-  options(request: PageRequest): Promise<OnboardingOptionsRecord>;
+  options(request: OnboardingOptionsRequest): Promise<OnboardingOptionsRecord>;
   /**
    * The most recent runs in a project, newest first, capped by `limit`.
    *

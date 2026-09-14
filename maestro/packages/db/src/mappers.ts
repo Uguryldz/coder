@@ -248,6 +248,8 @@ export interface ApplicationRow {
   adoRepo: string;
   platform: string;
   jiraComponent: string | null;
+  /** Deponun ait olduğu Jira projesi; `null` = sahipsiz. Bkz. sözleşme. */
+  jiraProjectKey: string | null;
   maestroYamlPresent: boolean;
   createdVia: ApplicationRecord["createdVia"];
 }
@@ -260,6 +262,17 @@ export function toApplicationRecord(row: ApplicationRow): ApplicationRecord {
     adoRepo: row.adoRepo,
     platform: row.platform as ApplicationRecord["platform"],
     jiraComponent: row.jiraComponent,
+    /**
+     * Sahipliğin GERÇEK alanı — ve Studio bunu bir dönem hiç görmüyordu.
+     *
+     * `/routing`in proje→uygulama listesi tam olarak bu kolona dayanıyor
+     * (`stores/routing.ts`), ama sözleşmede alan olmadığı için kayıt defteri
+     * tablosu onu gösteremiyordu. Canlıda ölçüldü: `Uguryldz/maestro-pilot`ın
+     * değeri NULL — sahipsiz — ama OPS bağlamasının varsayılanı o olduğu için
+     * Routing listesinde OPS altında görünüyor. Operatör deponun bağlı
+     * olduğunu sanıyordu; "proje bağlama tutarsız" şikayetinin kaynağı buydu.
+     */
+    jiraProjectKey: row.jiraProjectKey,
     maestroYamlPresent: row.maestroYamlPresent,
     createdVia: row.createdVia,
   };

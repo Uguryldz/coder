@@ -286,13 +286,52 @@ describe("journal and handover", () => {
     expect(fakes.patches).toEqual([]);
   });
 
-  it("a handover drops the mode, records it and tells a human", async () => {
+  /**
+   * ── DEVİR SATIRA DA YAZILIR — canlıda ölçülen kırık ───────────────────────
+   *
+   * Bu beklenti bir dönem yalnız `{ mode: "ai_assist" }` diyordu ve tam olarak
+   * o eksiklik sahada ölçüldü: OPS-120/121/122/123 LLM 403'ü yüzünden insana
+   * devredildi, ama satırları `status='done'`, `step='2'` kaldı. Devir satırın
+   * DURUMUNA hiç dokunmadığı için workflow `handover` dönüp Temporal'da
+   * `Completed` görünüyor, açılıştaki kıyas (`reconcileRunStatuses`) da
+   * `completed → done` eşlemesiyle satıra `done` yazıyordu. Tarama her turda
+   * "atlandı: koşusu var (tamamlandı, adım 2)" diyor ve o ticket'lar bir daha
+   * hiç akışa girmiyordu.
+   *
+   * Kıyasın `RECONCILE_PROTECTED` listesi `handover`ı ZATEN koruyor; korunacak
+   * değer yoktu. Bu yüzden beklenti iki alanı birden istiyor — ve tek bir
+   * `patch` olmasını, çünkü iki ayrı yazım arasında satır "devredildi ama hâlâ
+   * full_auto" görünebilirdi.
+   */
+  it("a handover drops the mode, MARKS THE ROW handover, records it and tells a human", async () => {
     const fakes = makeFakes();
     await handOverToHuman(fakes.deps, "PAY-101", "3 tur ilerleme yok (M54)");
 
-    expect(fakes.patches).toContainEqual({ mode: "ai_assist" });
+    expect(fakes.patches).toContainEqual({ mode: "ai_assist", status: "handover" });
     expect(fakes.recorded.notifications[0]?.event).toBe("handover");
     expect(fakes.journalStore.entries.at(-1)?.kind).toBe("handover");
     expect((await fakes.chain.verify()).checked).toBe(1);
+  });
+
+  /**
+   * DEVREDİLEN KOŞU TERMİNAL DEĞİLDİR — ve olmamalı.
+   *
+   * `done`/`cancelled`/`fail` terminal (`TERMINAL_STATUSES`,
+   * `apps/deploy/src/stores/run-context.ts`): `get` onları canlı saymaz, yani
+   * o satırdan sonra gelen hiçbir aktivite bağlam okuyamaz. Devredilen koşu ise
+   * BİTMİŞ değil, insanın elinde BEKLEYEN bir koşu — devirden sonra gelen bir
+   * insan yorumunun okunabilmesi buna bağlı.
+   */
+  it("devredilen koşu terminal bir duruma yazılmaz — insan hâlâ üstünde", async () => {
+    const fakes = makeFakes();
+    await handOverToHuman(fakes.deps, "PAY-101", "model anahtarı reddedildi");
+
+    const written = fakes.patches.map((patch) => patch.status).filter((s) => s !== undefined);
+    expect(written).toContain("handover");
+    // `done` YAZILMAZ: sahada ölçülen hâl tam olarak buydu ve ticket'ı havuzda
+    // çürütüyordu.
+    expect(written).not.toContain("done");
+    expect(written).not.toContain("cancelled");
+    expect(written).not.toContain("fail");
   });
 });

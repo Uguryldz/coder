@@ -1,5 +1,6 @@
 import type {
   OnboardingOptionsRecord,
+  OnboardingOptionsRequest,
   OnboardingProject,
   OnboardingReader,
   OnboardingSampleTicket,
@@ -43,10 +44,31 @@ export interface ApplicationListRow {
   adoRepo: string;
   platform: string;
   maestroYamlPresent: boolean;
+  /**
+   * Deponun AİT OLDUĞU Jira projesi, ya da `null` (henüz hiçbirine bağlı değil).
+   *
+   * `/routing` ekranının proje→uygulama listesi tam olarak bu kolona dayanıyor
+   * (`stores/routing.ts`). Burada da okunuyor, çünkü iki ekranın aynı soruya
+   * aynı cevabı vermesinin tek yolu aynı kolonu okumaları — bkz.
+   * `OnboardingOptionsRequest.projectKey`in gerekçesi.
+   */
+  jiraProjectKey?: string | null;
 }
 
 export interface ApplicationListDelegate {
-  findMany(args: { orderBy: { appId: "asc" }; take: number }): Promise<ApplicationListRow[]>;
+  /**
+   * `where` OPSİYONEL, ve bu bilinçli: onsuz çağrı bugüne kadar ne
+   * döndürüyorsa onu döndürür (bütün envanter). Proje bağlamı VERİLDİĞİNDE
+   * filtre SORGUYA giriyor, JS'e değil — `stores/routing.ts` aynı filtreyi
+   * aynı yerde uyguluyor ve iki yol ayrılmamalı. Bir sayfa dolusu satırı
+   * çekip bellekte elemek, `take` sınırıyla birleşince sessizce yanlış olurdu:
+   * ilk 200 satırın hiçbiri o projeye ait değilse liste boş dönerdi.
+   */
+  findMany(args: {
+    where?: { jiraProjectKey: string };
+    orderBy: { appId: "asc" };
+    take: number;
+  }): Promise<ApplicationListRow[]>;
   findUnique(args: { where: { appId: string } }): Promise<ApplicationListRow | null>;
 }
 
@@ -114,10 +136,38 @@ export class PrismaOnboardingReader implements OnboardingReader {
     private readonly runs: RunSampleDelegate,
   ) {}
 
-  async options(request: PageRequest): Promise<OnboardingOptionsRecord> {
+  /**
+   * ── DEPO LİSTESİ, PROJE BAĞLAMI VERİLDİYSE O PROJEYE AİT OLANLAR ──────────
+   *
+   * ÖLÇÜLEN KIRIK: bu okuma bütün `Application` satırlarını döndürüyordu, proje
+   * ayrımı YOK. `/routing` ekranı ise aynı tabloyu `jiraProjectKey` ile
+   * filtreliyor (`stores/routing.ts`). İki ekran farklı liste gösteriyor, ve
+   * başka bir Jira projesine ait depo bu projeye bağlanabilir GÖRÜNÜYORDU.
+   *
+   * Filtre KOŞULLU ve gerekçesi `OnboardingOptionsRequest.projectKey`te yazılı:
+   * sihirbaz listeyi proje seçilmeden ÖNCE okuyor (ilk kurulumun var olma
+   * sebebi) ve `assertBindable` projeden bağımsız bir soru soruyor
+   * ("böyle bir uygulama var mı"). Koşulsuz bir filtre üçünü birden bozardı.
+   *
+   * Projeler listesi filtrelenMİYOR: `state` alanının kendi gerekçesi
+   * geçerli — bağlı bir projeyi listeden gizlemek, "projem neden yok"
+   * sorusunu cevaplanamaz hâle getirir, ve çakışma zaten adıyla bildiriliyor.
+   */
+  async options(request: OnboardingOptionsRequest): Promise<OnboardingOptionsRecord> {
+    const owned =
+      request.projectKey === undefined || request.projectKey.trim() === ""
+        ? undefined
+        : request.projectKey.trim();
     const [bindingRows, appRows] = await Promise.all([
       this.bindings.findMany({ orderBy: { projectKey: "asc" }, take: request.limit }),
-      this.applications.findMany({ orderBy: { appId: "asc" }, take: request.limit }),
+      this.applications.findMany({
+        // Yokluk `undefined` olarak GEÇİLMİYOR, anahtar hiç yazılmıyor: bir
+        // fake'in (ve Prisma'nın) "filtre yok" ile "filtre var ama boş"
+        // arasındaki farkı görmesi gerekiyor.
+        ...(owned === undefined ? {} : { where: { jiraProjectKey: owned } }),
+        orderBy: { appId: "asc" },
+        take: request.limit,
+      }),
     ]);
 
     const repos = appRows.map((row) => ({

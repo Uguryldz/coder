@@ -252,6 +252,11 @@ export async function main(): Promise<void> {
         templateVersion,
         ...(checkout === null ? {} : { workspacePath: checkout.path }),
         ...(targetBranch === null ? {} : { targetBranch }),
+        // EŞLEŞME KARARI (M99). Alımda veriliyor, burada YAZILIYOR — ve bu
+        // satır olmadan `WorkflowRun.matchJson` üretimde hiç yazılmıyordu:
+        // `/onboarding/dry-run` 35 koşunun 35'ini "çözülemedi" kovasına
+        // atıyordu, çünkü `tierOf` boş bir sütunu ayrıştıramaz.
+        ...(run.match === null ? {} : { match: run.match }),
       });
     },
   });

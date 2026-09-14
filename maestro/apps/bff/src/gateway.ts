@@ -1,6 +1,7 @@
 import type {
   DataClass,
   FlowType,
+  MatchResult,
   TicketKey,
   WorkMode,
   WorkflowRunState,
@@ -112,6 +113,30 @@ export interface StartRunInput {
    * repository's own default branch, read from the clone at run start.
    */
   targetBranch?: string;
+  /**
+   * TICKET UYGULAMASINI NASIL BULDU (M99 `MatchResult`) — koşunun satırına
+   * yazılmak üzere.
+   *
+   * ── NEDEN BU ALAN VAR ─────────────────────────────────────────────────────
+   * `WorkflowRun.matchJson` sütunu M99'dan beri şemada duruyor ve SAHADA
+   * ÖLÇÜLDÜ ki hiçbir üretim kodu onu yazmıyordu: tek yazıcı demo seed'iydi
+   * (`packages/db/src/seed-demo.ts`). Sonuç, `/onboarding/dry-run`da doğrudan
+   * görünüyordu — `tierOf()` her koşuda `MatchResult.safeParse(null)` ile
+   * başarısız olup `"unresolved"` dönüyor, 35 koşunun 35'i "çözülemedi"
+   * kovasına düşüyor ve operatör "uygulamalar ekranı doğrulanamıyor" diyordu.
+   *
+   * Karar zaten BURADA, alımda veriliyor (`runIntake`: elle atama mı, kuralın
+   * depo eşlemesi mi, kod araması mı, yoksa proje bağlamasının varsayılanı
+   * mı). Taşımadığımız için kayboluyordu; artık koşunun başlangıç girdisiyle
+   * birlikte yolculuk ediyor — `flow`/`statusMap`/`analystVariantId` ile aynı
+   * gerekçe ve aynı biçim: bir workflow bu kararı kendisi okuyamaz (M44) ve
+   * sonradan okusa başka bir cevap alırdı.
+   *
+   * Opsiyonel, çünkü yokluk BUGÜNKÜ davranış demek: sütun `NULL` kalır ve
+   * satır bu alan hiç yokken nasıl yazılıyorsa öyle yazılır. Bir kararın
+   * uydurulması, kaydedilmemesinden kötüdür.
+   */
+  match?: MatchResult;
 }
 
 export interface SignalWithStartInput extends StartRunInput {

@@ -37,6 +37,7 @@ export const APP: ApplicationRecord = {
   adoRepo: "ugurpay",
   platform: "linux-node",
   jiraComponent: null,
+  jiraProjectKey: null,
   maestroYamlPresent: true,
   createdVia: "onboarding",
 };

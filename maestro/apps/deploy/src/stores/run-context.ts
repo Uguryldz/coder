@@ -1,4 +1,5 @@
 import type { ApplicationRecord } from "@maestro/contracts";
+import { MatchResult } from "@maestro/contracts";
 import type { PriorWork, RunContext, RunContextStore } from "@maestro/workflows";
 
 /**
@@ -75,6 +76,8 @@ export interface ApplicationRow {
   adoRepo: string;
   platform: string;
   jiraComponent: string | null;
+  /** Deponun ait olduğu Jira projesi; `null` = sahipsiz. Bkz. sözleşme. */
+  jiraProjectKey: string | null;
   maestroYamlPresent: boolean;
   createdVia: string;
 }
@@ -159,7 +162,50 @@ export interface RunCreate {
   templateVersion?: string;
   workspacePath?: string;
   workspacePresent?: boolean;
+  /**
+   * TICKET UYGULAMASINI NASIL BULDU (M99 `MatchResult`) — JSON sütunu.
+   *
+   * ── NEDEN `RunUpdate`'te DEĞİL, YALNIZ BURADA ────────────────────────────
+   * Eşleşme kararı koşu AÇILIRKEN verilir ve bir daha değişmez: ticket'ı
+   * hangi kuralın, hangi insanın ya da hangi aramanın bir uygulamaya
+   * yerleştirdiği, koşunun ilerlemesiyle yeniden müzakere edilen bir şey
+   * değil. `patch` ile yazılabilir olsaydı, bir aktivite koşunun kendi
+   * geçmişini geriye dönük olarak yeniden yazabilirdi — ve `/onboarding/dry-run`
+   * "bu ticket'lar NEREYE düştü" sorusunu geçmişin kendisinden okuyor.
+   *
+   * ── NEDEN OPSİYONEL ──────────────────────────────────────────────────────
+   * Uygulaması olmayan (analiz-yalnız) koşuda M99'un beş `via` değerinin
+   * hiçbiri doğru cevap değil, ve olmayan bir eşleşme uydurmak dry run'a yalan
+   * söylemek olurdu. Alan geçilmezse sütun `NULL` kalır — bu alan hiç yokken
+   * satır nasıl yazılıyorsa öyle.
+   *
+   * Tip `MatchResult` DEĞİL, yapısal bir JSON değeri: Prisma'nın JSON girdi
+   * tipi `readonly` alanları reddediyor (`verificationJson` ile aynı sebep) ve
+   * sözleşmenin `z.infer` tipi discriminated union olduğu için doğrudan
+   * atanamıyor. Doğrulama yazanın tarafında yapılıyor (`toMatchJson`).
+   */
+  matchJson?: MatchJson;
 }
+
+/**
+ * `MatchResult`in YAZILABİLİR aynası — `verificationJson` ile birebir aynı
+ * desen ve aynı gerekçe.
+ *
+ * Sözleşmenin `z.infer` tipi `readonly` alanlar taşıyor ve Prisma'nın JSON
+ * girdi tipi (`InputJsonValue`) onları reddediyor: değeri serileştirdiği için
+ * haklı olarak. `Record<string, unknown>` de çalışmıyor — `unknown` JSON'a
+ * çevrilebilir olmak zorunda değil, ve Prisma bunu doğru biçimde reddediyor.
+ *
+ * Bu yüzden ayrı bir tip: AYNI beş `via` dalı, mutable alanlarla. Sözleşmeye
+ * yeni bir dal eklenirse `toMatchJson`ın dönüşü buraya oturmaz ve derleme
+ * durur — istediğimiz bildirim tam olarak bu.
+ */
+export type MatchJson =
+  | { via: "rule"; ruleId: string; appId: string }
+  | { via: "ai_suggestion"; appId: string; confidence: number; validatedAtGate: boolean }
+  | { via: "human"; appId: string; assignedBy: string; channel: "jira_command" | "studio" }
+  | { via: "analysis_fanout"; parentTicketKey: string; appId: string }
+  | { via: "onboarding" };
 
 /** The three `PrismaClient.workflowRun` methods this store uses, and no more. */
 export interface RunDelegate {
@@ -329,6 +375,25 @@ export interface NewRun {
   readonly workspacePath?: string;
   /** The PR's target (environment) branch; absent = "" until something sets it. */
   readonly targetBranch?: string;
+  /**
+   * TICKET UYGULAMASINI NASIL BULDU (M99 `MatchResult`), ya da yok.
+   *
+   * ── SAHADA ÖLÇÜLEN KIRIK ─────────────────────────────────────────────────
+   * `WorkflowRun.matchJson` M99'dan beri şemada duruyordu, ama bu alan var
+   * olmadan ÜRETİMDE hiçbir şey yazmıyordu: tek yazıcı demo seed'iydi
+   * (`packages/db/src/seed-demo.ts`). `/onboarding/dry-run` sonucu doğrudan
+   * gösteriyordu — `tierOf()` her koşuda `MatchResult.safeParse(null)` ile
+   * başarısız olup `"unresolved"` dönüyor, 35 koşunun 35'i "çözülemedi"
+   * kovasına düşüyor, operatör "uygulamalar ekranı doğrulanamıyor" diyordu.
+   *
+   * Karar alımda veriliyor (`runIntake`, `matchOf`) ve buraya `OpenedRun` ile
+   * taşınıyor — `variantId` iğnesiyle aynı yol, aynı gerekçe: satırı yazan
+   * taraf kararı veren taraf değil, ve taşınmayan karar kaybolur.
+   *
+   * Opsiyonel: analiz-yalnız koşuda uygulama yoktur ve M99'un hiçbir `via`
+   * değeri "uygulama yok" demiyor. Geçilmezse sütun `NULL` kalır.
+   */
+  readonly match?: unknown;
 }
 
 /**
@@ -528,6 +593,7 @@ export class PrismaRunContextStore implements RunContextStore {
      * bakılıp ilk boş sıra numarası kullanılıyor.
      */
     const runId = await this.freeRunId(input.ticket, input.runId);
+    const matchJson = toMatchJson(input.match);
     try {
       await this.runs.create({
         data: {
@@ -559,6 +625,16 @@ export class PrismaRunContextStore implements RunContextStore {
           ...(input.targetBranch === undefined || input.targetBranch.trim() === ""
             ? {}
             : { targetBranch: input.targetBranch.trim() }),
+          /**
+           * EŞLEŞME KARARI, SÖZLEŞMEDEN GEÇİRİLEREK.
+           *
+           * `toMatchJson` doğrulamayan bir değeri `undefined`a düşürür, yani
+           * sütun `NULL` kalır. Bu bilerek fail-closed: `tierOf` ayrıştıramadığı
+           * bir `matchJson`'ı zaten `unresolved` okuyor, ama yarım bir değeri
+           * YAZMAK sütunu bir daha güvenilmez hâle getirirdi — dry run'ın
+           * cevabının tek dayanağı bu sütunun yazıldığı gibi okunabilmesi.
+           */
+          ...(matchJson === undefined ? {} : { matchJson }),
         },
       });
     } catch (error) {
@@ -684,6 +760,39 @@ function toLifecycle(status: string): RunContext["status"] {
 }
 
 /**
+ * Eşleşme kararını SÖZLEŞMEDEN geçirerek JSON sütununa hazırlar — ya da
+ * `undefined` (sütun yazılmaz).
+ *
+ * ── NEDEN BURADA DOĞRULANIYOR ───────────────────────────────────────────────
+ * Sütunu OKUYAN taraf (`tierOf`, `apps/bff/src/onboarding-service.ts`) zaten
+ * `MatchResult.safeParse` yapıyor ve ayrıştıramadığını fail-closed olarak
+ * `"unresolved"` sayıyor. Aynı doğrulamayı YAZARKEN de yapmak, o fail-closed
+ * dalını bir teşhis aracı olmaktan çıkarıp gerçekten olmaması gereken bir hâle
+ * indiriyor: sütunda duran her satır, sözleşmenin tanıdığı bir karardır. Bir
+ * kere yazıldıktan sonra bozuk bir satırı kimin yazdığını bulmak, hiç
+ * yazmamaktan çok daha pahalı — ve dry run'ın verdiği cevabın tek dayanağı bu
+ * sütunun yazıldığı gibi okunabilmesi.
+ *
+ * ── NEDEN ATMIYOR ───────────────────────────────────────────────────────────
+ * Bir koşuyu, yalnızca kararının adlandırılamaması yüzünden AÇMAMAK yanlış
+ * takas olurdu: `matchJson` bir teşhis/raporlama sütunu, akışın kendisi buna
+ * hiç bakmıyor. Doğrulamayan değer düşürülür, sütun `NULL` kalır, ve o hâl
+ * bu alanın var olmasından önceki hâlin ta kendisi.
+ *
+ * `JSON.parse(JSON.stringify(...))`: zod'un çıktısı `readonly` alanlar taşıyor
+ * ve Prisma'nın JSON girdi tipi onları reddediyor (`verificationJson` ile aynı
+ * sebep); tur, aynı veriyi düz ve yazılabilir bir nesneye çeviriyor.
+ */
+export function toMatchJson(match: unknown): MatchJson | undefined {
+  if (match === undefined || match === null) return undefined;
+  const parsed = MatchResult.safeParse(match);
+  if (!parsed.success) return undefined;
+  // Sözleşmenin `readonly` alanlarını düz, yazılabilir bir nesneye çevirir —
+  // `verificationJson`'ın `[...spec.command]`i ile aynı iş, tek satırda.
+  return { ...parsed.data };
+}
+
+/**
  * Both start-of-run pins, checked as the gateway will check them.
  *
  * `trim()` before the emptiness test because the gateway's schema is
@@ -782,6 +891,7 @@ function toApplication(row: ApplicationRow): ApplicationRecord {
     adoRepo: row.adoRepo,
     platform: row.platform as ApplicationRecord["platform"],
     jiraComponent: row.jiraComponent,
+    jiraProjectKey: row.jiraProjectKey,
     maestroYamlPresent: row.maestroYamlPresent,
     createdVia: row.createdVia as ApplicationRecord["createdVia"],
   };

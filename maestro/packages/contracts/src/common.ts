@@ -11,8 +11,31 @@ export type TicketKey = z.infer<typeof TicketKey>;
 export const ProjectKey = z.string().regex(/^[A-Z][A-Z0-9]+$/);
 export type ProjectKey = z.infer<typeof ProjectKey>;
 
-/** Application id in the Application Registry (M100). */
-export const AppId = z.string().regex(/^[a-z][a-z0-9-]{1,63}$/);
+/**
+ * Application id in the Application Registry (M100).
+ *
+ * ── NEDEN SLASH VE BÜYÜK HARF KABUL EDİLİYOR ────────────────────────────────
+ * Desen bir dönem `^[a-z][a-z0-9-]{1,63}$` idi ve ÜRETİMDE yazılan kimliklerin
+ * hiçbirini kabul etmiyordu. Kayıt defterine yazan taraf deponun TAM ADINI
+ * kimlik olarak kullanıyor (`apps/bff/src/routes/onboarding.ts`:
+ * `appId: repoHalf.adoRepo`, ör. `Uguryldz/maestro-pilot`) — yani hem eğik
+ * çizgi hem büyük harf taşıyor, ve desen ikisini de reddediyordu.
+ *
+ * Sahada ölçüldü: sözleşmenin bu ucundan geçen HER doğrulama sessizce
+ * başarısız oluyordu. `MatchResult.safeParse` bu yüzden hiçbir gerçek eşleşmeyi
+ * ayrıştıramıyor, `tierOf` (`apps/bff/src/onboarding-service.ts`) ticket'ı
+ * fail-closed olarak `"unresolved"` sayıyor, ve `/onboarding/dry-run` koşuların
+ * TAMAMINI "çözülemedi" kovasına atıyordu. Aynı desen
+ * `ApplicationRecord.parse`ı da (`packages/adapter-github/src/scm.ts`)
+ * gerçek bir depo kaydında fırlatacak durumdaydı.
+ *
+ * Yeni desen o gerçeği yazıya döküyor: bir sahip/isim çifti ya da düz bir ad.
+ * Gevşetilen şey KARAKTER KÜMESİ, doğrulamanın kendisi değil — boş kimlik,
+ * baştaki/sondaki eğik çizgi, iç içe yol ve 128 karakterin üstü hâlâ
+ * reddediliyor. Tek eğik çizgi sınırı bilinçli: `splitRepoFullName` ikinci bir
+ * eğik çizgiyi zaten bozuk sayıyor ve iki taraf aynı şeyi söylemeli.
+ */
+export const AppId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63})?$/);
 export type AppId = z.infer<typeof AppId>;
 
 /**

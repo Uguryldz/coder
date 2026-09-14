@@ -18,6 +18,7 @@ export const APP: ApplicationRecord = {
   adoRepo: "pay",
   platform: "linux-node",
   jiraComponent: "payments",
+  jiraProjectKey: null,
   maestroYamlPresent: true,
   createdVia: "import",
 };

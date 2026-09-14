@@ -1916,6 +1916,8 @@
   "routing.registry": "Kayıtlı uygulamalar",
   "routing.registry.col.app": "Uygulama",
   "routing.registry.col.platform": "Platform",
+  "routing.registry.col.owner": "Ait olduğu proje",
+  "routing.registry.unowned": "sahipsiz — hiçbir Jira projesine bağlı değil",
   "routing.registry.col.repo": "ADO repo",
   "routing.registry.col.source": "Kaynak",
   "routing.registry.col.yaml": ".maestro.yaml",

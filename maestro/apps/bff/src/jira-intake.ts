@@ -1,4 +1,4 @@
-import { ProjectKey, type TicketKey, type TicketSnapshot } from "@maestro/contracts";
+import { ProjectKey, type MatchResult, type TicketKey, type TicketSnapshot } from "@maestro/contracts";
 import type { ResolvedDeps } from "./deps.js";
 import { badRequest } from "./errors.js";
 import { BFF_MESSAGE_KEYS } from "./messages.js";
@@ -477,8 +477,33 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
    */
   const gateSteps = await resolveGateSteps(deps, flowDecision.gateSteps, "orta");
 
+  /**
+   * TICKET UYGULAMASINI NASIL BULDU — koşunun satırına yazılacak `MatchResult`.
+   *
+   * Bu karar yukarıda ZATEN verildi (`appId` zinciri); bu satır yalnız onu
+   * yazıya döküyor. Bkz. `matchOf` — hangi halkanın kazandığı orada, tek
+   * yerde, `appId` zincirinin kendi sırasıyla okunuyor.
+   */
+  const match = matchOf(request, flowDecision, mapped, searched, appId ?? null);
+
   const outcome = await deps.runs.signalWithStart({
     ticket: request.ticket,
+    /**
+     * EŞLEŞME KARARI, koşunun başlangıç girdisinde.
+     *
+     * Sahada ölçülen boşluğun kapandığı yer: `WorkflowRun.matchJson` M99'dan
+     * beri şemada duruyordu ama hiçbir üretim kodu yazmıyordu, ve
+     * `/onboarding/dry-run` bu yüzden 35 koşunun 35'ini "çözülemedi" kovasına
+     * atıyordu (`tierOf`, `apps/bff/src/onboarding-service.ts`). Karar burada
+     * veriliyordu; taşınmadığı için kayboluyordu.
+     *
+     * Koşullu spread, `flow`/`analystVariantId` ile aynı sebeple: karar
+     * çıkarılamadıysa alan HİÇ geçilmez ve sütun bugünkü gibi `NULL` kalır.
+     * Uydurulmuş bir `MatchResult`, hiç kaydedilmemiş olmasından kötüdür —
+     * dry-run onu "yerleşmiş" diye okur ve operatöre hiçbir şeyin
+     * yerleştirmediği bir ticket'ı yerleşmiş gösterirdi.
+     */
+    ...(match === null ? {} : { match }),
     // Omitted rather than sent as null for an analysis-only start: absence is
     // what the workflow reads as "no application", and `StartRunInput` has no
     // null to give it.
@@ -911,6 +936,100 @@ function sourceOf(request: IntakeRequest): string {
   }
   return request.explicit === true ? `komut/panel (${request.actor})` : `webhook (${request.actor})`;
 }
+
+/**
+ * TICKET UYGULAMASINI NASIL BULDU — koşunun satırına yazılacak `MatchResult`.
+ *
+ * ── NEDEN VAR: SAHADA ÖLÇÜLEN BOŞLUK ────────────────────────────────────────
+ * `WorkflowRun.matchJson` M99'dan beri şemada (`packages/db/prisma/schema.prisma`)
+ * ama hiçbir ÜRETİM kodu yazmıyordu — tek yazıcı demo seed'iydi. Bu, teşhisi
+ * zor bir sessizlik değildi; ekranda duruyordu: `tierOf()`
+ * (`onboarding-service.ts`) her koşuda `MatchResult.safeParse(null)` ile
+ * başarısız olup `"unresolved"` dönüyor, `/onboarding/dry-run` 35 koşunun
+ * 35'ini "çözülemedi" kovasına atıyor, operatör "uygulamalar ekranı
+ * doğrulanamıyor" diyordu. Karar zaten alımda veriliyordu; yalnızca
+ * taşınmıyordu.
+ *
+ * ── SIRA, `appId` ZİNCİRİNİN SIRASIDIR ──────────────────────────────────────
+ * Bu işlev kararı YENİDEN VERMİYOR, verilmiş kararı ADLANDIRIYOR — ve bu
+ * yüzden dallar yukarıdaki `appId` zinciriyle harfi harfine aynı sırada:
+ *
+ *   `request.appId` → `mapped.appId` → `searched.appId` → `binding.appId`
+ *
+ * İkinci bir sıralama yazmak, satırın ekranda söylediği ile koşunun gerçekte
+ * yaptığının sessizce ayrılması demekti; kaydın tek değeri, gerçekten olanı
+ * anlatması.
+ *
+ *  · `human` — bir insan `/ai-assign` ile adıyla söyledi. `channel` M99'un
+ *    kendi sözlüğü: komut yoluyla geldiyse `jira_command`, panelden geldiyse
+ *    `studio`. `sourceOf` ile aynı iki ayrım, aynı iki alandan okunuyor.
+ *  · `rule` — kararı dinleme kuralının depo eşlemesi verdi; `ruleId` o kuralın
+ *    kimliği, yani dry-run "hangi kural yerleştirdi" sorusuna cevap verebilir.
+ *  · `ai_suggestion` — depoyu KOD ARAMASI önerdi. Bu bir tahmindir ve M99 onu
+ *    tam olarak öyle sınıflandırıyor: `validatedAtGate: false`, çünkü analiz
+ *    kapısında bir insan onaylayana kadar onaylanmış değildir. `confidence`
+ *    sabit 0.5: arama uç noktası bir skor DÖNDÜRMÜYOR, ve uydurulmuş yüksek
+ *    bir güven, ekranın bir tahmini yerleşmiş göstermesi demek olurdu.
+ *  · `rule` (bağlama) — zincirin son halkası proje bağlamasının kendi
+ *    uygulaması. Bu da deterministik bir kural kararıdır ve `ruleId` olarak
+ *    kararı veren kuralın kimliği yazılır; kural yoksa `binding:<proje>`,
+ *    çünkü `NonEmpty` boş dizeyi reddeder ve boş bir kimlik satırı
+ *    ayrıştırılamaz hâle getirirdi.
+ *
+ * ── `null` NE DEMEK ─────────────────────────────────────────────────────────
+ * Uygulama YOK (analiz-yalnız koşu: bağlama uygulama adı vermedi ve `analiz`
+ * akışı bunu bilerek kabul ediyor). M99'un beş `via` değerinin hiçbiri
+ * "uygulamasız" demiyor — `onboarding` bile greenfield bir KURULUMU anlatıyor,
+ * bir analizi değil — ve olmayan bir eşleşme için bir eşleşme uydurmak, dry
+ * run'a yalan söylemek olurdu. Sütun `NULL` kalır, `tierOf` onu `unresolved`
+ * okur ve bu DOĞRUdur: o ticket'ın bir uygulamaya yerleşmesi hiç olmadı.
+ */
+export function matchOf(
+  request: IntakeRequest,
+  decision: FlowDecision,
+  mapped: { appId: string; search?: boolean } | null,
+  searched: { appId: string } | null,
+  appId: string | null,
+): MatchResult | null {
+  if (appId === null || appId.trim() === "") return null;
+
+  if (request.appId !== undefined) {
+    return {
+      via: "human",
+      appId,
+      assignedBy: request.actor,
+      // `explicit` bir insanın ADIYLA istediğini söylüyor (`/ai-start`,
+      // `/ai-assign`); `sourceOf` aynı alandan aynı ayrımı okuyor.
+      channel: request.explicit === true ? "jira_command" : "studio",
+    };
+  }
+
+  const ruleId = decision.ruleId;
+  if (mapped !== null && mapped.search !== true && mapped.appId === appId && ruleId !== undefined) {
+    return { via: "rule", ruleId, appId };
+  }
+
+  if (searched !== null && searched.appId === appId) {
+    return { via: "ai_suggestion", appId, confidence: SEARCH_MATCH_CONFIDENCE, validatedAtGate: false };
+  }
+
+  // Zincirin son halkası: proje bağlamasının kendi uygulaması. Kararı veren
+  // kuralın kimliği varsa o yazılır; yoksa bağlamanın kendisi adlandırılır —
+  // `NonEmpty` boş dizeyi reddeder ve boş bir `ruleId`, satırı okunamaz kılardı.
+  return { via: "rule", ruleId: ruleId ?? `binding:${request.ticket.split("-")[0] ?? "?"}`, appId };
+}
+
+/**
+ * KOD ARAMASININ ÖNERİSİNE VERİLEN GÜVEN — sabit, ve bilerek ortada.
+ *
+ * Arama uç noktası bir skor döndürmüyor: elinde "bu depoda eşleşme var"
+ * cevabından fazlası yok. 0.5 o bilgisizliğin dürüst karşılığı — yüksek bir
+ * değer uydurmak, dry-run ekranının bir TAHMİNİ yerleşmiş bir karar gibi
+ * göstermesi demek olurdu; düşük bir değer ise öneriyi hiç yapılmamış gibi
+ * gösterirdi. M99'un ikinci kademesi zaten "insan kapıda onaylayana kadar
+ * kesin değil" diyor ve `validatedAtGate: false` bunu ayrıca söylüyor.
+ */
+const SEARCH_MATCH_CONFIDENCE = 0.5;
 
 /**
  * Kararın dökümünü yazar — ve yazamazsa SESSİZCE PES EDER.

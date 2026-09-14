@@ -352,7 +352,38 @@ export async function handOver(
   reason: string,
   key: string,
 ): Promise<void> {
-  await deps.runs.patch(run.ticket, { mode: "ai_assist" });
+  /**
+   * ── DEVREDİLEN KOŞU `handover` YAZAR, `done` DEĞİL ────────────────────────
+   *
+   * CANLIDA ÖLÇÜLDÜ. OPS-120/121/122/123 LLM 403'ü yüzünden insana devredildi,
+   * ama satırları `status='done'`, `step='2'`, `archivedAt` boş kaldı. Tarama
+   * her turda "atlandı: koşusu var (tamamlandı, adım 2)" diyordu ve o
+   * ticket'lar bir daha HİÇ akışa girmedi — operatörün "havuzda ticket
+   * kalamaz" kuralının tam ihlali.
+   *
+   * SEBEP, ve neden tam olarak BURASI. Bu fonksiyon bugüne kadar YALNIZ
+   * `mode`u yazıyordu; satırın DURUMUNA hiç dokunmuyordu. Devir sonrası
+   * workflow `state.status = "handover"` ile dönüyor, Temporal yürütmeyi
+   * `Completed` sayıyor, ve açılışta koşan kıyas (`reconcileRunStatuses`,
+   * `apps/deploy/src/stores/reconcile.ts`) `completed → "done"` eşlemesiyle
+   * satıra `done` yazıyordu. Yani `done`u yazan reconcile'dı, ama yazabilmesinin
+   * TEK sebebi satırın `handover` demiyor olmasıydı: o dosyanın
+   * `RECONCILE_PROTECTED` listesi `handover`ı zaten koruyor ve gerekçesi orada
+   * yazılı — "motorun execution durumunun taşımadığı bir bilgi".
+   *
+   * Bu yüzden düzeltme reconcile'da değil burada: devri YAPAN taraf, devrin
+   * olduğunu satıra yazmalı. Koruma zaten vardı; korunacak değer yoktu.
+   *
+   * `handover` TERMİNAL DEĞİL (`TERMINAL_STATUSES`, `stores/run-context.ts`),
+   * ve bu bilinçli: devredilen koşu "bitmiş" bir koşu değil, insanın elinde
+   * bekleyen bir koşu. Terminal olsaydı `get` onu canlı saymayı bırakır ve
+   * devirden sonra gelen bir insan yorumu bağlamsız kalırdı.
+   *
+   * `mode` ile AYNI yazımda: iki ayrı `patch` iki ayrı UPDATE demek ve ikisi
+   * arasında satır yarım kalabilirdi — devredilmiş ama hâlâ `full_auto`
+   * görünen bir koşu, panelin operatöre söylediği en kötü yalan.
+   */
+  await deps.runs.patch(run.ticket, { mode: "ai_assist", status: "handover" });
   await record(deps, run, {
     kind: "handover",
     title: "insana devredildi",

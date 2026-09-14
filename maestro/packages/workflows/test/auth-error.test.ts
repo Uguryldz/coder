@@ -81,10 +81,14 @@ describe("guardModelCall — a rejected model key must never retry in silence", 
 
     // The handover trail is complete BEFORE the activity dies: journal,
     // ai-assist mode, and a notification a human will actually receive.
+    //
+    // Satırın DURUMU da yazılır (`status: "handover"`). Canlıda ölçüldü:
+    // OPS-120..123 tam bu yoldan — LLM 403 — devredildi, ama satır `done`
+    // kalınca tarama onları bir daha hiç akışa almadı.
     const handover = fakes.journalStore.entries.find((entry) => entry.kind === "handover");
     expect(handover?.detail).toContain("model anahtarı reddedildi");
     expect(handover?.detail).toContain("Ayarlar");
-    expect(fakes.patches).toContainEqual({ mode: "ai_assist" });
+    expect(fakes.patches).toContainEqual({ mode: "ai_assist", status: "handover" });
     expect(fakes.recorded.notifications.length).toBeGreaterThan(0);
   });
 

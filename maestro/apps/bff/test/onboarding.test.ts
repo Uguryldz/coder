@@ -103,6 +103,69 @@ describe("GET /onboarding/options", () => {
     expect(options.platforms).toContain("linux-java"); // the extra one the store seeded
   });
 
+  /**
+   * ── `?projectKey=` OKUYUCUYA GEÇER ────────────────────────────────────────
+   *
+   * ÖLÇÜLEN KIRIK: bu uç bütün `Application` satırlarını döndürüyordu, proje
+   * ayrımı YOK — `/routing` ekranı ise aynı tabloyu `jiraProjectKey` ile
+   * filtreliyor (`apps/deploy/src/stores/routing.ts`). İki ekran farklı liste
+   * gösteriyor, ve başka bir projeye ait depo bu projeye bağlanabilir
+   * görünüyordu.
+   *
+   * Rotanın İŞİ bağlamı okuyucuya taşımak; süzgecin KENDİSİ Postgres
+   * okuyucusunda ve testi orada (`apps/deploy/test/read-onboarding.test.ts`) —
+   * bellek mağazası sahiplik alanını taşımıyor ve bilerek filtrelemiyor
+   * (gerekçe `InMemoryOnboardingReader.options`ta yazılı). Bu yüzden burada
+   * ölçülen şey tam olarak taşımanın kendisi.
+   */
+  it("proje bağlamını okuyucuya geçirir — süzgecin uygulandığı yer orası", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+    const asked: Array<{ projectKey?: string }> = [];
+    const real = app.read.onboarding.options.bind(app.read.onboarding);
+    app.read.onboarding.options = (request) => {
+      asked.push(request);
+      return real(request);
+    };
+
+    const response = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/options?projectKey=UGURPAY",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(asked.at(-1)?.projectKey).toBe("UGURPAY");
+  });
+
+  /**
+   * BAĞLAM VERİLMEZSE ALAN HİÇ GEÇİLMEZ — ve bu, ilk kurulumun çalışmaya devam
+   * etmesinin tek sebebi. Sihirbaz (`Onboard.tsx`) ile kurulum ekranı
+   * (`Setup.tsx`) listeyi proje SEÇİLMEDEN ÖNCE okuyor; filtreli bir liste
+   * orada boş döner ve ilk kurulum imkânsız hâle gelirdi.
+   */
+  it("proje bağlamı verilmezse okuyucuya boş bir bağlam SIZDIRMAZ", async () => {
+    const app = await wizard();
+    const token = await adminToken(app);
+    const asked: Array<{ projectKey?: string }> = [];
+    const real = app.read.onboarding.options.bind(app.read.onboarding);
+    app.read.onboarding.options = (request) => {
+      asked.push(request);
+      return real(request);
+    };
+
+    const response = await app.app.inject({
+      method: "GET",
+      url: "/onboarding/options",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(Object.hasOwn(asked.at(-1) as object, "projectKey")).toBe(false);
+    // Ve liste dolu kalır: ilk kurulumun gördüğü envanterin ta kendisi.
+    expect(response.json().adoRepos).toEqual(["ugurpay", "cards"]);
+  });
+
   it("refuses an anonymous caller", async () => {
     const app = await wizard();
     const response = await app.app.inject({ method: "GET", url: "/onboarding/options" });

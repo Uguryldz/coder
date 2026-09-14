@@ -103,10 +103,14 @@ describe("guardModelCall — a model that cannot satisfy the schema must not ret
 
     // The handover trail is complete BEFORE the activity dies, and it points at
     // the thing the operator can actually change — the model, not the key.
+    //
+    // Satırın DURUMU da yazılır (`status: "handover"`): devri yapan taraf,
+    // devrin olduğunu satıra yazmazsa kıyas oraya `done` yazıyor ve tarama
+    // ticket'ı bir daha hiç almıyor (canlıda OPS-120..123).
     const handover = fakes.journalStore.entries.find((entry) => entry.kind === "handover");
     expect(handover?.detail).toContain("şemayı tutturamadı");
     expect(handover?.detail).toContain("Modeller");
-    expect(fakes.patches).toContainEqual({ mode: "ai_assist" });
+    expect(fakes.patches).toContainEqual({ mode: "ai_assist", status: "handover" });
     expect(fakes.recorded.notifications.length).toBeGreaterThan(0);
   });
 

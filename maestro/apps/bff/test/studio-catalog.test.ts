@@ -44,13 +44,33 @@ describe("GET /studio/apps", () => {
     expect(response.statusCode).toBe(404);
   });
 
+  /**
+   * ── ÖRNEK NEDEN DEĞİŞTİ ───────────────────────────────────────────────────
+   *
+   * Bu test bir dönem `NOT_AN_APP_ID` kullanıyordu ve `AppId` deseni
+   * `^[a-z][a-z0-9-]{1,63}$` olduğu için reddediliyordu. O desen ÜRETİMDE
+   * yazılan kimliklerin hiçbirini kabul etmiyordu: kayıt defterine yazan taraf
+   * deponun TAM ADINI kimlik yapıyor (`Uguryldz/maestro-pilot` —
+   * `routes/onboarding.ts`), yani eğik çizgi ve büyük harf taşıyor. Desen
+   * gerçeğe göre genişletildi (bkz. `packages/contracts/src/common.ts`), ve
+   * alt çizgi ile büyük harf artık GEÇERLİ — GitHub depo adları ikisini de
+   * kullanıyor.
+   *
+   * Testin ölçtüğü şey değişmedi, örneği değişti: rotanın kimliği sözleşmeden
+   * geçirdiği hâlâ ölçülüyor. Boşluk ve iç içe yol hâlâ reddediliyor, ve
+   * ikisini reddetmek hâlâ gerekli — kimlik bir DEPOLAMA YOLU parçası
+   * (`evidence/<yıl>/<ticket>/<runId>/…`) ve ikinci bir eğik çizgi o yolu
+   * geri ayrıştırılamaz hâle getirir.
+   */
   it("rejects an app id the contract would not accept", async () => {
     const h = await studioHarness();
     const token = await memberToken(h);
 
     const response = await h.app.inject({
       method: "GET",
-      url: "/studio/apps/NOT_AN_APP_ID",
+      // İç içe yol: `splitRepoFullName` de bunu bozuk sayıyor, iki taraf aynı
+      // şeyi söylemeli.
+      url: "/studio/apps/owner%2Frepo%2Fnested",
       headers: auth(token),
     });
 

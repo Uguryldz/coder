@@ -57,6 +57,7 @@ const APPS_BODY = {
         adoRepo: "ugurpay-core",
         platform: "linux-node",
         jiraComponent: null,
+        jiraProjectKey: "UGURPAY",
         maestroYamlPresent: true,
         createdVia: "onboarding",
       },
@@ -65,14 +66,59 @@ const APPS_BODY = {
   },
 };
 
+/**
+ * ── KAYIT DEFTERİ: SAHİPLİK VE ADRES ───────────────────────────────────────
+ *
+ * İki ayrı tutarsızlık sahada "proje bağlama tutarsız" olarak bildirildi:
+ *
+ *  1. Bir deponun HANGİ Jira projesine ait olduğu hiçbir yerde yazmıyordu —
+ *     oysa `/routing`in proje→uygulama listesi tam olarak o kolona dayanıyor.
+ *     Canlıda ölçüldü: `Uguryldz/maestro-pilot`ın değeri NULL (sahipsiz) ama
+ *     bağlamanın varsayılanı o olduğu için OPS altında görünüyordu. Operatör
+ *     deponun bağlı olduğunu sanıyordu.
+ *  2. Aynı depo iki Studio ekranında İKİ FARKLI adresle yazıyordu: kayıt
+ *     defteri `proje/depo`, Detay ekranı `proje/_git/depo`. ADO'da bir
+ *     deponun gerçek adresi `_git` içerir; kopyalanan adres 404 verir.
+ */
+describe("routing screen — kayıt defteri", () => {
+  it("names the OWNING project, and says so when a repository has none", async () => {
+    const unowned = {
+      path: "/studio/apps",
+      body: {
+        items: [
+          { ...APPS_BODY.body.items[0]!, appId: "sahipsiz-depo", jiraProjectKey: null },
+        ],
+        nextCursor: null,
+      },
+    };
+    const { fetchImpl } = stubFetch([ROUTING_BODY, unowned]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+    // Sahipsizlik SÖYLENİR: sessiz bir boşluk, operatöre "bağlı" diye okunuyordu.
+    expect(await screen.findByText(/sahipsiz/u)).toBeInTheDocument();
+  });
+
+  it("addresses an ADO repository the way ADO does — with _git", async () => {
+    const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+    // Detay ekranı (`RunSidebar`) bunu zaten böyle yazıyor; iki ekran ayrışmamalı.
+    expect(await screen.findByText("Payments/_git/ugurpay-core")).toBeInTheDocument();
+  });
+});
+
 describe("routing screen", () => {
   it("shows the Application Registry target of a match (M100)", async () => {
     const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY]);
     renderScreen(<RoutingScreen />, { fetchImpl });
 
     expect(await screen.findByText("UgurPay Core")).toBeInTheDocument();
-    // The ADO target as "project/repo" — the pair a ticket is routed to.
-    expect(screen.getByText("Payments/ugurpay-core")).toBeInTheDocument();
+    /*
+      ADO hedefi, ADO'nun kendi ADRESLEME biçimiyle: `proje/_git/depo`.
+      Burası bir dönem `proje/depo` bekliyordu ve ekran da öyle basıyordu —
+      ama Detay ekranı (`RunSidebar`) aynı depoyu `_git` ile yazıyordu. İki
+      Studio ekranı aynı depoyu iki farklı adresle gösteriyordu ve kayıt
+      defterinden kopyalanan adres ADO'da 404 veriyordu.
+    */
+    expect(screen.getByText("Payments/_git/ugurpay-core")).toBeInTheDocument();
   });
 
   it("hides the guarded policy editor from a non-admin", async () => {

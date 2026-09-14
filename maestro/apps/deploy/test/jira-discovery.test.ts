@@ -474,6 +474,58 @@ describe("discoverOnce", () => {
     expect(logs.some((line) => line.includes("OPS-1") && line.includes("yeniden akışa alındı"))).toBe(true);
   });
 
+  /**
+   * ── DEVREDİLEN KOŞU HAVUZDA ÇÜRÜMEZ — canlıda ölçülen kırık ───────────────
+   *
+   * OPS-120/121/122/123 LLM 403'ü yüzünden insana devredildi ve bir daha HİÇ
+   * akışa girmedi. İki sebep üst üste binmişti:
+   *
+   *  1. Devir satırın DURUMUNA hiç dokunmuyordu (`handOver`,
+   *     `packages/workflows/src/impl/outcome.ts`), o yüzden açılıştaki kıyas
+   *     satıra `done` yazıyordu. O yarı `outcome.ts`te düzeltildi.
+   *  2. Satır `handover` dese bile bu tur onu yeniden ALMIYORDU: devredilen
+   *     koşunun yürütmesi Temporal'da KAPALI, ve `liveRuns` bilerek
+   *     `onlyRunning: false` ile okuduğu için ticket `alive` kümesinde
+   *     görünüyor — yani "ölü koşu" dalına hiç uğramıyordu.
+   *
+   * Bu test ikinci yarıyı sabitliyor: `alive: ["OPS-1"]` tam olarak canlıdaki
+   * hâl (motor ticket'ı TANIYOR, çünkü kapanmış execution'ı hâlâ tutuyor) ve
+   * tura rağmen yeniden başlatma OLMALI. `isFailedRun`dan `handover` çıkarılırsa
+   * bu beklenti kırmızıya döner.
+   */
+  it("insana DEVREDİLEN koşuyu — motor onu tanısa bile — yeniden akışa alır", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "2", status: "handover" }],
+      // Canlıdaki hâl: yürütme kapandı ama motor onu hâlâ listeliyor.
+      alive: ["OPS-1"],
+    });
+    expect(restarts).toEqual(["OPS-1"]);
+    expect(logs.some((line) => line.includes("OPS-1") && line.includes("yeniden akışa alındı"))).toBe(true);
+  });
+
+  /**
+   * FREN DEĞİŞMEDİ. Devredilen bir koşunun yeniden alınabilir olması, sonsuza
+   * kadar yeniden alınacağı anlamına gelmiyor: pencereli sayaç sınıra
+   * ulaştığında tur DURUYOR ve ticket insana devrediliyor — kalıcı bir hatada
+   * (hâlâ reddedilen bir model anahtarı) döngüyü açan şey tam olarak bu frenin
+   * yokluğu olurdu.
+   */
+  it("devredilen koşuda da yeniden başlatma freni geçerlidir", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "2", status: "handover" }],
+      alive: ["OPS-1"],
+      priorRestarts: { "OPS-1": 99 },
+    });
+    expect(restarts).toEqual([]);
+    expect(logs.some((line) => line.includes("OPS-1") && line.includes("İNSANA DEVREDİLDİ"))).toBe(true);
+  });
+
   it("koşusu bitmiş ama havuzda duran ticket'ı sayar ve adlandırır", async () => {
     const jql = jqlFor(RULE)!;
     await run({

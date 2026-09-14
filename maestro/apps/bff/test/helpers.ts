@@ -127,6 +127,7 @@ function application(appId: string, adoProject: string, adoRepo: string): Applic
     adoRepo,
     platform: "linux-node",
     jiraComponent: null,
+      jiraProjectKey: null,
     maestroYamlPresent: true,
     createdVia: "onboarding",
   };

@@ -102,6 +102,23 @@ export const ApplicationRecord = z.object({
   adoRepo: NonEmpty, // rendered as <adoProject>/_git/<adoRepo>
   platform: PlatformProfile,
   jiraComponent: NonEmpty.nullable().default(null),
+  /**
+   * Bu deponun AİT OLDUĞU Jira projesi — sahipliğin gerçek alanı.
+   *
+   * Sözleşmede bir dönem YOKTU ve o eksiklik sahada "proje bağlama tutarsız"
+   * olarak bildirildi. Sebebi şu: `/routing` ekranının proje→uygulama listesi
+   * TAM OLARAK bu kolona dayanıyor (`stores/routing.ts`), ama Studio alanı hiç
+   * görmediği için kayıt defteri tablosunda gösteremiyordu.
+   *
+   * Canlıda ölçüldü: `Uguryldz/maestro-pilot`ın `jiraProjectKey`i NULL — yani
+   * SAHİPSİZ — ama OPS bağlamasının `defaultsJson.appId`i o olduğu için
+   * Routing listesinde OPS altında görünüyor. Operatör deponun OPS'a bağlı
+   * olduğunu sanıyor; gerçekte yalnızca varsayılan fallback'i sayesinde orada.
+   *
+   * `null` = hiçbir projeye bağlanmamış. Bu bir hata değil (içe aktarılmış bir
+   * envanter satırı böyle olabilir) ama GÖRÜNMESİ gerekir.
+   */
+  jiraProjectKey: NonEmpty.nullable().default(null),
   maestroYamlPresent: z.boolean(),
   createdVia: z.enum(["onboarding", "import"]),
 });

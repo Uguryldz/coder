@@ -334,6 +334,28 @@ services:
   # ───────────────────────────────────────────────────────────────────────────
   # Şema kurulumu — BFF'ten ÖNCE çalışır ve bitmesi beklenir
   # ───────────────────────────────────────────────────────────────────────────
+  # ── ÇALIŞMA ALANININ SAHİBİNİ AYARLAR, SONRA ÇIKAR ──────────────────────────
+  #
+  # `maestro-workspace` artık kalıcı bir named volume ve böyle bir volume ROOT
+  # sahipli doğar. İmajlar uid 10001 ile koşuyor, yani klon ilk `mkdir`de
+  # EACCES alırdı — tmpfs tam da bunu aşmak için seçilmişti.
+  #
+  # Bu konteyner o düğümü kalıcılığı bozmadan çözer: bir kez root olarak
+  # sahipliği verir ve çıkar. `restart: "no"` çünkü bir kez çalışması yeterli;
+  # bff ve worker `service_completed_successfully` ile bunu bekler.
+  #
+  # Alpine değil, kurulumun ZATEN çektiği imaj kullanılıyor: ikinci bir imaj
+  # indirmek kapalı ağdaki bir kurulumu kilitlerdi.
+  workspace-init:
+    image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env) — registry öneki dahil tam adres}
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown 10001:10001 /workspace && chmod 0770 /workspace && echo '[maestro] çalışma alanı hazır: /workspace'"]
+    volumes:
+      - maestro-workspace:/workspace
+    networks: [maestro]
+
   migrate:
     <<: *node-hardening
     image: ${MAESTRO_NODE_IMAGE:?MAESTRO_NODE_IMAGE gerekli (.env) — registry öneki dahil tam adres}
@@ -408,6 +430,9 @@ services:
       redis: { condition: service_healthy }
       temporal: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+      # Klon dizini sahipli olmadan açılan bir servis ilk klonda EACCES alır
+      # ve analizi sessizce depsuz bırakır — bekleme bu yüzden ŞART.
+      workspace-init: { condition: service_completed_successfully }
     healthcheck:
       # /readyz — Temporal ve kill-switch deposunu da yoklar; "süreç ayakta mı"
       # değil "istek çalışır mı" sorusunu yanıtlar.
@@ -433,6 +458,9 @@ services:
     depends_on:
       temporal: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+      # Klon dizini sahipli olmadan açılan bir servis ilk klonda EACCES alır
+      # ve analizi sessizce depsuz bırakır — bekleme bu yüzden ŞART.
+      workspace-init: { condition: service_completed_successfully }
     # Canlılık = KUYRUĞU YOKLUYOR, "süreç ayakta" değil.
     #
     # Eskiden burada `test: ["NONE"]` vardı ve worker'ı yalnız
@@ -523,20 +551,27 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  # Depo klonlarının ÇALIŞMA alanı — veri değil (kalıcı her şey Postgres'te).
-  # tmpfs + uid=10001 BİLİNÇLİ bir seçimdir: imajlar kök yazmayan uid 10001
-  # ile koşar ve sıradan bir named volume root sahipli doğar — klon daha ilk
-  # mkdir'de EACCES ile düşer, analiz de sessizce depsuz kalırdı. tmpfs,
-  # uid'i bağlarken verebilen taşınabilir tek yoldur; bedeli, yeniden
-  # başlatmada klonların silinmesidir — klon zaten en-iyi-çabadır ve bff
-  # gerektiğinde yeniden klonlar. 1g sınırı RAM'i korur; sığmayan klon analizi
-  # düşürmez, "depo çekilemedi" uyarısıyla depsuz sürer.
+  # Depo klonlarının ÇALIŞMA alanı — ARTIK KALICI DİSK.
+  #
+  # Burası bir dönem `tmpfs`ti ve gerekçesi yazılıydı: imajlar kök yazmayan
+  # uid 10001 ile koşar, sıradan bir named volume ROOT sahipli doğar, klon
+  # daha ilk `mkdir`de EACCES ile düşerdi. tmpfs, uid'i bağlarken verebilen
+  # taşınabilir tek yoldu.
+  #
+  # Ama bedeli kabul edilemez çıktı ve ikisi de sahada ölçüldü:
+  #
+  #  · RESTART'TA SİLİNİYORDU. Bir sürüm yükseltmesi, bir çökme, bir
+  #    `docker compose up` yeter. Koşu satırı hâlâ bir yol taşıyor
+  #    (`workspacePresent: true`) ama dizin yok; keşif adımı boş bir dizini
+  #    okuyup "kod karşılığı yok" diyordu.
+  #  · 1 GB RAM SINIRI. Kurumsal bir monorepo oraya sığmaz ve sığmayan klon
+  #    sessizce yarım kalır.
+  #
+  # İzin sorunu tmpfs'i seçtirmişti; çözümü `workspace-init` konteyneri:
+  # yığın açılırken bir kez root olarak `chown` eder, sonra çıkar. Böylece
+  # volume kalıcı OLUR ve uid 10001 yine yazabilir. Ölçülebilir tek bedel
+  # disk kullanımıdır — klonlar `--depth 1` ve tek dallıdır.
   maestro-workspace:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
-      o: "size=1g,uid=10001,gid=10001,mode=0770,noexec,nosuid"
 
 networks:
   maestro:

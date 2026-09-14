@@ -130,8 +130,22 @@ const { stdout: üst } = await run("sh", ["-c", `ls ${JSON.stringify(path)} | he
 const dosyaSayısı = Number(sayım.trim());
 
 if (head === "" || dosyaSayısı === 0) {
-  console.error(`\n✗ KLON BOŞ — dizin açıldı ama içinde commit/dosya yok.`);
-  console.error(`  Bu, jetonun bu depoya erişemediği hallerde görülür: git dizini kurar, içeriği çekemez.`);
+  /**
+   * BURAYA ULAŞAN KLON ERİŞİLEBİLİR AMA BOŞ BİR DEPODUR.
+   *
+   * Mesaj bir dönem "jeton erişemiyor" diyordu ve o, ölçülen ilk vakaydı.
+   * Sonra git'in iki davranışı yan yana ölçüldü:
+   *
+   *   boş depo  → `warning: You appear to have cloned an empty repository.`
+   *               ve klon BAŞARILI (çıkış 0) → bu satıra ulaşır
+   *   erişimsiz → `fatal: could not read Username` ve klon DÜŞER → yukarıdaki
+   *               catch'e gider, buraya hiç gelmez
+   *
+   * Yani "jetona izin verin" demek burada operatöre olmayan bir iş
+   * gösteriyordu: verilecek izin yok, indirilecek kod da.
+   */
+  console.error(`\n✗ DEPO BOŞ — erişim var ama içinde hiç commit yok.`);
+  console.error(`  Bu bir izin sorunu DEĞİL: depo henüz hiç kod almamış (GitHub "Git Repository is empty" der).`);
   console.error(`  yol   : ${path}`);
   console.error(`  dal   : ${(await checkedOutBranch(path)) ?? "-"}`);
   console.error(`  dosya : ${dosyaSayısı}`);

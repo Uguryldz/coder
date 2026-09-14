@@ -1217,6 +1217,7 @@
   "listening.repomap.clone_test.button": "Try downloading the repository",
   "listening.repomap.clone_test.busy": "downloading…",
   "listening.repomap.clone_test.ok": "✓ {repo} cloned — {files} files, branch {branch}, last commit {head} ({seconds}s). The clone was deleted; this was a trial.",
+  "listening.repomap.clone_test.empty_repo": "✗ The repository {repo} is EMPTY — it is reachable but holds no commit at all. This is not a permissions problem: nothing has ever been pushed to it (GitHub answers \"Git Repository is empty\"). Pick another repository, or push the first code to this one.",
   "listening.repomap.clone_test.empty": "✗ A directory was created for {repo} but it is EMPTY — no commit or file came down. This usually means the token cannot reach this repository (an organisation-owned one in particular): git sets the directory up but cannot fetch the content. Grant the SCM connection's token read access to this repository.",
   "listening.repomap.clone_test.failed": "✗ {repo} could not be cloned.",
   "listening.repomap.clone_test.unavailable": "A download cannot be tried on this installation. Add a source-code connection (GitHub/GitLab/Azure DevOps) from the panel; the clone root and token are set up from it automatically.",

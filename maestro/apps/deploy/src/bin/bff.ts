@@ -647,10 +647,33 @@ export async function main(): Promise<void> {
              * Commit yoksa ya da tek dosya inmediyse bu bir başarısızlıktır.
              */
             if (head === null || count === 0) {
+              /**
+               * BOŞ KLONUN İKİ AYRI SEBEBİ VAR — VE İKİSİ AYRI İŞ GEREKTİRİR.
+               *
+               * Mesaj bir dönem tek sebep söylüyordu ("jeton erişemiyor") ve o,
+               * ölçülen ilk vakaydı. Sonra ikincisi çıktı: 40 depo taranınca
+               * `Uguryldz/frp` boş klonlandı ve GitHub'ın kendi cevabı şuydu —
+               * `409 Git Repository is empty`. Depo GERÇEKTEN boştu (`size: 0`,
+               * hiç commit yok); jetonla ilgisi yoktu.
+               *
+               * Operatöre "jetona izin verin" demek o vakada yanlış işi
+               * yaptırırdı: verilecek bir izin yok, indirilecek bir kod da.
+               *
+               * İkisini AYIRAN şey git'in KENDİ davranışı ve ölçüldü:
+               *
+               *   boş depo   → `warning: You appear to have cloned an empty
+               *                 repository.` ve klon BAŞARILI (çıkış 0)
+               *   erişimsiz  → `fatal: could not read Username` ve klon DÜŞER
+               *
+               * Yani erişimsiz depo bu dala HİÇ ULAŞMAZ — aşağıdaki `catch`e
+               * düşer. Buraya ulaşan bir boş klon, erişilebilen ama içi boş bir
+               * depodur. Eski mesaj ("jetona izin verin") bu vakada operatöre
+               * yapacak bir iş olmayan bir iş gösteriyordu.
+               */
               return {
                 ok: false,
                 repo: request.repo,
-                messageKey: "listening.repomap.clone_test.empty",
+                messageKey: "listening.repomap.clone_test.empty_repo",
                 ...(branch === null ? {} : { branch }),
                 fileCount: count,
               };

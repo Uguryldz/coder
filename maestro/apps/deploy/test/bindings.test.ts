@@ -213,7 +213,6 @@ describe("PrismaBindingWriter", () => {
     const row = rows.get("OPS")!;
     const binding = await new PrismaJiraProjectBindings({
       findUnique: () => Promise.resolve({ triggerLabel: "maestro", ...row } as BindingRow),
-      update: () => Promise.resolve(undefined),
     }).resolve("OPS");
 
     expect(binding).toEqual({

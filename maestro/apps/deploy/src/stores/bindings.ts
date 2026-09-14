@@ -34,11 +34,6 @@ export interface BindingRow {
 /** The one delegate method the READ store uses. */
 export interface BindingDelegate {
   findUnique(args: { where: { projectKey: string } }): Promise<BindingRow | null>;
-  /** Var olan bir satırı düzenler — `upsert` DEĞİL, bkz. `update` gerekçesi. */
-  update(args: {
-    where: { projectKey: string };
-    data: { trigger?: string; state?: string; defaultsJson?: unknown };
-  }): Promise<unknown>;
 }
 
 /**
@@ -62,6 +57,24 @@ export interface BindingUpsertDelegate {
     where: { projectKey: string };
     create: BindingWriteRow;
     update: { trigger: TriggerLiteral; state: StateLiteral; defaultsJson: object };
+  }): Promise<unknown>;
+  /**
+   * Var olan bir satırı OKUR — güncelleme öncesi `defaultsJson`ı birleştirmek
+   * için. Ham yazım, yalnız `dataClass` gönderen bir istekte `appId`i sessizce
+   * silerdi (tek JSON sütunu).
+   */
+  findUnique(args: { where: { projectKey: string } }): Promise<{ defaultsJson: unknown } | null>;
+  /**
+   * Var olan bir satırı düzenler. `upsert` DEĞİL: bağlı olmayan bir projeyi
+   * burada yaratmak, `POST /onboarding`in iki yöneticili onay kapısını
+   * atlamak olurdu.
+   *
+   * `defaultsJson` tipi `object`: Prisma'nın JSON sütunu `unknown` kabul
+   * etmiyor ve yazılan değer her zaman `{ appId, mode, dataClass }` şeklinde.
+   */
+  update(args: {
+    where: { projectKey: string };
+    data: { trigger?: TriggerLiteral; state?: StateLiteral; defaultsJson?: object };
   }): Promise<unknown>;
 }
 
@@ -187,8 +200,8 @@ export class PrismaBindingWriter implements BindingWriter {
     await this.bindings.update({
       where: { projectKey: update.projectKey },
       data: {
-        ...(update.trigger === undefined ? {} : { trigger: update.trigger }),
-        ...(update.state === undefined ? {} : { state: update.state }),
+        ...(update.trigger === undefined ? {} : { trigger: update.trigger as TriggerLiteral }),
+        ...(update.state === undefined ? {} : { state: update.state as StateLiteral }),
         ...(defaults === undefined ? {} : { defaultsJson: defaults }),
       },
     });

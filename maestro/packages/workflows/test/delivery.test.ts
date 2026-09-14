@@ -66,6 +66,50 @@ describe("runScans (step 6b, M27 fail-closed)", () => {
     expect(events.ok).toBe(true);
   });
 
+  /**
+   * ÇALIŞMA ALANI YOKKEN TARAMA YEŞİL VEREMEZ.
+   *
+   * Ölçülmüş arıza: koşu satırındaki `workspacePath` koşu açılırken yazılır ve
+   * bir daha diske bakılmaz; `workspacePresent` kod tabanında hiçbir yerde
+   * `false` yazılmaz. Servis yeniden başlayıp çalışma alanı silindiğinde satır
+   * aynı kalırdı, tarayıcılar BOŞ bir dizini tarardı, hiçbir bulgu çıkmazdı ve
+   * akış `SECURITY_SCAN_PASS` yazardı — yani tarama hiç bakmadan "temiz" derdi.
+   *
+   * Bulgusuzluk ile bakmamışlık aynı şey değildir. Bu testin koruduğu tek
+   * cümle budur.
+   */
+  it("çalışma alanı yokken tarama TEMİZ demez, BLOKLAR", async () => {
+    const fakes = makeFakes({
+      context: { workspacePath: "" },
+      // Tarayıcı çağrılırsa geçerdi; asıl iddia çağrılMAMASI.
+      scan: (tool) => ({ ...PASS, tool: tool as ScanResult["tool"] }),
+    });
+    const results = await runScans(fakes.deps, "PAY-101");
+
+    expect(fakes.recorded.scans, "boş dizinde tarayıcı hiç çağrılmamalı").toEqual([]);
+    expect(results).toHaveLength(3);
+    expect(results.every((r) => r.outcome === "error")).toBe(true);
+    for (const result of results) {
+      expect(result.findings[0]?.severity).toBe("critical");
+      expect(result.findings[0]?.message).toContain("çalışma alanı yok");
+    }
+    expect(fakes.journalStore.entries.at(-1)?.title).toBe("tarama bloke etti");
+  });
+
+  it("çalışma alanı yokken denetim kaydı PASS yazmaz", async () => {
+    const fakes = makeFakes({
+      context: { workspacePath: "" },
+      scan: (tool) => ({ ...PASS, tool: tool as ScanResult["tool"] }),
+    });
+    const results = await runScans(fakes.deps, "PAY-101");
+    const events = await fakes.chain.verify();
+    expect(events.ok).toBe(true);
+    // Denetim kaydına giren eylem sonuçlardan türetiliyor (`isScanBlocking`);
+    // hiçbiri `pass` değilse yazılan eylem PASS olamaz.
+    expect(results.some((r) => r.outcome === "pass")).toBe(false);
+    expect(fakes.journalStore.entries.at(-1)?.title).toBe("tarama bloke etti");
+  });
+
   it("the synthesised error result is a valid, maximally severe finding", () => {
     const result = scannerErrorResult("semgrep", "2026-08-09T09:00:00+03:00", "boom");
     expect(result.outcome).toBe("error");

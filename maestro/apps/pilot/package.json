@@ -21,6 +21,7 @@
     "@maestro/audit": "workspace:*",
     "@maestro/config": "workspace:*",
     "@maestro/contracts": "workspace:*",
+    "@maestro/http-kit": "workspace:*",
     "@maestro/llm-gateway": "workspace:*",
     "@maestro/pii": "workspace:*",
     "@maestro/ports": "workspace:*",

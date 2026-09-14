@@ -1,4 +1,4 @@
-import { FOUR_EYES_GROUP } from "./propose.js";
+import { FOUR_EYES_GROUP } from "./four-eyes.js";
 
 /**
  * Master-admin self-approval exemption (kullanıcı isteği: "tek master admin

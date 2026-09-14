@@ -7,10 +7,24 @@ import type {
   RunId,
   TicketKey,
 } from "@maestro/contracts";
+import type { DataClassName, LoadedPiiPolicy, MaskCounts } from "@maestro/pii";
 import type { ScmPort, SecretPort, WorkPort } from "@maestro/ports";
-import type { DocumentSink, TemplateWarning } from "./doc-template.js";
-import type { DocTemplateSource } from "./drivers/binary-doc.js";
-import type { PublishPiiDeps } from "./pii.js";
+import type { DocTemplateSource, DocumentSink, TemplateWarning } from "./doc-template.js";
+
+/**
+ * Yayım hattının PII kapısının bağımlılıkları (M20/M82).
+ *
+ * Tanım bir dönem `pii.ts` içindeydi ve `types.ts` onu oradan alıyordu; `pii.ts`
+ * de buradan `RunContextResolver` aldığı için ortada bir döngü vardı. İkisi de
+ * tip: uygulamaya (maskeleme oturumu, redactor) ait olan `pii.ts`te kaldı,
+ * SÖZLEŞME buraya geldi.
+ */
+export interface PublishPiiDeps {
+  /** A policy that went through `loadPiiPolicy` — a literal will not compile. */
+  readonly policy: LoadedPiiPolicy;
+  /** Audit hook (M33 `PII_MASKED`). Receives counts — never values. */
+  readonly onMasked?: (counts: MaskCounts, dataClass: DataClassName, req: PublishRequest) => void;
+}
 
 /**
  * Message-catalog lookup (M104). Structurally identical to `@maestro/config`'s

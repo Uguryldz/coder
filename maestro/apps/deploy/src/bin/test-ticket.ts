@@ -17,6 +17,7 @@
  */
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
+import { findJiraConnection, jiraHeaders, jiraUrl } from "./jira-connection.js";
 
 const label = process.argv[2];
 const summary = process.argv[3];
@@ -28,22 +29,14 @@ if (label === undefined || summary === undefined) {
 
 const db = createDb(process.env["DATABASE_URL"] ?? "");
 const conns = await db.connection.findMany();
-const jira = conns.find((c) => c.kind === "jira_cloud");
-if (jira === undefined || jira.secretRef === null) throw new Error("Jira Cloud bağlantısı ya da jetonu yok.");
+const jira = findJiraConnection(conns);
 
 const secrets = new EncryptedSecretStore(
   resolveMasterKey({ envValue: process.env["CONNECTOR_MASTER_KEY"], isProduction: false }),
   db.connectorSecret,
 );
 const token = await secrets.get(jira.secretRef);
-const cfg = (jira.configJson as Record<string, unknown> | null) ?? {};
-const email = typeof cfg["email"] === "string" ? cfg["email"] : "";
-const base = jira.baseUrl.replace(/\/+$/u, "");
-const headers = {
-  authorization: `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`,
-  "content-type": "application/json",
-  accept: "application/json",
-};
+const headers = { ...jiraHeaders(jira, token), "content-type": "application/json" };
 
 /**
  * Bot hesabı ve proje, kuralın KENDİSİNDEN okunur — elle yazılan bir accountId
@@ -65,7 +58,7 @@ const body = {
   },
 };
 
-const res = await fetch(`${base}/rest/api/3/issue`, { method: "POST", headers, body: JSON.stringify(body) });
+const res = await fetch(jiraUrl(jira, "/issue"), { method: "POST", headers, body: JSON.stringify(body) });
 const out = (await res.json()) as { key?: string };
 if (!res.ok) {
   console.error(`✗ Jira ticket'ı açılmadı: HTTP ${res.status} ${JSON.stringify(out).slice(0, 300)}`);
@@ -73,7 +66,7 @@ if (!res.ok) {
   process.exit(1);
 }
 console.log(`✓ ${out.key} açıldı · proje=${rule.projectKey} · etiketler=[${rule.matchValue}, ${label}]`);
-console.log(`  ${base}/browse/${out.key}`);
+console.log(`  ${jira.baseUrl}/browse/${out.key}`);
 
 const map = rule.repoMapJson as { field?: string; entries?: { value: string; appId: string }[] } | null;
 if (map?.entries !== undefined) {

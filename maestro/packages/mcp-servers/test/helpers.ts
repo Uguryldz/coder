@@ -90,6 +90,8 @@ export const APP: ApplicationRecord = {
   adoRepo: "ugurpay-api",
   platform: "linux-node",
   jiraComponent: "odeme",
+  // Bu fixture'ın biletleri UGURPAY-504; uygulama o Jira projesine bağlıdır.
+  jiraProjectKey: "UGURPAY",
   maestroYamlPresent: true,
   createdVia: "import",
 };

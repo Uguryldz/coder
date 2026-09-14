@@ -21,7 +21,6 @@ import type {
 import type { ConnectionStore } from "./connection-store.js";
 import type { ListeningStore } from "./listening-store.js";
 import type { GuidanceStore } from "./guidance-store.js";
-import type { ConnectorFetch } from "./connection-service.js";
 import type { JiraWorkflowReader } from "./jira-workflow-model.js";
 import type { RunGateway } from "./gateway.js";
 import type { StudioReadModels } from "./read-studio.js";
@@ -49,6 +48,25 @@ import type {
  */
 
 /** Injected clock — session expiry and signature timestamps are testable because of it. */
+/**
+ * The fetch the live test uses. Injected so an OFFLINE test stubs the target
+ * with no network, and so the test path never reaches for a global. The URL is
+ * built by this service from the STORED `baseUrl` — never from the request
+ * body — so a test cannot be pointed at an arbitrary host by its caller.
+ *
+ * ONE exception to the injection: an `openai_compat` probe whose dial skips
+ * TLS verification (see `runConnectionTest`) goes through undici's own fetch,
+ * because the skip can only ride on an undici dispatcher and this signature
+ * has no seam for one. Such URLs are https + internal/flagged only, so the
+ * offline suites (http/public fixtures) never take that path.
+ *
+ * Tanım bir dönem `connection-service.ts` içindeydi ve `deps.ts` onu oradan
+ * alıyordu; `connection-service.ts` de buradan `UserDirectory` aldığı için
+ * ortada bir döngü vardı. Bu bir SÖZLEŞME — hangi `fetch`in enjekte edileceği
+ * — ve sözleşmelerin yeri burasıdır; onu kullanan servis değil.
+ */
+export type ConnectorFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
 export interface Clock {
   now(): Date;
 }

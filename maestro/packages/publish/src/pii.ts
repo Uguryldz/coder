@@ -5,13 +5,10 @@ import {
   compiledProfileFor,
   createSessionWith,
   maskText,
-  type DataClassName,
-  type LoadedPiiPolicy,
-  type MaskCounts,
-} from "@maestro/pii";
+  } from "@maestro/pii";
 import { PublishRenderError } from "./errors.js";
 import type { PublishRedactor } from "./port.js";
-import type { RunContextResolver } from "./types.js";
+import type { PublishPiiDeps, RunContextResolver } from "./types.js";
 
 /**
  * PII gate of the publish path (M20/M82).
@@ -27,12 +24,8 @@ import type { RunContextResolver } from "./types.js";
  * The ReverseMap is created and dropped inside `redact` — re-identification
  * belongs to a live screen (M20), never to a ten-year artefact.
  */
-export interface PublishPiiDeps {
-  /** A policy that went through `loadPiiPolicy` — a literal will not compile. */
-  readonly policy: LoadedPiiPolicy;
-  /** Audit hook (M33 `PII_MASKED`). Receives counts — never values. */
-  readonly onMasked?: (counts: MaskCounts, dataClass: DataClassName, req: PublishRequest) => void;
-}
+/** Sözleşmesi `types.ts`te; buradan yeniden dışavuruluyor. */
+export type { PublishPiiDeps };
 
 export const PUBLISH_PII_BOUNDARY = "publish";
 

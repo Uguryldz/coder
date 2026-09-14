@@ -104,10 +104,48 @@ export interface IntakeDecisionFacts {
   readonly analystVariantId?: string | null;
   /** Koşuya iğnelenen mühendis ajanı, biliniyorsa. */
   readonly engineerVariantId?: string | null;
+  /**
+   * HANGİ DEPOYA — VE HANGİ KAYNAKTAN (0025).
+   *
+   * Dökümün bir dönem hiç taşımadığı yarısı. Akış tarafı (hangi kural, neden,
+   * hangi statü kapattı) eksiksiz yazılıyordu; DEPO tarafı için tek alan
+   * yoktu ve kararın üç halkası yalnız `console.log`a gidiyordu. Operatörün
+   * en sık sorusu ise tam oradaydı: "kural doğru, ama neden HEP aynı depoya
+   * iniyor?"
+   *
+   * Sahip zinciri sıralıdır ve ilk cevap veren kazanır:
+   *   istekteki appId → depo eşlemesi → kod araması → proje bağlaması
+   * Son halka bir VARSAYILANDIR ve sessizce devreye girer; canlıda ölçülen
+   * yanlış-anlatımın kaynağı buydu — operatör deponun bağlamadan geldiğini
+   * bilmeden, eşlemenin çalıştığını sanıyordu.
+   *
+   * `appIdSource` o yüzden en önemli alan: "eşleşti" ile "eşleşemedi, varsayılana
+   * düşüldü" ekranda ayırt edilebilir olmak zorunda.
+   */
+  readonly appId?: string | null;
+  readonly appIdSource?: "request" | "repo_map" | "code_search" | "binding" | "none";
+  /** Eşlemenin baktığı Jira alanı ve o alanın bu ticket'taki DEĞERİ. */
+  readonly repoMapField?: string | null;
+  readonly repoMapValue?: string | null;
+  /**
+   * Eşleme neden cevap veremedi — varsa. Dört hal ayrı ayrı okunabilir
+   * olmalı, çünkü operatörün yapacağı şey her birinde farklı:
+   * sürücü alan okuyamıyor / alan okunamadı / değer için satır yok / eşleme yok.
+   */
+  readonly repoMapMiss?: string | null;
   /** Alım kabul edildi mi; edilmediyse sebebi. */
   readonly accepted: boolean;
   readonly refusedReason?: string;
 }
+
+/** Depo sahipliğinin hangi halkadan geldiği, operatör diliyle. */
+const APP_SOURCE_TR: Readonly<Record<NonNullable<IntakeDecisionFacts["appIdSource"]>, string>> = {
+  request: "isteğin kendisi taşıdı (panel/komut)",
+  repo_map: "dinleme kuralının depo eşlemesi",
+  code_search: "kod araması",
+  binding: "proje bağlamasının VARSAYILANI — eşleme cevap vermedi",
+  none: "hiçbir kaynak depo vermedi",
+};
 
 /** Karar sebebinin operatör diliyle karşılığı. */
 const REASON_TR: Readonly<Record<FlowDecision["reason"], string>> = {
@@ -307,6 +345,29 @@ export function decisionLogMarkdown(facts: IntakeDecisionFacts, at: Date): strin
 
   if (d.conflictingRuleIds !== undefined && d.conflictingRuleIds.length > 0) {
     lines.push(`- **Çakışan kurallar:** ${d.conflictingRuleIds.join(", ")}`);
+  }
+
+  /**
+   * DEPO BÖLÜMÜ — dökümün bir dönem hiç taşımadığı yarısı.
+   *
+   * "Hangi depo" ile "hangi KAYNAKTAN" ayrı satırlar, çünkü asıl yanıltıcı
+   * hal ikisinin karışmasıydı: eşleme cevap veremeyip proje bağlamasının
+   * varsayılanına düşüldüğünde ekranda yine bir depo adı görünüyordu ve
+   * operatör eşlemenin çalıştığını sanıyordu.
+   */
+  if (facts.appIdSource !== undefined) {
+    lines.push("", "## Depo seçimi", "");
+    lines.push(`- **Seçilen depo:** ${facts.appId ?? "yok"}`);
+    lines.push(`- **Kaynak:** ${APP_SOURCE_TR[facts.appIdSource]}`);
+    if (facts.repoMapField !== undefined && facts.repoMapField !== null) {
+      lines.push(
+        `- **Eşleme alanı:** \`${facts.repoMapField}\` = ` +
+          `${JSON.stringify(facts.repoMapValue ?? "")}`,
+      );
+    }
+    if (facts.repoMapMiss !== undefined && facts.repoMapMiss !== null) {
+      lines.push(`- **Eşleme cevap veremedi:** ${facts.repoMapMiss}`);
+    }
   }
 
   const blocked = facts.statusBlocked ?? [];

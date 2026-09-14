@@ -76,7 +76,12 @@ import {
   type ClarifyReentryStatus,
 } from "../listening-banner.js";
 import { EnvGateDirectory } from "../stores/gate-directory.js";
-import { checkedOutBranch, prepareWorkspace, workspaceRootFrom } from "../stores/workspace-prepare.js";
+import {
+  checkedOutBranch,
+  cloneFailureDetail,
+  prepareWorkspace,
+  workspaceRootFrom,
+} from "../stores/workspace-prepare.js";
 import { isScmConnectionKind, listScmRepos, searchRepos, type RepoCloneProbeResult } from "@maestro/bff";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
@@ -690,23 +695,13 @@ export async function main(): Promise<void> {
             /**
              * git'in KENDİ gerekçesi, maskelenmiş.
              *
-             * `prepareWorkspace` ham stderr'i bilerek yutar (komut satırı
-             * Authorization başlığında jeton taşır) ve geriye "clone failed"
-             * kalır — "depo yok", "jeton yetkisiz" ve "CA bozuk" hallerini tek
-             * cümlede birleştiren, teşhis edilemez bir mesaj. Burada `cause`
-             * açılıp jeton damgalanarak veriliyor; sahada bu üç hali ayırmak
-             * saatler aldı.
+             * Maskeleme `cloneFailureDetail` ile — tanımı
+             * `stores/workspace-prepare.ts`te ve `WorkspaceError` da aynı
+             * fonksiyondan geçiyor. Bir dönem bu kod burada, elle yazılmıştı
+             * ve ikinci bir kopyası `depo-indir-test.ts`teydi; bir sır
+             * maskeleme kuralının iki kopyası olamaz.
              */
-            const cause = (error as { cause?: unknown }).cause;
-            const raw = String((cause as { stderr?: unknown } | undefined)?.stderr ?? cause ?? error);
-            const detail = raw
-              .replace(/Basic\s+[A-Za-z0-9+/=]+/gu, "Basic ***")
-              .replace(/x-access-token:[^@\s]*/gu, "x-access-token:***")
-              .replace(/:\/\/[^@\s]*@/gu, "://***@")
-              .trim()
-              .split("\n")
-              .slice(0, 4)
-              .join(" ");
+            const detail = cloneFailureDetail((error as { cause?: unknown }).cause ?? error);
             return {
               ok: false,
               repo: request.repo,

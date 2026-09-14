@@ -32,6 +32,7 @@ import { execFile } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { findJiraConnection, jiraHeaders, jiraUrl } from "./jira-connection.js";
 const run = promisify(execFile);
 
 interface SearchBody {
@@ -49,16 +50,13 @@ interface SearchBody {
 
 const db = createDb(process.env["DATABASE_URL"] ?? "");
 const conns = await db.connection.findMany();
-const jira = conns.find((c) => c.kind === "jira_cloud" || c.kind === "jira_dc");
-if (jira?.secretRef == null) throw new Error("Jira bağlantısı ya da jetonu yok.");
+const jira = findJiraConnection(conns);
 const secrets = new EncryptedSecretStore(
   resolveMasterKey({ envValue: process.env["CONNECTOR_MASTER_KEY"], isProduction: false }),
   db.connectorSecret,
 );
 const jiraToken = await secrets.get(jira.secretRef);
-const email = ((jira.configJson as Record<string, unknown> | null)?.["email"] as string | undefined) ?? "";
-const base = jira.baseUrl.replace(/\/+$/u, "");
-const H = { authorization: `Basic ${Buffer.from(`${email}:${jiraToken}`).toString("base64")}`, accept: "application/json" };
+const H = jiraHeaders(jira, jiraToken);
 
 const scm = conns.find((c) => c.enabled !== false && isScmConnectionKind(c.kind));
 const scmToken = scm?.secretRef == null ? null : await secrets.get(scm.secretRef).catch(() => null);
@@ -88,7 +86,7 @@ for (const r of rules) {
 
   const jql = jqlFor(rule);
   if (jql === null) { console.log("  ✗ JQL kurulamadı (bot hesabı yok)\n"); continue; }
-  const res = await fetch(`${base}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&fields=key,summary,status,issuetype,assignee,labels&maxResults=5`, { headers: H });
+  const res = await fetch(jiraUrl(jira, `/search/jql?jql=${encodeURIComponent(jql)}&fields=key,summary,status,issuetype,assignee,labels&maxResults=5`), { headers: H });
   const found = ((await res.json()) as SearchBody).issues ?? [];
   console.log(`  1. Tarama    → ${found.length} ticket`);
 

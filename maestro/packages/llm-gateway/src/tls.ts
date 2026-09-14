@@ -1,5 +1,5 @@
 import { Agent, fetch as undiciFetch } from "undici";
-import type { FetchLike } from "./http.js";
+import type { FetchLike } from "./fetch-like.js";
 
 /**
  * TLS verification for self-hosted model servers — the wendoc parity module.

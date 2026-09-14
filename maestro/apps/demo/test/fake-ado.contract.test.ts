@@ -36,6 +36,7 @@ describe("sahte ADO ↔ @maestro/adapter-ado", () => {
     adoRepo: ADO_REPO,
     platform: "linux-node" as const,
     jiraComponent: null,
+    jiraProjectKey: "UGURPAY",
     maestroYamlPresent: false,
     createdVia: "import" as const,
   };

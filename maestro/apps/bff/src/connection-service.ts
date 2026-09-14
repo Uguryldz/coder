@@ -1,7 +1,7 @@
 import type { Connection, ConnectionInput, ConnectionKind } from "@maestro/contracts";
 import { classifyNetworkFailure, insecureFetch, shouldSkipTlsVerify } from "@maestro/llm-gateway";
 import type { ConnectionRecord } from "./connection-store.js";
-import type { UserDirectory, UserRecord } from "./deps.js";
+import type { ConnectorFetch, UserDirectory, UserRecord } from "./deps.js";
 
 /**
  * The connector service: turning a validated `ConnectionInput` into a stored
@@ -16,19 +16,8 @@ import type { UserDirectory, UserRecord } from "./deps.js";
  * test reads the connection's own secret and only reports ok/fail.
  */
 
-/**
- * The fetch the live test uses. Injected so an OFFLINE test stubs the target
- * with no network, and so the test path never reaches for a global. The URL is
- * built by this service from the STORED `baseUrl` — never from the request
- * body — so a test cannot be pointed at an arbitrary host by its caller.
- *
- * ONE exception to the injection: an `openai_compat` probe whose dial skips
- * TLS verification (see `runConnectionTest`) goes through undici's own fetch,
- * because the skip can only ride on an undici dispatcher and this signature
- * has no seam for one. Such URLs are https + internal/flagged only, so the
- * offline suites (http/public fixtures) never take that path.
- */
-export type ConnectorFetch = (input: string, init?: RequestInit) => Promise<Response>;
+/** Sözleşmesi `deps.ts`te; buradan yeniden dışavuruluyor. */
+export type { ConnectorFetch };
 
 /**
  * The explicit-switch half of the TLS rule, bound to the connection STORE —

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { ConnectionRecord } from "./connection-store.js";
 import type { ConnectorFetch } from "./connection-service.js";
 import type { ResolvedDeps } from "./deps.js";
-import { jiraMatchSource } from "./jira-match-values-service.js";
+import { jiraMatchSource, readTeamManaged } from "./jira-match-values-service.js";
 import type { FlowType, ListeningRuleRecord, ListeningStore } from "./listening-store.js";
 
 /**
@@ -27,10 +27,26 @@ import type { FlowType, ListeningRuleRecord, ListeningStore } from "./listening-
  * rule per subtask type would start duplicate runs for the same piece of work.
  */
 
-/** One issue type as the seed needs it: the name, and whether it is a subtask. */
+/**
+ * One issue type as the seed needs it.
+ *
+ * `id` BİR DÖNEM YOKTU ve bu, takım yönetimli ("next-gen") projelerde
+ * tohumlanan her kuralın sonsuza dek hiçbir ticket bulmamasına yol açıyordu.
+ * Sebep JQL'de: böyle bir projede Jira, iş tipi ve statü ADLARINI kabul etmez.
+ * Hata da vermez — boş sayfa döner. Canlıda OPS üzerinde, aynı ticket kümesinde
+ * ölçüldü (`jira-match-values-service.ts` modül yorumu):
+ *
+ *   issuetype = "Görev"  ->  0 ticket
+ *   issuetype = 10008    -> 14 ticket
+ *
+ * Yani adla tohumlanmış bir kural tarar, hiçbir şey bulmaz, ve hiçbir yerde
+ * hata görünmez — bir arızanın alabileceği en yanıltıcı biçim.
+ */
 export interface SeedIssueType {
   name: string;
   subtask?: boolean;
+  /** Jira'nın verdiği sayısal id; takım yönetimli projede JQL BUNU ister. */
+  id?: string;
 }
 
 export interface SeedResult {
@@ -73,6 +89,17 @@ export async function seedDefaultRules(
   projectKey: string,
   assigneeAccountId: string,
   issueTypes: readonly SeedIssueType[],
+  /**
+   * Proje takım yönetimli mi ("next-gen"). `true` ise kural İD ile yazılır:
+   * böyle bir projede JQL adları kabul etmez ve hata da vermez, boş sayfa
+   * döner — yani adla tohumlanmış kural sonsuza dek hiçbir ticket bulmaz
+   * (`SeedIssueType.id` yorumunda canlı ölçüm var).
+   *
+   * Varsayılan `false`: bu alan var olmadan önceki davranış. Fail-soft, çünkü
+   * proje kaynağı okunamadığında ad yazmak, hiç tohumlamamaktan iyidir —
+   * şirket yönetimli projelerde ad zaten doğru biçimdir.
+   */
+  teamManaged = false,
 ): Promise<SeedResult> {
   const existing = await store.list();
   const rules: ListeningRuleRecord[] = [];
@@ -106,7 +133,15 @@ export async function seedDefaultRules(
       projectKey,
       assigneeAccountId,
       matchKind: "issuetype",
-      matchValue: name,
+      /**
+       * Takım yönetimli projede İD, şirket yönetiminde AD.
+       *
+       * İd yoksa ada düşülür: Jira'nın id vermediği bir kaynaktan (bozulmuş
+       * statü yedeği) gelen tip hâlâ tohumlanabilmeli — o hâlde kural şirket
+       * yönetimli projede çalışır, takım yönetimlide çalışmaz, ki bu zaten
+       * bugünkü davranıştır. Sessizce KÖTÜLEŞEN bir şey yok.
+       */
+      matchValue: teamManaged && issueType.id !== undefined ? issueType.id : name,
       flowType,
       priority: flowType === "duzeltme" ? PRIORITY_DUZELTME : PRIORITY_ANALIZ,
       enabled: true,
@@ -150,7 +185,12 @@ export function parseSeedIssueTypes(raw: unknown): SeedIssueType[] | null {
     if (typeof group !== "object" || group === null) continue;
     const name = (group as Record<string, unknown>)["name"];
     if (typeof name !== "string" || name.trim().length === 0) continue;
-    out.push({ name: name.trim(), subtask: (group as Record<string, unknown>)["subtask"] === true });
+    const id = (group as Record<string, unknown>)["id"];
+    out.push({
+      name: name.trim(),
+      subtask: (group as Record<string, unknown>)["subtask"] === true,
+      ...(typeof id === "string" && id.trim() !== "" ? { id: id.trim() } : {}),
+    });
   }
   return out;
 }
@@ -177,7 +217,12 @@ export function parseSeedCreateMetaIssueTypes(raw: unknown): SeedIssueType[] | n
     if (typeof entry !== "object" || entry === null) continue;
     const name = (entry as Record<string, unknown>)["name"];
     if (typeof name !== "string" || name.trim().length === 0) continue;
-    out.push({ name: name.trim(), subtask: (entry as Record<string, unknown>)["subtask"] === true });
+    const id = (entry as Record<string, unknown>)["id"];
+    out.push({
+      name: name.trim(),
+      subtask: (entry as Record<string, unknown>)["subtask"] === true,
+      ...(typeof id === "string" && id.trim() !== "" ? { id: id.trim() } : {}),
+    });
   }
   // Zero creatable types is not a real project — treat it as "no answer" so the
   // caller degrades to the statuses payload instead of seeding nothing.
@@ -303,6 +348,33 @@ export async function seedProjectDefaults(
   const fetched = await fetchSeedIssueTypes(connection, projectKey, token, deps.connectorFetch);
   if (!fetched.ok) return { ok: false, reason: fetched.reason };
 
-  const result = await seedDefaultRules(deps.listening, projectKey, botAccountId, fetched.issueTypes);
+  /**
+   * Projenin takım yönetimli olup olmadığı, kuralın hangi BİÇİMDE yazılacağına
+   * karar verir (ad mı, id mi) — ayrıntısı `seedDefaultRules`ın parametresinde.
+   * Okunamıyorsa `false` döner ve tohum ad yazar; bu, bu kontrol var olmadan
+   * önceki davranıştır, yani okuma başarısızlığı hiçbir şeyi kötüleştirmez.
+   */
+  const matchSource = jiraMatchSource(connection.kind);
+  const teamManaged =
+    matchSource === null || token === null
+      ? false
+      : await readTeamManaged(
+          connection.baseUrl.replace(/\/+$/u, ""),
+          projectKey,
+          connection.kind,
+          matchSource.header(
+            token,
+            typeof connection.config["email"] === "string" ? connection.config["email"] : "",
+          ),
+          deps.connectorFetch,
+        ).catch(() => false);
+
+  const result = await seedDefaultRules(
+    deps.listening,
+    projectKey,
+    botAccountId,
+    fetched.issueTypes,
+    teamManaged,
+  );
   return { ok: true, ...result };
 }

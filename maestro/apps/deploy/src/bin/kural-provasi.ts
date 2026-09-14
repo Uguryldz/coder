@@ -12,6 +12,7 @@ import { jqlFor } from "../jira-discovery.js";
 import { flowDecisionFor } from "@maestro/bff";
 import { planFor, gatesFor } from "@maestro/workflows";
 import { APPROVAL_GATE_STEPS } from "@maestro/contracts";
+import { findJiraConnection, jiraHeaders, jiraUrl } from "./jira-connection.js";
 
 /** Aramanın döndürdüğü gövdenin bu provanın okuduğu dilimi. */
 interface SearchBody {
@@ -26,21 +27,13 @@ interface SearchBody {
   }[];
 }
 
-function str(value: unknown): string | undefined {
-  return typeof value === "string" && value !== "" ? value : undefined;
-}
-
 const db = createDb(process.env["DATABASE_URL"] ?? "");
 const rows = await db.connection.findMany();
-const jira = rows.find((c) => c.kind === "jira_cloud");
-if (jira === undefined) throw new Error("Jira Cloud bağlantısı yok — prova çalıştırılamaz.");
+const jira = findJiraConnection(rows);
 const secrets = new EncryptedSecretStore(
   resolveMasterKey({ envValue: process.env["CONNECTOR_MASTER_KEY"], isProduction: false }), db.connectorSecret);
-if (jira.secretRef === null) throw new Error("Jira bağlantısının token'ı yok — prova çalıştırılamaz.");
 const token = await secrets.get(jira.secretRef);
-const email = str((jira.configJson as Record<string, unknown> | null)?.["email"]) ?? "";
-const base = jira.baseUrl.replace(/\/+$/, "");
-const H: Record<string, string> = { authorization: `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`, accept: "application/json" };
+const H: Record<string, string> = jiraHeaders(jira, token);
 
 const rules = await db.listeningRule.findMany({ where: { enabled: true } });
 console.log(`PROVA — ${rules.length} etkin kural · ajan çağrısı YOK\n`);
@@ -67,7 +60,7 @@ for (const r of rules) {
   // 1) Taramanın kuracağı sorgu
   const jql = jqlFor(rule);
   if (jql === null) { console.log("  ✗ JQL kurulamadı (bot hesabı yok)\n"); continue; }
-  const res = await fetch(`${base}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&fields=key,status,issuetype,assignee,labels&maxResults=20`, { headers: H });
+  const res = await fetch(jiraUrl(jira, `/search/jql?jql=${encodeURIComponent(jql)}&fields=key,status,issuetype,assignee,labels&maxResults=20`), { headers: H });
   const body = (await res.json()) as SearchBody;
   const found = body.issues ?? [];
   console.log(`  1. Tarama    → ${found.length} ticket bulundu`);

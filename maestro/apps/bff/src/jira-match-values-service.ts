@@ -237,7 +237,7 @@ export function isTeamManagedProject(raw: unknown): boolean {
   return body["simplified"] === true || str(body["style"])?.trim().toLowerCase() === "next-gen";
 }
 
-async function readTeamManaged(
+export async function readTeamManaged(
   base: string,
   projectKey: string,
   kind: ConnectionKind,

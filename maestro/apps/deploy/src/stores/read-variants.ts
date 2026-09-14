@@ -1,4 +1,5 @@
 import type { LlmRole } from "@maestro/contracts";
+import type { VariantRow, VariantVersionRow } from "./variant-rows.js";
 import type {
   VariantCatalog,
   VariantDetail,
@@ -27,20 +28,8 @@ import type {
  * they come back as a marker rather than a plausible name — see `UNRECORDED`.
  */
 
-export interface VariantRow {
-  id: string;
-  role: string;
-  name: string;
-}
-
-export interface VariantVersionRow {
-  variantId: string;
-  version: number;
-  model: string;
-  configJson: unknown;
-  evalScore: number | null;
-  createdAt: Date;
-}
+/** Tanımları `variant-rows.ts`te; buradan yeniden dışavuruluyor. */
+export type { VariantRow, VariantVersionRow };
 
 export interface VariantDelegate {
   findMany(args: { orderBy: [{ role: "asc" }, { id: "asc" }] }): Promise<VariantRow[]>;

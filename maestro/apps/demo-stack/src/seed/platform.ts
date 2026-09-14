@@ -21,6 +21,15 @@ import { stampBefore } from "./runs.js";
  * the scanners found. Everything the operator screens read that is not a run.
  */
 
+/**
+ * `jiraProjectKey` DEMO_BINDINGS'teki eşlemenin AYNISIDIR (aşağıda). İki liste
+ * ayrışırsa prova yığını, sahada olamayacak bir durumu taşır: bir uygulamanın
+ * kendi söylediği Jira projesi ile o projeye bağlı olduğu kayıt birbirini
+ * tutmaz. `seed-parity.test.ts` bunu ölçer.
+ *
+ * android iOS ile aynı `UGURMOB` projesini paylaşır — bu kasıtlı: tek Jira
+ * projesine birden çok depo bağlanabilir (M102), ve prova o durumu taşımalı.
+ */
 export const DEMO_APPS: readonly ApplicationRecord[] = [
   {
     appId: "ugurpay",
@@ -28,6 +37,7 @@ export const DEMO_APPS: readonly ApplicationRecord[] = [
     adoProject: "UgurBank",
     adoRepo: "ugurpay-core",
     platform: "linux-node",
+    jiraProjectKey: "UGURPAY",
     jiraComponent: "payments",
     maestroYamlPresent: true,
     createdVia: "onboarding",
@@ -38,6 +48,7 @@ export const DEMO_APPS: readonly ApplicationRecord[] = [
     adoProject: "UgurBank",
     adoRepo: "ugurweb",
     platform: "linux-node",
+    jiraProjectKey: "UGURWEB",
     jiraComponent: "web",
     maestroYamlPresent: true,
     createdVia: "onboarding",
@@ -48,6 +59,7 @@ export const DEMO_APPS: readonly ApplicationRecord[] = [
     adoProject: "UgurBank",
     adoRepo: "ugurmobil-ios",
     platform: "macos-xcode",
+    jiraProjectKey: "UGURMOB",
     jiraComponent: "ios",
     maestroYamlPresent: true,
     createdVia: "onboarding",
@@ -58,6 +70,7 @@ export const DEMO_APPS: readonly ApplicationRecord[] = [
     adoProject: "UgurBank",
     adoRepo: "ugurmobil-android",
     platform: "linux-android",
+    jiraProjectKey: "UGURMOB",
     jiraComponent: "android",
     maestroYamlPresent: true,
     createdVia: "onboarding",
@@ -68,6 +81,7 @@ export const DEMO_APPS: readonly ApplicationRecord[] = [
     adoProject: "UgurBank",
     adoRepo: "ugurdesk",
     platform: "windows-dotnet",
+    jiraProjectKey: "UGURDESK",
     jiraComponent: "desktop",
     // Deliberately absent: the flow stops rather than inventing build commands
     // (M52), and an operator should be able to see one such app in the demo.

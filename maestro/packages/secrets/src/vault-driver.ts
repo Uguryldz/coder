@@ -11,15 +11,18 @@ import {
 } from "./errors.js";
 import { parseScope } from "./keys.js";
 import { resolveKey, toIsoDateTime } from "./shared.js";
+import { EXPIRY_SKEW_SECONDS } from "@maestro/ports";
 import type { VaultBody, VaultClient, VaultReadResult } from "./vault-client.js";
 
 /**
  * How much longer than the requested window a granted lease may run before the
- * driver calls it a violation. Mirrors `EXPIRY_SKEW_SECONDS` in adapter-ado,
- * which rejects exactly the same condition on the consuming side — the two
- * packages must not disagree about what "short-lived" means (M31).
+ * driver calls it a violation. Bu, adapter'ların tüketen tarafta reddettiği
+ * koşulun ta kendisi — iki paket "kısa ömürlü" ne demek konusunda ayrışamaz
+ * (M31). Bir dönem burada 60 yazıyordu ve bir yorum "adapter-ado'yu yansıtır"
+ * diyordu; yansıma yerine artık aynı sabit okunuyor, böylece tavan bir yerde
+ * değiştiğinde öteki taraf sessizce eski değerde kalamaz.
  */
-const GRANTED_LEASE_SKEW_SECONDS = 60;
+const GRANTED_LEASE_SKEW_SECONDS = EXPIRY_SKEW_SECONDS;
 
 export interface VaultSecretPortOptions {
   config: VaultConfig;

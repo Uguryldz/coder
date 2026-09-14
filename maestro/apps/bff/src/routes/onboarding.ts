@@ -24,6 +24,7 @@ import { engineIdentityWarning } from "../connection-service.js";
 import type { SecretPort } from "@maestro/ports";
 import { pageOf } from "./paging.js";
 import { unwired } from "./unwired.js";
+import { splitRepoFullName } from "../identifiers.js";
 
 /**
  * Self-service onboarding (M93/M102): connecting a Jira project to a
@@ -191,27 +192,8 @@ const RejectBody = z
   })
   .strict();
 
-/**
- * Split a repo's full name (`owner/repo`) into the two registry columns.
- *
- * The wizard sends the exact string it picked from the live SCM list, so the
- * appId is that string verbatim and the two halves are what the SCM/`.docx`
- * adapters read (owner → `adoProject`, repo → `adoRepo`; M100). A name with no
- * slash, or an empty half, is not a repository this platform can bind, so it is
- * refused by name rather than written as a row with a blank column.
- */
-export function splitRepoFullName(
-  fullName: string,
-): { adoProject: string; adoRepo: string } | null {
-  const slash = fullName.indexOf("/");
-  if (slash <= 0 || slash === fullName.length - 1) return null;
-  const adoProject = fullName.slice(0, slash);
-  const adoRepo = fullName.slice(slash + 1);
-  // A second slash would make `adoRepo` itself contain one; GitHub repo names
-  // never do, so this is a malformed pick rather than a nested path.
-  if (adoRepo.includes("/")) return null;
-  return { adoProject, adoRepo };
-}
+/** Tanımı `identifiers.ts`te; buradan yeniden dışavuruluyor. */
+export { splitRepoFullName };
 
 /**
  * The onboarding draft's two-valued choices, mapped to the binding columns.

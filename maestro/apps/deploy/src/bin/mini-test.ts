@@ -11,6 +11,7 @@ import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { findJiraConnection, jiraHeaders, jiraUrl } from "./jira-connection.js";
 const run = promisify(execFile);
 
 const db = createDb(process.env["DATABASE_URL"] ?? "");
@@ -24,15 +25,12 @@ console.log(`✓ klon: ${r.workspacePath}\n`);
 
 // Ticket'ın gerçek metnini al — ajan bunu görecek
 const rows = await db.connection.findMany();
-const jira = rows.find((c) => c.kind === "jira_cloud");
-if (jira === undefined || jira.secretRef === null) throw new Error("Jira yok");
+const jira = findJiraConnection(rows);
 const secrets = new EncryptedSecretStore(
   resolveMasterKey({ envValue: process.env["CONNECTOR_MASTER_KEY"], isProduction: false }), db.connectorSecret);
 const token = await secrets.get(jira.secretRef);
-const email = ((jira.configJson as Record<string, unknown> | null)?.["email"] as string | undefined) ?? "";
-const base = jira.baseUrl.replace(/\/+$/, "");
-const H = { authorization: `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`, accept: "application/json" };
-const ir = await fetch(`${base}/rest/api/3/issue/${ticket}?fields=summary,description`, { headers: H });
+const H = jiraHeaders(jira, token);
+const ir = await fetch(jiraUrl(jira, `/issue/${ticket}?fields=summary,description`), { headers: H });
 const ib = (await ir.json()) as { fields?: { summary?: string; description?: unknown } };
 const flat = (n: unknown): string => {
   if (typeof n !== "object" || n === null) return "";

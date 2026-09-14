@@ -10,7 +10,7 @@
  * parse, and because the package takes no new runtime dependency.
  */
 
-import { stripUnsafeChars } from "./md.js";
+import { stripUnsafeChars } from "./unsafe-chars.js";
 
 export type Inline =
   | { kind: "text"; text: string }

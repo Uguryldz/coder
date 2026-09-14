@@ -21,6 +21,73 @@ const BOT = "712020:bot";
 
 // ── seedDefaultRules (unit) ───────────────────────────────────────────────────
 
+/**
+ * TAKIM YÖNETİMLİ ("NEXT-GEN") PROJEDE KURAL İD İLE YAZILIR.
+ *
+ * Canlıda OPS üzerinde, aynı ticket kümesinde ölçüldü:
+ *
+ *   issuetype = "Görev"  ->  0 ticket
+ *   issuetype = 10008    -> 14 ticket
+ *
+ * Böyle bir projede JQL ADLARI KABUL ETMEZ, ve hata da vermez — boş sayfa
+ * döner. Yani adla tohumlanmış bir kural tarar, hiçbir şey bulmaz, ve hiçbir
+ * yerde hata görünmez. Operatörün gördüğü tek şey "altı kural tarandı, sıfır
+ * ticket alındı" olur; bir arızanın alabileceği en yanıltıcı biçim.
+ *
+ * Kuralın eşleşme tarafı (`flow-decision.ts` `matches`) ve sorgu tarafı
+ * (`jira-discovery.ts` `jqlFor`) sayısal değeri zaten id olarak okuyor —
+ * eksik olan tek halka tohumun onu YAZMASIYDI.
+ */
+describe("seedDefaultRules — takım yönetimli proje id ister", () => {
+  it("takım yönetimli projede matchValue İD olur", async () => {
+    const store = new InMemoryListeningStore();
+    await seedDefaultRules(
+      store,
+      "OPS",
+      BOT,
+      [
+        { name: "Görev", id: "10008" },
+        { name: "Hata", id: "10004" },
+      ],
+      true,
+    );
+    const rules = await store.list();
+    expect(rules.map((r) => r.matchValue).sort()).toEqual(["10004", "10008"]);
+    // Akış tipi yine ADDAN türetilir — id'ye geçmek "Hata"yı düzeltme
+    // olmaktan çıkarmamalı.
+    expect(rules.find((r) => r.matchValue === "10004")?.flowType).toBe("duzeltme");
+    expect(rules.find((r) => r.matchValue === "10008")?.flowType).toBe("analiz");
+  });
+
+  it("şirket yönetimli projede matchValue AD kalır — bugünkü davranış", async () => {
+    const store = new InMemoryListeningStore();
+    await seedDefaultRules(
+      store,
+      "OPS",
+      BOT,
+      [
+        { name: "Görev", id: "10008" },
+        { name: "Hata", id: "10004" },
+      ],
+      false,
+    );
+    expect((await store.list()).map((r) => r.matchValue).sort()).toEqual(["Görev", "Hata"]);
+  });
+
+  it("bayrak verilmezse AD yazılır — bu alan var olmadan önceki davranış", async () => {
+    const store = new InMemoryListeningStore();
+    await seedDefaultRules(store, "OPS", BOT, [{ name: "Görev", id: "10008" }]);
+    expect((await store.list())[0]?.matchValue).toBe("Görev");
+  });
+
+  it("id YOKSA ada düşülür — sessizce hiç tohumlamaktan iyidir", async () => {
+    const store = new InMemoryListeningStore();
+    await seedDefaultRules(store, "OPS", BOT, [{ name: "Görev" }], true);
+    expect((await store.list())[0]?.matchValue).toBe("Görev");
+  });
+});
+
+
 describe("seedDefaultRules", () => {
   it("maps bug-like types to duzeltme(50) and everything else to analiz(100) — never gelistirme", async () => {
     const store = new InMemoryListeningStore();

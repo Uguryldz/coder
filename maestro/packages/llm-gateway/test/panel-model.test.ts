@@ -9,6 +9,7 @@ import {
   type ResolvedModel,
 } from "../src/index.js";
 import { fakeClock, gatewayDeps, stubFetch, stubRunner, stubSecrets } from "./helpers.js";
+import type { AgentSessionOptions } from "@maestro/ports";
 
 /**
  * A model added in the panel is the model a run actually dials (M107).
@@ -478,13 +479,16 @@ describe("a deployment that still configures its model in .env", () => {
  * görmeden yazılıyordu.
  */
 describe("agentSession ve panelin modeli", () => {
-  const opts = {
+  // `as const` DEĞİL: `mcpServers` o zaman `readonly []` olur ve sözleşmenin
+  // istediği `string[]`e atanamaz. Tipi açıkça bildirmek hem bunu çözer hem de
+  // sözleşme değiştiğinde testin DERLENMEMESİNİ sağlar — asıl istenen bu.
+  const opts: AgentSessionOptions = {
     workspacePath: "/work/OPS-119",
     task: "depoyu incele",
     mcpServers: [],
     dataClass: "dahili",
     variantId: "analyst-default",
-  } as const;
+  };
 
   it("oturumu PANELDEKİ modelle açar, .env varsayılanıyla değil", async () => {
     const agentRunner = stubRunner([{ finalText: "ok", tokensIn: 5, tokensOut: 2, vendorSessionId: "v1" }]);

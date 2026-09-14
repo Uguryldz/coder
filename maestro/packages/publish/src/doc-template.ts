@@ -168,3 +168,17 @@ export function templateMessageKeys(): string[] {
 export interface DocumentSink {
   put(key: string, data: Uint8Array, opts?: { contentType?: string; objectLock?: boolean }): Promise<void>;
 }
+
+/**
+ * Kurumun kendi `.docx` şablonunu verir (M103r/M108). Hiç yüklenmemişse null
+ * döner — belgelenmiş bir geri düşüş, hata değil.
+ *
+ * Bu arayüz bir dönem `drivers/binary-doc.ts` içinde tanımlıydı ve `types.ts`
+ * onu oradan alıyordu; yani paketin TİP katmanı bir SÜRÜCÜYE bağlıydı ve
+ * sürücü de tiplere geri bağlandığı için ortada bir döngü vardı. Arayüzün
+ * kendisi sürücüye ait değil: yalnız `DocTemplateFile`e dayanıyor, o da
+ * burada tanımlı. Tip şablon katmanına taşındı, döngü kalktı.
+ */
+export interface DocTemplateSource {
+  current(): Promise<{ template: DocTemplateFile; bytes: Uint8Array } | null>;
+}

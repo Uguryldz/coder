@@ -450,16 +450,27 @@ describe("fetchSeedIssueTypes — the seed matches on the same names", () => {
    * so it has to prefer the same source: a seeded "Task" rule is a project that
    * silently listens to nothing.
    */
-  it("seeds from the LOCALISED createmeta names and keeps the subtask flag", async () => {
+  it("seeds from the LOCALISED createmeta names, keeps the subtask flag AND the id", async () => {
+    /**
+     * `id` DE TAŞINIR, ve bu isteğe bağlı bir ayrıntı değil.
+     *
+     * Takım yönetimli ("next-gen") bir projede JQL iş tipi adlarını hiç kabul
+     * etmez ve hata da vermez — boş sayfa döner. Canlıda OPS üzerinde ölçüldü:
+     * `issuetype = "Görev"` → 0 ticket, `issuetype = 10008` → 14 ticket. Yani
+     * adla tohumlanmış bir kural sonsuza dek hiçbir ticket bulmaz.
+     *
+     * Tohum id'yi burada alamazsa, o projede yazacak doğru değeri hiç
+     * göremez — `seedDefaultRules`ın takım yönetimli dalı ada düşer.
+     */
     const { fetch } = router([CREATEMETA, STATUSES]);
     const result = await fetchSeedIssueTypes(conn(), "OPS", TOKEN, fetch);
     expect(result).toEqual({
       ok: true,
       issueTypes: [
-        { name: "Görev", subtask: false },
-        { name: "Hata", subtask: false },
-        { name: "Hikaye", subtask: false },
-        { name: "Subtask", subtask: true },
+        { name: "Görev", subtask: false, id: "10001" },
+        { name: "Hata", subtask: false, id: "10004" },
+        { name: "Hikaye", subtask: false, id: "10002" },
+        { name: "Subtask", subtask: true, id: "10005" },
       ],
     });
   });

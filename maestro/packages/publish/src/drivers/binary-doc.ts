@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { NonEmpty, type PublishReceipt, type PublishRequest, type PublishTarget } from "@maestro/contracts";
 import { buildDocumentModel } from "../doc-model.js";
-import type { DocTemplateFile, DocumentSink, GeneratedDocument, TemplateWarning } from "../doc-template.js";
+import type {
+  DocTemplateSource,
+  DocumentSink,
+  GeneratedDocument,
+  TemplateWarning,
+} from "../doc-template.js";
 import { renderDocx } from "../docx-render.js";
 import { PublishConfigError, PublishRenderError } from "../errors.js";
 import { DOC_TITLE_KEY } from "../keys.js";
@@ -34,13 +39,8 @@ export const BinaryDocPublishConfig = z
   .strict();
 export type BinaryDocPublishConfig = z.infer<typeof BinaryDocPublishConfig>;
 
-/**
- * Supplies the institution's corporate `.docx` (M103r/M108). Returns null when
- * none is uploaded — a documented fallback, not an error.
- */
-export interface DocTemplateSource {
-  current(): Promise<{ template: DocTemplateFile; bytes: Uint8Array } | null>;
-}
+/** Tanımı `doc-template.ts`te; buradan yeniden dışavuruluyor (M103r/M108). */
+export type { DocTemplateSource };
 
 export interface BinaryDocPublisherDeps {
   sink: DocumentSink;

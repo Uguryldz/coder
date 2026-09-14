@@ -21,6 +21,7 @@ import { analysisInstructions, analysisRules, briefRules, planRules } from "./an
 import { discoveryNotes, loadDiscoveryStamp, storeAnalysis, storeDiscoveryStamp } from "./brief.js";
 import { analystPersona, roleVariantId, trainingFor } from "./persona.js";
 import { activitySeq, audit, record } from "./record.js";
+import { ensureWorkspaceFor } from "./workspace.js";
 
 /**
  * Steps 3ö and 3: read-only repo discovery and the analysis document.
@@ -105,13 +106,8 @@ export async function discoverRepo(
    * dokunmaz, silinmişse yeniden klonlar. Yetenek sunulmayan bir kurulumda
    * (klonlamayan sürücü) eski davranışa düşülür.
    */
-  const ensured = await ensureWorkspaceOrKeep(deps, run, ticket, appId);
-  if (ensured !== null && ensured !== run.workspacePath) {
-    await deps.runs.patch(ticket, { workspacePath: ensured });
-  }
-  // Bu adımın geri kalanı YOLU okur; koşu satırı yamandı ama eldeki nesne
-  // değişmedi, o yüzden yerel bir görünüm tutuluyor.
-  const workspacePath = ensured ?? run.workspacePath;
+  // Ortak koruma: `workspace.ts`. Satırı yamamak ve deftere yazmak orada.
+  const workspacePath = (await ensureWorkspaceFor(deps, run, ticket, appId, "keşif")).path;
 
   if (workspacePath.trim() === "") {
     // CANLI BULGU: no WORKSPACE_ROOT → no clone → discovery answered "0 dosya"
@@ -267,48 +263,6 @@ async function workspaceDigestOrNull(
     const body = `${digest.tree}\n\n${digest.files.map((f) => `--- ${f.path} ---\n${f.text}`).join("\n\n")}`;
     return { status: "ok", value: { resumeToken: "", finalText: body }, log: null } as never;
   } catch {
-    return null;
-  }
-}
-
-/**
- * Çalışma alanını var eder; dokunamıyorsa `null` döner (çağıran eski yola düşer).
- *
- * Yeniden klonlama SESSİZ değil: deftere yazılır, çünkü "analizim neden bu
- * kadar sürdü" ve "klon neden iki kez açıldı" sorularının cevabı burasıdır.
- */
-async function ensureWorkspaceOrKeep(
-  deps: ActivityDeps,
-  run: RunContext,
-  ticket: TicketKey,
-  appId: string,
-): Promise<string | null> {
-  const ensure = deps.scm.ensureWorkspace?.bind(deps.scm);
-  if (ensure === undefined) return null;
-  try {
-    const path = await ensure({
-      runId: run.runId,
-      appId,
-      ...(run.targetBranch === undefined || run.targetBranch === null ? {} : { targetBranch: run.targetBranch }),
-    });
-    if (path !== null && path !== run.workspacePath) {
-      await record(deps, run, {
-        kind: "discovery",
-        actor: "system",
-        title: "çalışma alanı yeniden açıldı",
-        detail: `${appId} klonu diskte yoktu (çalışma alanı geçici bir birimdir ve servis yeniden başlayınca silinir) — keşiften önce yeniden klonlandı.`,
-        key: "discovery:reclone",
-      });
-    }
-    return path;
-  } catch (error) {
-    await record(deps, run, {
-      kind: "discovery",
-      actor: "system",
-      title: "çalışma alanı açılamadı",
-      detail: `${appId} yeniden klonlanamadı: ${String(error)} — analiz keşifsiz sürüyor.`,
-      key: "discovery:reclone-failed",
-    });
     return null;
   }
 }

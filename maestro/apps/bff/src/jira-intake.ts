@@ -1,6 +1,5 @@
-import { ProjectKey, type MatchResult, type TicketKey, type TicketSnapshot } from "@maestro/contracts";
+import { type MatchResult, type TicketKey, type TicketSnapshot } from "@maestro/contracts";
 import type { ResolvedDeps } from "./deps.js";
-import { badRequest } from "./errors.js";
 import { BFF_MESSAGE_KEYS } from "./messages.js";
 import { workflowIdFor } from "./gateway.js";
 import { resolveGateSteps } from "./gate-defaults.js";
@@ -8,7 +7,7 @@ import { flowDecisionFor, statusGateOf, type FlowDecision } from "./flow-decisio
 import { decisionLogLine, decisionLogMarkdown, type IntakeDecisionFacts } from "./intake-decision-log.js";
 import type { ListeningRuleRecord } from "./listening-store.js";
 import { isFixedRepoMap, isSearchRepoMap, resolveRepoMapEntry } from "./listening-store.js";
-import { splitRepoFullName } from "./routes/onboarding.js";
+import { projectKeyOf, splitRepoFullName } from "./identifiers.js";
 
 /**
  * Intake: the decision to put a ticket on the workflow engine, and every
@@ -80,11 +79,8 @@ export type IntakeOutcome =
   | { accepted: true; workflowId: string; started: boolean }
   | { accepted: false; reason: IntakeRefusal };
 
-export function projectKeyOf(ticket: TicketKey): string {
-  const parsed = ProjectKey.safeParse(ticket.split("-")[0]);
-  if (!parsed.success) throw badRequest("ticket_key", { ticket });
-  return parsed.data;
-}
+/** Tanımı `identifiers.ts`te; buradan yeniden dışavuruluyor. */
+export { projectKeyOf };
 
 /**
  * The fields a listening rule matches on, READ from the ticket, for the callers
@@ -250,6 +246,18 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
    * olmaktan çıkarırdı. Yollar yalnızca son iki alanda (`accepted`,
    * `refusedReason`) ayrılır.
    */
+  /**
+   * Depo kararı bu noktadan SONRA hesaplanıyor (eşleme, kod araması, bağlama),
+   * ama `facts()` hem ondan önce hem sonra çağrılabiliyor — bir reddin dökümü
+   * zincir hiç koşmadan yazılabilir. Kapanış o yüzden değişken okuyor: karar
+   * varsa döküme girer, yoksa alanlar hiç yazılmaz ("henüz karar verilmedi"
+   * ile "bağlamaya düşüldü" ayrı şeyler ve döküm ikisini karıştırmamalı).
+   */
+  let repoFacts: Pick<
+    IntakeDecisionFacts,
+    "appId" | "appIdSource" | "repoMapField" | "repoMapValue" | "repoMapMiss"
+  > = {};
+
   const facts = (verdict: Pick<IntakeDecisionFacts, "accepted" | "refusedReason">): IntakeDecisionFacts => ({
     ticket: request.ticket,
     projectKey,
@@ -271,6 +279,7 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
     ungatedRuleIds: flow.ungatedRuleIds,
     analystVariantId: flowDecision.analystVariantId ?? null,
     engineerVariantId: flowDecision.engineerVariantId ?? null,
+    ...repoFacts,
     ...verdict,
   });
 
@@ -280,6 +289,7 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
   // explicit `/ai-assign` still wins; a ticket whose value matches no row
   // keeps the project binding's app, exactly as before the map existed.
   const mapped = await resolveRepoMap(deps, request.ticket, flowDecision.ruleId);
+  const repoMapMiss = lastRepoMapMiss;
   /**
    * ── DEPOYU KOD ARAMASIYLA BUL ────────────────────────────────────────────
    *
@@ -322,6 +332,34 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
    * doldurduğu ikinci bir kutu değil, yalnızca zincirin son çaresi.
    */
   const appId = request.appId ?? (mapped?.search === true ? undefined : mapped?.appId) ?? searched?.appId ?? binding.appId;
+  /**
+   * ZİNCİRİN HANGİ HALKASI CEVAP VERDİ — döküme yazmak için.
+   *
+   * Kararın kendisi değişmiyor; yalnız GÖRÜNÜR oluyor. Bir dönem bu bilgi
+   * hiçbir yere yazılmıyordu ve operatör, bağlamanın varsayılanına düşülmüş
+   * bir koşuda da bir depo adı gördüğü için eşlemenin çalıştığını sanıyordu —
+   * canlıda ölçülen yanlış-anlatımın kaynağı buydu.
+   *
+   * Sıra, yukarıdaki `??` zincirinin AYNISI olmak zorunda: ayrışırsa döküm
+   * kararı yanlış anlatır, ki bu hiç yazmamaktan kötüdür.
+   */
+  const appIdSource: NonNullable<IntakeDecisionFacts["appIdSource"]> =
+    request.appId !== undefined && request.appId !== null
+      ? "request"
+      : mapped !== null && mapped.search !== true && mapped.appId !== undefined
+        ? "repo_map"
+        : searched?.appId !== undefined && searched.appId !== null
+          ? "code_search"
+          : appId === null || appId === undefined
+            ? "none"
+            : "binding";
+  repoFacts = {
+    appId: appId ?? null,
+    appIdSource,
+    repoMapField: mapped?.field ?? null,
+    repoMapValue: mapped?.value ?? null,
+    repoMapMiss: repoMapMiss,
+  };
   if (appId === null || appId === undefined) {
     // Tier ③ of M99, narrowed to the flows it was written for: no rule matched
     // an application and no human said which one, so a flow that WRITES CODE
@@ -757,16 +795,29 @@ async function searchRepoFor(
   }
 }
 
+/**
+ * Eşleme neden cevap veremedi — çağrının HEMEN ardından okunur.
+ *
+ * Bir dönem bu sebepler yalnız `console.warn`a gidiyordu ve dört ayrı hal
+ * ("sürücü alan okuyamıyor", "alan okunamadı", "değer için satır yok",
+ * "kuralda eşleme yok") operatöre tek bir sessizlik olarak ulaşıyordu — üstelik
+ * her birinde yapılacak şey farklı. Dönüş tipini değiştirmemek için modül
+ * düzeyinde taşınıyor: `resolveRepoMap` tek akışta, tek çağrıyla kullanılıyor.
+ */
+let lastRepoMapMiss: string | null = null;
+
 async function resolveRepoMap(
   deps: ResolvedDeps,
   ticket: TicketKey,
   ruleId: string | undefined,
 ): Promise<{ appId: string; targetBranch?: string; field: string; value: string; search?: boolean } | null> {
+  lastRepoMapMiss = null;
   if (ruleId === undefined || deps.listening === undefined) return null;
   let rule: ListeningRuleRecord | null;
   try {
     rule = await deps.listening.get(ruleId);
   } catch {
+    lastRepoMapMiss = "dinleme kuralı okunamadı";
     return null;
   }
   const map = rule?.repoMap ?? null;
@@ -789,6 +840,7 @@ async function resolveRepoMap(
   }
   const readFields = deps.work.readFields?.bind(deps.work);
   if (readFields === undefined) {
+    lastRepoMapMiss = "bu Jira sürücüsü alan okuyamıyor";
     console.warn(`[maestro] ${ticket}: dinleme kuralı ${ruleId} depo eşlemesi taşıyor ama bu Jira sürücüsü alan okuyamıyor — proje bağlamasının uygulaması kullanılıyor.`);
     return null;
   }
@@ -796,12 +848,14 @@ async function resolveRepoMap(
   try {
     values = await readFields(ticket, [map.field]);
   } catch (error) {
+    lastRepoMapMiss = `alan (${map.field}) Jira'dan okunamadı: ${String(error)}`;
     console.warn(`[maestro] ${ticket}: depo eşlemesi alanı (${map.field}) okunamadı: ${String(error)} — proje bağlamasının uygulaması kullanılıyor.`);
     return null;
   }
   const value = values[map.field];
   const entry = resolveRepoMapEntry(map, value);
   if (entry === null) {
+    lastRepoMapMiss = `${map.fieldName ?? map.field} = ${JSON.stringify(value ?? "")} için eşleme tablosunda satır yok`;
     console.info(`[maestro] ${ticket}: ${map.fieldName ?? map.field} = "${value ?? ""}" için depo eşlemesinde satır yok — proje bağlamasının uygulaması kullanılıyor.`);
     return null;
   }

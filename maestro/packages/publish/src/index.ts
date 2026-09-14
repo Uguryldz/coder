@@ -18,3 +18,4 @@ export * from "./port.js";
 export * from "./register.js";
 export * from "./storage-format.js";
 export * from "./types.js";
+export * from "./unsafe-chars.js";

@@ -197,3 +197,78 @@ describe("karar dökümü — Jira kimlikleri", () => {
     expect(md).not.toContain("TİP KİMLİĞİ");
   });
 });
+
+/**
+ * DÖKÜM DEPO KARARINI DA ANLATIR.
+ *
+ * Dökümün bir dönem hiç taşımadığı yarısı buydu: akış tarafı (hangi kural,
+ * neden, hangi statü kapattı) eksiksiz yazılıyordu, ama "hangi depoya ve neden"
+ * için tek alan yoktu ve kararın üç halkası yalnız `console.log`a gidiyordu.
+ *
+ * Operatörün en sık sorusu tam oradaydı: "kural doğru görünüyor, ama neden HEP
+ * aynı depoya iniyor?" Cevap zincirin son halkasında — proje bağlamasının
+ * varsayılanı sessizce devreye giriyordu ve ekranda yine bir depo adı
+ * göründüğü için eşlemenin çalıştığı sanılıyordu.
+ */
+describe("depo seçimi dökümde", () => {
+  it("eşleme cevap verdiğinde kaynağını ve alanını yazar", () => {
+    const md = decisionLogMarkdown(
+      facts({
+        appId: "odeme-core",
+        appIdSource: "repo_map",
+        repoMapField: "customfield_10050",
+        repoMapValue: "Krediler",
+      }),
+      AT,
+    );
+    expect(md).toContain("## Depo seçimi");
+    expect(md).toContain("odeme-core");
+    expect(md).toContain("dinleme kuralının depo eşlemesi");
+    expect(md).toContain("customfield_10050");
+    expect(md).toContain('"Krediler"');
+  });
+
+  it("BAĞLAMAYA DÜŞÜLDÜĞÜNDE bunu açıkça söyler — sessiz varsayılan yok", () => {
+    const md = decisionLogMarkdown(
+      facts({
+        appId: "maestro-pilot",
+        appIdSource: "binding",
+        repoMapMiss: 'İş Ailesi = "Krediler" için eşleme tablosunda satır yok',
+      }),
+      AT,
+    );
+    expect(md).toContain("VARSAYILANI");
+    expect(md).toContain("eşleme cevap vermedi");
+    expect(md).toContain("satır yok");
+  });
+
+  it("dört eşleme arızası dört AYRI cümle verir", () => {
+    const reasons = [
+      "bu Jira sürücüsü alan okuyamıyor",
+      "alan (customfield_10050) Jira'dan okunamadı: Error: 403",
+      'İş Ailesi = "Krediler" için eşleme tablosunda satır yok',
+      "dinleme kuralı okunamadı",
+    ];
+    const rendered = reasons.map((repoMapMiss) =>
+      decisionLogMarkdown(facts({ appId: "x", appIdSource: "binding", repoMapMiss }), AT),
+    );
+    for (const [index, reason] of reasons.entries()) {
+      expect(rendered[index]).toContain(reason);
+    }
+    // Ve dördü birbirinden ayırt edilebilir olmalı — asıl iddia bu, çünkü
+    // operatörün yapacağı şey her birinde farklı.
+    expect(new Set(rendered).size).toBe(reasons.length);
+  });
+
+  it("hiçbir kaynak depo vermediğinde de susmaz", () => {
+    const md = decisionLogMarkdown(facts({ appId: null, appIdSource: "none" }), AT);
+    expect(md).toContain("## Depo seçimi");
+    expect(md).toContain("hiçbir kaynak depo vermedi");
+  });
+
+  it("depo kararı HENÜZ verilmediyse bölüm hiç yazılmaz", () => {
+    // "Karar verilmedi" ile "bağlamaya düşüldü" ayrı şeyler; döküm ikisini
+    // karıştırmamalı. Reddin dökümü zincir hiç koşmadan yazılabilir.
+    expect(decisionLogMarkdown(facts(), AT)).not.toContain("## Depo seçimi");
+  });
+});

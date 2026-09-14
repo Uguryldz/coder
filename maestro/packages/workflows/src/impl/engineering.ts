@@ -7,6 +7,7 @@ import type { ActivityDeps, RunContext } from "./deps.js";
 import { engineerVariantOf } from "./deps.js";
 import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
+import { ensureWorkspaceFor, workspaceUsable } from "./workspace.js";
 import { developerBrief, loadAnalysis, planDeviations, ruleChecklist } from "./brief.js";
 import { commentsBlock, readHumanComments } from "./comments.js";
 import { roleVariantId, trainingFor } from "./persona.js";
@@ -63,9 +64,31 @@ export const TestRunDigest = z.object({
   coveragePct: z.number().min(0).max(100),
 });
 
-/** The context a NEW session opens with (M30); a resumed one gets the task only. */
+/**
+ * The context a NEW session opens with (M30); a resumed one gets the task only.
+ *
+ * ÇALIŞMA ALANI BURADA VAR EDİLİR, VARSAYILMAZ.
+ *
+ * `run.workspacePath` ve `run.workspacePresent` koşu AÇILIRKEN yazılır ve
+ * sonrasında diske hiç bakılmaz; `workspacePresent` kod tabanında hiçbir yerde
+ * `false` yazılmaz — ölçüldü, tek yönlü bir bayrak. Servis yeniden başlayıp
+ * çalışma alanı silindiğinde satır aynı kalır, ve bu fonksiyon bir dönem o
+ * satırı olduğu gibi ajana veriyordu: mühendis var olmayan bir dizinde açılıp
+ * "dosya yok" diyor, doğrulayıcı aynı dizinde "doğrulandı" diyordu.
+ *
+ * Bu dosyadaki ÜÇ oturum da (kod yazma turu, doğrulayıcı, test tasarımı)
+ * buradan geçiyor, bu yüzden korumanın doğru yeri burası. `present` artık
+ * satırdaki bayrağı değil, adımın AZ ÖNCE ölçtüğü gerçeği taşır.
+ */
 async function turnContext(deps: ActivityDeps, run: RunContext, task: string) {
   const entries = await deps.memory.store.list(run.runId);
+  const workspace = await ensureWorkspaceFor(
+    deps,
+    run,
+    run.ticket,
+    run.app?.appId ?? "",
+    "geliştirme",
+  );
   return {
     ticketKey: run.ticket,
     runId: run.runId,
@@ -73,8 +96,8 @@ async function turnContext(deps: ActivityDeps, run: RunContext, task: string) {
     journal: entries,
     livingSummary: entries.length === 0 ? null : buildLivingSummary(run.runId, entries),
     workspace: {
-      path: run.workspacePath,
-      present: run.workspacePresent,
+      path: workspace.path,
+      present: workspace.ensured && workspaceUsable(workspace.path),
       branch: run.branch,
       baseSha: null,
       dirtyFiles: [],
@@ -289,7 +312,14 @@ async function verifierSession(
   run: RunContext,
   rules: readonly string[],
 ): Promise<{ finalText: string } | null> {
-  if (run.workspacePath.trim() === "") return null;
+  /**
+   * Doğrulayıcı da çalışma alanını VAR EDER — satırdaki yolun boş olup
+   * olmadığına bakmak yetmez. Yol dolu ama dizin silinmiş olabilir (bayrak tek
+   * yönlü, ayrıntısı `workspace.ts`te); o hâlde doğrulayıcı boş bir dizinde
+   * koşup "doğrulandı" derdi, ki bu sessiz bir onaydır.
+   */
+  const workspace = await ensureWorkspaceFor(deps, run, run.ticket, run.app?.appId ?? "", "doğrulama");
+  if (!workspaceUsable(workspace.path)) return null;
   const commands = run.verification.map((spec) => `- ${spec.name}: ${spec.command.join(" ")}`).join("\n");
   // The verifier's own agent definition (role `dev_reviewer`): training
   // first, then the task with this run's rules and commands.
@@ -298,7 +328,7 @@ async function verifierSession(
   let outcome: Awaited<ReturnType<ActivityDeps["llm"]["agentSession"]>>;
   try {
     outcome = await deps.llm.agentSession({
-      workspacePath: run.workspacePath,
+      workspacePath: workspace.path,
       task: `${training}\n\n${deps.translate(run.locale, "agent.verify_task", {
         ticket: run.ticket,
         rules: rules.length === 0 ? "- (analizde iş kuralı yok — kabul kriterlerini ticket'tan al)" : rules.join("\n"),

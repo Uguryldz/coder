@@ -15,7 +15,7 @@
  */
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
-import { isScmConnectionKind, listScmRepos, searchRepos, searchTermsFrom, matchByName } from "@maestro/bff";
+import { isScmConnectionKind, listScmRepos, searchRepos, searchTermsFrom } from "@maestro/bff";
 
 const text = process.argv[2];
 const project = process.argv[3];

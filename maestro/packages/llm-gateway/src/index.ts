@@ -4,6 +4,7 @@ export * from "./driver-cloud.js";
 export * from "./driver-openai.js";
 export * from "./driver-types.js";
 export * from "./errors.js";
+export * from "./fetch-like.js";
 export * from "./gateway.js";
 export * from "./http.js";
 export * from "./masking.js";

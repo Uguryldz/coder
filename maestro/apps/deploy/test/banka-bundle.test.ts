@@ -375,10 +375,32 @@ describe("banka bundle: the audited variables reach the process that reads them"
   it("gives the workspace volume to uid 10001, or the clone dies on its first mkdir", () => {
     // A plain named volume is born root-owned; the services run as 10001 and
     // the checkout would fail EACCES — silently, into a repo-blind analysis.
+    //
+    // İDDİA "tmpfs" DEĞİL, "uid 10001 YAZABİLİR"dir. Bu ayrım bir kez pahalıya
+    // mal oldu: paket tmpfs'ten kalıcı volume'e geçirildiğinde bu test, doğru
+    // olan düzeltmeyi kırdı — çünkü niyeti (yazılabilirlik) tek bir uygulamaya
+    // (mount'ta uid vermek) kilitlemişti. İki meşru yol var ve ikisi de burada:
+    //
+    //  1. tmpfs, `o: uid=10001` ile — uid'i bağlarken verir. Bedeli, yeniden
+    //     başlatmada klonların silinmesidir.
+    //  2. Kalıcı volume + `workspace-init` — açılışta bir kez root olarak
+    //     `chown` eder. Klonlar restart'ı atlatır; bugün seçilen yol budur.
+    //
+    // Yazılabilirliği HİÇ sağlamayan üçüncü bir hâl (kalıcı volume, ama
+    // workspace-init yok) burada düşer — düşmesi gereken tek hâl odur.
     const volume = compose.volumes?.["maestro-workspace"] as
       | { driver_opts?: { o?: string } }
       | undefined;
-    expect(volume?.driver_opts?.o ?? "").toContain("uid=10001");
+    const mountGivesUid = (volume?.driver_opts?.o ?? "").includes("uid=10001");
+    const init = compose.services["workspace-init"] as
+      | { user?: string; command?: unknown }
+      | undefined;
+    const initChowns =
+      init?.user === "0:0" && JSON.stringify(init?.command ?? "").includes("chown 10001:10001");
+    expect(
+      mountGivesUid || initChowns,
+      "ne mount uid veriyor ne de workspace-init chown ediyor — ilk klon EACCES alır",
+    ).toBe(true);
   });
 });
 

@@ -2,6 +2,7 @@ export * from "./errors.js";
 export * from "./registry.js";
 export * from "./work.js";
 export * from "./scm.js";
+export * from "./push-credential.js";
 export * from "./ci.js";
 export * from "./llm.js";
 export * from "./runner.js";

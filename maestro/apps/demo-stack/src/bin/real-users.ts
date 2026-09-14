@@ -24,26 +24,33 @@ import {
 import { createDb } from "@maestro/db";
 import { createJiraCloudWorkPort } from "@maestro/adapter-jira";
 import type { SecretPort } from "@maestro/ports";
-import { PrismaUserDirectory } from "../../../deploy/src/stores/users.js";
-import { PrismaSessionStore } from "../../../deploy/src/stores/sessions.js";
-import { PrismaKillSwitchStore } from "../../../deploy/src/stores/killswitch.js";
-import { PrismaParamStore } from "../../../deploy/src/stores/params-store.js";
-import { PrismaRoutingReader } from "../../../deploy/src/stores/routing.js";
-import { PrismaTemplateStore } from "../../../deploy/src/stores/template.js";
-import { PrismaDocTemplateStore } from "../../../deploy/src/stores/doc-template.js";
-import { PrismaBindingWriter, PrismaJiraProjectBindings } from "../../../deploy/src/stores/bindings.js";
-import { liveReadModels } from "../../../deploy/src/stores/read-live.js";
-import { postgresChainLock, PrismaAuditStore } from "../../../deploy/src/stores/audit.js";
-import { prismaTransactionRunner } from "../../../deploy/src/stores/sql.js";
-import { postgresProbe, httpProbe } from "../../../deploy/src/stores/read-health.js";
-import { PrismaVariantCatalog } from "../../../deploy/src/stores/read-variants.js";
-import { PrismaVariantWriter } from "../../../deploy/src/stores/write-variants.js";
-import { AuditPiiReader, AuditDecisionReader } from "../../../deploy/src/stores/read-governance.js";
-import { PrismaAppRegistryWriter } from "../../../deploy/src/stores/app-registry-writer.js";
-import { PrismaConnectionStore } from "../../../deploy/src/stores/connections.js";
-import { PrismaListeningStore } from "../../../deploy/src/stores/listening.js";
-import { PrismaGuidanceStore } from "../../../deploy/src/stores/guidance.js";
-import { EncryptedSecretStore, resolveMasterKey } from "../../../deploy/src/stores/encrypted-secret.js";
+import {
+  AuditDecisionReader,
+  AuditPiiReader,
+  EncryptedSecretStore,
+  PrismaAppRegistryWriter,
+  PrismaAuditStore,
+  PrismaBindingWriter,
+  PrismaConnectionStore,
+  PrismaDocTemplateStore,
+  PrismaGuidanceStore,
+  PrismaJiraProjectBindings,
+  PrismaKillSwitchStore,
+  PrismaListeningStore,
+  PrismaParamStore,
+  PrismaRoutingReader,
+  PrismaSessionStore,
+  PrismaTemplateStore,
+  PrismaUserDirectory,
+  PrismaVariantCatalog,
+  PrismaVariantWriter,
+  httpProbe,
+  liveReadModels,
+  postgresChainLock,
+  postgresProbe,
+  prismaTransactionRunner,
+  resolveMasterKey,
+} from "@maestro/deploy/stores";
 import { buildDemoStack } from "../deps.js";
 import { listenAddress } from "../address.js";
 

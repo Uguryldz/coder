@@ -96,6 +96,9 @@ const APPLICATION = {
   adoRepo: ADO_REPO,
   platform: "linux-node",
   jiraComponent: null,
+  // Demo'nun bileti UGURPAY-501; uygulama o Jira projesine bağlıdır. `null`
+  // bırakılırsa proje→depo sahipliğini demo üstünde denemek mümkün olmaz.
+  jiraProjectKey: TICKET_KEY.split("-")[0]!,
   maestroYamlPresent: false,
   createdVia: "import",
 } as const;

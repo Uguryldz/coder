@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Composition root (M44): binds real drivers to real ports, and boots the BFF and the Temporal worker",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./stores": "./src/stores/index.ts"
   },
   "scripts": {
     "start:bff": "tsx src/bin/bff.ts",

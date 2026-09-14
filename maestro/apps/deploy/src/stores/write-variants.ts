@@ -1,4 +1,5 @@
 import type { LlmRole } from "@maestro/contracts";
+import type { VariantRow, VariantVersionRow } from "./variant-rows.js";
 import type {
   VariantCreateRequest,
   VariantDetail,
@@ -47,22 +48,8 @@ import type {
  * and the tests never need Postgres.
  */
 
-/** A `Variant` row, as the writer needs it. */
-export interface VariantRow {
-  id: string;
-  role: string;
-  name: string;
-}
-
-/** A `VariantVersion` row, as the writer reads it back to build a detail. */
-export interface VariantVersionRow {
-  variantId: string;
-  version: number;
-  model: string;
-  configJson: unknown;
-  evalScore: number | null;
-  createdAt: Date;
-}
+/** Tanımları `variant-rows.ts`te; buradan yeniden dışavuruluyor. */
+export type { VariantRow, VariantVersionRow };
 
 /**
  * The persona/knowledge/note/author overlay a published version carries.

@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import {
   caEnv,
   checkedOutBranch,
+  cloneFailureDetail,
   DEFAULT_WORKSPACE_ROOT,
   prepareWorkspace,
   workspaceRootFrom,
@@ -225,5 +226,87 @@ describe("environment branch", () => {
     await sh("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "ilk"]);
     expect(await checkedOutBranch(repo)).toBe("develop");
     expect(await checkedOutBranch(dir)).toBeNull();
+  });
+});
+
+/**
+ * KLON HATASININ GEREKÇESİ MESAJIN İÇİNDEDİR — VE JETON İÇİNDE DEĞİLDİR.
+ *
+ * İki şey aynı anda doğru olmalı ve bir dönem yalnız biri doğruydu:
+ *
+ *  1. Ham stderr olduğu gibi geçemez: klon komut satırı `Authorization: Basic
+ *     <jeton>` taşır ve git bunu yankılayabilir. Sızarsa jeton loglara, koşu
+ *     defterine ve denetim kaydına yazılır.
+ *  2. Ama sebep de kaybolamaz. Yutulduğunda geriye "clone failed for X"
+ *     kalıyordu — "depo yok", "jeton yetkisiz", "CA bozuk" ve "boş depo"
+ *     hallerini tek cümlede birleştiren, teşhis edilemez bir mesaj. Gerekçeyi
+ *     açan kod vardı ama YALNIZ iki teşhis aracında; koşu yolu `String(error)`
+ *     yazıyordu ve operatör arızanın olduğu koşuda hiçbir şey göremiyordu.
+ *
+ * Çözüm susmak değil MASKELEMEKTİ, ve maskelemenin tek bir kopyası olmalı.
+ */
+describe("klon hatası: sebep görünür, sır görünmez", () => {
+  const JETON = "Z2hwX2FiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6MTIzNA==";
+
+  it("git'in gerekçesi mesajın İÇİNDEDİR — cause'u açmak gerekmez", () => {
+    const error = new WorkspaceError("clone failed for owner/repo", {
+      stderr: "remote: Repository not found.\nfatal: repository not found",
+    });
+    // Koşu yolu `String(error)` yazar; sebep orada olmalı.
+    expect(String(error)).toContain("Repository not found");
+    expect(String(error)).toContain("clone failed for owner/repo");
+  });
+
+  it("dört ayrı arıza dört ayrı cümle verir — hepsi 'clone failed' değil", () => {
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["remote: Repository not found.", "Repository not found"],
+      ["fatal: Authentication failed for 'https://host/x.git'", "Authentication failed"],
+      ["fatal: unable to access: SSL certificate problem: unable to get local issuer", "SSL certificate"],
+      ["warning: You appear to have cloned an empty repository.", "empty repository"],
+    ];
+    const messages = cases.map(([stderr]) =>
+      String(new WorkspaceError("clone failed for owner/repo", { stderr })),
+    );
+    for (const [index, [, expected]] of cases.entries()) {
+      expect(messages[index]).toContain(expected);
+    }
+    // Ve dördü birbirinden AYIRT EDİLEBİLİR olmalı — asıl iddia bu.
+    expect(new Set(messages).size).toBe(cases.length);
+  });
+
+  it("Basic başlığındaki jeton DAMGALANIR", () => {
+    const error = new WorkspaceError("clone failed for owner/repo", {
+      stderr: `fatal: could not read Authorization: Basic ${JETON}`,
+    });
+    expect(String(error)).not.toContain(JETON);
+    expect(String(error)).toContain("Basic ***");
+  });
+
+  it("URL içine gömülü jeton DAMGALANIR", () => {
+    for (const stderr of [
+      `fatal: unable to access 'https://x-access-token:${JETON}@github.com/o/r.git/'`,
+      `fatal: unable to access 'https://kullanici:${JETON}@git.banka.local/o/r.git/'`,
+    ]) {
+      const message = String(new WorkspaceError("clone failed for owner/repo", { stderr }));
+      expect(message, stderr).not.toContain(JETON);
+    }
+  });
+
+  it("gerekçe yoksa mesaj eskisi gibi kalır", () => {
+    expect(String(new WorkspaceError("clone failed for owner/repo"))).toBe(
+      "WorkspaceError: clone failed for owner/repo",
+    );
+  });
+
+  it("çok satırlı stderr kırpılır — log satırı defteri boğmaz", () => {
+    const stderr = Array.from({ length: 40 }, (_, i) => `satır ${i}`).join("\n");
+    const message = String(new WorkspaceError("clone failed for owner/repo", { stderr }));
+    expect(message).toContain("satır 0");
+    expect(message).not.toContain("satır 30");
+  });
+
+  it("maskeleme tek kaynaktan — cloneFailureDetail aynı kuralı uygular", () => {
+    expect(cloneFailureDetail({ stderr: `Basic ${JETON}` })).toBe("Basic ***");
+    expect(cloneFailureDetail(undefined)).toBe("");
   });
 });

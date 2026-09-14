@@ -54,9 +54,49 @@ export async function checkedOutBranch(path: string): Promise<string | null> {
   }
 }
 
+/**
+ * KİMLİK BİLGİSİ TAŞIYABİLECEK METNİ DAMGALAR.
+ *
+ * Klon komut satırı `Authorization: Basic <jeton>` taşır ve git bunu stderr'e
+ * yankılayabilir; uzak adres `https://x-access-token:<jeton>@host/...` biçiminde
+ * olabilir. Bu üç kalıbın üçü de damgalanır.
+ *
+ * Bu fonksiyon bir dönem `bin/bff.ts` içinde, YALNIZ panelin "depoyu indirmeyi
+ * dene" düğmesi için yaşıyordu ve ikinci bir kopyası `depo-indir-test.ts`teydi.
+ * Bir sır maskeleme kuralının iki kopyası, birinde sıkılaştırılıp ötekinde
+ * unutulan bir kuraldır — ve unutulan taraf jetonu loga yazar. Tek yerde.
+ */
+export function maskCredentials(text: string): string {
+  return text
+    .replace(/Basic\s+[A-Za-z0-9+/=]+/gu, "Basic ***")
+    .replace(/x-access-token:[^@\s]*/gu, "x-access-token:***")
+    .replace(/:\/\/[^@\s]*@/gu, "://***@");
+}
+
+/** Hatanın `cause` zincirinden git'in KENDİ gerekçesini çıkarır, maskelenmiş. */
+export function cloneFailureDetail(cause: unknown): string {
+  const raw = String((cause as { stderr?: unknown } | undefined)?.stderr ?? cause ?? "");
+  return maskCredentials(raw).trim().split("\n").slice(0, 4).join(" ").trim();
+}
+
+/**
+ * GEREKÇE MESAJIN İÇİNDEDİR, `cause` İÇİNDE SAKLI DEĞİL.
+ *
+ * Ham stderr bir dönem kasten yutuluyordu (jeton sızmasın diye) ve geriye
+ * yalnız "clone failed for X" kalıyordu — "depo yok", "jeton yetkisiz", "CA
+ * bozuk" ve "boş depo" hallerini tek cümlede birleştiren, teşhis edilemez bir
+ * mesaj. Gerekçeyi açan kod vardı ama YALNIZ iki teşhis aracında; koşu yolu
+ * `String(error)` yazıyordu ve operatör arızanın olduğu koşuda hiçbir şey
+ * göremiyordu. Sahada bu üç hali ayırmak saatler aldı.
+ *
+ * Yutma sebebi (jeton) meşruydu; çözümü susmak değil, MASKELEMEKTİ. Gerekçe
+ * artık mesajın kendisinde: konteyner logu, koşu defteri, panel ve CLI —
+ * hepsi aynı cümleyi görür.
+ */
 export class WorkspaceError extends Error {
   constructor(message: string, override readonly cause?: unknown) {
-    super(message);
+    const detail = cloneFailureDetail(cause);
+    super(detail === "" ? message : `${message}: ${detail}`);
     this.name = "WorkspaceError";
   }
 }
@@ -212,8 +252,8 @@ export async function prepareWorkspace(request: CloneRequest): Promise<string> {
       },
     });
   } catch (cause) {
-    // The message may carry the header; report the repository and the reason
-    // shape, never the raw stderr.
+    // Gerekçe `WorkspaceError` içinde maskelenip mesaja konur — ham stderr
+    // hiçbir zaman olduğu gibi geçmez, ama sebep de kaybolmaz.
     throw new WorkspaceError(`clone failed for ${repo}`, cause);
   }
   return path;

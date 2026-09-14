@@ -14,6 +14,7 @@
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { normalizeFieldList } from "@maestro/adapter-jira";
+import { findJiraConnection, jiraHeaders, jiraUrl } from "./jira-connection.js";
 
 interface RawField {
   readonly id?: string;
@@ -26,24 +27,14 @@ interface RawField {
 
 const db = createDb(process.env["DATABASE_URL"] ?? "");
 const conns = await db.connection.findMany();
-const jira = conns.find((c) => c.kind === "jira_cloud" || c.kind === "jira_dc");
-if (jira === undefined) throw new Error("Jira bağlantısı yok.");
-if (jira.secretRef === null) throw new Error("Jira bağlantısının jetonu yok.");
+const jira = findJiraConnection(conns);
 
 const secrets = new EncryptedSecretStore(
   resolveMasterKey({ envValue: process.env["CONNECTOR_MASTER_KEY"], isProduction: false }),
   db.connectorSecret,
 );
 const token = await secrets.get(jira.secretRef);
-const cfg = (jira.configJson as Record<string, unknown> | null) ?? {};
-const email = typeof cfg["email"] === "string" ? cfg["email"] : "";
-const base = jira.baseUrl.replace(/\/+$/u, "");
-const auth =
-  jira.kind === "jira_cloud"
-    ? `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`
-    : `Bearer ${token}`;
-
-const res = await fetch(`${base}/rest/api/3/field`, { headers: { authorization: auth, accept: "application/json" } });
+const res = await fetch(jiraUrl(jira, "/field"), { headers: jiraHeaders(jira, token) });
 if (!res.ok) throw new Error(`Jira alan listesi okunamadı: HTTP ${res.status}`);
 const raw = (await res.json()) as RawField[];
 

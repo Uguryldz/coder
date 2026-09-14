@@ -18,6 +18,7 @@ export * from "./doc-template-scan.js";
 export * from "./doc-template-service.js";
 export * from "./docx-zip.js";
 export * from "./errors.js";
+export * from "./identifiers.js";
 export * from "./notify-service.js";
 export * from "./routing-service.js";
 export * from "./gate-decision.js";

@@ -8,6 +8,7 @@ import type { ResolvedDeps, SessionRecord } from "../deps.js";
 import { conflict, forbidden } from "../errors.js";
 import { putParam } from "../params-service.js";
 import { scopeOf } from "./actor-scope.js";
+import { FOUR_EYES_GROUP } from "./four-eyes.js";
 
 /**
  * The two proposal tools (M71/M58/M101). Both file a change for a second human
@@ -16,8 +17,8 @@ import { scopeOf } from "./actor-scope.js";
  * ASK for a governing change and may never be the only thing behind it.
  */
 
-/** The group that supplies the second pair of eyes on a guarded change (M71/M32). */
-export const FOUR_EYES_GROUP = "maestro-admins";
+/** Tanımı `four-eyes.ts`te; buradan yeniden dışavuruluyor. */
+export { FOUR_EYES_GROUP };
 
 /** Where a kill-switch proposal waits for its second approver (M58). */
 export const KILL_SWITCH_PROPOSAL_KEY = "killswitch.level";

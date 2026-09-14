@@ -15,14 +15,13 @@
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { listJiraFields, listJiraFieldValues } from "@maestro/bff";
+import { findJiraConnection } from "./jira-connection.js";
 
 const projectKey = process.argv[2] ?? "OPS";
 
 const db = createDb(process.env["DATABASE_URL"] ?? "");
 const conns = await db.connection.findMany();
-const jira = conns.find((c) => c.kind === "jira_cloud" || c.kind === "jira_dc");
-if (jira === undefined) throw new Error("Jira bağlantısı yok.");
-if (jira.secretRef === null) throw new Error("Jira bağlantısının jetonu yok.");
+const jira = findJiraConnection(conns);
 
 const secrets = new EncryptedSecretStore(
   resolveMasterKey({ envValue: process.env["CONNECTOR_MASTER_KEY"], isProduction: false }),
@@ -35,8 +34,11 @@ const token = await secrets.get(jira.secretRef);
  * kullanıcı adı boş gider: çağrı 200 döner ama YALNIZCA anonim görülebilen
  * alanları taşır — 52 alanlık bir Jira'da tek satır. Sessiz bir yarım cevap,
  * hata değil; bu yüzden dönüştürme burada açıkça yapılıyor.
+ *
+ * E-posta `findJiraConnection`tan geliyor: Cloud'da varlığı orada zorunlu
+ * tutuluyor, yani buraya boş ulaşamaz.
  */
-const connection = { ...jira, config: jira.configJson } as never;
+const connection = { ...jira, config: { email: jira.email } } as never;
 
 const fieldsResult = await listJiraFields(connection, token, ((u: never, i: never) => fetch(u, i)) as never, projectKey);
 if (!fieldsResult.ok) throw new Error(`Alan listesi okunamadı: ${JSON.stringify(fieldsResult)}`);

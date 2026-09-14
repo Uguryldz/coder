@@ -2,6 +2,7 @@ import { isScanBlocking, type ScanResult, type ScanTool, type TicketKey } from "
 import { CORE_SCAN_TOOLS } from "@maestro/scanners";
 import type { ActivityDeps } from "./deps.js";
 import { audit, record } from "./record.js";
+import { ensureWorkspaceFor, workspaceUsable } from "./workspace.js";
 
 /**
  * Step 6b (M27): gitleaks + semgrep + trivy, fail-closed.
@@ -52,14 +53,51 @@ export async function runScans(
   const run = await deps.runs.get(ticket);
   const results: ScanResult[] = [];
 
-  for (const tool of CORE_SCAN_TOOLS) {
-    const startedAt = deps.now().toISOString();
-    try {
-      results.push(await deps.scan.run(tool, { workspacePath: run.workspacePath }));
-    } catch (cause) {
+  /**
+   * ÇALIŞMA ALANI OLMADAN TARAMA YAPILMAZ — ve yokluğu "temiz" diye okunmaz.
+   *
+   * Ölçülmüş arıza: koşu satırındaki `workspacePath` koşu AÇILIRKEN yazılır ve
+   * bir daha diske bakılmaz; `workspacePresent` hiçbir yerde `false` yazılmaz.
+   * Servis yeniden başlayıp çalışma alanı silindiğinde satır aynı kalır.
+   * Tarayıcılar o zaman BOŞ bir dizini tarar, hiçbir bulgu üretmez ve bu akış
+   * `SECURITY_SCAN_PASS` yazardı. Yani tarama HİÇ BAKMADAN yeşil veriyordu —
+   * bir bankada bunun adı yanlış negatiftir.
+   *
+   * Önce alan var edilmeye çalışılır (silinmişse yeniden klonlanır). Yine
+   * yoksa bu, taramanın atlanacağı bir durum DEĞİL, tarayıcının koşamadığı bir
+   * durumdur — ve bu dosyanın en başındaki sözleşme onu zaten tarif ediyor:
+   * koşamayan tarayıcı akışı BLOKLAR ve kanıt paketine öyle yazılır, kanıt
+   * paketinden kaybolmaz.
+   */
+  const workspace = await ensureWorkspaceFor(
+    deps,
+    run,
+    ticket,
+    run.app?.appId ?? "",
+    "güvenlik taraması",
+  );
+  if (!workspaceUsable(workspace.path)) {
+    const at = deps.now().toISOString();
+    for (const tool of CORE_SCAN_TOOLS) {
       results.push(
-        scannerErrorResult(tool, startedAt, cause instanceof Error ? cause.message : String(cause)),
+        scannerErrorResult(
+          tool,
+          at,
+          "çalışma alanı yok: depo klonu açılamadı, tarayıcı hiçbir dosya görmedi — " +
+            "bulgu üretilmemesi 'temiz' anlamına GELMEZ, bu yüzden akış bloklandı.",
+        ),
       );
+    }
+  } else {
+    for (const tool of CORE_SCAN_TOOLS) {
+      const startedAt = deps.now().toISOString();
+      try {
+        results.push(await deps.scan.run(tool, { workspacePath: workspace.path }));
+      } catch (cause) {
+        results.push(
+          scannerErrorResult(tool, startedAt, cause instanceof Error ? cause.message : String(cause)),
+        );
+      }
     }
   }
 

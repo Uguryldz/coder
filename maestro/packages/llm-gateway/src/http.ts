@@ -1,10 +1,11 @@
 import type { RateLimitConfig, RetryConfig } from "./config.js";
 import { LlmAuthError, LlmHttpError, LlmRateLimitError, LlmResponseError } from "./errors.js";
 import { networkFailureSummary } from "./net-cause.js";
+import type { FetchLike } from "./fetch-like.js";
 import { insecureFetch, shouldSkipTlsVerify } from "./tls.js";
 
-/** Narrow `fetch` shape the drivers depend on — keeps tests offline. */
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+/** Tanımı `fetch-like.ts`te; buradan yeniden dışavuruluyor. */
+export type { FetchLike };
 
 /** Everything non-deterministic is injected: no global clock, no global random. */
 export interface HttpDeps {

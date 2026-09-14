@@ -18,7 +18,7 @@
  */
 import { createDb } from "@maestro/db";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
-import { prepareWorkspace, checkedOutBranch, workspaceRootFrom } from "../stores/workspace-prepare.js";
+import { checkedOutBranch, cloneFailureDetail, prepareWorkspace, workspaceRootFrom } from "../stores/workspace-prepare.js";
 import { isScmConnectionKind } from "@maestro/bff";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -98,15 +98,8 @@ try {
    * başlığı sabit bir damgayla değiştiriliyor, kalan metin (git'in gerçek
    * gerekçesi) görünür kalıyor.
    */
-  const cause = (error as { cause?: unknown }).cause;
-  if (cause !== undefined) {
-    const ham = String((cause as { stderr?: unknown }).stderr ?? cause);
-    const temiz = ham
-      .replace(/Basic\s+[A-Za-z0-9+/=]+/gu, "Basic ***")
-      .replace(/x-access-token:[^@\s]*/gu, "x-access-token:***")
-      .replace(/:\/\/[^@\s]*@/gu, "://***@");
-    console.error(`  git diyor ki: ${temiz.trim().split("\n").slice(0, 6).join("\n  ")}`);
-  }
+  const detay = cloneFailureDetail((error as { cause?: unknown }).cause);
+  if (detay !== "") console.error(`  git diyor ki: ${detay}`);
   await db.$disconnect();
   process.exit(1);
 }

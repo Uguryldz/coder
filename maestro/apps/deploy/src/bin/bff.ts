@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import { join } from "node:path";
 import { AuditChain } from "@maestro/audit";
 import {
   buildServer,
@@ -109,6 +108,9 @@ import { PrismaUserDirectory } from "../stores/users.js";
 import { connectTemporal } from "../temporal-gateway.js";
 import { jiraWorkEventReader } from "../work-events.js";
 import { fail, install, isEntrypoint } from "./lifecycle.js";
+import { buildCommandsFor } from "@maestro/execution";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 /**
  * What each process-local store costs on a restart.
@@ -258,6 +260,21 @@ export async function main(): Promise<void> {
         engineerVariantId,
         templateVersion,
         ...(checkout === null ? {} : { workspacePath: checkout.path }),
+        /*
+         * DERLEME KOMUTLARI — klondan türetildi, koşuya YAZILIYOR.
+         *
+         * Bu satır olmadan alan hep boş kalıyordu: canlıda 40 koşunun 40'ında
+         * `verificationJson` boştu, yani doğrulayıcı ajanın çalıştıracağı bir
+         * komut hiç üretilmiyordu ve "derleme" kapısı hep `skipped` oluyordu.
+         * Kapı vardı, kapıdan geçecek şey yoktu.
+         *
+         * Boş liste de yazılmıyor: tanınmayan bir yığın "derleme atlandı"
+         * demek ve bunu boş bir dizi olarak yazmak ile hiç yazmamak aynı
+         * anlama geliyor — alanın yokluğu zaten bugünkü davranış.
+         */
+        ...(checkout === null || checkout.verification.length === 0
+          ? {}
+          : { verificationJson: checkout.verification }),
         ...(targetBranch === null ? {} : { targetBranch }),
         // EŞLEŞME KARARI (M99). Alımda veriliyor, burada YAZILIYOR — ve bu
         // satır olmadan `WorkflowRun.matchJson` üretimde hiç yazılmıyordu:
@@ -1833,12 +1850,29 @@ async function scmCloneToken(
   }
 }
 
+/** Klonlanmış deponun kök dosyalarından derleme komutlarını türetir. */
+async function buildCommandsAt(path: string): Promise<Array<{ name: string; command: string[] }>> {
+  try {
+    const names = await readdir(path);
+    let packageJson: unknown;
+    if (names.includes("package.json")) {
+      packageJson = JSON.parse(await readFile(join(path, "package.json"), "utf8")) as unknown;
+    }
+    return buildCommandsFor({ names, ...(packageJson === undefined ? {} : { packageJson }) }).map(
+      (spec) => ({ name: spec.name, command: [...spec.command] }),
+    );
+  } catch {
+    // Okunamayan bir klon "derleme atlandı" demektir, koşuyu düşürmez.
+    return [];
+  }
+}
+
 async function checkoutOrNull(
   env: DeployEnv,
   secrets: SecretPort,
   connections: PrismaConnectionStore,
   run: { runId: string; appId: string | null; targetBranch?: string | null },
-): Promise<{ path: string; branch: string | null } | null> {
+): Promise<{ path: string; branch: string | null; verification: Array<{ name: string; command: string[] }> } | null> {
   // An analysis-only run has no repository to check out — that is the
   // binding's deliberate shape, not a clone failure, so there is nothing to
   // warn about either. The skip is journaled by the workflow itself at 3ö.
@@ -1893,7 +1927,21 @@ async function checkoutOrNull(
        */
       ...(mirrorPath === null ? {} : { mirrorPath }),
     });
-    return { path, branch: await checkedOutBranch(path) };
+    /**
+     * DERLEME KOMUTLARI KLONDAN TÜRETİLİR.
+     *
+     * Doğrulama altyapısı zaten vardı: doğrulayıcı ajan derleme sonucunu
+     * raporluyor (`engineering.ts` → `verdict.build`) ve kırmızıysa koşuyu
+     * onaylamıyor. Ama komutlar koşu satırındaki `verificationJson`dan
+     * geliyordu ve ORAYA HİÇBİR KOD YAZMIYORDU — canlıda ölçüldü, 40 koşunun
+     * 40'ında alan boştu. Kapı vardı, kapıdan geçecek şey üretilmiyordu.
+     *
+     * Operatöre sorulmuyor: bir deponun nasıl derlendiği deponun kendi
+     * bilgisi ve dosyalarında yazılı. Tanınmayan bir yığın için komut
+     * UYDURULMUYOR — boş liste "derleme atlandı" demek, ve bu var olmayan bir
+     * betiği çalıştırıp kırmızı yakmaktan dürüst.
+     */
+    return { path, branch: await checkedOutBranch(path), verification: await buildCommandsAt(path) };
   } catch (error) {
     /**
      * SESSİZ YUTMA YOK — ve "en kötü hal" burada geçti.

@@ -1943,6 +1943,8 @@
   "routing.registry_empty": "No applications registered",
   "routing.registry_note": "A repo card is the application's module/area summary (versioned in knowledge). When building the impact matrix, the analyst judges other applications from these cards without cloning them.",
   "routing.registry_sub": "the target of a match · each with repo + platform + repo card",
+  "routing.status.rule_count": "{count} rules",
+  "listening.rule.disabled": "disabled",
   "routing.status.no_rule": "⚠ needs a listening rule",
   "routing.status.ready": "✓ working",
   "run.handover_stuck": "The agent made no progress in {count}/{limit} rounds — handed to a human, work mode set to ai-assist",

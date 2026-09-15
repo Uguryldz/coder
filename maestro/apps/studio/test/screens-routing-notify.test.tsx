@@ -97,6 +97,49 @@ describe("routing screen — kayıt defteri", () => {
     expect(await screen.findByText(/sahipsiz/u)).toBeInTheDocument();
   });
 
+  /**
+   * KURALLAR ADLARIYLA — "yeşil" tek şeyi ölçüyordu.
+   *
+   * Rozet yalnızca "bu projenin bir kuralı var mı" diye soruyordu. Yanlış veri
+   * sınıfıyla, erişilemeyen bir depoyla ya da hiçbir ticket'ın taşımadığı bir
+   * eşleşme değeriyle bağlanmış bir proje de YEŞİL görünüyordu — operatörün
+   * "bağlı ama çalışmıyor" dediği durumun tam olarak kaynağı.
+   */
+  it("her projenin altında kurallarını ne yaptıklarıyla listeler", async () => {
+    const rules = {
+      path: "/studio/listening-rules",
+      body: {
+        rules: [
+          {
+            projectKey: "UGURPAY",
+            flowType: "analiz",
+            matchKind: "issuetype",
+            matchValue: "Görev",
+            enabled: true,
+            repoMap: { entries: [{ appId: "Uguryldz/maestro-platform" }] },
+          },
+          {
+            projectKey: "UGURPAY",
+            flowType: "gelistirme",
+            matchKind: "assigned",
+            matchValue: "*",
+            enabled: false,
+            repoMap: null,
+          },
+        ],
+      },
+    };
+    const { fetchImpl } = stubFetch([ROUTING_BODY, rules]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+
+    // Kaç kural olduğu — "var/yok" değil.
+    expect(await screen.findByText(/2 kural/u)).toBeInTheDocument();
+    // Kuralın NE YAPTIĞI ve HANGİ DEPOYA indiği.
+    expect(await screen.findByText(/Görev.*Uguryldz\/maestro-platform/u)).toBeInTheDocument();
+    // Kapalı kural kapalı olduğunu söyler — sessizce "yeşil"e karışmaz.
+    expect(await screen.findByText(/kapalı/u)).toBeInTheDocument();
+  });
+
   it("addresses an ADO repository the way ADO does — with _git", async () => {
     const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY]);
     renderScreen(<RoutingScreen />, { fetchImpl });

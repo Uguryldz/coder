@@ -96,9 +96,33 @@ export function RoutingScreen(): ReactNode {
   const listeningRules = useQuery({
     queryKey: ["listening-rules"],
     queryFn: ({ signal }) =>
-      api.get<{ rules: readonly { projectKey: string }[] }>("/studio/listening-rules", { signal }),
+      api.get<{
+        rules: readonly {
+          projectKey: string;
+          flowType: string;
+          matchKind: string;
+          matchValue: string;
+          enabled: boolean;
+          repoMap?: { entries?: readonly { appId: string }[] } | null;
+        }[];
+      }>("/studio/listening-rules", { signal }),
   });
-  const projectsWithRule = new Set((listeningRules.data?.rules ?? []).map((r) => r.projectKey));
+  const allRules = listeningRules.data?.rules ?? [];
+  /**
+   * PROJEYE GÖRE KURALLAR — "yeşil" tek şeyi ölçüyordu.
+   *
+   * Rozet yalnızca "bu projenin bir kuralı var mı" diye soruyordu. Yanlış veri
+   * sınıfıyla, erişilemeyen bir depoyla ve hiçbir ticket'ın taşımadığı bir
+   * eşleşme değeriyle bağlanmış bir proje de YEŞİL görünüyordu.
+   *
+   * Liste bunu açıyor: her projenin altında kuralları, ne yaptıkları ve hangi
+   * depoya indikleriyle. Operatörün "bağlı ama çalışmıyor" dediği durumun
+   * cevabı burada görünür oluyor.
+   */
+  const rulesByProject = new Map<string, typeof allRules>();
+  for (const rule of allRules) {
+    rulesByProject.set(rule.projectKey, [...(rulesByProject.get(rule.projectKey) ?? []), rule]);
+  }
 
   // Two different gates on the BFF: the approval queue is admin + tech-lead
   // (the four-eyes second person is often the tech lead), the guarded policy
@@ -312,15 +336,47 @@ export function RoutingScreen(): ReactNode {
                 // A bound project with no listening rule accepts no ticket: say
                 // so and link to the step that fixes it. A working one links to
                 // its rules too — that is the one editable thing per project.
-                cell: (row) => (
-                  <Button variant="link" size="sm" onClick={() => void navigate(listeningPath(row.projectKey))}>
-                    {projectsWithRule.has(row.projectKey) ? (
-                      <Badge tone="green">{t("routing.status.ready")}</Badge>
-                    ) : (
-                      <Badge tone="amber">{t("routing.status.no_rule")}</Badge>
-                    )}
-                  </Button>
-                ),
+                cell: (row) => {
+                  /*
+                   * KURALLAR ADLARIYLA — "yeşil" tek şeyi ölçüyordu.
+                   *
+                   * Rozet yalnızca "bir kuralı var mı" diyordu; yanlış veri
+                   * sınıfıyla, erişilemeyen bir depoyla ya da hiçbir ticket'ın
+                   * taşımadığı bir eşleşme değeriyle bağlanmış bir proje de
+                   * YEŞİL görünüyordu. Kurallar burada, ne yaptıkları ve hangi
+                   * depoya indikleriyle listeleniyor.
+                   */
+                  const rules = rulesByProject.get(row.projectKey) ?? [];
+                  return (
+                    <div>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={() => void navigate(listeningPath(row.projectKey))}
+                      >
+                        {rules.length > 0 ? (
+                          <Badge tone="green">
+                            {t("routing.status.rule_count", { count: String(rules.length) })}
+                          </Badge>
+                        ) : (
+                          <Badge tone="amber">{t("routing.status.no_rule")}</Badge>
+                        )}
+                      </Button>
+                      {rules.map((rule) => {
+                        const repo = rule.repoMap?.entries?.[0]?.appId ?? null;
+                        return (
+                          <p key={`${rule.matchKind}:${rule.matchValue}`} className="scr-hint">
+                            {t(`listening.flow.${rule.flowType}`)} ·{" "}
+                            {t(`listening.match.${rule.matchKind}`)}
+                            {rule.matchKind === "assigned" ? "" : ` = ${rule.matchValue}`}
+                            {repo === null ? "" : ` → ${repo}`}
+                            {rule.enabled ? "" : ` · ${t("listening.rule.disabled")}`}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  );
+                },
               },
             ]}
             rows={routing.data?.projects ?? []}

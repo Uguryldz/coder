@@ -1943,6 +1943,8 @@
   "routing.registry_empty": "Kayıtlı uygulama yok",
   "routing.registry_note": "Her uygulama bir repo ve platformdan oluşur; bir ticket ancak burada kayıtlı bir uygulamaya yönlendirilebilir.",
   "routing.registry_sub": "Ticket'ların yönlendirilebileceği repolar",
+  "routing.status.rule_count": "{count} kural",
+  "listening.rule.disabled": "kapalı",
   "routing.status.no_rule": "⚠ dinleme kuralı gerekli",
   "routing.status.ready": "✓ çalışıyor",
   "run.handover_stuck": "Ajan {count}/{limit} turda ilerleyemedi — iş insana devredildi, work mode ai-assist'e alındı",

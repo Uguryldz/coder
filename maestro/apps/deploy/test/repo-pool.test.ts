@@ -314,3 +314,63 @@ describe("koşu aynadan klonlanır", () => {
     await expect(access(join(workspace, ".git", "objects", "info", "alternates"))).rejects.toThrow();
   });
 });
+
+/**
+ * `usableMirror` — koşu yolunun havuza sorduğu tek soru.
+ *
+ * HİÇBİR ZAMAN fırlatmaz: havuz bir hızlandırma katmanı, bir kapı değil.
+ * Ayna yoksa, bozuksa ya da BOŞSA `null` döner ve çağıran bugünkü davranışına
+ * (ağdan klon) düşer. Fırlatsaydı, havuzdaki bir arıza koşuyu durdururdu —
+ * yani hızlandırma katmanı bir arıza kaynağına dönerdi.
+ */
+describe("usableMirror — yoksa null, asla fırlatmaz", () => {
+  it("gerçek bir ayna için yolunu verir", async () => {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const { writeFile } = await import("node:fs/promises");
+    const sh = promisify(execFile);
+    const src = await tempDir();
+    await sh("git", ["init", "-q", "-b", "main", src]);
+    await sh("git", ["-C", src, "config", "user.email", "t@t"]);
+    await sh("git", ["-C", src, "config", "user.name", "t"]);
+    await writeFile(join(src, "a.txt"), "x\n", "utf8");
+    await sh("git", ["-C", src, "add", "-A"]);
+    await sh("git", ["-C", src, "commit", "-qm", "ilk"]);
+
+    const poolRoot = await tempDir();
+    const { ensureMirror, usableMirror } = await import("../src/stores/repo-pool.js");
+    const mirror = await ensureMirror({
+      poolRoot,
+      host: "yerel.test",
+      repo: "a/b",
+      sourceUrl: `file://${src}`,
+    });
+    expect(await usableMirror({ poolRoot, host: "yerel.test", repo: "a/b" })).toBe(mirror.path);
+  });
+
+  it("ayna YOKSA null", async () => {
+    const { usableMirror } = await import("../src/stores/repo-pool.js");
+    expect(await usableMirror({ poolRoot: await tempDir(), host: "yerel.test", repo: "a/b" })).toBeNull();
+  });
+
+  it("COMMIT'İ OLMAYAN dizin ayna sayılmaz", async () => {
+    // `git init` bir `HEAD` bırakır ama commit yoktur. Böyle bir dizini ayna
+    // saymak, koşuya "bu depoda kod yok" diye kalıcı bir yanlış cevap verirdi.
+    const poolRoot = await tempDir();
+    const { mirrorPathFor, usableMirror } = await import("../src/stores/repo-pool.js");
+    const path = mirrorPathFor({ poolRoot, host: "yerel.test", repo: "a/b" });
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(path, { recursive: true });
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    await promisify(execFile)("git", ["init", "-q", "--bare", path]);
+    expect(await usableMirror({ poolRoot, host: "yerel.test", repo: "a/b" })).toBeNull();
+  });
+
+  it("GEÇERSİZ depo adı için de FIRLATMAZ — null döner", async () => {
+    const { usableMirror } = await import("../src/stores/repo-pool.js");
+    expect(
+      await usableMirror({ poolRoot: await tempDir(), host: "yerel.test", repo: "../../kaçış" }),
+    ).toBeNull();
+  });
+});

@@ -310,3 +310,25 @@ async function mirrorBytes(path: string): Promise<number | null> {
     return null;
   }
 }
+
+/**
+ * Bu depo için KULLANILABİLİR bir ayna var mı — varsa yolu.
+ *
+ * Koşu yolundan çağrılır ve HİÇBİR ZAMAN fırlatmaz: havuz bir hızlandırma
+ * katmanı, bir kapı değil. Ayna yoksa, bozuksa ya da boşsa `null` döner ve
+ * çağıran bugünkü davranışına — ağdan klona — düşer.
+ */
+export async function usableMirror(input: {
+  readonly poolRoot: string;
+  readonly host: string;
+  readonly repo: string;
+}): Promise<string | null> {
+  try {
+    const path = mirrorPathFor(input);
+    if (!(await isMirror(path))) return null;
+    if (!(await hasCommits(path))) return null;
+    return path;
+  } catch {
+    return null;
+  }
+}

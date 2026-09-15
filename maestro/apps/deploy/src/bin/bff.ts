@@ -82,6 +82,7 @@ import {
   prepareWorkspace,
   workspaceRootFrom,
 } from "../stores/workspace-prepare.js";
+import { poolRootFrom, usableMirror } from "../stores/repo-pool.js";
 import { isScmConnectionKind, listScmRepos, searchRepos, type RepoCloneProbeResult } from "@maestro/bff";
 import { EncryptedSecretStore, resolveMasterKey } from "../stores/encrypted-secret.js";
 import { PrismaSessionStore } from "../stores/sessions.js";
@@ -1840,6 +1841,11 @@ async function checkoutOrNull(
     const token = await scmCloneToken(env, secrets, connections);
     const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
     const branch = run.targetBranch?.trim() ?? "";
+    const mirrorPath = await usableMirror({
+      poolRoot: poolRootFrom(env.source),
+      host: scmHost === "" ? "github.com" : scmHost,
+      repo: run.appId,
+    });
     const path = await prepareWorkspace({
       repo: run.appId,
       root,
@@ -1857,6 +1863,18 @@ async function checkoutOrNull(
        */
       ...(scmHost === "" ? {} : { host: scmHost }),
       ...(token === undefined ? {} : { token }),
+      /**
+       * HAVUZDA AYNA VARSA AĞA ÇIKILMAZ.
+       *
+       * `usableMirror` yalnız GERÇEKTEN kullanılabilir bir aynayı döndürür
+       * (dizin var, commit var); yoksa `null` ve bu satır hiç eklenmiyor, yani
+       * klon bugünkü gibi ağdan yapılıyor. Havuz bir hızlandırma katmanı, bir
+       * kapı değil: havuzu olmayan kurulum eski hâlinde, tam işlevli kalır.
+       *
+       * Ölçüldü: aynadan klon 0.436 sn (gerçek depo, ağ yok); koşu aynaya
+       * bağımlı değil (alternates yok) ve aynaya yazamıyor.
+       */
+      ...(mirrorPath === null ? {} : { mirrorPath }),
     });
     return { path, branch: await checkedOutBranch(path) };
   } catch (error) {

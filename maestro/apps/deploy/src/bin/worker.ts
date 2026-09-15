@@ -35,6 +35,7 @@ import { buildWorkerCore } from "../stores/worker-core.js";
 import { connectTemporal } from "../temporal-gateway.js";
 import { namespaceServisi, saklamaSuresiniAcilistaAyarla } from "../temporal-retention.js";
 import { fail, isEntrypoint } from "./lifecycle.js";
+import { poolRootFrom, usableMirror } from "../stores/repo-pool.js";
 
 /**
  * The Temporal worker process.
@@ -648,6 +649,19 @@ export function withWorkspaceCloning(
              * klonlayamıyor" gibi teşhis edilemez bir ayrışma doğar.
              */
             const token = await scmCloneTokenFor(env, secrets, connections);
+            /**
+             * HAVUZDA AYNA VARSA AĞA ÇIKILMAZ — `checkoutOrNull` ile aynı.
+             *
+             * İki yol ayrışmamalı: bir dönem BFF klonlayabiliyor ama worker
+             * klonlayamıyordu (jeton kaynağı ayrışmıştı) ve bu, teşhis
+             * edilemez bir arıza üretmişti. Havuz da iki yola AYNI anda ve
+             * aynı kuralla giriyor.
+             */
+            const mirrorPath = await usableMirror({
+              poolRoot: poolRootFrom(env.source),
+              host: scmHost === "" ? "github.com" : scmHost,
+              repo: request.appId,
+            });
             return prepareWorkspace({
               repo: request.appId,
               root,
@@ -657,6 +671,7 @@ export function withWorkspaceCloning(
               // `checkoutOrNull`da da belgeli.
               ...(scmHost === "" ? {} : { host: scmHost }),
               ...(token === undefined ? {} : { token }),
+              ...(mirrorPath === null ? {} : { mirrorPath }),
             });
           },
         } satisfies ScmPort;

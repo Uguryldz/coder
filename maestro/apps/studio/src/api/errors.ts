@@ -154,6 +154,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   bot_account_unknown: "error.bot_account_unknown",
   duplicate_listening_rule: "error.duplicate_listening_rule",
   listening_pool_without_exit: "error.listening_pool_without_exit",
+  listening_repo_map_required: "error.listening_repo_map_required",
   no_such_listening_rule: "error.no_such_listening_rule",
   invalid_guidance: "error.invalid_guidance",
   no_such_guidance: "error.no_such_guidance",

@@ -112,38 +112,10 @@ export interface KnownRun {
  * da çalışan koşu ihlal değildir — işi bitmemiştir.
  */
 const FINISHED_RUN_STATUSES: ReadonlySet<string> = new Set(["done", "fail", "failed", "handover", "cancelled"]);
-/**
- * Kaydı "hatalı" ya da "insana devredilmiş" olan koşu — tarama onu yeniden alır.
- *
- * ── NEDEN `handover` DA BU LİSTEDE ──────────────────────────────────────────
- * CANLIDA ÖLÇÜLDÜ: OPS-120/121/122/123 LLM 403'ü yüzünden insana devredildi ve
- * bir daha HİÇ akışa girmedi. Devredilen koşunun yürütmesi Temporal'da KAPALI,
- * ama `liveRuns` bilerek `onlyRunning: false` ile okuyor (kapanmış bir
- * execution da motorun TANIDIĞI bir koşudur), yani ticket `alive` kümesinde
- * görünüyor ve "ölü koşu" dalı ona hiç uğramıyordu. Sonuç, operatörün
- * kuralının ("havuzda hiçbir zaman ticket kalamaz") tam ihlali: ticket havuzda
- * duruyor, tarama her turda "atlandı: koşusu var" diyor, robot hiçbir şey
- * yapmıyor.
- *
- * `fail` ile aynı muameleyi hak ediyor ve gerekçe aynı: ikisi de İŞİ BİTMEMİŞ
- * koşular. Fark yalnız nerede durdukları — biri düştü, biri devredildi — ve
- * ikisinde de havuzdaki ticket hâlâ yapılacak iş.
- *
- * ── NEDEN SONSUZ DÖNGÜ DEĞİL ────────────────────────────────────────────────
- * Aynı üç fren geçerli ve DEĞİŞMEDİ: pencereli yeniden başlatma sayacı
- * (`stuck.restart_window_hours`, varsayılan 24 saat) `maxAutoRestarts`a
- * ulaşınca DURUYOR ve ticket insana devrediliyor — log satırı bunu adıyla
- * söylüyor. Yani kalıcı bir hata (ör. hâlâ reddedilen bir model anahtarı)
- * ticket'ı sonsuza kadar yeniden başlatmaz; sayaç emekli SATIRLARDAN okunduğu
- * için süreç yeniden başlasa da sıfırlanmaz.
- *
- * Bunun karşılığında kazanılan şey, devrin SEBEBİ giderilebilir olduğunda
- * (operatör anahtarı düzeltti, kotayı doldurdu) ticket'ın kendiliğinden akışa
- * dönmesi — ve sahada ölçülen dört ticket tam olarak o durumdaydı.
- */
+/** Kaydı "hatalı" olan koşu — yürütme düştü; tarama onu yeniden alır. */
 export function isFailedRun(run: KnownRun): boolean {
   const status = (run.status ?? "").trim();
-  return status === "fail" || status === "failed" || status === "handover";
+  return status === "fail" || status === "failed";
 }
 
 /**
@@ -996,37 +968,6 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
         // koşu havuzdaki ticket'ı "koşusu zaten var" diye kilitleyemez;
         // operatörün kuralı "hangi adımda düştüyse düşsün, takılmak yok".
         // Fren aynı (pencereli sayaç), Jira'ya yazan da aynı yol.
-        //
-        // ── ÜÇÜNCÜ HAL: KOŞU BİTTİ AMA TİCKET HÂLÂ HAVUZDA ────────────────
-        //
-        // CANLIDA ÖLÇÜLDÜ (OPS-119): koşu `done`, ticket kuralın izinli
-        // statüsünde ve bot'a atanmış duruyor. Tarama onu her turda buluyor
-        // ve her turda "atlandı: koşusu var (tamamlandı, adım 3)" diyor.
-        // Sonsuza kadar. Operatör ticket'ı havuza geri verse bile hiçbir şey
-        // olmuyor.
-        //
-        // Sebebi `liveRuns`ın `onlyRunning: false` okuması: KAPANMIŞ bir
-        // execution da `alive` kümesinde görünüyor, yani biten koşu "ölü"
-        // sayılmıyor ve bu dala hiç girmiyordu. O okuma DOĞRU ve
-        // değiştirilmiyor — "motor bu ticket'ı tanımıyor" ile "koşu bitti"
-        // gerçekten farklı iki şey.
-        //
-        // Yanlış olan çıkarımdı: "koşu bitti, demek ki iş bitti". Ticket
-        // havuzdaysa iş BİTMEMİŞTİR. Havuz = kuralın `allowedStatuses`ı, ve
-        // operatörün kuralı net: "havuzda hiçbir zaman ticket kalamaz; işlem
-        // yapıldıktan sonra ileri ya da geri oynar". Ticket hâlâ oradaysa iki
-        // şeyden biridir — statü eşlemesi ticket'ı ileri taşıyamadı, ya da
-        // biri onu bilerek geri koydu. İkisi de "yeniden işle" demek.
-        //
-        // `finishedButPooled` bu hali tanıyor ve zaten ADLANDIRILIYORDU
-        // (`stuckInPool`, tur özetinde "havuzda kaldı" satırı) — yani sistem
-        // ihlali görüyor, söylüyor, ama DÜZELTMİYORDU. Artık düzeltiyor.
-        //
-        // Sonsuz döngü riski yok: aynı üç fren geçerli. Pencereli sayaç
-        // (varsayılan 24 saatte 3) ve sayaç emekli satırlardan okunuyor. Bir
-        // ticket ileri taşınamıyorsa üç denemede insana devredilir — ki o
-        // zaman sorun koşuda değil, kuralın statü eşlemesindedir ve devir
-        // satırı operatörü tam oraya gönderir.
         ((alive !== null && !alive.has(key)) ||
           isFailedRun(knownRun) ||
           finishedButPooled(knownRun))

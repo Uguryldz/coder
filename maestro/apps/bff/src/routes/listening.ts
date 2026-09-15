@@ -275,6 +275,38 @@ async function assertMappedAppsExist(
   if (unknown.length > 0) throw badRequest("listening_repo_map_unknown_app", { appIds: unknown });
 }
 
+/**
+ * KOD YAZAN BİR AKIŞ DEPOSUZ KAYDEDİLEMEZ.
+ *
+ * Depo artık TEK yerden gelir: bu kuralın eşlemesi. Proje bağlamasının
+ * varsayılanı (`binding.appId`) zincirden çıkarıldı, çünkü o sessiz bir
+ * varsayılandı — eşleme cevap veremediğinde devreye giriyor ve koşuya yine bir
+ * depo veriyordu, operatör de eşlemenin çalıştığını sanıyordu.
+ *
+ * O halka kalkınca eşlemesi olmayan bir `gelistirme`/`duzeltme` kuralı ticket
+ * işleyemez hale geldi. Bunun SÖYLENECEĞİ yer burasıdır — kural kaydedilirken.
+ * Aksi hâlde ölçülmüş pahalı arıza geri gelirdi: kural kaydedilir, ticket
+ * alınır, analiz yazılır, bir insan onaylar, ve ancak mühendislik adımında
+ * "depo yok" denir. O adımların her biri gerçek zaman harcar ve hepsini boşa
+ * çıkaran şey ilk tıklamadan önce bilinebilirdi.
+ *
+ * `analiz` MUAF: belge ticket metninden yazılır, depo gerekmez. Bir analiz
+ * ekibini sahip olmadığı bir depoyu bağlamaya zorlamak, kapının engellemesi
+ * gereken şeyin tersi olurdu.
+ *
+ * "Projeyi seç, depoyu sistem bulsun" kipi de GEÇER: orada eşleme vardır,
+ * yalnız deponun adı ticket geldiğinde bulunur.
+ */
+function assertRepoMapForCodeFlow(record: Pick<ListeningRuleRecord, "flowType" | "repoMap">): void {
+  if (record.flowType === "analiz") return;
+  const map = record.repoMap;
+  const empty =
+    map === null ||
+    map === undefined ||
+    (!isSearchRepoMap(map) && (map.entries?.length ?? 0) === 0);
+  if (empty) throw badRequest("listening_repo_map_required", { flowType: record.flowType });
+}
+
 function storedRule<T extends { matchKind: string; matchValue: string }>(body: T): T {
   return body.matchKind === "assigned" ? { ...body, matchValue: ASSIGNED_MATCH_VALUE } : body;
 }
@@ -545,6 +577,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
     };
     assertPoolExits(record);
+    assertRepoMapForCodeFlow(record);
     await assertMappedAppsExist(deps, record.repoMap);
     try {
       await store.put(record);
@@ -721,6 +754,7 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
       ...storedRule(body.data as Omit<ListeningRuleRecord, "ruleId">),
     };
     assertPoolExits(record);
+    assertRepoMapForCodeFlow(record);
     await assertMappedAppsExist(deps, record.repoMap);
     try {
       await store.put(record);

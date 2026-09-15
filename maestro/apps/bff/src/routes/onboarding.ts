@@ -110,6 +110,28 @@ const DraftBody = z
     adoRepo: z.string().trim().min(1).max(128).optional(),
     platform: z.string().trim().min(1).max(32).optional(),
     triggerMode: z.enum(["opt_in", "automatic"]),
+    /**
+     * SEÇİLEN DEPO BAĞLAMANIN VARSAYILANI OLSUN MU — varsayılan HAYIR.
+     *
+     * İki ayrı şey aynı istekte yapılıyor ve ayrılmaları gerekti:
+     *
+     *  1. ENVANTER KAYDI (`appRegistry.register`) — `Application` satırı.
+     *     Dinleme kuralının eşlemesi bir depo adı gösteriyorsa o adın
+     *     envanterde satırı OLMAK ZORUNDA (`assertMappedAppsExist`); yoksa
+     *     alım depoyu klonluyor ve koşu satırı `WorkflowRun_appId_fkey` ile
+     *     patlıyor — OPS-121'de ölçüldü. Bu yazma HER ZAMAN doğru.
+     *
+     *  2. BAĞLAMA VARSAYILANI (`defaults.appId`) — sorunlu olan yalnız buydu.
+     *     Zincirin son halkasıydı ve SESSİZ bir varsayılandı: kuralın eşlemesi
+     *     cevap veremediğinde devreye giriyor, koşuya yine bir depo veriyor ve
+     *     operatöre eşlemenin çalıştığını sandırıyordu. Zincirden çıkarıldı.
+     *
+     * Sihirbaz artık `false` gönderir: depo envantere yazılır, bağlama
+     * varsayılansız kalır. `true` eski davranıştır ve eski istemciler için
+     * korunuyor — alanı GÖNDERMEYEN bir istemci de eski davranışı alır, çünkü
+     * onun gövdesi `adoRepo`/`platform` taşıyorsa niyeti eski niyettir.
+     */
+    bindDefaultApp: z.boolean().optional(),
     gateSet: z.enum(["risk_tiered", "always_six"]),
     mergeMode: z.enum(["human", "auto"]),
     /**
@@ -775,7 +797,9 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
           platform: target.platform,
         });
       }
-      appId = target.appId;
+      // Envanter yazıldı (yukarıda); bağlama varsayılanı ise YALNIZ istemci
+      // açıkça isterse. Alanı hiç göndermeyen eski istemci eski davranışı alır.
+      appId = parsed.data.bindDefaultApp === false ? null : target.appId;
     }
 
     // One open proposal per project. A second one would leave two drafts

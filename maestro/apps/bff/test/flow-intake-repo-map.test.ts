@@ -93,17 +93,25 @@ describe("intake — repo map picks the application", () => {
     expect(h.work.fieldReads).toEqual([{ ticket: "UGURPAY-1", fieldIds: ["customfield_10234"] }]);
   });
 
-  it("keeps the project binding's app when the value matches no row", async () => {
+  /**
+   * DEĞER HİÇBİR SATIRA UYMUYORSA TİCKET İNSANA HAVALE EDİLİR.
+   *
+   * Eskiden proje bağlamasının varsayılanı devreye girer ve koşu YİNE açılırdı
+   * — başka bir depoya. Operatör panelde bir depo adı görüp eşlemenin
+   * çalıştığını sanıyordu; canlıda ölçülen yanlış-anlatımın kaynağı buydu.
+   * Yanlış depoya güvenle iş yapmak, hiç iş yapmamaktan kötüdür.
+   */
+  it("değer hiçbir satıra uymuyorsa koşu AÇILMAZ — sessiz varsayılan yok", async () => {
     const h = await harness({ applications: MAPPED_APPS, listeningRules: [rule()] });
     h.work.putFields("UGURPAY-2", { customfield_10234: "Sigorta" });
-    const started = await deliver(h, "UGURPAY-2");
-    expect(started?.appId).toBe("ugurpay");
-    expect(started?.targetBranch).toBeUndefined();
+    expect(await deliver(h, "UGURPAY-2")).toBeUndefined();
+    // Ticket sessizce düşmez: bir insanın beklendiği ticket'a yazılır.
+    expect(h.work.lastComment("UGURPAY-2")).toContain("UGURPAY-2");
   });
 
-  it("keeps the project binding's app when the rule has no map, and reads no field", async () => {
+  it("kuralda eşleme yoksa koşu AÇILMAZ ve alan da okunmaz", async () => {
     const h = await harness({ applications: MAPPED_APPS, listeningRules: [rule({ repoMap: null })] });
-    expect((await deliver(h, "UGURPAY-3"))?.appId).toBe("ugurpay");
+    expect(await deliver(h, "UGURPAY-3")).toBeUndefined();
     expect(h.work.fieldReads).toEqual([]);
   });
 });
@@ -174,7 +182,7 @@ describe("intake — kod aramasıyla depo bulma", () => {
    * aynı yere düşer: proje bağlaması. Arama bir EK, bir koşul değil — bir
    * arama arızası ticket'ın hiç işlenmemesine yol açmamalı.
    */
-  it("falls back to the project binding when the search finds nothing", async () => {
+  it("arama bulamazsa koşu AÇILMAZ — bağlamaya düşülmez", async () => {
     const h = await harness({
       applications: MAPPED_APPS,
       listeningRules: [rule({ repoMap: null })],
@@ -182,21 +190,31 @@ describe("intake — kod aramasıyla depo bulma", () => {
     });
     seedTicket(h, "UGURPAY-42");
     const started = await deliver(h, "UGURPAY-42");
-    expect(started?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+    expect(started).toBeUndefined();
   });
 
-  it("behaves exactly as before when no search is wired at all", async () => {
+  it("arama HİÇ kurulmamışsa da koşu açılmaz — eşleme tek kaynak", async () => {
     const h = await harness({ applications: MAPPED_APPS, listeningRules: [rule({ repoMap: null })] });
-    expect((seedTicket(h, "UGURPAY-43"), await deliver(h, "UGURPAY-43"))?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+    expect((seedTicket(h, "UGURPAY-43"), await deliver(h, "UGURPAY-43"))).toBeUndefined();
   });
 
-  it("a search failure does not stop the ticket from being processed", async () => {
+  /**
+   * Arama ÇÖKMESİ turu düşürmez — ama artık bir depo da üretmez.
+   *
+   * Eskiden bağlamanın varsayılanı devreye girip koşuyu açıyordu. Aramanın
+   * çökmesiyle "hiçbir şey bulamaması" aynı yere çıkıyor: depo yok, ticket
+   * insana havale ediliyor. Ölçülen şey, çökmenin bir İSTİSNA olarak dışarı
+   * sızmaması.
+   */
+  it("arama çökerse alım düşmez, ticket insana havale edilir", async () => {
     const h = await harness({
       applications: MAPPED_APPS,
       listeningRules: [rule({ repoMap: null })],
       repoSearch: () => Promise.reject(new Error("almsearch unreachable")),
     });
-    expect((seedTicket(h, "UGURPAY-44"), await deliver(h, "UGURPAY-44"))?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+    seedTicket(h, "UGURPAY-44");
+    expect(await deliver(h, "UGURPAY-44")).toBeUndefined();
+    expect(h.work.lastComment("UGURPAY-44")).toContain("UGURPAY-44");
   });
 });
 
@@ -238,8 +256,9 @@ describe("intake — projeyi seç, depoyu arama bulsun", () => {
     });
     seedTicket(h, "UGURPAY-51");
     // Kural "ara" diyor ama arama bulamadı: `appId: ""` asla bir depo olarak
-    // kullanılmamalı — o boş dize klonu anlamsız bir adla denerdi.
-    expect((await deliver(h, "UGURPAY-51"))?.appId).toBe(TEST_APPLICATIONS[0]!.appId);
+    // kullanılmamalı — o boş dize klonu anlamsız bir adla denerdi. Bağlamanın
+    // varsayılanı da artık yok, yani koşu hiç açılmaz.
+    expect(await deliver(h, "UGURPAY-51")).toBeUndefined();
   });
 
   it("still lets a human override the search with /ai-assign", async () => {
@@ -431,10 +450,13 @@ describe("intake — an unregistered application stops the run BEFORE it starts"
     expect(lines.join("\n")).toContain("alınmadı (unknown_application)");
   });
 
-  it("also guards the app the PROJECT BINDING names, not only the mapped one", async () => {
-    // Depo esleme yok; baglamanin uygulamasi kullanilir. Envanteri bos birakmak
-    // "baglandi ama depo silindi" halini kurar — ayni yabancı anahtar hatasi.
-    const h = await harness({ applications: [], listeningRules: [rule({ repoMap: null })] });
+  it("eşlemenin gösterdiği depo envanterde yoksa koşu başlamaz", async () => {
+    // Envanteri boş bırakmak "kural bir depo gösteriyor ama o depo silinmiş"
+    // halini kurar — aynı yabancı anahtar hatası, koşu açılmadan yakalanır.
+    const h = await harness({ applications: [], listeningRules: [rule()] });
+    // Eşlemenin ÇÖZÜLMESİ gerekiyor: ölçülen şey "depo bulunamadı" değil,
+    // "depo bulundu ama envanterde kaydı yok" hali.
+    h.work.putFields("UGURPAY-14", { customfield_10234: "Krediler" });
 
     const before = h.runs.started.length;
     const delivery = signed(issueEvent({ ticket: "UGURPAY-14", issueType: "Hata" }));

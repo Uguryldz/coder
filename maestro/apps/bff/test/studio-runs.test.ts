@@ -823,6 +823,9 @@ describe("POST /studio/runs/:ticket/start", () => {
     priority: 10,
     enabled: true,
     statusMap: { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" },
+    // Kod yazan akış deposunu kendi eşlemesinden alır: proje bağlamasının
+    // varsayılanı zincirden çıkarıldı (sessiz bir varsayılandı).
+    repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
   };
 
   /** The harness with a rule seeded and the deployment default set to something ELSE,

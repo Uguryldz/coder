@@ -28,9 +28,25 @@ function gateEvents(events: readonly AuditEvent[]): AuditEvent[] {
   return events.filter((event) => event.action === "GATE_APPROVE" || event.action === "GATE_REJECT");
 }
 
+const CATCH_ALL_RULE: ListeningRuleRecord = {
+  ruleId: "lr_catch_all",
+  projectKey: "UGURPAY",
+  assigneeAccountId: "",
+  matchKind: "assigned",
+  matchValue: "*",
+  flowType: "analiz",
+  priority: 1000,
+  enabled: true,
+  analystVariantId: null,
+  engineerVariantId: null,
+  // Depo kuralın eşlemesinden gelir; proje bağlamasının varsayılanı zincirden
+  // çıkarıldı (sessiz bir varsayılandı, eşlemenin çalıştığını sandırıyordu).
+  repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
+};
+
 describe("Jira command path (M105)", () => {
   it("closes an open gate for a member of the owning group", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/approve");
@@ -51,7 +67,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("numbers the signature with its position in the audit chain (M33)", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "5");
 
     await deliver(h, "/approve");
@@ -63,7 +79,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it('does NOT treat "/approve etmiyorum" as an approval (M105)', async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/approve etmiyorum");
@@ -76,7 +92,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("does not let trailing prose on a following line ride along with /approve", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/approve\nama önce şu soruyu cevaplayın");
@@ -86,7 +102,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("refuses a gate decision from somebody outside the owning group (M32)", async () => {
-    const h = await harness({ groups: { "tech-leads": ["baska.kisi"] } });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: { "tech-leads": ["baska.kisi"] } });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/approve", "yetkisiz.kullanici");
@@ -102,7 +118,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("refuses a REJECT from somebody outside the owning group too", async () => {
-    const h = await harness({ groups: { "tech-leads": ["baska.kisi"] } });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: { "tech-leads": ["baska.kisi"] } });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/reject kapsam belirsiz", "yetkisiz.kullanici");
@@ -112,7 +128,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("ignores a command that arrived by editing a comment (M32 SoD)", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/approve", "mert.demir", "comment_updated");
@@ -122,7 +138,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("tells the author when /reject arrives without a reason", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/reject");
@@ -132,7 +148,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("carries the rejection reason into the signal", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "5");
 
     await deliver(h, "/reject kapsam çok geniş");
@@ -144,7 +160,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("answers /approve on a ticket with no run", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
 
     const response = await deliver(h, "/approve");
 
@@ -153,7 +169,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("answers /approve when the run is not standing at an approval gate", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.states.set(`maestro-${TICKET}`, {
       runId: `run-${TICKET}`,
       ticketKey: TICKET,
@@ -170,7 +186,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("refuses a decision at the clarification wait, which is not an approval gate", async () => {
-    const h = await harness({ groups: TL_GROUPS });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  groups: TL_GROUPS });
     h.runs.openGate(TICKET, "2b");
 
     const response = await deliver(h, "/approve");
@@ -179,7 +195,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("reports the run state for /status", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/status");
@@ -189,7 +205,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("changes the work mode and records it", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/mode-change ai-assist");
@@ -204,7 +220,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("maps /ai-takeover to human_lead", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     h.runs.openGate(TICKET, "5");
 
     await deliver(h, "/ai-takeover");
@@ -213,7 +229,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("starts a run from /ai-start even in an opt-in project", async () => {
-    const h = await harness({
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE], 
       bindings: [
         {
           projectKey: "UGURPAY",
@@ -242,7 +258,7 @@ describe("Jira command path (M105)", () => {
    * boundary into a bug report.
    */
   it("says NOTHING on a project nobody bound, so the platform is not disclosed", async () => {
-    const h = await harness({ bindings: [] });
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE],  bindings: [] });
 
     const response = await deliver(h, "/ai-start");
 
@@ -251,7 +267,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("records the application when /ai-assign names one", async () => {
-    const h = await harness({
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE], 
       bindings: [
         {
           projectKey: "UGURPAY",
@@ -292,6 +308,8 @@ describe("Jira command path (M105)", () => {
       matchKind: "issuetype",
       matchValue: "Hata",
       flowType: "duzeltme",
+      // Kod yazan akış deposunu kendi eşlemesinden alır (bağlama varsayılanı kalktı).
+      repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
       priority: 10,
       enabled: true,
       statusMap: { onStart: "Devam Ediyor", onDone: "Tamam" },
@@ -407,7 +425,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("tells the author that /ai-explain has no workflow signal yet", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     h.runs.openGate(TICKET, "5");
 
     const response = await deliver(h, "/ai-explain");
@@ -417,7 +435,7 @@ describe("Jira command path (M105)", () => {
   });
 
   it("tells the author when the command is not one Maestro knows", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
 
     const response = await deliver(h, "/onayla");
 

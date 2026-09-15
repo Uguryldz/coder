@@ -57,10 +57,28 @@ describe("listening rule repo map", () => {
     expect(rules[0]?.repoMap).toEqual(MAP);
   });
 
-  it("a rule without a map stores null — today's behaviour", async () => {
+  /**
+   * EŞLEMESİZ KOD AKIŞI ARTIK KAYDEDİLEMEZ.
+   *
+   * Depo bir dönem proje bağlamasının varsayılanından gelirdi, o yüzden
+   * eşlemesiz bir `gelistirme` kuralı kaydedilebiliyordu — ve ticket'ı sessizce
+   * başka bir depoya yönlendiriyordu. O halka zincirden çıkarıldı; eksik kural
+   * artık canlıya hiç çıkmıyor, ve reddi operatör kuralı YAZARKEN görüyor,
+   * ticket işlenirken değil.
+   */
+  it("eşlemesiz bir KOD akışı kuralı reddedilir", async () => {
     const h = await harness({ applications: MAPPED_APPS });
     const token = await admin(h);
-    expect((await post(h, "/studio/listening-rules", token, BASE)).statusCode).toBe(201);
+    const res = await post(h, "/studio/listening-rules", token, BASE);
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error?: string }>().error).toBe("listening_repo_map_required");
+  });
+
+  it("yalnız ANALİZ yapan kural eşlemesiz kaydedilir — belge ticket metninden", async () => {
+    const h = await harness({ applications: MAPPED_APPS });
+    const token = await admin(h);
+    const analiz = { ...BASE, flowType: "analiz" };
+    expect((await post(h, "/studio/listening-rules", token, analiz)).statusCode).toBe(201);
     const list = await h.app.inject({ method: "GET", url: "/studio/listening-rules", headers: auth(token) });
     expect(list.json<{ rules: { repoMap?: unknown }[] }>().rules[0]?.repoMap ?? null).toBeNull();
   });

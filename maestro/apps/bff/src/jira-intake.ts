@@ -318,20 +318,32 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
       ? null
       : await searchRepoFor(deps, request, (await searchProject) ?? projectKey);
   /**
-   * ── ZİNCİRİN SON HALKASI BAĞLAMADIR, VE ÖYLE KALIYOR ─────────────────────
+   * ── DEPO TEK YERDEN GELİR: DİNLEME KURALININ EŞLEMESİ ────────────────────
    *
-   * Bu satırdan `binding.appId` bir kez çıkarıldı ("depo tek yerden gelsin")
-   * ve ÖLÇÜLDÜ: 38 test kırıldı. Kırılanlar bozuk test değildi, davranışın
-   * gerçek yüzüydü — depo eşlemesi olmayan her `gelistirme`/`duzeltme` kuralı
-   * ticket işlemeyi bırakıyordu. Canlı bir kurulumda bu, çalışan kuralların
-   * sessizce durması demek.
+   * Zincirde bir dönem dördüncü bir halka vardı — `binding.appId`, proje
+   * bağlamasının varsayılanı. Kaldırıldı, ve sebebi kaldırmanın maliyetinden
+   * daha ağırdı.
    *
-   * Asıl şikayet ("iki yerde uygulama seçmek saçma") ekranın sorunuydu ve
-   * ekranda çözüldü: "Depo ekle" düğmesi proje bağlamasından kaldırıldı, depo
-   * dinleme ayarlarından seçiliyor. Bağlamadaki uygulama artık operatörün
-   * doldurduğu ikinci bir kutu değil, yalnızca zincirin son çaresi.
+   * O halka SESSİZ bir varsayılandı: kuralın eşlemesi cevap veremediğinde
+   * (alan okunamadı, değer için satır yok, sürücü alan okuyamıyor) devreye
+   * giriyor ve koşuya yine bir depo veriyordu. Operatör panelde bir depo adı
+   * görüyor ve eşlemenin çalıştığını sanıyordu. Canlıda ölçüldü:
+   * `Uguryldz/maestro-pilot`ın `jiraProjectKey`i NULL — yani sahipsiz — ama
+   * OPS bağlamasının varsayılanı o olduğu için Routing listesinde OPS altında
+   * görünüyordu. Yanlış depoya güvenle iş yapmak, hiç iş yapmamaktan kötüdür.
+   *
+   * Kaldırmanın maliyeti ölçüldü ve KABUL EDİLDİ: eşlemesi olmayan bir
+   * `gelistirme`/`duzeltme` kuralı artık ticket işlemez. Bu bir gerileme
+   * değil, kuralın EKSİK olduğunun söylenmesi — ve söylenme yeri de değişti:
+   * kural artık eşlemesiz KAYDEDİLEMİYOR (bkz. `routes/listening.ts`), yani
+   * eksik kural canlıya hiç çıkmıyor. Eskiden kural sessizce kaydediliyor,
+   * sonra sessizce yanlış depoya iş yapıyordu.
+   *
+   * `analiz` akışı etkilenmez: belge ticket metninden yazılır, depo
+   * gerekmez ve `appId === null` o akışta zaten meşru.
    */
-  const appId = request.appId ?? (mapped?.search === true ? undefined : mapped?.appId) ?? searched?.appId ?? binding.appId;
+  const appId =
+    request.appId ?? (mapped?.search === true ? undefined : mapped?.appId) ?? searched?.appId ?? null;
   /**
    * ZİNCİRİN HANGİ HALKASI CEVAP VERDİ — döküme yazmak için.
    *
@@ -350,9 +362,7 @@ export async function runIntake(deps: ResolvedDeps, request: IntakeRequest): Pro
         ? "repo_map"
         : searched?.appId !== undefined && searched.appId !== null
           ? "code_search"
-          : appId === null || appId === undefined
-            ? "none"
-            : "binding";
+          : "none";
   repoFacts = {
     appId: appId ?? null,
     appIdSource,

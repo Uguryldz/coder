@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { auth, harness, type Harness } from "./helpers.js";
 import { issueEvent, signed } from "./payloads.js";
+import type { ListeningRuleRecord } from "../src/listening-store.js";
 
 async function admin(h: Harness): Promise<string> {
   await h.addUser({ username: "ayse.kaya", roles: ["admin"] });
@@ -26,9 +27,25 @@ async function deliverNewTicket(h: Harness, ticket: string) {
   });
 }
 
+const CATCH_ALL_RULE: ListeningRuleRecord = {
+  ruleId: "lr_catch_all",
+  projectKey: "UGURPAY",
+  assigneeAccountId: "",
+  matchKind: "assigned",
+  matchValue: "*",
+  flowType: "analiz",
+  priority: 1000,
+  enabled: true,
+  analystVariantId: null,
+  engineerVariantId: null,
+  // Depo kuralın eşlemesinden gelir; proje bağlamasının varsayılanı zincirden
+  // çıkarıldı (sessiz bir varsayılandı, eşlemenin çalıştığını sandırıyordu).
+  repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
+};
+
 describe("POST /killswitch (M58)", () => {
   it("refuses a caller without the admin role", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     await h.addUser({ username: "sade.kullanici" });
     const token = await h.login("sade.kullanici");
 
@@ -39,7 +56,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("refuses a delegated AI token even when the human is an admin (M101)", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     await h.addUser({ username: "ayse.kaya", roles: ["admin"] });
     const token = await h.delegatedToken("ayse.kaya");
 
@@ -50,7 +67,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("records the operation in the audit chain", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     const token = await admin(h);
 
     const response = await flip(h, token, "intake_only");
@@ -64,7 +81,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("refuses new intake while the switch is on", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     const token = await admin(h);
     await flip(h, token, "intake_only");
 
@@ -78,7 +95,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("refuses new intake at the `all` level too", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     const token = await admin(h);
     await flip(h, token, "all");
 
@@ -88,7 +105,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("takes intake again once the switch is turned off", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     const token = await admin(h);
     await flip(h, token, "intake_only");
     await flip(h, token, "off", "olay kapandı");
@@ -99,7 +116,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("stops running work only at the `all` level", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     const token = await admin(h);
     h.runs.openGate("UGURPAY-1", "5");
     h.runs.openGate("UGURPAY-2", "5");
@@ -114,7 +131,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("demands a reason", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     const token = await admin(h);
 
     const response = await h.app.inject({
@@ -129,7 +146,7 @@ describe("POST /killswitch (M58)", () => {
   });
 
   it("reports the current state to any authenticated caller", async () => {
-    const h = await harness();
+    const h = await harness({ listeningRules: [CATCH_ALL_RULE] });
     const token = await admin(h);
     await flip(h, token, "intake_only", "bakım penceresi");
 

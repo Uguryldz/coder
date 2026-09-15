@@ -15,6 +15,7 @@ import type {
 import { projectGroupFor } from "../src/routes/access.js";
 import { InMemoryQuotaReader } from "../src/stores/read-memory.js";
 import { harness, type Harness, type HarnessOptions } from "./helpers.js";
+import type { ListeningRuleRecord } from "../src/listening-store.js";
 
 /**
  * Fixtures for Studio's read surface. Everything an endpoint returns is seeded
@@ -221,8 +222,38 @@ export const ACCOUNTS: readonly SubscriptionAccount[] = [
  * place — the state nearly every Studio read test needs before it can ask a
  * question worth asking.
  */
+/**
+ * Studio testlerinin varsayılan dinleme kuralı.
+ *
+ * Kuralsız bir harness'ta ticket artık koşu açamıyor: hiçbir kural eşleşmeyince
+ * akış belirsiz kalır, belirsiz akış "tam boru hattı" sayılır (kod yazar,
+ * uygulama ister), ve proje bağlamasının depo varsayılanı zincirden çıkarıldığı
+ * için uygulama gelmez. O halka sessiz bir varsayılandı — eşleme cevap
+ * veremediğinde devreye giriyor ve operatöre eşlemenin çalıştığını sandırıyordu.
+ *
+ * Gerçek kurulumun `seed-defaults` sonrası hâli: bota atanmış her ticket'ı alan
+ * geniş bir `analiz` kuralı, deposu kendi eşlemesinde.
+ */
+const STUDIO_CATCH_ALL: ListeningRuleRecord = {
+  ruleId: "lr_studio_catch_all",
+  projectKey: "UGURPAY",
+  assigneeAccountId: "",
+  matchKind: "assigned",
+  matchValue: "*",
+  flowType: "analiz",
+  priority: 1000,
+  enabled: true,
+  analystVariantId: null,
+  engineerVariantId: null,
+  repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
+};
+
 export async function studioHarness(options: HarnessOptions = {}): Promise<Harness> {
-  const h = await harness({ accounts: new InMemoryQuotaReader(ACCOUNTS), ...options });
+  const h = await harness({
+    accounts: new InMemoryQuotaReader(ACCOUNTS),
+    listeningRules: [STUDIO_CATCH_ALL],
+    ...options,
+  });
   h.read.runs.put(RUN);
   h.read.apps.put(APP);
   h.runs.openGate(TICKET, "5");

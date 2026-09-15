@@ -243,6 +243,17 @@ describe("setup wizard", () => {
         jiraProject: "OPS",
         adoRepo: "Uguryldz/maestro-pilot",
         platform: "linux-node",
+        /*
+         * `false` — ENVANTER yazılsın, BAĞLAMA VARSAYILANI yazılmasın.
+         *
+         * İkisi bir dönem tek karardı. `Application` satırı her zaman gerekli:
+         * kuralın eşlemesi bir depo adı gösteriyorsa o adın envanterde satırı
+         * olmak zorunda, yoksa koşu satırı yabancı anahtar hatasıyla patlıyor
+         * (OPS-121). `defaults.appId` ise zincirin son halkasıydı ve sessiz bir
+         * varsayılandı — eşleme cevap veremediğinde devreye girip operatöre
+         * eşlemenin çalıştığını sandırıyordu. Zincirden çıkarıldı.
+         */
+        bindDefaultApp: false,
         triggerMode: "opt_in",
         gateSet: "always_six",
         mergeMode: "human",

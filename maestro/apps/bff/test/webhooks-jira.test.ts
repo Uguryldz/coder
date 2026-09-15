@@ -3,10 +3,49 @@ import { BODY_LIMIT_BYTES } from "../src/server.js";
 import { FakeWorkPort, WEBHOOK_SECRET } from "./fakes.js";
 import { auth, harness, UGURPAY_BINDING } from "./helpers.js";
 import { commentEvent, issueEvent, signed } from "./payloads.js";
+import type { ListeningRuleRecord } from "../src/listening-store.js";
+
+/**
+ * BU DOSYADAKİ TESTLER WEBHOOK YOLUNU ÖLÇÜYOR, akış/depo kararını değil.
+ *
+ * Kuralsız bir harness'ta ticket artık koşu açamıyor: hiçbir kural eşleşmeyince
+ * akış belirsiz kalır, belirsiz akış "tam boru hattı" sayılır (kod yazar,
+ * uygulama ister), ve proje bağlamasının depo varsayılanı zincirden çıkarıldığı
+ * için uygulama gelmez. O halka sessiz bir varsayılandı — eşleme cevap
+ * veremediğinde devreye giriyor ve operatöre eşlemenin çalıştığını sandırıyordu.
+ *
+ * Bu yardımcı, gerçek bir kurulumun `seed-defaults` sonrası hâlini kuruyor:
+ * bota atanmış her ticket'ı alan geniş bir `analiz` kuralı. `analiz` çünkü depo
+ * istemeyen tek akış odur. Böylece testler ölçmek istedikleri şeye — imza
+ * doğrulama, tekrar teslimat, etiket kapısı — odaklanabiliyor.
+ */
+const CATCH_ALL: ListeningRuleRecord = {
+  ruleId: "lr_catch_all",
+  projectKey: "UGURPAY",
+  assigneeAccountId: "",
+  matchKind: "assigned",
+  matchValue: "*",
+  flowType: "analiz",
+  priority: 1000,
+  enabled: true,
+  analystVariantId: null,
+  engineerVariantId: null,
+  /**
+   * Depo KURALIN eşlemesinden gelir; bu, bağlamanın eski varsayılanının
+   * açıkça yazılmış hâli. `analiz` akışı depo İSTEMEZ ama testler koşunun
+   * `appId`ini ölçüyor, ve gerçek bir kurulumda analiz kuralı da bir depoya
+   * bağlanabilir (kod okuyarak zenginleşir).
+   */
+  repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
+};
+
+/** `harness()` ama varsayılan olarak yakalayıcı kuralla. */
+const webhookHarness: typeof harness = (options = {}) =>
+  harness({ listeningRules: [CATCH_ALL], ...options });
 
 describe("POST /webhooks/jira", () => {
   it("refuses a delivery with no signature (M15 fail-closed)", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const response = await h.app.inject({
       method: "POST",
       url: "/webhooks/jira",
@@ -20,7 +59,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("refuses a delivery whose signature belongs to another secret", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const delivery = signed(issueEvent({ ticket: "UGURPAY-1" }), "someone-elses-secret");
     const response = await h.app.inject({
       method: "POST",
@@ -34,7 +73,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("refuses a body that was re-serialised after signing", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const delivery = signed(issueEvent({ ticket: "UGURPAY-1" }));
 
     // Same JSON value, different bytes: key order and spacing changed. This is
@@ -55,7 +94,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("answers 401, not 400, when an unsigned body is also malformed", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const response = await h.app.inject({
       method: "POST",
       url: "/webhooks/jira",
@@ -67,7 +106,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("starts a run for a signed issue event on a bound project", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const delivery = signed(issueEvent({ ticket: "UGURPAY-42" }));
 
     const response = await h.app.inject({
@@ -87,7 +126,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("does not start a second run when the same ticket is delivered twice", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const delivery = signed(issueEvent({ ticket: "UGURPAY-42" }));
     const send = () =>
       h.app.inject({
@@ -106,7 +145,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("drops a project that was never bound, silently but counted (M102)", async () => {
-    const h = await harness({ bindings: [] });
+    const h = await webhookHarness({ bindings: [] });
     const delivery = signed(issueEvent({ ticket: "UGURWEB-9" }));
 
     const response = await h.app.inject({
@@ -188,7 +227,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("no longer refuses an unlabelled ticket: the project-wide opt-in gate is gone (0023)", async () => {
-    const h = await harness({
+    const h = await webhookHarness({
       bindings: [{ ...UGURPAY_BINDING, triggerMode: "opt_in" }],
     });
     const delivery = signed(issueEvent({ ticket: "UGURPAY-7" }));
@@ -205,7 +244,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("takes a labelled ticket just the same — the label is no longer a gate", async () => {
-    const h = await harness({
+    const h = await webhookHarness({
       bindings: [{ ...UGURPAY_BINDING, triggerMode: "opt_in" }],
     });
     const delivery = signed(issueEvent({ ticket: "UGURPAY-7", labels: ["maestro"] }));
@@ -240,6 +279,8 @@ describe("POST /webhooks/jira", () => {
           matchKind: "label",
           matchValue: "maestro",
           flowType: "duzeltme",
+          // Kod yazan akış deposunu kendi eşlemesinden alır (bağlama varsayılanı kalktı).
+          repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
           priority: 100,
           enabled: true,
           analystVariantId: null,
@@ -273,12 +314,17 @@ describe("POST /webhooks/jira", () => {
           matchKind: "label",
           matchValue: "maestro",
           flowType: "duzeltme",
+          // Kod yazan akış deposunu kendi eşlemesinden alır (bağlama varsayılanı kalktı).
+          repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
           priority: 100,
           enabled: true,
           analystVariantId: null,
           engineerVariantId: null,
           statusMap: null,
         },
+        // Etiketi tutmayan ticket'ın yine de bir koşu açabilmesi için: asıl
+        // iddia `lr_label`ın KARAR VERMEMESİ, koşunun hiç açılmaması değil.
+        CATCH_ALL,
       ],
     });
     const delivery = signed(issueEvent({ ticket: "UGURPAY-7", labels: ["digeri"] }));
@@ -297,7 +343,14 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("sends a ticket with no application to the assignment queue (M99 tier 3)", async () => {
-    const h = await harness({ bindings: [{ ...UGURPAY_BINDING, appId: null }] });
+    /*
+     * "Uygulama yok" hâli artık BAĞLAMADAN değil, kuralın eşlemesinden gelir:
+     * `binding.appId` zincirden çıkarıldı (sessiz bir varsayılandı). Eşlemesiz
+     * bir kod akışı kuralı aynı sonucu verir — ticket atama kuyruğuna gider.
+     */
+    const h = await harness({
+      listeningRules: [{ ...CATCH_ALL, flowType: "gelistirme", repoMap: null }],
+    });
     const delivery = signed(issueEvent({ ticket: "UGURPAY-8" }));
 
     const response = await h.app.inject({
@@ -317,7 +370,7 @@ describe("POST /webhooks/jira", () => {
     // A WorkPort that implements only the frozen interface: no
     // `parseCommandDetailed`, so the BFF has nothing to say back.
     Object.defineProperty(work, "parseCommandDetailed", { value: undefined });
-    const h = await harness({ deps: { work } });
+    const h = await webhookHarness({ deps: { work } });
 
     const delivery = signed(
       commentEvent({ ticket: "UGURPAY-3", author: "mert.demir", body: "/onayla" }),
@@ -335,7 +388,7 @@ describe("POST /webhooks/jira", () => {
   });
 
   it("ignores a comment that is not a command", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const delivery = signed(
       commentEvent({ ticket: "UGURPAY-3", author: "mert.demir", body: "bir bakayım" }),
     );
@@ -367,7 +420,7 @@ describe("request body limit", () => {
   }
 
   it("accepts a delivery larger than Fastify's 1 MB default", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const delivery = bulkyDelivery(2 * 1024 * 1024);
 
     const response = await h.app.inject({
@@ -381,7 +434,7 @@ describe("request body limit", () => {
   });
 
   it("refuses a delivery past the configured limit, and does not 500", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     const delivery = bulkyDelivery(BODY_LIMIT_BYTES + 1024);
 
     const response = await h.app.inject({
@@ -395,7 +448,7 @@ describe("request body limit", () => {
   });
 
   it("applies the same limit to the REST surface", async () => {
-    const h = await harness();
+    const h = await webhookHarness();
     await h.addUser({ username: "ayse.kaya", roles: ["admin"] });
     const token = await h.login("ayse.kaya");
 
@@ -419,6 +472,7 @@ describe("silent webhook outcomes leave a server-side trace (denetim B5)", () =>
   async function loggedHarness(options: Parameters<typeof harness>[0] = {}) {
     const raw: string[] = [];
     const h = await harness({
+      listeningRules: [CATCH_ALL],
       ...options,
       fastify: {
         logger: {
@@ -715,6 +769,7 @@ describe("clarify re-entry from Jira (step 2b)", () => {
 
   const botHarness = () =>
     harness({
+      listeningRules: [CATCH_ALL],
       deps: { config: { actorDomain: "ugurbank.local", engineBotAccountId: BOT } },
     });
 
@@ -915,7 +970,7 @@ describe("clarify re-entry from Jira (step 2b)", () => {
   it("does nothing when the deployment configured no bot account", async () => {
     // `MAESTRO_BOT_ACCOUNT_ID` boş: kimlik ve yön katmanları ölçülemez, ve
     // ölçülemeyen bir korumayla ilerlemek korumasız ilerlemektir.
-    const h = await harness();
+    const h = await webhookHarness();
     h.runs.openGate("UGURPAY-3", "2b", { awaitingClarificationSince: ASKED_AT });
 
     await deliver(

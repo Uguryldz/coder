@@ -22,6 +22,18 @@ function rule(over: Partial<ListeningRuleRecord> = {}): ListeningRuleRecord {
     matchKind: "issuetype",
     matchValue: "Hata",
     flowType: "duzeltme",
+    /**
+     * KOD YAZAN AKIŞ DEPOSUNU KENDİ EŞLEMESİNDEN ALIR.
+     *
+     * Bu alan bir dönem yoktu ve testler depoyu proje bağlamasının
+     * varsayılanından (`UGURPAY_BINDING.appId`) alıyordu. O halka zincirden
+     * çıkarıldı: sessiz bir varsayılandı, eşleme cevap veremediğinde devreye
+     * giriyor ve operatöre eşlemenin çalıştığını sandırıyordu.
+     *
+     * Sabit eşleme (`field: "*"`) "bu kuralın bütün ticket'ları şu depoya"
+     * demek — bağlama varsayılanının yaptığı işin AÇIKÇA yazılmış hâli.
+     */
+    repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
     priority: 100,
     enabled: true,
     ...over,
@@ -156,9 +168,18 @@ describe("intake falls back when no rule claims the ticket", () => {
   it("leaves the flow unset when nothing matches and no default is configured", async () => {
     const h = await harness({ listeningRules: [rule({ matchValue: "Hata" })] });
 
+    /*
+     * Hiçbir kural eşleşmiyor ve kurulum varsayılanı yok → akış BELİRSİZ, ve
+     * belirsiz akış "tam boru hattı" sayılır (bir alt blok bunu kilitliyor):
+     * kod yazar, uygulama ister. Proje bağlamasının depo varsayılanı zincirden
+     * çıkarıldığı için uygulama gelmiyor ve ticket insana havale ediliyor.
+     *
+     * Testin adı hâlâ doğru: akış SET EDİLMİYOR. Değişen, set edilmemiş akışın
+     * artık koşu açamaması.
+     */
     const started = await deliver(h, { ticket: "UGURPAY-8", issueType: "Görev" });
-    expect(started).toBeDefined();
-    expect(started?.flow).toBeUndefined();
+    expect(started).toBeUndefined();
+    expect(h.work.lastComment("UGURPAY-8")).toContain("UGURPAY-8");
   });
 
   it("keeps the deployment default when NO listening store is wired at all", async () => {
@@ -260,7 +281,19 @@ describe("intake pins the rule's status map into the run input", () => {
   const MAP = { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" } as const;
 
   it("carries the deciding rule's map to the engine", async () => {
-    const h = await harness({ listeningRules: [rule({ matchValue: "Hata", statusMap: MAP })] });
+    /*
+     * Eşleşen kural `analiz`, ve bu testin ölçtüğü şeyi korumak için gerekli:
+     * bağlamanın depo varsayılanı zincirden çıkarıldığı için akışı belirsiz bir
+     * ticket artık koşu AÇAMIYOR (tam boru hattı sayılır, uygulama ister).
+     * `analiz` depo istemez, yani koşu açılır ve asıl iddia — kuralın
+     * seçmediği alanın girdiye TAŞINMAMASI — yine ölçülebilir.
+     */
+    const h = await harness({
+      listeningRules: [
+        rule({ matchValue: "Hata", statusMap: MAP }),
+        rule({ ruleId: "lr_gorev", matchValue: "Görev", flowType: "analiz", repoMap: null }),
+      ],
+    });
 
     const started = (await deliver(h, { ticket: "UGURPAY-1", issueType: "Hata" })) as
       | { statusMap?: unknown }
@@ -287,7 +320,19 @@ describe("intake pins the rule's status map into the run input", () => {
 
   /** A ticket no rule matched has no operator-configured board to be driven around. */
   it("omits the field when the deployment default decided the flow", async () => {
-    const h = await harness({ listeningRules: [rule({ matchValue: "Hata", statusMap: MAP })] });
+    /*
+     * Eşleşen kural `analiz`, ve bu testin ölçtüğü şeyi korumak için gerekli:
+     * proje bağlamasının depo varsayılanı zincirden çıkarıldığı için akışı
+     * belirsiz bir ticket artık koşu AÇAMIYOR (tam boru hattı sayılır, uygulama
+     * ister). `analiz` depo istemez, yani koşu açılır ve asıl iddia — KURALIN
+     * seçmediği `statusMap`in girdiye taşınmaması — yine ölçülebilir.
+     */
+    const h = await harness({
+      listeningRules: [
+        rule({ matchValue: "Hata", statusMap: MAP }),
+        rule({ ruleId: "lr_gorev", matchValue: "Görev", flowType: "analiz", repoMap: null }),
+      ],
+    });
 
     const started = (await deliver(h, { ticket: "UGURPAY-9", issueType: "Görev" })) as
       | Record<string, unknown>
@@ -350,7 +395,11 @@ describe("intake pins the rule's AGENT choice into the run input", () => {
 
   it("hiçbir kural eşleşmediğinde ajan gönderilmez", async () => {
     const h = await harness({
-      listeningRules: [rule({ matchValue: "Hata", analystVariantId: "analyst-kredi" })],
+      listeningRules: [
+        rule({ matchValue: "Hata", analystVariantId: "analyst-kredi" }),
+        // Eşleşen kural `analiz` (gerekçesi bir üstteki testte).
+        rule({ ruleId: "lr_gorev", matchValue: "Görev", flowType: "analiz", repoMap: null }),
+      ],
     });
 
     const started = (await deliver(h, { ticket: "UGURPAY-9", issueType: "Görev" })) as
@@ -364,8 +413,11 @@ describe("intake pins the rule's AGENT choice into the run input", () => {
 
 describe("the analysis-only binding — no application, and only analiz may run", () => {
   const rules = [
-    rule({ ruleId: "lr_analiz", matchKind: "issuetype", matchValue: "Analiz", flowType: "analiz" }),
-    rule({ ruleId: "lr_gel", matchKind: "issuetype", matchValue: "Görev", flowType: "gelistirme" }),
+    // Bu blok "HİÇBİR YERDE depo yok" halini ölçüyor, o yüzden kurallar da
+    // eşlemesiz: `rule()`in varsayılan sabit eşlemesi burada ölçülen şeyi
+    // bozardı.
+    rule({ ruleId: "lr_analiz", matchKind: "issuetype", matchValue: "Analiz", flowType: "analiz", repoMap: null }),
+    rule({ ruleId: "lr_gel", matchKind: "issuetype", matchValue: "Görev", flowType: "gelistirme", repoMap: null }),
   ];
 
   /** The binding an analysis-only team files: active, but naming no repo. */

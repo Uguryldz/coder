@@ -95,6 +95,40 @@ export class TestClock implements Clock {
   }
 }
 
+/**
+ * HARNESS'IN VARSAYILAN DİNLEME KURALI.
+ *
+ * Bu liste bir dönem BOŞTU ve testler yine koşu açabiliyordu: hiçbir kural
+ * eşleşmese bile proje bağlamasının depo varsayılanı devreye giriyor, akışı
+ * belirsiz ticket "tam boru hattı" olarak başlıyordu. O halka zincirden
+ * çıkarıldı — sessiz bir varsayılandı ve operatöre eşlemenin çalıştığını
+ * sandırıyordu — ve akışı belirsiz bir ticket artık deposuz başlayamıyor.
+ *
+ * Gerçek kurulumun karşılığı `POST /studio/listening-rules/seed-defaults`:
+ * bir proje bağlandığında platform kuralları kendisi tohumlar. Yani "bağlı
+ * proje + hiç kural yok" hâli sahada da geçici bir durumdur.
+ *
+ * `matchKind: "assigned"` seçildi çünkü en geniş olan o: bota atanmış her
+ * ticket'ı alır, statü ve tip ayrımı yapmaz. `analiz` çünkü depo istemeyen
+ * tek akış odur ve bu kural bir VARSAYILAN — kuralsız bir kurulumda kod
+ * yazmaya başlamak, depo kapısının engellemek için var olduğu şeyin kendisi.
+ *
+ * Kendi kural kümesini ölçen testler `listeningRules` geçiyor ve bu satır
+ * onları etkilemiyor; "hiç kural yok" hâlini ölçenler `[]` geçebilir.
+ */
+export const DEFAULT_LISTENING_RULE: ListeningRuleRecord = {
+  ruleId: "lr_default",
+  projectKey: "UGURPAY",
+  assigneeAccountId: "",
+  matchKind: "assigned",
+  matchValue: "*",
+  flowType: "analiz",
+  priority: 1000,
+  enabled: true,
+  analystVariantId: null,
+  engineerVariantId: null,
+};
+
 export const UGURPAY_BINDING: JiraBinding = {
   projectKey: "UGURPAY",
   active: true,

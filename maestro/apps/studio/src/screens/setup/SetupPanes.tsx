@@ -172,7 +172,6 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
   // pick (a repo chosen under another flow must not vanish behind a closed
   // summary), and otherwise remembers what the operator did with it.
   const [repoOpen, setRepoOpen] = useState(draft.connectionId !== "");
-
   // Each live list has four faces to tell apart: nothing picked yet, loading,
   // a provider error, an empty result. One "seçiniz" for all four is how
   // "hiçbir şey çıkmıyor" tickets happen.
@@ -183,6 +182,7 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
         ? t("setup.common.loading")
         : (data.jiraProjectsError ??
           (data.jiraProjects.length === 0 ? t("setup.project.no_projects") : t("setup.common.choose")));
+
   const repoPlaceholder =
     draft.connectionId === ""
       ? t("setup.project.pick_scm_conn_first")
@@ -276,9 +276,23 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
         <div className="scr-note scr-note--warn scr-mt-2">{t("setup.dataclass.gizli_warning")}</div>
       )}
 
+      {/*
+        DEPO SORULUR — ama cevabı KURALIN EŞLEMESİNE yazılır, bağlamaya değil.
+
+        Bir dönem buradaki cevap proje BAĞLAMASINA gidiyordu ve orada yalnızca
+        SON ÇAREYDİ: kuralın eşlemesi cevap veremediğinde sessizce devreye giren
+        bir varsayılan. Operatör panelde bir depo adı görüyor ve eşlemenin
+        çalıştığını sanıyordu — canlıda ölçülen yanlış-anlatımın kaynağı buydu,
+        ve "depo iki yerde soruluyor" şikâyetinin de.
+
+        Soru duruyor çünkü kod yazan bir akış deposuz KAYDEDİLEMİYOR; kaldırmak,
+        operatörü beş adım yürütüp sonunda reddetmek olurdu. Değişen şey cevabın
+        nereye gittiği: artık tek kaynak, kuralın kendi eşlemesi.
+      */}
       {repoRequired ? (
         <>
           <h4 className="scr-h">{t("setup.project.repo_heading")}</h4>
+          <p className="scr-hint">{t("setup.project.repo_moved_to_rule")}</p>
           {repoFields}
         </>
       ) : (

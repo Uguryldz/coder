@@ -344,6 +344,56 @@ describe("POST /onboarding", () => {
     mergeMode: "human",
   } as const;
 
+  /**
+   * ENVANTER YAZILIR, BAĞLAMA VARSAYILANI YAZILMAZ.
+   *
+   * İkisi bir dönem tek karardı ve ayrılmaları gerekti:
+   *  1. `Application` satırı — kuralın eşlemesi bir depo adı gösteriyorsa o
+   *     adın envanterde satırı OLMAK ZORUNDA (`assertMappedAppsExist`); yoksa
+   *     alım depoyu klonluyor ve koşu satırı `WorkflowRun_appId_fkey` ile
+   *     patlıyor (OPS-121'de ölçüldü).
+   *  2. `defaults.appId` — zincirin son halkası, SESSİZ bir varsayılandı:
+   *     eşleme cevap veremediğinde devreye girip koşuya yine bir depo veriyor
+   *     ve operatöre eşlemenin çalıştığını sandırıyordu.
+   *
+   * Sihirbaz bir ara İKİSİNİ BİRDEN kaybetti (depo hiç gönderilmiyordu), yani
+   * envanter de yazılmıyordu ve kural kaydı o duvara çarpıyordu. Doğru cevap
+   * "depoyu hiç gönderme" değil, "gönder ama bağlamaya yazma".
+   */
+  it("bindDefaultApp:false — envanter yazılır, bağlama varsayılansız kalır", async () => {
+    const app = await wizardLegacy();
+    const token = await adminToken(app);
+
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...DRAFT, bindDefaultApp: false },
+    });
+    expect(response.statusCode).toBe(202);
+
+    const pending = await app.params.pending();
+    const proposal = pending.find((entry) => entry.key === ONBOARDING_PROPOSAL_PREFIX);
+    expect((proposal?.value as { appId?: unknown }).appId).toBeNull();
+  });
+
+  it("alan gönderilmezse ESKİ davranış sürer — geriye uyum", async () => {
+    const app = await wizardLegacy();
+    const token = await adminToken(app);
+
+    const response = await app.app.inject({
+      method: "POST",
+      url: "/onboarding",
+      headers: { authorization: `Bearer ${token}` },
+      payload: DRAFT,
+    });
+    expect(response.statusCode).toBe(202);
+
+    const pending = await app.params.pending();
+    const proposal = pending.find((entry) => entry.key === ONBOARDING_PROPOSAL_PREFIX);
+    expect((proposal?.value as { appId?: unknown }).appId).not.toBeNull();
+  });
+
   it("files a proposal and binds nothing", async () => {
     // Legacy path: no writer, so the repo must already be in the options.
     const app = await wizardLegacy();

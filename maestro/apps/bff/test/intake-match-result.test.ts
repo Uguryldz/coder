@@ -92,15 +92,30 @@ describe("alım — eşleşme kararı koşuya taşınır (M99 matchJson)", () =>
    * kaydedilmesi tam olarak BURADA önemli: sahada ölçülen 35 koşunun ezici
    * çoğunluğu bu halkadan geçiyordu, ve hiçbiri kaydedilmiyordu.
    */
-  it("eşleme tutmayıp bağlamanın uygulamasına düşse bile kararı KAYDEDER", async () => {
+  /**
+   * Eşleme tutmadığında artık BAĞLAMAYA DÜŞÜLMÜYOR — o halka zincirden
+   * çıkarıldı, çünkü sessiz bir varsayılandı: koşuya yine bir depo veriyor ve
+   * operatöre eşlemenin çalıştığını sandırıyordu. Değer hiçbir satıra
+   * uymuyorsa ticket insana havale edilir.
+   *
+   * Bu testin ölçtüğü şey (kararın KAYDEDİLMESİ) korunuyor: eşlemenin TUTTUĞU
+   * yol üzerinden, çünkü sahada ölçülen 35 koşunun geçtiği halka o.
+   */
+  it("eşleme tuttuğunda kararı kural kimliğiyle KAYDEDER", async () => {
     const h = await harness({ applications: MAPPED_APPS, listeningRules: [rule()] });
-    h.work.putFields("UGURPAY-2", { customfield_10234: "Sigorta" });
+    h.work.putFields("UGURPAY-2", { customfield_10234: "Krediler" });
 
     const started = await deliver(h, "UGURPAY-2");
-    expect(started?.appId).toBe("ugurpay");
-    // Karar hâlâ bir KURAL kararı — kimliği kararı veren kuralın kimliği.
-    expect(started?.match).toEqual({ via: "rule", ruleId: "lr_eslesme", appId: "ugurpay" });
+    expect(started?.appId).toBe("bank/kredi");
+    // Karar bir KURAL kararı — kimliği kararı veren kuralın kimliği.
+    expect(started?.match).toEqual({ via: "rule", ruleId: "lr_eslesme", appId: "bank/kredi" });
     expect(MatchResult.safeParse(started?.match).success).toBe(true);
+  });
+
+  it("değer hiçbir satıra uymuyorsa koşu açılmaz — sessiz varsayılan yok", async () => {
+    const h = await harness({ applications: MAPPED_APPS, listeningRules: [rule()] });
+    h.work.putFields("UGURPAY-3", { customfield_10234: "Sigorta" });
+    expect(await deliver(h, "UGURPAY-3")).toBeUndefined();
   });
 
   /**

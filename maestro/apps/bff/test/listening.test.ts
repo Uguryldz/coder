@@ -1,6 +1,7 @@
 import type { LightMyRequestResponse } from "fastify";
 import { describe, expect, it } from "vitest";
 import { auth, harness, type Harness } from "./helpers.js";
+import type { ListeningRuleRecord } from "../src/listening-store.js";
 
 /**
  * The listening-rules surface: which tickets Maestro picks up and how it runs
@@ -38,7 +39,7 @@ function del(h: Harness, url: string, token: string): Promise<LightMyRequestResp
   return h.app.inject({ method: "DELETE", url, headers: auth(token) });
 }
 
-const RULE = {
+const RULE: Omit<ListeningRuleRecord, "ruleId"> = {
   projectKey: "OPS",
   assigneeAccountId: "712020:bot",
   matchKind: "issuetype",
@@ -46,7 +47,19 @@ const RULE = {
   flowType: "duzeltme",
   priority: 100,
   enabled: true,
-} as const;
+  /**
+   * KOD YAZAN AKIŞ DEPOSUNU KENDİ EŞLEMESİNDEN ALIR.
+   *
+   * `duzeltme` bir ticket'a kod yazar ve depo ister. Depo bir dönem proje
+   * bağlamasının varsayılanından geliyordu; o halka zincirden çıkarıldı, çünkü
+   * sessiz bir varsayılandı — eşleme cevap veremediğinde devreye giriyor ve
+   * operatöre eşlemenin çalıştığını sandırıyordu.
+   *
+   * Artık eşlemesiz bir kod akışı KAYDEDİLEMİYOR (`assertRepoMapForCodeFlow`),
+   * yani bu fixture da gerçek bir kuralı temsil etmek için eşleme taşımalı.
+   */
+  repoMap: { field: "*", entries: [{ value: "*", appId: "ugurpay" }] },
+};
 
 /**
  * "Maestro'nun havuzunda hiçbir zaman ticket kalamaz." Statü seçen (havuzlu)

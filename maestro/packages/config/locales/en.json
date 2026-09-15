@@ -2139,6 +2139,7 @@
   "setup.project.pick_scm_conn_first": "Choose a repository connection first",
   "setup.project.platform": "Application technology",
   "setup.project.platform_hint": "Decides the environment the tests and the build run in.",
+  "setup.project.platform_single": "Platform: {platform} — the only profile defined in this installation, no need to pick one.",
   "setup.blocked.pool_no_exit": "You picked a status, which means you created a POOL for tickets. A ticket cannot stay in the pool: fill in both the way BACK (which status when information is missing, or reassigning to the reporter) and the way FORWARD (which status when the work is done / the analysis goes to review). Leave them empty and the robot finishes its work while the ticket stays stuck in the pool.",
   "setup.gates.heading": "Human approval",
   "setup.gates.choice.none": "None — Maestro proceeds without waiting",

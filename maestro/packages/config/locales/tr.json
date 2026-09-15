@@ -2139,6 +2139,7 @@
   "setup.project.pick_scm_conn_first": "Önce kod deposu bağlantısını seçin",
   "setup.project.platform": "Uygulamanın teknolojisi",
   "setup.project.platform_hint": "Testlerin ve derlemenin hangi ortamda çalışacağını belirler.",
+  "setup.project.platform_single": "Platform: {platform} — bu kurulumda tanımlı tek profil, ayrıca seçmenize gerek yok.",
   "setup.blocked.pool_no_exit": "Bir statü seçtiniz, yani ticket için bir HAVUZ kurdunuz. Havuzda ticket kalamaz: aşağıda hem GERİ çıkışı (bilgi eksik olduğunda hangi statü, ya da talep sahibine geri atama) hem de İLERİ çıkışı (iş bitince / analiz onaya çıkınca hangi statü) doldurun. Boş bırakırsanız robot işini bitirir ama ticket havuzda takılı kalır.",
   "setup.gates.heading": "İnsan onayı",
   "setup.gates.choice.none": "Yok — Maestro onay beklemeden ilerler",

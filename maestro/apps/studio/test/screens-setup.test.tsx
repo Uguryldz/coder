@@ -109,7 +109,14 @@ async function fillProject(): Promise<void> {
   await userEvent.selectOptions(screen.getByLabelText("Kod deposu bağlantısı"), "scm-1");
   await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" });
   await userEvent.selectOptions(screen.getByLabelText("Kod deposu"), "Uguryldz/maestro-pilot");
-  await userEvent.selectOptions(screen.getByLabelText("Uygulamanın teknolojisi"), "linux-node");
+  /*
+   * Platform kutusu YALNIZ birden fazla profil varsa çizilir. Tek profilli bir
+   * kurulumda soracak bir şey yok: taslak kendi doluyor ve ekran hangisi
+   * olduğunu satır altında yazıyor. Fixture tek profil taşıdığı için kutu
+   * burada yok — `queryByLabelText` ile varsa seçiyoruz, yoksa geçiyoruz.
+   */
+  const platformBox = screen.queryByLabelText("Uygulamanın teknolojisi");
+  if (platformBox !== null) await userEvent.selectOptions(platformBox, "linux-node");
   await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 }
 
@@ -509,9 +516,10 @@ describe("setup wizard", () => {
       expect((screen.getByLabelText("Kod deposu") as HTMLSelectElement).value).toBe(
         "Uguryldz/maestro-pilot",
       );
-      expect((screen.getByLabelText("Uygulamanın teknolojisi") as HTMLSelectElement).value).toBe(
-        "linux-node",
-      );
+      // Tek profilli kurulumda platform bir KUTU değil: soracak bir şey yok,
+      // taslak kendi doluyor ve ekran hangisi olduğunu yazıyor. Korunan cevap
+      // yine korunuyor — yalnız gösterimi değişti.
+      expect(screen.getByText(/Platform: .*Node/u)).toBeTruthy();
 
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
       await screen.findByText("Hangi ticket'ları alsın?");

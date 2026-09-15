@@ -215,18 +215,36 @@ export function ProjectPane({ draft, data, onChange }: PaneProps): ReactNode {
           ]}
         />
       </div>
-      <div className="scr-grid scr-grid--2 scr-mt-2">
-        <Select
-          label={t("setup.project.platform")}
-          value={draft.platform}
-          onChange={(e) => onChange({ platform: e.target.value })}
-          options={[
-            { value: "", label: t("setup.common.choose") },
-            ...data.platforms.map((p) => ({ value: p, label: t(`platform.${p}`) })),
-          ]}
-          hint={t("setup.project.platform_hint")}
-        />
-      </div>
+      {/*
+        PLATFORM: TEK PROFİL VARSA SORULMAZ.
+        
+        Bu kurulumda tanımlı profil bir taneyse operatöre sorulacak bir şey yok
+        — cevabı zaten belli, ve zorunlu bir "seçiniz" kutusu yalnız fazladan
+        bir tıklama demek. Tahmin EDİLMİYOR: liste gerçekten tek elemanlıysa o
+        seçiliyor ve satır altında hangisi olduğu YAZILIYOR.
+        
+        Birden fazlaysa kutu duruyor. Yanlış tahmin `platform_mismatch`e ya da
+        yanlış araç zincirinde derlemeye çıkardı; tahmin etmek yerine tek
+        seçenek olduğunda sormamak doğru olan.
+      */}
+      {data.platforms.length === 1 ? (
+        <p className="scr-hint scr-mt-2">
+          {t("setup.project.platform_single", { platform: t(`platform.${data.platforms[0]!}`) })}
+        </p>
+      ) : (
+        <div className="scr-grid scr-grid--2 scr-mt-2">
+          <Select
+            label={t("setup.project.platform")}
+            value={draft.platform}
+            onChange={(e) => onChange({ platform: e.target.value })}
+            options={[
+              { value: "", label: t("setup.common.choose") },
+              ...data.platforms.map((p) => ({ value: p, label: t(`platform.${p}`) })),
+            ]}
+            hint={t("setup.project.platform_hint")}
+          />
+        </div>
+      )}
     </>
   );
 

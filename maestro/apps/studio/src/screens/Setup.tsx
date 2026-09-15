@@ -185,6 +185,26 @@ export function SetupScreen(): ReactNode {
     }));
   }, [intakeMode, intakePollSeconds, intakeTouched]);
 
+  /**
+   * TEK PLATFORM PROFİLİ VARSA TASLAK KENDİ DOLAR.
+   *
+   * Ekran o durumda kutuyu çizmiyor (soracak bir şey yok), ama taslağın boş
+   * kalması `POST /onboarding`in `adoRepo`+`platform` çiftini birlikte
+   * istemesini kırardı — ve kural kaydı `assertMappedAppsExist` duvarına
+   * çarpardı. Gizlenen bir soru cevapsız bırakılmaz, CEVAPLANIR.
+   *
+   * Tahmin yok: yalnız liste gerçekten tek elemanlıysa. Birden fazlaysa kutu
+   * duruyor ve operatör seçiyor — yanlış tahmin `platform_mismatch`e ya da
+   * yanlış araç zincirinde derlemeye çıkardı.
+   */
+  const platformList = options.data?.platforms ?? [];
+  const soleplatform = platformList.length === 1 ? platformList[0] : undefined;
+  useEffect(() => {
+    if (soleplatform !== undefined && draft.platform === "") {
+      setDraft((current) => ({ ...current, platform: soleplatform }));
+    }
+  }, [soleplatform, draft.platform]);
+
   // The bot's own accountId, learned when a Jira connection was tested — so
   // step 3 pre-fills itself instead of asking for a hand-copied GUID.
   const botAccountId = jiraConnList.find((c) => c.botAccountId)?.botAccountId ?? null;

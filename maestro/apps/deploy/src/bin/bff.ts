@@ -61,6 +61,7 @@ import { probeListeningRule } from "../listening-probe.js";
 import {
   canReadComments,
   canReadStatuses,
+  canReadWorkflow,
   canReadTickets,
   startJiraPoller,
 } from "../jira-poller.js";
@@ -348,6 +349,18 @@ export async function main(): Promise<void> {
    */
   const gateDirectory = new EnvGateDirectory(env);
 
+  /**
+   * PROJE İŞ AKIŞI — sihirbazın statü listesinin kaynağı.
+   *
+   * Sürücüde (`JiraCloudWorkPort.readProjectWorkflow`) ÖLÇÜLDÜ: var. Ama bu
+   * satıra kadar hiçbir yere bağlanmamıştı, yani `GET /studio/jira-workflow`
+   * her kurulumda 503 dönüyordu ve ona dayanan hiçbir ekran yazılamıyordu.
+   *
+   * Yetenek SORULUYOR, varsayılmıyor: Data Center sürücüsünde bu metot henüz
+   * yok ve "sürücü okuyamıyor" ile "bu projenin iş akışı yok" farklı iki şey.
+   */
+  const workflowReader = canReadWorkflow(deployment.ports.work) ? deployment.ports.work : null;
+
   const deps: BffDeps = {
     work: deployment.ports.work,
     workEvents: jiraWorkEventReader(),
@@ -424,6 +437,9 @@ export async function main(): Promise<void> {
       apiKeyRef: env.LLM_API_KEY_REF,
     }),
     routing: new PrismaRoutingReader(db.jiraProjectBinding, db.routingRule, db.application),
+    // Sürücü okuyabiliyorsa bağlanır; okuyamıyorsa alan hiç konmaz ve uç
+    // 503-adıyla reddeder — boş bir sayfa render etmez.
+    ...(workflowReader === null ? {} : { jiraWorkflow: workflowReader }),
     // Postgres-backed, where it used to be an `InMemoryKillSwitchStore` (Dalga
     // E, migration 0008). This is the store `assertStoresDurable` refused a
     // prod boot without: a process-local brake reverts to `off` on the restart
@@ -1034,6 +1050,7 @@ export async function main(): Promise<void> {
    * `as unknown as` kastının yaptığı hata olurdu.
    */
   const statusReader = canReadStatuses(deployment.ports.work) ? deployment.ports.work : null;
+
 
   /**
    * Motorun Jira kimliği, HER SORULDUĞUNDA yeniden çözülür.

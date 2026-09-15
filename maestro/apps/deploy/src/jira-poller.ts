@@ -9,6 +9,7 @@ import {
   type ResolvedDeps,
 } from "@maestro/bff";
 import { ClarificationAnswerSignal, type TicketKey } from "@maestro/contracts";
+import type { JiraWorkflowReader } from "@maestro/bff";
 
 /**
  * Reading Jira commands by polling, because the webhook cannot always reach us.
@@ -866,3 +867,19 @@ export function maskAuthor(author: string): string {
 
 /** Project key of a ticket, re-exported so callers filter without a second parser. */
 export { projectKeyOf };
+
+/**
+ * Bir sürücü PROJE İŞ AKIŞINI okuyabiliyor mu (statüler + geçişler).
+ *
+ * `canReadStatuses` ile aynı desen ve aynı gerekçe: yeteneğin varlığı SORULUR,
+ * varsayılmaz. `readProjectWorkflow` Jira Cloud sürücüsünde var, Data Center
+ * sürücüsünde henüz yok — ve "yok" ile "bu projenin iş akışı yok" farklı iki
+ * şey. Bağlanmamış bir kurulum uçtan 503 alır, boş bir sayfa değil.
+ */
+export function canReadWorkflow<T>(driver: unknown): driver is T & JiraWorkflowReader {
+  return (
+    typeof driver === "object" &&
+    driver !== null &&
+    typeof (driver as { readProjectWorkflow?: unknown }).readProjectWorkflow === "function"
+  );
+}

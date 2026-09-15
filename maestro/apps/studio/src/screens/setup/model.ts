@@ -1,5 +1,7 @@
 import type { APPROVAL_GATE_STEPS } from "@maestro/contracts";
 import { EMPTY_STATUS_DRAFT, type StatusDraft } from "../common/status-map.ts";
+import { poolExitGaps } from "@maestro/contracts";
+import { buildStatusMap } from "../common/status-map.ts";
 
 /**
  * The guided setup's data model — everything the five panes read and write,
@@ -492,11 +494,40 @@ export function stepBlockedReason(
         return "setup.blocked.no_match_value";
       }
       return null;
-    case "status":
-      // The whole step is optional; an operator who turned the map ON and then
-      // filled nothing in is not blocked — `buildStatusMap` folds that back to
-      // comment-only, which is exactly what the summary will say.
-      return null;
+    case "status": {
+      /**
+       * HAVUZ SEÇİLDİYSE ÇIKIŞ ZORUNLUDUR — ve bunu BURADA söylüyoruz.
+       *
+       * Bu dal bir dönem koşulsuz `null` dönüyordu ve adım "isteğe bağlı" diye
+       * etiketliydi. Ama kısıtın iki ucu iki ayrı adımdaydı: operatör 3. adımda
+       * bir statü seçiyor (havuz kuruluyor), 4. adımı atlıyor, ve 6. adımda
+       * `400 listening_pool_without_exit` yiyordu — dört adım geç, ve "bu adımı
+       * atlayabilirsiniz" denen bir kutuyu doldurmak için geri dönerek.
+       *
+       * Kural sunucununkiyle AYNI fonksiyondan geliyor (`poolExitGaps`,
+       * `@maestro/contracts`) — kopya değil. Kopyalanmış bir doğrulama
+       * ayrışır, ve ayrışan doğrulama "ekran geçiriyor, sunucu reddediyor"
+       * demektir: bugünkü arızanın aynası.
+       *
+       * Girdi TELDEN türetiliyor, taslaktan değil: `buildStatusMap` ne
+       * gönderecekse kontrol onu görüyor. `gateMirror`ın aynı gerekçeyle
+       * öğrendiği ders — taslağa bakan bir ayna, telin yapmayacağı bir şeyi
+       * söylüyordu.
+       */
+      if (draft.allowedStatuses.length === 0) return null;
+      const gaps = poolExitGaps({
+        allowedStatuses: draft.allowedStatuses,
+        statusMap: buildStatusMap(
+          draft.statusOn,
+          draft.statusDraft,
+          draft.reassignOnNeedInfo,
+          draft.flowType,
+        ),
+        flowType: draft.flowType,
+        gateSteps: { steps: [...GATE_STEPS_BY_CHOICE[draft.gateChoice]] },
+      });
+      return gaps.length === 0 ? null : "setup.blocked.pool_no_exit";
+    }
     case "intake": {
       // A driver that cannot read a comment thread cannot poll for commands.
       // Named rather than hidden, and it stops "İleri" — accepting the answer

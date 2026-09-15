@@ -1683,3 +1683,28 @@ describe("insan onayı radyosu", () => {
     }
   });
 });
+
+/**
+ * HAVUZ ÇIKIŞI — arıza 4. adımda görünür, 6. adımda DEĞİL.
+ *
+ * Ölçülmüş arıza: operatör 3. adımda bir statü seçiyor (havuz kuruluyor),
+ * 4. adım "isteğe bağlı" diye etiketli olduğu için atlıyor, ve 6. adımda
+ * `400 listening_pool_without_exit` yiyor — dört adım geç, üstelik atlamasının
+ * söylendiği bir kutuyu doldurmak için geri dönerek.
+ *
+ * Kural sunucununkiyle AYNI fonksiyondan geliyor (`poolExitGaps`,
+ * `@maestro/contracts`) — kopya değil. Kopyalanmış bir doğrulama ayrışır ve
+ * "ekran geçiriyor, sunucu reddediyor" hâline döner.
+ */
+describe("havuz çıkışı 4. adımda zorunlu", () => {
+  it("statü seçilmediyse adım gerçekten isteğe bağlı — İleri açık", async () => {
+    const { fetchImpl } = stubFetch(baseRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+    await chooseFlow();
+    await fillProject();
+    await fillTickets();
+    await screen.findByText("Jira durumlarını da değiştirsin mi?");
+    // Havuz yok → çıkış da gerekmiyor.
+    expect(screen.getByRole("button", { name: "İleri" })).toBeEnabled();
+  });
+});

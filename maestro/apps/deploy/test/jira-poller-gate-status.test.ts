@@ -1,7 +1,7 @@
 import type { ResolvedDeps } from "@maestro/bff";
 import type { TicketKey, WorkflowRunState } from "@maestro/contracts";
 import { describe, expect, it } from "vitest";
-import { canReadStatuses, startJiraPoller } from "../src/jira-poller.js";
+import { canReadStatuses, canReadWorkflow, startJiraPoller } from "../src/jira-poller.js";
 
 /**
  * KAPI KARARININ STATÜYLE VERİLMESİ — webhook'suz kurulumun kanalı.
@@ -330,4 +330,33 @@ describe("poller gate-status channel", () => {
     const result = await round();
     expect(summaryOf(result.lines)).not.toContain("kapı statü kanalı kapalı");
   });
+});
+
+/**
+ * `canReadWorkflow` — iş akışı okuyucusu BAĞLI MI.
+ *
+ * Bu kontrol, sürücüde var olan ama üretim bileşimine hiç bağlanmamış bir
+ * yeteneği açtı: `JiraCloudWorkPort.readProjectWorkflow` yazılmıştı, ama
+ * `deps.jiraWorkflow`a hiçbir yerde atanmıyordu — yani
+ * `GET /studio/jira-workflow` HER kurulumda 503 dönüyordu ve ona dayanan
+ * hiçbir ekran yazılamıyordu.
+ *
+ * Yetenek SORULUYOR, varsayılmıyor: Data Center sürücüsünde bu metot henüz yok
+ * ve "sürücü okuyamıyor" ile "bu projenin iş akışı yok" farklı iki şey.
+ */
+describe("canReadWorkflow", () => {
+  it("metodu OLAN sürücüyü tanır", () => {
+    expect(canReadWorkflow({ readProjectWorkflow: () => Promise.resolve({}) })).toBe(true);
+  });
+
+  it("metodu olmayanı tanımaz — 503-adıyla reddedilecek", () => {
+    expect(canReadWorkflow({ readCurrentStatus: () => Promise.resolve(null) })).toBe(false);
+  });
+
+  it.each([[null], [undefined], ["metin"], [42], [{ readProjectWorkflow: "fonksiyon değil" }]])(
+    "%s için false",
+    (driver) => {
+      expect(canReadWorkflow(driver)).toBe(false);
+    },
+  );
 });

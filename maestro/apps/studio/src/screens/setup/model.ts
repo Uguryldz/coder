@@ -224,6 +224,47 @@ export function intakeChanged(
 }
 
 /** The six panes, in the order an operator walks them. */
+/**
+ * İNSAN ONAYI — kural başına TEK soru, üç cevap.
+ *
+ * Operatörün istediği şey basitti: "PR'ı istersem kapatabileyim". Bugünkü
+ * ekran onun yerine altı kapılık bir kutu listesi ve "risk seviyesine göre mi,
+ * ben mi seçiyorum" diye ikinci bir soru soruyordu.
+ *
+ * Üç seçenek, ve karşılıkları `SELECTABLE_GATES`ten seçildi:
+ *
+ *  · `none`         → `{ steps: [] }`        hiç onay yok
+ *  · `analysis`     → `{ steps: ["5"] }`     analiz bitince teknik lider
+ *  · `analysis_pr`  → `{ steps: ["5","12"] }` + birleştirme öncesi son kapı
+ *
+ * Kapı 5 ("Analiz onayı — teknik lider") üç risk katmanının ÜÇÜNDE de var;
+ * "analiz bitince" için tek doğru adım o. Kapı 12 ("PR/birleştirme onayı")
+ * ise operatörün kapatmak istediği şeyin ta kendisi — ve kendi ipucu metni
+ * zaten "kapatabilirsiniz, onayı GitHub/ADO tarafında yapan ekipler bu kapıyı
+ * işaretlemez" diyor.
+ *
+ * Kapı 4 (ürün sahibi) BİLEREK dışarıda: `SELECTABLE_GATES`in yorumu, onay
+ * yetkisi zaten Jira'nın izin şemasından geçen bir kurulumda onu ikinci bir
+ * kontrol katmanı sayıyor. Üç seçenekli radyo altı kapılık menüyü değiştirmeye
+ * çalışmıyor; sık kullanılan üç cevabı veriyor. Dört ya da dokuzuncu kapıyı
+ * isteyen operatör Dinleme kuralları ekranındaki tam listeye gider.
+ *
+ * ── HER ZAMAN `{steps}` GÖNDERİLİR, `null` ASLA ─────────────────────────────
+ * `null` "operatör seçmedi" demektir ve kapı dizisini risk katmanına bırakır.
+ * Radyoda bir seçenek HER ZAMAN seçili olduğu için operatör her zaman seçmiş
+ * olur; `null` göndermek, sorduğu soruyu sonra yok saymak olurdu.
+ */
+export type GateChoice = "none" | "analysis" | "analysis_pr";
+
+export const GATE_STEPS_BY_CHOICE: Record<GateChoice, readonly GateStep[]> = {
+  none: [],
+  analysis: ["5"],
+  analysis_pr: ["5", "12"],
+};
+
+/** Radyonun sunduğu sıra — en gevşekten en sıkıya. */
+export const GATE_CHOICES: readonly GateChoice[] = ["none", "analysis", "analysis_pr"];
+
 export const SETUP_STEPS = ["flow", "project", "tickets", "status", "intake", "review"] as const;
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
@@ -291,6 +332,13 @@ export interface SetupDraft {
   readonly gatesCustom: boolean;
   readonly gateSteps: readonly GateStep[];
   /**
+   * İnsan onayı — radyonun cevabı. `gatesCustom`/`gateSteps` çiftinin yerini
+   * alır: sihirbaz artık altı kutu değil üç seçenek soruyor, ve cevabı telde
+   * HER ZAMAN `{steps}` olarak taşınır (`null` asla — ayrıntısı
+   * `GATE_STEPS_BY_CHOICE`ta).
+   */
+  readonly gateChoice: GateChoice;
+  /**
    * Step 5 — how `/approve` reaches Maestro (`jira.command_intake`).
    *
    * The one PLATFORM-WIDE answer in an otherwise per-project draft, and the
@@ -335,6 +383,12 @@ export const EMPTY_SETUP_DRAFT: SetupDraft = {
   // ürünün varsayılanından farklı bir şey OLMAMALI. Operatörün hiç dokunmadan
   // geçtiği bir sihirbaz, kapı dizisini sessizce daraltmamalı.
   gatesCustom: false,
+  /*
+   * Varsayılan "analiz bitince": bugünkü `gatesCustom:false` fiilen tek kapı
+   * (5) açıyordu — `GATES_BY_RISK.dusuk = ["5","12"]` ve 12 analiz akışında
+   * hiç açılmıyor. Radyo bunu AÇIKÇA yazıyor, sessizce türetmiyor.
+   */
+  gateChoice: "analysis",
   gateSteps: [],
   // The starting answer is what the platform ALREADY does, not what the wizard
   // recommends: the screen overwrites both fields with the stored parameters

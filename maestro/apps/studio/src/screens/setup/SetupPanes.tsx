@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Input, Select } from "../../ui/index.ts";
 import { englishAside, matchValueLabel } from "../common/jira-english.ts";
@@ -15,6 +14,7 @@ import {
   COMMAND_INTAKES,
   DATA_CLASSES,
   OFFERED_FLOW_TYPES,
+  GATE_CHOICES,
   MAX_POLL_SECONDS,
   MIN_POLL_SECONDS,
   flowNeedsRepository,
@@ -435,71 +435,40 @@ export function TicketsPane({ draft, data, onChange }: PaneProps): ReactNode {
           the same reason it is HERE too: an operator who only ever walks the
           wizard never learns the choice exists. Collapsed, because the default
           ("risk seviyesine göre") is right for a first setup. */}
-      <details className="scr-adv scr-mt-3" open={draft.gatesCustom || undefined}>
-        <summary className="scr-adv__summary">
-          {t("setup.tickets.gates_summary", {
-            mode: draft.gatesCustom ? t("listening.gates.custom") : t("listening.gates.default"),
-          })}
-        </summary>
-        <div className="scr-adv__body">
-          <p className="scr-hint">{t("listening.gates.explain")}</p>
-          {/* Two radios, not a checkbox: "seçim yok" and "hiç kapı istemiyorum"
-              are different answers, and one box cannot carry both. */}
-          <div className="scr-checklist scr-mt-2">
+      {/*
+        İNSAN ONAYI — TEK SORU, ÜÇ CEVAP.
+        
+        Burası bir dönem altı kutuluk bir liste ve "risk seviyesine göre mi, ben
+        mi seçiyorum" diye ikinci bir soruydu. Operatörün istediği şey ise
+        basitti: "PR'ı istersem kapatabileyim."
+        
+        Üç cevabın karşılıkları `GATE_STEPS_BY_CHOICE`ta ve kapıların kendi
+        ipuçlarından seçildi: kapı 5 üç risk katmanının üçünde de var, kapı 12
+        ise "kapatabilirsiniz — onayı GitHub/ADO tarafında yapan ekipler bu
+        kapıyı işaretlemez" diyen kapının ta kendisi.
+        
+        Katlanmış DEĞİL: bir dönem `<details>` içindeydi ve operatör seçeneğin
+        var olduğunu hiç öğrenmiyordu. Kapatabilmek istediği şeyin görünür
+        olması gerekiyor.
+      */}
+      <h4 className="scr-h scr-mt-3">{t("setup.gates.heading")}</h4>
+      <div className="scr-checklist">
+        {GATE_CHOICES.map((choice) => (
+          <div key={choice}>
             <label className="scr-check">
               <input
                 type="radio"
-                name="setup-gates-mode"
-                checked={!draft.gatesCustom}
-                onChange={() => onChange({ gatesCustom: false })}
+                name="setup-gate-choice"
+                checked={draft.gateChoice === choice}
+                onChange={() => onChange({ gateChoice: choice })}
               />
-              {t("listening.gates.default")}
+              {t(`setup.gates.choice.${choice}`)}
             </label>
-            <label className="scr-check">
-              <input
-                type="radio"
-                name="setup-gates-mode"
-                checked={draft.gatesCustom}
-                onChange={() => onChange({ gatesCustom: true })}
-              />
-              {t("listening.gates.custom")}
-            </label>
+            <p className="scr-hint setup-indent">{t(`setup.gates.choice.${choice}.hint`)}</p>
           </div>
-          {draft.gatesCustom && (
-            <div className="scr-checklist scr-mt-2 setup-indent">
-              {SELECTABLE_GATES.map((gate) => {
-                // The analysis flow never reaches the engineering gates; a ticked
-                // one is SAID to be dead rather than hidden.
-                const dead = draft.flowType === "analiz" && gate.step !== "4" && gate.step !== "5";
-                const checked = draft.gateSteps.includes(gate.step);
-                return (
-                  <div key={gate.step}>
-                    <label className={"scr-check" + (dead ? " scr-muted" : "")}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          onChange({
-                            gateSteps: checked
-                              ? draft.gateSteps.filter((step) => step !== gate.step)
-                              : [...draft.gateSteps, gate.step],
-                          })
-                        }
-                      />
-                      {t(gate.titleKey)}
-                    </label>
-                    <p className="scr-hint setup-indent">
-                      {t(`${gate.titleKey}.hint`)}
-                      {dead && checked && ` ${t("listening.gates.engineering_only")}`}
-                    </p>
-                  </div>
-                );
-              })}
-              {draft.gateSteps.length === 0 && <p className="scr-hint">{t("listening.gates.none_selected")}</p>}
-            </div>
-          )}
-        </div>
-      </details>
+        ))}
+      </div>
+      <p className="scr-hint">{t("setup.gates.risk_note")}</p>
       <p className="scr-hint">{t("setup.tickets.note")}</p>
     </>
   );

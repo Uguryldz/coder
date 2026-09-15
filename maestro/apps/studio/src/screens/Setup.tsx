@@ -25,6 +25,7 @@ import {
   ASSIGNED_MATCH_VALUE,
   DEFAULT_POLL_SECONDS,
   EMPTY_SETUP_DRAFT,
+  GATE_STEPS_BY_CHOICE,
   SETUP_STEPS,
   bindsNoRepository,
   flowDefaults,
@@ -336,7 +337,19 @@ export function SetupScreen(): ReactNode {
         allowedStatuses: input.allowedStatuses.length === 0 ? null : [...input.allowedStatuses],
         // `null` = "no selection" (risk-tiered); an EMPTY LIST is the opposite
         // answer ("no gates at all") and must travel as such.
-        gateSteps: input.gatesCustom ? { steps: [...input.gateSteps] } : null,
+        /*
+         * HER ZAMAN `{steps}` — `null` ASLA.
+         *
+         * `null` "operatör seçmedi" demek ve kapı dizisini risk katmanına
+         * bırakıyor. Radyoda bir seçenek her zaman seçili olduğu için operatör
+         * her zaman seçmiş olur; `null` göndermek sorduğu soruyu sonra yok
+         * saymak olurdu.
+         *
+         * Bunun bir bedeli var ve ekran onu söylüyor: seçim risk seviyesinden
+         * BAĞIMSIZDIR. Risk katmanına göre değişen kapı dizisi isteyen operatör
+         * Dinleme kuralları ekranından "seçim yok"u işaretler.
+         */
+        gateSteps: { steps: [...GATE_STEPS_BY_CHOICE[input.gateChoice]] },
         /*
          * DEPO BURAYA YAZILIR — kurala, bağlamaya değil.
          *

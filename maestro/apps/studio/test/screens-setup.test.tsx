@@ -1620,3 +1620,66 @@ describe("kurulum sihirbazı — kapı kararının statüyle verilmesi", () => {
     ).toBeTruthy();
   });
 });
+
+/**
+ * İNSAN ONAYI RADYOSU — "PR'ı istersem kapatabileyim".
+ *
+ * Operatörün isteği buydu. Ekran onun yerine altı kutuluk bir liste ve "risk
+ * seviyesine göre mi, ben mi seçiyorum" diye ikinci bir soru soruyordu; üstelik
+ * katlanmış bir `<details>` içinde, yani seçeneğin var olduğu hiç görünmüyordu.
+ *
+ * Bu testler üç cevabın TELDE ne taşıdığını ölçüyor — ekranın ne gösterdiğini
+ * değil. Karşılık yanlışsa kapı yanlış açılır ve bunu kimse fark etmez.
+ */
+describe("insan onayı radyosu", () => {
+  async function gateBody(choice: string): Promise<Record<string, unknown>> {
+    const { fetchImpl, calls } = stubFetch(baseRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await chooseFlow();
+    await fillProject();
+    // Radyo `tickets` adımında: `fillTickets` sonunda "İleri"ye bastığı için
+    // onun yerine adımı elle dolduruyoruz.
+    await screen.findByText("Hangi ticket'ları alsın?");
+    await screen.findByRole("option", { name: "Hata (Bug)" });
+    await userEvent.selectOptions(screen.getByLabelText("Hangi değer?"), "Hata");
+    await userEvent.click(screen.getByRole("radio", { name: new RegExp(choice, "u") }));
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    // 4. adım (Jira durumları) isteğe bağlı — dokunmadan geçiliyor.
+    await screen.findByText("Jira durumlarını da değiştirsin mi?");
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    await skipIntake();
+    await screen.findByText("Özet");
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    let body: Record<string, unknown> = {};
+    await waitFor(() => {
+      const call = calls.find((c) => c.url.endsWith("/studio/listening-rules") && c.method === "POST");
+      expect(call, "kural kaydedilmedi").toBeTruthy();
+      body = call!.body as Record<string, unknown>;
+    });
+    return body;
+  }
+
+  it("Yok → hiçbir kapı açılmaz ({steps: []})", async () => {
+    expect((await gateBody("Yok"))["gateSteps"]).toEqual({ steps: [] });
+  });
+
+  it("Analiz bitince → yalnız teknik lider kapısı ({steps: ['5']})", async () => {
+    expect((await gateBody("Analiz bitince"))["gateSteps"]).toEqual({ steps: ["5"] });
+  });
+
+  it("Analiz + PR öncesi → iki kapı ({steps: ['5','12']})", async () => {
+    // Kapı 12 "PR (birleştirme) onayı" — operatörün kapatmak istediği kapı.
+    expect((await gateBody("Analiz \\+ PR öncesi"))["gateSteps"]).toEqual({ steps: ["5", "12"] });
+  });
+
+  it("HER ZAMAN {steps} gönderilir, null ASLA", async () => {
+    // `null` "operatör seçmedi" demek ve kapı dizisini risk katmanına bırakır.
+    // Radyoda bir seçenek hep seçili olduğu için operatör her zaman seçmiştir;
+    // `null` göndermek sorduğu soruyu sonra yok saymak olurdu.
+    for (const choice of ["Yok", "Analiz bitince"]) {
+      expect((await gateBody(choice))["gateSteps"]).not.toBeNull();
+    }
+  });
+});

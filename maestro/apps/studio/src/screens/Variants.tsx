@@ -10,6 +10,7 @@ import { hasRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Input, Modal, Select, Table, TextArea, useToast } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
+import { useServedModels } from "./variants/use-served-models.ts";
 import { ModelField, useConnectionModels } from "./variants/ModelField.tsx";
 import { variantModelHealth } from "./variants/model-source.ts";
 import {
@@ -142,10 +143,11 @@ export function VariantsScreen(): ReactNode {
  */
 function ModelHealthBanner({ variants }: { readonly variants: readonly AgentVariant[] }): ReactNode {
   const t = useT();
-  const flagged = variants.filter((row) => variantModelHealth(row.model) !== "ok");
+  const served = useServedModels();
+  const flagged = variants.filter((row) => variantModelHealth(row.model, served) !== "ok");
   if (flagged.length === 0) return null;
 
-  const cloud = flagged.filter((row) => variantModelHealth(row.model) === "cloud");
+  const cloud = flagged.filter((row) => variantModelHealth(row.model, served) === "cloud");
   return (
     <div className={cloud.length > 0 ? "scr-note scr-note--danger" : "scr-note scr-note--warn"}>
       {t("variants.model.banner", {
@@ -165,7 +167,8 @@ function ModelHealthBanner({ variants }: { readonly variants: readonly AgentVari
  */
 export function ModelCell({ model }: { readonly model: string }): ReactNode {
   const t = useT();
-  const health = variantModelHealth(model);
+  const served = useServedModels();
+  const health = variantModelHealth(model, served);
 
   if (health === "ok") return <code>{model}</code>;
   return (

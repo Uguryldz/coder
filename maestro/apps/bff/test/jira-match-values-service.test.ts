@@ -657,6 +657,22 @@ describe("listJiraUsers — the bot account a rule can be pointed at", () => {
     expect(urls[0]).toContain("maxResults=50");
   });
 
+  it("drops Marketplace app accounts (Slack, Outlook…) — a rule's bot is a person or a bot user, never an app", async () => {
+    const { fetch } = router([
+      {
+        match: "/user/search",
+        status: 200,
+        body: [
+          { accountId: "app-1", displayName: "Slack", accountType: "app", active: true },
+          { accountId: "human-1", displayName: "maestro", accountType: "atlassian", active: true },
+          { accountId: "cust-1", displayName: "Müşteri", accountType: "customer", active: true },
+        ],
+      },
+    ]);
+    const got = await listJiraUsers(conn(), "m", TOKEN, fetch);
+    expect(got.ok && got.users.map((u) => u.accountId)).toEqual(["human-1", "cust-1"]);
+  });
+
   it("reads a Data Center body, where the identifier is `key` or `name`, off the v2 `username` endpoint", async () => {
     const DC_BODY = [
       { key: "JIRAUSER10100", name: "botuser", displayName: "Otomasyon Botu", emailAddress: "bot@ugurbank.local", active: true },

@@ -133,8 +133,11 @@ export function suggestModel(
  */
 export type VariantModelHealth = "ok" | "unset" | "cloud";
 
-export function variantModelHealth(model: string): VariantModelHealth {
+export function variantModelHealth(model: string, served?: ReadonlySet<string>): VariantModelHealth {
   if (!isModelSelected(model)) return "unset";
+  // Served by a connection this platform has = reachable, whatever the name
+  // says. The name heuristic below is for installs with NO such connection.
+  if (served?.has(model.trim()) === true) return "ok";
   if (isCloudModelName(model)) return "cloud";
   return "ok";
 }

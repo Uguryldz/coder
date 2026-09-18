@@ -351,6 +351,27 @@ describe("onboarding approve seeds the default listening rules", () => {
     expect(rules.find((rule) => rule.matchValue === "Hata")?.flowType).toBe("duzeltme");
   });
 
+  it("a project the operator already wrote a rule for is NOT seeded on approval (the wizard's rule stands alone)", async () => {
+    const { h } = await seedHarness({ onboarding: OPTIONS });
+    await h.listening.put({
+      ruleId: "lr_wizard",
+      projectKey: "NEWPROJ",
+      assigneeAccountId: "bot-1",
+      matchKind: "issuetype",
+      matchValue: "Görev",
+      flowType: "analiz",
+      priority: 100,
+      enabled: true,
+      analystVariantId: null,
+      engineerVariantId: null,
+    });
+    const res = await submitAndApprove(h);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: "bound", listeningSeed: { created: 0, skipped: 0 } });
+    const rules = await h.listening.list();
+    expect(rules.map((rule) => rule.ruleId)).toEqual(["lr_wizard"]);
+  });
+
   it("FAIL-SOFT: a seed that cannot run never breaks the approval", async () => {
     // Jira unreachable during the seed — the approve must still bind.
     const { h } = await seedHarness({
@@ -408,5 +429,27 @@ describe("onboarding approve seeds the default listening rules", () => {
     const res = await submitAndApprove(h);
     expect(res.statusCode).toBe(200);
     expect(res.json()).not.toHaveProperty("seedSkipped");
+  });
+});
+
+describe("seedDefaultRules — one rule per issue type, by name OR by id", () => {
+  it("skips an issue type whose id is already stored (team-managed) even when the seed would use the name", async () => {
+    const store = new InMemoryListeningStore();
+    await store.put({
+      ruleId: "lr_by_id",
+      projectKey: "TM",
+      assigneeAccountId: "bot-1",
+      matchKind: "issuetype",
+      matchValue: "10004",
+      flowType: "analiz",
+      priority: 100,
+      enabled: true,
+      analystVariantId: null,
+      engineerVariantId: null,
+    });
+    const out = await seedDefaultRules(store, "TM", "bot-1", [{ name: "Görev", id: "10004" }, { name: "Hata", id: "10005" }], true);
+    expect(out.created).toBe(1);
+    expect(out.skipped).toBe(1);
+    expect((await store.list()).map((rule) => rule.matchValue).sort()).toEqual(["10004", "10005"]);
   });
 });

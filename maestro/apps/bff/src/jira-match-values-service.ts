@@ -639,6 +639,8 @@ export interface JiraUser {
   readonly displayName: string;
   readonly email?: string;
   readonly active: boolean;
+  /** Jira Cloud: `atlassian` (human), `app` (Slack, Outlook, …), `customer`. DC omits it. */
+  readonly accountType?: string;
 }
 
 export type JiraUsersResult =
@@ -666,7 +668,14 @@ function parseJiraUser(raw: unknown): JiraUser | null {
   // Absent `active` means active: DC omits it on some builds, and treating the
   // omission as "disabled" would empty the list on exactly those deployments.
   const active = record["active"] !== false;
-  return { accountId: accountId.trim(), displayName: displayName.trim(), ...(email === undefined ? {} : { email: email.trim() }), active };
+  const accountType = str(record["accountType"]);
+  return {
+    accountId: accountId.trim(),
+    displayName: displayName.trim(),
+    ...(email === undefined ? {} : { email: email.trim() }),
+    active,
+    ...(accountType === undefined ? {} : { accountType: accountType.trim() }),
+  };
 }
 
 /**
@@ -716,6 +725,10 @@ export async function listJiraUsers(
     // Deactivated accounts are dropped: a rule pointed at one can never fire,
     // so offering it is offering a silent failure.
     if (user === null || !user.active || seen.has(user.accountId)) continue;
+    // Marketplace apps (Slack, Outlook, Automation…) answer the same search;
+    // none of them can be the bot a rule assigns tickets to, and fifteen of
+    // them buried the two real accounts in the picker.
+    if (user.accountType === "app") continue;
     seen.add(user.accountId);
     users.push(user);
   }

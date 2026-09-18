@@ -236,6 +236,7 @@ async function clearOtherDefaults(
       token,
       deps.connectorFetch,
       deps.config.engineBotAccountId,
+      { measureBudget: true },
     );
 
     const at = deps.clock.now().toISOString();

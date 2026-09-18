@@ -121,11 +121,30 @@ describe("varyant detayı — modeli değiştirme yolu keşfedilebilir", () => {
     expect(await screen.findByText("model seçilmedi")).toBeInTheDocument();
   });
 
-  it("erişilemez bulut modeli KIRMIZI olarak işaretleniyor", async () => {
+  it("hiçbir bağlantının sunmadığı bulut modeli KIRMIZI olarak işaretleniyor", async () => {
     const { fetchImpl } = stubFetch(routes({ ...DETAIL, model: "anthropic/claude-sonnet-4.5" }));
     renderVariant(fetchImpl);
 
     expect(await screen.findByText("erişilemez model")).toBeInTheDocument();
+  });
+
+  it("bir bağlantının SUNDUĞU model, adı bulutu andırsa da erişilebilir sayılır (rozet yok)", async () => {
+    const { fetchImpl } = stubFetch([
+      { path: "/variants/analyst-web", body: { ...DETAIL, model: "anthropic/claude-sonnet-4.5" } },
+      { path: "/studio/guidance", body: { notes: [] } },
+      {
+        path: "/studio/connections",
+        body: {
+          connections: [
+            { id: "openrouter", kind: "openrouter", displayName: "OpenRouter", enabled: true, isDefault: true, config: { model: "anthropic/claude-sonnet-4.5" } },
+          ],
+        },
+      },
+    ]);
+    renderVariant(fetchImpl);
+
+    expect(await screen.findByText("anthropic/claude-sonnet-4.5")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("erişilemez model")).not.toBeInTheDocument());
   });
 });
 

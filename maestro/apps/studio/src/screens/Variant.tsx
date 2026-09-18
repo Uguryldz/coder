@@ -31,6 +31,7 @@ import { GuidanceList } from "./knowledge/GuidanceList.tsx";
 import { GUIDANCE_QUERY_KEY, GUIDANCE_WRITE_ROLES, targetOf, type GuidanceNote } from "./knowledge/types.ts";
 import { ModelField, useConnectionModels } from "./variants/ModelField.tsx";
 import { variantModelHealth } from "./variants/model-source.ts";
+import { useServedModels } from "./variants/use-served-models.ts";
 import { isValidModel, isValidName, isValidNote, isValidPersona } from "./variants/validate.ts";
 
 /**
@@ -270,7 +271,8 @@ function VariantModelLine({
   readonly onChange: () => void;
 }): ReactNode {
   const t = useT();
-  const health = variantModelHealth(model);
+  const served = useServedModels();
+  const health = variantModelHealth(model, served);
 
   return (
     <div className="scr-stack">

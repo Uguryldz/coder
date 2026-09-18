@@ -105,3 +105,17 @@ describe("guardModelCall — a rejected model key must never retry in silence", 
     ).toBe(false);
   });
 });
+
+describe("the provider's own reason reaches the journal", () => {
+  it("writes 'Key limit exceeded' next to the 403 instead of a bare status", async () => {
+    const fakes = makeFakes({
+      generateObject: () => {
+        throw authError();
+      },
+    });
+    await expect(atAttempt(1, () => runIntake(fakes.deps, "PAY-101"))).rejects.toBeDefined();
+    const line = fakes.journalStore.entries.find((e) => e.title === "model anahtarı reddedildi");
+    expect(line?.detail).toContain("Key limit exceeded");
+    expect(line?.detail).toContain("403");
+  });
+});

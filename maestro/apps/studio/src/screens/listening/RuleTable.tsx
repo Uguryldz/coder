@@ -51,11 +51,17 @@ function TriggerCell({ rule }: { readonly rule: ListeningRule }): ReactNode {
   if (rule.matchKind === "assigned") return <b>{t("listening.match.assigned")}</b>;
   // Etiket için İngilizce ek YOK: tablo Jira'nın kendi statü/tip adlarını
   // bilir, bir etiket ise operatörün uydurduğu serbest metindir.
-  const english = rule.matchKind === "label" ? null : englishAside(rule.matchValue);
+  const shown = rule.matchLabel ?? rule.matchValue;
+  const english = rule.matchKind === "label" ? null : englishAside(shown);
   return (
     <>
-      <span className="scr-hint">{t(`listening.match.${rule.matchKind}`)}</span> <b>{rule.matchValue}</b>
-      {isIdValue(rule) && <span className="scr-hint"> {t("listening.match.id_aside")}</span>}
+      <span className="scr-hint">{t(`listening.match.${rule.matchKind}`)}</span> <b>{shown}</b>
+      {isIdValue(rule) && (
+        <span className="scr-hint" title={rule.matchValue}>
+          {" "}
+          {t("listening.match.id_aside")}
+        </span>
+      )}
       {english !== null && <span className="scr-hint"> {t("jira.english.aside", { english })}</span>}
     </>
   );

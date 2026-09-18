@@ -114,12 +114,14 @@ export async function seedDefaultRules(
     if (seen.has(name)) continue;
     seen.add(name);
 
+    // Taken by NAME or by ID: a team-managed project stores the id, the setup
+    // wizard used to store the name, and the two must never coexist as two
+    // rules for one issue type (measured: "Görev" + "10004" side by side).
     const taken = existing.some(
       (rule) =>
         rule.projectKey === projectKey &&
-        rule.assigneeAccountId === assigneeAccountId &&
         rule.matchKind === "issuetype" &&
-        rule.matchValue === name,
+        (rule.matchValue === name || (issueType.id !== undefined && rule.matchValue === issueType.id)),
     );
     if (taken) {
       skipped += 1;
@@ -315,8 +317,19 @@ export type SeedOutcome =
 export async function seedProjectDefaults(
   deps: ResolvedDeps,
   projectKey: string,
+  options: { readonly onlyWhenProjectHasNoRules?: boolean } = {},
 ): Promise<SeedOutcome> {
   if (deps.listening === undefined) return { ok: false, reason: "listening_unwired" };
+  // The approve path seeds only a project NOBODY has written a rule for: the
+  // setup wizard saves the operator's own rule before the binding is approved,
+  // and seeding on top of it produced three rules where one was asked for.
+  // The explicit "Hazır kuralları yükle" button keeps seeding on demand.
+  if (options.onlyWhenProjectHasNoRules === true) {
+    const existing = await deps.listening.list();
+    if (existing.some((rule) => rule.projectKey === projectKey)) {
+      return { ok: true, created: 0, skipped: 0, rules: [] };
+    }
+  }
   if (deps.connections === undefined || deps.connectorSecrets === undefined) {
     return { ok: false, reason: "connections_unwired" };
   }

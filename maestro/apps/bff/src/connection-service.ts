@@ -564,6 +564,7 @@ export async function runConnectionTest(
    * check — so every existing caller and test keeps its current behaviour.
    */
   engineAccountId = "",
+  options: { readonly measureBudget?: boolean } = {},
 ): Promise<TestOutcome> {
   const probe = probeFor(record.kind);
   if (probe === null) {
@@ -661,7 +662,32 @@ export async function runConnectionTest(
    * `/v1/models`); the VERDICT is made honest instead, so the operator knows
    * what this green does and does not cover.
    */
-  if (record.kind === "openrouter" || record.kind === "anthropic") {
+  if (record.kind === "openrouter") {
+    // OpenRouter CAN tell us the budget: `/auth/key` carries the key's spend
+    // limit and what is left of it. A key with nothing left passes `/models`
+    // and then fails every real call with 403 "Key limit exceeded" — measured
+    // on the pilot, where that read as "the platform is broken" for a week.
+    // Only on the operator's explicit test: the periodic health probe must
+    // stay one request per connection (no probe storm), and a budget is a
+    // fact to read when someone asks, not to poll.
+    const budget = options.measureBudget === true ? await openRouterBudget(url, presented, dial) : null;
+    if (budget !== null && budget.limit !== null && budget.remaining !== null && budget.remaining <= 0) {
+      return {
+        ok: false,
+        messageKey: "connections.test.openrouter_limit_exhausted",
+        messageParams: { usage: budget.usage.toFixed(2), limit: budget.limit.toFixed(2) },
+      };
+    }
+    if (budget !== null && budget.limit !== null && budget.remaining !== null) {
+      return {
+        ok: true,
+        messageKey: "connections.test.openrouter_limit_ok",
+        messageParams: { remaining: budget.remaining.toFixed(2), limit: budget.limit.toFixed(2) },
+      };
+    }
+    return { ok: true, messageKey: "connections.test.key_ok_quota_unknown" };
+  }
+  if (record.kind === "anthropic") {
     return { ok: true, messageKey: "connections.test.key_ok_quota_unknown" };
   }
 
@@ -914,4 +940,33 @@ export async function ensureBotUser(
   };
   await users.upsert(record);
   return { username, created: true, displayName };
+}
+
+/**
+ * OpenRouter's key budget (`GET /auth/key`): `limit` (USD, null = unlimited),
+ * `limit_remaining`, `usage`. Best effort: any failure returns null and the
+ * test falls back to the "quota unknown" note it always gave.
+ */
+async function openRouterBudget(
+  modelsUrl: string,
+  token: string,
+  dial: (input: string, init: RequestInit) => Promise<Response>,
+): Promise<{ limit: number | null; remaining: number | null; usage: number } | null> {
+  const url = modelsUrl.replace(/\/models\/?$/, "/auth/key");
+  if (url === modelsUrl) return null;
+  try {
+    const response = await dial(url, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    if (response.status < 200 || response.status >= 300) return null;
+    const body = (await response.json()) as { data?: Record<string, unknown> };
+    const data = body.data;
+    if (typeof data !== "object" || data === null) return null;
+    const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+    return { limit: num(data["limit"]), remaining: num(data["limit_remaining"]), usage: num(data["usage"]) ?? 0 };
+  } catch {
+    return null;
+  }
 }

@@ -17,6 +17,7 @@ import {
 import { realignRules } from "../listening-identity.js";
 import { seedProjectDefaults } from "../listening-seed.js";
 import type { ResolvedDeps } from "../deps.js";
+import { listJiraMatchValues } from "../jira-match-values-service.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { poolExitGaps } from "../listening-pool.js";
 import { assertWritable } from "../platform/propose.js";
@@ -324,7 +325,13 @@ export async function listeningRoutes(app: FastifyInstance, deps: ResolvedDeps):
   app.get("/studio/listening-rules", { preHandler: readHandler }, async (_request, reply) => {
     const { store } = listeningDeps(deps);
     const rules = await store.list();
-    return reply.code(200).send({ rules });
+    const labels = await matchLabelsFor(deps, rules);
+    return reply.code(200).send({
+      rules: rules.map((rule) => {
+        const label = labels.get(labelKey(rule));
+        return label === undefined ? rule : { ...rule, matchLabel: label };
+      }),
+    });
   });
 
   /**
@@ -805,4 +812,48 @@ async function audit(
     at: deps.clock.now(),
     meta: { surface: "listening", verb },
   });
+}
+
+function labelKey(rule: Pick<ListeningRuleRecord, "projectKey" | "matchKind" | "matchValue">): string {
+  return `${rule.projectKey}\u0000${rule.matchKind}\u0000${rule.matchValue.trim()}`;
+}
+
+/**
+ * Names for the ids a team-managed project's rules store (`10004` → "Görev").
+ * The id is what JQL needs; the name is what a human reads, and a list that
+ * showed "İş tipi 10004" made the operator think the rule was broken. Best
+ * effort per (project, kind): one Jira read each, any failure leaves the id.
+ */
+async function matchLabelsFor(
+  deps: ResolvedDeps,
+  rules: readonly ListeningRuleRecord[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const numeric = rules.filter(
+    (rule) => (rule.matchKind === "issuetype" || rule.matchKind === "status") && /^[0-9]+$/u.test(rule.matchValue.trim()),
+  );
+  if (numeric.length === 0 || deps.connections === undefined || deps.connectorSecrets === undefined) return out;
+  const connection = (await deps.connections.list()).find(
+    (candidate) => candidate.enabled && (candidate.kind === "jira_cloud" || candidate.kind === "jira_dc"),
+  );
+  if (connection === undefined) return out;
+  const token =
+    connection.secretRef === null ? null : await deps.connectorSecrets.get(connection.secretRef).catch(() => null);
+  const groups = new Map<string, ListeningRuleRecord[]>();
+  for (const rule of numeric) {
+    const key = `${rule.projectKey}\u0000${rule.matchKind}`;
+    groups.set(key, [...(groups.get(key) ?? []), rule]);
+  }
+  for (const [key, members] of groups) {
+    const [projectKey, kind] = key.split("\u0000") as [string, "issuetype" | "status"];
+    const result = await listJiraMatchValues(connection, projectKey, kind, token, deps.connectorFetch).catch(() => null);
+    if (result === null || !result.ok) continue;
+    const byId = new Map<string, string>();
+    for (const option of result.options ?? []) if (option.id !== undefined) byId.set(option.id, option.name);
+    for (const rule of members) {
+      const name = byId.get(rule.matchValue.trim());
+      if (name !== undefined) out.set(labelKey(rule), name);
+    }
+  }
+  return out;
 }

@@ -1016,7 +1016,7 @@ export async function onboardingRoutes(app: FastifyInstance, deps: ResolvedDeps)
     // can say "tohumlanamadı: <sebep>" instead of celebrating a half-setup.
     let seedSkipped: { reason: string } | null = null;
     try {
-      const seeded = await seedProjectDefaults(deps, parsed.data.projectKey);
+      const seeded = await seedProjectDefaults(deps, parsed.data.projectKey, { onlyWhenProjectHasNoRules: true });
       if (seeded.ok) {
         listeningSeed = { created: seeded.created, skipped: seeded.skipped };
       } else {

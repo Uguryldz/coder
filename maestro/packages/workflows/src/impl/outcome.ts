@@ -178,6 +178,11 @@ export async function guardModelCall<T>(
      * yalnız denemeleri bedava yapıyor.
      */
     const waited = (err as { breakerOpen?: boolean }).breakerOpen === true;
+    // The provider's own sentence ("Key limit exceeded (total limit)…") is the
+    // one thing the operator can act on; a bare "403" sent one to re-enter a
+    // key that was fine and merely out of budget.
+    const reason = authReasonOf(err);
+    const because = reason === null ? "" : ` · ${reason}`;
 
     if (attempt < AUTH_RETRY_MAX_ATTEMPTS) {
       // The panel must show the wait: one line per attempt, keyed on the
@@ -189,7 +194,7 @@ export async function guardModelCall<T>(
         title: waited ? "model anahtarı bekleniyor" : "model anahtarı reddedildi",
         detail: waited
           ? `${what} · kesici açık, ağa çıkılmadı · anahtar düzelince kaldığı yerden sürer (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`
-          : `${what} · ${status} · yeniden denenecek (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`,
+          : `${what} · ${status}${because} · yeniden denenecek (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`,
         key: `auth-retry:${what}:${attempt}`,
       });
       // Rethrown as-is: the proxy's own ladder decides when the next attempt
@@ -203,7 +208,7 @@ export async function guardModelCall<T>(
     await handOver(
       deps,
       run,
-      `${what}: model anahtarı reddedildi (${status}, ${attempt} deneme) — Ayarlar > Bağlantılar'dan anahtarı düzeltin`,
+      `${what}: model anahtarı reddedildi (${status}, ${attempt} deneme)${because} — Ayarlar > Bağlantılar'dan anahtarı/limiti düzeltin`,
       `auth-rejected:${what}`,
     );
     throw ApplicationFailure.create({
@@ -490,4 +495,24 @@ export function outcomeOfRole<T>(result: RoleResult<T>): LlmOutcome<T> {
     case "blocked":
       return { status: "blocked", messageKey: result.messageKey, dataClass: result.dataClass };
   }
+}
+
+/**
+ * The provider's error sentence out of an auth failure's body: OpenAI-style
+ * `{error:{message}}`, plain `{message}`, or the first line of text. Null when
+ * the body carries nothing readable. Never the request, never a key.
+ */
+export function authReasonOf(err: unknown): string | null {
+  const body = (err as { responseBody?: unknown } | null)?.responseBody;
+  if (typeof body !== "string" || body.trim() === "") return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: unknown } | string; message?: unknown };
+    const nested = typeof parsed.error === "object" && parsed.error !== null ? parsed.error.message : parsed.error;
+    const message = typeof nested === "string" ? nested : typeof parsed.message === "string" ? parsed.message : null;
+    if (message !== null && message.trim() !== "") return message.trim().slice(0, 200);
+  } catch {
+    /* not JSON — fall through to the raw line */
+  }
+  const line = body.split("\n")[0]?.trim() ?? "";
+  return line === "" ? null : line.slice(0, 200);
 }

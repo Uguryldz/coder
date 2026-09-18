@@ -65,6 +65,8 @@ export interface ListeningRule {
   readonly assigneeAccountId: string;
   readonly matchKind: MatchKind;
   readonly matchValue: string;
+  /** BFF'nin çözdüğü ad — takım yönetimli projede `matchValue` kimlikken ekranda bu okunur. */
+  readonly matchLabel?: string;
   readonly flowType: FlowType;
   /** Küçük sayı önce eşleşir (`flow-decision.ts`). */
   readonly priority: number;
@@ -114,17 +116,11 @@ export interface JiraFieldOption {
 }
 
 /**
- * Bir tetikleme değeri, İKİ kimliğiyle: operatörün okuduğu `name` ve takım
- * yönetimli bir projede JQL'in tek kabul ettiği `id`.
- *
- * `/onboarding/jira-match-values` uçunun `options` alanı. `id` boş olabilir —
- * kaynağın id vermediği tek hâl, iş tipi listesinin bozulmuş (degraded)
- * kaynaktan gelmesi; o değer yine seçilir, yalnız id biçiminde kaydedilemez.
+ * Bir tetikleme değeri, İKİ kimliğiyle — tanımı `common/match-value.ts`te,
+ * çünkü kurulum sihirbazı da aynı kuralı (takım yönetimli projede id kaydet)
+ * uyguluyor ve iki kopya bir dönem ayrıştı.
  */
-export interface MatchValueOption {
-  readonly name: string;
-  readonly id: string;
-}
+export type { MatchValueOption } from "../common/match-value.ts";
 
 /** `POST`/`PUT` gövdesi — kimlik hariç her alan (PUT tam değiştirmedir). */
 export type RuleBody = Omit<ListeningRule, "ruleId">;

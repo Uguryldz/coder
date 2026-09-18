@@ -25,6 +25,7 @@ export const AuditAction = z.enum([
   "SANDBOX_DESTROY",
   "TEST_RUN_COMPLETE",
   "CI_RESULT",
+  "BRANCH_PUSHED",
   "PR_OPENED",
   "PR_MERGED",
   "MODE_CHANGED",

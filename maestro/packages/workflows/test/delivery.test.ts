@@ -7,6 +7,8 @@ import {
   deliverAnalysis,
   mergePullRequest,
   openPullRequest,
+  pollBuild,
+  publishBranch,
   verifyCiOrigin,
 } from "../src/impl/delivery.js";
 import { runScans, scannerErrorResult } from "../src/impl/scan.js";
@@ -163,10 +165,10 @@ describe("the pull request", () => {
   });
 
   it("refuses to record a merge sha before the PR is completed (M106)", async () => {
-    const fakes = makeFakes({ prState: { state: "active", mergeSha: "preview1" } });
-    await expect(
-      mergePullRequest(fakes.deps, "PAY-101", { adoProject: "BANK", adoRepo: "pay", prId: 77 }),
-    ).rejects.toMatchObject({ type: "PrNotCompleted" });
+    const fakes = makeFakes({ context: { mode: "human_lead" }, prState: { state: "active", mergeSha: "preview1" } });
+    const out = await mergePullRequest(fakes.deps, "PAY-101", { adoProject: "BANK", adoRepo: "pay", prId: 77 });
+    expect(out.mergeSha).toBeNull();
+    expect(out.state).toBe("active");
   });
 
   it("records the merge once the PR is completed", async () => {
@@ -285,5 +287,94 @@ describe("deliverAnalysis", () => {
     const last = fakes.journalStore.entries.at(-1);
     expect(last?.title).toBe("analiz teslim edildi");
     expect(last?.detail).toContain("atama yapılamadı");
+  });
+});
+
+describe("publishBranch (6a → dal → PR)", () => {
+  const PR = { adoProject: "BANK", adoRepo: "pay", prId: 77 };
+
+  it("refuses without opening anything when the deployment cannot publish", async () => {
+    const fakes = makeFakes({ context: { workspacePath: "/w/PAY-101", workspacePresent: true, branch: "" } });
+    const out = await publishBranch(fakes.deps, "PAY-101");
+    expect(out.pushed).toBe(false);
+    expect(out.branch).toBe("maestro/pay-101");
+    expect(fakes.journalStore.entries.at(-1)?.title).toBe("dal yayımlanamadı");
+  });
+
+  it("a turn that changed nothing yields no PR and says so", async () => {
+    const fakes = makeFakes({
+      context: { workspacePath: "/w/PAY-101", workspacePresent: true, branch: "" },
+      publishWorkspace: () => Promise.resolve({ pushed: false, reason: "no_changes" }),
+    });
+    const out = await publishBranch(fakes.deps, "PAY-101");
+    expect(out).toMatchObject({ pushed: false, reason: expect.stringContaining("hiçbir dosyayı değiştirmedi") });
+    expect(fakes.patches.some((p) => p.branch !== undefined)).toBe(false);
+  });
+
+  it("commits, pushes, remembers the branch on the run and audits the push", async () => {
+    const requests: unknown[] = [];
+    const fakes = makeFakes({
+      context: { workspacePath: "/w/PAY-101", workspacePresent: true, branch: "" },
+      publishWorkspace: (request) => {
+        requests.push(request);
+        return Promise.resolve({ pushed: true, sha: "feedface00112233", files: 3, credential: "connection" });
+      },
+    });
+    const out = await publishBranch(fakes.deps, "PAY-101");
+    expect(out).toEqual({ pushed: true, branch: "maestro/pay-101", sha: "feedface00112233", files: 3 });
+    expect(requests[0]).toMatchObject({ appId: APP.appId, workspacePath: "/w/PAY-101", branch: "maestro/pay-101" });
+    expect(fakes.patches).toContainEqual({ branch: "maestro/pay-101" });
+    const last = fakes.journalStore.entries.at(-1);
+    expect(last?.title).toBe("dal yayımlandı");
+    expect(last?.detail).toContain("bağlantı jetonu");
+    const events = await fakes.chain.verify();
+    expect(events.ok).toBe(true);
+  });
+
+  it("keeps a branch the run already has", async () => {
+    const fakes = makeFakes({
+      context: { workspacePath: "/w/PAY-101", workspacePresent: true, branch: "maestro/pay-101" },
+      publishWorkspace: () => Promise.resolve({ pushed: true, sha: "abc", files: 1, credential: "short_lived" }),
+    });
+    const out = await publishBranch(fakes.deps, "PAY-101");
+    expect(out.branch).toBe("maestro/pay-101");
+  });
+
+  it("pollBuild is unsupported without commit checks and relays them when present", async () => {
+    const none = makeFakes();
+    expect(await pollBuild(none.deps, "PAY-101", "abc")).toEqual({ state: "unsupported", detail: [] });
+    const withChecks = makeFakes({
+      getCommitChecks: (_repo, sha) => Promise.resolve({ sha, state: "failure", detail: ["build ✗"] }),
+    });
+    expect(await pollBuild(withChecks.deps, "PAY-101", "abc")).toEqual({ state: "failure", detail: ["build ✗"] });
+  });
+
+  it("mergePullRequest: an open PR outside full_auto is a wait, not a failure", async () => {
+    const fakes = makeFakes({ context: { mode: "ai_assist" }, prState: { state: "active", mergeSha: null } });
+    const out = await mergePullRequest(fakes.deps, "PAY-101", PR);
+    expect(out).toEqual({ mergeSha: null, state: "active", by: null });
+  });
+
+  it("mergePullRequest: full_auto merges through the SCM and records who did it", async () => {
+    const merged: number[] = [];
+    const fakes = makeFakes({
+      context: { mode: "full_auto" },
+      prState: { state: "active", mergeSha: null },
+      mergePr: (_repo, prId) => {
+        merged.push(prId);
+        return Promise.resolve({ mergeSha: "m3rge5ha" });
+      },
+    });
+    const out = await mergePullRequest(fakes.deps, "PAY-101", PR);
+    expect(out).toEqual({ mergeSha: "m3rge5ha", state: "completed", by: "maestro" });
+    expect(merged).toEqual([77]);
+    expect(fakes.journalStore.entries.at(-1)?.title).toContain("full_auto");
+  });
+
+  it("mergePullRequest: an abandoned PR is reported, never merged", async () => {
+    const fakes = makeFakes({ context: { mode: "full_auto" }, prState: { state: "abandoned", mergeSha: null }, mergePr: () => Promise.reject(new Error("must not be called")) });
+    const out = await mergePullRequest(fakes.deps, "PAY-101", PR);
+    expect(out.state).toBe("abandoned");
+    expect(out.mergeSha).toBeNull();
   });
 });

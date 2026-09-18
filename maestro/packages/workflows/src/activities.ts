@@ -96,6 +96,24 @@ export interface PrRef {
   prId: number;
 }
 
+export type PublishResult =
+  | { pushed: true; branch: string; sha: string; files: number }
+  | { pushed: false; branch: string; reason: string };
+
+export interface BuildPoll {
+  /** `none`: no check has reported for the sha; `unsupported`: this SCM has no pull-based checks. */
+  state: "success" | "failure" | "pending" | "none" | "unsupported";
+  detail: string[];
+}
+
+export interface MergeOutcome {
+  /** Null while the PR is still open (someone else merges it) — the workflow waits and asks again. */
+  mergeSha: string | null;
+  state: "draft" | "active" | "completed" | "abandoned";
+  /** Who merged: Maestro itself (full_auto) or a human on the SCM. */
+  by: "maestro" | "human" | null;
+}
+
 /**
  * Ticket'ın modele giden bir insan yorumu.
  *
@@ -275,11 +293,15 @@ export interface MaestroActivities {
   runTests(ticket: TicketKey, attempt?: number): Promise<TestRunResult>;
 
   // ── step 10b-13: PR, CI, closure ─────────────────────────────────────────
+  /** Commit + push the engineering turn's work to the run's feature branch (before the PR). */
+  publishBranch(ticket: TicketKey): Promise<PublishResult>;
   openPullRequest(ticket: TicketKey): Promise<PrRef>;
   activatePullRequest(ticket: TicketKey, pr: PrRef): Promise<void>;
   /** Rejects a signal whose origin does not match the run's application (M106). */
   verifyCiOrigin(ticket: TicketKey, signal: CiResultSignal): Promise<boolean>;
-  mergePullRequest(ticket: TicketKey, pr: PrRef): Promise<{ mergeSha: string }>;
+  /** Pull-based CI verdict for SCMs without a build webhook (GitHub check runs). */
+  pollBuild(ticket: TicketKey, sha: string): Promise<BuildPoll>;
+  mergePullRequest(ticket: TicketKey, pr: PrRef): Promise<MergeOutcome>;
   buildEvidencePackage(ticket: TicketKey): Promise<{ files: number; storageKey: string }>;
   /**
    * The `analiz` flow's delivery: hand the approved analysis back to whoever

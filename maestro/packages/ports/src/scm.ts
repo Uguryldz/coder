@@ -120,4 +120,28 @@ export interface ScmPort {
    * green. Returns the merge commit sha. A driver that cannot merge omits it.
    */
   mergePr?(repo: RepoRef, prId: number): Promise<{ mergeSha: GitSha }>;
+  /**
+   * Commit whatever the engineering turn left in the run's clone and push it
+   * to `branch` on the real remote (M31: the push credential is minted per
+   * call and never written to the clone's config). Optional for the same
+   * reason `ensureWorkspace` is: only a deployment that owns the checkout
+   * directory can implement it. `pushed: false` with `no_changes` means the
+   * turn produced nothing to publish — a PR would be empty, so the caller
+   * hands over instead of opening one.
+   */
+  publishWorkspace?(request: PublishWorkspaceRequest): Promise<PublishWorkspaceResult>;
 }
+
+export interface PublishWorkspaceRequest {
+  readonly runId: string;
+  /** `owner/repo` (GitHub) or `project/_git/repo` (ADO) — the clone path form. */
+  readonly appId: string;
+  readonly repo: RepoRef;
+  readonly workspacePath: string;
+  readonly branch: string;
+  readonly message: string;
+}
+
+export type PublishWorkspaceResult =
+  | { readonly pushed: true; readonly sha: GitSha; readonly files: number; readonly credential: "short_lived" | "connection" }
+  | { readonly pushed: false; readonly reason: "no_changes" };

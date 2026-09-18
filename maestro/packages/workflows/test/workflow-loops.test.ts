@@ -113,8 +113,10 @@ describe("the CI gate (M12/M106)", () => {
 
     expect(run.status).toBe("done");
     expect(scenario.journal.some((e) => e.title === "CI kırmızı")).toBe(true);
-    const fix = scenario.engineering.find((e) => e.task === "CI hatasını düzelt");
+    // The fix task names WHAT was red, so the session does not re-run blind.
+    const fix = scenario.engineering.find((e) => e.task.startsWith("CI hatasını düzelt"));
     expect(fix).toBeDefined();
+    expect(fix?.task).toContain("910");
     // Not a fresh session: the token from the first turn came back in.
     expect(fix?.resumeToken).toBe("session-1");
   });

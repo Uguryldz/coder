@@ -134,6 +134,8 @@ export function createActivities(deps: ActivityDeps): MaestroActivities {
     reviewTests: (ticket, attempt) => engineering.reviewTests(deps, ticket, attempt),
     runTests: (ticket, attempt) => engineering.runTests(deps, ticket, attempt),
 
+    publishBranch: (ticket) => delivery.publishBranch(deps, ticket),
+    pollBuild: (ticket, sha) => delivery.pollBuild(deps, ticket, sha),
     openPullRequest: (ticket) => delivery.openPullRequest(deps, ticket),
     activatePullRequest: (ticket, pr) => delivery.activatePullRequest(deps, ticket, pr),
     verifyCiOrigin: (ticket, signal) => delivery.verifyCiOrigin(deps, ticket, signal),

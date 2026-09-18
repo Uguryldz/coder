@@ -10,7 +10,7 @@ import { AuditChain, InMemoryAuditStore } from "@maestro/audit";
 import type { AgentTurnRequest, AgentTurnResult } from "@maestro/execution";
 import { createJournalMasker } from "@maestro/memory";
 import { defaultPiiPolicy } from "@maestro/pii";
-import type { LlmOutcome, RepoRef } from "@maestro/ports";
+import type { LlmOutcome, RepoRef, ScmPort } from "@maestro/ports";
 import type { ActivityDeps, AnalysisTemplateSectionText, AttachmentMeta, RunContext } from "../src/impl/deps.js";
 import { InMemoryIdempotency } from "../src/impl/idempotency.js";
 import {
@@ -164,6 +164,10 @@ export interface FakeOptions {
   /** Role -> directory group, when a test needs the two to differ. */
   groupForRole?: (role: string) => string;
   prState?: { state: "draft" | "active" | "completed" | "abandoned"; mergeSha: string | null };
+  /** `ScmPort.publishWorkspace` — undefined leaves the capability out entirely. */
+  publishWorkspace?: ScmPort["publishWorkspace"];
+  getCommitChecks?: ScmPort["getCommitChecks"];
+  mergePr?: ScmPort["mergePr"];
   verifyMembership?: boolean;
 }
 
@@ -272,6 +276,9 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
       resolveRepo: () => Promise.resolve(repo),
       ...(options.ensureWorkspace === undefined ? {} : { ensureWorkspace: options.ensureWorkspace }),
       ...(options.readWorkspaceDigest === undefined ? {} : { readWorkspaceDigest: options.readWorkspaceDigest }),
+      ...(options.publishWorkspace === undefined ? {} : { publishWorkspace: options.publishWorkspace }),
+      ...(options.getCommitChecks === undefined ? {} : { getCommitChecks: options.getCommitChecks }),
+      ...(options.mergePr === undefined ? {} : { mergePr: options.mergePr }),
       createBranch: () => Promise.resolve(),
       getPushCredential: NOT_WIRED("getPushCredential"),
       openPr: () => Promise.resolve({ prId: 77 }),

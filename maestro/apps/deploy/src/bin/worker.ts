@@ -13,6 +13,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { prepareWorkspace, workspaceRootFrom } from "../stores/workspace-prepare.js";
+import { publishWorkspace } from "../stores/workspace-publish.js";
 
 /** `git ls-files` gibi kısa okumalar için. */
 const execFileAsync = promisify(execFile);
@@ -679,9 +680,38 @@ export function withWorkspaceCloning(
               ...(mirrorPath === null ? {} : { mirrorPath }),
             });
           },
+          publishWorkspace: async (request) => {
+            const scmHost = env.source["SCM_HOST"]?.trim() ?? "";
+            const host = scmHost === "" ? "github.com" : scmHost;
+            // M31 first: a per-push, TTL-bound credential when the secret
+            // backend can mint one (Vault). Without that backend the SCM
+            // connection's own token pushes — the same token that cloned —
+            // and the result says which one was used, so the journal is honest.
+            let token: string | undefined;
+            let credential: "short_lived" | "connection";
+            try {
+              token = (await base.getPushCredential(request.repo, PUSH_TOKEN_TTL_SECONDS)).token;
+              credential = "short_lived";
+            } catch {
+              token = await scmCloneTokenFor(env, secrets, connections);
+              credential = "connection";
+            }
+            return publishWorkspace({
+              workspacePath: request.workspacePath,
+              host,
+              appId: request.appId,
+              branch: request.branch,
+              message: request.message,
+              token,
+              credential,
+            });
+          },
         } satisfies ScmPort;
       });
     }
   }
   return wrapped;
 }
+
+/** M31 ceiling-friendly TTL: long enough for one push, short enough to be worthless afterwards. */
+const PUSH_TOKEN_TTL_SECONDS = 900;

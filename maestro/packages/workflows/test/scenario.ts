@@ -407,6 +407,8 @@ export function makeActivities(
     reviewTests: async () => ({ approved: true, findings: [] }),
     runTests: async () => ({ passed: true, total: 42, failed: 0, coveragePct: 88 }),
 
+    publishBranch: async () => ({ pushed: true, branch: "maestro/pay-101", sha: "feedface0000", files: 2 }),
+    pollBuild: async () => ({ state: "pending", detail: [] }),
     openPullRequest: async () => ({ ...REPO, prId: 77 }),
     activatePullRequest: async () => {},
     verifyCiOrigin: async (_ticket, signal) => {
@@ -417,7 +419,7 @@ export function makeActivities(
       if (ok && signal.status === "succeeded") scenario.ciGateOpen = false;
       return ok;
     },
-    mergePullRequest: async () => ({ mergeSha: "abcdef1" }),
+    mergePullRequest: async () => ({ mergeSha: "abcdef1", state: "completed", by: "maestro" }),
     buildEvidencePackage: async () => ({ files: 4, storageKey: "evidence/2026/PAY-101/run/manifest.json" }),
     deliverAnalysis: async () => {
       scenario.delivered = true;

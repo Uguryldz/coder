@@ -103,7 +103,7 @@ describe("the activity set", () => {
     expect(names).toContain("deliverAnalysis");
     // The listening rule's status map, applied; see `impl/status-move.ts`.
     expect(names).toContain("moveTicketStatus");
-    expect(names).toHaveLength(28);
+    expect(names).toHaveLength(30);
     expect(Object.values(activities).every((fn) => typeof fn === "function")).toBe(true);
   });
 

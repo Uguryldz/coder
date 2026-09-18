@@ -86,7 +86,7 @@ describe("the kill switch (M58)", () => {
       },
       mergePullRequest: async () => {
         merges.push("MERGED");
-        return { mergeSha: "abcdef1" };
+        return { mergeSha: "abcdef1", state: "completed" as const, by: "maestro" as const };
       },
     });
 

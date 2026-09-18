@@ -129,42 +129,103 @@ export async function runEngineeringLoop(
  * build exactly once, so a green result that lands mid-fix has to survive until
  * the loop comes back to look at it.
  */
+/** How often 10b asks the SCM for the commit's checks when no webhook has spoken. */
+export const CI_POLL_INTERVAL = "2 minutes";
+/**
+ * Polls that may answer "no check reported" before 10b concludes the repo
+ * has no CI at all. GitHub creates check runs seconds after a push; a few
+ * quiet rounds is the difference between "not yet" and "never".
+ */
+export const CI_NONE_GRACE_ROUNDS = 3;
+
+/**
+ * Wait for the build on the published commit to be green.
+ *
+ * Two sources, whichever speaks first: the CI webhook (ADO's path, the
+ * `ciResults` inbox) or, when the webhook is silent for one interval, the
+ * SCM's own checks for `sha` (GitHub's path — nothing ever posted a signal
+ * for a GitHub repo, so this loop used to wait forever at 10b). A repo with
+ * no CI at all is not a red build: after a grace window of "no check
+ * reported" rounds the verification that ran in 6a stands as the evidence,
+ * and the journal says so.
+ *
+ * A red build is fixed by the same session (6a again) and the fix is
+ * PUBLISHED before the next wait: a fix left in the clone is invisible to CI.
+ */
 export async function awaitGreenBuild(
   deps: Pick<EngineeringLoopDeps, "acts" | "longActs">,
   state: RunState,
   inbox: Inbox,
   ticket: TicketKey,
-  /** The last engineering round, so each CI fix gets a round of its own. */
   afterAttempt: number,
+  publishedSha: string | null = null,
 ): Promise<EngineeringOutcome> {
   const { acts, longActs } = deps;
-  // M54: the same red build three times over is not progress either.
   let fixes = 0;
-
+  let sha = publishedSha;
+  let quietRounds = 0;
   for (;;) {
-    await condition(() => inbox.ciResults.length > 0);
-    const signal = inbox.ciResults.shift();
-    if (signal === undefined) continue;
-    if (!(await acts.verifyCiOrigin(ticket, signal))) {
-      await acts.journal(ticket, "ci", "yabancı CI sinyali reddedildi", signal.adoRepo ?? "?");
-      continue;
+    const signalled = await condition(() => inbox.ciResults.length > 0, CI_POLL_INTERVAL);
+    let verdict: "green" | "red" | null = null;
+    let why = "";
+    if (signalled) {
+      const signal = inbox.ciResults.shift();
+      if (signal === undefined) continue;
+      if (!(await acts.verifyCiOrigin(ticket, signal))) {
+        await acts.journal(ticket, "ci", "yabancı CI sinyali reddedildi", signal.adoRepo ?? "?");
+        continue;
+      }
+      verdict = signal.status === "succeeded" ? "green" : "red";
+      why = `build ${String(signal.buildId)}: ${signal.status}`;
+    } else {
+      if (sha === null) continue;
+      const poll = await acts.pollBuild(ticket, sha);
+      switch (poll.state) {
+        case "success":
+          verdict = "green";
+          why = poll.detail.join(", ");
+          break;
+        case "failure":
+          verdict = "red";
+          why = poll.detail.join(", ");
+          break;
+        case "none":
+          quietRounds += 1;
+          if (quietRounds < CI_NONE_GRACE_ROUNDS) continue;
+          await acts.journal(
+            ticket,
+            "ci",
+            "CI tanımlı değil",
+            `${sha.slice(0, 10)} için hiçbir kontrol raporlanmadı — 6a'daki derleme doğrulaması kanıt sayılıyor`,
+          );
+          return { kind: "ready", attempts: afterAttempt + fixes };
+        case "pending":
+        case "unsupported":
+          continue;
+      }
     }
-    if (signal.status === "succeeded") return { kind: "ready", attempts: afterAttempt + fixes };
-
+    if (verdict === "green") {
+      await acts.journal(ticket, "ci", "CI yeşil", why);
+      return { kind: "ready", attempts: afterAttempt + fixes };
+    }
     fixes += 1;
     if (fixes > MAX_GATE_REJECTIONS) {
       return { kind: "handover", reason: `${fixes - 1} kez CI düzeltilemedi (M54)` };
     }
-    await acts.journal(ticket, "ci", "CI kırmızı", "6a'ya dönülüyor");
+    await acts.journal(ticket, "ci", "CI kırmızı", `${why} — 6a'ya dönülüyor`);
     const fix: EngineeringResult = await longActs.runEngineering(
       ticket,
       state.resumeToken,
-      "CI hatasını düzelt",
+      `CI hatasını düzelt: ${why}`,
       afterAttempt + fixes,
     );
     state.resumeToken = fix.resumeToken;
     if (!fix.ok && fix.handoverReason !== undefined) {
       return { kind: "handover", reason: fix.handoverReason };
     }
+    const published = await acts.publishBranch(ticket);
+    if (!published.pushed) return { kind: "handover", reason: `CI düzeltmesi yayımlanamadı: ${published.reason}` };
+    sha = published.sha;
+    quietRounds = 0;
   }
 }

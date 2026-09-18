@@ -6,6 +6,7 @@ import {
   isCancellation,
   proxyActivities,
   setHandler,
+  sleep,
   workflowInfo,
 } from "@temporalio/workflow";
 import type {
@@ -114,6 +115,9 @@ const thinkActs = proxyActivities<MaestroActivities>({
 });
 
 /** Long jobs get their own budget; the engineer may legitimately run for hours. */
+/** How often 12→13 asks whether a human merged the PR (non-full_auto modes). */
+const PR_MERGE_POLL_INTERVAL = "5 minutes";
+
 const longActs = proxyActivities<MaestroActivities>({
   startToCloseTimeout: "4 hours",
   retry: { maximumAttempts: 1 },
@@ -763,11 +767,15 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
 
   // ── 10b · PR and the CI gate ─────────────────────────────────────────────
   await stopIfKilled();
+  // The turn's edits exist only in the clone until here. Publish first, PR
+  // second: a PR on a branch nobody pushed is what every run opened before.
+  const published = await acts.publishBranch(ticket);
+  if (!published.pushed) return handOver(`dal yayımlanamadı — ${published.reason}`);
   const pr: PrRef = await acts.openPullRequest(ticket);
   await acts.activatePullRequest(ticket, pr);
   await goto("10b", `PR #${pr.prId} · build validation bekleniyor`);
 
-  const green = await awaitGreenBuild({ acts, longActs }, state, inbox, ticket, attempt);
+  const green = await awaitGreenBuild({ acts, longActs }, state, inbox, ticket, attempt, published.sha);
   if (green.kind === "handover") return handOver(green.reason);
 
   // ── 11-12 · QA result and PR approval ────────────────────────────────────
@@ -809,7 +817,16 @@ export async function ticketWorkflow(input: TicketWorkflowInput): Promise<Workfl
   // cannot be skipped: an emergency stop that does not stop the MERGE has not
   // stopped the only thing in this system that cannot be undone.
   await stopIfKilled();
-  await acts.mergePullRequest(ticket, pr);
+  // Merge is a decision the mode makes (full_auto merges, the rest wait for a
+  // human on the SCM); waiting is a loop of cheap polls, not a failing
+  // activity retried into a handover.
+  for (;;) {
+    const merged = await acts.mergePullRequest(ticket, pr);
+    if (merged.mergeSha !== null) break;
+    if (merged.state === "abandoned") return handOver(`PR #${pr.prId} SCM'de terk edildi`);
+    await sleep(PR_MERGE_POLL_INTERVAL);
+    await stopIfKilled();
+  }
   await goto("13", "kanıt paketi");
   const evidence = await acts.buildEvidencePackage(ticket);
   await acts.journal(ticket, "closure", "kanıt paketi", `${evidence.files} dosya`);

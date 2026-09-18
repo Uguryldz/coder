@@ -46,6 +46,7 @@ export const AUDIT_ACTION_INFO: Record<AuditAction, AuditActionInfo> = {
   SANDBOX_DESTROY: { severity: 3, name: "Sandbox destroyed", category: "sandbox" },
   TEST_RUN_COMPLETE: { severity: 3, name: "Test run completed", category: "delivery" },
   CI_RESULT: { severity: 4, name: "CI pipeline result recorded", category: "delivery" },
+  BRANCH_PUSHED: { severity: 4, name: "Feature branch pushed", category: "delivery" },
   PR_OPENED: { severity: 4, name: "Pull request opened", category: "delivery" },
   PR_MERGED: { severity: 6, name: "Pull request merged", category: "delivery" },
   MODE_CHANGED: { severity: 6, name: "Work mode changed", category: "governance" },

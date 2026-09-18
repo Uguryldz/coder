@@ -39,6 +39,16 @@ import { namespaceServisi, saklamaSuresiniAcilistaAyarla } from "../temporal-ret
 import { fail, isEntrypoint } from "./lifecycle.js";
 import { poolRootFrom, usableMirror } from "../stores/repo-pool.js";
 
+// Module-level constants live ABOVE main(): the entrypoint runs while this
+// module is still evaluating, and a `const` declared further down is in its
+// temporal dead zone at that moment (the 1.0.98 worker crash-looped on it).
+/** Where `SCAN_RULES_VOLUME` appears inside every scanner container. */
+export const SCAN_RULES_MOUNT = "/rules";
+/** trivy's default cache dir (the image runs as root); `SCAN_TRIVY_CACHE_VOLUME` lands here. */
+export const TRIVY_CACHE_MOUNT = "/root/.cache/trivy";
+/** M31 ceiling-friendly TTL: long enough for one push, short enough to be worthless afterwards. */
+const PUSH_TOKEN_TTL_SECONDS = 900;
+
 /**
  * The Temporal worker process.
  *
@@ -719,8 +729,7 @@ export function withWorkspaceCloning(
   return wrapped;
 }
 
-/** M31 ceiling-friendly TTL: long enough for one push, short enough to be worthless afterwards. */
-const PUSH_TOKEN_TTL_SECONDS = 900;
+
 
 /**
  * The scanners' `ContainerRunner`, from the same variables the sandbox fleet
@@ -730,10 +739,6 @@ const PUSH_TOKEN_TTL_SECONDS = 900;
  * root, or without either mapping, nothing is wired and boot keeps the
  * refusing default — a scan that cannot see the clone must not run.
  */
-/** Where `SCAN_RULES_VOLUME` appears inside every scanner container. */
-export const SCAN_RULES_MOUNT = "/rules";
-/** trivy's default cache dir (the image runs as root); `SCAN_TRIVY_CACHE_VOLUME` lands here. */
-export const TRIVY_CACHE_MOUNT = "/root/.cache/trivy";
 
 export function scanRunnerOption(source: NodeJS.ProcessEnv): { containerRunner?: ContainerRunner } {
   // The same default the clone path uses (`workspaceRootFrom`): a stack that

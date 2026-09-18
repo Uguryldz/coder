@@ -736,10 +736,13 @@ export const SCAN_RULES_MOUNT = "/rules";
 export const TRIVY_CACHE_MOUNT = "/root/.cache/trivy";
 
 export function scanRunnerOption(source: NodeJS.ProcessEnv): { containerRunner?: ContainerRunner } {
-  const workerRoot = source["WORKSPACE_ROOT"]?.trim() ?? "";
+  // The same default the clone path uses (`workspaceRootFrom`): a stack that
+  // leaves WORKSPACE_ROOT blank still clones under /workspace, so the scanner
+  // must look there too — a blank here must not silently disable the gate.
+  const workerRoot = workspaceRootFrom(source);
   const hostRoot = source["RUNNER_WORKSPACE_HOST_ROOT"]?.trim() ?? "";
   const volume = source["WORKSPACE_VOLUME"]?.trim() ?? "";
-  if (workerRoot === "" || (hostRoot === "" && volume === "")) return {};
+  if (hostRoot === "" && volume === "") return {};
   const rulesVolume = source["SCAN_RULES_VOLUME"]?.trim() ?? "";
   const trivyCache = source["SCAN_TRIVY_CACHE_VOLUME"]?.trim() ?? "";
   const runner = createScanContainerRunner({

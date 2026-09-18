@@ -78,10 +78,12 @@ describe("compositeScanPort", () => {
 });
 
 describe("scanRunnerOption", () => {
-  it("wires nothing without a workspace root or a daemon-side mapping", () => {
+  it("wires nothing without a daemon-side mapping; a blank WORKSPACE_ROOT means the default /workspace", () => {
     expect(scanRunnerOption({})).toEqual({});
     expect(scanRunnerOption({ WORKSPACE_ROOT: "/workspace" })).toEqual({});
-    expect(scanRunnerOption({ WORKSPACE_VOLUME: "v" })).toEqual({});
+    // The clone lives under the default root when the variable is blank — so does the scan.
+    expect(scanRunnerOption({ WORKSPACE_VOLUME: "v" }).containerRunner).toBeDefined();
+    expect(scanRunnerOption({ WORKSPACE_ROOT: "", WORKSPACE_VOLUME: "v" }).containerRunner).toBeDefined();
   });
 
   it("wires a runner for a named volume, and prefers a host root when both are set", () => {

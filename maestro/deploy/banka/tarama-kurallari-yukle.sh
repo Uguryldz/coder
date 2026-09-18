@@ -19,7 +19,9 @@ KAYNAK="${1:-tarama/semgrep-kurallar.yml}"
 YARDIMCI="$(grep -oE '^MAESTRO_NODE_IMAGE=.*' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ' || true)"
 YARDIMCI="${YARDIMCI:-alpine:3.20}"
 docker volume create "$BIRIM" >/dev/null
-docker run --rm --entrypoint sh \
+# Yeni birim root'a aittir; yardımcı imaj (maestro-node) normalde 10001 ile
+# koşar ve yazamaz — kopya kök kullanıcıyla yapılır, dosya herkese okunur bırakılır.
+docker run --rm --entrypoint sh --user 0:0 \
   -v "$BIRIM":/rules \
   -v "$(cd "$(dirname "$KAYNAK")" && pwd)/$(basename "$KAYNAK")":/kaynak.yml:ro \
   "$YARDIMCI" -c 'cp /kaynak.yml /rules/semgrep.yml && chmod 0644 /rules/semgrep.yml && ls -l /rules'

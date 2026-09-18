@@ -41,6 +41,7 @@
     "@maestro/llm-gateway": "workspace:*",
     "@maestro/memory": "workspace:*",
     "@maestro/notify": "workspace:*",
+    "@maestro/openai-agent-driver": "workspace:*",
     "@maestro/pii": "workspace:*",
     "@maestro/pilot": "workspace:*",
     "@maestro/ports": "workspace:*",

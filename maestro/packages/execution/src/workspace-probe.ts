@@ -46,7 +46,7 @@ export class SandboxWorkspaceProbe implements WorkspaceProbe {
       "--porcelain=v1",
       "-z",
       "-uall",
-      "--no-renames=false",
+      "--renames",
     ]);
     const files = parsePorcelainZ(status);
     if (files.length === 0) return [];

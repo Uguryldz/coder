@@ -1,5 +1,7 @@
 import { ClaudeSubRunner, nodeSpawn, type SeatCredential } from "@maestro/claude-driver";
-import type { AgentRunner } from "@maestro/llm-gateway";
+import { isSubscriptionDriver } from "@maestro/contracts";
+import type { AgentRunInput, AgentRunner } from "@maestro/llm-gateway";
+import { HttpAgentRunner, NodeWorkspaceFs } from "@maestro/openai-agent-driver";
 import type { SecretPort } from "@maestro/ports";
 import { LOCAL_SEAT_REF } from "./driver-config.js";
 import type { DeployEnv } from "./env.js";
@@ -23,10 +25,35 @@ import type { DeployEnv } from "./env.js";
  * resolved with empty findings would let an analysis claim it had read a
  * repository it never opened.
  */
-export function buildAgentRunner(env: DeployEnv, secrets: SecretPort): AgentRunner | undefined {
+export function buildAgentRunner(env: DeployEnv, secrets: SecretPort): AgentRunner {
+  const claude = buildClaudeRunner(env, secrets);
+  const http = new HttpAgentRunner({
+    fsFor: (workspacePath) => new NodeWorkspaceFs(workspacePath),
+    maxSteps: Number(env.source["AGENT_MAX_STEPS"]?.trim() ?? 80),
+  });
+  return {
+    run(input: AgentRunInput) {
+      if (!isSubscriptionDriver(input.driver)) return http.run(input);
+      if (claude === undefined) {
+        return Promise.reject(new Error(
+          `agent session: driver "${input.driver}" is a subscription seat and needs the vendor CLI, ` +
+            "but CLAUDE_BIN_PATH is unset — set it, or route the agent role to an HTTP (openai-compat) model",
+        ));
+      }
+      return claude.run(input);
+    },
+  };
+}
+
+/**
+ * The CLI-backed runner for subscription seats; `undefined` without a binary.
+ * The HTTP runner above needs nothing but the gateway's own driver, so an
+ * agent session is always possible once an openai-compat model is routed —
+ * the "never wired" era this file's header describes is over.
+ */
+export function buildClaudeRunner(env: DeployEnv, secrets: SecretPort): ClaudeSubRunner | undefined {
   const binPath = env.source["CLAUDE_BIN_PATH"]?.trim();
   if (binPath === undefined || binPath === "") return undefined;
-
   return new ClaudeSubRunner(nodeSpawn(), {
     binPath,
     /**

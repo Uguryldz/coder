@@ -188,9 +188,16 @@ describe("the worker's core dependencies", () => {
       expect(built.degradedReason).not.toBeNull();
       const declared = degradedCapabilities(built.degradedReason);
       const entry = declared.find((line) => line.includes("AgentTurnRunner")) ?? "";
-      // Named precisely enough that an operator can tell what to set.
+      // Named precisely enough that an operator can tell what to set — and
+      // honest about what runs meanwhile: the turn no longer refuses, its
+      // verification runs in the worker's clone with weaker isolation.
       expect(entry).toMatch(/RUNNER_IMAGE_LINUX/);
       expect(entry).toMatch(/engineering turn/);
+      expect(entry).toMatch(/WITHOUT a sandbox fleet/);
+      expect(entry).toMatch(/inside the worker container/);
+      // A real runner is bound, not the refusing stub.
+      expect(typeof built.runner.runTurn).toBe("function");
+      expect(typeof built.runner.endRun).toBe("function");
     });
 
     /**
@@ -220,7 +227,7 @@ describe("the worker's core dependencies", () => {
      * run. It fails if a future change makes one refuse without the other
      * announcing it, in EITHER direction.
      */
-    it("declares the turn runner exactly when the seam itself refuses", async () => {
+    it("declares the local-mode turn runner exactly when there is no fleet, and never refuses the turn for it", async () => {
       for (const image of [undefined, PINNED_IMAGE]) {
         const built = buildTurnRunner(
           envWith(image === undefined ? {} : { RUNNER_IMAGE_LINUX: image }),
@@ -229,21 +236,22 @@ describe("the worker's core dependencies", () => {
         );
 
         /**
-         * "Refuses" means the SEAM refused — the placeholder that rejects
-         * before doing anything. A wired runner also rejects here, because the
-         * stub context has no workspace to probe, and the two have to be told
-         * apart or this assertion passes for the wrong reason.
+         * Neither shape refuses over the variable any more: without a fleet
+         * the turn runs in the worker's clone (LocalAgentTurnRunner), with one
+         * it runs in the sandbox. What the declaration tracks now is the
+         * ISOLATION, not whether the turn can happen at all.
          */
-        const refusedAtSeam = await built.runner
+        const refusedOverVariable = await built.runner
           .runTurn({ context: {} as never, dataClass: "dahili", variantId: "v1", verification: [] })
           .then(
             () => false,
             (error: Error) => error.message.includes("RUNNER_IMAGE_LINUX"),
           );
+        expect(refusedOverVariable, `image=${String(image)}`).toBe(false);
         const declared = degradedCapabilities(built.degradedReason).some((e) =>
           e.includes("AgentTurnRunner"),
         );
-        expect(declared, `image=${String(image)}`).toBe(refusedAtSeam);
+        expect(declared, `image=${String(image)}`).toBe(image === undefined);
       }
     });
 

@@ -93,28 +93,37 @@ export class SandboxVerificationRunner implements VerificationRunner {
    * a verification gate is the pessimistic one.
    */
   private truncationOf(spec: CommandSpec, stdout: string, stderr: string): CommandResult | null {
-    const limit = this.options.tailLimitBytes;
-    if (limit <= 0) return null;
-
-    const stdoutBytes = Buffer.byteLength(stdout, "utf8");
-    const stderrBytes = Buffer.byteLength(stderr, "utf8");
-    if (stdoutBytes < limit && stderrBytes < limit) return null;
-
-    if ((this.options.onTruncated ?? "fail") === "throw") {
-      throw new TruncatedOutputError(spec.name, limit);
-    }
-    return {
-      name: spec.name,
-      command: spec.command,
-      exitCode: TRUNCATED_EXIT_CODE,
-      stdoutTail: stdout,
-      // The reason goes in the STDERR tail, where every consumer already looks
-      // for why a command failed — the CI fingerprint, the handover note and
-      // the journal all read it without needing to know about this class.
-      stderrTail:
-        `${stderr}\n[maestro] output reached the ${limit}-byte tail budget and was truncated; ` +
-        `this result cannot be read as a pass (see TruncatedOutputError)`,
-      durationMs: 0,
-    };
+    return truncatedResult(spec, stdout, stderr, this.options.tailLimitBytes, this.options.onTruncated);
   }
+}
+
+/**
+ * The truncation rule, shared by the sandbox and the local runner: output at
+ * or over the tail budget cannot be read as a pass, because the line that
+ * said "FAILED" may be the one that fell off the top.
+ */
+export function truncatedResult(
+  spec: CommandSpec,
+  stdout: string,
+  stderr: string,
+  limit: number,
+  onTruncated: "fail" | "throw" | undefined,
+): CommandResult | null {
+  if (limit <= 0) return null;
+  const stdoutBytes = Buffer.byteLength(stdout, "utf8");
+  const stderrBytes = Buffer.byteLength(stderr, "utf8");
+  if (stdoutBytes < limit && stderrBytes < limit) return null;
+  if ((onTruncated ?? "fail") === "throw") {
+    throw new TruncatedOutputError(spec.name, limit);
+  }
+  return {
+    name: spec.name,
+    command: spec.command,
+    exitCode: TRUNCATED_EXIT_CODE,
+    stdoutTail: stdout,
+    stderrTail:
+      `${stderr}\n[maestro] output reached the ${String(limit)}-byte tail budget and was truncated; ` +
+      `this result cannot be read as a pass (see TruncatedOutputError)`,
+    durationMs: 0,
+  };
 }

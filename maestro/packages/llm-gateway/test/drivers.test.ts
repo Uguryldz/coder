@@ -300,3 +300,67 @@ describe("cloud driver skeletons (M16 config + failure path)", () => {
     expect(result.text).toBe("part one part two");
   });
 });
+
+describe("OpenAiCompatDriver.chat (tool calling for agent sessions)", () => {
+  const config = () =>
+    cfg({ driver: "openai-compat", baseUrl: "https://vllm.internal.bank", apiKeyRef: "llm/vllm", onPrem: true }) as Extract<
+      DriverConfig,
+      { driver: "openai-compat" }
+    >;
+  const tools = [{ name: "read_file", description: "read", parameters: { type: "object", properties: {} } }];
+
+  it("sends tools and the conversation in the OpenAI wire shape and parses tool calls back", async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [{ id: "call_1", type: "function", function: { name: "read_file", arguments: '{"path":"a"}' } }],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+          usage: { prompt_tokens: 5, completion_tokens: 2 },
+        },
+      },
+    ]);
+    const result = await new OpenAiCompatDriver(config(), deps(stub)).chat({
+      model: "m",
+      tools,
+      maxTokens: 100,
+      temperature: 0,
+      messages: [
+        { role: "system", content: "sys" },
+        { role: "user", content: "task" },
+        { role: "assistant", content: null, toolCalls: [{ id: "c0", name: "list_dir", arguments: "{}" }] },
+        { role: "tool", toolCallId: "c0", content: "[]" },
+      ],
+    });
+    expect(result.toolCalls).toEqual([{ id: "call_1", name: "read_file", arguments: '{"path":"a"}' }]);
+    expect(result.text).toBeNull();
+    expect(result).toMatchObject({ tokensIn: 5, tokensOut: 2, finishReason: "tool_calls" });
+    const body = stub.calls[0]?.body as Record<string, unknown>;
+    expect(body["tool_choice"]).toBe("auto");
+    expect(body["tools"]).toEqual([{ type: "function", function: { name: "read_file", description: "read", parameters: { type: "object", properties: {} } } }]);
+    expect(body["messages"]).toEqual([
+      { role: "system", content: "sys" },
+      { role: "user", content: "task" },
+      { role: "assistant", content: null, tool_calls: [{ id: "c0", type: "function", function: { name: "list_dir", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "c0", content: "[]" },
+    ]);
+  });
+
+  it("a final answer carries text and no tool calls; an empty answer is a response error", async () => {
+    const stub = stubFetch([
+      { body: { choices: [{ message: { content: "done" }, finish_reason: "stop" }] } },
+      { body: { choices: [{ message: { content: "" } }] } },
+    ]);
+    const driver = new OpenAiCompatDriver(config(), deps(stub));
+    const base = { model: "m", tools, maxTokens: 10, temperature: 0, messages: [{ role: "user" as const, content: "x" }] };
+    const ok = await driver.chat(base);
+    expect(ok).toMatchObject({ text: "done", toolCalls: [], finishReason: "stop" });
+    await expect(driver.chat(base)).rejects.toBeInstanceOf(LlmResponseError);
+  });
+});

@@ -1,6 +1,6 @@
 import type { PlatformProfile } from "@maestro/contracts";
 import type { SessionReport } from "@maestro/execution";
-import { PersistentStrikeLedger, SandboxAgentTurnRunner } from "@maestro/execution";
+import { LocalAgentTurnRunner, PersistentStrikeLedger, SandboxAgentTurnRunner } from "@maestro/execution";
 import type { LoadedPiiPolicy, OutboundCall } from "@maestro/pii";
 import type { LlmPort, RunnerPort, StoragePort } from "@maestro/ports";
 import type { CoreDeps } from "@maestro/workflows";
@@ -135,4 +135,34 @@ function sessionReportSink(storage: StoragePort): OutboundCall<SessionReport, vo
       { contentType: "application/json" },
     );
   };
+}
+
+/**
+ * The turn runner for a deployment with no sandbox fleet: verification runs
+ * in the worker's own clone (`LocalAgentTurnRunner`). Same ledger, same
+ * journal sink, same PII policy — only the isolation differs, and the
+ * degraded-capabilities line at boot says so.
+ */
+export function buildLocalAgentTurnRunner(deps: Omit<TurnRunnerDeps, "runner" | "platform">): CoreDeps["execution"] {
+  const now = deps.now ?? ((): Date => new Date());
+  return new LocalAgentTurnRunner({
+    tailLimitBytes: deps.tailLimitBytes,
+    commandTimeoutSeconds: deps.commandTimeoutSeconds,
+    ...(deps.signalFor === undefined ? {} : { signalFor: deps.signalFor }),
+    strikes: new PersistentStrikeLedger({
+      store: new PrismaStrikeStore(deps.counters),
+      now,
+      onWriteError:
+        deps.onStrikeWriteError ??
+        ((error: unknown): void => {
+          console.error("[maestro] strike counter write failed (M54 handover may be delayed)", error);
+        }),
+    }),
+    execution: {
+      llm: deps.llm,
+      piiPolicy: deps.piiPolicy,
+      journalSink: sessionReportSink(deps.storage),
+      now,
+    },
+  });
 }

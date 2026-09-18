@@ -2,6 +2,8 @@ import type { PlatformProfile } from "@maestro/contracts";
 import type { RunnerPort } from "@maestro/ports";
 import { AgentExecution, type AgentExecutionDeps, type AgentTurnRequest, type AgentTurnResult } from "./execution.js";
 import { PersistentStrikeLedger } from "./persistent-strikes.js";
+import { LocalWorkspaceProbe } from "./local-probe.js";
+import { LocalVerificationRunner } from "./local-verification-runner.js";
 import { SandboxVerificationRunner } from "./verification-runner.js";
 import { SandboxWorkspaceProbe } from "./workspace-probe.js";
 
@@ -136,4 +138,61 @@ function refusingVerifier(): AgentExecutionDeps["verifier"] {
       );
     },
   };
+}
+
+export interface LocalTurnRunnerOptions {
+  readonly strikes: PersistentStrikeLedger;
+  readonly execution: Omit<AgentExecutionDeps, "probe" | "verifier" | "strikes">;
+  readonly tailLimitBytes: number;
+  readonly commandTimeoutSeconds: number;
+  readonly signalFor?: (runId: string) => AbortSignal | undefined;
+  readonly env?: Record<string, string>;
+}
+
+/**
+ * The turn runner for a deployment WITHOUT a sandbox fleet.
+ *
+ * Same execution, same strike ledger, same protected-path proof — only the
+ * probe and the verifier run in the worker's own clone instead of a
+ * digest-pinned container. Until this existed such a deployment refused
+ * every engineering turn outright, so a bank evaluating Maestro on one
+ * machine never saw a line of code written; the degraded-capabilities report
+ * still names the weaker isolation so nobody mistakes this for M21.
+ */
+export class LocalAgentTurnRunner {
+  private readonly execution: AgentExecution;
+
+  constructor(private readonly options: LocalTurnRunnerOptions) {
+    this.execution = new AgentExecution({
+      ...options.execution,
+      strikes: options.strikes,
+      probe: refusingProbe(),
+      verifier: refusingVerifier(),
+    });
+  }
+
+  async runTurn(req: AgentTurnRequest): Promise<AgentTurnResult> {
+    const runId = req.context.runId;
+    const signal = this.options.signalFor?.(runId);
+    await this.options.strikes.hydrate(runId);
+    const shared = { runId, ...(signal === undefined ? {} : { signal }) };
+    try {
+      return await this.execution.runTurn(req, {
+        probe: new LocalWorkspaceProbe(shared),
+        verifier: new LocalVerificationRunner({
+          ...shared,
+          timeoutSeconds: this.options.commandTimeoutSeconds,
+          tailLimitBytes: this.options.tailLimitBytes,
+          ...(this.options.env === undefined ? {} : { env: this.options.env }),
+        }),
+      });
+    } finally {
+      await this.options.strikes.pendingWrites();
+    }
+  }
+
+  endRun(runId: string): void {
+    this.execution.endRun(runId);
+    this.options.strikes.forget(runId);
+  }
 }

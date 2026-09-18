@@ -296,6 +296,10 @@ export class LlmGateway implements LlmPort {
 
     const record = existing ?? this.sessions.start(pin, opts.workspacePath);
     try {
+      // The panel's endpoint/key override, for the same reason and by the same
+      // rule as `generateObject`: an HTTP agent runner must dial the endpoint
+      // the panel's green test proved, not `.env`'s default.
+      const target = overrideFor(routed, active);
       const out = await runner.run({
         driver: routed.driver,
         model: routed.model,
@@ -303,7 +307,10 @@ export class LlmGateway implements LlmPort {
         task: masked === null ? opts.task : masked.payload,
         mcpServers: opts.mcpServers,
         vendorSessionId: record.vendorSessionId,
-        credentialRef: routed.credentialRef,
+        credentialRef: target.credentialRef,
+        transport: routed.transport,
+        ...(target.baseUrl === null ? {} : { baseUrl: target.baseUrl }),
+        ...(target.skipTlsVerify ? { skipTlsVerify: true } : {}),
       });
       this.sessions.complete(record.resumeToken, out.vendorSessionId ?? null);
       const log = this.writeLog({

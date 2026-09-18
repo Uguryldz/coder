@@ -49,9 +49,59 @@ export interface DriverResult {
 }
 
 /** The single shape all four API drivers implement (M16). */
+/**
+ * A tool the model may call during an agent session (OpenAI function-calling
+ * shape). `parameters` is a JSON Schema object — the driver forwards it as-is.
+ */
+export interface ChatToolSpec {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: Record<string, unknown>;
+}
+
+export interface ChatToolCall {
+  readonly id: string;
+  readonly name: string;
+  /** Raw JSON text as the model produced it; the caller parses and validates. */
+  readonly arguments: string;
+}
+
+export type ChatMessage =
+  | { readonly role: "system" | "user"; readonly content: string }
+  | { readonly role: "assistant"; readonly content: string | null; readonly toolCalls?: readonly ChatToolCall[] }
+  | { readonly role: "tool"; readonly toolCallId: string; readonly content: string };
+
+export interface ChatCall {
+  model: string;
+  messages: readonly ChatMessage[];
+  tools: readonly ChatToolSpec[];
+  maxTokens: number;
+  temperature: number;
+  baseUrl?: string;
+  credentialRef?: string;
+  skipTlsVerify?: boolean;
+  counter?: CallCounter;
+}
+
+export interface ChatResult {
+  text: string | null;
+  toolCalls: readonly ChatToolCall[];
+  tokensIn: number;
+  tokensOut: number;
+  finishReason: string | null;
+}
+
 export interface LlmDriver {
   readonly id: ApiDriverId;
   complete(call: DriverCall): Promise<DriverResult>;
+  /**
+   * Multi-turn, tool-calling completion. Optional: only drivers whose wire
+   * protocol carries tool calls implement it, and an agent runner that needs
+   * it refuses with a named error when the routed driver lacks it — never a
+   * silent fall-back to a plain completion that would "answer" without
+   * having read a single file.
+   */
+  chat?(call: ChatCall): Promise<ChatResult>;
 }
 
 /**

@@ -35,7 +35,7 @@ describe("LlmGateway.agentSession (M17 delegation)", () => {
     });
     // The result carries the same log row, so a resumed turn can be logged alone.
     expect(outcome.value.log).toBe(outcome.log);
-    expect(agentRunner.inputs[0]).toEqual({
+    expect(agentRunner.inputs[0]).toMatchObject({
       driver: "claude-sub",
       model: "claude-sonnet",
       workspacePath: "/work/UGURPAY-1",
@@ -44,6 +44,8 @@ describe("LlmGateway.agentSession (M17 delegation)", () => {
       vendorSessionId: null,
       credentialRef: "llm/seat1",
     });
+    // The routed transport rides along for HTTP runners; a seat ignores it.
+    expect(agentRunner.inputs[0]?.transport).toBeDefined();
     // The gateway itself makes no provider call — execution is Wave 2's job.
     expect(stub.calls).toHaveLength(0);
   });

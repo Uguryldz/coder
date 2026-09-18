@@ -233,7 +233,7 @@ export async function bootPlatform(options: BootOptions = {}): Promise<BootedPla
       // analysis is written, step 6a writes the change in the same conversation.
       // Absent, `agentSession` throws and those steps refuse — which is what
       // every deployment did until this was wired.
-      ...(agentRunner === undefined ? {} : { agentRunner }),
+      agentRunner,
       // The panel's model, re-read per call. Absent, every fact stays the
       // static config's and this deployment behaves exactly as it always has.
       ...(options.resolveModel === undefined ? {} : { resolveModel: options.resolveModel }),

@@ -22,7 +22,7 @@ import { PrismaTemplateStore } from "../stores/template.js";
 import { commentReaderFor } from "../stores/comment-reader.js";
 import { docAttacherFor } from "../stores/doc-attacher.js";
 import { statusMoverFor } from "../stores/status-mover.js";
-import { buildAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
+import { buildAgentTurnRunner, buildLocalAgentTurnRunner, unrunnableTurnRunner } from "../stores/execution.js";
 import { reconcileRunStatuses } from "../stores/reconcile.js";
 import { healthPortOf, startWorkerLiveness } from "../worker-liveness.js";
 import { prismaSqlExecutor, prismaTransactionRunner } from "../stores/sql.js";
@@ -378,15 +378,20 @@ export function buildTurnRunner(env: DeployEnv, db: Db, ports: TurnPorts): Built
   const image = env.RUNNER_IMAGE_LINUX;
   if (image === undefined) {
     return {
-      runner: unrunnableTurnRunner(
-        "execution: no sandbox fleet is configured — RUNNER_IMAGE_LINUX is unset, and an " +
-          "engineering turn runs the agent's verification commands inside a digest-pinned " +
-          "container (M21/M27). Set it to a pinned reference to enable the turn.",
-      ),
+      runner: buildLocalAgentTurnRunner({
+        llm: ports.llm,
+        storage: ports.storage,
+        piiPolicy: defaultPiiPolicy(),
+        counters: db.strikeCounter,
+        tailLimitBytes: DEFAULT_MAX_TAIL_BYTES,
+        commandTimeoutSeconds: env.RUNNER_COMMAND_TIMEOUT_SECONDS,
+      }),
       degradedReason:
-        "AgentTurnRunner (M30/M52/M54): implemented and wired, but this deployment has no sandbox " +
-        "fleet — RUNNER_IMAGE_LINUX is unset, so the engineering turn refuses with a named error. " +
-        "Set it to a digest-pinned image to enable the turn; every other step is unaffected.",
+        "AgentTurnRunner (M30/M52/M54): running WITHOUT a sandbox fleet — RUNNER_IMAGE_LINUX is unset, " +
+        "so the engineering turn's build/verification commands run inside the worker container against " +
+        "the run's clone instead of a digest-pinned sandbox (M21/M27). Protected-path enforcement and the " +
+        "strike ledger are unchanged; only the isolation is weaker. Set RUNNER_IMAGE_LINUX to a pinned " +
+        "image to move verification into the fleet.",
     };
   }
 

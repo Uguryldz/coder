@@ -1,4 +1,5 @@
 import type { DataClass, LlmDriverId } from "@maestro/contracts";
+import type { LlmDriver } from "./driver-types.js";
 import { UnknownResumeTokenError } from "./errors.js";
 
 /**
@@ -14,8 +15,17 @@ export interface AgentRunInput {
   mcpServers: string[];
   /** Vendor session handle from the previous turn; null on the first turn. */
   vendorSessionId: string | null;
-  /** Subscription seat credential when the pool picked one (M55). */
+  /** Subscription seat credential when the pool picked one (M55); the panel row's key ref for HTTP drivers. */
   credentialRef: string | null;
+  /**
+   * The routed HTTP driver, for runners that talk to the model over the
+   * gateway's own transport (tool-calling chat) instead of a vendor CLI.
+   * Subscription seats (claude-sub) ignore it. `baseUrl`/`skipTlsVerify`
+   * carry the panel's per-model override exactly as `generateObject` does.
+   */
+  transport?: LlmDriver;
+  baseUrl?: string;
+  skipTlsVerify?: boolean;
 }
 
 export interface AgentRunOutput {

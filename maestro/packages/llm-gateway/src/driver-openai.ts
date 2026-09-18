@@ -2,7 +2,7 @@ import type { ApiDriverId } from "@maestro/contracts";
 import { z } from "zod";
 import type { DriverConfig } from "./config.js";
 import { trimSlash } from "./driver-anthropic.js";
-import type { DriverCall, DriverDeps, DriverResult, LlmDriver } from "./driver-types.js";
+import type { ChatCall, ChatMessage, ChatResult, ChatToolCall, DriverCall, DriverDeps, DriverResult, LlmDriver } from "./driver-types.js";
 import { LlmResponseError } from "./errors.js";
 import { postJson } from "./http.js";
 
@@ -50,6 +50,59 @@ const ChatResponse = z.object({
  * vendor. Whether it counts as on-prem is config (`onPrem`), not a guess made
  * from the URL — the M18 confidential rule leans on that flag.
  */
+const ToolCallWire = z.object({
+  id: z.string().min(1),
+  type: z.literal("function").optional(),
+  function: z.object({ name: z.string().min(1), arguments: z.string().default("") }),
+});
+
+const ChatToolResponse = z.object({
+  choices: z
+    .array(
+      z.object({
+        message: z.object({
+          content: z.string().nullish(),
+          tool_calls: z.array(ToolCallWire).nullish(),
+        }),
+        finish_reason: z.string().nullish(),
+      }),
+    )
+    .min(1),
+  usage: z
+    .object({
+      prompt_tokens: z.number().int().nonnegative().nullish(),
+      completion_tokens: z.number().int().nonnegative().nullish(),
+    })
+    .nullish(),
+});
+
+/** `ChatMessage` → the OpenAI wire shape. */
+export function toOpenAiMessage(message: ChatMessage): Record<string, unknown> {
+  switch (message.role) {
+    case "system":
+    case "user":
+      return { role: message.role, content: message.content };
+    case "assistant": {
+      const calls = message.toolCalls ?? [];
+      return {
+        role: "assistant",
+        content: message.content,
+        ...(calls.length === 0
+          ? {}
+          : {
+              tool_calls: calls.map((call) => ({
+                id: call.id,
+                type: "function",
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            }),
+      };
+    }
+    case "tool":
+      return { role: "tool", tool_call_id: message.toolCallId, content: message.content };
+  }
+}
+
 export class OpenAiCompatDriver implements LlmDriver {
   readonly id: ApiDriverId = "openai-compat";
 
@@ -125,6 +178,61 @@ export class OpenAiCompatDriver implements LlmDriver {
         cached === undefined || cached === null || tokensIn === 0
           ? null
           : Math.round((cached / tokensIn) * 10_000) / 100,
+    };
+  }
+
+  async chat(call: ChatCall): Promise<ChatResult> {
+    const baseUrl = call.baseUrl ?? this.cfg.baseUrl;
+    const apiKey = await this.deps.secrets.get(call.credentialRef ?? this.cfg.apiKeyRef);
+    const json = await postJson(
+      {
+        driver: this.id,
+        url: `${trimSlash(baseUrl)}/v1/chat/completions`,
+        headers: {
+          ...(apiKey === "" ? {} : { authorization: `Bearer ${apiKey}` }),
+          accept: "application/json",
+        },
+        body: {
+          model: call.model,
+          max_tokens: call.maxTokens,
+          temperature: call.temperature,
+          messages: call.messages.map(toOpenAiMessage),
+          ...(call.tools.length === 0
+            ? {}
+            : {
+                tools: call.tools.map((tool) => ({
+                  type: "function",
+                  function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+                })),
+                tool_choice: "auto",
+              }),
+        },
+        timeoutMs: this.cfg.timeoutMs,
+        skipTlsVerify: call.skipTlsVerify === true,
+      },
+      { deps: this.deps, bucket: this.deps.bucket, retry: this.deps.retry, counter: call.counter },
+    );
+    const parsed = ChatToolResponse.safeParse(json);
+    if (!parsed.success) {
+      throw new LlmResponseError(this.id, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+    }
+    const choice = parsed.data.choices[0];
+    if (choice === undefined) throw new LlmResponseError(this.id, ["no choices"]);
+    const toolCalls: ChatToolCall[] = (choice.message.tool_calls ?? []).map((tc) => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: tc.function.arguments,
+    }));
+    const text = choice.message.content ?? null;
+    if (toolCalls.length === 0 && (text === null || text.trim().length === 0)) {
+      throw new LlmResponseError(this.id, ["first choice carries neither content nor tool calls"]);
+    }
+    return {
+      text,
+      toolCalls,
+      tokensIn: parsed.data.usage?.prompt_tokens ?? 0,
+      tokensOut: parsed.data.usage?.completion_tokens ?? 0,
+      finishReason: choice.finish_reason ?? null,
     };
   }
 }

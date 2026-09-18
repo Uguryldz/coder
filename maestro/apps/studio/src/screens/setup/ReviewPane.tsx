@@ -2,11 +2,12 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Button, ButtonLink, Card } from "../../ui/index.ts";
 import { matchValueLabel } from "../common/jira-english.ts";
+import { displayMatchValue, type MatchValueOption } from "../common/match-value.ts";
 import { STATUS_POINTS, buildStatusMap, gateMirror } from "../common/status-map.ts";
-import { bindsNoRepository, flowDefaults, intakePolls, type SetupDraft } from "./model.ts";
+import { bindsNoRepository, flowNeedsRepository, intakePolls, type SetupDraft } from "./model.ts";
 
 /**
- * Step 6 — "Özet & kaydet".
+ * Step 5 — "Özet & kaydet".
  *
  * Written as SENTENCES, not a key/value dump of the draft. Every line is
  * derived from the same wire bodies the save will send (`buildStatusMap`,
@@ -24,22 +25,30 @@ export interface ReviewPaneProps {
   readonly alreadyBound: boolean;
   /** Whether a changed command-intake setting takes effect without a restart; `undefined` while unknown. */
   readonly intakeAppliesLive?: boolean | undefined;
+  /**
+   * The live values with their ids: on a team-managed project the draft holds
+   * the ID the rule will store, and the summary must print the NAME — an
+   * operator cannot check "10008" against anything they know.
+   */
+  readonly matchValueOptions?: readonly MatchValueOption[];
 }
 
 /**
  * The rule value as the summary should PRINT it. A LABEL is a free string the
  * operator invented, so it gets no English aside — `hata (Bug)` would be a
  * confident wrong answer on the one screen whose job is letting somebody
- * check what they are about to create.
+ * check what they are about to create. A stored id is shown by its name.
  */
-function matchValueOf(draft: { matchKind: string; matchValue: string }): string {
-  const value = draft.matchValue.trim();
+function matchValueOf(
+  draft: { matchKind: string; matchValue: string },
+  options: readonly MatchValueOption[] = [],
+): string {
+  const value = displayMatchValue(draft.matchValue.trim(), options);
   return draft.matchKind === "label" ? value : matchValueLabel(value);
 }
 
-export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPaneProps): ReactNode {
+export function ReviewPane({ draft, alreadyBound, intakeAppliesLive, matchValueOptions }: ReviewPaneProps): ReactNode {
   const t = useT();
-  const defaults = flowDefaults(draft.flowType);
   // The wire body, verbatim — the summary signs off on what will be SENT.
   const statusMap = buildStatusMap(draft.statusOn, draft.statusDraft, draft.reassignOnNeedInfo, draft.flowType);
   const mappedPoints = STATUS_POINTS.filter(
@@ -60,7 +69,7 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
           : t("setup.review.rule_sentence", {
               project: draft.jiraProject,
               kind: t(`setup.tickets.kind.${draft.matchKind}`),
-              value: matchValueOf(draft),
+              value: matchValueOf(draft, matchValueOptions),
               flow: flowName,
             })}
       </p>
@@ -136,7 +145,9 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
             : t("setup.intake.applies_restart")}
       </p>
 
-      {/* 4 — the binding: repo, build profile, and the derived answers. */}
+      {/* 4 — the binding: repo, build profile, and the derived answers. Three
+          mutually exclusive sentences: no repository at all (ticket text only),
+          a repository the analysis READS, a repository the code lands in. */}
       <h4 className="scr-h">{t("setup.review.binding_heading")}</h4>
       {alreadyBound ? (
         <p className="scr-prose">{t("setup.review.binding_exists", { project: draft.jiraProject })}</p>
@@ -145,19 +156,27 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
           <p className="scr-prose">
             {bindsNoRepository(draft)
               ? t("setup.review.binding_sentence_norepo", { project: draft.jiraProject })
-              : t("setup.review.binding_sentence", {
-                  project: draft.jiraProject,
-                  repo: draft.repoFullName,
-                  platform: t(`platform.${draft.platform}`),
-                })}
+              : flowNeedsRepository(draft.flowType)
+                ? t("setup.review.binding_sentence", {
+                    project: draft.jiraProject,
+                    repo: draft.repoFullName,
+                    platform: t(`platform.${draft.platform}`),
+                  })
+                : t("setup.review.binding_sentence_analiz_repo", {
+                    project: draft.jiraProject,
+                    repo: draft.repoFullName,
+                  })}
           </p>
           <ul className="scr-list">
             <li>{t("setup.review.trigger.by_rule")}</li>
-            <li>{t(`setup.review.merge.${defaults.mergeMode}`)}</li>
+            {/* Nothing is merged on an analysis-only flow; on a code flow the
+                merger is decided by the rule's work mode, not by this wizard. */}
+            {flowNeedsRepository(draft.flowType) && <li>{t("setup.review.merge.human")}</li>}
             <li>{t(`setup.review.dataclass.${draft.dataClass}`)}</li>
           </ul>
-          {/* The four-eyes fact, stated BEFORE the button rather than as a toast. */}
-          <div className="scr-note scr-note--warn scr-mt-2">{t("setup.review.four_eyes")}</div>
+          {/* What happens to the binding on save, stated BEFORE the button:
+              the wizard tries the approval itself; four-eyes may still apply. */}
+          <div className="scr-note scr-mt-2">{t("setup.review.four_eyes")}</div>
         </>
       )}
     </>
@@ -165,22 +184,52 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
 }
 
 /**
+ * How the binding ended up once the writes went through.
+ *
+ *  · `bound`          — the proposal was filed AND approved on the spot
+ *  · `awaiting`       — filed; the BFF answered `self_approval`, a second admin approves
+ *  · `approve_failed` — filed; the approval failed for another reason (named)
+ *  · `already_bound`  — no proposal: the project was live before the wizard ran
+ */
+export type SetupOutcome =
+  | { readonly outcome: "bound" | "awaiting" | "already_bound" }
+  | { readonly outcome: "approve_failed"; readonly errorKey: string };
+
+/**
  * What to do once the writes have gone through — rendered in place of the
  * form after a successful save: the concrete next actions, not a green toast.
  */
 export interface DonePaneProps {
   readonly draft: SetupDraft;
-  /** True when a binding proposal was filed and is waiting for a second admin. */
-  readonly awaitingApproval: boolean;
+  readonly result: SetupOutcome;
+  readonly matchValueOptions?: readonly MatchValueOption[];
   readonly onAgain: () => void;
 }
 
-export function DonePane({ draft, awaitingApproval, onAgain }: DonePaneProps): ReactNode {
+export function DonePane({ draft, result, matchValueOptions, onAgain }: DonePaneProps): ReactNode {
   const t = useT();
+  // The queue is only worth a link while something is actually sitting in it.
+  const queueOpen = result.outcome === "awaiting" || result.outcome === "approve_failed";
   return (
     <Card title={t("setup.done.title")} subtitle={t("setup.done.sub")}>
       <p className="scr-prose">{t("setup.done.rule_created")}</p>
-      {awaitingApproval && <div className="scr-note scr-note--warn">{t("setup.done.awaiting_approval")}</div>}
+      {result.outcome === "bound" && <div className="scr-note scr-hint--ok">{t("setup.done.bound")}</div>}
+      {result.outcome === "awaiting" && (
+        <div className="scr-note scr-note--warn">
+          {t("setup.done.awaiting_approval")}{" "}
+          <ButtonLink size="sm" to="/projects?tab=routing">
+            {t("setup.done.open_approval")}
+          </ButtonLink>
+        </div>
+      )}
+      {result.outcome === "approve_failed" && (
+        <div className="scr-note scr-note--danger">
+          {t("setup.done.approve_failed", { error: t(result.errorKey) })}{" "}
+          <ButtonLink size="sm" to="/projects?tab=routing">
+            {t("setup.done.open_approval")}
+          </ButtonLink>
+        </div>
+      )}
       <h4 className="scr-h">{t("setup.done.next_heading")}</h4>
       <ol className="scr-list">
         <li>
@@ -189,16 +238,23 @@ export function DonePane({ draft, awaitingApproval, onAgain }: DonePaneProps): R
             : t("setup.done.next_open_ticket", {
                 project: draft.jiraProject,
                 kind: t(`setup.tickets.kind.${draft.matchKind}`),
-                value: matchValueOf(draft),
+                value: matchValueOf(draft, matchValueOptions),
               })}
         </li>
         <li>{t("setup.done.next_assign")}</li>
-        <li>{t("setup.done.next_watch")}</li>
+        <li>
+          {/* The Panel is where a run shows up; "Canlı akış" was a screen the
+              menu does not have. */}
+          {t("setup.done.next_watch")}{" "}
+          <ButtonLink size="sm" to="/dash">
+            {t("setup.done.open_dash")}
+          </ButtonLink>
+        </li>
         <li>{t(`setup.done.next_approve.${draft.commandIntake}`)}</li>
       </ol>
       <div className="scr-actions">
-        <ButtonLink to={awaitingApproval ? "/projects?tab=routing" : "/projects?tab=listening"}>
-          {t(awaitingApproval ? "setup.done.open_approval" : "setup.done.open_expert")}
+        <ButtonLink to={queueOpen ? "/projects?tab=routing" : "/projects?tab=listening"}>
+          {t(queueOpen ? "setup.done.open_approval" : "setup.done.open_expert")}
         </ButtonLink>
         <Button onClick={onAgain}>{t("setup.done.again")}</Button>
       </div>

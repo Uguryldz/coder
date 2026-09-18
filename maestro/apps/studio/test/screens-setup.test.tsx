@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { SetupScreen } from "../src/screens/Setup.tsx";
+import { flowUnavailableReason } from "../src/screens/setup/model.ts";
 import { ADMIN, VIEWER, renderScreen, stubFetch, type Route } from "./harness.tsx";
 
 /**
@@ -74,6 +75,9 @@ function baseRoutes(overrides: readonly Route[] = []): Route[] {
     { path: "/settings", method: "PUT", body: { results: [] } },
     { path: "/studio/listening-rules", method: "POST", status: 201, body: { rule: { ruleId: "lr_1" } } },
     { path: "/onboarding", method: "POST", body: { proposalId: "pr_1" } },
+    // Kaydın hemen ardından sihirbaz bağlamayı kendisi onaylamayı dener; ana
+    // yönetici kendi teklifini onaylayabildiği için varsayılan fixture 200.
+    { path: "/onboarding/approve", method: "POST", body: { status: "bound", projectKey: "OPS", nextStep: "" } },
   ];
   // An override REPLACES the route with the same path+method rather than being
   // appended: the harness matches the first hit, so appending would be ignored.
@@ -85,30 +89,37 @@ function baseRoutes(overrides: readonly Route[] = []): Route[] {
 }
 
 /**
- * Adım 1 → adım 2: varsayılan akışı kabul ederek ya da diğerini seçerek.
- *
- * `duzeltme` sihirbazda SUNULMUYOR (kapı kutuları aynı işi görerek yapıyor),
- * bu yüzden yalnız iki kart var. Kod yazan akışı isteyen testler artık
- * `gelistirme` seçiyor — davranış olarak `duzeltme` ile aynı yolu yürüyorlar,
- * tek fark analiz kapılarının açık olması.
+ * Adım 1 (proje): tek Jira bağlantısı KENDİLİĞİNDEN seçilir, kutuya dokunulmaz;
+ * yalnız proje seçilip ilerlenir. Depo burada SORULMUYOR — akışla birlikte
+ * 2. adımda.
  */
-async function chooseFlow(flow?: "gelistirme"): Promise<void> {
-  await screen.findByText("Ne yapmak istiyorsunuz?");
-  if (flow !== undefined) {
-    await userEvent.click(screen.getByRole("radio", { name: /Analiz \+ kod \+ PR/ }));
-  }
+async function fillProject(): Promise<void> {
+  await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+  await screen.findByRole("option", { name: "OPS · Operasyon" });
+  await userEvent.selectOptions(screen.getByLabelText("Jira projesi"), "OPS");
   await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 }
 
-/** Fill step 2 (project + repo + platform) and move on. */
-async function fillProject(): Promise<void> {
-  await screen.findByText("Hangi Jira projesi, hangi uygulama?");
-  await userEvent.selectOptions(screen.getByLabelText("Jira bağlantısı"), "jira-1");
-  await screen.findByRole("option", { name: "OPS · Operasyon" });
-  await userEvent.selectOptions(screen.getByLabelText("Jira projesi"), "OPS");
-  await userEvent.selectOptions(screen.getByLabelText("Kod deposu bağlantısı"), "scm-1");
+/**
+ * Adım 2'nin başı: akış. Varsayılan "Yalnızca analiz"; kod yazan akışı isteyen
+ * testler `gelistirme` seçiyor. `duzeltme` sihirbazda SUNULMUYOR (kapı kutuları
+ * aynı işi görerek yapıyor). İleri'ye BASMAZ — depo ve tetikleme aynı adımda.
+ */
+async function chooseFlow(flow?: "gelistirme"): Promise<void> {
+  await screen.findByText("Hangi ticket'ları alsın?");
+  if (flow !== undefined) {
+    await userEvent.click(screen.getByRole("radio", { name: /Analiz \+ kod \+ PR/ }));
+  }
+}
+
+/** Adım 2'de depo: tek SCM bağlantısı kendiliğinden seçili, liste açık gelir. */
+async function pickRepo(): Promise<void> {
   await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" });
-  await userEvent.selectOptions(screen.getByLabelText("Kod deposu"), "Uguryldz/maestro-pilot");
+  // Zorunluysa "Kod deposu", isteğe bağlıysa uzun etiket — aynı kutu.
+  const repoBox =
+    screen.queryByLabelText("Kod deposu") ??
+    screen.getByLabelText("Kod deposu (analiz kodu okusun diye, isteğe bağlı)");
+  await userEvent.selectOptions(repoBox, "Uguryldz/maestro-pilot");
   /*
    * Platform kutusu YALNIZ birden fazla profil varsa çizilir. Tek profilli bir
    * kurulumda soracak bir şey yok: taslak kendi doluyor ve ekran hangisi
@@ -117,11 +128,10 @@ async function fillProject(): Promise<void> {
    */
   const platformBox = screen.queryByLabelText("Uygulamanın teknolojisi");
   if (platformBox !== null) await userEvent.selectOptions(platformBox, "linux-node");
-  await userEvent.click(screen.getByRole("button", { name: "İleri" }));
 }
 
 /**
- * Fill step 3 (which tickets) and move on.
+ * Fill the rest of step 2 (the trigger value) and move on.
  *
  * `value` is the LOCALISED name Jira serves and the rule stores; `label` is
  * what the operator reads, which now carries the English name beside it. The
@@ -138,8 +148,8 @@ async function fillTickets(value = "Hata", label = "Hata (Bug)"): Promise<void> 
 }
 
 /**
- * Walk step 5 (how approvals arrive) by ACCEPTING what the platform already
- * does, and move on to the summary.
+ * Walk step 4 (Jira ile iletişim — how commands arrive) by ACCEPTING what the
+ * platform already does, and move on to the summary.
  *
  * Accepting rather than answering is the point for every test that is not
  * about this step: an unchanged answer must not write a parameter version, so
@@ -162,12 +172,37 @@ function ruleBody(calls: readonly { url: string; method: string; body: unknown }
 }
 
 describe("setup wizard", () => {
-  it("opens on the flow question, described by outcome rather than by jargon", async () => {
+  it("opens on the project question, with the sole Jira connection already picked", async () => {
     const { fetchImpl } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await screen.findByText("Ne yapmak istiyorsunuz?");
-    // The three flows, each with the sentence that says what it DOES. Nothing
+    await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+    // Ölçülen şikâyet: tek Jira'lı kurulumda kutu "Seçiniz" bekliyor ve ipucu
+    // "tek seçenek gelir" diyordu. Tek seçenekli soru sorulmaz — seçilir.
+    await waitFor(() =>
+      expect((screen.getByLabelText("Jira bağlantısı") as HTMLSelectElement).value).toBe("jira-1"),
+    );
+    // Beş adım, tek liste: sihirbazın kendi şeridi. "Ne yapsın" ayrı adım değil.
+    expect(screen.getByRole("button", { name: "1 · Proje & uygulama" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "2 · Hangi ticket'lar" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "3 · Jira durumları" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "4 · Jira ile iletişim" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "5 · Özet & kaydet" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Ne yapsın/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /6 ·/ })).toBeNull();
+    // Depo bu adımda SORULMUYOR — "depo bağlama" diye katlanır bir grup yok.
+    expect(screen.queryByText(/Depo bağlama/)).toBeNull();
+    expect(screen.queryByLabelText(/Kod deposu/)).toBeNull();
+  });
+
+  it("asks the flow on the tickets step, described by outcome rather than by jargon", async () => {
+    const { fetchImpl } = stubFetch(baseRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await fillProject();
+    await screen.findByText("Hangi ticket'ları alsın?");
+    expect(screen.getByText("Ne yapılsın")).toBeTruthy();
+    // The two flows, each with the sentence that says what it DOES. Nothing
     // on this screen says "risk_tiered" or "opt_in" — that is the whole point.
     expect(
       screen.getByText(/analiz belgesini ticket'a yazsın; kod YAZMASIN/),
@@ -183,12 +218,31 @@ describe("setup wizard", () => {
     );
   });
 
+  it("numbers every step's subtitle the way the strip does", async () => {
+    const { fetchImpl } = stubFetch(baseRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    // Ölçülen tutarsızlık: Özet adımı "5. adım" derken solda "6" yazıyordu.
+    await fillProject();
+    expect(screen.getByText(/^2\. adım/)).toBeTruthy();
+    await chooseFlow();
+    await fillTickets();
+    expect(await screen.findByText(/^3\. adım/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    expect(await screen.findByText(/^4\. adım/)).toBeTruthy();
+    await skipIntake();
+    await screen.findByText("Özet");
+    expect(screen.getByText(/^5\. adım/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "5 · Özet & kaydet" }).getAttribute("aria-current")).toBe("step");
+  });
+
   it("creates the rule with the chosen flow and no status map on the happy path", async () => {
     const { fetchImpl, calls } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await chooseFlow("gelistirme");
     await fillProject();
+    await chooseFlow("gelistirme");
+    await pickRepo();
     await fillTickets();
 
     // Step 4 is skipped without touching it — the wizard says so on the button.
@@ -233,8 +287,9 @@ describe("setup wizard", () => {
     const { fetchImpl, calls } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await chooseFlow("gelistirme");
     await fillProject();
+    await chooseFlow("gelistirme");
+    await pickRepo();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
     await skipIntake();
@@ -272,31 +327,108 @@ describe("setup wizard", () => {
     });
   });
 
-  it("says the binding waits for a second admin rather than looking like a failure", async () => {
-    const { fetchImpl } = stubFetch(baseRoutes());
+  /**
+   * KAYDET SONRASI ONAY ÇIKMAZI — kapatıldı.
+   *
+   * Sihirbaz teklifi yazıp "ikinci yönetici onaylasın" diye bırakıyordu; tek
+   * yöneticili kurulumda operatör Proje bağlama ekranına gidip KENDİ teklifini
+   * onaylamak zorundaydı. BFF ana onaylayıcıya kendi teklifini onaylama izni
+   * veriyor (`masterSolo`), vermiyorsa `409 self_approval` dönüyor. Sihirbaz
+   * artık kaydın hemen ardından onayı dener ve üç sonucu üç ayrı cümleyle
+   * söyler.
+   */
+  it("approves the binding on the spot and says the project is live (200)", async () => {
+    const { fetchImpl, calls } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
 
-    // Stated BEFORE the button, so the wait is expected rather than discovered.
+    // Stated BEFORE the button: the wizard will TRY the approval itself.
     await skipIntake();
     await screen.findByText("Özet");
-    expect(screen.getByText(/ikinci bir yöneticinin onayını bekler/)).toBeTruthy();
+    expect(screen.getByText(/sizin adınıza hemen onaylamayı dener/)).toBeTruthy();
+    expect(screen.queryByText(/ikinci bir yöneticinin onayını bekler/)).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
 
-    // And again afterwards, with the two concrete next actions.
     expect(await screen.findByText("Kurulum tamam")).toBeTruthy();
-    expect(screen.getByText(/ikinci bir yöneticinin onayını bekliyor/)).toBeTruthy();
+    expect(screen.getByText(/Proje bağlandı ve devrede/)).toBeTruthy();
+    // No approval note, no queue link: nothing is waiting anywhere.
+    expect(screen.queryByText(/ikinci bir yöneticinin onayını bekliyor/)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Onay kuyruğunu aç" })).toBeNull();
+    // Onay KURALDAN SONRA: onay varsayılan kuralları tohumluyor ve kuraldan
+    // önce gelseydi sihirbazın kuralı çoğaltma diye düşebilirdi.
+    const rule = calls.findIndex((c) => c.url.endsWith("/studio/listening-rules") && c.method === "POST");
+    const approve = calls.findIndex((c) => c.url.endsWith("/onboarding/approve") && c.method === "POST");
+    expect(approve).toBeGreaterThan(rule);
+    expect(calls[approve]!.body).toEqual({ projectKey: "OPS" });
+    // The concrete next actions, with the Panel — a screen the menu HAS.
     expect(
       screen.getByText(
         "OPS projesinde İş tipi değeri \"Hata (Bug)\" olan bir ticket açın (ya da mevcut birini o değere getirin).",
       ),
     ).toBeTruthy();
     expect(screen.getByText(/Ticket'ı Maestro botuna atayın/)).toBeTruthy();
+    expect(screen.getByText(/İşin başladığını Panel'den izleyin/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Panel'i aç" }).getAttribute("href")).toBe("/dash");
+    expect(screen.queryByText(/Canlı akış/)).toBeNull();
+  });
+
+  it("falls back to the four-eyes note with a queue link when the BFF answers self_approval (409)", async () => {
+    const { fetchImpl } = stubFetch(
+      baseRoutes([
+        { path: "/onboarding/approve", method: "POST", status: 409, body: { error: "self_approval" } },
+      ]),
+    );
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await fillProject();
+    await chooseFlow();
+    await pickRepo();
+    await fillTickets();
+    await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
+    await screen.findByText("Özet");
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    // Not a failure: the rule is saved, the binding waits for a second admin.
+    expect(await screen.findByText("Kurulum tamam")).toBeTruthy();
+    expect(screen.getByText(/ikinci bir yöneticinin onayını bekliyor/)).toBeTruthy();
+    expect(screen.queryByText(/Proje bağlandı ve devrede/)).toBeNull();
+    const links = screen.getAllByRole("link", { name: "Onay kuyruğunu aç" });
+    expect(links.length).toBeGreaterThan(0);
+    expect(links[0]!.getAttribute("href")).toBe("/projects?tab=routing");
+  });
+
+  it("names any other approval failure and still links the queue", async () => {
+    const { fetchImpl } = stubFetch(
+      baseRoutes([
+        { path: "/onboarding/approve", method: "POST", status: 404, body: { error: "no_pending_binding" } },
+      ]),
+    );
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await fillProject();
+    await chooseFlow();
+    await pickRepo();
+    await fillTickets();
+    await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
+    await screen.findByText("Özet");
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+
+    expect(await screen.findByText("Kurulum tamam")).toBeTruthy();
+    // The catalog sentence for the code, inside the wizard's own sentence.
+    expect(screen.getByText(/kaydedildi ama onaylanamadı/)).toBeTruthy();
+    expect(screen.getByText(/onay bekleyen bir paket yok/i)).toBeTruthy();
+    expect(screen.queryByText(/no_pending_binding/)).toBeNull();
+    expect(screen.getAllByRole("link", { name: "Onay kuyruğunu aç" })[0]!.getAttribute("href")).toBe(
+      "/projects?tab=routing",
+    );
   });
 
   it("skips the binding proposal when the project is already bound, and says so", async () => {
@@ -317,8 +449,9 @@ describe("setup wizard", () => {
     );
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
     await skipIntake();
@@ -329,11 +462,15 @@ describe("setup wizard", () => {
     expect(
       screen.getByText(/OPS projesi zaten bağlı; yeni bir bağlama önerisi oluşturulmayacak/),
     ).toBeTruthy();
-    expect(screen.queryByText(/ikinci bir yöneticinin onayını bekler/)).toBeNull();
+    expect(screen.queryByText(/sizin adınıza hemen onaylamayı dener/)).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
     await screen.findByText("Kurulum tamam");
     expect(calls.find((c) => c.url.endsWith("/onboarding") && c.method === "POST")).toBeUndefined();
+    // Nothing to approve either — and nothing claimed about it on the done screen.
+    expect(calls.find((c) => c.url.endsWith("/onboarding/approve"))).toBeUndefined();
+    expect(screen.queryByText(/Proje bağlandı ve devrede/)).toBeNull();
+    expect(screen.queryByText(/ikinci bir yöneticinin onayını bekliyor/)).toBeNull();
   });
 
   describe("the optional status map", () => {
@@ -349,8 +486,9 @@ describe("setup wizard", () => {
     }
 
     async function reachStatusStep(flow?: "gelistirme"): Promise<void> {
-      await chooseFlow(flow);
       await fillProject();
+      await chooseFlow(flow);
+      await pickRepo();
       // With no live list the value is a free-text field.
       await screen.findByText("Hangi ticket'ları alsın?");
       await userEvent.type(screen.getByLabelText("Hangi değer?"), "Hata");
@@ -447,8 +585,9 @@ describe("setup wizard", () => {
       );
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await fillProject();
+      await chooseFlow();
+      await pickRepo();
       // With a live list every value is picked, never spelled.
       await fillTickets("İNCELEMEDE", "İNCELEMEDE (In Review)");
       await screen.findByText("Jira durumlarını da değiştirsin mi?");
@@ -472,12 +611,30 @@ describe("setup wizard", () => {
     it("düzeltme akışını KART OLARAK sunmaz — kapı kutuları aynı işi görerek yapıyor", async () => {
       const { fetchImpl } = stubFetch(statusRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
-      await screen.findByText("Ne yapmak istiyorsunuz?");
+      await fillProject();
+      await screen.findByText("Hangi ticket'ları alsın?");
 
-      expect(screen.queryByRole("radio", { name: /Hata düzeltme/ })).toBeNull();
-      expect(screen.getByRole("radio", { name: /Yalnızca analiz/ })).toBeTruthy();
-      expect(screen.getByRole("radio", { name: /Analiz \+ kod \+ PR/ })).toBeTruthy();
-      expect(screen.getAllByRole("radio").length).toBe(2);
+      const flows = within(screen.getByRole("radiogroup", { name: "Ne yapılsın" }));
+      expect(flows.queryByRole("radio", { name: /Hata düzeltme/ })).toBeNull();
+      expect(flows.getByRole("radio", { name: /Yalnızca analiz/ })).toBeTruthy();
+      expect(flows.getByRole("radio", { name: /Analiz \+ kod \+ PR/ })).toBeTruthy();
+      expect(flows.getAllByRole("radio").length).toBe(2);
+    });
+
+    it("kapalıyken yalnız kutu ve tek cümle — açıklama paragrafları anahtarın arkasında", async () => {
+      const { fetchImpl } = stubFetch(statusRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+      await reachStatusStep();
+
+      // Ölçülen şikâyet: adımı atlayacak operatör üç paragraf okuyordu.
+      expect(screen.queryByText(/Yukarıdaki beş satır/)).toBeNull();
+      expect(screen.queryByText(/Varsayılan olarak Maestro ticket'a yalnızca yorum yazar/)).toBeNull();
+      expect(screen.queryByText(/Her satır ayrı ayrı isteğe bağlıdır/)).toBeNull();
+      expect(screen.getByText(/Statü eşlemesi kapalı/)).toBeTruthy();
+
+      await userEvent.click(screen.getByLabelText("Ticket'ın Jira durumunu da değiştirsin"));
+      expect(await screen.findByText(/Yukarıdaki beş satır/)).toBeTruthy();
+      expect(screen.getByText(/Her satır ayrı ayrı isteğe bağlıdır/)).toBeTruthy();
     });
   });
 
@@ -490,8 +647,9 @@ describe("setup wizard", () => {
       );
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow("gelistirme");
       await fillProject();
+      await chooseFlow("gelistirme");
+      await pickRepo();
       await screen.findByText("Hangi ticket'ları alsın?");
       await userEvent.type(screen.getByLabelText("Hangi değer?"), "Özellik");
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
@@ -505,17 +663,16 @@ describe("setup wizard", () => {
       const back = screen.getByRole("button", { name: "Geri" });
       await userEvent.click(back);
       await userEvent.click(screen.getByRole("button", { name: "Geri" }));
-      await userEvent.click(screen.getByRole("button", { name: "Geri" }));
-      await screen.findByText("Ne yapmak istiyorsunuz?");
-      expect(
-        (screen.getByRole("radio", { name: /Analiz \+ kod \+ PR/ }) as HTMLInputElement).checked,
-      ).toBe(true);
+      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
+      expect((screen.getByLabelText("Jira projesi") as HTMLSelectElement).value).toBe("OPS");
 
       // … and forward again. Nothing was dropped by the round trip: "geri
       // gidince yazdıklarım gitti" is what makes a wizard worse than a form.
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
-      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
-      expect((screen.getByLabelText("Jira projesi") as HTMLSelectElement).value).toBe("OPS");
+      await screen.findByText("Hangi ticket'ları alsın?");
+      expect(
+        (screen.getByRole("radio", { name: /Analiz \+ kod \+ PR/ }) as HTMLInputElement).checked,
+      ).toBe(true);
       expect((screen.getByLabelText("Kod deposu") as HTMLSelectElement).value).toBe(
         "Uguryldz/maestro-pilot",
       );
@@ -523,9 +680,6 @@ describe("setup wizard", () => {
       // taslak kendi doluyor ve ekran hangisi olduğunu yazıyor. Korunan cevap
       // yine korunuyor — yalnız gösterimi değişti.
       expect(screen.getByText(/Platform: .*Node/u)).toBeTruthy();
-
-      await userEvent.click(screen.getByRole("button", { name: "İleri" }));
-      await screen.findByText("Hangi ticket'ları alsın?");
       expect((screen.getByLabelText("Hangi değer?") as HTMLInputElement).value).toBe("Özellik");
 
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
@@ -540,10 +694,18 @@ describe("setup wizard", () => {
     });
 
     it("says WHICH answer is missing instead of just disabling the button", async () => {
-      const { fetchImpl } = stubFetch(baseRoutes());
+      // İki Jira: tek bağlantı kendiliğinden seçildiği için soru ancak gerçek
+      // bir seçim varken sorulur.
+      const { fetchImpl } = stubFetch(
+        baseRoutes([
+          {
+            path: "/onboarding/jira-connections",
+            body: { connections: [JIRA_CONN, { ...JIRA_CONN, id: "jira-2", displayName: "İkinci Jira" }] },
+          },
+        ]),
+      );
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
 
       // Nothing picked yet: the first thing that is missing, named.
@@ -588,7 +750,8 @@ describe("setup wizard", () => {
       // On the default flow (analiz) the card must NOT appear: the repository
       // is an offer there, and "kurulum yapılamaz" would be a false sentence
       // for the analysis-only team this install may well be.
-      await screen.findByText("Ne yapmak istiyorsunuz?");
+      await fillProject();
+      await screen.findByText("Hangi ticket'ları alsın?");
       expect(screen.queryByText(/Hiç kod deposu bağlantısı tanımlı değil/)).toBeNull();
 
       // Pick a flow that genuinely needs the repository, and the prerequisite
@@ -612,6 +775,7 @@ describe("setup wizard", () => {
       );
       renderScreen(<SetupScreen />, { fetchImpl });
 
+      await fillProject();
       await userEvent.click(await screen.findByRole("radio", { name: /Analiz \+ kod \+ PR/ }));
 
       // The NOUN and the fix, not "bir şeyler eksik". It appears on the ONE
@@ -623,7 +787,7 @@ describe("setup wizard", () => {
         /bir kod deposu bağlantısı gerekir ve bu kurulumda henüz tanımlı değil/,
       );
       expect(said.length).toBe(2);
-      // And "İleri" does not walk them four steps toward a run that cannot finish.
+      // And "İleri" does not walk them three steps toward a run that cannot finish.
       expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
     });
 
@@ -636,10 +800,20 @@ describe("setup wizard", () => {
       );
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await screen.findByText("Ne yapmak istiyorsunuz?");
-      expect((screen.getByRole("radio", { name: /Yalnızca analiz/ }) as HTMLInputElement).checked).toBe(
+      await fillProject();
+      await screen.findByText("Hangi ticket'ları alsın?");
+      // `^`: the blocked code card's note ends with “Yalnızca analiz” and would
+      // otherwise match too.
+      expect((screen.getByRole("radio", { name: /^Yalnızca analiz/ }) as HTMLInputElement).checked).toBe(
         true,
       );
+      // The reason is on the code card ONLY — not beside "İleri", which the
+      // analysis flow does not block.
+      expect(screen.getAllByText(/bir kod deposu bağlantısı gerekir/).length).toBe(1);
+      // What still blocks "İleri" is the trigger value, not the repository.
+      expect(screen.getByText("Devam etmek için Maestro'yu hangi değerin tetikleyeceğini belirtin.")).toBeTruthy();
+      await screen.findByRole("option", { name: "Hata (Bug)" });
+      await userEvent.selectOptions(screen.getByLabelText("Hangi değer?"), "Hata");
       expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
@@ -649,20 +823,27 @@ describe("setup wizard", () => {
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
+      await fillProject();
       await userEvent.click(await screen.findByRole("radio", { name: /Analiz \+ kod \+ PR/ }));
       expect(screen.queryByText(/bir kod deposu bağlantısı gerekir/)).toBeNull();
+      // The repository is now REQUIRED — and that, not the connection, is
+      // what the dead button explains.
+      expect(screen.getByText("Devam etmek için kodun yazılacağı depoyu seçin.")).toBeTruthy();
+      await pickRepo();
+      await screen.findByRole("option", { name: "Hata (Bug)" });
+      await userEvent.selectOptions(screen.getByLabelText("Hangi değer?"), "Hata");
       expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
-    it("does not call a flow unavailable while the connection list is still in flight", async () => {
+    it("does not call a flow unavailable while the connection list is still in flight", () => {
       // Same rule the prerequisite banner already follows: an unanswered
       // request is not evidence of an empty list, and telling an operator to
-      // go and add a connection they already have is its own bug.
-      const { fetchImpl } = stubFetch(baseRoutes());
-      renderScreen(<SetupScreen />, { fetchImpl });
-
-      await screen.findByText("Ne yapmak istiyorsunuz?");
-      expect(screen.queryByText(/bir kod deposu bağlantısı gerekir/)).toBeNull();
+      // go and add a connection they already have is its own bug. `null` is
+      // the in-flight count, and it must answer "nothing wrong" — the one
+      // predicate every flow card reads.
+      expect(flowUnavailableReason("gelistirme", null)).toBeNull();
+      expect(flowUnavailableReason("gelistirme", 0)).toBe("setup.flow.needs_scm");
+      expect(flowUnavailableReason("analiz", 0)).toBeNull();
     });
 
     it("does not accuse an empty list while the request is still in flight", async () => {
@@ -670,7 +851,7 @@ describe("setup wizard", () => {
       // strength of "the array is empty so far".
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
-      await screen.findByText("Ne yapmak istiyorsunuz?");
+      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
       expect(screen.queryByText(/Hiç Jira bağlantısı tanımlı değil/)).toBeNull();
       expect(screen.queryByText(/Hiç kod deposu bağlantısı tanımlı değil/)).toBeNull();
     });
@@ -696,8 +877,9 @@ describe("setup wizard", () => {
     );
     renderScreen(<SetupScreen />, { fetchImpl, session: ADMIN });
 
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
     await skipIntake();
@@ -736,8 +918,9 @@ describe("setup wizard", () => {
     );
     renderScreen(<SetupScreen />, { fetchImpl, session: ADMIN });
 
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
     await skipIntake();
@@ -779,8 +962,9 @@ describe("setup wizard", () => {
     );
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
     await skipIntake();
@@ -793,6 +977,8 @@ describe("setup wizard", () => {
     const rule = calls.findIndex((c) => c.url.endsWith("/studio/listening-rules") && c.method === "POST");
     expect(onboarding).toBeGreaterThanOrEqual(0);
     expect(rule).toBeGreaterThan(onboarding);
+    // Kural düşünce onay DENENMEZ: onaysız teklif kuyrukta görünür kalır.
+    expect(calls.find((c) => c.url.endsWith("/onboarding/approve"))).toBeUndefined();
   });
 
   /**
@@ -810,8 +996,9 @@ describe("setup wizard", () => {
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await fillProject();
+      await chooseFlow();
+      await pickRepo();
       await screen.findByText("Hangi ticket'ları alsın?");
 
       const select = (await screen.findByLabelText("Hangi değer?")) as HTMLSelectElement;
@@ -832,8 +1019,9 @@ describe("setup wizard", () => {
       const { fetchImpl, calls } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await fillProject();
+      await chooseFlow();
+      await pickRepo();
       // Picked through the label `Görev (Task)` — the exact pair that produced
       // the live bug when a rule was written from the English list.
       await fillTickets("Görev", "Görev (Task)");
@@ -857,8 +1045,9 @@ describe("setup wizard", () => {
       );
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await fillProject();
+      await chooseFlow();
+      await pickRepo();
       await screen.findByText("Hangi ticket'ları alsın?");
 
       // A bank's own custom type. Guessing "Request" for it would be exactly
@@ -891,8 +1080,9 @@ describe("setup wizard", () => {
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await fillProject();
+      await chooseFlow();
+      await pickRepo();
       await screen.findByText("Hangi ticket'ları alsın?");
       // Present for the conditioned kinds …
       expect(screen.getByLabelText("Hangi değer?")).toBeTruthy();
@@ -907,8 +1097,9 @@ describe("setup wizard", () => {
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await fillProject();
+      await chooseFlow();
+      await pickRepo();
       await chooseAnyAssigned();
 
       // The blocker that used to demand a match value must not fire here.
@@ -923,8 +1114,9 @@ describe("setup wizard", () => {
       const { fetchImpl, calls } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await fillProject();
+      await chooseFlow();
+      await pickRepo();
       await chooseAnyAssigned();
       await userEvent.click(screen.getByRole("button", { name: "İleri" }));
       await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
@@ -967,7 +1159,6 @@ describe("setup wizard", () => {
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
 
       // The class is ONE select; the assertion is about which option is
@@ -983,7 +1174,6 @@ describe("setup wizard", () => {
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
 
       // The select's hint states the consequence of the CURRENT answer: the
@@ -1008,7 +1198,6 @@ describe("setup wizard", () => {
       const { fetchImpl } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
       expect(screen.queryByText(/modeli kullanamadım, elle tamamlayın/)).toBeNull();
 
@@ -1025,7 +1214,6 @@ describe("setup wizard", () => {
       const { fetchImpl, calls } = stubFetch(baseRoutes());
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      await chooseFlow();
       await screen.findByText("Hangi Jira projesi, hangi uygulama?");
       await userEvent.selectOptions(screen.getByLabelText("Bu uygulamanın verisi ne kadar gizli?"), "acik");
       await fillProject();
@@ -1049,44 +1237,189 @@ describe("setup wizard", () => {
   });
 
   /**
-   * The start guide, moved here from the Panel.
+   * The start guide is NOT on the wizard any more.
    *
-   * `screens-dash-start.test.tsx` asserts the other half — that the Panel no
-   * longer renders it. This is where it now has to appear, and the dismissal
-   * has to keep meaning what it always did.
+   * It was: a five-step welcome card above a five-step wizard, two numbered
+   * lists on one page, and the operator read them as one broken list. The
+   * wizard's own strip is the only list here; `StartGuide` keeps its own tests
+   * in `screens-dash-start.test.tsx`.
    */
   describe("the start guide", () => {
-    /** Routes for the guide's own reads; nothing is set up, so it shows. */
-    function guideRoutes(): Route[] {
-      return baseRoutes([
-        { path: "/onboarding/scm-connections", body: { connections: [SCM_CONN] } },
-        { path: "/variants", body: { variants: [] } },
-      ]);
-    }
-
-    it("renders the five-step checklist on the wizard while setup is open", async () => {
-      const { fetchImpl } = stubFetch(guideRoutes());
+    it("is not rendered on the wizard — one numbered list, the wizard's own", async () => {
+      const { fetchImpl } = stubFetch(
+        baseRoutes([
+          { path: "/onboarding/scm-connections", body: { connections: [SCM_CONN] } },
+          { path: "/variants", body: { variants: [] } },
+        ]),
+      );
       renderScreen(<SetupScreen />, { fetchImpl });
 
-      expect(
-        await screen.findByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
-      ).toBeTruthy();
-      expect(screen.getByText("Ticket girişini aç")).toBeTruthy();
-      // The wizard is still a wizard: the guide sits ABOVE the first question,
-      // it does not replace it.
-      expect(screen.getByText("Ne yapmak istiyorsunuz?")).toBeTruthy();
-    });
-
-    it("honours the dismissal the Panel used to own, under the same key", async () => {
-      globalThis.localStorage.setItem("maestro.setup.guideDismissed", "1");
-      const { fetchImpl } = stubFetch(guideRoutes());
-      renderScreen(<SetupScreen />, { fetchImpl });
-
-      await screen.findByText("Ne yapmak istiyorsunuz?");
+      await screen.findByText("Hangi Jira projesi, hangi uygulama?");
       expect(
         screen.queryByText("Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin"),
       ).toBeNull();
-      globalThis.localStorage.removeItem("maestro.setup.guideDismissed");
+      expect(screen.queryByText("Ticket girişini aç")).toBeNull();
+      // Exactly one numbered list: the step strip.
+      expect(screen.getAllByRole("list").length).toBe(1);
+    });
+  });
+
+  /**
+   * TAKIM YÖNETİMLİ PROJE — kural ADI değil KİMLİĞİ saklar.
+   *
+   * Dinleme kuralı formu bunu yapıyordu; sihirbaz yapmıyordu ve "Görev" adıyla
+   * kaydettiği kural takım yönetimli projede sonsuza dek 0 ticket buluyordu.
+   * İki ekran artık aynı yardımcıyı paylaşıyor (`common/match-value.ts`).
+   */
+  describe("team-managed project", () => {
+    const teamManaged = () =>
+      baseRoutes([
+        {
+          path: "/onboarding/jira-match-values",
+          body: {
+            ok: true,
+            values: ["Hata", "Görev"],
+            options: [
+              { name: "Hata", id: "10007" },
+              { name: "Görev", id: "10008" },
+            ],
+            teamManaged: true,
+          },
+        },
+      ]);
+
+    it("shows the name, stores the id, and summarises by name", async () => {
+      const { fetchImpl, calls } = stubFetch(teamManaged());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await fillProject();
+      await chooseFlow();
+      await screen.findByText("Hangi ticket'ları alsın?");
+      const select = (await screen.findByLabelText("Hangi değer?")) as HTMLSelectElement;
+      await screen.findByRole("option", { name: "Görev (Task)" });
+      // The operator reads names; the option VALUES are the ids JQL insists on.
+      const options = [...select.options].filter((o) => o.value !== "");
+      expect(options.map((o) => o.textContent)).toEqual(["Hata (Bug)", "Görev (Task)"]);
+      expect(options.map((o) => o.value)).toEqual(["10007", "10008"]);
+      expect(screen.getByText(/Bu proje takım yönetimli/)).toBeTruthy();
+      await userEvent.selectOptions(select, "10008");
+      await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+      await screen.findByText("Jira durumlarını da değiştirsin mi?");
+      await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+      await skipIntake();
+
+      // The summary prints the NAME — nobody can check "10008" against anything.
+      await screen.findByText("Özet");
+      expect(screen.getByText(/İş tipi değeri "Görev \(Task\)" olan ticket'lar/)).toBeTruthy();
+      expect(screen.queryByText(/"10008"/)).toBeNull();
+
+      await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+      await waitFor(() => expect(ruleBody(calls).matchValue).toBe("10008"));
+      // And the done screen keeps reading by name.
+      expect(await screen.findByText(/İş tipi değeri "Görev \(Task\)" olan bir ticket açın/)).toBeTruthy();
+    });
+
+    it("keeps storing the name on a company-managed project, ids or not", async () => {
+      const { fetchImpl, calls } = stubFetch(
+        baseRoutes([
+          {
+            path: "/onboarding/jira-match-values",
+            body: {
+              ok: true,
+              values: ["Hata", "Görev"],
+              options: [
+                { name: "Hata", id: "10007" },
+                { name: "Görev", id: "10008" },
+              ],
+              teamManaged: false,
+            },
+          },
+        ]),
+      );
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await fillProject();
+      await chooseFlow();
+      await fillTickets("Görev", "Görev (Task)");
+      await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+      await skipIntake();
+      await screen.findByText("Özet");
+      await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+      await waitFor(() => expect(ruleBody(calls).matchValue).toBe("Görev"));
+    });
+
+    it("adds the status trigger to the pool by NAME even when the rule stores its id", async () => {
+      const { fetchImpl, calls } = stubFetch(
+        baseRoutes([
+          {
+            path: "/onboarding/jira-match-values",
+            body: {
+              ok: true,
+              values: ["Yapılacaklar", "Tamam"],
+              options: [
+                { name: "Yapılacaklar", id: "10004" },
+                { name: "Tamam", id: "10005" },
+              ],
+              teamManaged: true,
+            },
+          },
+        ]),
+      );
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await fillProject();
+      await chooseFlow();
+      await userEvent.selectOptions(screen.getByLabelText("Ticket'ın nesine baksın?"), "status");
+      await screen.findByRole("option", { name: "Yapılacaklar (To Do)" });
+      await userEvent.selectOptions(screen.getByLabelText("Hangi değer?"), "10004");
+      // The pool is a list of NAMES: the trigger joined it by name.
+      expect((screen.getByLabelText("Yapılacaklar") as HTMLInputElement).checked).toBe(true);
+      await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+      // A pool needs an exit: fill the map so step 3 lets us through.
+      await screen.findByText("Jira durumlarını da değiştirsin mi?");
+      await userEvent.click(screen.getByLabelText("Ticket'ın Jira durumunu da değiştirsin"));
+      await userEvent.selectOptions(await screen.findByLabelText("İş bittiğinde"), "Tamam");
+      await userEvent.selectOptions(screen.getByLabelText("Bilgi eksik olduğunda"), "Tamam");
+      await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+      await skipIntake();
+      await screen.findByText("Özet");
+      await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+      await waitFor(() => {
+        const body = ruleBody(calls);
+        expect(body.matchValue).toBe("10004");
+        expect(body.allowedStatuses).toEqual(["Yapılacaklar"]);
+      });
+    });
+  });
+
+  /** The pre-filled bot account is a LINE, not a box, until asked to change. */
+  describe("the bot account", () => {
+    it("shows the auto-filled id read-only, with a change button that opens the box", async () => {
+      const { fetchImpl } = stubFetch(baseRoutes());
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await fillProject();
+      await chooseFlow();
+      expect(await screen.findByText("712020:bot")).toBeTruthy();
+      expect(screen.queryByLabelText("Bot kullanıcısı (Jira hesap kimliği)")).toBeNull();
+
+      await userEvent.click(screen.getByRole("button", { name: "Değiştir" }));
+      const box = (await screen.findByLabelText("Bot kullanıcısı (Jira hesap kimliği)")) as HTMLInputElement;
+      expect(box.value).toBe("712020:bot");
+    });
+
+    it("asks for it in a box when no connection has reported one", async () => {
+      const { fetchImpl } = stubFetch(
+        baseRoutes([
+          { path: "/onboarding/jira-connections", body: { connections: [{ ...JIRA_CONN, botAccountId: null }] } },
+        ]),
+      );
+      renderScreen(<SetupScreen />, { fetchImpl });
+
+      await fillProject();
+      await chooseFlow();
+      expect(await screen.findByLabelText("Bot kullanıcısı (Jira hesap kimliği)")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Değiştir" })).toBeNull();
     });
   });
 });
@@ -1105,30 +1438,22 @@ describe("setup wizard — analysis without a repository", () => {
   const noScm = () =>
     baseRoutes([{ path: "/onboarding/scm-connections", body: { connections: [] } }]);
 
-  /** Step 2 with only the Jira half filled — the analysis-only walk. */
-  async function fillProjectJiraOnly(): Promise<void> {
-    await screen.findByText("Hangi Jira projesi, hangi uygulama?");
-    await userEvent.selectOptions(screen.getByLabelText("Jira bağlantısı"), "jira-1");
-    await screen.findByRole("option", { name: "OPS · Operasyon" });
-    await userEvent.selectOptions(screen.getByLabelText("Jira projesi"), "OPS");
-  }
-
   it("walks step 2 without a repository, says the offer is optional, and files a repo-less binding", async () => {
     const { fetchImpl, calls } = stubFetch(noScm());
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    // Step 1: analiz is the default and İleri is live despite zero SCM
-    // connections — the prerequisite is per-flow.
+    await fillProject();
+    // Step 2: analiz is the default and nothing about the flow is blocked
+    // despite zero SCM connections — the prerequisite is per-flow. The repo
+    // is an OFFER, named as such, and with no connection there is no empty
+    // select to hold the operator hostage.
     await chooseFlow();
-
-    // Step 2: the repo fields are an OFFER, named as such, and the empty
-    // selects do not hold the operator hostage.
-    await fillProjectJiraOnly();
     expect(
       screen.getByText(/İsteğe bağlı: bir kod deposu bağlarsanız etki analizi dosyalara bakılarak yazılır/),
     ).toBeTruthy();
-    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(false);
-    await userEvent.click(screen.getByRole("button", { name: "İleri" }));
+    expect(screen.queryByLabelText(/Kod deposu/)).toBeNull();
+    // The code card carries its reason (shown, never hidden); nothing blocks İleri for it.
+    expect(screen.getAllByText(/bir kod deposu bağlantısı gerekir/).length).toBe(1);
 
     await fillTickets();
     await screen.findByText("Jira durumlarını da değiştirsin mi?");
@@ -1165,16 +1490,26 @@ describe("setup wizard — analysis without a repository", () => {
     const { fetchImpl, calls } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
 
+    await fillProject();
     await chooseFlow(); // analiz
-    await fillProject(); // picks repo + platform as before
+    // The offer, on the same field the code flow requires — labelled as optional.
+    expect(await screen.findByLabelText("Kod deposu (analiz kodu okusun diye, isteğe bağlı)")).toBeTruthy();
+    await pickRepo();
     await fillTickets();
     await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
     await skipIntake();
     await screen.findByText("Özet");
     // Repo mode's own sentence, not the ticket-text one: picking the repo
-    // accepted the offer.
-    expect(screen.getByText(/Uguryldz\/maestro-pilot deposuna bağlanacak/)).toBeTruthy();
+    // accepted the offer — and it says the analysis READS that code, rather
+    // than claiming the application will be built and tested.
+    expect(
+      screen.getByText(/Uguryldz\/maestro-pilot deposuna bağlanacak: analiz o deponun kodu okunarak yapılacak/),
+    ).toBeTruthy();
     expect(screen.queryByText(/kod deposu bağlanmayacak/)).toBeNull();
+    expect(screen.queryByText(/derlenip test edilecek/)).toBeNull();
+    expect(screen.queryByText(/Maestro hiçbir koda bakmayacak/)).toBeNull();
+    // Nothing is merged on an analysis flow, so no merge sentence either.
+    expect(screen.queryByText(/Merge/)).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
     await waitFor(() => {
@@ -1186,27 +1521,61 @@ describe("setup wizard — analysis without a repository", () => {
     });
   });
 
-  it("does not accept HALF a repository: a started pick must be finished", async () => {
-    const { fetchImpl } = stubFetch(baseRoutes());
+  it("pre-selects the sole repository connection, and an untouched list still means no repository", async () => {
+    const { fetchImpl, calls } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
 
+    await fillProject();
     await chooseFlow(); // analiz
-    await fillProjectJiraOnly();
-    // The operator starts the offer — picks the connection — then stops.
-    await userEvent.selectOptions(screen.getByLabelText("Kod deposu bağlantısı"), "scm-1");
-    await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" });
+    // The list is already open — no "Kod deposu bağlantısı" question stood in
+    // front of it — and its empty row says what leaving it means.
+    expect(await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" })).toBeTruthy();
+    expect(screen.queryByLabelText("Kod deposu bağlantısı")).toBeNull();
+    expect(screen.getByRole("option", { name: /Depo bağlanmasın/ })).toBeTruthy();
+    // A pre-selected connection is not "half a repository": nothing blocks.
+    expect(screen.queryByText("Devam etmek için kodun yazılacağı depoyu seçin.")).toBeNull();
 
-    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(
-      screen.getByText("Devam etmek için kodun yazılacağı depoyu seçin."),
-    ).toBeTruthy();
+    await fillTickets();
+    await userEvent.click(await screen.findByRole("button", { name: "İleri" }));
+    await skipIntake();
+    await screen.findByText("Özet");
+    expect(screen.getByText(/OPS projesine kod deposu bağlanmayacak/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
+    await waitFor(() => {
+      const call = calls.find((c) => c.url.endsWith("/onboarding") && c.method === "POST");
+      expect(call!.body).not.toHaveProperty("adoRepo");
+      expect(ruleBody(calls)).not.toHaveProperty("repoMap");
+    });
   });
 
-  it("still blocks düzeltme without a repository connection on the same install (regression)", async () => {
+  it("asks for the connection only when there is a real choice, and finishes a started pick", async () => {
+    const { fetchImpl } = stubFetch(
+      baseRoutes([
+        {
+          path: "/onboarding/scm-connections",
+          body: { connections: [SCM_CONN, { ...SCM_CONN, id: "scm-2", displayName: "İkinci GitHub" }] },
+        },
+      ]),
+    );
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await fillProject();
+    await chooseFlow("gelistirme");
+    // Two connections: the question is asked, and the code flow needs it answered.
+    expect(screen.getByText("Devam etmek için bir kod deposu bağlantısı seçin.")).toBeTruthy();
+    await userEvent.selectOptions(screen.getByLabelText("Kod deposu bağlantısı"), "scm-1");
+    await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" });
+    // The connection alone is HALF a repository for a code flow: named as such.
+    expect(screen.getByText("Devam etmek için kodun yazılacağı depoyu seçin.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("still blocks the code flow without a repository connection on the same install (regression)", async () => {
     const { fetchImpl } = stubFetch(noScm());
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await screen.findByText("Ne yapmak istiyorsunuz?");
+    await fillProject();
+    await screen.findByText("Hangi ticket'ları alsın?");
     await userEvent.click(screen.getByRole("radio", { name: /Analiz \+ kod \+ PR/ }));
     await screen.findAllByText(/bir kod deposu bağlantısı gerekir ve bu kurulumda henüz tanımlı değil/);
     expect((screen.getByRole("button", { name: "İleri" }) as HTMLButtonElement).disabled).toBe(true);
@@ -1252,8 +1621,9 @@ describe("setup wizard — how approvals arrive", () => {
   > {
     const stub = stubFetch(routes);
     renderScreen(<SetupScreen />, { fetchImpl: stub.fetchImpl });
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await fillTickets();
     await screen.findByText("Jira durumlarını da değiştirsin mi?");
     await userEvent.click(screen.getByRole("button", { name: "İleri" }));
@@ -1536,8 +1906,9 @@ describe("kurulum sihirbazı — kapı kararının statüyle verilmesi", () => {
   }
 
   async function reachStatusStep(): Promise<void> {
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await screen.findByText("Hangi ticket'ları alsın?");
     await userEvent.type(screen.getByLabelText("Hangi değer?"), "Hata");
     await userEvent.click(screen.getByRole("button", { name: "İleri" }));
@@ -1658,12 +2029,13 @@ describe("kurulum sihirbazı — kapı kararının statüyle verilmesi", () => {
  * değil. Karşılık yanlışsa kapı yanlış açılır ve bunu kimse fark etmez.
  */
 describe("insan onayı radyosu", () => {
-  async function gateBody(choice: string): Promise<Record<string, unknown>> {
+  async function gateBody(choice: string, flow?: "gelistirme"): Promise<Record<string, unknown>> {
     const { fetchImpl, calls } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
 
-    await chooseFlow();
     await fillProject();
+    await chooseFlow(flow);
+    await pickRepo();
     // Radyo `tickets` adımında: `fillTickets` sonunda "İleri"ye bastığı için
     // onun yerine adımı elle dolduruyoruz.
     await screen.findByText("Hangi ticket'ları alsın?");
@@ -1671,7 +2043,7 @@ describe("insan onayı radyosu", () => {
     await userEvent.selectOptions(screen.getByLabelText("Hangi değer?"), "Hata");
     await userEvent.click(screen.getByRole("radio", { name: new RegExp(choice, "u") }));
     await userEvent.click(screen.getByRole("button", { name: "İleri" }));
-    // 4. adım (Jira durumları) isteğe bağlı — dokunmadan geçiliyor.
+    // 3. adım (Jira durumları) isteğe bağlı — dokunmadan geçiliyor.
     await screen.findByText("Jira durumlarını da değiştirsin mi?");
     await userEvent.click(screen.getByRole("button", { name: "İleri" }));
     await skipIntake();
@@ -1697,7 +2069,29 @@ describe("insan onayı radyosu", () => {
 
   it("Analiz + PR öncesi → iki kapı ({steps: ['5','12']})", async () => {
     // Kapı 12 "PR (birleştirme) onayı" — operatörün kapatmak istediği kapı.
-    expect((await gateBody("Analiz \\+ PR öncesi"))["gateSteps"]).toEqual({ steps: ["5", "12"] });
+    // Yalnız kod yazan akışta sunulur: analiz akışı PR açmaz.
+    expect((await gateBody("Analiz \\+ PR öncesi", "gelistirme"))["gateSteps"]).toEqual({ steps: ["5", "12"] });
+  });
+
+  it("Yalnızca analiz akışında 'Analiz + PR öncesi' sunulmaz; akış analize dönerse seçim 'Analiz bitince'ye düşer", async () => {
+    const { fetchImpl } = stubFetch(baseRoutes());
+    renderScreen(<SetupScreen />, { fetchImpl });
+
+    await fillProject();
+    await chooseFlow();
+    // Başlık "İnsan onayı" değil: iletişim adımıyla karışmasın diye.
+    expect(screen.getByText("Hangi onaylar beklensin")).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: /Analiz \+ PR öncesi/ })).toBeNull();
+    expect(screen.getByRole("radio", { name: /^Yok/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Analiz bitince/ })).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("radio", { name: /Analiz \+ kod \+ PR/ }));
+    await userEvent.click(await screen.findByRole("radio", { name: /Analiz \+ PR öncesi/ }));
+    expect((screen.getByRole("radio", { name: /Analiz \+ PR öncesi/ }) as HTMLInputElement).checked).toBe(true);
+
+    await userEvent.click(screen.getByRole("radio", { name: /Yalnızca analiz/ }));
+    expect(screen.queryByRole("radio", { name: /Analiz \+ PR öncesi/ })).toBeNull();
+    expect((screen.getByRole("radio", { name: /Analiz bitince/ }) as HTMLInputElement).checked).toBe(true);
   });
 
   it("HER ZAMAN {steps} gönderilir, null ASLA", async () => {
@@ -1711,10 +2105,10 @@ describe("insan onayı radyosu", () => {
 });
 
 /**
- * HAVUZ ÇIKIŞI — arıza 4. adımda görünür, 6. adımda DEĞİL.
+ * HAVUZ ÇIKIŞI — arıza 3. adımda görünür, 5. adımda DEĞİL.
  *
- * Ölçülmüş arıza: operatör 3. adımda bir statü seçiyor (havuz kuruluyor),
- * 4. adım "isteğe bağlı" diye etiketli olduğu için atlıyor, ve 6. adımda
+ * Ölçülmüş arıza: operatör 2. adımda bir statü seçiyor (havuz kuruluyor),
+ * 3. adım "isteğe bağlı" diye etiketli olduğu için atlıyor, ve 5. adımda
  * `400 listening_pool_without_exit` yiyor — dört adım geç, üstelik atlamasının
  * söylendiği bir kutuyu doldurmak için geri dönerek.
  *
@@ -1722,12 +2116,13 @@ describe("insan onayı radyosu", () => {
  * `@maestro/contracts`) — kopya değil. Kopyalanmış bir doğrulama ayrışır ve
  * "ekran geçiriyor, sunucu reddediyor" hâline döner.
  */
-describe("havuz çıkışı 4. adımda zorunlu", () => {
+describe("havuz çıkışı 3. adımda zorunlu", () => {
   it("statü seçilmediyse adım gerçekten isteğe bağlı — İleri açık", async () => {
     const { fetchImpl } = stubFetch(baseRoutes());
     renderScreen(<SetupScreen />, { fetchImpl });
-    await chooseFlow();
     await fillProject();
+    await chooseFlow();
+    await pickRepo();
     await fillTickets();
     await screen.findByText("Jira durumlarını da değiştirsin mi?");
     // Havuz yok → çıkış da gerekmiyor.

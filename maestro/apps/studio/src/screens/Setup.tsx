@@ -15,12 +15,11 @@ import type {
   ScmReposResult,
 } from "./common/index.ts";
 import { usePhrase } from "./common/label.ts";
+import type { MatchValueOption } from "./common/match-value.ts";
 import { buildStatusMap } from "./common/status-map.ts";
-import { StartGuide } from "./setup/StartGuide.tsx";
-import { GUIDE_DISMISSED_KEY, readFlag, useSetupState, webhookAcked, writeFlag } from "./dash/setup-state.ts";
-import { FlowPane, IntakePane, ProjectPane, StatusPane, TicketsPane } from "./setup/SetupPanes.tsx";
+import { IntakePane, ProjectPane, StatusPane, TicketsPane } from "./setup/SetupPanes.tsx";
 import type { PaneData } from "./setup/SetupPanes.tsx";
-import { DonePane, ReviewPane } from "./setup/ReviewPane.tsx";
+import { DonePane, ReviewPane, type SetupOutcome } from "./setup/ReviewPane.tsx";
 import {
   ASSIGNED_MATCH_VALUE,
   DEFAULT_POLL_SECONDS,
@@ -43,15 +42,16 @@ import {
  *
  * `/projects` holds the expert tabs in the platform's own vocabulary. This
  * screen is for the other person — a bank operator whose job is approving
- * Jira tickets — and asks six questions in the order the ANSWERS depend on
+ * Jira tickets — and asks five questions in the order the ANSWERS depend on
  * each other, in outcome language:
  *
- *   1 ne yapmak istiyorsun   → the flow type, which decides the defaults below
- *   2 hangi proje & uygulama → the Jira project, data class and the repo
- *   3 hangi ticket'lar       → the listening rule's trigger, status gate, gates
- *   4 Jira durumları         → the optional status map, OFF by default
- *   5 onaylar nasıl gelsin   → webhook / yoklama / ikisi, the command intake
- *   6 özet & kaydet          → in sentences, then the writes
+ *   1 hangi proje & uygulama → the Jira project and the data class
+ *   2 hangi ticket'lar       → the flow (which decides the defaults), the repo,
+ *                              the trigger, the status gate, the human approvals
+ *   3 Jira durumları         → the optional status map, OFF by default
+ *   4 Jira ile iletişim      → webhook / yoklama / ikisi, the command intake
+ *   5 özet & kaydet          → in sentences, then the writes — and the
+ *                              binding's approval, attempted on the spot
  *
  * Nothing here is a new capability: every field maps to something `/projects`
  * can set, every write goes to an endpoint that exists, and the two screens
@@ -87,16 +87,10 @@ export function SetupScreen(): ReactNode {
   const { session } = useAuth();
   const canWrite = hasAnyRole(session, WRITE_ROLES);
 
-  // The start guide's state, reused from the one place that measures setup.
-  const [webhookAck, setWebhookAck] = useState(() => webhookAcked());
-  const [guideDismissed, setGuideDismissed] = useState(() => readFlag(GUIDE_DISMISSED_KEY));
-  const setupState = useSetupState(webhookAck);
-  const setupIncomplete = !setupState.loading && !setupState.complete;
-
   const [draft, setDraft] = useState<SetupDraft>(EMPTY_SETUP_DRAFT);
   const [stepIndex, setStepIndex] = useState(0);
   const step: SetupStep = SETUP_STEPS[stepIndex]!;
-  const [finished, setFinished] = useState<{ awaitingApproval: boolean } | null>(null);
+  const [finished, setFinished] = useState<SetupOutcome | null>(null);
   // A failure the operator can act on, beside the save button rather than only
   // as a toast; plus the field-level violations of a validation 400.
   const [saveProblem, setSaveProblem] = useState<string | null>(null);
@@ -131,6 +125,29 @@ export function SetupScreen(): ReactNode {
       api.get<{ connections: readonly ScmConnection[] }>("/onboarding/scm-connections", { signal }),
     retry: false,
   });
+  const scmConnList = scmConnections.data?.connections ?? [];
+
+  /**
+   * TEK BAĞLANTI VARSA SORULMAZ — kendiliğinden seçilir.
+   *
+   * Ölçülen şikâyet: tek Jira'lı kurulumda kutu "Seçiniz" bekliyor ve ipucu
+   * "tek seçenek gelir" diyordu; operatör tek seçenekli bir soruya cevap
+   * vermek zorunda kalıyordu. Tahmin yok: yalnız liste gerçekten tek
+   * elemanlıysa. Aynı kural depo bağlantısı için de geçerli — depo listesi
+   * böylece "Hangi ticket'lar" adımında açık gelir.
+   */
+  const soleJiraConn = jiraConnList.length === 1 ? jiraConnList[0]!.id : undefined;
+  useEffect(() => {
+    if (soleJiraConn !== undefined && draft.jiraConnectionId === "") {
+      setDraft((current) => ({ ...current, jiraConnectionId: soleJiraConn }));
+    }
+  }, [soleJiraConn, draft.jiraConnectionId]);
+  const soleScmConn = scmConnList.length === 1 ? scmConnList[0]!.id : undefined;
+  useEffect(() => {
+    if (soleScmConn !== undefined && draft.connectionId === "") {
+      setDraft((current) => ({ ...current, connectionId: soleScmConn }));
+    }
+  }, [soleScmConn, draft.connectionId]);
   const jiraProjects = useQuery({
     queryKey: ["onboarding-jira-projects", draft.jiraConnectionId],
     enabled: draft.jiraConnectionId !== "",
@@ -206,7 +223,7 @@ export function SetupScreen(): ReactNode {
   }, [soleplatform, draft.platform]);
 
   // The bot's own accountId, learned when a Jira connection was tested — so
-  // step 3 pre-fills itself instead of asking for a hand-copied GUID.
+  // step 2 pre-fills itself instead of asking for a hand-copied GUID.
   const botAccountId = jiraConnList.find((c) => c.botAccountId)?.botAccountId ?? null;
   const [assigneeTouched, setAssigneeTouched] = useState(false);
   useEffect(() => {
@@ -216,11 +233,17 @@ export function SetupScreen(): ReactNode {
   }, [botAccountId, assigneeTouched, draft.assigneeAccountId]);
 
   // The Jira connection the match values are read through: the one picked in
-  // step 2, falling back to the first configured connection.
+  // step 1, falling back to the first configured connection.
   const matchConnId = draft.jiraConnectionId !== "" ? draft.jiraConnectionId : (jiraConnList[0]?.id ?? null);
 
   // The project's real issue types / statuses. Fetched ONLY for the two kinds
   // the endpoint understands; `assigned` and `label` fall back to free text.
+  //
+  // `options` + `teamManaged` decide what the rule STORES: on a team-managed
+  // project JQL matches by id only, so the wizard saves the id the way the
+  // listening form does (`common/match-value.ts`) — a rule saved by NAME on
+  // such a project found zero tickets forever, and this screen was the one
+  // still doing it.
   const matchValues = useQuery({
     queryKey: ["jira-match-values", matchConnId, draft.jiraProject, draft.matchKind],
     enabled:
@@ -229,14 +252,20 @@ export function SetupScreen(): ReactNode {
       (draft.matchKind === "status" || draft.matchKind === "issuetype"),
     retry: false,
     queryFn: ({ signal }) =>
-      api.get<{ ok: boolean; values?: readonly string[]; degradedKey?: string }>(
+      api.get<{
+        ok: boolean;
+        values?: readonly string[];
+        options?: readonly MatchValueOption[];
+        teamManaged?: boolean;
+        degradedKey?: string;
+      }>(
         `/onboarding/jira-match-values?connectionId=${encodeURIComponent(matchConnId ?? "")}` +
           `&project=${encodeURIComponent(draft.jiraProject)}&kind=${draft.matchKind}`,
         { signal },
       ),
   });
   // The STATUS names, pinned to kind=status whatever the rule matches on: the
-  // status gate (step 3) and the status map (step 4) both need them.
+  // status gate (step 2) and the status map (step 3) both need them.
   const statusNames = useQuery({
     queryKey: ["jira-match-values", matchConnId, draft.jiraProject, "status"],
     enabled: matchConnId !== null && draft.jiraProject !== "",
@@ -264,12 +293,12 @@ export function SetupScreen(): ReactNode {
         : jiraProjects.isError
           ? t(messageKeyOf(jiraProjects.error))
           : null,
-    scmConnections: (scmConnections.data?.connections ?? []).map((c) => ({
+    scmConnections: scmConnList.map((c) => ({
       id: c.id,
       label: `${c.displayName} · ${t(`onboard.scm.kind.${c.kind}`)}`,
     })),
     // Only an ANSWERED request may be turned into "this install has no repository".
-    scmConnectionCount: scmConnections.isSuccess ? (scmConnections.data?.connections ?? []).length : null,
+    scmConnectionCount: scmConnections.isSuccess ? scmConnList.length : null,
     scmRepos: reposBody?.ok === true ? reposBody.repos.map((r) => r.fullName) : [],
     scmReposLoading: draft.connectionId !== "" && scmRepos.isFetching,
     scmReposError:
@@ -280,6 +309,10 @@ export function SetupScreen(): ReactNode {
           : null,
     platforms: options.data?.platforms ?? [],
     matchValues: matchValues.data?.ok === true ? (matchValues.data.values ?? []) : [],
+    matchValueOptions: matchValues.data?.ok === true ? (matchValues.data.options ?? []) : [],
+    // `?? false` is the fail-soft: a BFF that could not read the project
+    // resource reports nothing, and "nothing" must mean today's behaviour.
+    matchValuesTeamManaged: (matchValues.data?.ok === true ? matchValues.data.teamManaged : false) ?? false,
     matchValuesNote:
       matchValues.data?.ok === true && matchValues.data.degradedKey !== undefined
         ? t(matchValues.data.degradedKey)
@@ -295,10 +328,7 @@ export function SetupScreen(): ReactNode {
   // Only checked once the lists have actually loaded; a failed request is not
   // evidence of an empty list either.
   const missingJira = jiraConnections.isSuccess && jiraConnList.length === 0;
-  const missingScm =
-    flowNeedsRepository(draft.flowType) &&
-    scmConnections.isSuccess &&
-    (scmConnections.data?.connections ?? []).length === 0;
+  const missingScm = flowNeedsRepository(draft.flowType) && scmConnections.isSuccess && scmConnList.length === 0;
   // A list that could not be read at all is said, with a retry — a silently
   // empty dropdown reads as "this install has nothing", which is a different
   // and wrong claim.
@@ -317,9 +347,16 @@ export function SetupScreen(): ReactNode {
    * rule second (applies immediately, can fail on a duplicate trigger); the
    * binding proposal last (waits for a second admin, so it is never filed for
    * a rule that did not save). An already-bound project skips the proposal.
+   *
+   * Then a FOURTH, best-effort: `POST /onboarding/approve`. The BFF lets a
+   * master admin approve their own proposal (a single-admin install must not
+   * deadlock), so the wizard tries it on the spot instead of sending the
+   * operator to the queue to approve their own package. `409 self_approval`
+   * is the four-eyes answer — a second admin will do it — and is reported as
+   * such, not as a failure; any other error is named, with the queue linked.
    */
   const save = useMutation({
-    mutationFn: async (input: SetupDraft) => {
+    mutationFn: async (input: SetupDraft): Promise<SetupOutcome> => {
       // Skipped when the answer has not changed: this is a GLOBAL setting in a
       // per-project wizard, and a fourth project must not mint a parameter
       // version for a value nobody touched.
@@ -351,7 +388,7 @@ export function SetupScreen(): ReactNode {
        * Bağlı proje: teklif yok, ama depo yine envantere girmeli —
        * `POST /onboarding/apps` tam bunun için var ve bağlı projede çalışır.
        */
-      let awaitingApproval = false;
+      let proposed = false;
       if (!alreadyBound) {
         const defaults = flowDefaults(input.flowType);
         await api.post<{ proposalId: string }>("/onboarding", {
@@ -390,7 +427,7 @@ export function SetupScreen(): ReactNode {
           dataClass: input.dataClass,
           ...defaults,
         });
-        awaitingApproval = true;
+        proposed = true;
       } else if (!bindsNoRepository(input)) {
         await api.post("/onboarding/apps", {
           jiraProject: input.jiraProject,
@@ -455,8 +492,17 @@ export function SetupScreen(): ReactNode {
           : { repoMap: { field: "*", entries: [{ value: "*", appId: input.repoFullName }] } }),
       });
 
-
-      return { awaitingApproval };
+      if (!proposed) return { outcome: "already_bound" };
+      // After the rule, never before: approval seeds the project's default
+      // rules, and a seed landing on the wizard's trigger would turn the
+      // rule POST into a duplicate.
+      try {
+        await api.post("/onboarding/approve", { projectKey: input.jiraProject });
+        return { outcome: "bound" };
+      } catch (error) {
+        if (error instanceof ApiError && error.code === "self_approval") return { outcome: "awaiting" };
+        return { outcome: "approve_failed", errorKey: messageKeyOf(error) };
+      }
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["listening-rules"] });
@@ -504,7 +550,8 @@ export function SetupScreen(): ReactNode {
       <div className="scr-stack">
         <DonePane
           draft={draft}
-          awaitingApproval={finished.awaitingApproval}
+          result={finished}
+          matchValueOptions={data.matchValueOptions}
           onAgain={() => {
             // A second project from a clean draft — but keep the bot account,
             // which is a property of the platform rather than of the project.
@@ -575,20 +622,7 @@ export function SetupScreen(): ReactNode {
         {!canWrite && <div className="scr-note scr-note--warn scr-mt-2">{t("setup.blocked.read_only")}</div>}
       </Card>
 
-      {/* The "where do I start" checklist, while something is actually open. */}
-      {setupIncomplete && !guideDismissed && (
-        <StartGuide
-          setup={setupState}
-          onWebhookAck={setWebhookAck}
-          onDismiss={() => {
-            writeFlag(GUIDE_DISMISSED_KEY, true);
-            setGuideDismissed(true);
-          }}
-        />
-      )}
-
       <Card title={t(`setup.${step}.title`)} subtitle={t(`setup.${step}.sub`)}>
-        {step === "flow" && <FlowPane draft={draft} data={data} onChange={patch} />}
         {step === "project" && <ProjectPane draft={draft} data={data} onChange={patch} />}
         {step === "tickets" && (
           <TicketsPane
@@ -612,7 +646,12 @@ export function SetupScreen(): ReactNode {
           />
         )}
         {step === "review" && (
-          <ReviewPane draft={draft} alreadyBound={alreadyBound} intakeAppliesLive={data.intakeAppliesLive} />
+          <ReviewPane
+            draft={draft}
+            alreadyBound={alreadyBound}
+            intakeAppliesLive={data.intakeAppliesLive}
+            matchValueOptions={data.matchValueOptions}
+          />
         )}
 
         <div className="scr-actions setup-actions">

@@ -225,7 +225,6 @@ export function intakeChanged(
   return intakePolls(draft.commandIntake) && current.pollSeconds !== draft.pollSeconds;
 }
 
-/** The six panes, in the order an operator walks them. */
 /**
  * İNSAN ONAYI — kural başına TEK soru, üç cevap.
  *
@@ -267,21 +266,45 @@ export const GATE_STEPS_BY_CHOICE: Record<GateChoice, readonly GateStep[]> = {
 /** Radyonun sunduğu sıra — en gevşekten en sıkıya. */
 export const GATE_CHOICES: readonly GateChoice[] = ["none", "analysis", "analysis_pr"];
 
-export const SETUP_STEPS = ["flow", "project", "tickets", "status", "intake", "review"] as const;
+/**
+ * Bu akışta ANLAMLI onay seçenekleri.
+ *
+ * "Yalnızca analiz" hiç PR açmaz; ona "Analiz + PR öncesi" sunmak, hiç
+ * gelmeyecek bir kapı için ikinci bir onay vaat etmek olurdu. O seçenek yalnız
+ * kod yazan akışta görünür; akış analize dönerse seçim `gateChoiceFor` ile
+ * "analiz bitince"ye düşer.
+ */
+export function offeredGateChoices(flow: FlowType): readonly GateChoice[] {
+  return flow === "analiz" ? GATE_CHOICES.filter((choice) => choice !== "analysis_pr") : GATE_CHOICES;
+}
+
+/** Seçili onay cevabının bu akışta geçerli hâli — sunulmayan seçenek "analysis"e düşer. */
+export function gateChoiceFor(flow: FlowType, choice: GateChoice): GateChoice {
+  return offeredGateChoices(flow).includes(choice) ? choice : "analysis";
+}
+
+/**
+ * Beş adım, operatörün yürüdüğü sırayla. "Ne yapsın" ayrı bir adım DEĞİL:
+ * akış seçimi "Hangi ticket'lar" adımının başında, depo seçimiyle aynı yerde
+ * soruluyor — akışın kod yazıp yazmayacağı ile deponun zorunlu olup olmadığı
+ * tek bir kararın iki yüzü, ve iki adıma bölünmüş hâli operatörün "depo
+ * bağlama" diye ayrı bir kavram öğrenmesini gerektiriyordu.
+ */
+export const SETUP_STEPS = ["project", "tickets", "status", "intake", "review"] as const;
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 export interface SetupDraft {
-  /** Step 1 — chosen first, because it decides the defaults for everything else. */
+  /** Step 2 (top) — decides the defaults for everything else, and whether a repo is required. */
   readonly flowType: FlowType;
-  /** Step 2 — the Jira connection the project is listed from, and the project. */
+  /** Step 1 — the Jira connection the project is listed from, and the project. */
   readonly jiraConnectionId: string;
   readonly jiraProject: string;
-  /** Step 2 — the SCM connection and the repository the work lands in. */
+  /** Step 2 — the SCM connection and the repository the work lands in (required for code-writing flows). */
   readonly connectionId: string;
   readonly repoFullName: string;
   readonly platform: string;
   /**
-   * Step 2 — how confidential this application's tickets are (M18).
+   * Step 1 — how confidential this application's tickets are (M18).
    *
    * Asked rather than assumed because the assumption was wrong in the one way
    * the operator could not see. The binding used to fail closed to `gizli`, and
@@ -295,12 +318,12 @@ export interface SetupDraft {
    * answer is the only honest version of this field.
    */
   readonly dataClass: DataClass;
-  /** Step 3 — which tickets the rule picks up. */
+  /** Step 2 — which tickets the rule picks up. */
   readonly assigneeAccountId: string;
   readonly matchKind: MatchKind;
   readonly matchValue: string;
   /**
-   * Adım 3 — HANGİ STATÜDEKİ ticket'lar işlensin (giriş kapısı, 0024).
+   * Adım 2 — HANGİ STATÜDEKİ ticket'lar işlensin (giriş kapısı, 0024).
    *
    * `statusDraft` ile karıştırılmamalı: o "ticket'ı NEREYE taşıyayım" (çıktı),
    * bu "ticket NEREDEYSE işleyebilirim" (giriş). Boş = kısıt yok; telde `null`
@@ -308,7 +331,7 @@ export interface SetupDraft {
    * her kural dinleme ekranında "statü kısıtı yok" uyarısıyla açılıyordu.
    */
   readonly allowedStatuses: readonly string[];
-  /** Step 4 — the optional Jira status map, OFF unless the operator turns it on. */
+  /** Step 3 — the optional Jira status map, OFF unless the operator turns it on. */
   readonly statusOn: boolean;
   readonly statusDraft: StatusDraft;
   readonly reassignOnNeedInfo: boolean;
@@ -341,7 +364,7 @@ export interface SetupDraft {
    */
   readonly gateChoice: GateChoice;
   /**
-   * Step 5 — how `/approve` reaches Maestro (`jira.command_intake`).
+   * Step 4 — how `/approve` reaches Maestro (`jira.command_intake`).
    *
    * The one PLATFORM-WIDE answer in an otherwise per-project draft, and the
    * wizard says so on the pane: it is written to the global parameter, so an
@@ -351,7 +374,7 @@ export interface SetupDraft {
    * approval they are about to configure can ever be given from the ticket.
    */
   readonly commandIntake: CommandIntake;
-  /** Step 5 — the polling interval in SECONDS; ignored for webhook-only. */
+  /** Step 4 — the polling interval in SECONDS; ignored for webhook-only. */
   readonly pollSeconds: number;
 }
 
@@ -460,32 +483,32 @@ export function stepBlockedReason(
   canReadComments: boolean | undefined = undefined,
 ): string | null {
   switch (step) {
-    case "flow":
-      // A radio group with a default selected can never be EMPTY — but it can
-      // hold a choice this install cannot serve. `analiz` is always available,
-      // so an operator is never stranded here with nothing to pick; what they
-      // are stopped from doing is walking four more steps toward a run that
-      // was going to fail after a human had already approved its analysis.
-      return flowUnavailableReason(draft.flowType, scmConnectionCount);
     case "project":
       if (draft.jiraConnectionId === "") return "setup.blocked.no_jira_connection_picked";
       if (draft.jiraProject === "") return "setup.blocked.no_project";
-      // The repository trio is required exactly when the chosen flow will
-      // write code. `analiz` produces a document from the ticket text, so an
-      // analysis team without a repository — the actual first-pilot audience —
-      // walks through with everything blank; a repo they DID start picking
-      // must still be finished, because "half a repository" is not a binding
-      // either mode can honour.
-      if (!flowNeedsRepository(draft.flowType)) {
-        if (draft.connectionId !== "" && draft.repoFullName === "") return "setup.blocked.no_repo";
-        if (draft.repoFullName !== "" && draft.platform === "") return "setup.blocked.no_platform";
-        return null;
-      }
-      if (draft.connectionId === "") return "setup.blocked.no_scm_connection_picked";
-      if (draft.repoFullName === "") return "setup.blocked.no_repo";
-      if (draft.platform === "") return "setup.blocked.no_platform";
       return null;
-    case "tickets":
+    case "tickets": {
+      // A radio group with a default selected can never be EMPTY — but it can
+      // hold a choice this install cannot serve. `analiz` is always available,
+      // so an operator is never stranded here with nothing to pick; what they
+      // are stopped from doing is walking three more steps toward a run that
+      // was going to fail after a human had already approved its analysis.
+      const flowBlocked = flowUnavailableReason(draft.flowType, scmConnectionCount);
+      if (flowBlocked !== null) return flowBlocked;
+      // The repository is required exactly when the chosen flow will write
+      // code. `analiz` produces a document from the ticket text, so an
+      // analysis team without a repository — the actual first-pilot audience —
+      // walks through with the field blank. A connection alone binds nothing
+      // (`bindsNoRepository` reads the repo, not the connection): the sole
+      // connection is pre-selected so the repo list is already open, and an
+      // operator who never picks from it has answered "no repository".
+      if (flowNeedsRepository(draft.flowType)) {
+        if (draft.connectionId === "") return "setup.blocked.no_scm_connection_picked";
+        if (draft.repoFullName === "") return "setup.blocked.no_repo";
+        if (draft.platform === "") return "setup.blocked.no_platform";
+      } else if (draft.repoFullName !== "" && draft.platform === "") {
+        return "setup.blocked.no_platform";
+      }
       if (draft.assigneeAccountId.trim() === "") return "setup.blocked.no_assignee";
       // "Bota atanan her ticket" has no second condition to fill in — the
       // assignee above IS the whole rule — so demanding a value here would make
@@ -494,13 +517,14 @@ export function stepBlockedReason(
         return "setup.blocked.no_match_value";
       }
       return null;
+    }
     case "status": {
       /**
        * HAVUZ SEÇİLDİYSE ÇIKIŞ ZORUNLUDUR — ve bunu BURADA söylüyoruz.
        *
        * Bu dal bir dönem koşulsuz `null` dönüyordu ve adım "isteğe bağlı" diye
        * etiketliydi. Ama kısıtın iki ucu iki ayrı adımdaydı: operatör 3. adımda
-       * bir statü seçiyor (havuz kuruluyor), 4. adımı atlıyor, ve 6. adımda
+       * bir statü seçiyor (havuz kuruluyor), 3. adımı atlıyor, ve 5. adımda
        * `400 listening_pool_without_exit` yiyordu — dört adım geç, ve "bu adımı
        * atlayabilirsiniz" denen bir kutuyu doldurmak için geri dönerek.
        *

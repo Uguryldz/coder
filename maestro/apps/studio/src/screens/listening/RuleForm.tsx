@@ -4,6 +4,7 @@ import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Button, Card, FieldGroup, Input, Select } from "../../ui/index.ts";
 import { matchValueLabel } from "../common/jira-english.ts";
+import { displayMatchValue, storedMatchValue } from "../common/match-value.ts";
 import { useEnumLabel } from "../common/label.ts";
 import {
   STATUS_POINTS,
@@ -295,21 +296,10 @@ function TriggerGroup(props: RuleFormProps): ReactNode {
 }
 
 /**
- * Kayıtlı `matchValue`nun EKRANDA görünecek hâli.
- *
- * Kural bir id tutuyor olabilir (aşağıdaki `MatchValuePicker`in gerekçesine
- * bakın) ve operatöre "10008" göstermek, listeye bakıp anlamını çıkaramayacağı
- * bir kural demektir. Listede karşılığı varsa ADI gösterilir; yoksa değer
- * olduğu gibi kalır — tanımadığımız bir değeri tahmin edip yanlış ad yazmak,
- * ham id göstermekten kötüdür.
+ * `displayMatchValue` artık `common/match-value.ts`te — sihirbazla paylaşılır.
+ * Buradan yeniden dışa aktarılır ki mevcut içe aktarmalar kırılmasın.
  */
-export function displayMatchValue(
-  value: string,
-  options: readonly MatchValueOption[],
-): string {
-  const byId = options.find((option) => option.id !== "" && option.id === value);
-  return byId?.name ?? value;
-}
+export { displayMatchValue };
 
 /**
  * TETİKLEME DEĞERİ — kullanıcı ADI görür, kural gerektiğinde ID kaydeder.
@@ -336,12 +326,9 @@ export function displayMatchValue(
 function MatchValuePicker(props: RuleFormProps): ReactNode {
   const t = useT();
   const { draft, patch } = props;
-  const byName = new Map(props.valueIdOptions.map((option) => [option.name, option]));
-  /** Bir ADIN kaydedilecek hâli: takım yönetimliyse id (varsa), değilse ad. */
-  const storedFor = (name: string): string => {
-    const id = byName.get(name)?.id ?? "";
-    return props.valuesTeamManaged && id !== "" ? id : name;
-  };
+  /** Bir ADIN kaydedilecek hâli — kural `common/match-value.ts`te, sihirbazla ortak. */
+  const storedFor = (name: string): string =>
+    storedMatchValue(name, props.valueIdOptions, props.valuesTeamManaged);
   const options = props.valueOptions.map((name) => ({
     // `value` kaydedilen; `label` okunan. BİLEREK farklı: `matchValueLabel`
     // "Görev (Task)" üretir ve o metinle bir kural hiçbir ticket'a uymaz.

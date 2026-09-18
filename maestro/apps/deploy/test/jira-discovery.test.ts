@@ -226,6 +226,8 @@ describe("discoverOnce", () => {
     priorRestarts?: Record<string, number> | "throws";
     /** Yeniden başlatma alımı reddedilsin mi (kill-switch benzeri). */
     restartRefused?: boolean;
+    /** Model anahtarı çalışıyor mu; `"throws"` sağlığın okunamadığı turu ölçer. */
+    llmHealthy?: boolean | "throws";
   }): Promise<{
     started: readonly string[];
     /**
@@ -289,6 +291,12 @@ describe("discoverOnce", () => {
       deps,
       search,
       ...restartSeam,
+      ...(options.llmHealthy === undefined
+        ? {}
+        : {
+            llmHealthy: () =>
+              options.llmHealthy === "throws" ? Promise.reject(new Error("health down")) : Promise.resolve(options.llmHealthy as boolean),
+          }),
       rules: () => Promise.resolve(options.rules),
       known: () => Promise.resolve((options.known ?? []) as never),
       intervalMs: 0,
@@ -675,6 +683,39 @@ describe("discoverOnce", () => {
 
     expect(restarts).toEqual([]);
     expect(logs.some((l) => l.includes("OPS-1 atlandı: koşusu var"))).toBe(true);
+  });
+
+  /**
+   * MODEL ÖLÜYKEN YENİDEN BAŞLATMA YOK.
+   *
+   * Canlıda ölçüldü: anahtar reddedilirken tarama devredilen koşuları her
+   * sabah yeniden başlatıyordu; her biri 30 kez daha reddediliyordu. Modelin
+   * ölü olduğu bir turda yeniden başlatılan koşu ilk çağrıda aynı duvara
+   * çarpar — anlamsız gürültü.
+   */
+  it("model anahtarı reddediliyorsa bu turda HİÇBİR koşu yeniden başlatılmaz", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts, logs } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "2", status: "handover" }],
+      alive: [],
+      llmHealthy: false,
+    });
+    expect(restarts).toEqual([]);
+    expect(logs.some((l) => l.includes("model anahtarı reddediliyor"))).toBe(true);
+  });
+
+  it("sağlık OKUNAMAZSA restart kapatılmaz — ölçemediğimiz şeye göre fren yok", async () => {
+    const jql = jqlFor(RULE)!;
+    const { restarts } = await run({
+      rules: [RULE],
+      found: { [jql]: ["OPS-1"] },
+      known: [{ ticket: "OPS-1", step: "2", status: "handover" }],
+      alive: [],
+      llmHealthy: "throws",
+    });
+    expect(restarts).toEqual(["OPS-1"]);
   });
 
   /**

@@ -1429,6 +1429,16 @@ export async function main(): Promise<void> {
        */
       boundProjects: liveBoundProjects,
       /**
+       * Model anahtarı çalışıyor mu — `read.health` zaten LLM bağlantısını
+       * 5 dakikalık önbellekle yokluyor (`/models`, ucuz). "down" ise bu turda
+       * yeniden başlatma yok. `not_configured`/`unknown` "down" DEĞİLDİR:
+       * ölçemediğimiz şeye göre restart'ı kapatmak, kalıcı kapatmak olurdu.
+       */
+      llmHealthy: async () => {
+        const services = await read.health.services();
+        return !services.some((h) => h.service === "llm" && h.state === "down");
+      },
+      /**
        * The operator's interval, from `jira.discover_seconds`.
        *
        * Read from the parameter table rather than the environment so it can be

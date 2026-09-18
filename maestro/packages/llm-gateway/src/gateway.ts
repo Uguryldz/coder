@@ -17,6 +17,7 @@ import { BedrockDriver, VertexDriver } from "./driver-cloud.js";
 import { OpenAiCompatDriver } from "./driver-openai.js";
 import type { DriverDeps, LlmDriver } from "./driver-types.js";
 import { AgentRunnerNotWiredError, LlmConfigError, SessionPolicyChangedError } from "./errors.js";
+import { AuthBreaker, type AuthBreakerState } from "./breaker.js";
 import { CallCounter, type FetchLike, TokenBucket } from "./http.js";
 import { type MaskFn, type MaskedPayload, maskForEgress } from "./masking.js";
 import {
@@ -103,6 +104,14 @@ interface Routed {
  * provider, wiring, schema.
  */
 export class LlmGateway implements LlmPort {
+  /** Süreç içi kimlik-reddi kesicisi (`breaker.ts`). */
+  private readonly authBreaker = new AuthBreaker();
+
+  /** Kesicinin durumu — sağlık ekranı ve tarama okur; hiçbir şeyi değiştirmez. */
+  authBreakerState(): AuthBreakerState {
+    return this.authBreaker.state();
+  }
+
   private readonly policy: LlmPolicy;
   private readonly pool: SubscriptionPool;
   private readonly sessions: AgentSessionStore;
@@ -208,7 +217,9 @@ export class LlmGateway implements LlmPort {
 
     const counter = new CallCounter();
     try {
-      const out = await generateStructured({
+      // Kesiciden geçer: anahtar reddedildiyse pencere boyunca ağa çıkılmaz
+      // (gerekçesi `breaker.ts`te — sekiz gün boyunca ticket başına 30 deneme).
+      const out = await this.authBreaker.guard(() => generateStructured({
         driver: routed.transport,
         schemaName: req.schemaName,
         schema,
@@ -222,7 +233,7 @@ export class LlmGateway implements LlmPort {
           ...(target.credentialRef === null ? {} : { credentialRef: target.credentialRef }),
           ...(target.skipTlsVerify ? { skipTlsVerify: true } : {}),
         },
-      });
+      }));
       const { tokensIn, tokensOut, cachePct } = out;
       const { role, variantId, dataClass } = req;
       // The log records what was ACTUALLY dialled, so the audit trail names the

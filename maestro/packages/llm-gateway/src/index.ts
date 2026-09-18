@@ -1,3 +1,4 @@
+export * from "./breaker.js";
 export * from "./config.js";
 export * from "./driver-anthropic.js";
 export * from "./driver-cloud.js";

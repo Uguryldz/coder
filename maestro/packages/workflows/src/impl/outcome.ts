@@ -169,6 +169,15 @@ export async function guardModelCall<T>(
 
     const attempt = currentAttempt();
     const status = typeof err.status === "number" ? `HTTP ${err.status}` : "HTTP 401/403";
+    /**
+     * Kesici açıksa bu deneme AĞA ÇIKMADI: sağlayıcı dövülmedi, anahtar
+     * pencere sonunda yeniden yoklanacak. Defterde bunu adıyla söylemek
+     * gerekiyor — "30 kez reddedildi" ile "30 kez beklendi" operatör için
+     * farklı iki cümle; birincisi anahtarı, ikincisi sabrı sorgulatır.
+     * Deneme yine sayılır: devir bütçesi (≈1 gün) olduğu gibi duruyor, kesici
+     * yalnız denemeleri bedava yapıyor.
+     */
+    const waited = (err as { breakerOpen?: boolean }).breakerOpen === true;
 
     if (attempt < AUTH_RETRY_MAX_ATTEMPTS) {
       // The panel must show the wait: one line per attempt, keyed on the
@@ -177,8 +186,10 @@ export async function guardModelCall<T>(
       // so this can never flood the journal.
       await record(deps, run, {
         kind: "other",
-        title: "model anahtarı reddedildi",
-        detail: `${what} · ${status} · yeniden denenecek (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`,
+        title: waited ? "model anahtarı bekleniyor" : "model anahtarı reddedildi",
+        detail: waited
+          ? `${what} · kesici açık, ağa çıkılmadı · anahtar düzelince kaldığı yerden sürer (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`
+          : `${what} · ${status} · yeniden denenecek (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`,
         key: `auth-retry:${what}:${attempt}`,
       });
       // Rethrown as-is: the proxy's own ladder decides when the next attempt

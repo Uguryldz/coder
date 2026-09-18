@@ -296,6 +296,21 @@ export interface DiscoveryOptions {
    * varsaymaktansa yapmamak doğru. `restart` olmadan da anlamsız: ikisi
    * birlikte verilir ya da hiç verilmez.
    */
+  /**
+   * MODEL ANAHTARI ÇALIŞIYOR MU — yeniden başlatmanın ön koşulu.
+   *
+   * Canlıda ölçüldü: anahtar reddedilirken tarama, devredilen koşuları her
+   * sabah yeniden başlatıyordu; her biri 30 kez daha reddediliyor, yine
+   * devrediliyordu. Sekiz gün, beş ticket, her sabah aynı Jira yorumu.
+   * Modelin ölü olduğu bir turda HİÇBİR koşuyu yeniden başlatmak anlamlı
+   * değil: yeniden başlatılan koşu ilk model çağrısında aynı duvara çarpar.
+   *
+   * `false` dönerse bu tur yeniden başlatma yapılmaz ve tek bir satırla
+   * söylenir. Verilmezse eski davranış (kesici kavramı olmayan kurulum).
+   * `true`/`false` dışında bir şey (okuma hatası) `true` sayılır — ölçemediğimiz
+   * bir şeye göre restart'ı kapatmak, kalıcı olarak kapatmak olurdu.
+   */
+  readonly llmHealthy?: () => Promise<boolean>;
   readonly liveRuns?: LiveRuns;
   /** Ölü koşuyu yeniden akışa alan işlev; bkz. {@link RunRestarter}. */
   readonly restart?: RunRestarter;
@@ -709,7 +724,15 @@ export async function discoverOnce(options: DiscoveryOptions): Promise<readonly 
    * Seam verilmemişse okuma da yapılmaz: otomatik yeniden başlatma bu
    * kurulumda kapalıdır ve tur eskisi gibi davranır.
    */
-  const canRestart = options.liveRuns !== undefined && options.restart !== undefined;
+  const llmUp =
+    options.llmHealthy === undefined ? true : await options.llmHealthy().catch(() => true);
+  if (!llmUp) {
+    log(
+      "[keşif] model anahtarı reddediliyor — bu turda hiçbir koşu yeniden başlatılmayacak. " +
+        "Ayarlar > Bağlantılar'dan anahtarı düzeltin; düzelince koşular kaldıkları yerden sürer.",
+    );
+  }
+  const canRestart = llmUp && options.liveRuns !== undefined && options.restart !== undefined;
   const alive: ReadonlySet<string> | null = canRestart
     ? await options.liveRuns!().catch((error: unknown) => {
         log(

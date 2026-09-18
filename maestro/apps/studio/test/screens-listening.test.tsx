@@ -1528,26 +1528,20 @@ describe("kural tahtası (RuleBoard)", () => {
     });
   });
 
-  it("ajan rozetini çıkarmak kaydedilmez, ve tahta bunu SÖYLÜYOR", async () => {
+  it("tahta ajan rozetlerini yalnız GÖSTERİR: kaydedilmeyen sürükle-bırak/çıkarma UI'ı yok", async () => {
     stubWithStatuses(["Yapılacaklar", "Devam Ediyor", "Tamam"]);
     renderScreen(ADMIN);
     await screen.findByRole("option", { name: "OPS" });
     await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
     await screen.findByText("Jira statüsü");
 
-    // Uyarı ilk anda ekranda: sahte bir kalıcılık gösterilmiyor.
-    expect(screen.getByText(/Ajan rozetlerini çıkarmak\/geri takmak ŞU AN KAYDEDİLMİYOR/)).toBeTruthy();
-
-    // Rozet çıkarılabilir ve havuza düşer; adım "ajan bırak" boşluğuna döner.
-    expect(screen.getByText("hepsi bağlı")).toBeTruthy();
+    // Rozet duruyor, ama ne "×" düğmesi, ne havuz, ne "kaydedilmiyor" uyarısı:
+    // kaydedilmeyen bir hareket operatöre hiç sunulmaz.
     const step = screen.getByText("Analiz + etki matrisi").closest(".scr-board__step") as HTMLElement;
-    await userEvent.click(within(step).getByRole("button", { name: "Analist ajanını bu adımdan çıkar" }));
-    expect(within(step).getByText("ajan bırak")).toBeTruthy();
+    expect(within(step).getByText("Analist · analiz belgesi")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /ajanını bu adımdan çıkar/ })).toBeNull();
     expect(screen.queryByText("hepsi bağlı")).toBeNull();
-
-    // Ve geri takılabilir — kendi adımına.
-    await userEvent.click(screen.getByRole("button", { name: "Analist ajanını adımına geri tak" }));
-    expect(screen.getByText("hepsi bağlı")).toBeTruthy();
+    expect(screen.queryByText(/ŞU AN KAYDEDİLMİYOR/)).toBeNull();
   });
 });
 

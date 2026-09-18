@@ -1,5 +1,4 @@
-import { useState } from "react";
-import type { DragEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import type { StatusPoint } from "../common/status-map.ts";
@@ -149,9 +148,6 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
   const steps = boardStepsFor(draft.flowType);
 
   // Havuzdaki (adımından çıkarılmış) ajanlar — yalnız bu oturum, kaydedilmez.
-  const [detached, setDetached] = useState<readonly BoardStepId[]>([]);
-  const [dragging, setDragging] = useState<BoardStepId | null>(null);
-  const [overStep, setOverStep] = useState<BoardStepId | null>(null);
 
   const toggleGate = (step: BoardStepId): void => {
     const picked = draft.gateSteps.includes(step);
@@ -163,18 +159,6 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
     });
   };
 
-  const detach = (step: BoardStepId): void =>
-    setDetached((prev) => (prev.includes(step) ? prev : [...prev, step]));
-  const attach = (step: BoardStepId): void =>
-    setDetached((prev) => prev.filter((s) => s !== step));
-
-  const onDrop = (step: BoardStepId) => (event: DragEvent<HTMLElement>): void => {
-    event.preventDefault();
-    setOverStep(null);
-    // Ajan yalnız KENDİ adımına geri takılır; başka adıma bırakmak yok sayılır.
-    if (dragging === step) attach(step);
-    setDragging(null);
-  };
 
   /**
    * Statü şeritleri: Jira'nın verdiği sıra korunur — operatörün panosunda
@@ -197,28 +181,17 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
   const renderStep = (step: BoardStep): ReactNode => {
     const agent = step.agent;
     const off = step.gate === true && draft.gatesCustom && !draft.gateSteps.includes(step.id);
-    const gone = agent !== undefined && detached.includes(step.id);
     const selected = props.selectedStep === step.id;
     const classes = [
       "scr-board__step",
       step.gate === true ? "scr-board__step--gate" : "",
-      off || gone ? "scr-board__step--off" : "",
+      off ? "scr-board__step--off" : "",
       selected ? "scr-board__step--sel" : "",
     ]
       .filter((c) => c !== "")
       .join(" ");
     return (
-      <div
-        key={step.id}
-        className={classes}
-        onDragOver={(event) => {
-          if (dragging !== step.id) return;
-          event.preventDefault();
-          setOverStep(step.id);
-        }}
-        onDragLeave={() => setOverStep((prev) => (prev === step.id ? null : prev))}
-        onDrop={onDrop(step.id)}
-      >
+      <div key={step.id} className={classes}>
         <button
           type="button"
           className="scr-board__pick"
@@ -227,40 +200,10 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
         >
           <b>{t(step.titleKey)}</b>
         </button>
-        {agent !== undefined &&
-          (gone ? (
-            <span
-              className={
-                overStep === step.id ? "scr-board__slot scr-board__slot--over" : "scr-board__slot"
-              }
-            >
-              {t("listening.board.agent_slot")}
-            </span>
-          ) : (
-            <span
-              className="scr-board__agent"
-              draggable
-              onDragStart={() => setDragging(step.id)}
-              onDragEnd={() => {
-                setDragging(null);
-                setOverStep(null);
-              }}
-            >
-              {t(`listening.board.role.${step.id}`)}
-              <button
-                type="button"
-                className="scr-board__rm"
-                aria-label={t("listening.board.agent_remove", { agent: t(`listening.board.agent.${agent}`) })}
-                onClick={() => detach(step.id)}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          {/* İkinci ajan: aynı adımda koşar, kendi adımı olmadığı için
-              sürüklenemez. Rozetsiz bırakmak, o adımda iki ajanın çalıştığını
-              saklamak olurdu. */}
-          {step.also !== undefined && !gone && (
+        {agent !== undefined && (
+          <span className="scr-board__agent">{t(`listening.board.role.${step.id}`)}</span>
+        )}
+          {step.also !== undefined && (
             <span className="scr-board__agent scr-board__agent--fixed">
               {t(`listening.board.role.${step.id}_also`)}
             </span>
@@ -297,52 +240,6 @@ export function RuleBoard(props: RuleBoardProps): ReactNode {
       */}
       <p className="scr-hint scr-board__flow" style={{ margin: 0 }}>
         {t(`listening.board.flow_note.${draft.flowType}`)}
-      </p>
-
-      {/* BAĞLI OLMAYAN AJANLAR — adımından çıkarılanlar burada bekler. */}
-      <div className="scr-board__palette">
-        <b>{t("listening.board.pool")}</b>
-        <span className="scr-hint" style={{ margin: 0, flex: 1 }}>
-          {t("listening.board.pool_hint")}
-        </span>
-        <span className="scr-board__pool">
-          {detached.length === 0 ? (
-            <i className="scr-muted">{t("listening.board.pool_empty")}</i>
-          ) : (
-            detached.map((step) => {
-              const agent = BOARD_STEPS.find((s) => s.id === step)?.agent;
-              if (agent === undefined) return null;
-              return (
-                <span
-                  key={step}
-                  className="scr-board__agent"
-                  draggable
-                  onDragStart={() => setDragging(step)}
-                  onDragEnd={() => {
-                    setDragging(null);
-                    setOverStep(null);
-                  }}
-                >
-                  {t(`listening.board.role.${step}`)}
-                  <button
-                    type="button"
-                    className="scr-board__rm"
-                    aria-label={t("listening.board.agent_attach", {
-                      agent: t(`listening.board.agent.${agent}`),
-                    })}
-                    onClick={() => attach(step)}
-                  >
-                    ↩
-                  </button>
-                </span>
-              );
-            })
-          )}
-        </span>
-      </div>
-      {/* Sahte kalıcılık göstermemek için: çıkarma bu oturumda kalır. */}
-      <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
-        {t("listening.board.agent_not_saved")}
       </p>
 
       <div className="scr-board__heads">

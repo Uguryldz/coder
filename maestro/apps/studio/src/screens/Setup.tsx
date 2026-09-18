@@ -336,6 +336,69 @@ export function SetupScreen(): ReactNode {
         });
       }
 
+      /*
+       * ÖNCE ENVANTER, SONRA KURAL — sıra ölçülmüş bir arızanın karşılığı.
+       *
+       * Kural gövdesi `repoMap: {appId: <depo>}` taşıyor ve sunucu o adın
+       * `Application` tablosunda satırı olmasını zorunlu tutuyor
+       * (`assertMappedAppsExist` — yoksa koşu satırı yabancı anahtarla patlar,
+       * OPS-121). O satırı YAZAN ise `POST /onboarding`. Bir dönem kural önce
+       * gönderiliyordu: yeni bir depoyla ilk kurulum 6. adımda
+       * `listening_repo_map_unknown_app` ile düşüyordu — operatör depoyu
+       * kutudan seçmişken "tanınmayan depo" okuyordu. Testler yakalamadı,
+       * çünkü iki ucu da ayrı ayrı mock'luyordu; sıra kimseye görünmüyordu.
+       *
+       * Bağlı proje: teklif yok, ama depo yine envantere girmeli —
+       * `POST /onboarding/apps` tam bunun için var ve bağlı projede çalışır.
+       */
+      let awaitingApproval = false;
+      if (!alreadyBound) {
+        const defaults = flowDefaults(input.flowType);
+        await api.post<{ proposalId: string }>("/onboarding", {
+          jiraProject: input.jiraProject,
+          /*
+           * DEPO GÖNDERİLİR ama BAĞLAMAYA YAZILMAZ — `bindDefaultApp: false`.
+           *
+           * İki ayrı şey var ve ayrılmaları gerekti:
+           *
+           *  1. ENVANTER: seçilen depo `Application` tablosuna yazılır. Kuralın
+           *     eşlemesi bu adı gösteriyor ve `assertMappedAppsExist` satırın
+           *     var olmasını zorunlu kılıyor — yoksa alım depoyu klonluyor ve
+           *     koşu satırı yabancı anahtar hatasıyla patlıyor (OPS-121).
+           *     Sihirbaz bir dönem hiç göndermiyordu ve kural kaydı bu duvara
+           *     çarpıyordu.
+           *
+           *  2. BAĞLAMA VARSAYILANI: yazılMAZ. Sorunlu olan yalnız buydu —
+           *     eşleme cevap veremediğinde sessizce devreye giren son çare.
+           *
+           * Aşağıdaki eski yorum birinciyi de kaybediyordu:
+           *
+           * Sihirbaz bir dönem burada `adoRepo`/`platform` gönderiyordu ve bu
+           * çift proje BAĞLAMASINA yazılıyordu. Bağlamadaki depo ise yalnızca
+           * SON ÇAREYDİ: kuralın eşlemesi cevap veremediğinde sessizce devreye
+           * giren bir varsayılan. Canlıda ölçülen sonuç, operatörün eşlemenin
+           * çalıştığını sanmasıydı — oysa depo hiç eşleşmeden, varsayılandan
+           * geliyordu.
+           *
+           * Depo KARARI artık tek yerden gelir: dinleme kuralının eşlemesi.
+           * Buradaki gönderim yalnız ENVANTER içindir.
+           */
+          ...(bindsNoRepository(input)
+            ? {}
+            : { adoRepo: input.repoFullName, platform: input.platform, bindDefaultApp: false }),
+          // The operator's ANSWER; the BFF falls back to `gizli` only when absent.
+          dataClass: input.dataClass,
+          ...defaults,
+        });
+        awaitingApproval = true;
+      } else if (!bindsNoRepository(input)) {
+        await api.post("/onboarding/apps", {
+          jiraProject: input.jiraProject,
+          adoRepo: input.repoFullName,
+          platform: input.platform,
+        });
+      }
+
       await api.post<{ rule: unknown }>("/studio/listening-rules", {
         projectKey: input.jiraProject,
         assigneeAccountId: input.assigneeAccountId.trim(),
@@ -392,46 +455,8 @@ export function SetupScreen(): ReactNode {
           : { repoMap: { field: "*", entries: [{ value: "*", appId: input.repoFullName }] } }),
       });
 
-      if (alreadyBound) return { awaitingApproval: false };
 
-      const defaults = flowDefaults(input.flowType);
-      await api.post<{ proposalId: string }>("/onboarding", {
-        jiraProject: input.jiraProject,
-        /*
-         * DEPO GÖNDERİLİR ama BAĞLAMAYA YAZILMAZ — `bindDefaultApp: false`.
-         *
-         * İki ayrı şey var ve ayrılmaları gerekti:
-         *
-         *  1. ENVANTER: seçilen depo `Application` tablosuna yazılır. Kuralın
-         *     eşlemesi bu adı gösteriyor ve `assertMappedAppsExist` satırın
-         *     var olmasını zorunlu kılıyor — yoksa alım depoyu klonluyor ve
-         *     koşu satırı yabancı anahtar hatasıyla patlıyor (OPS-121).
-         *     Sihirbaz bir dönem hiç göndermiyordu ve kural kaydı bu duvara
-         *     çarpıyordu.
-         *
-         *  2. BAĞLAMA VARSAYILANI: yazılMAZ. Sorunlu olan yalnız buydu —
-         *     eşleme cevap veremediğinde sessizce devreye giren son çare.
-         *
-         * Aşağıdaki eski yorum birinciyi de kaybediyordu:
-         *
-         * Sihirbaz bir dönem burada `adoRepo`/`platform` gönderiyordu ve bu
-         * çift proje BAĞLAMASINA yazılıyordu. Bağlamadaki depo ise yalnızca
-         * SON ÇAREYDİ: kuralın eşlemesi cevap veremediğinde sessizce devreye
-         * giren bir varsayılan. Canlıda ölçülen sonuç, operatörün eşlemenin
-         * çalıştığını sanmasıydı — oysa depo hiç eşleşmeden, varsayılandan
-         * geliyordu.
-         *
-         * Depo KARARI artık tek yerden gelir: dinleme kuralının eşlemesi.
-         * Buradaki gönderim yalnız ENVANTER içindir.
-         */
-        ...(bindsNoRepository(input)
-          ? {}
-          : { adoRepo: input.repoFullName, platform: input.platform, bindDefaultApp: false }),
-        // The operator's ANSWER; the BFF falls back to `gizli` only when absent.
-        dataClass: input.dataClass,
-        ...defaults,
-      });
-      return { awaitingApproval: true };
+      return { awaitingApproval };
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["listening-rules"] });

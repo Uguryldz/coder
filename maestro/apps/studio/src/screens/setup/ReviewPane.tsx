@@ -71,11 +71,12 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
             : t("setup.review.allowed_statuses", { statuses: draft.allowedStatuses.join(", ") })}
         </li>
         <li>
-          {draft.gatesCustom
-            ? draft.gateSteps.length === 0
-              ? t("setup.review.gates_none")
-              : t("setup.review.gates_custom", { n: String(draft.gateSteps.length) })
-            : t("setup.review.gates_default")}
+          {/*
+            Özet, GÖNDERİLENİ imzalar. Bir dönem burası ölü `gatesCustom`
+            alanını okuyordu ve radyoda "Yok" seçen operatöre "risk seviyesine
+            göre" yazıyordu — tel ise her zaman `{steps}` gönderiyordu.
+          */}
+          {t(`setup.gates.choice.${draft.gateChoice}`)}
         </li>
       </ul>
 
@@ -152,7 +153,6 @@ export function ReviewPane({ draft, alreadyBound, intakeAppliesLive }: ReviewPan
           </p>
           <ul className="scr-list">
             <li>{t("setup.review.trigger.by_rule")}</li>
-            <li>{t(`setup.review.gates.${defaults.gateSet}`)}</li>
             <li>{t(`setup.review.merge.${defaults.mergeMode}`)}</li>
             <li>{t(`setup.review.dataclass.${draft.dataClass}`)}</li>
           </ul>

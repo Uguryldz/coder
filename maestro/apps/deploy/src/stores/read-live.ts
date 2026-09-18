@@ -61,6 +61,8 @@ export interface ReadModelDb {
 }
 
 export interface LiveReadModelOptions {
+  /** Filonun koşabildiği platform profilleri; verilmezse sözleşmedeki tam liste. */
+  readonly platforms?: readonly string[];
   db: ReadModelDb;
   /**
    * The audit chain's store — the SAME one the BFF appends through.
@@ -112,6 +114,7 @@ export function liveReadModels(options: LiveReadModelOptions): ReadModels {
       db.jiraProjectBinding,
       db.application,
       runSampleDelegate(db.workflowRun),
+      ...(options.platforms === undefined ? [] : [options.platforms]),
     ),
     repoPolicy: new PrismaRepoPolicyReader(db.application, runSampleDelegate(db.workflowRun)),
   };

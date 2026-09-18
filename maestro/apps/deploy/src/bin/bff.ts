@@ -311,7 +311,22 @@ export async function main(): Promise<void> {
     }),
     db.connectorSecret,
   );
+  /**
+   * FİLONUN KOŞABİLDİĞİ PLATFORMLAR — sihirbazın sunacağı liste.
+   *
+   * `linux-node` her zaman: worker'ın koştuğu tek imaj o (`RUNNER_IMAGE_LINUX`
+   * ayarlı olsun olmasın kayıt yolu bunu yazıyor). Diğerleri yalnız karşılık
+   * gelen runner imajı ayarlıysa — ki bugün hiçbiri yok. Böylece kutu bu
+   * kurulumda tek seçenek sunar ve sihirbaz onu çizmez; dört seçenek sunup
+   * üçünü yalan söylemek yerine.
+   */
+  const fleetPlatforms: string[] = ["linux-node"];
+  if ((env.source["RUNNER_IMAGE_ANDROID"] ?? "").trim() !== "") fleetPlatforms.push("linux-android");
+  if ((env.source["RUNNER_IMAGE_MACOS"] ?? "").trim() !== "") fleetPlatforms.push("macos-xcode");
+  if ((env.source["RUNNER_IMAGE_WINDOWS"] ?? "").trim() !== "") fleetPlatforms.push("windows-dotnet");
+
   const probeRead = liveReadModels({
+    platforms: fleetPlatforms,
     db,
     audit: auditStore,
     probes: [postgresProbe(db), temporalProbe(temporal.gateway)],

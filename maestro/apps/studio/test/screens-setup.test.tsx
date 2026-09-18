@@ -310,6 +310,9 @@ describe("setup wizard", () => {
             policy: null,
           },
         },
+        // Bağlı projede teklif yok ama depo yine envantere girer: kuralın
+        // eşlemesi bu adı gösteriyor ve sunucu satırı zorunlu tutuyor.
+        { path: "/onboarding/apps", method: "POST", body: { ok: true } },
       ]),
     );
     renderScreen(<SetupScreen />, { fetchImpl });
@@ -749,7 +752,21 @@ describe("setup wizard", () => {
     ).toBeTruthy();
   });
 
-  it("does not file a binding proposal when the rule write failed", async () => {
+  /**
+   * TEKLİF ÖNCE, KURAL SONRA — ve kural düşerse teklif AYAKTA KALIR.
+   *
+   * Eski sözleşme tersiydi: "kural kaydedilmezse teklif asla dosyalanmaz".
+   * Ölçüldü ve terk edildi: kural gövdesi depo eşlemesi taşıyor, sunucu o
+   * deponun envanterde olmasını zorunlu tutuyor, envanteri yazan ise teklif
+   * ucu. Kural önce gidince yeni depoyla ilk kurulum 6. adımda %100
+   * düşüyordu — "tanınmayan depo", operatör depoyu kutudan seçmişken.
+   *
+   * Yeni sıranın bedeli: kural köşe durumda düşerse (çoğaltma) onaylayanın
+   * kuyruğunda kuralsız bir teklif kalır. Bu görünür ve kurtarılabilir —
+   * onaylayınca `seed-defaults` kuralları kendisi tohumlar. Sessiz bir
+   * %100 arızaya karşı görünür bir köşe durumu: doğru taraf bu.
+   */
+  it("kural düşerse hata gösterilir; teklif ayakta kalır (envanter yazılmış olmalı)", async () => {
     const { fetchImpl, calls } = stubFetch(
       baseRoutes([
         {
@@ -771,10 +788,11 @@ describe("setup wizard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Kurulumu tamamla" }));
     await screen.findByText(/Bu ticket'lar için zaten bir dinleme kuralı var/);
 
-    // A pending four-eyes approval for a setup that never completed is worse
-    // than no approval at all: somebody would approve a binding whose rule
-    // does not exist.
-    expect(calls.find((c) => c.url.endsWith("/onboarding") && c.method === "POST")).toBeUndefined();
+    // Envanter (ve teklif) kuraldan ÖNCE yazıldı — sıra bu.
+    const onboarding = calls.findIndex((c) => c.url.endsWith("/onboarding") && c.method === "POST");
+    const rule = calls.findIndex((c) => c.url.endsWith("/studio/listening-rules") && c.method === "POST");
+    expect(onboarding).toBeGreaterThanOrEqual(0);
+    expect(rule).toBeGreaterThan(onboarding);
   });
 
   /**

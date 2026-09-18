@@ -134,6 +134,21 @@ export class PrismaOnboardingReader implements OnboardingReader {
     private readonly bindings: BindingListDelegate,
     private readonly applications: ApplicationListDelegate,
     private readonly runs: RunSampleDelegate,
+    /**
+     * Sihirbazın SUNACAĞI platform profilleri — filonun gerçekten koşabildikleri.
+     *
+     * Bir dönem burası sözleşmedeki dört değerin tamamını döndürüyordu
+     * (linux-node, linux-android, macos-xcode, windows-dotnet). Ama worker
+     * tek bir Linux imajı koşuyor ve kayıt yolu `linux-node`u sabit yazıyor;
+     * `windows-dotnet` seçen operatörün uygulaması Linux'ta `dotnet build`
+     * deniyor. Yani kutu dört seçenek sunuyor, üçü YALAN.
+     *
+     * Liste artık çağırandan geliyor (bin/bff.ts, runner imajı env'lerinden):
+     * bu kurulumda tek profil varsa sihirbaz kutuyu hiç çizmez ve satır altında
+     * hangisi olduğunu yazar — sorulacak bir şey yok. Verilmezse eski
+     * davranış (tam liste), çünkü "bilinmiyor" ile "yalnız Linux" farklı.
+     */
+    private readonly platforms: readonly string[] = [...PlatformProfile.options],
   ) {}
 
   /**
@@ -185,7 +200,7 @@ export class PrismaOnboardingReader implements OnboardingReader {
       // profile, so no app could be created, so the registry stayed empty. The
       // wizard is exactly the moment a new toolchain enters the platform, so it
       // must offer all of them.
-      platforms: [...PlatformProfile.options],
+      platforms: [...this.platforms],
     };
   }
 

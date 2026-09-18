@@ -299,7 +299,14 @@ export function SetupScreen(): ReactNode {
     })),
     // Only an ANSWERED request may be turned into "this install has no repository".
     scmConnectionCount: scmConnections.isSuccess ? scmConnList.length : null,
-    scmRepos: reposBody?.ok === true ? reposBody.repos.map((r) => r.fullName) : [],
+    // Alphabetical, owner first: a GitHub account that can see 120 repositories
+    // across six organisations got them in the API's order, which is none.
+    scmRepos:
+      reposBody?.ok === true
+        ? reposBody.repos
+            .map((r) => r.fullName)
+            .toSorted((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
+        : [],
     scmReposLoading: draft.connectionId !== "" && scmRepos.isFetching,
     scmReposError:
       reposBody !== undefined && reposBody.ok === false

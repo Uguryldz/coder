@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { HealthScreen } from "../src/screens/Health.tsx";
 import { NotifyScreen } from "../src/screens/Notify.tsx";
-import { OnboardScreen } from "../src/screens/Onboard.tsx";
+import { ReposScreen } from "../src/screens/Onboard.tsx";
 import { SandboxScreen } from "../src/screens/Sandbox.tsx";
 import { YamlScreen } from "../src/screens/Yaml.tsx";
 import { ADMIN, renderScreen, stubFetch } from "./harness.tsx";
@@ -413,92 +413,172 @@ describe("notify screen", () => {
   });
 });
 
-describe("onboard screen", () => {
+/**
+ * "Depolar" — the repositories registered under bound projects, and the
+ * "+ Depo ekle" form. This file used to be the EXPERT onboarding form (Jira
+ * connection + project + repo + gate set + merge mode + dry run + "send for
+ * admin approval"), which re-did the wizard's job and contradicted it. A
+ * binding binds a Jira project (the wizard does that); a repository is
+ * inventory the listening rule's repo map picks from, filed with
+ * `POST /onboarding/apps` — no proposal, no dry run, no second approval.
+ */
+describe("repos tab (Depolar)", () => {
   const OPTIONS = {
     path: "/onboarding/options",
-    body: { jiraProjects: ["UGURKREDI"], adoRepos: [], platforms: ["linux-node"] },
+    body: { jiraProjects: ["OPS"], adoRepos: [], platforms: ["linux-node"] },
   };
-  const JIRA_CONNS = {
-    path: "/onboarding/jira-connections",
-    body: { connections: [{ id: "jira", kind: "jira_cloud", displayName: "Jira" }] },
+  const ROUTING = {
+    path: "/routing",
+    body: {
+      projects: [
+        { projectKey: "OPS", apps: ["Uguryldz/maestro-pilot"], noteKey: "routing.note.active_by_rule" },
+        { projectKey: "KREDI", apps: [], noteKey: "routing.note.active_by_rule" },
+      ],
+      rules: [],
+      policy: { backendByClass: {}, whenOnpremMissing: "block" },
+    },
   };
-  const JIRA_PROJECTS = {
-    // stubFetch strips the query string before matching, so the path is bare.
-    path: "/onboarding/jira-projects",
-    body: { ok: true, projects: [{ key: "UGURKREDI", name: "Ugur Kredi" }] },
+  const REGISTRY = {
+    path: "/studio/apps",
+    body: {
+      items: [
+        {
+          appId: "Uguryldz/maestro-pilot",
+          displayName: "maestro-pilot",
+          adoProject: "Uguryldz",
+          adoRepo: "maestro-pilot",
+          platform: "linux-node",
+          jiraComponent: null,
+          jiraProjectKey: "OPS",
+          maestroYamlPresent: true,
+          createdVia: "onboarding",
+        },
+      ],
+      nextCursor: null,
+    },
   };
   const SCM_CONNS = {
     path: "/onboarding/scm-connections",
     body: { connections: [{ id: "github", kind: "github", displayName: "GitHub" }] },
   };
   const SCM_REPOS = {
+    // stubFetch strips the query string before matching, so the path is bare.
     path: "/onboarding/scm-repos",
-    body: { ok: true, repos: [{ id: "1", fullName: "Uguryldz/maestro-pilot" }] },
+    body: { ok: true, repos: [{ id: "1", fullName: "Uguryldz/maestro-pilot" }, { id: "2", fullName: "Uguryldz/kredi-api" }] },
   };
-  const PICKERS = [OPTIONS, JIRA_CONNS, JIRA_PROJECTS, SCM_CONNS, SCM_REPOS];
+  const ADDED = { path: "/onboarding/apps", method: "POST", status: 201, body: { appId: "Uguryldz/kredi-api", projectKey: "KREDI" } };
+  const STUBS = [OPTIONS, ROUTING, REGISTRY, SCM_CONNS, SCM_REPOS, ADDED];
 
-  /** Pick Jira connection → (live) project, then SCM connection → (live) repo. */
-  async function pickProjectAndRepo(): Promise<void> {
-    await userEvent.selectOptions(await screen.findByLabelText("Jira bağlantısı"), "jira");
-    await screen.findByRole("option", { name: "UGURKREDI · Ugur Kredi" });
-    await userEvent.selectOptions(screen.getByLabelText("Jira projesi"), "UGURKREDI");
-    await userEvent.selectOptions(screen.getByLabelText("SCM bağlantısı"), "github");
-    // The repo select is disabled until the live list arrives; wait for the option.
-    await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" });
-    await userEvent.selectOptions(screen.getByLabelText("Repo"), "Uguryldz/maestro-pilot");
-  }
+  it("lists the registered repositories grouped by their bound project, with the platform profile", async () => {
+    const { fetchImpl } = stubFetch(STUBS);
+    renderScreen(<ReposScreen />, { fetchImpl });
 
-  it("blocks submission until a dry run has been seen", async () => {
-    const { fetchImpl, calls } = stubFetch([...PICKERS]);
-    renderScreen(<OnboardScreen />, { fetchImpl });
-
-    // Single form now: project+repo+platform are all on screen, no "İleri".
-    await pickProjectAndRepo();
-    await userEvent.selectOptions(await screen.findByLabelText("Platform profili"), "linux-node");
-
-    const submit = await screen.findByRole("button", { name: "Admin onayına gönder" });
-    expect(submit).toBeDisabled();
-    // The block message points the operator at the dry-run button on the same
-    // form, since every field is already filled in above it.
-    expect(await screen.findByText(/Kuru koşum yap.*butonuna basın/)).toBeInTheDocument();
-    expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
+    expect(await screen.findByText("Uguryldz/maestro-pilot")).toBeInTheDocument();
+    // The project column names the owner (it is also an option in the add form below).
+    expect(screen.getAllByText("OPS").length).toBeGreaterThan(0);
+    // The platform comes from the registry, as its readable name — never the slug.
+    expect(screen.getByText("Linux (Node.js, Java/Maven, web)")).toBeInTheDocument();
+    // The wizard link stays: binding a NEW project is the wizard's job.
+    expect(screen.getByRole("link", { name: /Kurulum sihirbazı/ })).toHaveAttribute("href", "/setup");
   });
 
-  it("names the tickets that matched no rule instead of hiding them", async () => {
+  it("carries none of the binding's settings: no gate set, merge mode, data class, dry run or admin approval", async () => {
+    const { fetchImpl, calls } = stubFetch(STUBS);
+    renderScreen(<ReposScreen />, { fetchImpl });
+
+    await screen.findByText("+ Depo ekle");
+    for (const label of ["Kapı seti", "Yayınlama modu", "Jira bağlantısı"]) {
+      expect(screen.queryByLabelText(label)).toBeNull();
+    }
+    for (const name of ["Kuru koşum yap", "Admin onayına gönder"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    // Neither the proposal endpoint nor the dry run is ever called from here.
+    expect(calls.some((c) => c.url.endsWith("/onboarding") || c.url.endsWith("/onboarding/dry-run"))).toBe(false);
+  });
+
+  it("registers a repository under a BOUND project with POST /onboarding/apps, then refreshes the list", async () => {
+    const { fetchImpl, calls } = stubFetch(STUBS);
+    renderScreen(<ReposScreen />, { fetchImpl });
+
+    // Only bound projects are offered — a project is bound in the wizard, not here.
+    await screen.findByRole("option", { name: "KREDI" });
+    const project = screen.getByLabelText("Proje");
+    expect([...project.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["— proje seç —", "OPS", "KREDI"]);
+    await userEvent.selectOptions(project, "KREDI");
+
+    // One SCM connection and one platform profile: both fill themselves and hide.
+    expect(screen.queryByLabelText("SCM bağlantısı")).toBeNull();
+    expect(screen.queryByLabelText("Platform profili")).toBeNull();
+    expect(calls.some((c) => c.url.includes("/onboarding/scm-repos?connectionId=github"))).toBe(true);
+
+    const submit = screen.getByRole("button", { name: "Depo ekle" });
+    expect(submit).toBeDisabled();
+    await screen.findByRole("option", { name: "Uguryldz/kredi-api" });
+    await userEvent.selectOptions(screen.getByLabelText("Repo"), "Uguryldz/kredi-api");
+    expect(submit).toBeEnabled();
+    await userEvent.click(submit);
+
+    const post = await waitFor(() => {
+      const found = calls.find((c) => c.method === "POST" && c.url.endsWith("/onboarding/apps"));
+      expect(found).toBeDefined();
+      return found!;
+    });
+    expect(post.body).toEqual({ jiraProject: "KREDI", adoRepo: "Uguryldz/kredi-api", platform: "linux-node" });
+    expect(await screen.findByText(/Uguryldz\/kredi-api deposu KREDI projesine kaydedildi/)).toBeInTheDocument();
+    // The list is re-read so the new repository shows up under its project.
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.url.endsWith("/routing")).length).toBeGreaterThan(1));
+  });
+
+  it("asks for the SCM connection and the platform when there is more than one of each", async () => {
     const { fetchImpl } = stubFetch([
-      ...PICKERS,
+      ...STUBS.filter((s) => s !== OPTIONS && s !== SCM_CONNS),
+      { path: "/onboarding/options", body: { jiraProjects: ["OPS"], adoRepos: [], platforms: ["linux-node", "windows-dotnet"] } },
       {
-        path: "/onboarding/dry-run",
-        method: "POST",
-        body: { byRule: ["A-1"], bySuggestion: [], unresolved: ["UGURKREDI-3", "UGURKREDI-9"] },
+        path: "/onboarding/scm-connections",
+        body: {
+          connections: [
+            { id: "github", kind: "github", displayName: "GitHub" },
+            { id: "ado", kind: "ado", displayName: "Azure DevOps" },
+          ],
+        },
       },
     ]);
-    renderScreen(<OnboardScreen />, { fetchImpl });
+    renderScreen(<ReposScreen />, { fetchImpl });
 
-    await pickProjectAndRepo();
-    await userEvent.click(screen.getByRole("button", { name: "Kuru koşum yap" }));
-
-    expect(await screen.findByText(/UGURKREDI-3, UGURKREDI-9/)).toBeInTheDocument();
-    expect(screen.getByText("atama gerekir: 2")).toBeInTheDocument();
-  });
-
-  it("lists project and repo LIVE from the chosen connections, never a hard-coded list", async () => {
-    const { fetchImpl, calls } = stubFetch([...PICKERS]);
-    renderScreen(<OnboardScreen />, { fetchImpl });
-
-    // Before a Jira connection is picked, the project select prompts for one.
-    await screen.findByLabelText("Jira bağlantısı");
-    expect(screen.getByText("Önce Jira bağlantısı seç")).toBeInTheDocument();
-    // Picking the Jira connection triggers the LIVE project call.
-    await userEvent.selectOptions(screen.getByLabelText("Jira bağlantısı"), "jira");
-    expect(await screen.findByRole("option", { name: "UGURKREDI · Ugur Kredi" })).toBeInTheDocument();
-    expect(calls.some((c) => c.url.includes("/onboarding/jira-projects?connectionId=jira"))).toBe(true);
-
+    await screen.findByText("+ Depo ekle");
+    expect(await screen.findByLabelText("SCM bağlantısı")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Platform profili")).toBeInTheDocument();
     // Before an SCM connection is picked, the repo select prompts for one.
     expect(screen.getByText("Önce SCM bağlantısı seç")).toBeInTheDocument();
-    // Picking the SCM connection triggers the LIVE repo call.
-    await userEvent.selectOptions(screen.getByLabelText("SCM bağlantısı"), "github");
-    expect(await screen.findByRole("option", { name: "Uguryldz/maestro-pilot" })).toBeInTheDocument();
-    expect(calls.some((c) => c.url.includes("/onboarding/scm-repos?connectionId=github"))).toBe(true);
+  });
+
+  it("says the refusal in the operator's words when the BFF rejects the repository", async () => {
+    const { fetchImpl } = stubFetch([
+      ...STUBS.filter((s) => s !== ADDED),
+      { path: "/onboarding/apps", method: "POST", status: 404, body: { error: "unbound_project", messageKey: "error.unbound_project" } },
+    ]);
+    renderScreen(<ReposScreen />, { fetchImpl });
+
+    await screen.findByRole("option", { name: "KREDI" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "KREDI");
+    await screen.findByRole("option", { name: "Uguryldz/kredi-api" });
+    await userEvent.selectOptions(screen.getByLabelText("Repo"), "Uguryldz/kredi-api");
+    await userEvent.click(screen.getByRole("button", { name: "Depo ekle" }));
+
+    // The catalog's sentence for the BFF's code, never the raw body.
+    expect(await screen.findByText("Bu proje bağlı değil; önce projeyi bağlayın.")).toBeInTheDocument();
+    expect(screen.queryByText(/deposu KREDI projesine kaydedildi/)).toBeNull();
+  });
+
+  it("with no bound project, offers nothing to add to and points at the wizard", async () => {
+    const { fetchImpl } = stubFetch([
+      ...STUBS.filter((s) => s !== ROUTING),
+      { path: "/routing", body: { projects: [], rules: [], policy: { backendByClass: {}, whenOnpremMissing: "block" } } },
+    ]);
+    renderScreen(<ReposScreen />, { fetchImpl });
+
+    expect((await screen.findAllByText(/Bağlı proje yok — önce Kurulum sihirbazıyla/)).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Proje")).toBeDisabled();
   });
 });

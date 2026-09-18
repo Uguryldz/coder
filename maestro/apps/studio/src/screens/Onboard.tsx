@@ -1,103 +1,90 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
-import { issueDetailsOf, messageKeyOf } from "../api/errors.ts";
+import { messageKeyOf } from "../api/errors.ts";
 import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
-import { Button, ButtonLink, Card, useToast } from "../ui/index.ts";
+import { Badge, Button, ButtonLink, Card, Select, Table, useToast } from "../ui/index.ts";
 import {
-  type DryRunResult,
-  type JiraConnection,
-  type JiraProjectsResult,
+  type ApplicationRecord,
   type OnboardingOptions,
+  type Page,
+  type RoutingView,
   type ScmConnection,
   type ScmReposResult,
 } from "./common/index.ts";
-import { DryRunPanel } from "./onboard/DryRunPanel.tsx";
-import { type OnboardingDraft, OnboardingSteps } from "./onboard/OnboardingSteps.tsx";
+import { useEnumLabel } from "./common/label.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 
 /** Mirrors the BFF's `ONBOARDING_ROLES`: every `/onboarding/*` read and write. */
 const ONBOARDING_ROLES = ["admin", "tech-lead"] as const;
 
-const EMPTY_DRAFT: OnboardingDraft = {
-  jiraConnectionId: "",
-  jiraProject: "",
-  connectionId: "",
-  repoFullName: "",
-  platform: "",
-  /**
-   * NOT A SETTING — a constant the wire still requires (0023). A trigger is
-   * defined only on a listening rule; `DraftBody` still marks `triggerMode`
-   * required and `JiraProjectBinding.trigger` is NOT NULL. Nothing branches on
-   * the value. Do not surface it, and do not read it back.
-   */
-  triggerMode: "opt_in",
-  gateSet: "risk_tiered",
-  mergeMode: "human",
-  // The safe-but-WORKABLE class: `gizli` is what the server assumes when the
-  // field is absent, and on an install with no on-prem model that silently
-  // disables analysis (SAM1-12). `acik` is never a default.
-  dataClass: "dahili",
-};
-
 /**
- * Self-service onboarding (M93), the EXPERT form: connecting a new application
- * to the platform in the platform's own vocabulary. The guided path is the
- * wizard (`/setup`), which also writes the first listening rule; this form
- * stays for an operator who knows exactly which binding they want.
+ * "Depolar" — the repositories registered under the bound projects, and a
+ * form that registers one more.
  *
- * The form produces a PROPOSAL, not a live configuration: binding a Jira
- * project to a repository decides where an agent will be allowed to push
- * code, so a second admin approves it. The dry run (M102) is a precondition —
- * until the operator has seen where the last N tickets WOULD have landed, the
- * submit button stays disabled.
+ * This file was the EXPERT onboarding form: Jira connection + project + SCM
+ * connection + repo + platform + gate set + merge mode + data class + dry run
+ * + "send for admin approval". It did the wizard's job a second time and
+ * contradicted it ("depo bağlama diye bir şey olmasın"): a project binding
+ * binds a JIRA PROJECT to Maestro (the wizard does that, once), a repository
+ * comes from a listening rule's repo map, and the binding's settings (merge
+ * mode, data class, state) are edited in the "Düzenle" panel of the bound
+ * list. None of that belongs on a repository page, so none of it is here.
+ *
+ * What IS here: the inventory the repo map picks from. `POST /onboarding/apps
+ * {jiraProject, adoRepo, platform}` files a repository under an already-bound
+ * project — no proposal, no second approval: the project's approval stands,
+ * the repo is inventory. The listening screen registers an unknown repo the
+ * same way when a rule is saved; this tab lets an operator do it ahead of
+ * time and see what is registered.
+ *
+ * Sources: the bound projects and their app ids come from `/routing`
+ * (`projects[].apps` — the same list the bound table and the rule form's
+ * app picker read, so the three never disagree); the platform of each app is
+ * looked up in the registry (`/studio/apps`). Pickers: SCM connections
+ * (`/onboarding/scm-connections`), the live repo list of the chosen one
+ * (`/onboarding/scm-repos?connectionId=`), the platform profiles the BFF
+ * offers (`/onboarding/options.platforms`). A picker with ONE choice does not
+ * ask: it fills itself and hides.
  */
 
-/**
- * Does this draft name a COMPLETE repository half? All three or none:
- * `DraftBody` refuses `adoRepo` without `platform` (and the reverse). An
- * analysis-only draft answers false and sends no repo at all.
- */
-function repoComplete(draft: OnboardingDraft): boolean {
-  return draft.repoFullName !== "" && draft.connectionId !== "" && draft.platform !== "";
+interface RepoDraft {
+  readonly jiraProject: string;
+  readonly connectionId: string;
+  readonly repoFullName: string;
+  readonly platform: string;
 }
 
-export function OnboardScreen(): ReactNode {
+const EMPTY_DRAFT: RepoDraft = { jiraProject: "", connectionId: "", repoFullName: "", platform: "" };
+
+export function ReposScreen(): ReactNode {
   const api = useApi();
   const t = useT();
   const toast = useToast();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const enumLabel = useEnumLabel();
   const { session } = useAuth();
   const allowed = hasAnyRole(session, ONBOARDING_ROLES);
 
-  const [draft, setDraft] = useState<OnboardingDraft>(EMPTY_DRAFT);
-  const [dryRun, setDryRun] = useState<DryRunResult | null>(null);
-  // The field-level violations of a refused submit, kept beside the button.
-  const [submitIssues, setSubmitIssues] = useState<readonly string[]>([]);
+  const [draft, setDraft] = useState<RepoDraft>(EMPTY_DRAFT);
+  const update = (patch: Partial<RepoDraft>): void => setDraft((current) => ({ ...current, ...patch }));
 
+  const routing = useQuery({
+    queryKey: ["routing"],
+    queryFn: ({ signal }) => api.get<RoutingView>("/routing", { signal }),
+    enabled: allowed,
+  });
+  const registry = useQuery({
+    queryKey: ["studio-apps"],
+    queryFn: ({ signal }) => api.get<Page<ApplicationRecord>>("/studio/apps", { signal }),
+    enabled: allowed,
+  });
   const options = useQuery({
     queryKey: ["onboarding-options"],
     queryFn: ({ signal }) => api.get<OnboardingOptions>("/onboarding/options", { signal }),
     enabled: allowed,
-  });
-  const jiraConnections = useQuery({
-    queryKey: ["onboarding-jira-connections"],
-    queryFn: ({ signal }) =>
-      api.get<{ connections: readonly JiraConnection[] }>("/onboarding/jira-connections", { signal }),
-    enabled: allowed,
-  });
-  const jiraProjects = useQuery({
-    queryKey: ["onboarding-jira-projects", draft.jiraConnectionId],
-    enabled: allowed && draft.jiraConnectionId !== "",
-    queryFn: ({ signal }) =>
-      api.get<JiraProjectsResult>(
-        `/onboarding/jira-projects?connectionId=${encodeURIComponent(draft.jiraConnectionId)}`,
-        { signal },
-      ),
   });
   const scmConnections = useQuery({
     queryKey: ["onboarding-scm-connections"],
@@ -114,167 +101,170 @@ export function OnboardScreen(): ReactNode {
       }),
   });
 
-  const runDryRun = useMutation({
-    mutationFn: (input: OnboardingDraft) =>
-      api.post<DryRunResult>("/onboarding/dry-run", {
+  // A picker with ONE choice fills itself: the question has one answer, and
+  // asking it is one more click between the operator and the repo list.
+  const connections = scmConnections.data?.connections ?? [];
+  const soleConnection = connections.length === 1 ? connections[0] : undefined;
+  useEffect(() => {
+    if (soleConnection !== undefined && draft.connectionId === "") update({ connectionId: soleConnection.id });
+  }, [soleConnection, draft.connectionId]);
+  const platforms = options.data?.platforms ?? [];
+  const solePlatform = platforms.length === 1 ? platforms[0] : undefined;
+  useEffect(() => {
+    if (solePlatform !== undefined && draft.platform === "") update({ platform: solePlatform });
+  }, [solePlatform, draft.platform]);
+
+  const add = useMutation({
+    mutationFn: (input: RepoDraft) =>
+      api.post<{ appId: string; projectKey: string }>("/onboarding/apps", {
         jiraProject: input.jiraProject,
-        // The rehearsal is about the project; an empty repo is refused by the schema.
-        ...(input.repoFullName === "" ? {} : { adoRepo: input.repoFullName }),
+        adoRepo: input.repoFullName,
+        platform: input.platform,
       }),
-    onSuccess: (result) => setDryRun(result),
+    onSuccess: (result) => {
+      // The project stays picked — the next repo usually goes under the same one.
+      setDraft((current) => ({ ...current, repoFullName: "" }));
+      // The bound list, the rule form's app picker and the registry all read
+      // from these; a repo that does not show up there looks like a failed add.
+      void queryClient.invalidateQueries({ queryKey: ["routing"] });
+      void queryClient.invalidateQueries({ queryKey: ["studio-apps"] });
+      void queryClient.invalidateQueries({ queryKey: ["onboarding-options"] });
+      toast.show("success", t("onboard.repos.toast.added", { repo: result.appId, project: result.projectKey }));
+    },
     onError: (error) => toast.show("error", t(messageKeyOf(error))),
   });
 
-  const submit = useMutation({
-    mutationFn: (input: OnboardingDraft) =>
-      api.post<{ proposalId: string }>("/onboarding", {
-        jiraProject: input.jiraProject,
-        // Sent together or not at all — `DraftBody` refuses one without the other.
-        ...(repoComplete(input) ? { adoRepo: input.repoFullName, platform: input.platform } : {}),
-        triggerMode: input.triggerMode,
-        gateSet: input.gateSet,
-        mergeMode: input.mergeMode,
-        // The operator's ANSWER. Absent, the BFF writes `gizli` — the known
-        // production failure this field closes.
-        dataClass: input.dataClass,
-      }),
-    onSuccess: () => {
-      setDraft(EMPTY_DRAFT);
-      setDryRun(null);
-      setSubmitIssues([]);
-      // The approver's queue and the bound list read from these; a proposal
-      // that does not show up there looks like a failed submit.
-      void queryClient.invalidateQueries({ queryKey: ["onboarding-pending"] });
-      void queryClient.invalidateQueries({ queryKey: ["routing"] });
-      toast.show("success", t("onboard.toast.submitted"));
-      void navigate("/projects?tab=routing");
-    },
-    onError: (error) => {
-      setSubmitIssues(issueDetailsOf(error));
-      toast.show("error", t(messageKeyOf(error)));
-    },
-  });
-
-  // A new draft invalidates the evidence: the dry run answered a question
-  // about the OLD rules.
-  const update = (patch: Partial<OnboardingDraft>): void => {
-    setDraft((current) => ({ ...current, ...patch }));
-    setDryRun(null);
-    setSubmitIssues([]);
-  };
-
   if (!allowed) {
     return (
-      <Card title={t("onboard.intro.title")}>
+      <Card title={t("onboard.repos.title")}>
         <p className="scr-prose">{t("projects.roles.body")}</p>
       </Card>
     );
   }
 
-  const reposBody = scmRepos.data;
-  const scm = {
-    connections: scmConnections.data?.connections ?? [],
-    repos: reposBody?.ok === true ? reposBody.repos : [],
-    reposLoading: draft.connectionId !== "" && scmRepos.isFetching,
-    reposError:
-      reposBody !== undefined && reposBody.ok === false
-        ? t(reposBody.messageKey, reposBody.messageParams ?? {})
-        : scmRepos.isError
-          ? t(messageKeyOf(scmRepos.error))
-          : null,
-  };
-  const projectsBody = jiraProjects.data;
-  const jira = {
-    connections: jiraConnections.data?.connections ?? [],
-    projects: projectsBody?.ok === true ? projectsBody.projects : [],
-    projectsLoading: draft.jiraConnectionId !== "" && jiraProjects.isFetching,
-    projectsError:
-      projectsBody !== undefined && projectsBody.ok === false
-        ? t(projectsBody.messageKey, projectsBody.messageParams ?? {})
-        : jiraProjects.isError
-          ? t(messageKeyOf(jiraProjects.error))
-          : null,
-  };
+  const projects = routing.data?.projects ?? [];
+  // Platform by app id, from the registry; an app `/routing` lists that the
+  // registry does not know shows a blank, never a guessed profile.
+  const platformOf = new Map((registry.data?.items ?? []).map((app) => [app.appId, app.platform]));
+  const rows = projects.flatMap((project) =>
+    project.apps.map((appId) => ({ projectKey: project.projectKey, appId, platform: platformOf.get(appId) ?? "" })),
+  );
 
-  // A repository is an ENRICHMENT, not a gate: an analysis-only install owns
-  // none. The pair is still all-or-nothing, because the wire contract is.
-  const repoHalf = draft.repoFullName !== "" || draft.connectionId !== "" || draft.platform !== "";
-  const complete = draft.jiraProject !== "" && (!repoHalf || repoComplete(draft));
-  const maySubmit = complete && dryRun !== null;
-  // The connection lists could not be read at all — said, not left as an empty select.
-  const listFailure = jiraConnections.isError
-    ? jiraConnections.error
-    : scmConnections.isError
-      ? scmConnections.error
-      : null;
+  const reposBody = scmRepos.data;
+  const repos = reposBody?.ok === true ? reposBody.repos : [];
+  const reposLoading = draft.connectionId !== "" && scmRepos.isFetching;
+  const reposError =
+    reposBody !== undefined && reposBody.ok === false
+      ? t(reposBody.messageKey, reposBody.messageParams ?? {})
+      : scmRepos.isError
+        ? t(messageKeyOf(scmRepos.error))
+        : null;
+  const repoPlaceholder =
+    draft.connectionId === ""
+      ? t("onboard.scm.pick_connection_first")
+      : reposLoading
+        ? t("onboard.scm.loading")
+        : (reposError ?? (repos.length === 0 ? t("onboard.scm.no_repos") : t("onboard.field.choose")));
+  const complete = draft.jiraProject !== "" && draft.repoFullName !== "" && draft.platform !== "";
 
   return (
     <div className="scr-stack">
-      {/* The guided path first: the wizard asks the same questions in outcome
-          language and writes the first listening rule too. */}
+      {/* The registered repositories, grouped by the project they belong to. */}
       <Card
-        title={t("onboard.intro.title")}
-        subtitle={t("onboard.intro.sub")}
+        title={t("onboard.repos.title")}
+        subtitle={t("onboard.repos.sub")}
+        padded={false}
         actions={
-          <ButtonLink size="sm" variant="primary" to="/setup">
+          <ButtonLink size="sm" to="/setup">
             {t("onboard.intro.wizard")}
           </ButtonLink>
         }
       >
-        <p className="scr-prose">{t("onboard.intro.short")}</p>
-        {listFailure !== null && (
+        <QueryState
+          isPending={routing.isPending}
+          error={routing.error}
+          isEmpty={rows.length === 0}
+          emptyTitle={projects.length === 0 ? t("onboard.repos.no_projects") : t("onboard.repos.empty")}
+          onRetry={() => void routing.refetch()}
+        >
+          <Table
+            columns={[
+              { key: "project", header: t("routing.col.project"), cell: (row) => <b>{row.projectKey}</b> },
+              { key: "repo", header: t("onboard.repos.col.repo"), cell: (row) => <code className="scr-mono">{row.appId}</code> },
+              {
+                key: "platform",
+                header: t("onboard.field.platform"),
+                cell: (row) => (row.platform === "" ? "—" : <Badge tone="gray">{enumLabel("platform", row.platform).text}</Badge>),
+              },
+            ]}
+            rows={rows}
+            rowKey={(row) => `${row.projectKey}:${row.appId}`}
+            emptyLabel={t("onboard.repos.empty")}
+          />
+        </QueryState>
+        <p className="scr-mini routing-foot">{t("onboard.repos.note")}</p>
+      </Card>
+
+      {/* "+ Depo ekle": only under a BOUND project — binding is the wizard's. */}
+      <Card title={t("onboard.repos.add.title")} subtitle={t("onboard.repos.add.sub")}>
+        {scmConnections.isError && (
           <div className="scr-note scr-note--danger">
-            {t(messageKeyOf(listFailure))}{" "}
-            <Button
-              size="sm"
-              onClick={() => {
-                void jiraConnections.refetch();
-                void scmConnections.refetch();
-              }}
-            >
+            {t(messageKeyOf(scmConnections.error))}{" "}
+            <Button size="sm" onClick={() => void scmConnections.refetch()}>
               {t("action.retry")}
             </Button>
           </div>
         )}
-      </Card>
-
-      <QueryState isPending={options.isPending} error={options.error} onRetry={() => void options.refetch()}>
-        {options.data !== undefined && (
-          <OnboardingSteps draft={draft} options={options.data} scm={scm} jira={jira} onChange={update} />
-        )}
-      </QueryState>
-
-      {/* Dry run + submit sit together at the bottom: run the mandatory check, then send. */}
-      <DryRunPanel
-        result={dryRun}
-        busy={runDryRun.isPending}
-        // The rehearsal replays a PROJECT's tickets; it never touches a repository.
-        ready={draft.jiraProject !== ""}
-        onRun={() => runDryRun.mutate(draft)}
-      />
-
-      <Card title={t("onboard.card.actions")}>
-        <Button variant="success" busy={submit.isPending} disabled={!maySubmit} onClick={() => submit.mutate(draft)}>
-          {t("onboard.action.submit")}
-        </Button>
-        {submitIssues.length > 0 && (
-          <div className="scr-note scr-note--danger scr-mt-2">
-            {t("onboard.error.refused_fields")}
-            <ul className="scr-list">
-              {submitIssues.map((issue) => (
-                <li key={issue} className="scr-mono">
-                  {issue}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {!maySubmit && (
-          <div className="scr-note scr-note--warn scr-mt-2">
-            {complete ? t("onboard.blocked.dry_run") : t("onboard.blocked.incomplete")}
-          </div>
-        )}
-        <p className="scr-hint">{t("onboard.note.admin_approval")}</p>
+        <div className="scr-grid scr-grid--2">
+          <Select
+            label={t("onboard.repos.add.project")}
+            value={draft.jiraProject}
+            onChange={(e) => update({ jiraProject: e.target.value })}
+            placeholder={projects.length === 0 ? t("onboard.repos.no_projects") : t("onboard.jira.choose")}
+            disabled={projects.length === 0}
+            options={projects.map((project) => ({ value: project.projectKey, label: project.projectKey }))}
+            hint={t("onboard.repos.add.project_hint")}
+          />
+          {soleConnection === undefined && (
+            <Select
+              label={t("onboard.field.scm_connection")}
+              value={draft.connectionId}
+              onChange={(e) => update({ connectionId: e.target.value, repoFullName: "" })}
+              placeholder={t("onboard.field.choose")}
+              options={connections.map((c) => ({
+                value: c.id,
+                label: `${c.displayName} · ${t(`onboard.scm.kind.${c.kind}`)}`,
+              }))}
+              hint={t("onboard.field.scm_connection_hint")}
+            />
+          )}
+          <Select
+            label={t("onboard.field.scm_repo")}
+            value={draft.repoFullName}
+            onChange={(e) => update({ repoFullName: e.target.value })}
+            placeholder={repoPlaceholder}
+            disabled={draft.connectionId === "" || reposLoading || repos.length === 0}
+            options={repos.map((repo) => ({ value: repo.fullName, label: repo.fullName }))}
+            {...(reposError !== null ? { error: reposError } : {})}
+          />
+          {solePlatform === undefined && (
+            <Select
+              label={t("onboard.field.platform")}
+              value={draft.platform}
+              onChange={(e) => update({ platform: e.target.value })}
+              placeholder={platforms.length === 0 ? t("listening.repomap.platform_unavailable") : t("onboard.field.choose")}
+              disabled={platforms.length === 0}
+              options={platforms.map((p) => ({ value: p, label: enumLabel("platform", p).text }))}
+              hint={t("onboard.field.platform_hint")}
+            />
+          )}
+        </div>
+        <div className="scr-actions">
+          <Button variant="primary" busy={add.isPending} disabled={!complete} onClick={() => add.mutate(draft)}>
+            {t("onboard.repos.add.submit")}
+          </Button>
+        </div>
+        {!complete && <p className="scr-hint">{t("onboard.repos.add.incomplete")}</p>}
       </Card>
     </div>
   );

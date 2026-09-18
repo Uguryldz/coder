@@ -5,19 +5,22 @@ import { ProjectsScreen } from "../src/screens/Projects.tsx";
 import { renderScreen, stubFetch } from "./harness.tsx";
 
 /**
- * The projects page gathers the three binding steps into one page with three
- * tabs (add application / Jira mapping & approval / listening rules). The tests
- * here cover the page's OWN behaviour — the tab strip and which tab the URL
- * selects — not the three screens' internals, which have their own suites.
+ * The projects page is a page of LISTS around a bound project: the bindings
+ * (and their approval queue), the listening rules, the registered
+ * repositories, and the protected-paths reference. Binding itself happens in
+ * the wizard — the numbered "1 · Uygulama ekle → 2 · onay → 3 · kural" strip
+ * that re-did the wizard's job with a contradicting form is gone. The tests
+ * here cover the page's OWN behaviour — the tab strip, which tab the URL
+ * selects, and the empty state — not the screens' internals, which have their
+ * own suites.
  *
  * Each tab renders a real screen that fetches, so the stub answers the endpoints
  * those screens hit on mount; the assertions are about the tabs, not the data.
  */
 
-// The endpoints the three tabbed screens call on mount, answered emptily.
+// The endpoints the tabbed screens call on mount, answered emptily.
 const STUBS = [
   { path: "/onboarding/options", body: { jiraProjects: [], adoRepos: [], platforms: [] } },
-  { path: "/onboarding/jira-connections", body: { connections: [] } },
   { path: "/onboarding/scm-connections", body: { connections: [] } },
   { path: "/onboarding/pending", body: { items: [] } },
   { path: "/routing", body: { projects: [], rules: [], policy: { backendByClass: {}, whenOnpremMissing: "block" } } },
@@ -25,111 +28,88 @@ const STUBS = [
   { path: "/studio/listening-rules", body: { rules: [] } },
 ];
 
+const BOUND = STUBS.map((s) =>
+  s.path === "/routing"
+    ? {
+        path: "/routing",
+        body: {
+          projects: [{ projectKey: "OPS", apps: ["Uguryldz/maestro-pilot"], noteKey: "routing.note.active_by_rule" }],
+          rules: [],
+          policy: { backendByClass: {}, whenOnpremMissing: "block" },
+        },
+      }
+    : s,
+);
+
 describe("projects page (tabbed binding)", () => {
-  it("shows the three step tabs in the operator's order, then the protected-paths reference tab", async () => {
+  it("shows the four tabs in the operator's order, with no step numbers", async () => {
+    const { fetchImpl } = stubFetch(BOUND);
+    renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
+
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((el) => el.textContent)).toEqual([
+      "Bağlı projeler",
+      "Dinleme kuralları",
+      "Depolar",
+      "Korumalı yollar",
+    ]);
+    // The wizard binds; the page never numbers its tabs as if it did.
+    expect(screen.queryByText(/^1 · /)).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Uygulama ekle/ })).toBeNull();
+  });
+
+  it("opens on the bound-projects list when something is bound", async () => {
+    const { fetchImpl } = stubFetch(BOUND);
+    renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Bağlı projeler" })).toHaveAttribute("aria-selected", "true"),
+    );
+    // Nothing tells a bound install to go to the wizard.
+    expect(screen.queryByText("Henüz bağlı proje yok")).toBeNull();
+  });
+
+  it("with nothing bound, sends the admin to the wizard instead of a second binding form", async () => {
     const { fetchImpl } = stubFetch(STUBS);
     renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
 
-    // Tabs are now numbered so their order reads as steps ("1 · …").
-    const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((el) => el.textContent)).toEqual([
-      "1 · Uygulama ekle",
-      "2 · Bağlı projeler & onay",
-      "3 · Dinleme kuralları",
-      "Korumalı yollar",
-    ]);
-    // Default tab is the first step: add application.
-    expect(screen.getByRole("tab", { name: /Uygulama ekle/ })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-  });
-
-  it("opens on the bound-projects list when something is already bound", async () => {
-    // A fresh install lands on "add application"; once a project is bound, the
-    // page must open on the LIST so the admin sees what they bound instead of an
-    // empty add-form ("bağladığım uygulamayı göremiyorum").
-    const withBinding = STUBS.map((s) =>
-      s.path === "/routing"
-        ? {
-            path: "/routing",
-            body: {
-              projects: [
-                { projectKey: "OPS", apps: ["Uguryldz/maestro-pilot"], noteKey: "routing.note.active_by_rule" },
-              ],
-              rules: [],
-              policy: { backendByClass: {}, whenOnpremMissing: "block" },
-            },
-          }
-        : s,
-    );
-    const { fetchImpl } = stubFetch(withBinding);
-    renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
-
-    // The default flips only after the /routing query resolves, so wait for it.
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: /Bağlı projeler & onay/ })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      ),
-    );
+    expect(await screen.findByText("Henüz bağlı proje yok")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Kurulum sihirbazını aç" })).toHaveAttribute("href", "/setup");
+    // The list tab is the one shown under the prompt — never an add-form.
+    expect(screen.getByRole("tab", { name: "Bağlı projeler" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: "Admin onayına gönder" })).toBeNull();
   });
 
   it("selects the tab named in the URL (?tab=)", async () => {
     const { fetchImpl } = stubFetch(STUBS);
-    renderScreen(<ProjectsScreen />, {
-      fetchImpl,
-      initialEntries: ["/projects?tab=listening"],
-    });
+    renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects?tab=listening"] });
 
-    expect(
-      (await screen.findByRole("tab", { name: /Dinleme kuralları/ })).getAttribute("aria-selected"),
-    ).toBe("true");
-    expect(screen.getByRole("tab", { name: /Uygulama ekle/ })).toHaveAttribute(
-      "aria-selected",
-      "false",
-    );
+    expect((await screen.findByRole("tab", { name: "Dinleme kuralları" })).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Bağlı projeler" })).toHaveAttribute("aria-selected", "false");
+    // An explicit tab never shows the wizard prompt: the admin asked for a tab.
+    expect(screen.queryByText("Henüz bağlı proje yok")).toBeNull();
+  });
+
+  it("still honours old links: ?tab=onboard lands on Depolar", async () => {
+    // `/onboard` redirects to `?tab=onboard` and the listening screen's
+    // "unbound" note links there; the tab was renamed, the links were not.
+    const { fetchImpl } = stubFetch(BOUND);
+    renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects?tab=onboard"] });
+    expect((await screen.findByRole("tab", { name: "Depolar" })).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("accepts the new id too: ?tab=repos", async () => {
+    const { fetchImpl } = stubFetch(BOUND);
+    renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects?tab=repos"] });
+    expect((await screen.findByRole("tab", { name: "Depolar" })).getAttribute("aria-selected")).toBe("true");
   });
 
   it("switches the active tab when another is clicked", async () => {
-    const { fetchImpl } = stubFetch(STUBS);
+    const { fetchImpl } = stubFetch(BOUND);
     renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
 
-    await userEvent.click(await screen.findByRole("tab", { name: /Bağlı projeler & onay/ }));
-    expect(screen.getByRole("tab", { name: /Bağlı projeler & onay/ })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-  });
-
-  it("says what the current step does, one line under the numbered tabs, for each of the three steps", async () => {
-    const { fetchImpl } = stubFetch(STUBS);
-    renderScreen(<ProjectsScreen />, { fetchImpl, initialEntries: ["/projects"] });
-
-    // The numbered tabs ARE the journey; the line under them says what the
-    // step the admin is on does — one step at a time, never a second card.
-    expect(await screen.findByText(/Jira projesi \+ repo seç, admin onayına gönder/)).toBeInTheDocument();
-    expect(screen.queryByText(/İkinci bir yönetici onaylar/)).toBeNull();
-
-    await userEvent.click(screen.getByRole("tab", { name: /Bağlı projeler & onay/ }));
-    expect(await screen.findByText(/İkinci bir yönetici onaylar; proje bağlanır/)).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("tab", { name: /Dinleme kuralları/ }));
-    expect(await screen.findByText(/Hangi ticket'lar işlensin kuralını ekle/)).toBeInTheDocument();
-
-    // The reference tab is not a step, so it gets no step line.
-    await userEvent.click(screen.getByRole("tab", { name: /Korumalı yollar/ }));
-    await waitFor(() =>
-      expect(screen.getByRole("tab", { name: /Korumalı yollar/ })).toHaveAttribute("aria-selected", "true"),
-    );
-    // Earlier tabs stay mounted (hidden) with their own prose, so the check is
-    // against the step lines themselves, word for word.
-    for (const line of [
-      "Jira projesi + repo seç, admin onayına gönder",
-      "İkinci bir yönetici onaylar; proje bağlanır",
-      "Hangi ticket'lar işlensin kuralını ekle",
-    ]) {
-      expect(screen.queryByText(line)).toBeNull();
-    }
+    await userEvent.click(await screen.findByRole("tab", { name: "Depolar" }));
+    expect(screen.getByRole("tab", { name: "Depolar" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("+ Depo ekle")).toBeInTheDocument();
   });
 });

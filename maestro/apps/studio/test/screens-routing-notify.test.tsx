@@ -322,11 +322,13 @@ describe("routing screen", () => {
     expect(screen.queryByText(/otomatik kuruldu/)).not.toBeInTheDocument();
   });
 
-  it("names an analysis-only package's missing repo instead of showing an empty cell", async () => {
-    // The BFF sends explicit nulls for a repo-less (analysis-only) proposal.
-    // The approver is confirming precisely that no repository is in scope, so
-    // the cell must SAY it — a blank would read as data loss on the one screen
-    // where the second human decides.
+  it("says where a repo-less package's repository comes from instead of showing an empty cell", async () => {
+    // The BFF sends explicit nulls for a proposal that binds no repository —
+    // the normal case now: a binding binds a Jira project, and the repo comes
+    // from the listening rule's repo map. The cell must SAY that; a blank would
+    // read as data loss on the one screen where the second human decides, and
+    // the old line ("yalnızca analiz, belge ticket metninden") named a chain
+    // that no longer exists.
     const noRepoPending = {
       path: "/onboarding/pending",
       body: {
@@ -344,8 +346,21 @@ describe("routing screen", () => {
     renderScreen(<RoutingScreen />, { fetchImpl });
 
     expect(
-      await screen.findByText("depo yok — yalnızca analiz (belge ticket metninden üretilir)"),
+      await screen.findByText("depo yok — depo dinleme kuralının eşlemesinden gelir"),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/yalnızca analiz/)).toBeNull();
+  });
+
+  it("names both who may approve: a second admin OR the principal approver", async () => {
+    // A single-admin install: the principal approver confirms alone. The queue
+    // used to say "ikinci bir yönetici onaylar" flat out, which told that admin
+    // the button in front of them would not work.
+    const { fetchImpl } = stubFetch([ROUTING_BODY, APPS_BODY, PENDING_BODY]);
+    renderScreen(<RoutingScreen />, { fetchImpl });
+
+    await screen.findByText("Uguryldz/maestro-pilot");
+    expect(screen.getByText(/onay: ikinci yönetici ya da ana onaylayıcı/)).toBeInTheDocument();
+    expect(screen.queryByText(/Uygulama ekle'den gelen/)).toBeNull();
   });
 
   it("hides the approval queue from a non-admin", async () => {

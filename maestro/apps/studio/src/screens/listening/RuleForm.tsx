@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
@@ -335,9 +335,26 @@ function MatchValuePicker(props: RuleFormProps): ReactNode {
     value: storedFor(name),
     label: matchValueLabel(name),
   }));
+  /**
+   * ADLA KAYDEDİLMİŞ ESKİ KURAL, TAKIM YÖNETİMLİ PROJEDE — GÖÇ.
+   *
+   * Sihirbaz bir dönem takım yönetimli projede de ADI kaydediyordu ("Görev").
+   * Böyle bir kural düzenlemeye alındığında kutu adı seçeneklerde bulamıyor
+   * (seçeneklerin `value`su id) ve "kayıtlı değer listede yok" yolu ikinci bir
+   * "Görev (Task)" satırı ekliyordu — ölçüldü: liste aynı adı iki kez yazıyor.
+   *
+   * Kaydedilen değer bir seçeneğin ADINA eşitse taslak o seçeneğin id'sine
+   * çevrilir: kutu tek satırla o seçeneği seçili gösterir ve kaydedince id
+   * yazılır — kural böylece kendiliğinden göç eder. `storedMatchValue` şirket
+   * yönetimli projede adı olduğu gibi döndürür; orada hiçbir şey değişmez.
+   */
+  const current = draft.matchValue;
+  const migrated = current === "" ? current : storedFor(current);
+  useEffect(() => {
+    if (migrated !== current) patch({ matchValue: migrated });
+  }, [migrated, current, patch]);
   // Kayıtlı değer listede yoksa (proje değişti, statü silindi) kutudan sessizce
   // düşmesin: kendi seçeneği olarak, okunabilir hâliyle kalır.
-  const current = draft.matchValue;
   const extra =
     current !== "" && !options.some((option) => option.value === current)
       ? [{ value: current, label: matchValueLabel(displayMatchValue(current, props.valueIdOptions)) }]
@@ -832,8 +849,12 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
   const projectOptions = Object.keys(projectRepoCounts).sort((a, b) => a.localeCompare(b, "tr"));
   const incomplete = repoMapIncomplete(draft);
   const complete = rows.filter((r) => r.value.trim() !== "" && r.appId.trim() !== "").length;
+  // "Kapalı" says what closed MEANS for this flow: the analysis flow needs no
+  // repository (the document is written from the ticket text); a code flow
+  // cannot be saved without one. The old line ("proje bağlamasının
+  // uygulaması") named a fallback chain that no longer exists.
   const summaryState = !draft.repoMapOn
-    ? t("listening.repomap.summary_off")
+    ? t(draft.flowType === "analiz" ? "listening.repomap.summary_off_analysis" : "listening.repomap.summary_off_required")
     : incomplete
       ? t("listening.repomap.summary_incomplete")
       : draft.repoMapMode === "search"

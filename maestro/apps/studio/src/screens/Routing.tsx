@@ -27,7 +27,8 @@ import { QueryState } from "./shared/QueryState.tsx";
  * (collapsed) the LLM routing policy and the application registry.
  *
  * The approval queue is the four-eyes step: a submitted binding waits here
- * for a DIFFERENT admin or tech-lead. Approving is what turns a proposal into
+ * for a second admin or tech-lead — or for the principal approver, who may
+ * confirm alone when the install has one admin. Approving turns a proposal into
  * a live binding; the screen then sends the approver straight to the
  * listening rules of the project that just went live, because a bound project
  * with no rule accepts no ticket.
@@ -227,8 +228,10 @@ export function RoutingScreen(): ReactNode {
               {
                 key: "repo",
                 header: t("routing.pending.col.repo"),
-                // An analysis-only package binds no repository, and the approver
-                // is confirming exactly that — so the cell says it in words.
+                // A package binds no repository any more — the repo comes from
+                // the listening rule's repo map — so an empty cell says THAT in
+                // words rather than reading as data loss. A legacy package that
+                // still carries one shows it.
                 cell: (row: PendingBinding) =>
                   row.adoRepo === null ? (
                     <span className="scr-mini">{t("routing.pending.norepo")}</span>
@@ -700,11 +703,3 @@ function BindingEdit({
     </Modal>
   );
 }
-
-/**
- * "Depo ekle": a second (third…) repository under an already-bound project.
- * The binding keeps its default application; this only files another repo
- * in the inventory, tagged with the project, so the listening rule's repo map
- * can pick among them. Same pickers as onboarding: SCM connection → repo
- * list → platform.
- */

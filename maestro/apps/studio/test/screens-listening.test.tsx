@@ -1678,6 +1678,46 @@ describe("tetikleme değeri — id mi ad mı kaydedilir", () => {
     });
   });
 
+  it("adla kaydedilmiş eski kural, takım yönetimli projede: tek satır, id seçili, kaydedince id yazılır", async () => {
+    /**
+     * Sihirbaz bir dönem takım yönetimli projede de ADI kaydetti ("Görev").
+     * Böyle bir kural düzenlemeye alındığında kutu adı seçeneklerde bulamıyor
+     * (seçeneklerin değeri id) ve "listede yok" yolu ikinci bir "Görev (Task)"
+     * satırı ekliyordu — ölçüldü: liste aynı adı iki kez yazıyordu. Kaydedilen
+     * değer bir seçeneğin ADINA eşitse o seçenek (id'siyle) seçili gelir, ek
+     * satır yok, ve kaydedince id yazılır: kural kendiliğinden göç eder.
+     */
+    const fn = stubMatchValues(true, [{ ...SEED, matchKind: "issuetype", matchValue: "Görev", flowType: "analiz" }]);
+    renderScreen(ADMIN);
+    await userEvent.click(await screen.findByRole("button", { name: "Düzenle" }));
+
+    const select = (await screen.findByLabelText("Değer")) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("10008"));
+    const labels = [...select.options].map((o) => o.textContent);
+    expect(labels.filter((label) => label === "Görev (Task)")).toHaveLength(1);
+    expect([...select.options].map((o) => o.value)).not.toContain("Görev");
+
+    await userEvent.click(screen.getByRole("button", { name: "Kuralı kaydet" }));
+    const body = await waitFor(() => {
+      const put = fn.mock.calls.find(
+        (c) => String(c[0]).includes("/studio/listening-rules/") && (c[1] as RequestInit)?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      return JSON.parse((put![1] as RequestInit).body as string) as Record<string, unknown>;
+    });
+    expect(body.matchValue).toBe("10008");
+  });
+
+  it("şirket yönetimli projede adla kayıtlı kural olduğu gibi kalır — göç yok", async () => {
+    stubMatchValues(false, [{ ...SEED, matchKind: "issuetype", matchValue: "Görev", flowType: "analiz" }]);
+    renderScreen(ADMIN);
+    await userEvent.click(await screen.findByRole("button", { name: "Düzenle" }));
+    const select = (await screen.findByLabelText("Değer")) as HTMLSelectElement;
+    await waitFor(() => expect([...select.options].map((o) => o.value)).toContain("Görev"));
+    expect(select.value).toBe("Görev");
+    expect([...select.options].map((o) => o.textContent).filter((l) => l === "Görev (Task)")).toHaveLength(1);
+  });
+
   it("takım yönetimli olmadığında kutunun DEĞERLERİ de addır", async () => {
     stubMatchValues(false);
     renderScreen(ADMIN);

@@ -6,22 +6,27 @@ import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import type { RoutingView } from "./common/admin-api.ts";
-import { Card, Skeleton, Tabs } from "../ui/index.ts";
-import { OnboardScreen } from "./Onboard.tsx";
+import { ButtonLink, Card, EmptyState, Skeleton, Tabs } from "../ui/index.ts";
+import { ReposScreen } from "./Onboard.tsx";
 import { RoutingScreen } from "./Routing.tsx";
 import { ListeningScreen } from "./Listening.tsx";
 import { YamlScreen } from "./Yaml.tsx";
 
 /**
- * Screen: projects — one page for the three steps of binding a project, plus
- * the repo-side policy reference.
+ * Screen: projects — what is bound, what listens, which repositories are
+ * registered, and the repo-side policy reference.
  *
- * The three steps are one SEQUENTIAL workflow around a single `projectKey`:
- * ADD an application (or run the wizard), a second admin APPROVES it into a
- * binding, then the LISTENING rules decide which tickets Maestro picks up. The
- * tabs are numbered so their order reads as steps, and one line under the
- * strip says what the current step does — the numbered tabs and a separate
- * journey card used to say the same thing twice.
+ * BİNDING İTSELF HAPPENS IN THE WIZARD (`/setup`). This page used to carry a
+ * numbered "1 · Uygulama ekle → 2 · onay → 3 · kural" strip that re-did the
+ * wizard's job a second time, with a form (gate set, merge mode, data class,
+ * dry run, admin approval) that CONTRADICTED it. Measured in a browser tour:
+ * two ways to bind, two vocabularies, one of them stale. The strip is gone.
+ *
+ * What is left is a page of LISTS around a bound project: the bindings and
+ * their approval queue, the listening rules, the registered repositories, and
+ * the protected-paths reference. A repository is not something a project is
+ * "bound to" any more — it comes from a listening rule's repo map, and the
+ * "Depolar" tab is the inventory of what that map may pick from.
  *
  * The active tab lives in the URL (`?tab=`). A tab, once opened, STAYS
  * MOUNTED (hidden) when another is shown: the listening form is long, and an
@@ -31,17 +36,23 @@ import { YamlScreen } from "./Yaml.tsx";
  * shows.
  */
 
-const TAB_IDS = ["onboard", "routing", "listening", "yaml"] as const;
+const TAB_IDS = ["routing", "listening", "repos", "yaml"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
-/** The three binding STEPS; "yaml" is a reference tab. */
-const JOURNEY_IDS = ["onboard", "routing", "listening"] as const;
+/**
+ * Old links: `/onboard` still redirects to `?tab=onboard` and the listening
+ * screen's "unbound" note points there too. The former "Uygulama ekle" tab is
+ * now "Depolar", so the old id lands on the new tab rather than on nothing.
+ */
+const TAB_ALIASES: Readonly<Record<string, TabId>> = { onboard: "repos" };
 
 /** Every endpoint behind these tabs (`/routing`, `/onboarding/*`, `/studio/listening-rules`) is admin / tech-lead. */
 const PROJECT_ROLES = ["admin", "tech-lead"] as const;
 
-function isTab(value: string | null): value is TabId {
-  return (TAB_IDS as readonly string[]).includes(value ?? "");
+function tabOf(value: string | null): TabId | null {
+  if (value === null) return null;
+  if ((TAB_IDS as readonly string[]).includes(value)) return value as TabId;
+  return TAB_ALIASES[value] ?? null;
 }
 
 export function ProjectsScreen(): ReactNode {
@@ -50,21 +61,21 @@ export function ProjectsScreen(): ReactNode {
   const { session } = useAuth();
   const allowed = hasAnyRole(session, PROJECT_ROLES);
   const [params, setParams] = useSearchParams();
-  const raw = params.get("tab");
-  const explicitTab = isTab(raw) ? raw : null;
+  const explicitTab = tabOf(params.get("tab"));
 
-  // How the page opens depends on whether anything is bound yet: a fresh
-  // install lands on "add an application", a bound one on the LIST — landing
-  // an admin on an empty add-form hides the very thing they came to see. An
-  // explicit `?tab=` always wins, and the read is only made when it decides.
+  // How the page opens depends on whether anything is bound yet: a bound
+  // install lands on the LIST; a fresh one gets an empty state that sends the
+  // admin to the wizard — the one place a project is bound — instead of a
+  // second, contradicting form. An explicit `?tab=` always wins, and the read
+  // is only made when it decides.
   const routing = useQuery({
     queryKey: ["routing"],
     queryFn: ({ signal }) => api.get<RoutingView>("/routing", { signal }),
     enabled: allowed && explicitTab === null,
   });
   const hasBindings = (routing.data?.projects.length ?? 0) > 0;
-  const fallback: TabId = hasBindings ? "routing" : "onboard";
-  const tab: TabId = explicitTab ?? fallback;
+  const tab: TabId = explicitTab ?? "routing";
+  const showWizardPrompt = explicitTab === null && !routing.isPending && !hasBindings;
   // Which tabs have been shown so far — these stay mounted. Seeded with the
   // first tab shown, never with the transient default a pending read implies.
   const [visited, setVisited] = useState<ReadonlySet<TabId>>(() => new Set());
@@ -99,8 +110,8 @@ export function ProjectsScreen(): ReactNode {
     );
   }
 
-  // Until the default tab is known, show nothing that could jump: mounting
-  // "Uygulama ekle" and then switching to the list a beat later is the flicker
+  // Until the default is known, show nothing that could jump: mounting the
+  // list and then swapping in the wizard prompt a beat later is the flicker
   // this wait exists to end.
   if (explicitTab === null && routing.isPending) {
     return (
@@ -116,28 +127,37 @@ export function ProjectsScreen(): ReactNode {
         {node}
       </div>
     ) : null;
-  const journeyIndex = (JOURNEY_IDS as readonly string[]).indexOf(tab);
 
   return (
     <div className="scr-stack">
-      <div>
-        <Tabs
-          label={t("projects.tabs.label")}
-          active={tab}
-          onChange={select}
-          items={TAB_IDS.map((id, i) => ({
-            id,
-            label: i < JOURNEY_IDS.length ? `${i + 1} · ${t(`projects.tab.${id}`)}` : t(`projects.tab.${id}`),
-          }))}
-        />
-        {/* What THIS step does, in one line — the journey, without a second card. */}
-        {journeyIndex >= 0 && <p className="scr-hint">{t(`projects.journey.step.${tab}`)}</p>}
-      </div>
+      {/* Nothing bound yet: the way in is the wizard, said once, above the
+          (empty) list — never a second binding form on this page. */}
+      {showWizardPrompt && (
+        <Card>
+          <EmptyState
+            title={t("projects.empty.title")}
+            description={t("projects.empty.body")}
+            action={
+              <ButtonLink variant="primary" to="/setup">
+                {t("projects.empty.wizard")}
+              </ButtonLink>
+            }
+          />
+        </Card>
+      )}
 
-      {panel("onboard", <OnboardScreen />)}
+      <Tabs
+        label={t("projects.tabs.label")}
+        active={tab}
+        onChange={select}
+        items={TAB_IDS.map((id) => ({ id, label: t(`projects.tab.${id}`) }))}
+      />
+
       {panel("routing", <RoutingScreen />)}
       {panel("listening", <ListeningScreen key={listeningKey} />)}
-      {/* Korumalı yollar (.maestro.yaml): a project's repo-side policy — reference, not a step. */}
+      {/* Depolar: the registered repositories a listening rule's repo map picks from. */}
+      {panel("repos", <ReposScreen />)}
+      {/* Korumalı yollar (.maestro.yaml): a project's repo-side policy — reference. */}
       {panel("yaml", <YamlScreen />)}
     </div>
   );

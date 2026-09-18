@@ -513,3 +513,55 @@ describe("agent trainings reach the doing-role sessions", () => {
     expect(fakes.recorded.llm.find((c) => c.schemaName === "diff-review")?.variantId).toBe("verifier-default");
   });
 });
+
+describe("reviewer reads the real diff (step 6c, third tier)", () => {
+  const DIFF = "diff --git a/src/pay.ts b/src/pay.ts\n--- a/src/pay.ts\n+++ b/src/pay.ts\n@@ -1 +1 @@\n-const a = 1;\n+const a = eval(input);\n";
+
+  it("hands the diff to the dev reviewer and maps its findings (a blocker is never an approval)", async () => {
+    const fakes = makeFakes({
+      context: { workspacePath: "/w/PAY-101", workspacePresent: true },
+      readWorkspaceDiff: () => Promise.resolve({ diff: DIFF, files: 1, truncated: false }),
+      generateObject: (schemaName) =>
+        schemaName === "DevReviewOutput"
+          ? {
+              status: "ok",
+              value: {
+                approved: false,
+                summary: "eval kullanımı",
+                findings: [{ file: "src/pay.ts", locator: "@@ -1 +1 @@", severity: "blocker", problem: "eval ile kod çalıştırma", suggestion: "JSON.parse kullan" }],
+              },
+              log: LOG,
+            }
+          : { status: "ok", value: { approved: true, findings: [] }, log: LOG },
+    });
+    const verdict = await reviewDiff(fakes.deps, "PAY-101");
+    expect(verdict.approved).toBe(false);
+    expect(verdict.findings[0]).toContain("src/pay.ts");
+    expect(verdict.findings[0]).toContain("blocker");
+    const call = fakes.recorded.llm.find((c) => c.schemaName === "DevReviewOutput");
+    expect(call).toBeDefined();
+    expect(fakes.journalStore.entries.at(-1)?.title).toBe("inceleme bulguları");
+    expect(fakes.journalStore.entries.at(-1)?.detail).toContain("1 dosya");
+  });
+
+  it("an empty diff is never approved", async () => {
+    const fakes = makeFakes({
+      context: { workspacePath: "/w/PAY-101", workspacePresent: true },
+      readWorkspaceDiff: () => Promise.resolve({ diff: "", files: 0, truncated: false }),
+      generateObject: () => ({ status: "ok", value: { approved: true, findings: [] }, log: LOG }),
+    });
+    const verdict = await reviewDiff(fakes.deps, "PAY-101");
+    expect(verdict.approved).toBe(false);
+    expect(verdict.findings[0]).toContain("değişiklik yok");
+    expect(fakes.recorded.llm.some((c) => c.schemaName === "DevReviewOutput")).toBe(false);
+  });
+
+  it("without a readable clone the blind review runs and the journal says it was blind", async () => {
+    const fakes = makeFakes({
+      generateObject: () => ({ status: "ok", value: { approved: true, findings: [] }, log: LOG }),
+    });
+    const verdict = await reviewDiff(fakes.deps, "PAY-101");
+    expect(verdict.approved).toBe(true);
+    expect(fakes.journalStore.entries.some((e) => e.title === "kör inceleme")).toBe(true);
+  });
+});

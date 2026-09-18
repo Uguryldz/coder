@@ -3,6 +3,7 @@ import type { DeployEnv } from "./env.js";
 import { vaultMounts } from "./env.js";
 import { objectLockConfig } from "./object-lock.js";
 import { NOT_CONFIGURED_DRIVER, type PortKey, type Profile } from "./profile.js";
+import { CONTAINER_TRIO_DRIVER, trioSelectionFrom } from "./stores/scan-port.js";
 
 /**
  * Per-port driver configuration, built from the environment.
@@ -414,11 +415,47 @@ export function llmConfig(env: DeployEnv): Record<string, unknown> {
  * names the one the profile selects; the other two tools are configured the
  * same way once they are selectable.
  */
+/**
+ * The scan driver a deployment gets. The profile says `not-configured`; the
+ * three `SCAN_IMAGE_*` variables, all set, upgrade that to the container trio.
+ * Two out of three is still `not-configured` — a gate that ran two scanners
+ * and skipped the third would read as "scanned" — and the note names the gap.
+ */
+export function scanDriverFor(env: DeployEnv, profileDriver: string): { driver: string; note: string | null } {
+  if (profileDriver !== NOT_CONFIGURED_DRIVER) return { driver: profileDriver, note: null };
+  const trio = trioSelectionFrom(trioSource(env));
+  if (trio.configured !== null) return { driver: CONTAINER_TRIO_DRIVER, note: null };
+  const named = 4 - trio.missing.length;
+  return {
+    driver: NOT_CONFIGURED_DRIVER,
+    note:
+      named === 0
+        ? null
+        : `[maestro] UYARI: tarama kapısı (6b) YAPILANDIRILMADI — ${trio.missing.join(", ")} boş. ` +
+          "Üç tarayıcının üçü de digest-pinli bir imaj, semgrep ayrıca çevrimdışı bir kural yolu ister (M27); " +
+          "eksik olan varken kapı fail-closed kalır ve her mühendislik koşusu 6b'de durur.",
+  };
+}
+
+function trioSource(env: DeployEnv): Parameters<typeof trioSelectionFrom>[0] {
+  return {
+    images: { gitleaks: env.SCAN_IMAGE_GITLEAKS, semgrep: env.SCAN_IMAGE_SEMGREP, trivy: env.SCAN_IMAGE_TRIVY },
+    semgrepRules: env.SCAN_SEMGREP_RULES,
+  };
+}
+
 export function scanConfig(env: DeployEnv, driver: string): Record<string, unknown> {
   // The not-configured driver reads no config: it has no container to pin,
   // because it never runs one. Demanding a digest from a deployment that has
   // not set a scanner up is the same wall `ADO_BASE_URL` was.
   if (driver === NOT_CONFIGURED_DRIVER) return {};
+  if (driver === CONTAINER_TRIO_DRIVER) {
+    const trio = trioSelectionFrom(trioSource(env));
+    if (trio.configured === null) {
+      throw new DeployConfigError(`${trio.missing[0] ?? "SCAN_IMAGE_*"}: required — the scan trio needs it (M27)`);
+    }
+    return { images: trio.configured.images, semgrep: { rulesRef: trio.configured.semgrepRules } };
+  }
   const byTool: Record<string, string | undefined> = {
     trivy: env.SCAN_IMAGE_TRIVY,
     semgrep: env.SCAN_IMAGE_SEMGREP,

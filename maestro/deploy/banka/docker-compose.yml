@@ -126,6 +126,27 @@ x-node-env: &node-env
   MAESTRO_BOT_EMAIL: ${MAESTRO_BOT_EMAIL:-}
   JIRA_CLOUD_EMAIL: ${JIRA_CLOUD_EMAIL:-}
 
+  # ── Kod hattı: çalışma alanı, SCM, tarama, ajan ────────────────────────────
+  # bff klonlar, worker okur/yazar/tarar; ikisi de aynı değişkenleri görür.
+  WORKSPACE_ROOT: ${WORKSPACE_ROOT:-}
+  SCM_TOKEN_REF: ${SCM_TOKEN_REF:-}
+  SCM_HOST: ${SCM_HOST:-}
+  # Çalışma alanı bir NAMED VOLUME (aşağıdaki maestro-workspace). Tarayıcı
+  # konteynerleri klonu bu birimin adıyla, salt-okur ve alt yoldan bağlar
+  # (Engine API ≥ 1.45); host yolu yoktur. Varsayılan proje adından türetilir.
+  WORKSPACE_VOLUME: ${WORKSPACE_VOLUME:-${COMPOSE_PROJECT_NAME:-maestro}_maestro-workspace}
+  DOCKER_SOCKET_PATH: /var/run/docker.sock
+  # Tarama kapısı (6b, M27): üç imaj da digest-pinli olmalı; semgrep ayrıca
+  # ÇEVRİMDIŞI kural yolu ister (tarayıcının ağı yoktur). Dördü de doluysa
+  # kapı gerçek tarama yapar, biri boşsa fail-closed kalır ve açılışta söyler.
+  SCAN_IMAGE_GITLEAKS: ${SCAN_IMAGE_GITLEAKS:-}
+  SCAN_IMAGE_SEMGREP: ${SCAN_IMAGE_SEMGREP:-}
+  SCAN_IMAGE_TRIVY: ${SCAN_IMAGE_TRIVY:-}
+  SCAN_SEMGREP_RULES: ${SCAN_SEMGREP_RULES:-}
+  SCAN_RULES_VOLUME: ${SCAN_RULES_VOLUME:-}
+  # HTTP ajan koşucusu (3ö/6a, CLI'sız): bir oturumun araç çağrısı bütçesi.
+  AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-80}
+
   # ── Onay kapıları → Jira grupları ──────────────────────────────────────────
   # /approve kararı, karar verenin JİRA GRUBU üyeliğiyle doğrulanır
   # (apps/deploy/src/stores/gate-directory.ts). Eşleme boşsa ROL ADININ KENDİSİ
@@ -482,7 +503,11 @@ services:
       WORKER_HEALTH_PORT: "7002"
     # workspace dahil: analiz aktiviteleri bff'in klonladığı depoyu
     # workspacePath'ten okur — mount olmadan yol worker'da hiç var olmaz.
-    volumes: *workspace-volumes
+    volumes:
+      - maestro-workspace:/workspace
+      # Tarayıcı konteynerleri (6b) ve — RUNNER_IMAGE_LINUX verilirse — sandbox
+      # filosu bu soketten yaratılır. Salt-okur bağ, API çağrısına yeter.
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro
     depends_on:
       temporal: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }

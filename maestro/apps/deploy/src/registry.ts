@@ -11,6 +11,7 @@ import { registerSecretDrivers } from "@maestro/secrets";
 import { registerStorageDrivers } from "@maestro/storage";
 import { NOT_CONFIGURED_DRIVER } from "./profile.js";
 import { notConfiguredCiPort, notConfiguredScanPort, notConfiguredWorkPort } from "./stores/unavailable-ports.js";
+import { CONTAINER_TRIO_DRIVER, compositeScanPort, TRIO_TOOLS, type TrioTool } from "./stores/scan-port.js";
 import type { PublishDeps } from "@maestro/publish";
 import type { ScanDeps } from "@maestro/scanners";
 import type { NotifyDeps } from "@maestro/notify";
@@ -134,6 +135,20 @@ export function buildRegistry(deps: RegistrationDeps): PortRegistry {
   registry.register<WorkPort>("work", NOT_CONFIGURED_DRIVER, () => notConfiguredWorkPort());
   registry.register<CiPort>("ci", NOT_CONFIGURED_DRIVER, () => notConfiguredCiPort());
   registry.register<ScanPort>("scan", NOT_CONFIGURED_DRIVER, () => notConfiguredScanPort());
+  // The three-tool fan-out (M27): each tool keeps its own driver and image;
+  // this one composes them so step 6b can ask ONE port for any of the three.
+  registry.register<ScanPort>("scan", CONTAINER_TRIO_DRIVER, (config) => {
+    const cfg = config as { images?: Partial<Record<TrioTool, string>>; semgrep?: { rulesRef?: string } };
+    const images = cfg.images ?? {};
+    const byTool: Partial<Record<TrioTool, ScanPort>> = {};
+    for (const tool of TRIO_TOOLS) {
+      const image = images[tool];
+      if (image === undefined) continue;
+      const toolConfig = tool === "semgrep" && cfg.semgrep?.rulesRef !== undefined ? { image, rulesRef: cfg.semgrep.rulesRef } : { image };
+      byTool[tool] = registry.resolve<ScanPort>("scan", tool)(toolConfig);
+    }
+    return compositeScanPort(byTool);
+  });
 
   return registry;
 }

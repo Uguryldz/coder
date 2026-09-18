@@ -74,6 +74,15 @@ x-node-env: &node-env
   SCAN_IMAGE_TRIVY: ${SCAN_IMAGE_TRIVY}
   SCAN_IMAGE_SEMGREP: ${SCAN_IMAGE_SEMGREP}
   SCAN_IMAGE_GITLEAKS: ${SCAN_IMAGE_GITLEAKS}
+  # semgrep's offline rules (a path inside the scanner: under the workspace
+  # mount, or on the read-only rules volume at /rules) and that volume's name.
+  SCAN_SEMGREP_RULES: ${SCAN_SEMGREP_RULES:-}
+  SCAN_RULES_VOLUME: ${SCAN_RULES_VOLUME:-}
+  # The workspace as a NAMED volume, for scanner containers that bind it by
+  # name at a sub-path when no host path exists (see WORKSPACE_ROOT).
+  WORKSPACE_VOLUME: ${WORKSPACE_VOLUME:-}
+  # HTTP agent runner (steps 3ö/6a without a vendor CLI): tool-call budget per session.
+  AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-80}
   # The engineering turn's sandbox image (M21/M27). Optional and empty by
   # default: unset, the worker keeps a NARROW refusal for step 6a rather than
   # inventing a fleet. It was missing from this anchor entirely, so a pilot

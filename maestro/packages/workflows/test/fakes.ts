@@ -166,6 +166,7 @@ export interface FakeOptions {
   prState?: { state: "draft" | "active" | "completed" | "abandoned"; mergeSha: string | null };
   /** `ScmPort.publishWorkspace` — undefined leaves the capability out entirely. */
   publishWorkspace?: ScmPort["publishWorkspace"];
+  readWorkspaceDiff?: ScmPort["readWorkspaceDiff"];
   getCommitChecks?: ScmPort["getCommitChecks"];
   mergePr?: ScmPort["mergePr"];
   verifyMembership?: boolean;
@@ -277,6 +278,7 @@ export function makeFakes(options: FakeOptions = {}): Fakes {
       ...(options.ensureWorkspace === undefined ? {} : { ensureWorkspace: options.ensureWorkspace }),
       ...(options.readWorkspaceDigest === undefined ? {} : { readWorkspaceDigest: options.readWorkspaceDigest }),
       ...(options.publishWorkspace === undefined ? {} : { publishWorkspace: options.publishWorkspace }),
+      ...(options.readWorkspaceDiff === undefined ? {} : { readWorkspaceDiff: options.readWorkspaceDiff }),
       ...(options.getCommitChecks === undefined ? {} : { getCommitChecks: options.getCommitChecks }),
       ...(options.mergePr === undefined ? {} : { mergePr: options.mergePr }),
       createBranch: () => Promise.resolve(),

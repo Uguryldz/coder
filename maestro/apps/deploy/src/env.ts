@@ -160,6 +160,16 @@ export const DeployEnvSchema = z.object({
   SCAN_IMAGE_TRIVY: optionalSetting(),
   SCAN_IMAGE_SEMGREP: optionalSetting(),
   SCAN_IMAGE_GITLEAKS: optionalSetting(),
+  /**
+   * semgrep's `--config`: a rules path INSIDE the scanner container. Rules are
+   * never fetched at scan time (the scanner has no network), so this is either
+   * a file the repository carries under the workspace mount (`/workspace/.semgrep.yml`)
+   * or a file on the rules volume below (`/rules/semgrep.yml`). Without it the
+   * trio is incomplete and the gate stays fail-closed.
+   */
+  SCAN_SEMGREP_RULES: optionalSetting(),
+  /** NAME of a Docker volume mounted read-only at `/rules` in every scanner container. */
+  SCAN_RULES_VOLUME: optionalSetting(),
 
   // ── the engineering turn's sandbox fleet (M21/M23/M60) ──────────────────
   /**
@@ -189,6 +199,13 @@ export const DeployEnvSchema = z.object({
    * empty named volume — without it the sandbox verifies nothing real.
    */
   RUNNER_WORKSPACE_HOST_ROOT: optionalSetting(),
+  /**
+   * NAME of the Docker volume `WORKSPACE_ROOT` is, for a compose stack whose
+   * workspace is a named volume rather than a host directory. The scanners
+   * mount it read-only at a sub-path (Engine API ≥ 1.45); without either this
+   * or `RUNNER_WORKSPACE_HOST_ROOT` no scanner container can see a clone.
+   */
+  WORKSPACE_VOLUME: optionalSetting(),
   /** `uid:gid` the sandbox runs as; with a bound workspace it must own the clone (default 10001:10001). */
   RUNNER_SANDBOX_USER: optionalSetting(),
   /**

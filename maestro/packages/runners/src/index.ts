@@ -9,6 +9,7 @@ export * from "./pool.js";
 export * from "./provision.js";
 export * from "./register.js";
 export * from "./sandbox.js";
+export * from "./scan-runner.js";
 export * from "./unix-transport.js";
 export * from "./workspace.js";
 

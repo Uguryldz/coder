@@ -9,6 +9,7 @@ import {
   notifyConfig,
   publishConfig,
   scanConfig,
+  scanDriverFor,
   secretConfig,
   storageConfig,
 } from "./driver-config.js";
@@ -106,12 +107,13 @@ export function buildPortSelection(inputs: DeploymentInputs): DeploymentSelectio
   // pointed at a repository yet — the wizard, not the boot sequence, is where
   // that gap is supposed to be reported.
   const scmConfig = drivers.scm === "github" ? githubConfig(env) : ado;
+  const scanDriver = scanDriverFor(env, drivers.scan).driver;
   return {
     work: { driver: workDriver, config: work },
     scm: { driver: drivers.scm, config: scmConfig },
     ci: { driver: drivers.ci, config: ado },
     llm: { driver: drivers.llm, config: llmConfig(env) },
-    scan: { driver: drivers.scan, config: scanConfig(env, drivers.scan) },
+    scan: { driver: scanDriver, config: scanConfig(env, scanDriver) },
     storage: {
       driver: drivers.storage,
       config: storageConfig(env, profile, inputs.s3Credentials, inputs.sql, inputs.fetchImpl),

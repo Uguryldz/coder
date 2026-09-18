@@ -95,6 +95,17 @@ export class DockerClient {
   }
 
   /** Log tail of a finished (or killed) container — the partial output of M23. */
+  /**
+   * The COMPLETE log, both streams, for callers that must never read a
+   * truncated report as a pass (the scanners, M27). `containerLogs` keeps its
+   * tail semantics for the sandbox, whose output is evidence but not a verdict.
+   */
+  async containerLogsAll(id: string): Promise<StreamTails> {
+    const path = `/containers/${encode(id)}/logs${query({ stdout: 1, stderr: 1, tail: "all" })}`;
+    const response = await this.#send({ method: "GET", path }, "containers/logs", { tolerate: [404], raw: true });
+    return demultiplex(response.body);
+  }
+
   async containerLogs(id: string, tailLines: number): Promise<StreamTails> {
     const path = `/containers/${encode(id)}/logs${query({ stdout: 1, stderr: 1, tail: tailLines })}`;
     const response = await this.#send({ method: "GET", path }, "containers/logs", { tolerate: [404], raw: true });

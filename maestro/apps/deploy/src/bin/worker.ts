@@ -1,11 +1,12 @@
 import { createDb, type Db } from "@maestro/db";
 import { defaultPiiPolicy } from "@maestro/pii";
 import { PortRegistry, type LlmPort, type ScmPort, type SecretPort, type StoragePort } from "@maestro/ports";
-import { createDockerLinuxRunner } from "@maestro/runners";
+import { createDockerLinuxRunner, createScanContainerRunner } from "@maestro/runners";
 import { MAESTRO_TASK_QUEUE, PORT_NAMES, startMaestroWorker, type CoreDeps } from "@maestro/workflows";
 import { bootPlatform, degradedCapabilities, MISSING_CORE_DEPS } from "../boot.js";
 import { roleResolver } from "../stores/gate-directory.js";
 import type { DeployEnv } from "../env.js";
+import type { ContainerRunner } from "@maestro/scanners";
 import { PrismaConnectionStore } from "../stores/connections.js";
 import { isScmConnectionKind } from "@maestro/bff";
 import { execFile } from "node:child_process";
@@ -99,6 +100,10 @@ export async function main(): Promise<void> {
 
     const { env, deployment } = await bootPlatform({
       sql: prismaSqlExecutor(db),
+      // The scanners' container seam (M27). Absent, every engineering run
+      // stops at 6b with "no ContainerRunner is wired" — which is what every
+      // deployment did until this was bridged.
+      ...scanRunnerOption(process.env),
       publishRunDeps,
       // The worker is where model calls happen, so it is where they are
       // recorded. Without this the cost and PII screens answer 200 with an
@@ -611,6 +616,7 @@ export function withWorkspaceCloning(
            *    dosyaları, üretilmiş çıktılar ve ikili dosyalar bütçeyi
            *    doldurup asıl kodu dışarı iterdi.
            */
+          readWorkspaceDiff: (request) => readWorkspaceDiff(request.workspacePath, request.maxBytes ?? 200_000),
           readWorkspaceDigest: async (request) => {
             const budget = request.maxBytes ?? 200_000;
             try {
@@ -715,3 +721,78 @@ export function withWorkspaceCloning(
 
 /** M31 ceiling-friendly TTL: long enough for one push, short enough to be worthless afterwards. */
 const PUSH_TOKEN_TTL_SECONDS = 900;
+
+/**
+ * The scanners' `ContainerRunner`, from the same variables the sandbox fleet
+ * reads. `WORKSPACE_ROOT` names the worker-side root the clones live under;
+ * the daemon reaches it through `RUNNER_WORKSPACE_HOST_ROOT` (a host path) or
+ * `WORKSPACE_VOLUME` (a named volume, the compose stack's case). Without a
+ * root, or without either mapping, nothing is wired and boot keeps the
+ * refusing default — a scan that cannot see the clone must not run.
+ */
+/** Where `SCAN_RULES_VOLUME` appears inside every scanner container. */
+export const SCAN_RULES_MOUNT = "/rules";
+
+export function scanRunnerOption(source: NodeJS.ProcessEnv): { containerRunner?: ContainerRunner } {
+  const workerRoot = source["WORKSPACE_ROOT"]?.trim() ?? "";
+  const hostRoot = source["RUNNER_WORKSPACE_HOST_ROOT"]?.trim() ?? "";
+  const volume = source["WORKSPACE_VOLUME"]?.trim() ?? "";
+  if (workerRoot === "" || (hostRoot === "" && volume === "")) return {};
+  const rulesVolume = source["SCAN_RULES_VOLUME"]?.trim() ?? "";
+  const runner = createScanContainerRunner({
+    socketPath: source["DOCKER_SOCKET_PATH"]?.trim() || "/var/run/docker.sock",
+    workspace: {
+      workerRoot,
+      ...(hostRoot === "" ? {} : { hostRoot }),
+      ...(hostRoot === "" && volume !== "" ? { volume } : {}),
+    },
+    extraMounts: rulesVolume === "" ? [] : [{ volume: rulesVolume, target: SCAN_RULES_MOUNT }],
+  });
+  return { containerRunner: runner };
+}
+
+/**
+ * Tracked changes as `git diff HEAD`, new files as `git diff --no-index`
+ * against /dev/null, so the reviewer sees an added file's content and not
+ * only its name. Nothing is staged or written: the clone is the turn's
+ * evidence and a diff that mutated it would be reviewing its own side effect.
+ */
+export async function readWorkspaceDiff(
+  workspacePath: string,
+  maxBytes: number,
+): Promise<{ diff: string; files: number; truncated: boolean } | null> {
+  const git = (args: readonly string[], okCodes: readonly number[] = [0]): Promise<string> =>
+    new Promise((resolve, reject) => {
+      execFile(
+        "git",
+        ["-C", workspacePath, ...args],
+        { maxBuffer: 32 * 1024 * 1024, encoding: "utf8", env: { PATH: process.env["PATH"] ?? "/usr/bin:/bin", GIT_TERMINAL_PROMPT: "0" } },
+        (error, stdout) => {
+          const code = (error as { code?: unknown } | null)?.code;
+          if (error && !(typeof code === "number" && okCodes.includes(code))) reject(error);
+          else resolve(stdout);
+        },
+      );
+    });
+  try {
+    const tracked = await git(["diff", "HEAD", "--no-color", "--"]);
+    const untracked = (await git(["ls-files", "--others", "--exclude-standard", "-z"]))
+      .split("\0")
+      .filter((f) => f !== "" && f !== ".maestro-workspace");
+    const pieces: string[] = tracked === "" ? [] : [tracked];
+    for (const file of untracked) {
+      pieces.push(await git(["diff", "--no-index", "--no-color", "--", "/dev/null", file], [0, 1]));
+    }
+    const full = pieces.join("");
+    const files = new Set<string>();
+    for (const line of full.split("\n")) {
+      const m = /^diff --git a\/(\S+) b\//.exec(line);
+      if (m?.[1] !== undefined) files.add(m[1]);
+    }
+    const truncated = Buffer.byteLength(full, "utf8") > maxBytes;
+    const diff = truncated ? `${Buffer.from(full, "utf8").subarray(0, maxBytes).toString("utf8")}\n… (diff ${String(maxBytes)} bayttan sonra kesildi)` : full;
+    return { diff, files: files.size, truncated };
+  } catch {
+    return null;
+  }
+}

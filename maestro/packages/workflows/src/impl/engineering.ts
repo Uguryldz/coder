@@ -1,11 +1,12 @@
 import { NonEmpty, type TicketKey } from "@maestro/contracts";
+import { BLOCKING_SEVERITIES, runDevReviewer } from "@maestro/agent-roles";
 import type { AgentTurnResult, SessionReport } from "@maestro/execution";
 import { buildLivingSummary } from "@maestro/memory";
 import { z } from "zod";
 import type { EngineeringResult, ReviewResult, TestRunResult } from "../activities.js";
 import type { ActivityDeps, RunContext } from "./deps.js";
 import { engineerVariantOf } from "./deps.js";
-import { guardModelCall, handOver, quotaWait, resolveOutcome } from "./outcome.js";
+import { guardModelCall, guardedLlm, handOver, outcomeOfRole, quotaWait, resolveOutcome } from "./outcome.js";
 import { audit, record } from "./record.js";
 import { ensureWorkspaceFor, workspaceUsable } from "./workspace.js";
 import { developerBrief, loadAnalysis, planDeviations, ruleChecklist } from "./brief.js";
@@ -294,7 +295,14 @@ async function verifierTurn(
       variantId,
       verification: run.verification,
     });
-  } catch {
+  } catch (error) {
+    await record(deps, run, {
+      kind: "review",
+      actor: "ai",
+      title: "doğrulama turu açılamadı",
+      detail: `sandbox turu: ${error instanceof Error ? error.message : String(error)} — okur oturuma düşülüyor`,
+      key: `verify-turn-failed:${deps.now().toISOString()}`,
+    });
     return null;
   }
   if (outcome.status !== "ok") return null;
@@ -338,7 +346,14 @@ async function verifierSession(
       dataClass: run.dataClass,
       variantId: verifierVariant,
     });
-  } catch {
+  } catch (error) {
+    await record(deps, run, {
+      kind: "review",
+      actor: "ai",
+      title: "doğrulama oturumu açılamadı",
+      detail: `ajan oturumu: ${error instanceof Error ? error.message : String(error)} — diff incelemesine düşülüyor`,
+      key: `verify-session-failed:${deps.now().toISOString()}`,
+    });
     return null;
   }
   const resolved = await resolveOutcome(deps, run, "verify", outcome);
@@ -370,7 +385,21 @@ async function verifyChanges(deps: ActivityDeps, ticket: TicketKey, attempt: num
     commands: commands === "" ? "- (tanımlı komut yok)" : commands,
   })}`;
   const session = (await verifierTurn(deps, run, verifyTask)) ?? (await verifierSession(deps, run, rules));
-  if (session === null) return review(deps, ticket, "dev_reviewer", "diff-review", attempt);
+  if (session === null) {
+    // No sandbox and no agent session: the reviewer still gets the DIFF —
+    // the one thing a code review is about. Only a deployment that cannot
+    // read its own clone falls to the ticket-only verdict, and says so.
+    const reviewed = await reviewRealDiff(deps, run, ticket, rules, attempt);
+    if (reviewed !== null) return reviewed;
+    await record(deps, run, {
+      kind: "review",
+      actor: "ai",
+      title: "kör inceleme",
+      detail: "çalışma alanı diff'i okunamadı — inceleme yalnız ticket metnine dayanıyor",
+      key: `blind-review:${attempt}`,
+    });
+    return review(deps, ticket, "dev_reviewer", "diff-review", attempt);
+  }
   const verifierVariant = await roleVariantId(deps, run, "dev_reviewer");
   const outcome = await guardModelCall(deps, run, "dev_reviewer", () =>
     deps.llm.generateObject(
@@ -403,6 +432,63 @@ async function verifyChanges(deps: ActivityDeps, ticket: TicketKey, attempt: num
     actor: "ai",
     title: approved ? "doğrulama onaylandı" : "doğrulama bulguları",
     detail: verificationTable(verdict),
+    key: `dev_reviewer:${attempt}`,
+  });
+  return { approved, findings };
+}
+
+/**
+ * The code review on the actual diff (`runDevReviewer`, the role that existed
+ * with zero callers). Findings are pinned to files in the diff by the role's
+ * own validation; a blocker or major finding cannot coexist with approval.
+ * An empty diff is not approvable: a turn that changed nothing has nothing
+ * to review and nothing to open a PR from.
+ */
+async function reviewRealDiff(
+  deps: ActivityDeps,
+  run: RunContext,
+  ticket: TicketKey,
+  rules: readonly string[],
+  attempt: number,
+): Promise<ReviewResult | null> {
+  if (deps.scm.readWorkspaceDiff === undefined) return null;
+  if (!run.workspacePresent || run.workspacePath.trim() === "") return null;
+  const read = await deps.scm.readWorkspaceDiff({ workspacePath: run.workspacePath }).catch(() => null);
+  if (read === null) return null;
+  if (read.diff.trim() === "") {
+    await record(deps, run, {
+      kind: "review",
+      actor: "ai",
+      title: "inceleme bulguları",
+      detail: "çalışma alanında değişiklik yok — incelenecek diff yok",
+      key: `dev_reviewer:${attempt}`,
+    });
+    return { approved: false, findings: ["çalışma alanında değişiklik yok — geliştirme turu hiçbir dosyayı değiştirmedi"] };
+  }
+  const snapshot = await deps.work.getTicket(ticket);
+  const variantId = await roleVariantId(deps, run, "dev_reviewer");
+  const result = await runDevReviewer({
+    llm: guardedLlm(deps, run, "dev_reviewer"),
+    context: { ticket: snapshot, diff: read.diff, acceptanceCriteria: [...rules], codingStandards: [] },
+    variantId,
+    dataClass: run.dataClass,
+  });
+  const resolved = await resolveOutcome(deps, run, "dev_reviewer", outcomeOfRole(result));
+  if (resolved.status === "degraded") {
+    return { approved: false, findings: [`ai_assist (M97): ${resolved.messageKey}`] };
+  }
+  const verdict = resolved.value;
+  const blocking = verdict.findings.some((f) => BLOCKING_SEVERITIES.includes(f.severity));
+  const approved = verdict.approved && !blocking;
+  const findings = verdict.findings.map((f) => `${f.file}:${f.locator} [${f.severity}] ${f.problem} → ${f.suggestion}`);
+  await record(deps, run, {
+    kind: "review",
+    actor: "ai",
+    title: approved ? "inceleme onaylandı" : "inceleme bulguları",
+    detail: [
+      `${String(read.files)} dosya${read.truncated ? " (diff kesildi)" : ""} · ${verdict.summary}`,
+      ...findings,
+    ].join("\n"),
     key: `dev_reviewer:${attempt}`,
   });
   return { approved, findings };

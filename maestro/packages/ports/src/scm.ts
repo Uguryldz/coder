@@ -130,6 +130,16 @@ export interface ScmPort {
    * hands over instead of opening one.
    */
   publishWorkspace?(request: PublishWorkspaceRequest): Promise<PublishWorkspaceResult>;
+  /**
+   * The unified diff of everything the engineering turn changed in the clone
+   * (tracked edits against HEAD plus new files), byte-capped. What the code
+   * reviewer READS — a reviewer handed only the ticket key reviews nothing.
+   * `null` when the deployment owns no checkout directory.
+   */
+  readWorkspaceDiff?(request: {
+    readonly workspacePath: string;
+    readonly maxBytes?: number;
+  }): Promise<{ readonly diff: string; readonly files: number; readonly truncated: boolean } | null>;
 }
 
 export interface PublishWorkspaceRequest {

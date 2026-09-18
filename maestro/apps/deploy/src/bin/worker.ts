@@ -732,6 +732,8 @@ const PUSH_TOKEN_TTL_SECONDS = 900;
  */
 /** Where `SCAN_RULES_VOLUME` appears inside every scanner container. */
 export const SCAN_RULES_MOUNT = "/rules";
+/** trivy's default cache dir (the image runs as root); `SCAN_TRIVY_CACHE_VOLUME` lands here. */
+export const TRIVY_CACHE_MOUNT = "/root/.cache/trivy";
 
 export function scanRunnerOption(source: NodeJS.ProcessEnv): { containerRunner?: ContainerRunner } {
   const workerRoot = source["WORKSPACE_ROOT"]?.trim() ?? "";
@@ -739,6 +741,7 @@ export function scanRunnerOption(source: NodeJS.ProcessEnv): { containerRunner?:
   const volume = source["WORKSPACE_VOLUME"]?.trim() ?? "";
   if (workerRoot === "" || (hostRoot === "" && volume === "")) return {};
   const rulesVolume = source["SCAN_RULES_VOLUME"]?.trim() ?? "";
+  const trivyCache = source["SCAN_TRIVY_CACHE_VOLUME"]?.trim() ?? "";
   const runner = createScanContainerRunner({
     socketPath: source["DOCKER_SOCKET_PATH"]?.trim() || "/var/run/docker.sock",
     workspace: {
@@ -746,7 +749,11 @@ export function scanRunnerOption(source: NodeJS.ProcessEnv): { containerRunner?:
       ...(hostRoot === "" ? {} : { hostRoot }),
       ...(hostRoot === "" && volume !== "" ? { volume } : {}),
     },
-    extraMounts: rulesVolume === "" ? [] : [{ volume: rulesVolume, target: SCAN_RULES_MOUNT }],
+    extraMounts: [
+      ...(rulesVolume === "" ? [] : [{ volume: rulesVolume, target: SCAN_RULES_MOUNT, readOnly: true }]),
+      ...(trivyCache === "" ? [] : [{ volume: trivyCache, target: TRIVY_CACHE_MOUNT, readOnly: false }]),
+    ],
+    ...((source["SCAN_INTERNAL_NETWORK"]?.trim() ?? "") === "" ? {} : { internalNetwork: source["SCAN_INTERNAL_NETWORK"]!.trim() }),
   });
   return { containerRunner: runner };
 }

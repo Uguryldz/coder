@@ -78,6 +78,12 @@ x-node-env: &node-env
   # mount, or on the read-only rules volume at /rules) and that volume's name.
   SCAN_SEMGREP_RULES: ${SCAN_SEMGREP_RULES:-}
   SCAN_RULES_VOLUME: ${SCAN_RULES_VOLUME:-}
+  # trivy's network: none (needs a pre-populated DB) or internal (joins
+  # SCAN_INTERNAL_NETWORK to reach a DB mirror).
+  SCAN_TRIVY_NETWORK: ${SCAN_TRIVY_NETWORK:-none}
+  SCAN_INTERNAL_NETWORK: ${SCAN_INTERNAL_NETWORK:-}
+  # trivy's vulnerability DB is downloaded once into this volume and reused.
+  SCAN_TRIVY_CACHE_VOLUME: ${SCAN_TRIVY_CACHE_VOLUME:-}
   # The workspace as a NAMED volume, for scanner containers that bind it by
   # name at a sub-path when no host path exists (see WORKSPACE_ROOT).
   WORKSPACE_VOLUME: ${WORKSPACE_VOLUME:-}

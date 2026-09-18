@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, ButtonLink, Kpi, Section } from "../ui/index.ts";
 import { useEnumLabel } from "./common/label.ts";
 import { QueryState } from "./shared/QueryState.tsx";
 import { ageLabel } from "./shared/format.ts";
 import { MAX_RUN_PAGE, useRuns, type RunRow } from "./shared/runs.ts";
-import { TicketsList, BOARD_SCOPE } from "./Tickets.tsx";
+import { TicketsList, BOARD_SCOPE, STATUS_PARAM } from "./Tickets.tsx";
 import { RunStatusCell } from "./shared/RunStatusCell.tsx";
 import {
   GUIDE_DISMISSED_KEY,
@@ -37,9 +37,32 @@ function needsHuman(run: RunRow): boolean {
   return run.status === "fail" || run.status === "handover";
 }
 
+/**
+ * TAKILI KOŞU — durumu `running` ama `updatedAt` bu kadar süredir kıpırdamamış.
+ *
+ * Bir adım normalde dakikalar sürer; yarım saat boyunca hiçbir şey yazmayan
+ * bir koşu ya ölmüş bir işçinin elinde ya da cevap vermeyen bir servisi
+ * bekliyor. İkisi de operatörün bakması gereken şey, ve ikisi de "Çalışıyor"
+ * kutusunda sağlıklı görünüyordu.
+ */
+export const STUCK_AFTER_MS = 30 * 60_000;
+
+/** `null` when the row carries no usable timestamp — never guessed. */
+function updatedAtMs(run: RunRow): number | null {
+  const ms = Date.parse(run.updatedAt);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+export function isStuck(run: RunRow, now: number): boolean {
+  if (run.status !== "running") return false;
+  const updated = updatedAtMs(run);
+  return updated !== null && now - updated >= STUCK_AFTER_MS;
+}
+
 export function DashScreen(): ReactNode {
   const t = useT();
   const navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
   const enumLabel = useEnumLabel();
 
   const { data, isPending, error, refetch, isFetching } = useRuns(MAX_RUN_PAGE, {
@@ -58,6 +81,38 @@ export function DashScreen(): ReactNode {
     }),
     [runs],
   );
+
+  /**
+   * Stuck runs, oldest update first. `now` is taken per render: the list polls
+   * every 30 s, so the verdict refreshes without a timer of its own.
+   *
+   * `unknown` counts running rows with NO usable `updatedAt` — an older BFF or
+   * a stripped fixture. The tile shows "—" rather than "0" when EVERY running
+   * row is like that: a zero there would claim a health the data cannot vouch
+   * for.
+   */
+  const now = Date.now();
+  const stuck = useMemo(
+    () =>
+      runs
+        .filter((run) => isStuck(run, now))
+        .sort((a, b) => (updatedAtMs(a) ?? 0) - (updatedAtMs(b) ?? 0)),
+    [runs, now],
+  );
+  const runningUnknown = runs.filter((run) => run.status === "running" && updatedAtMs(run) === null).length;
+  const stuckValue = stats.running > 0 && runningUnknown === stats.running ? "—" : String(stuck.length);
+
+  // The gate tile opens the list below already sliced to the gate chip.
+  const openGateList = (): void => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.set(STATUS_PARAM, "gate");
+        return params;
+      },
+      { replace: true },
+    );
+  };
 
   /**
    * "Needs attention": broken first (a failure blocks everything behind it),
@@ -134,7 +189,14 @@ export function DashScreen(): ReactNode {
             <Kpi
               label={t("dash.kpi.gate")}
               value={String(stats.gate)}
+              onClick={openGateList}
+              title={t("dash.kpi.gate_action")}
               {...(stats.gate > 0 ? { note: t("dash.kpi.gate_note") } : {})}
+            />
+            <Kpi
+              label={t("dash.kpi.stuck")}
+              value={stuckValue}
+              note={t(stuckValue === "—" ? "dash.kpi.stuck_unknown" : "dash.kpi.stuck_note")}
             />
             <Kpi
               label={t("dash.kpi.failed")}
@@ -149,6 +211,36 @@ export function DashScreen(): ReactNode {
               {...(stats.done > 0 ? { note: t("dash.kpi.done_note") } : {})}
             />
           </div>
+        )}
+
+        {stuck.length > 0 && (
+          <Section title={t("dash.stuck.title")} subtitle={t("dash.stuck.subtitle")}>
+            <div>
+              {stuck.map((run) => {
+                const age = ageLabel(run.updatedAt, now);
+                return (
+                  <button
+                    key={run.ticketKey}
+                    type="button"
+                    className="scr-issue scr-issue--alert"
+                    onClick={() => void navigate(`/detail/${run.ticketKey}`)}
+                  >
+                    <span className="scr-issue__body">
+                      {/* No status badge: every row here is `running` by definition. */}
+                      <b className="scr-mono">{run.ticketKey}</b>{" "}
+                      <span className="scr-hint">
+                        {run.title}
+                        {run.step === null ? "" : ` · ${t(`steps.${run.step}`)}`}
+                        {age === null
+                          ? ""
+                          : ` · ${t("dash.stuck.age", { age: t(age.key, age.params) })}`}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
         )}
 
         {attention.length > 0 && (

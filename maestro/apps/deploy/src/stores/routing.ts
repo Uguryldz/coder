@@ -1,4 +1,4 @@
-import type { RoutingProjectView, RoutingReader, RoutingRuleView } from "@maestro/bff";
+import type { RoutingBindingSettings, RoutingProjectView, RoutingReader, RoutingRuleView } from "@maestro/bff";
 import { triggerModeOf } from "./bindings.js";
 
 /**
@@ -26,6 +26,13 @@ import { triggerModeOf } from "./bindings.js";
  */
 export interface RoutingBindingRow {
   projectKey: string;
+  /**
+   * Geri geldi — ama karar için değil, DÜZENLEME için: panel bağlamanın
+   * bugünkü tetikleme kipini göstermeli ki operatör neyi neye çevirdiğini
+   * görsün (`RoutingProjectView.binding`). Yukarıdaki not hâlâ doğru: hiçbir
+   * şey bu sütuna bakarak ticket almaz.
+   */
+  trigger: string;
   defaultsJson: unknown;
   state: string;
 }
@@ -109,6 +116,7 @@ export class PrismaRoutingReader implements RoutingReader {
         // stays; this read model no longer speaks for it.
         apps: [...apps].sort(),
         noteKey: note.key,
+        binding: bindingSettingsOf(row),
         // Omitted rather than sent as `undefined`: the wire schema marks it
         // optional, and a present-but-undefined field serialises as `null`,
         // which the screen would have to special-case.
@@ -136,6 +144,26 @@ export class PrismaRoutingReader implements RoutingReader {
       };
     });
   }
+}
+
+/**
+ * The binding's editable settings, RAW. `mode`/`dataClass` are `null` when the
+ * JSON column does not carry them — the panel then shows "unknown" rather than
+ * a default the row never had.
+ */
+function bindingSettingsOf(row: RoutingBindingRow): RoutingBindingSettings {
+  const defaults =
+    typeof row.defaultsJson === "object" && row.defaultsJson !== null
+      ? (row.defaultsJson as Record<string, unknown>)
+      : {};
+  const mode = defaults["mode"];
+  const dataClass = defaults["dataClass"];
+  return {
+    trigger: row.trigger,
+    state: row.state,
+    mode: typeof mode === "string" && mode !== "" ? mode : null,
+    dataClass: typeof dataClass === "string" && dataClass !== "" ? dataClass : null,
+  };
 }
 
 /** `{ appId?, mode?, dataClass? }` — a JSON column, so genuinely unknown. */

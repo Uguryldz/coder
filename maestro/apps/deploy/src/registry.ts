@@ -138,13 +138,22 @@ export function buildRegistry(deps: RegistrationDeps): PortRegistry {
   // The three-tool fan-out (M27): each tool keeps its own driver and image;
   // this one composes them so step 6b can ask ONE port for any of the three.
   registry.register<ScanPort>("scan", CONTAINER_TRIO_DRIVER, (config) => {
-    const cfg = config as { images?: Partial<Record<TrioTool, string>>; semgrep?: { rulesRef?: string } };
+    const cfg = config as {
+      images?: Partial<Record<TrioTool, string>>;
+      semgrep?: { rulesRef?: string };
+      trivy?: { networkMode?: "none" | "internal" };
+    };
     const images = cfg.images ?? {};
     const byTool: Partial<Record<TrioTool, ScanPort>> = {};
     for (const tool of TRIO_TOOLS) {
       const image = images[tool];
       if (image === undefined) continue;
-      const toolConfig = tool === "semgrep" && cfg.semgrep?.rulesRef !== undefined ? { image, rulesRef: cfg.semgrep.rulesRef } : { image };
+      const toolConfig =
+        tool === "semgrep" && cfg.semgrep?.rulesRef !== undefined
+          ? { image, rulesRef: cfg.semgrep.rulesRef }
+          : tool === "trivy" && cfg.trivy?.networkMode !== undefined
+            ? { image, networkMode: cfg.trivy.networkMode }
+            : { image };
       byTool[tool] = registry.resolve<ScanPort>("scan", tool)(toolConfig);
     }
     return compositeScanPort(byTool);

@@ -240,6 +240,20 @@ export function repoMapIncomplete(d: RuleDraft): boolean {
   return d.repoMapOn && repoMapOf(d) === null;
 }
 
+/**
+ * KOD YAZAN AKIŞ DEPO EŞLEMESİ İSTER.
+ *
+ * `analiz` salt-okurdur: ticket metninden belge yazar, depoya dokunmaz.
+ * `gelistirme` (ve eski `duzeltme`) kod yazar ve PR açar — hangi depoya
+ * yazacağını bilmeden koşan bir kod akışı, proje bağlamasının varsayılan
+ * deposuna sessizce düşer ve operatör bunu ancak yanlış depoda açılmış bir
+ * PR'dan öğrenir. Bu yüzden kod akışında kaydedilecek eşleme (`repoMapOf`)
+ * boş olamaz; eşleme açık ama yarım bırakılmışsa da aynı kapı çalışır.
+ */
+export function repoMapRequired(d: RuleDraft): boolean {
+  return d.flowType !== "analiz" && repoMapOf(d) === null;
+}
+
 export function statusMapOf(d: RuleDraft): StatusMap | null {
   return buildStatusMap(d.statusOn, d.statusDraft, d.reassignOnNeedInfo, d.flowType, d.gateStatusDraft);
 }

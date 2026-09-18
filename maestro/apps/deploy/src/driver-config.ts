@@ -454,7 +454,11 @@ export function scanConfig(env: DeployEnv, driver: string): Record<string, unkno
     if (trio.configured === null) {
       throw new DeployConfigError(`${trio.missing[0] ?? "SCAN_IMAGE_*"}: required — the scan trio needs it (M27)`);
     }
-    return { images: trio.configured.images, semgrep: { rulesRef: trio.configured.semgrepRules } };
+    return {
+      images: trio.configured.images,
+      semgrep: { rulesRef: trio.configured.semgrepRules },
+      trivy: { networkMode: env.SCAN_TRIVY_NETWORK },
+    };
   }
   const byTool: Record<string, string | undefined> = {
     trivy: env.SCAN_IMAGE_TRIVY,

@@ -13,6 +13,7 @@ import type {
   Page,
   ParamPutResult,
   PendingBinding,
+  RoutingBindingSettings,
   RoutingUpdate,
   RoutingView,
 } from "./common/index.ts";
@@ -501,6 +502,7 @@ export function RoutingScreen(): ReactNode {
       {editingBinding !== null && (
         <BindingEdit
           projectKey={editingBinding}
+          current={routing.data?.projects.find((p) => p.projectKey === editingBinding)?.binding ?? null}
           onClose={() => setEditingBinding(null)}
           onOpenRules={(key) => void navigate(listeningPath(key))}
           onSaved={() => {
@@ -545,11 +547,18 @@ export function RoutingScreen(): ReactNode {
  */
 function BindingEdit({
   projectKey,
+  current,
   onClose,
   onOpenRules,
   onSaved,
 }: {
   readonly projectKey: string;
+  /**
+   * The binding's settings TODAY, from `/routing` (`RoutingProject.binding`).
+   * `null` on a BFF that does not send them — the boxes then open on
+   * "leave unchanged" instead of a value nobody read.
+   */
+  readonly current: RoutingBindingSettings | null;
   readonly onClose: () => void;
   readonly onOpenRules: (projectKey: string) => void;
   readonly onSaved: () => void;
@@ -557,22 +566,43 @@ function BindingEdit({
   const t = useT();
   const api = useApi();
   const toast = useToast();
+  const enumLabel = useEnumLabel();
   /**
-   * Başlangıç değeri BOŞ ("değiştirme"), mevcut değer DEĞİL.
+   * KUTULAR MEVCUT DEĞERLE AÇILIR — `/routing` artık gönderiyor.
    *
-   * `/routing` bu ekrana bağlamanın tetikleme kipini, yayınlama kipini, veri
-   * sınıfını ve durumunu GÖNDERMİYOR — yalnız proje anahtarı, uygulamaları ve
-   * bir not. Kutuları uydurma bir varsayılanla doldurmak, operatöre "şu anda
-   * böyle" diye YANLIŞ bilgi verirdi; üstelik dokunmadığı bir kutu kaydederken
-   * gerçek değeri o uydurmayla ezerdi.
+   * Bir dönem her kutu "— değiştirme —" ile açılıyordu, çünkü `/routing`
+   * bağlamanın tetikleme kipini, yayınlama kipini, veri sınıfını ve durumunu
+   * GÖNDERMİYORDU; uydurma bir varsayılan operatöre "şu anda böyle" diye
+   * yanlış bilgi verir, dokunulmayan kutu kaydederken gerçek değeri ezerdi.
+   * Sahada bu "düzenleme boş form açıyor" diye bildirildi: operatör neyi neye
+   * çevirdiğini göremiyordu.
    *
-   * Bu yüzden her kutu "— değiştirme —" ile açılır ve yalnız SEÇİLEN alanlar
-   * gönderilir. Sunucu da yokluğu "dokunma" diye okuyor.
+   * Şimdi `RoutingProject.binding` mevcut değerleri taşıyor ve kutular onunla
+   * dolu. İki ilke KORUNUYOR: (1) yalnız MEVCUTTAN FARKLI alanlar gönderilir —
+   * dokunulmayan kutu tele çıkmaz, eş zamanlı bir düzenleme ezilmez; (2)
+   * sunucu alanı göndermiyorsa (eski BFF, `current === null`) eski davranış:
+   * boş = "değiştirme". Bilinmeyen bir mevcut değer (`null` mode/dataClass)
+   * da boş açılır; uydurma varsayılan yok.
    */
-  const [trigger, setTrigger] = useState<string>("");
-  const [mode, setMode] = useState<string>("");
-  const [dataClass, setDataClass] = useState<string>("");
-  const [state, setState] = useState<string>("");
+  const [trigger, setTrigger] = useState<string>(current?.trigger ?? "");
+  const [mode, setMode] = useState<string>(current?.mode ?? "");
+  const [dataClass, setDataClass] = useState<string>(current?.dataClass ?? "");
+  const [state, setState] = useState<string>(current?.state ?? "");
+  /** A box is sent only when it holds something AND that differs from today. */
+  const changed = (value: string, today: string | null | undefined): boolean =>
+    value !== "" && value !== (today ?? "");
+  /** "— değiştirme —" is offered only when the current value is unknown. */
+  const keepRow = (today: string | null | undefined): { value: string; label: string }[] =>
+    today === null || today === undefined ? [{ value: "", label: t("routing.edit.keep") }] : [];
+  /**
+   * A stored value outside the panel's short list (`ai_assist`, `human_only`)
+   * is still shown by its own name, so opening the panel never blanks it and
+   * saving never silently moves it.
+   */
+  const extraRow = (today: string | null | undefined, known: readonly string[], prefix: string) =>
+    today !== null && today !== undefined && today !== "" && !known.includes(today)
+      ? [{ value: today, label: enumLabel(prefix, today).text }]
+      : [];
 
   const save = useMutation({
     mutationFn: () => {
@@ -584,11 +614,11 @@ function BindingEdit({
        * sessizce geri alırdı. Sunucu da yokluğu "dokunma" diye okuyor.
        */
       const defaults: Record<string, string> = {};
-      if (mode !== "") defaults["mode"] = mode;
-      if (dataClass !== "") defaults["dataClass"] = dataClass;
+      if (changed(mode, current?.mode)) defaults["mode"] = mode;
+      if (changed(dataClass, current?.dataClass)) defaults["dataClass"] = dataClass;
       return api.patch<void>(`/onboarding/${encodeURIComponent(projectKey)}`, {
-        ...(trigger === "" ? {} : { trigger }),
-        ...(state === "" ? {} : { state }),
+        ...(changed(trigger, current?.trigger) ? { trigger } : {}),
+        ...(changed(state, current?.state) ? { state } : {}),
         ...(Object.keys(defaults).length === 0 ? {} : { defaults }),
       });
     },
@@ -616,6 +646,7 @@ function BindingEdit({
       }
     >
       <p className="scr-prose">{t("routing.edit.rules_body")}</p>
+      {current !== null && <p className="scr-hint">{t("routing.edit.prefilled")}</p>}
       <div className="scr-grid scr-grid--2" style={{ marginTop: 12 }}>
         <Select
           label={t("routing.edit.trigger")}
@@ -623,7 +654,7 @@ function BindingEdit({
           onChange={(e) => setTrigger(e.target.value)}
           hint={t("routing.edit.trigger_hint")}
           options={[
-            { value: "", label: t("routing.edit.keep") },
+            ...keepRow(current?.trigger),
             { value: "auto", label: t("routing.edit.trigger.auto") },
             { value: "label", label: t("routing.edit.trigger.label") },
             { value: "command", label: t("routing.edit.trigger.command") },
@@ -635,9 +666,10 @@ function BindingEdit({
           onChange={(e) => setMode(e.target.value)}
           hint={t("onboard.field.merge_hint")}
           options={[
-            { value: "", label: t("routing.edit.keep") },
+            ...keepRow(current?.mode),
             { value: "human_lead", label: t("onboard.merge.human") },
             { value: "full_auto", label: t("onboard.merge.auto") },
+            ...extraRow(current?.mode, ["human_lead", "full_auto"], "mode"),
           ]}
         />
         <Select
@@ -646,7 +678,7 @@ function BindingEdit({
           onChange={(e) => setDataClass(e.target.value)}
           hint={t("routing.edit.data_class_hint")}
           options={[
-            { value: "", label: t("routing.edit.keep") },
+            ...keepRow(current?.dataClass),
             { value: "acik", label: t("routing.data_class.acik") },
             { value: "dahili", label: t("routing.data_class.dahili") },
             { value: "gizli", label: t("routing.data_class.gizli") },
@@ -658,9 +690,10 @@ function BindingEdit({
           onChange={(e) => setState(e.target.value)}
           hint={t("routing.edit.state_hint")}
           options={[
-            { value: "", label: t("routing.edit.keep") },
+            ...keepRow(current?.state),
             { value: "active", label: t("routing.edit.state.active") },
             { value: "paused", label: t("routing.edit.state.paused") },
+            ...extraRow(current?.state, ["active", "paused"], "routing.edit.state"),
           ]}
         />
       </div>

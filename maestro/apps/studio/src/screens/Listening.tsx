@@ -7,7 +7,7 @@ import { useApi, useAuth } from "../auth/AuthProvider.tsx";
 import { hasAnyRole } from "../auth/types.ts";
 import { useT } from "../i18n/I18nProvider.tsx";
 import { Button, Card, useToast } from "../ui/index.ts";
-import type { RoutingView } from "./common/index.ts";
+import type { OnboardingOptions, RoutingView } from "./common/index.ts";
 import {
   bodyFromDraft,
   draftFromRule,
@@ -16,6 +16,7 @@ import {
   priorityOf,
   probeDraftOf,
   repoMapIncomplete,
+  repoMapRequired,
   type RuleDraft,
 } from "./listening/draft.ts";
 import { RuleForm } from "./listening/RuleForm.tsx";
@@ -231,6 +232,28 @@ export function ListeningScreen(): ReactNode {
     },
   });
   const scmRepoOptions = (scmRepos.data?.repos ?? []).filter((name) => !appOptions.includes(name));
+  /**
+   * PLATFORM PROFİLİ — SABİT DEĞİL, LİSTEDEN.
+   *
+   * Kayıtsız bir depo `platform: "linux-node"` sabitiyle kaydediliyordu. Profil
+   * listesi BFF'in kendi cevabıdır (`/onboarding/options.platforms`; Kurulum
+   * sihirbazı da aynı listeyi okur) ve tek elemanlıysa soru sorulmaz: taslak
+   * kendiliğinden dolar. Birden çoksa formda seçici çıkar ve seçilmeden
+   * kayıtsız depo kaydedilmez — yanlış tahmin yanlış araç zincirinde derleme
+   * demek. Yalnız eşleme açıkken okunur; kapalı kuralın profile ihtiyacı yok.
+   */
+  const onboardingOptions = useQuery({
+    queryKey: ["onboarding-options"],
+    enabled: draft.repoMapOn,
+    retry: false,
+    queryFn: ({ signal }) => api.get<OnboardingOptions>("/onboarding/options", { signal }),
+  });
+  const platformOptions = onboardingOptions.data?.platforms ?? [];
+  const [platform, setPlatform] = useState("");
+  const solePlatform = platformOptions.length === 1 ? platformOptions[0] : undefined;
+  useEffect(() => {
+    if (solePlatform !== undefined && platform === "") setPlatform(solePlatform);
+  }, [solePlatform, platform]);
   /**
    * Depo kutusunun NEDEN kısa olduğunu söyleyen not.
    *
@@ -455,6 +478,12 @@ export function ListeningScreen(): ReactNode {
       toast.show("error", t("listening.repomap.incomplete_blocked"));
       return;
     }
+    // Kod yazan akış depoyu bilmeden kaydedilmez (düğme zaten kapalı; klavye
+    // ve eski taslaklar için ikinci kapı).
+    if (repoMapRequired(draft)) {
+      toast.show("error", t("listening.repomap.required_for_code"));
+      return;
+    }
     const priority = priorityOf(draft.priority);
     if (priority === null) {
       toast.show("error", t("listening.form.priority_invalid"));
@@ -462,8 +491,8 @@ export function ListeningScreen(): ReactNode {
     }
     const body = bodyFromDraft(draft, priority);
     // Depo eşlemesinde projeye henüz kayıtlı olmayan bir depo seçildiyse önce
-    // projeye kaydedilir (varsayılan profil: Linux/Node — imaj Java/Maven'ı da
-    // taşır); kayıt başarısızsa kural kaydedilmez.
+    // projeye kaydedilir (profil: BFF'in listesinden seçilen `platform`);
+    // kayıt başarısızsa kural kaydedilmez.
     /**
      * KAYITSIZ DEPO ÖNCE KAYDEDİLİR — SCM LİSTESİNDE GÖRÜNMESE BİLE.
      *
@@ -488,10 +517,19 @@ export function ListeningScreen(): ReactNode {
         : [...new Set((body.repoMap?.entries ?? []).map((e) => e.appId))].filter(
             (appId) => !appOptions.includes(appId),
           );
+    // Kayıtsız depo varsa profil ŞART: liste okunamadıysa ya da seçilmediyse
+    // tahmin yerine adıyla söylenir, kural kaydedilmez.
+    if (unknownRepos.length > 0 && (platform === "" || !platformOptions.includes(platform))) {
+      toast.show(
+        "error",
+        t(platformOptions.length === 0 ? "listening.repomap.platform_unavailable" : "listening.repomap.platform_required"),
+      );
+      return;
+    }
     void (async () => {
       for (const adoRepo of unknownRepos) {
         try {
-          await api.post<{ appId: string }>("/onboarding/apps", { jiraProject: body.projectKey, adoRepo, platform: "linux-node" });
+          await api.post<{ appId: string }>("/onboarding/apps", { jiraProject: body.projectKey, adoRepo, platform });
           void queryClient.invalidateQueries({ queryKey: ["routing"] });
         } catch (error) {
           toast.show("error", t(messageKeyOf(error)));
@@ -756,6 +794,10 @@ export function ListeningScreen(): ReactNode {
           scmNoticeKey={scmNoticeKey}
           branchesByRepo={branchesByRepo}
           jiraUserOptions={jiraUserOptions}
+          platformOptions={platformOptions}
+          platformsPending={onboardingOptions.isPending}
+          platform={platform}
+          onPlatform={setPlatform}
           analystOptions={analystOptions}
           engineerOptions={engineerOptions}
           onSubmit={onSubmit}

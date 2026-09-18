@@ -553,6 +553,28 @@ export interface RoutingProjectView {
   noteKey: string;
   /** Substitutions for `noteKey` — currently only the unrecognised state name. */
   noteParams?: Readonly<Record<string, string>>;
+  /**
+   * BAĞLAMANIN BUGÜNKÜ AYARLARI — yalnız düzenleme paneli için.
+   *
+   * `PATCH /onboarding/:projectKey` dört alanı değiştirebiliyor ama `/routing`
+   * hiçbirinin mevcut değerini göndermiyordu; panel bu yüzden her kutuyu
+   * "— değiştirme —" ile açıyordu ve operatör neyi neye çevirdiğini
+   * göremiyordu. Bu nesne o dört alanın ham değeridir (enum adları, cümle
+   * değil); ekran onları okunur adlarıyla gösterir ve yalnız DEĞİŞENİ yollar.
+   *
+   * `trigger` burada YENİDEN görünüyor ama yukarıdaki not geçerliliğini
+   * koruyor: karar vermiyor, yalnız düzenlenebilir bir sütunun bugünkü değeri.
+   * `mode`/`dataClass` JSON sütunundan gelir; yoksa `null` — uydurma
+   * varsayılan yok. Eski bir okuyucu alanı hiç göndermeyebilir (opsiyonel).
+   */
+  binding?: RoutingBindingSettings;
+}
+
+export interface RoutingBindingSettings {
+  trigger: string;
+  state: string;
+  mode: string | null;
+  dataClass: string | null;
 }
 
 export interface RoutingRuleView {

@@ -4,6 +4,7 @@ import { SELECTABLE_GATES } from "@maestro/contracts";
 import { useT } from "../../i18n/I18nProvider.tsx";
 import { Button, Card, FieldGroup, Input, Select } from "../../ui/index.ts";
 import { matchValueLabel } from "../common/jira-english.ts";
+import { useEnumLabel } from "../common/label.ts";
 import {
   STATUS_POINTS,
   deadStatusEntries,
@@ -11,7 +12,7 @@ import {
   gateStatusConflicts,
   type StatusPoint,
 } from "../common/status-map.ts";
-import { EMPTY_REPO_MAP_ROW, gateMirrorOf, repoMapIncomplete, type RepoMapRowDraft, type RuleDraft } from "./draft.ts";
+import { EMPTY_REPO_MAP_ROW, gateMirrorOf, repoMapIncomplete, repoMapRequired, type RepoMapRowDraft, type RuleDraft } from "./draft.ts";
 import { CloneTest } from "./CloneTest.tsx";
 import { RuleBoard } from "./RuleBoard.tsx";
 import { RuleProbe } from "./RuleProbe.tsx";
@@ -69,6 +70,17 @@ export interface RuleFormProps {
   readonly branchesByRepo: Record<string, readonly string[]>;
   /** Jira accounts the rule may listen for. Empty = the deployment cannot search users. */
   readonly jiraUserOptions: readonly { readonly accountId: string; readonly displayName: string }[];
+  /**
+   * PLATFORM PROFİLLERİ — projeye henüz kayıtlı olmayan bir depo kaydedilirken
+   * `POST /onboarding/apps`e gidecek profil. Liste BFF'ten (`/onboarding/options`)
+   * gelir; tek elemanlıysa soru sorulmaz, birden çoksa küçük bir seçici çıkar.
+   * `platformsPending`: liste henüz okunmadı — boş liste ile "okunamadı"
+   * ayrımı, uyarının yanlış anda çıkmaması için.
+   */
+  readonly platformOptions: readonly string[];
+  readonly platformsPending: boolean;
+  readonly platform: string;
+  readonly onPlatform: (platform: string) => void;
   readonly onSubmit: () => void;
   readonly onTest: () => void;
   readonly onCancelEdit: () => void;
@@ -106,6 +118,8 @@ export function RuleForm(props: RuleFormProps): ReactNode {
   // Seçili adım yalnız GÖRÜNÜM: taslakta karşılığı yok, kaydedilmez.
   const [selectedStep, setSelectedStep] = useState<string | null>(null);
   const boardOn = props.statusOptions.length > 0;
+  // Kod yazan akış depo eşlemesi olmadan KAYDEDİLMEZ — düğme kapalı, sebep yazılı.
+  const mapMissing = repoMapRequired(draft);
 
   return (
     <div ref={props.formRef}>
@@ -150,11 +164,16 @@ export function RuleForm(props: RuleFormProps): ReactNode {
             </div>
           </div>
 
+          {mapMissing && (
+            <p className="scr-hint scr-hint--warn" role="alert" style={{ margin: 0 }}>
+              {t("listening.repomap.required_for_code")}
+            </p>
+          )}
           <div className="scr-actions">
             <Button busy={props.testing} onClick={props.onTest}>
               {t("listening.probe.run")}
             </Button>
-            <Button variant="primary" busy={props.submitting} onClick={props.onSubmit}>
+            <Button variant="primary" busy={props.submitting} disabled={mapMissing} onClick={props.onSubmit}>
               {editing ? t("listening.action.save") : t("listening.action.add")}
             </Button>
           </div>
@@ -794,6 +813,7 @@ function BranchPicker(props: {
 
 function RepoMapSection(props: RuleFormProps): ReactNode {
   const t = useT();
+  const enumLabel = useEnumLabel();
   const { draft, patch } = props;
   const rows = draft.repoMapRows;
   const setRow = (index: number, changes: Partial<RepoMapRowDraft>): void =>
@@ -920,6 +940,29 @@ function RepoMapSection(props: RuleFormProps): ReactNode {
         {draft.repoMapOn && draft.repoMapMode === "search" && incomplete && (
           <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
             {t("listening.repomap.incomplete_search")}
+          </p>
+        )}
+        {/*
+          PLATFORM PROFİLİ — sabit yazılmaz, listeden gelir.
+          Kayıtsız bir depo `linux-node` sabitiyle kaydediliyordu; .NET ya da
+          Xcode profili tanımlı bir kurulumda yanlış araç zincirine düşerdi.
+          Tek profil: soru yok (Kurulum sihirbazıyla aynı kural). Birden çok:
+          seçici. Liste okunamadı: kayıt yapılamayacağı yazılır, tahmin yok.
+          "Projeyi seç" kipinde kaydedilecek depo olmadığından gösterilmez.
+        */}
+        {draft.repoMapOn && draft.repoMapMode !== "search" && props.platformOptions.length > 1 && (
+          <Select
+            label={t("listening.repomap.platform")}
+            value={props.platform}
+            onChange={(e) => props.onPlatform(e.target.value)}
+            placeholder={t("listening.repomap.platform_choose")}
+            hint={t("listening.repomap.platform_hint")}
+            options={props.platformOptions.map((p) => ({ value: p, label: enumLabel("platform", p).text }))}
+          />
+        )}
+        {draft.repoMapOn && draft.repoMapMode !== "search" && !props.platformsPending && props.platformOptions.length === 0 && (
+          <p className="scr-hint scr-hint--warn" style={{ margin: 0 }}>
+            {t("listening.repomap.platform_unavailable")}
           </p>
         )}
         {draft.repoMapOn && draft.repoMapMode === "fixed" && (

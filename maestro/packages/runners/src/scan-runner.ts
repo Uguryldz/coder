@@ -2,7 +2,7 @@ import { NonEmpty } from "@maestro/contracts";
 import { z } from "zod";
 import { DEFAULT_API_VERSION } from "./config.js";
 import { type ContainerSpec, DockerClient } from "./docker-client.js";
-import { RunnerConfigError } from "./errors.js";
+import { DockerHttpError, RunnerConfigError } from "./errors.js";
 import { createUnixSocketTransport } from "./unix-transport.js";
 import type { DockerTransport } from "./deps.js";
 
@@ -45,12 +45,20 @@ export const ScanRunnerConfig = z
       }),
     /** Read-only named volumes every scanner sees (e.g. the offline semgrep rules at /rules). */
     extraMounts: z
-      .array(z.object({ volume: NonEmpty, target: MountPath }).strict())
+      .array(z.object({ volume: NonEmpty, target: MountPath, readOnly: z.boolean().default(true) }).strict())
       .default([]),
     memoryMb: z.number().int().min(256).max(65_536).default(2_048),
     pidsLimit: z.number().int().min(16).max(4_096).default(512),
     /** Writable scratch the tools need (trivy/semgrep caches) on a read-only rootfs. */
     tmpfsMb: z.number().int().min(16).max(8_192).default(1_024),
+    /**
+     * The Docker network a scanner asking for `network: "internal"` joins —
+     * a bank names the network its trivy DB mirror sits on; "bridge" is the
+     * daemon's default and means "the host's egress".
+     */
+    internalNetwork: NonEmpty.default("bridge"),
+    /** How long a missing image may take to pull before the scan is an error. */
+    pullTimeoutMs: z.number().int().min(10_000).max(3_600_000).default(600_000),
   })
   .strict();
 export type ScanRunnerConfig = z.infer<typeof ScanRunnerConfig>;
@@ -105,7 +113,17 @@ export function createScanContainerRunner(input: unknown, deps: ScanRunnerDeps =
     async run(request) {
       const spec = buildScanSpec(config, request);
       const name = `${config.labelPrefix}-scan-${newId()}`;
-      const id = await client.createContainer(name, spec);
+      // A digest-pinned image the daemon has not seen yet is pulled ONCE, by
+      // that exact digest, then the create is retried; any other refusal is
+      // the scan's error verbatim.
+      let id: string;
+      try {
+        id = await client.createContainer(name, spec);
+      } catch (error) {
+        if (!(error instanceof DockerHttpError && error.status === 404 && /no such image/i.test(error.detail))) throw error;
+        await client.pullImage(request.image, config.pullTimeoutMs);
+        id = await client.createContainer(name, spec);
+      }
       let timedOut = false;
       try {
         await client.startContainer(id);
@@ -167,7 +185,7 @@ export function buildScanSpec(config: ScanRunnerConfig, request: ScanContainerRe
   const [entry, ...rest] = request.argv;
   if (entry === undefined || entry === "") throw new RunnerConfigError("scan-runner: argv is empty");
   const workspace = scanWorkspaceMount(config, request.workspacePath, request.workspaceMountPath);
-  const extra = config.extraMounts.map((m) => ({ Type: "volume", Source: m.volume, Target: m.target, ReadOnly: true }));
+  const extra = config.extraMounts.map((m) => ({ Type: "volume", Source: m.volume, Target: m.target, ReadOnly: m.readOnly }));
   const mount =
     extra.length === 0
       ? workspace
@@ -190,7 +208,7 @@ export function buildScanSpec(config: ScanRunnerConfig, request: ScanContainerRe
     },
     HostConfig: {
       ...mount,
-      NetworkMode: request.network === "none" ? "none" : "bridge",
+      NetworkMode: request.network === "none" ? "none" : config.internalNetwork,
       ReadonlyRootfs: true,
       CapDrop: ["ALL"],
       SecurityOpt: ["no-new-privileges:true"],

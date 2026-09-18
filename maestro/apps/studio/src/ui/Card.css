@@ -59,6 +59,30 @@
   margin-top: 3px;
 }
 
+/* A clickable tile: same box, the button fills it. */
+.ui-kpi--btn {
+  padding: 0;
+}
+
+.ui-kpi__btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  padding: 10px 13px;
+  cursor: pointer;
+  display: block;
+  border-radius: var(--radius);
+}
+
+.ui-kpi--btn:hover,
+.ui-kpi--btn:focus-within {
+  border-color: var(--accent, var(--muted));
+}
+
 /* A plain titled block — no border, no background. Use it where a Card would
    be one box too many (a form's second half, a list under a heading). */
 .ui-section {

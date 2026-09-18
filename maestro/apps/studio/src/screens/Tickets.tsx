@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { messageKeyOf } from "../api/errors.ts";
 import { useI18n, useT } from "../i18n/I18nProvider.tsx";
 import { Badge, Button, Card, Input, Select, Table, riskTone, workModeTone } from "../ui/index.ts";
@@ -45,13 +45,47 @@ const STATUS_FILTERS: readonly { readonly id: RunStatus; readonly labelKey: stri
 
 type FilterId = RunStatus | "all";
 
+/** `?status=` is honoured only when it names a chip the list actually has. */
+function filterIdOf(value: string | null): FilterId | null {
+  if (value === null) return null;
+  if (value === "all") return "all";
+  return STATUS_FILTERS.some((entry) => entry.id === value) ? (value as RunStatus) : null;
+}
+
+/** The URL filter parameter — the Panel's tiles link into the list through it. */
+export const STATUS_PARAM = "status";
+
 export function TicketsList(): ReactNode {
   const t = useT();
   const { locale } = useI18n();
   const navigate = useNavigate();
   const enumLabel = useEnumLabel();
   const toast = useToast();
-  const [filter, setFilter] = useState<FilterId>("all");
+  /**
+   * The status chip lives in the URL too (`?status=gate`), so a tile on the
+   * Panel can open the list already sliced, and a refresh keeps the slice.
+   * The chip stays the source of truth while the operator clicks; the URL
+   * only drives it when it CHANGES (a tile click, a pasted link).
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusParam = searchParams.get(STATUS_PARAM);
+  const [filter, setFilterState] = useState<FilterId>(() => filterIdOf(statusParam) ?? "all");
+  useEffect(() => {
+    const fromUrl = filterIdOf(statusParam);
+    if (fromUrl !== null) setFilterState(fromUrl);
+  }, [statusParam]);
+  const setFilter = (next: FilterId): void => {
+    setFilterState(next);
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === "all") params.delete(STATUS_PARAM);
+        else params.set(STATUS_PARAM, next);
+        return params;
+      },
+      { replace: true },
+    );
+  };
   const [project, setProject] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
   /**

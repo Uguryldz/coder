@@ -159,6 +159,19 @@ export class DockerClient {
   }
 
   /** Resolves a local image to its content-addressed id (M27 digest pinning). */
+  /**
+   * Pull an image by digest-pinned reference. The daemon streams progress
+   * JSON until the pull finishes; the request returns only then, so the
+   * timeout is the pull's, not a request's.
+   */
+  async pullImage(reference: string, timeoutMs: number): Promise<void> {
+    await this.#send(
+      { method: "POST", path: `/images/create${query({ fromImage: reference })}` },
+      "images/create",
+      { timeoutMs, raw: true },
+    );
+  }
+
   async inspectImage(reference: string): Promise<{ id: string; repoDigests: string[] }> {
     const response = await this.#send({ method: "GET", path: `/images/${encode(reference)}/json` }, "images/inspect");
     const record = asRecord(response, "images/inspect");

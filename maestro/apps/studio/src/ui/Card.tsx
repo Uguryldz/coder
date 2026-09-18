@@ -36,17 +36,35 @@ export interface KpiProps {
   readonly value: string;
   /** Already-translated footnote under the number. */
   readonly note?: string;
+  /**
+   * Makes the tile a button: the number becomes the way INTO the list it
+   * counts. `title` names the destination for the screen reader and the hover.
+   */
+  readonly onClick?: () => void;
+  readonly title?: string;
 }
 
 /** The dashboard stat tile (`.card.kpi` in the mock). */
-export function Kpi({ label, value, note }: KpiProps) {
-  return (
-    <section className="ui-card ui-kpi">
+export function Kpi({ label, value, note, onClick, title }: KpiProps) {
+  const body = (
+    <>
       <div className="ui-kpi__lbl">{label}</div>
       <div className="ui-kpi__val">{value}</div>
       {note !== undefined && <div className="ui-kpi__note">{note}</div>}
-    </section>
+    </>
   );
+  if (onClick !== undefined) {
+    // Still a `section` outside (the tile keeps its place in the grid and its
+    // landmark), with the button filling it — the whole tile is the target.
+    return (
+      <section className="ui-card ui-kpi ui-kpi--btn">
+        <button type="button" className="ui-kpi__btn" onClick={onClick} title={title}>
+          {body}
+        </button>
+      </section>
+    );
+  }
+  return <section className="ui-card ui-kpi">{body}</section>;
 }
 
 export interface SectionProps {

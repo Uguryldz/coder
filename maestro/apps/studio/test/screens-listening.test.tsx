@@ -40,6 +40,12 @@ const SEED = {
   priority: 100,
   enabled: true,
 };
+/**
+ * A stored map for the tests that SAVE a `duzeltme` rule: a code flow cannot
+ * be saved without one (the save button is disabled until the map is there),
+ * so a fixture that re-saves such a rule has to carry what the rule must have.
+ */
+const SEED_MAP = { field: "*", entries: [{ value: "*", appId: "bank/kredi" }] };
 
 function renderScreen(session: Session): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -66,6 +72,8 @@ interface SeedAnswer {
   readonly projects?: object[];
   /** SCM repositories the connection lists (repo map picker). */
   readonly scmRepos?: string[];
+  /** Platform profiles `/onboarding/options` offers; default a single one. */
+  readonly platforms?: string[];
 }
 
 /** A fetch stub that records POSTs and answers GET with the seeded rule. */
@@ -88,6 +96,9 @@ function stubFetch(rules: object[], seedAnswer: SeedAnswer = {}): ReturnType<typ
     }
     if (u.includes("/studio/listening-rules") && method === "PUT") {
       return Response.json({ rule: { ...SEED } }, { status: 200 });
+    }
+    if (u.includes("/onboarding/options")) {
+      return Response.json({ jiraProjects: [], adoRepos: [], platforms: seedAnswer.platforms ?? ["linux-node"] });
     }
     if (u.includes("/onboarding/scm-connections")) {
       return Response.json({ connections: seedAnswer.scmRepos === undefined ? [] : [{ id: "gh", kind: "github", displayName: "GitHub" }] });
@@ -405,10 +416,15 @@ describe("ListeningScreen", () => {
       await waitFor(() => {
         const call = fn.mock.calls.find((c) => {
           const method = (c[1] as RequestInit | undefined)?.method;
+          const u = String(c[0]);
+          // The RULE itself — not the probe (`/test`), the clone check
+          // (`/clone-test`, fired right after a save with a repo map) or the seed.
           return (
-            String(c[0]).includes("/studio/listening-rules") &&
+            u.includes("/studio/listening-rules") &&
             (method === "POST" || method === "PUT") &&
-            !String(c[0]).includes("seed-defaults")
+            !u.includes("seed-defaults") &&
+            !u.endsWith("/test") &&
+            !u.endsWith("/clone-test")
           );
         });
         expect(call).toBeTruthy();
@@ -627,7 +643,7 @@ describe("ListeningScreen", () => {
 
     it("returns a rule to comment-only mode when every field is cleared", async () => {
       const fn = stubFetch([
-        { ...SEED, statusMap: { onStart: "Devam Ediyor", onDone: "Tamam" } },
+        { ...SEED, repoMap: SEED_MAP, statusMap: { onStart: "Devam Ediyor", onDone: "Tamam" } },
       ]);
       renderScreen(ADMIN);
       await screen.findByText("Hata");
@@ -645,7 +661,7 @@ describe("ListeningScreen", () => {
     });
 
     it("also drops the map when the toggle itself is switched back off", async () => {
-      const fn = stubFetch([{ ...SEED, statusMap: { onStart: "Devam Ediyor" } }]);
+      const fn = stubFetch([{ ...SEED, repoMap: SEED_MAP, statusMap: { onStart: "Devam Ediyor" } }]);
       renderScreen(ADMIN);
       await screen.findByText("Hata");
       await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
@@ -730,6 +746,7 @@ describe("ListeningScreen", () => {
         const fn = stubFetch([
           {
             ...SEED,
+            repoMap: SEED_MAP,
             statusMap: { onStart: "Devam Ediyor", onReview: "İNCELEMEDE", onDone: "Tamam" },
           },
         ]);
@@ -1675,5 +1692,142 @@ describe("tetikleme değeri — id mi ad mı kaydedilir", () => {
     const select = (await screen.findByLabelText("Değer")) as HTMLSelectElement;
     await waitFor(() => expect([...select.options].map((o) => o.value)).toContain("Görev"));
     expect([...select.options].map((o) => o.value)).not.toContain("10008");
+  });
+});
+
+/**
+ * ── PLATFORM PROFİLİ LİSTEDEN, SABİT DEĞİL ─────────────────────────────────
+ *
+ * Kayıtsız bir depo `platform: "linux-node"` sabitiyle kaydediliyordu. Profil
+ * listesi BFF'in cevabıdır (`/onboarding/options.platforms`, Kurulum sihirbazı
+ * da onu okur): tek elemanlıysa soru sorulmaz, birden çoksa seçici çıkar ve
+ * seçilen gider.
+ */
+describe("repo map — platform profile of a repository registered on save", () => {
+  async function pickUnknownRepo(): Promise<void> {
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    await userEvent.type(await screen.findByLabelText("Uygulama (depo)"), "banka/ekstre");
+  }
+
+  function registerBody(fn: ReturnType<typeof vi.fn>): Record<string, unknown> | undefined {
+    const call = fn.mock.calls.find(
+      (c) => String(c[0]).includes("/onboarding/apps") && (c[1] as RequestInit)?.method === "POST",
+    );
+    return call === undefined ? undefined : (JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>);
+  }
+
+  it("a single profile is used without asking, and it is the one the BFF listed — not a constant", async () => {
+    const fn = stubFetch([], { platforms: ["windows-dotnet"] });
+    renderScreen(ADMIN);
+    await pickUnknownRepo();
+    expect(screen.queryByLabelText("Platform profili")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    await waitFor(() => expect(registerBody(fn)?.platform).toBe("windows-dotnet"));
+  });
+
+  it("several profiles: a picker appears and the chosen one is sent", async () => {
+    const fn = stubFetch([], { platforms: ["linux-node", "windows-dotnet"] });
+    renderScreen(ADMIN);
+    await pickUnknownRepo();
+    const picker = await screen.findByLabelText("Platform profili");
+    // Not pre-picked: the wrong toolchain is a wrong guess nobody confirmed.
+    expect((picker as HTMLSelectElement).value).toBe("");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    expect(await screen.findByText(/Platform profili seçilmedi/u)).toBeTruthy();
+    expect(registerBody(fn)).toBeUndefined();
+
+    await userEvent.selectOptions(picker, "windows-dotnet");
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    await waitFor(() => expect(registerBody(fn)?.platform).toBe("windows-dotnet"));
+  });
+
+  it("no profile list at all: says so and registers nothing, rather than guessing", async () => {
+    const fn = stubFetch([], { platforms: [] });
+    renderScreen(ADMIN);
+    await pickUnknownRepo();
+    expect(await screen.findByText(/Platform profili listesi okunamadı/u)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Kural ekle" }));
+    await waitFor(() => expect(screen.getAllByText(/Platform profili listesi okunamadı/u).length).toBeGreaterThan(1));
+    expect(registerBody(fn)).toBeUndefined();
+    expect(
+      fn.mock.calls.find((c) => String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST"),
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * ── KOD AKIŞI DEPO EŞLEMESİ İSTER ─────────────────────────────────────────
+ *
+ * `analiz` salt-okur; `gelistirme` kod yazar ve hangi depoya yazacağını
+ * bilmeli. Eşlemesiz bir kod akışı sessizce proje bağlamasının deposuna
+ * düşüyordu — artık kaydet düğmesi kapalı ve sebep yazılı.
+ */
+describe("repo map — required for a code flow, optional for analysis", () => {
+  async function fillRequired(): Promise<void> {
+    await screen.findByRole("option", { name: "OPS" });
+    await userEvent.selectOptions(screen.getByLabelText("Proje"), "OPS");
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "712020:bot");
+    await userEvent.type(inputs[1]!, "Görev");
+  }
+
+  it("analysis-only: no map needed, the save button stays enabled", async () => {
+    stubFetch([]);
+    renderScreen(ADMIN);
+    await fillRequired();
+    expect((screen.getByRole("button", { name: "Kural ekle" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/Kod akışı için depo eşlemesi gerekli/u)).toBeNull();
+  });
+
+  it("gelistirme without a map: save is disabled with the reason, and enabled once a map is there", async () => {
+    const fn = stubFetch([]);
+    renderScreen(ADMIN);
+    await fillRequired();
+    await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "gelistirme");
+
+    const save = screen.getByRole("button", { name: "Kural ekle" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(screen.getByText(/Kod akışı için depo eşlemesi gerekli/u)).toBeTruthy();
+    await userEvent.click(save);
+    expect(
+      fn.mock.calls.find((c) => String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST"),
+    ).toBeUndefined();
+
+    // An OPEN but empty map is still no map.
+    await userEvent.click(screen.getByText("Depo eşlemesi (hangi ticket hangi depoya)"));
+    await userEvent.click(screen.getByLabelText("Depoyu ticket'taki bir alana göre seç"));
+    expect(save.disabled).toBe(true);
+
+    await userEvent.type(await screen.findByLabelText("Uygulama (depo)"), "bank/kart");
+    expect(save.disabled).toBe(false);
+    expect(screen.queryByText(/Kod akışı için depo eşlemesi gerekli/u)).toBeNull();
+    await userEvent.click(save);
+    await waitFor(() => {
+      const posted = fn.mock.calls.find(
+        (c) => String(c[0]).endsWith("/studio/listening-rules") && (c[1] as RequestInit)?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      const body = JSON.parse((posted![1] as RequestInit).body as string) as Record<string, unknown>;
+      expect(body.flowType).toBe("gelistirme");
+      expect(body.repoMap).toEqual({ field: "*", entries: [{ value: "*", appId: "bank/kart" }] });
+    });
+  });
+
+  it("editing a stored code-flow rule without a map: the form opens but cannot be saved as is", async () => {
+    stubFetch([SEED]); // duzeltme, no repoMap
+    renderScreen(ADMIN);
+    await userEvent.click(await screen.findByRole("button", { name: "Düzenle" }));
+    const save = (await screen.findByRole("button", { name: "Kuralı kaydet" })) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(screen.getByText(/Kod akışı için depo eşlemesi gerekli/u)).toBeTruthy();
+    // Switching the rule to analysis-only is one way out.
+    await userEvent.selectOptions(screen.getByLabelText("Ne yapılsın (akış)"), "analiz");
+    expect(save.disabled).toBe(false);
   });
 });

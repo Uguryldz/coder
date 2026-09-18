@@ -449,6 +449,19 @@ export interface RoutingProject {
   readonly apps: readonly string[];
   readonly noteKey?: string;
   readonly noteParams?: Readonly<Record<string, string>>;
+  /**
+   * The binding's current editable settings (`deps.ts:RoutingBindingSettings`),
+   * so the edit panel opens PRE-FILLED. Absent on an older BFF — the panel then
+   * falls back to "leave unchanged" boxes.
+   */
+  readonly binding?: RoutingBindingSettings;
+}
+
+export interface RoutingBindingSettings {
+  readonly trigger: string;
+  readonly state: string;
+  readonly mode: string | null;
+  readonly dataClass: string | null;
 }
 
 /** One rendered rule of the data-class routing policy. */

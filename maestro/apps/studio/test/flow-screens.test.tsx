@@ -614,7 +614,10 @@ describe("dash", () => {
     renderScreen(<DashScreen />, { fetchImpl });
 
     await waitFor(() => expect(screen.getByText("Dikkat isteyenler")).toBeInTheDocument());
-    const rows = screen.getAllByRole("button").filter((el) => el.className.includes("scr-issue"));
+    // Scoped to the attention section: the "Takılı koşular" list above it uses
+    // the same row style for a running run that has not moved in 30 minutes.
+    const attention = screen.getByText("Dikkat isteyenler").closest("section")!;
+    const rows = within(attention).getAllByRole("button").filter((el) => el.className.includes("scr-issue"));
     expect(rows[0]!.textContent).toContain("UGURDESK-45");
     expect(rows[1]!.textContent).toContain("UGURPAY-777");
     // A plain `running` run is not "attention" — nobody is blocked on it.
@@ -658,7 +661,9 @@ describe("dash", () => {
     const { fetchImpl, calls } = stubFetch({ "/api/studio/runs": () => json(RUN_PAGE) });
     renderScreen(<DashScreen />, { fetchImpl });
 
-    await waitFor(() => expect(screen.getByText("UGURPAY-501")).toBeInTheDocument());
+    // `getAllBy`: the running run in this fixture has not moved for weeks, so
+    // the "Takılı koşular" list names it too — still ONE request behind both.
+    await waitFor(() => expect(screen.getAllByText("UGURPAY-501").length).toBeGreaterThan(0));
     const runCalls = calls.filter((c) => /\/api\/studio\/runs(\?|$)/.test(c.url));
     expect(runCalls).toHaveLength(1);
     expect(runCalls[0]!.url).toBe(`/api/studio/runs?limit=${MAX_RUN_PAGE}&archived=active`);

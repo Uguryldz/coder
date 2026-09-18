@@ -144,6 +144,12 @@ x-node-env: &node-env
   SCAN_IMAGE_TRIVY: ${SCAN_IMAGE_TRIVY:-}
   SCAN_SEMGREP_RULES: ${SCAN_SEMGREP_RULES:-}
   SCAN_RULES_VOLUME: ${SCAN_RULES_VOLUME:-}
+  # trivy'nin ağı: none (varsayılan, hazır DB ister) ya da internal
+  # (SCAN_INTERNAL_NETWORK ağına girer — DB aynası ya da test sunucusunda internet).
+  SCAN_TRIVY_NETWORK: ${SCAN_TRIVY_NETWORK:-none}
+  SCAN_INTERNAL_NETWORK: ${SCAN_INTERNAL_NETWORK:-}
+  # trivy zafiyet DB'si (yüzlerce MB) bir kez iner, bu birimde kalır.
+  SCAN_TRIVY_CACHE_VOLUME: ${SCAN_TRIVY_CACHE_VOLUME:-${COMPOSE_PROJECT_NAME:-maestro}_maestro-trivy-cache}
   # HTTP ajan koşucusu (3ö/6a, CLI'sız): bir oturumun araç çağrısı bütçesi.
   AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-80}
 

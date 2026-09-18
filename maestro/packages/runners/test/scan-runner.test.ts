@@ -126,3 +126,35 @@ describe("createScanContainerRunner", () => {
     expect(fake.requests.at(-1)?.method).toBe("DELETE");
   });
 });
+
+describe("pull on a missing image", () => {
+  it("pulls the exact digest once and retries the create; any other create failure is verbatim", async () => {
+    let creates = 0;
+    const fake = fakeTransport(async (req) => {
+      if (req.path.includes("/containers/create")) {
+        creates += 1;
+        return creates === 1
+          ? httpResponse(404, JSON.stringify({ message: "No such image: x" }))
+          : httpResponse(201, JSON.stringify({ Id: "c9" }));
+      }
+      if (req.path.includes("/images/create")) return httpResponse(200, '{"status":"Pulling"}');
+      if (req.path.includes("/start")) return httpResponse(204);
+      if (req.path.includes("/wait")) return httpResponse(200, JSON.stringify({ StatusCode: 0 }));
+      if (req.path.includes("/logs")) return logsBody("{}", "");
+      if (req.method === "DELETE") return httpResponse(204);
+      return httpResponse(500);
+    });
+    const runner = createScanContainerRunner(HOST_CONFIG, { transport: fake.transport });
+    const out = await runner.run(request);
+    expect(out.exitCode).toBe(0);
+    const pull = fake.matching("/images/create")[0];
+    expect(decodeURIComponent(pull?.path ?? "")).toContain(`fromImage=${request.image}`);
+    expect(creates).toBe(2);
+
+    const denied = fakeTransport(async (req) =>
+      req.path.includes("/containers/create") ? httpResponse(403, JSON.stringify({ message: "forbidden" })) : httpResponse(500),
+    );
+    await expect(createScanContainerRunner(HOST_CONFIG, { transport: denied.transport }).run(request)).rejects.toThrow(/forbidden/);
+    expect(denied.matching("/images/create")).toHaveLength(0);
+  });
+});

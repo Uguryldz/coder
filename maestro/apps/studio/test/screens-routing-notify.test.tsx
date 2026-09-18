@@ -437,6 +437,58 @@ describe("routing screen", () => {
       expect(screen.getByRole("button", { name: "Dinleme kurallarını aç" })).toBeInTheDocument();
     });
 
+    /**
+     * ── KUTULAR MEVCUT DEĞERLE AÇILIR ─────────────────────────────────────
+     *
+     * `/routing` bağlamanın bugünkü ayarlarını (`binding`) göndermeye başladı;
+     * panel artık boş bir form değil. İki ilke korunur: dokunulmayan kutu
+     * tele çıkmaz, ve eski bir BFF (alan yok) eski davranışı görür — yukarıdaki
+     * test tam olarak o hâli tutuyor.
+     */
+    it("opens PRE-FILLED with the binding's current settings and sends only what changed", async () => {
+      const body = ROUTING_BODY.body;
+      const { fetchImpl, calls } = stubFetch([
+        {
+          path: "/routing",
+          body: {
+            ...body,
+            projects: [
+              {
+                ...body.projects[0],
+                binding: { trigger: "label", state: "active", mode: "human_lead", dataClass: "dahili" },
+              },
+            ],
+          },
+        },
+        APPS_BODY,
+        { path: "/onboarding/UGURPAY", method: "PATCH", body: null, status: 204 },
+      ]);
+      renderScreen(<RoutingScreen />, { fetchImpl });
+      await screen.findByText("UgurPay Core");
+
+      await userEvent.click(screen.getByRole("button", { name: "Düzenle" }));
+      await screen.findByText("UGURPAY bağlamasını düzenle");
+
+      // Every box shows today's value — and the "leave unchanged" row is gone,
+      // because there is nothing unknown to leave.
+      expect((screen.getByLabelText("Tetikleme") as HTMLSelectElement).value).toBe("label");
+      expect((screen.getByLabelText("Veri sınıfı") as HTMLSelectElement).value).toBe("dahili");
+      expect((screen.getByLabelText("Durum") as HTMLSelectElement).value).toBe("active");
+      expect((screen.getByLabelText("Yayınlama modu") as HTMLSelectElement).value).toBe("human_lead");
+      expect(screen.queryByRole("option", { name: "— değiştirme —" })).not.toBeInTheDocument();
+
+      await userEvent.selectOptions(screen.getByLabelText("Durum"), "paused");
+      await userEvent.click(screen.getByRole("button", { name: "Kaydet" }));
+
+      await waitFor(() => {
+        const patch = calls.find((c) => c.method === "PATCH");
+        expect(patch, "PATCH gönderilmedi").toBeTruthy();
+        // The three untouched boxes hold real values now, and STILL stay off
+        // the wire: pre-filling must not turn every save into a full rewrite.
+        expect(patch!.body).toEqual({ state: "paused" });
+      });
+    });
+
     it("writes nothing until the operator presses save — opening is not a change", async () => {
       const { fetchImpl, calls } = stubFetch([ROUTING_BODY, APPS_BODY]);
       renderScreen(<RoutingScreen />, { fetchImpl });

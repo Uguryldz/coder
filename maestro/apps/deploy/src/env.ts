@@ -170,6 +170,20 @@ export const DeployEnvSchema = z.object({
   SCAN_SEMGREP_RULES: optionalSetting(),
   /** NAME of a Docker volume mounted read-only at `/rules` in every scanner container. */
   SCAN_RULES_VOLUME: optionalSetting(),
+  /**
+   * trivy's network: `none` (default; needs a pre-populated DB) or `internal`
+   * (joins `SCAN_INTERNAL_NETWORK` to reach a DB mirror — or, on a test host,
+   * the internet). gitleaks and semgrep never get a network.
+   */
+  SCAN_TRIVY_NETWORK: z.enum(["none", "internal"]).default("none"),
+  /** The Docker network `internal` means; "bridge" is the daemon default. */
+  SCAN_INTERNAL_NETWORK: optionalSetting(),
+  /**
+   * NAME of a Docker volume mounted read-write at trivy's cache path in every
+   * scanner container, so the vulnerability DB (hundreds of MB) is downloaded
+   * once and reused. Without it trivy fills a tmpfs on every run and fails.
+   */
+  SCAN_TRIVY_CACHE_VOLUME: optionalSetting(),
 
   // ── the engineering turn's sandbox fleet (M21/M23/M60) ──────────────────
   /**

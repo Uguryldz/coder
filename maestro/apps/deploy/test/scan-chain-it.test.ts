@@ -24,8 +24,13 @@ async function workspace(): Promise<{ root: string; dir: string }> {
   await writeFile(join(root, ".keep"), "");
   const { mkdir } = await import("node:fs/promises");
   await mkdir(dir, { recursive: true });
-  const token = `ghp_${"Qm7kR2pXz9LtY4vNbH3wCj8sDf6gAe1uKo5x".slice(0, 36)}`;
-  await writeFile(join(dir, "app.js"), `const token = "${token}";\nconst slack = "xoxb-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx";\nconst r = eval(process.argv[2]);\nconsole.log(token, r);\n`);
+  // The planted secrets are ASSEMBLED at runtime, never written as literals:
+  // GitHub's push protection reads a literal in a committed file as a real
+  // leak and refuses the push (measured — this very file blocked one), and a
+  // scanner test that cannot be committed is a test nobody runs.
+  const token = ["ghp", "Qm7kR2pXz9LtY4vNbH3wCj8sDf6gAe1uKo5x"].join("_");
+  const slack = ["xoxb", "123456789012", "1234567890123", "AbCdEfGhIjKlMnOpQrStUvWx"].join("-");
+  await writeFile(join(dir, "app.js"), `const token = "${token}";\nconst slack = "${slack}";\nconst r = eval(process.argv[2]);\nconsole.log(token, slack, r);\n`);
   await writeFile(join(dir, "package.json"), JSON.stringify({ name: "it", version: "1.0.0", dependencies: { lodash: "4.17.20" } }));
   await writeFile(join(dir, "package-lock.json"), JSON.stringify({ name: "it", lockfileVersion: 3, packages: { "": { dependencies: { lodash: "4.17.20" } }, "node_modules/lodash": { version: "4.17.20", resolved: "https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz" } } }));
   await writeFile(join(dir, ".semgrep.yml"), await (await import("node:fs/promises")).readFile(new URL("../../../deploy/banka/tarama/semgrep-kurallar.yml", import.meta.url), "utf8"));

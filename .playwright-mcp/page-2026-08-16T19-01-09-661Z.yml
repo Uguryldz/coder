@@ -1,0 +1,179 @@
+- generic [ref=f28e2]:
+  - generic [ref=f28e57]:
+    - navigation "Ana gezinme" [ref=f28e58]:
+      - generic [ref=f28e59]:
+        - generic [ref=f28e60]: M
+        - generic [ref=f28e61]:
+          - text: Maestro
+          - generic [ref=f28e62]: SDLC otomasyonu
+      - generic [ref=f28e63]:
+        - generic [ref=f28e64]: İşler
+        - link "Panel" [ref=f28e65] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f28e66]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f28e67] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f28e68]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f28e69] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f28e70]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f28e71]:
+        - generic [ref=f28e72]: Ajanlar
+        - link "Ajan tanımları" [ref=f28e73] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f28e74]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f28e75] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f28e76]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f28e77] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f28e78]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f28e79] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f28e80]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f28e81] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f28e82]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f28e83]: yakında
+      - generic [ref=f28e84]:
+        - generic [ref=f28e85]: Denetim
+        - link "Denetim izi" [ref=f28e86] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f28e87]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f28e88] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f28e89]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f28e90] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f28e91]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f28e92] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f28e93]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f28e94]: yakında
+        - link "Kanıt paketi yakında" [ref=f28e95] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f28e96]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f28e97]: yakında
+      - generic [ref=f28e98]:
+        - generic [ref=f28e99]: Kurulum
+        - link "Kurulum sihirbazı" [ref=f28e100] [cursor=pointer]:
+          - /url: /setup
+          - generic [ref=f28e101]: 🧭
+          - text: Kurulum sihirbazı
+        - link "Proje bağlama" [ref=f28e102] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f28e103]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f28e104] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f28e105]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f28e106] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f28e107]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f28e108] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f28e109]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f28e110] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f28e111]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f28e112] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f28e113]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f28e114]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f28e115] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f28e116]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f28e117]:
+      - banner [ref=f28e118]:
+        - heading "Kurulum sihirbazı" [level=1] [ref=f28e119]
+        - generic [ref=f28e120]:
+          - generic [ref=f28e121]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f28e122]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f28e123]: admin
+        - button "Çıkış" [ref=f28e124] [cursor=pointer]
+      - main [ref=f28e8]:
+        - generic [ref=f28e9]:
+          - generic [ref=f28e10]:
+            - generic [ref=f28e11]:
+              - heading "Kurulum sihirbazı" [level=3] [ref=f28e12]
+              - generic [ref=f28e13]: beş soruda çalışır bir kurulum
+            - generic [ref=f28e14]:
+              - paragraph [ref=f28e15]: "Bu sihirbaz Maestro'yu uçtan uca kurar: hangi işi yapmasını istediğinizi seçersiniz, hangi Jira projesi ve hangi kod deposuyla çalışacağını söylersiniz, hangi ticket'ları alacağını belirlersiniz. Hangi ekranın ne işe yaradığını bilmeniz gerekmez. Her adımda geri dönebilirsiniz; yazdıklarınız kaybolmaz."
+              - list [ref=f28e16]:
+                - listitem [ref=f28e17]:
+                  - button "1 · Ne yapsın" [ref=f28e18] [cursor=pointer]
+                - listitem [ref=f28e19]:
+                  - button "2 · Proje & uygulama" [ref=f28e20] [cursor=pointer]
+                - listitem [ref=f28e21]:
+                  - button "3 · Hangi ticket'lar" [disabled] [ref=f28e22] [cursor=pointer]
+                - listitem [ref=f28e23]:
+                  - button "4 · Jira durumları" [disabled] [ref=f28e24] [cursor=pointer]
+                - listitem [ref=f28e25]:
+                  - button "5 · Özet & kaydet" [disabled] [ref=f28e26] [cursor=pointer]
+          - generic [ref=f28e125]:
+            - generic [ref=f28e126]:
+              - heading "Hangi Jira projesi, hangi uygulama?" [level=3] [ref=f28e127]
+              - generic [ref=f28e128]: 2. adım · Maestro'nun çalışacağı proje ve kod deposu
+            - generic [ref=f28e129]:
+              - paragraph [ref=f28e130]: Maestro'nun ticket'ları hangi Jira projesinden alacağını ve kodu hangi depoda yazacağını seçin. Listeler bağlantılarınızdan canlı okunur — elle yazmanız gereken bir şey yok.
+              - generic [ref=f28e131]:
+                - generic [ref=f28e132]:
+                  - generic [ref=f28e133]: Jira bağlantısı
+                  - combobox "Jira bağlantısı" [ref=f28e134]:
+                    - option "Seçiniz" [selected]
+                    - option "Jira (uyildiz) · Jira Cloud"
+                  - paragraph [ref=f28e135]: Projeler bu bağlantı üzerinden okunur. Birden fazla Jira'nız yoksa tek seçenek gelir.
+                - generic [ref=f28e136]:
+                  - generic [ref=f28e137]: Jira projesi
+                  - combobox "Jira projesi" [disabled] [ref=f28e138]:
+                    - option "Önce Jira bağlantısını seçin" [selected]
+                  - paragraph [ref=f28e139]: Maestro yalnızca bu projedeki ticket'lara bakar.
+              - generic [ref=f28e140]:
+                - generic [ref=f28e141]:
+                  - generic [ref=f28e142]: Kod deposu bağlantısı
+                  - combobox "Kod deposu bağlantısı" [ref=f28e143]:
+                    - option "Seçiniz" [selected]
+                    - option "GitHub (maestro-pilot) · GitHub"
+                  - paragraph [ref=f28e144]: Depolar bu bağlantı üzerinden okunur (GitHub ya da Azure DevOps).
+                - generic [ref=f28e145]:
+                  - generic [ref=f28e146]: Kod deposu
+                  - combobox "Kod deposu" [disabled] [ref=f28e147]:
+                    - option "Önce kod deposu bağlantısını seçin" [selected]
+              - generic [ref=f28e149]:
+                - generic [ref=f28e150]: Uygulamanın teknolojisi
+                - combobox "Uygulamanın teknolojisi" [ref=f28e151]:
+                  - option "Seçiniz" [selected]
+                  - option "Node.js / web (Linux)"
+                  - option "Android uygulaması (Linux)"
+                  - option "iOS / macOS (Xcode)"
+                  - option ".NET / Windows"
+                - paragraph [ref=f28e152]: Testlerin ve derlemenin hangi ortamda çalışacağını belirler.
+              - generic [ref=f28e153]: "Bir Jira projesini bir kod deposuna bağlamak, Maestro'nun oraya kod göndermesine izin vermek demektir. Bu yüzden bağlama işlemi tek başınıza tamamlanmaz: siz öneriyi verirsiniz, ikinci bir yönetici onaylar."
+          - generic [ref=f28e53]:
+            - generic [ref=f28e54]:
+              - button "Geri" [ref=f28e55] [cursor=pointer]
+              - button "İleri" [disabled] [ref=f28e56]
+            - generic [ref=f28e154]: Devam etmek için bir Jira bağlantısı seçin.
+  - region

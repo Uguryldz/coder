@@ -1,0 +1,171 @@
+- generic [ref=f31e2]:
+  - generic [ref=f31e8]:
+    - navigation "Ana gezinme" [ref=f31e9]:
+      - generic [ref=f31e10]:
+        - generic [ref=f31e11]: M
+        - generic [ref=f31e12]:
+          - text: Maestro
+          - generic [ref=f31e13]: SDLC otomasyonu
+      - generic [ref=f31e14]:
+        - generic [ref=f31e15]: İşler
+        - link "Panel" [ref=f31e16] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f31e17]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f31e18] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f31e19]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f31e20] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f31e21]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f31e22]:
+        - generic [ref=f31e23]: Ajanlar
+        - link "Ajan tanımları" [ref=f31e24] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f31e25]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f31e26] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f31e27]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f31e28] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f31e29]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f31e30] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f31e31]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f31e32] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f31e33]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f31e34]: yakında
+      - generic [ref=f31e35]:
+        - generic [ref=f31e36]: Denetim
+        - link "Denetim izi" [ref=f31e37] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f31e38]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f31e39] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f31e40]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f31e41] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f31e42]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f31e43] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f31e44]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f31e45]: yakında
+        - link "Kanıt paketi yakında" [ref=f31e46] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f31e47]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f31e48]: yakında
+      - generic [ref=f31e49]:
+        - generic [ref=f31e50]: Kurulum
+        - link "Kurulum sihirbazı" [ref=f31e51] [cursor=pointer]:
+          - /url: /setup
+          - generic [ref=f31e52]: 🧭
+          - text: Kurulum sihirbazı
+        - link "Proje bağlama" [ref=f31e53] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f31e54]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f31e55] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f31e56]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f31e57] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f31e58]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f31e59] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f31e60]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f31e61] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f31e62]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f31e63] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f31e64]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f31e65]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f31e66] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f31e67]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f31e68]:
+      - banner [ref=f31e69]:
+        - heading "Kurulum sihirbazı" [level=1] [ref=f31e70]
+        - generic [ref=f31e71]:
+          - generic [ref=f31e72]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f31e73]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f31e74]: admin
+        - button "Çıkış" [ref=f31e75] [cursor=pointer]
+      - main [ref=f31e76]:
+        - generic [ref=f31e77]:
+          - generic [ref=f31e78]:
+            - generic [ref=f31e79]:
+              - heading "Kurulum sihirbazı" [level=3] [ref=f31e80]
+              - generic [ref=f31e81]: beş soruda çalışır bir kurulum
+            - generic [ref=f31e82]:
+              - paragraph [ref=f31e83]: "Bu sihirbaz Maestro'yu uçtan uca kurar: hangi işi yapmasını istediğinizi seçersiniz, hangi Jira projesi ve hangi kod deposuyla çalışacağını söylersiniz, hangi ticket'ları alacağını belirlersiniz. Hangi ekranın ne işe yaradığını bilmeniz gerekmez. Her adımda geri dönebilirsiniz; yazdıklarınız kaybolmaz."
+              - list [ref=f31e84]:
+                - listitem [ref=f31e85]:
+                  - button "1 · Ne yapsın" [ref=f31e86] [cursor=pointer]
+                - listitem [ref=f31e87]:
+                  - button "2 · Proje & uygulama" [ref=f31e88] [cursor=pointer]
+                - listitem [ref=f31e89]:
+                  - button "3 · Hangi ticket'lar" [ref=f31e90] [cursor=pointer]
+                - listitem [ref=f31e91]:
+                  - button "4 · Jira durumları" [disabled] [ref=f31e92] [cursor=pointer]
+                - listitem [ref=f31e93]:
+                  - button "5 · Özet & kaydet" [disabled] [ref=f31e94] [cursor=pointer]
+          - generic [ref=f31e130]:
+            - generic [ref=f31e131]:
+              - heading "Hangi ticket'ları alsın?" [level=3] [ref=f31e132]
+              - generic [ref=f31e133]: 3. adım · Maestro'yu tetikleyen ticket'lar
+            - generic [ref=f31e134]:
+              - paragraph [ref=f31e135]: Maestro projedeki her ticket'a atlamaz. Yalnızca bota atanmış ve aşağıdaki koşula uyan ticket'ları alır — böylece ekibin geri kalanı normal çalışmaya devam eder.
+              - generic [ref=f31e136]:
+                - generic [ref=f31e137]:
+                  - generic [ref=f31e138]: Ticket'ın nesine baksın?
+                  - combobox "Ticket'ın nesine baksın?" [ref=f31e139]:
+                    - option "İş tipi" [selected]
+                    - option "Statü"
+                  - paragraph [ref=f31e140]: Ticket'ın türüne bakar (örn. "Hata", "Görev"). Ticket açılır açılmaz tetiklenmesini istiyorsanız bunu seçin.
+                - generic [ref=f31e141]:
+                  - generic [ref=f31e142]: Hangi değer?
+                  - combobox "Hangi değer?" [ref=f31e143]:
+                    - option "Seçiniz" [selected]
+                    - option "Epic"
+                    - option "Subtask"
+                    - option "Task"
+                    - option "Story"
+                    - option "Feature"
+                    - option "Bug"
+                  - paragraph [ref=f31e144]: Bu liste Jira projenizden canlı okundu; yazım hatası yapmanız mümkün değil.
+              - generic [ref=f31e146]:
+                - generic [ref=f31e147]: Bot kullanıcısı (Jira hesap kimliği)
+                - textbox "Bot kullanıcısı (Jira hesap kimliği)" [ref=f31e148]:
+                  - /placeholder: 712020:…
+                  - text: 712020:7ee7a2ab-23e7-47aa-a61e-38b79b7eb4d1
+                - paragraph [ref=f31e149]: Jira bağlantınız test edildiği için bot hesabı otomatik dolduruldu. Değiştirmeniz gerekmiyor.
+              - generic [ref=f31e150]: "İki koşul birlikte aranır: ticket bu bota atanmış OLACAK ve yukarıdaki değere uyacak. Yalnızca birine uyan ticket'a Maestro dokunmaz."
+          - generic [ref=f31e125]:
+            - generic [ref=f31e126]:
+              - button "Geri" [ref=f31e127] [cursor=pointer]
+              - button "İleri" [disabled] [ref=f31e128]
+            - generic [ref=f31e151]: Devam etmek için Maestro'yu hangi değerin tetikleyeceğini belirtin.
+  - region

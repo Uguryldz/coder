@@ -1,0 +1,95 @@
+/*
+ * Design tokens. Screen agents use these variables and never a literal colour.
+ *
+ * The palette is deliberately SMALL (operator's brief, 2026-09: "compact,
+ * calm, colour only for state"):
+ *
+ *   --blue    the one primary: links, the active nav entry, primary buttons
+ *   --purple  the one accent: things that are "AI-driven" (full-auto mode,
+ *             delegated sessions) — used sparingly
+ *   --green / --amber / --red   the three states: good / needs attention /
+ *             broken or dangerous. Red and amber appear ONLY when something is
+ *             actually wrong; informational text is grey.
+ *   everything else is a grey ramp (--text, --muted, --faint, --border…).
+ *
+ * `--teal` and `--orange` survive as NAMES so untouched screens keep compiling,
+ * but they resolve to neutral greys: two extra hues for "ai-assist" and
+ * "handover" made every list look like a warning board.
+ *
+ * There is no dark theme. The tokens for one existed for a year and nothing
+ * ever set `data-theme`; the dead block was deleted rather than shipped.
+ */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel2: #f8fafc;
+  --border: #e2e8f0;
+  --border2: #cbd5e1;
+  --text: #0f172a;
+  --muted: #64748b;
+  --faint: #94a3b8;
+  /* Text placed ON a solid primary/state fill. */
+  --on-primary: #ffffff;
+
+  --blue: #2563eb;
+  --blue-bg: #eaf1fe;
+
+  --purple: #6d28d9;
+  --purple-bg: #f1ecfd;
+
+  --green: #15803d;
+  --green-bg: #e7f6ec;
+  --amber: #b45309;
+  --amber-bg: #fdf3e2;
+  --red: #b91c1c;
+  --red-bg: #fdeaea;
+
+  /* Neutral aliases — see the note above. */
+  --teal: #475569;
+  --teal-bg: #eef2f7;
+  --orange: #475569;
+  --orange-bg: #eef2f7;
+
+  --shadow: none;
+  --radius: 8px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13.5px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* The mock has no focus styles, but a bank console must be keyboard-operable. */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}

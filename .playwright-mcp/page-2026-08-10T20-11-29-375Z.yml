@@ -1,0 +1,318 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e23]:
+    - navigation "Ana gezinme" [ref=f1e24]:
+      - generic [ref=f1e25]:
+        - generic [ref=f1e26]: M
+        - generic [ref=f1e27]:
+          - text: Maestro
+          - generic [ref=f1e28]: SDLC otomasyonu
+      - generic [ref=f1e29]:
+        - generic [ref=f1e30]: Operasyon
+        - link "Panel" [ref=f1e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f1e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f1e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f1e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f1e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f1e36]: 🎬
+          - text: Canlı demo
+        - link "Canlı akış / Pilot" [ref=f1e37] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f1e38]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f1e39] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f1e40]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f1e41] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f1e42]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f1e43] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f1e44]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f1e45] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f1e46]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f1e47] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f1e48]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f1e49] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f1e50]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f1e51] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f1e52]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f1e53]:
+        - generic [ref=f1e54]: Yürütme
+        - link "Runner havuzları" [ref=f1e55] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f1e56]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f1e57] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f1e58]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f1e59] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f1e60]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f1e61] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f1e62]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f1e63]:
+        - generic [ref=f1e64]: Ajanlar
+        - link "Variant'lar" [ref=f1e65] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f1e66]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f1e67] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f1e68]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f1e69] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f1e70]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f1e71] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f1e72]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f1e73] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f1e74]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f1e75] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f1e76]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f1e77]:
+        - generic [ref=f1e78]: Yönetişim
+        - link "LLM Gateway" [ref=f1e79] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f1e80]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f1e81] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f1e82]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f1e83] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f1e84]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f1e85] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f1e86]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f1e87] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f1e88]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f1e89] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f1e90]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f1e91] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f1e92]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f1e93]:
+        - generic [ref=f1e94]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f1e95] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f1e96]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f1e97] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f1e98]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f1e99] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f1e100]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f1e101] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f1e102]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f1e103] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f1e104]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f1e105] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f1e106]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f1e107] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f1e108]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f1e109] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f1e110]: ✔
+          - text: Karar defteri
+    - generic [ref=f1e111]:
+      - banner [ref=f1e112]:
+        - heading "Kullanıcılar & roller" [level=1] [ref=f1e113]
+        - generic [ref=f1e114]:
+          - generic [ref=f1e115]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f1e116]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f1e117]: ayse.kaya
+        - button "Çıkış" [ref=f1e118] [cursor=pointer]
+      - main [ref=f1e119]:
+        - generic [ref=f1e120]:
+          - generic [ref=f1e121]:
+            - generic [ref=f1e122]:
+              - heading "Kullanıcılar" [level=3] [ref=f1e123]
+              - generic [ref=f1e124]: Yerel hesaplar — ekle, düzenle, pasifleştir (M8/M86)
+              - button "➕ Kullanıcı ekle" [ref=f1e126] [cursor=pointer]
+            - table [ref=f1e129]:
+              - caption [ref=f1e130]: Kullanıcılar
+              - rowgroup [ref=f1e131]:
+                - row [ref=f1e132]:
+                  - columnheader "Kullanıcı" [ref=f1e133]
+                  - columnheader "Dizin grubu" [ref=f1e134]
+                  - columnheader "Maestro rolü" [ref=f1e135]
+                  - columnheader "Hesap" [ref=f1e136]
+                  - columnheader [ref=f1e137]
+              - rowgroup [ref=f1e138]:
+                - row [ref=f1e139]:
+                  - cell "ayse.kaya ayse.kaya@ugurbank.local" [ref=f1e140]:
+                    - generic [ref=f1e141]:
+                      - text: ayse.kaya
+                      - generic [ref=f1e142]: ayse.kaya@ugurbank.local
+                  - cell "maestro-platform, maestro-gizli" [ref=f1e143]
+                  - cell "admin" [ref=f1e144]
+                  - cell "etkin" [ref=f1e147]
+                  - cell [ref=f1e149]:
+                    - generic [ref=f1e150]:
+                      - button "Düzenle" [ref=f1e151] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f1e152] [cursor=pointer]
+                - row [ref=f1e153]:
+                  - cell "mert.demir mert.demir@ugurbank.local" [ref=f1e154]:
+                    - generic [ref=f1e155]:
+                      - text: mert.demir
+                      - generic [ref=f1e156]: mert.demir@ugurbank.local
+                  - cell "maestro-tech-leads, maestro-ugurpay, maestro-ugurweb" [ref=f1e157]
+                  - cell "tech-lead" [ref=f1e158]
+                  - cell "etkin" [ref=f1e161]
+                  - cell [ref=f1e163]:
+                    - generic [ref=f1e164]:
+                      - button "Düzenle" [ref=f1e165] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f1e166] [cursor=pointer]
+                - row [ref=f1e167]:
+                  - cell "can.ozturk can.ozturk@ugurbank.local" [ref=f1e168]:
+                    - generic [ref=f1e169]:
+                      - text: can.ozturk
+                      - generic [ref=f1e170]: can.ozturk@ugurbank.local
+                  - cell "maestro-product-owners, maestro-ugurpay" [ref=f1e171]
+                  - cell "product-owner" [ref=f1e172]
+                  - cell "etkin" [ref=f1e175]
+                  - cell [ref=f1e177]:
+                    - generic [ref=f1e178]:
+                      - button "Düzenle" [ref=f1e179] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f1e180] [cursor=pointer]
+                - row [ref=f1e181]:
+                  - cell "deniz.yilmaz deniz.yilmaz@ugurbank.local" [ref=f1e182]:
+                    - generic [ref=f1e183]:
+                      - text: deniz.yilmaz
+                      - generic [ref=f1e184]: deniz.yilmaz@ugurbank.local
+                  - cell "maestro-qa, maestro-ugurpay, maestro-ugurweb" [ref=f1e185]
+                  - cell "qa" [ref=f1e186]
+                  - cell "etkin" [ref=f1e189]
+                  - cell [ref=f1e191]:
+                    - generic [ref=f1e192]:
+                      - button "Düzenle" [ref=f1e193] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f1e194] [cursor=pointer]
+                - row [ref=f1e195]:
+                  - cell "baran.tekin baran.tekin@ugurbank.local" [ref=f1e196]:
+                    - generic [ref=f1e197]:
+                      - text: baran.tekin
+                      - generic [ref=f1e198]: baran.tekin@ugurbank.local
+                  - cell "maestro-ugurdesk, maestro-ugurmob" [ref=f1e199]
+                  - cell "developer" [ref=f1e200]
+                  - cell "etkin" [ref=f1e203]
+                  - cell [ref=f1e205]:
+                    - generic [ref=f1e206]:
+                      - button "Düzenle" [ref=f1e207] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f1e208] [cursor=pointer]
+                - row [ref=f1e209]:
+                  - cell "selin.aydin selin.aydin@ugurbank.local" [ref=f1e210]:
+                    - generic [ref=f1e211]:
+                      - text: selin.aydin
+                      - generic [ref=f1e212]: selin.aydin@ugurbank.local
+                  - cell "maestro-ugurmob" [ref=f1e213]
+                  - cell "viewer" [ref=f1e214]
+                  - cell "etkin" [ref=f1e217]
+                  - cell [ref=f1e219]:
+                    - generic [ref=f1e220]:
+                      - button "Düzenle" [ref=f1e221] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f1e222] [cursor=pointer]
+                - row [ref=f1e223]:
+                  - cell "hulya.arslan hulya.arslan@ugurbank.local" [ref=f1e224]:
+                    - generic [ref=f1e225]:
+                      - text: hulya.arslan
+                      - generic [ref=f1e226]: hulya.arslan@ugurbank.local
+                  - cell "maestro-audit, maestro-gizli" [ref=f1e227]
+                  - 'cell "tanınmayan: internal-audit" [ref=f1e228]'
+                  - cell "etkin" [ref=f1e231]
+                  - cell [ref=f1e233]:
+                    - generic [ref=f1e234]:
+                      - button "Düzenle" [ref=f1e235] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f1e236] [cursor=pointer]
+          - generic [ref=f1e237]:
+            - generic [ref=f1e238]:
+              - heading "Rol kümesi" [level=3] [ref=f1e239]
+              - generic [ref=f1e240]: Kapalı küme — bir oturumun yetkisi bu listeden okunur
+            - generic [ref=f1e241]:
+              - generic [ref=f1e242]:
+                - generic [ref=f1e243]:
+                  - term [ref=f1e244]:
+                    - generic [ref=f1e245]: admin
+                  - definition [ref=f1e246]: Platform ayarları, korumalı parametreler, kill-switch önerisi
+                - generic [ref=f1e247]:
+                  - term [ref=f1e248]:
+                    - generic [ref=f1e249]: tech-lead
+                  - definition [ref=f1e250]: Mühendislik onay kapıları (adım 5 ve 12)
+                - generic [ref=f1e251]:
+                  - term [ref=f1e252]:
+                    - generic [ref=f1e253]: product-owner
+                  - definition [ref=f1e254]: Analiz kapısı (adım 4); riski yükseltebilir
+                - generic [ref=f1e255]:
+                  - term [ref=f1e256]:
+                    - generic [ref=f1e257]: qa
+                  - definition [ref=f1e258]: Test kapıları (adım 9 ve 11)
+                - generic [ref=f1e259]:
+                  - term [ref=f1e260]:
+                    - generic [ref=f1e261]: developer
+                  - definition [ref=f1e262]: Akışları okur, iş başlatır, soruları yanıtlar
+                - generic [ref=f1e263]:
+                  - term [ref=f1e264]:
+                    - generic [ref=f1e265]: viewer
+                  - definition [ref=f1e266]: Yalnız okuma — yetkisi olmayan hesabın tabanı
+              - generic [ref=f1e267]: "Roller doğrudan verilmez: yetki, dizin grubu üyeliğinin okunmasıyla belirlenir (M8). Bir hesap eklerken ya da düzenlerken grup seçilir; roller platformun o gruplardan çıkardığı okumadır. Kapalı kümenin dışındaki bir grup hiçbir rol vermez."
+          - generic [ref=f1e268]:
+            - generic [ref=f1e269]:
+              - heading "Görevler ayrılığı (SoD)" [level=3] [ref=f1e270]
+              - generic [ref=f1e271]: İş akışı motorunun uyguladığı kurallar (M32/M92)
+            - generic [ref=f1e272]:
+              - list [ref=f1e273]:
+                - listitem [ref=f1e274]: Kodu üreten kimlik ≠ onaylayan kimlik
+                - listitem [ref=f1e275]: PO onayı ≠ Tech Lead onayı
+                - listitem [ref=f1e276]: PR onaylayan ≠ merge eden
+                - listitem [ref=f1e277]: QA senaryo onayı ≠ QA sonuç onayı
+                - listitem [ref=f1e278]: AI servis hesabı onay veremez
+              - generic [ref=f1e279]: AI servis hesabı onay veremez — teknik olarak yetkisi yoktur.
+  - region

@@ -1,0 +1,736 @@
+# Maestro — Banka İçi (İnternetsiz) Kurulum
+
+**Paket sürümü: 2026-08-27**
+*(Bu tarih `.env.example` içindeki `BUNDLE_VERSION` ve `install.sh` başlığıyla
+aynı olmalıdır. Üçü tutmuyorsa elinizdeki paket karışıktır — kurmayın.)*
+
+Bu paket, Maestro'yu **internete çıkmayan** bir sunucuya kurmak içindir.
+Kurulumu yapan kişinin bilmesi gereken her şey bu dosyadadır; sırayla okuyun.
+
+---
+
+## Maestro ne yapar?
+
+Kısaca: **Jira'ya düşen bir talebi alır, analiz dokümanı üretir, onaya sunar.**
+
+1. Bir kullanıcı Jira'da talep açar ve onu Maestro bot hesabına **atar**.
+2. Maestro talebi görür (webhook ya da yoklama ile), sınıflandırır.
+3. Kurum içi yapay zekâ uç noktasını kullanarak analiz dokümanı yazar.
+4. Dokümanı Jira'ya iliştirir ve bir **insan onayına** sunar.
+
+Bu hat her kurulumda uçtan uca çalışır. Kod yazma / PR açma / birleştirme
+hattı da **kuruludur**: hangi talebin hangi akışla (yalnızca analiz, hata
+düzeltme, yeni özellik) koşacağı panelden, ticket başına seçilir — sunucu
+yapılandırmasıyla değil.
+
+Kod yazan akışlar bir **kod deposu bağlantısı** ister. Bağlantı tanımlı
+değilse kurulum sihirbazı o akışları **gerekçesiyle birlikte, daha ilk adımda**
+kapatır; onaylanmış bir analizden sonra ölen koşu diye bir şey yoktur.
+
+---
+
+## 0. Önce şunu bilin: imajlar DIŞARIDA hazırlanır
+
+İnternetsiz sunucuda **build yapılmaz** (`pnpm install` ve `apt-get` internet
+ister). Akış şudur:
+
+```
+[İnternetli makine]                    [Banka sunucusu]
+  build → docker save → .tar   ──USB/SFTP──→   docker load → docker compose up
+```
+
+Ya da bankanın kendi registry'si (Nexus/Harbor) varsa: dışarıda build → push →
+sunucuda pull.
+
+---
+
+## 1. Ön koşullar (banka sunucusu)
+
+| Gereklilik | Değer |
+|---|---|
+| Docker Engine + Compose v2 | `docker compose version` çalışmalı |
+| CPU / RAM | 4 CPU / 16 GB önerilir (asgari 2 CPU / 8 GB) |
+| Disk | imajlar ~3 GB + veritabanı büyümesi |
+| Açık port | yalnızca panel portu (varsayılan 7000) |
+
+**Sunucudan erişilebilmesi gerekenler:**
+
+- **Jira** (Data Center ya da Cloud) — talepleri okur, yorum yazar
+- **Kurum içi LLM uç noktası** — analizi bu üretir
+- **LDAP/AD** — yalnızca LDAP ile giriş kullanacaksanız
+- **Kod deposu (GitHub / GitHub Enterprise)** — yalnızca kod yazan akışlar için;
+  bağlantı panelden tanımlanır
+
+> Maestro dışarıya **çıkmaz**. `install.sh` de internete bağlanmaz: imaj
+> indirmez, sürüm sorgulamaz, telemetri göndermez.
+
+---
+
+## 2. Dışarıda imaj hazırlama (internetli makinede)
+
+### 2.1 Kaynağı al ve sürümü sabitle
+
+```bash
+git clone <maestro-repo> maestro && cd maestro
+git checkout <sürüm-etiketi>
+export TAG=$(git rev-parse --short HEAD)   # imaj etiketi olacak, not edin
+```
+
+### 2.2 İki imajı build et
+
+`node` imajı tek tanedir; **BFF, worker ve migration** rolleri aynı imajdan
+`MAESTRO_ENTRYPOINT` env'i ile ayrılır. Bu yüzden üç değil **iki** imaj taşınır.
+
+```bash
+docker build -f deploy/docker/Dockerfile.node   -t maestro/node:$TAG   .
+docker build -f deploy/docker/Dockerfile.studio -t maestro/studio:$TAG .
+```
+
+### 2.3 Build'i DOĞRULA (bu adımı atlamayın)
+
+Geçmişte imaj sessizce bozuk çıktı ve arıza haftalar sonra fark edildi.
+
+```bash
+# a) OpenSSL gerçekten kurulu mu (Prisma query engine için şart)
+docker run --rm --entrypoint sh maestro/node:$TAG -c "openssl version"
+#    Beklenen: OpenSSL 3.x ...
+
+# b) Migration klasörlerinin TAMAMI imajda mı
+docker run --rm --entrypoint sh maestro/node:$TAG \
+  -c "ls /app/packages/db/prisma/migrations | grep -c '^[0-9]'"
+#    Beklenen: 22  (son migration 0021'dir; iki klasör 0011 önekini paylaşır)
+
+# c) Prisma istemcisi üretilmiş mi  ← EN KRİTİK KONTROL
+#    (pnpm istemciyi .pnpm deposunun içine koyar; yol sürüme göre değişir,
+#     bu yüzden sabit yol yerine arama yapılır)
+docker run --rm --entrypoint sh maestro/node:$TAG \
+  -c "find /app -path '*/.prisma/client/index.js' -print -quit"
+#    Boş çıkarsa imaj KULLANILMAZ. Bayat bir Prisma istemcisi yeni sütunları
+#    YOK SAYAR: kod hatasız çalışır, veriyi yazdığını sanır, değer veritabanına
+#    hiç ulaşmaz. Sessiz veri kaybıdır.
+
+# d) Studio bundle'ı üretilmiş mi
+docker run --rm --entrypoint sh maestro/studio:$TAG \
+  -c "ls /usr/share/nginx/html/index.html && echo VAR"
+
+# e) İmajın içinde GERÇEK kimlik bilgisi kalmış mı  ← GÜVENLİK KONTROLÜ
+docker run --rm --entrypoint sh maestro/node:$TAG \
+  -c "find /app -name '.env' -not -name '*.example'"
+#    Beklenen: HİÇBİR ÇIKTI OLMAMASI.
+#    Bir yol yazdırıyorsa imajı BANKAYA GÖTÜRMEYİN ve etiketi silin: içinde
+#    geliştiricinin gerçek parolaları ve jetonları vardır. Bir kez tam olarak
+#    bu oldu — `/app/deploy/.env`, 18 KB, doldurulmuş hâliyle. Sebebi
+#    `.dockerignore`'daki `.env` kalıbının eğik çizgi içermemesiydi: böyle bir
+#    kalıp yalnızca BAĞLAM KÖKÜNDE eşleşir, `deploy/.env` hiç dışlanmamıştı.
+#    Kalıp `**/.env` olarak düzeltildi; bu kontrol, düzeltmenin GEÇERLİ OLDUĞU
+#    bir koddan build ettiğinizi doğrular. İmajın içi, build eden makinenin
+#    diskiyle aynı şey değildir — tek görme yolu budur.
+```
+
+### 2.4 Yan imajları topla ve paketle
+
+```bash
+docker pull postgres:17-alpine
+docker pull redis:7-alpine
+docker pull temporalio/auto-setup:1.25.2
+
+docker save maestro/node:$TAG maestro/studio:$TAG \
+  postgres:17-alpine redis:7-alpine temporalio/auto-setup:1.25.2 \
+  | gzip > maestro-imajlar-$TAG.tar.gz
+
+sha256sum maestro-imajlar-$TAG.tar.gz > maestro-imajlar-$TAG.sha256
+```
+
+Taşınacaklar: `maestro-imajlar-$TAG.tar.gz`, `.sha256` ve bu `banka/` klasörü.
+
+---
+
+## 3. Banka sunucusunda kurulum
+
+### 3.1 İmajları yükle
+
+```bash
+sha256sum -c maestro-imajlar-<TAG>.sha256     # bütünlük kontrolü
+gunzip -c maestro-imajlar-<TAG>.tar.gz | docker load
+docker images | grep maestro                  # iki imaj görünmeli
+```
+
+### 3.2 Yapılandır
+
+```bash
+cd banka
+cp .env.example .env
+chmod 600 .env
+```
+
+`.env`'i açın ve **`DEGISTIR`** yazan her satırı doldurun. `install.sh` dosyada
+`DEGISTIR` kalırsa çalışmayı reddeder.
+
+**Doldurulacak alan sayısı dörttür** ve dördü de altyapıya aittir — Jira jetonu,
+GitHub jetonu ve model anahtarı bu dosyada **artık yoktur.** Onlar kurulumdan
+sonra panelden girilir (§4). Bu dosya "sisteme nasıl ulaşılır" sorusunu
+cevaplar; "hangi hesapla bağlanılır" sorusunu panel cevaplar.
+
+| Alan | Ne için |
+|---|---|
+| `CONNECTOR_MASTER_KEY` | Panelden girilecek bütün jetonları şifreler. `openssl rand -base64 32` |
+| `POSTGRES_PASSWORD` | Veritabanı parolası. `openssl rand -hex 24` |
+| `REDIS_PASSWORD` | Kuyruk parolası. `openssl rand -hex 16` |
+| `MAESTRO_SECRET_KV_JIRA__WEBHOOK` | Jira webhook imza sırrı. `openssl rand -hex 32` |
+
+Son satır neden panelde değil de burada: bu sır, **dışarıdan gelen ve henüz
+doğrulanmamış** bir isteği doğrulamak için okunur. Diğer jetonlar sistemin kendi
+başlattığı dış çağrılarda kullanılır; bu ise yabancının başlattığı bir istekte.
+Veritabanından okunsaydı, imza kontrolünün önüne bir sorgu koyulmuş olurdu.
+
+Bir de bir görüntü ayarı vardır (`MAESTRO_NODE_IMAGE` / `MAESTRO_STUDIO_IMAGE`):
+yüklediğiniz imajların adlarını yazın.
+
+> **Aynı sunucuya ikinci bir kurulum mu yapıyorsunuz?** (kabul ortamı, sürüm
+> provası) `.env`'de **`COMPOSE_PROJECT_NAME`** ile **`STUDIO_PORT`**'u
+> mutlaka farklı verin. İkisi de varsayılan bırakılırsa compose ikinci kurulumu
+> yeni bir yığın olarak değil **mevcudun güncellemesi** olarak görür: çalışan
+> kurulumun veritabanı volume'üne bağlanır. "Denemek için yan tarafa kurdum"
+> sanılan işlem, üretimin üstüne yapılmış olur ve hiçbir uyarı çıkmaz.
+
+Model adresi ve adı da **bu dosyada değildir**: `LLM_BASE_URL` / `LLM_MODEL`
+boş gelir ve boş kalabilir. Model kurulumdan sonra panelden tanımlanır
+(Ayarlar & bağlantılar → "Kurum içi model sunucusu"); "Test et" sunucunun o
+modeli gerçekten sunduğunu doğrular. Yalnız `.env` üzerinden doldurmayı
+seçerseniz iki tuzağı bilin:
+
+| Alan | Neden önemli |
+|---|---|
+| `LLM_BASE_URL` | Sonuna `/v1` **yazmayın** — sürücü kendisi ekler. |
+| `LLM_ON_PREM` | `false` kalırsa `gizli` işlerin analizi eksik biter. |
+
+`MAESTRO_BOT_ACCOUNT_ID` **boş bırakılabilir.** Panelde bağlantıyı test
+ettiğinizde sistem jetonun gerçek sahibini kendisi öğrenir ve yazar; yanlış
+yazılmış bir değeri de düzeltir. Doldurursanız yalnızca bir karşılaştırma
+dayanağı olur.
+
+`MAESTRO_SECRET_*` değişkenlerinin **adlarını değiştirmeyin**. Bu adlar sır
+adresinden türetilir (`kv/jira#token` → `MAESTRO_SECRET_KV_JIRA__TOKEN`, `#`
+çift alt çizgi olur). Bir harf şaşarsa sistem "sır bulunamadı" der, siz `.env`'de
+değeri dolu görürsünüz ve aradaki farkı anlamanın yolu olmaz.
+
+### 3.3 Kur
+
+```bash
+./install.sh          # ön kontrolleri yapar, sırayla başlatır, sağlığı bekler
+./install.sh --yes    # otomasyon için (soru sormaz)
+```
+
+`install.sh` **önce doğrular, sonra çalıştırır.** Şunlardan biri eksikse hiçbir
+konteyner başlatmadan durur:
+
+- `.env` yok, ya da içinde `DEGISTIR` kalmış
+- Zorunlu değişkenlerden biri boş
+- `NODE_ENV=production` ama Vault/S3 değişkenleri boş
+- `CONNECTOR_MASTER_KEY` 32 bayt değil
+- `.env`'de eski biçimli sır adı (`MAESTRO_SECRET_JIRA_TOKEN`) ya da eski
+  referans biçimi (`env:JIRA_TOKEN`) var
+- Bir imaj `docker load` ile yüklenmemiş
+- İmajda migration eksik ya da **Prisma istemcisi üretilmemiş**
+- `LLM_BASE_URL` sonunda `/v1` var
+- Kurumsal CA dosyası `.env`'de yazılı ama diskte yok
+- **Ortam, uygulamanın kendi açılış şemasından geçemiyor** — bkz. aşağıdaki not
+
+Son maddedeki kontrol, listedeki diğerlerinden farklı bir işi yapar ve bu fark
+önemlidir. Yukarıdakilerin her biri belirli bir değişkeni ADIYLA kontrol eder;
+böyle bir liste ise ancak yazıldığı günkü kadar günceldir. Nitekim bir kez tam
+olarak bu oldu: betik 24 değişkeni doğruladı, hepsi yeşil geçti ve `migrate`
+konteyneri açılışta dört satırlık bir şema hatasıyla öldü — çünkü hata, listede
+adı hiç geçmeyen değişkenlerdeydi.
+
+Bu yüzden `install.sh` artık yığını başlatmadan önce, `bff` servisinin ortamını
+compose'un kurduğu **hâliyle** ayağa kaldırıp uygulamanın açılışta çalıştırdığı
+doğrulamanın **aynısını** çalıştırır. Elle tutulan bir değişken listesi yoktur;
+doğrulayan şey şemanın kendisidir, dolayısıyla bayatlayamaz. Burada geçen bir
+`.env` ile sistem açılır.
+
+> **`.env`'de boş bırakmak = satırı hiç yazmamak.** Compose, isteğe bağlı
+> değişkenleri `${DEGISKEN:-}` biçiminde iletir; `.env`'de olmayan bir değişken
+> konteynere **boş dize** olarak girer ve uygulama bunu "ayarlanmamış" diye
+> okur. Kullanmadığınız isteğe bağlı satırları yorumda bırakın — ama bir adrese
+> değer yazacaksanız geçerli bir URL yazın (`https://…`), çünkü dolu bir alan
+> artık şemaya göre denetlenir.
+
+---
+
+## 4. Kurulum sonrası doğrulama
+
+```bash
+docker compose ps                    # hepsi healthy/running olmalı
+docker compose logs migrate          # "migrations applied" görmelisiniz
+docker compose exec bff node -e "fetch('http://127.0.0.1:7001/readyz').then(r=>console.log(r.status))"
+```
+
+**Panel:** `http://<SUNUCU_IP>:7000`
+**İlk giriş:** `admin` + kurulum sırasında migrate adımının **bir kez** bastığı
+`GEÇİCİ PAROLA` (install.sh çıktısındaki `GEÇİCİ PAROLA` satırı). İlk oturumda
+sistem yeni bir parola belirlemenizi **zorunlu** tutar. Parolayı not etmediyseniz:
+`./reset-admin.sh admin` yenisini üretir.
+
+---
+
+## 5. ⚠ KURULUMDAN SONRA MUTLAKA YAPIN
+
+Bu beş maddeyi yapmadan sistem **çalışıyor görünür ama güvenli ya da işlevsel
+değildir.** Sırayla uygulayın.
+
+### 5.1 `admin` hesabıyla girin, kalıcı parolanızı belirleyin
+
+Kurulum, ilk girişi mümkün kılmak için `admin` hesabını **rastgele üretilmiş
+geçici bir parolayla** ekler ve bu parolayı **yalnızca bir kez**, migrate
+adımının çıktısında basar (`GEÇİCİ PAROLA` satırı). Sabit bir kurulum parolası
+**yoktur** — hiçbir paketin kaynağında yazılı değildir.
+
+Panele `admin` + geçici parola ile girin; sistem kendi parolanızı belirlemenizi
+**zorunlu** tutar. Değiştirene kadar bu hesap yalnızca üç uca erişir, ama yine
+de **kurulumun ilk işi** budur.
+
+**Geçici parolayı not etmediyseniz ya da parola unutulduysa** — sunucuda, bu
+klasörde:
+
+```bash
+./reset-admin.sh              # admin hesabını sıfırlar
+./reset-admin.sh ayse.kaya    # başka bir hesabı sıfırlar
+```
+
+Betik, uygulama imajının içinde yeni bir rastgele parola üretir, bcrypt'leyip
+veritabanına yazar, parolayı ekrana **bir kez** basar, hesabın açık oturumlarını
+kapatır ve ilk girişte değişimi yine zorunlu kılar. Parola hiçbir yere
+kaydedilmez; not almadıysanız betiği yeniden çalıştırın (her çalıştırma yeni
+parola üretir). `psql` ile elle hash yazmak artık gerekmez ve önerilmez.
+
+### 5.2 Ajanların modeli: eski kurulumdan kalan bulut adları
+
+Maestro'nun **eski** sürümleri, kurulum sırasında varsayılan ajanları bir
+**bulut** modeliyle (`anthropic/claude-sonnet-4.5`) tohumluyordu. Kurum içi ve
+internetsiz bir kurulumda o ad hiçbir sunucuda **yoktur**: çağrı cevapsız kalır
+ve hata "bağlantı kurulamadı" diye **yanlış yerde** görünür.
+
+Yeni sürümler artık bulut adı tohumlamaz — ajan modeli `secilmedi` ile başlar ve
+seçimi siz yaparsınız. Ama kurulum, **zaten var olan** bir ajan tanımına asla
+dokunmaz (yayınlanmış bir sürümü sessizce yeniden yazmak kabul edilemez).
+Dolayısıyla **güncelleme kurulumundan sonra eski adlar yerinde durur** ve panelde
+görünmeye devam eder.
+
+Kurulum bunu artık **söyler**: migrate çıktısında "kurum içi bir kurulumda
+ERİŞİLEMEYECEK" başlıklı bir uyarı bloğu varsa, ilgili ajanlar listelenmiştir.
+
+Denetlemek için (sunucuda, bu klasörde):
+
+```bash
+./ajan-modelleri.sh           # SADECE RAPOR — hiçbir şey değişmez
+./ajan-modelleri.sh --duzelt  # bulunanları "secilmedi" durumuna alır
+```
+
+**Düzeltmenin iki yolu var, ve panel olanı daha iyidir:**
+
+1. **Panelden (önerilen)** — Ajan tanımları → ilgili ajan → *yeni sürüm yayınla*
+   ve **kendi model sunucunuzun servis ettiği** model adını yazın. Doğru adı
+   yalnızca siz bilirsiniz.
+2. **Toplu** — `./ajan-modelleri.sh --duzelt`. Bu, adları silmez; her ajanın
+   **etkin** sürümünü `secilmedi` durumuna alır (eski sürümler değişmez, çünkü
+   eski bir sürüme sabitlenmiş koşular onu okumaya devam eder). Ardından yine
+   panelden gerçek model adını vermeniz gerekir.
+
+`secilmedi` bir arıza değil, **dürüst bir durumdur**: sistem bunu adıyla tanır,
+çağrıyı "Ayarlar & bağlantılar" ekranındaki modelle yapar ve bunu loglara
+**görünür** bir satırla yazar. Sessizce yanlış bir modele düşmez.
+
+### 5.3 Bot hesabı `maestro-admins` grubunda OLMASIN
+
+Maestro'da korumalı parametreleri değiştirmek **dört-göz kuralına** tabidir:
+öneren ve onaylayan **farklı** kişiler olmalıdır.
+
+Bot hesabı da `maestro-admins` grubundaysa bu kural **tek başına sağlanabilir**
+hâle gelir: bot önerir, bot onaylar. Kural teknik olarak çalışır, denetim
+kaydı düzgün görünür, ama ikinci göz diye bir şey kalmaz.
+
+AD tarafında kontrol edin — bot hesabı `maestro-admins` içinde **olmamalıdır**.
+LDAP kullanmıyorsanız, panelde bot için ayrı bir hesap açmayın; bot Jira
+tarafında bir kimliktir, Maestro'da bir yönetici hesabı değildir.
+
+### 5.4 Jira webhook'unu kaydedin
+
+Webhook olmadan Maestro talepleri **anında** görmez. Kayıt adımları ve imza
+sırrının nasıl üretileceği ayrı belgede:
+
+**→ [`docs/jira-webhook-kurulum.md`](../../docs/jira-webhook-kurulum.md)**
+
+Webhook adresi panelin kendisiyle **aynı host**'tur:
+`https://<host>/webhooks/jira`. İstek, dışarı açılan tek port olan studio'dan
+girer ve `studio-nginx.conf`'taki `/webhooks/` geçidiyle `bff:7001`'e geçer —
+BFF için ayrı bir port **açılmaz**. Jira Data Center'da belge eki ve pano
+taşıma henüz yoktur; analiz **yorum olarak** teslim edilir (ayrıntı belgede).
+
+Özet: `.env`'deki `MAESTRO_SECRET_KV_JIRA__WEBHOOK` değeri ile Jira'daki webhook
+kaydının `secret` alanı **aynı** olmalıdır. `POST /webhooks/jira` ucu
+fail-closed'dır: sır tanımlı değilse gövde ayrıştırılmadan reddedilir. "Sırrı
+sonra tanımlarım" diye bir mod yoktur.
+
+### 5.5 Motor kimliğini doğrulayın
+
+Sistem iki Jira kimliği taşıyabilir:
+
+- **Bağlantının kimliği** — panelden girdiğiniz jetonun sahibi
+- **Motorun kimliği** — `.env`'deki `MAESTRO_BOT_ACCOUNT_ID` (artık isteğe bağlı)
+
+Keşif sorgusu motorun kimliğiyle çalışır; panel ise dinleme kuralını
+**bağlantının** kimliğiyle doldurur. İkisi farklıysa her kural asla
+eşleşmeyecek bir atanana bakar — hiçbir talep işlenmez, hiçbir yerde hata
+görünmez.
+
+**Bu arıza artık büyük ölçüde kendiliğinden kapanıyor:** `MAESTRO_BOT_ACCOUNT_ID`
+boş bırakıldığında karşılaştırılacak iki değer olmaz; bağlantı testi jetonun
+gerçek sahibini `/rest/api/3/myself` ile öğrenip bağlantıya yazar ve kurallar o
+kimlikle kurulur. Önerilen kurulum budur.
+
+Yine de doldurmayı seçtiyseniz doğrulayın: panelde **Ayarlar → Bağlantılar →
+(Jira bağlantısı) → Test**. Ekran iki kimliği karşılaştırır ve farklıysa
+**uyarır**. Uyarı görüyorsanız ya `.env`'deki değeri bağlantının sahibiyle
+eşitleyin, ya da satırı boşaltıp panele bırakın. `.env`'i değiştirdiyseniz:
+
+```bash
+docker compose up -d --force-recreate bff worker
+```
+
+> **Jetonu değiştirmek için yeniden başlatmak GEREKMEZ.** Panelden girilen
+> jetonlar her çağrıda yeniden okunur; "Test et" yeşil olduğu anda koşular da o
+> jetonu kullanır. Yukarıdaki komut yalnızca `.env` değiştiğinde gerekir.
+
+### 5.6 Jira'da onay gruplarını eşleyin (`GATE_GROUPS`)
+
+Onay kapıları (analiz onayı, teknik onay, test onayı) `/approve` yazan kişinin
+**Jira grup üyeliğiyle** doğrulanır. Eşleme verilmediğinde rol adının kendisi
+grup adı sayılır: Jira'nızda `product-owners`, `tech-leads` ve `qa` adında
+gruplar yoksa **her onay "üye değil" diye reddedilir** — kapı fail-closed'dır
+ve koşu onay adımında bekler kalır.
+
+İki seçenekten birini yapın:
+
+- Jira'da bu adlarla (`product-owners`, `tech-leads`, `qa`) grup açıp
+  onaycıları üye yapın, **ya da**
+- `.env` §6b'de rolleri kendi gruplarınıza eşleyin:
+  `GATE_GROUPS="product-owners=<JIRA-GRUBU>,tech-leads=<JIRA-GRUBU>,qa=<JIRA-GRUBU>"`
+  — tek onaycı grubu varsa `GATE_GROUP_DEFAULT="<JIRA-GRUBU>"` tek başına
+  yeter.
+
+Eşleme **hem `bff` hem `worker`** tarafından okunur (biri üyeliği doğrular,
+öteki kapı kaydına sahibi yazar); `.env` değiştiği için ikisini birden
+yenileyin: `docker compose up -d --force-recreate bff worker`
+
+---
+
+
+### 5.6a Havuz kuralı: robotun havuzunda ticket kalmaz
+
+Robot, dinleme kuralında seçilen statüyü (örn. `analiz`) **iş havuzu** olarak okur. İşlem
+bittiğinde ticket ya ileri ("Analiz onaya çıktığında" → örn. `analysisapproval`) ya geri ("Bilgi
+eksik olduğunda" → örn. `todo`, ya da talep sahibine geri atama) oynar. Bunun için:
+
+- Havuzlu bir kural bu çıkış durumları boşken **kaydedilemez** (`Havuz çıkışı` hatası). Eski
+  kurallar için Sistem sağlığı › Yapılandırma'da "Havuz çıkışı" satırı uyarır.
+- Taşıma Jira tarafında başarısız olursa (geçiş tanımlı değil, yetki yok) ticket'a **görünür bir
+  yorum** yazılır: hangi duruma gidecekti, neden gidemedi, elle ne yapılmalı. Koşu defterinde de
+  "durum: …" satırı vardır.
+- Koşusu bitmiş ama hâlâ havuzda duran ticket'lar tarama bandında **"Havuzda kalan"** olarak
+  listelenir.
+- Ölmüş/devredilmiş koşu otomatik yeniden başlatılır; fren günde en fazla 3 denemedir
+  (`stuck.restart_window_hours`, varsayılan 24). Eskiden sayaç sonsuza kadar sayıyordu ve üçüncü
+  denemeden sonra ticket havuzda çürüyordu — sebep düzelse bile. Artık ertesi gün yeniden dener.
+
+### 5.6b Depo eşlemesi: aynı projede birden çok depo
+
+Bir Jira projesi "Proje bağlama"da TEK uygulamaya bağlanır. Aynı projede birden çok depo varsa
+(React ön yüz, Java servis, Linux betikleri) hangi depoya gidileceğini ticket'taki bir alan söyler,
+bankada bu **İş Ailesi** özel alanı. Dinleme kuralında **Depo eşlemesi** bölümünü açın. İki kip var: **sabit** (bu kuralın her ticket'ı
+seçilen uygulamaya gider; tetik zaten depoyu ayırıyorsa, ör. iş tipi ya da etiket) ve **alana göre**:
+
+1. Alanı seçin (liste Jira bağlantısından okunur, özel alanlar önce gelir; okunamazsa alan kimliğini
+   yazın, ör. `customfield_10234`).
+2. Değerler Jira'dan gelir (alanın izin verilen listesi, yoksa projede kullanılan değerler); her değeri bir uygulamaya eşleyin: `Krediler → bank/kredi`, `Kartlar → bank/kart`. İsteğe bağlı
+   hedef dal (ortam) yazılır.
+3. Uygulamalar önce kayıtlı olmalı: "Proje bağlama"daki bağlı projeler tablosunda **Depo ekle** ile aynı projeye
+   ikinci, üçüncü depoyu ekleyin (SCM bağlantısı → depo listesi → platform; onay turu yok, denetim kaydı var).
+   Bağlama varsayılan uygulamayı söyler, eşleme bu projedeki depolar arasından seçer (migration 0030).
+
+Satırdaki **hedef dal** koşuya taşınır: klon o daldan açılır ve PR o dala açılır; boşsa deponun kendi varsayılan dalı.
+Eşleşmeyen değer ya da boş alan proje bağlamasının uygulamasına gider (eskisi gibi). `/ai-assign`
+komutu eşlemeyi ezer. Webhook, tarama ve "Kuralı test et" aynı eşlemeyi okur; koşu günlüğünde
+`depo eşlemesi İş Ailesi = "Krediler" → bank/kredi` satırı görünür. Migration 0029 kolonu ekler.
+
+### 5.7 Analiz şablonu ve kurumsal Word şablonu (PDD düzeni)
+
+Analiz belgesinin **bölümleri** ve **görünümü** iki ayrı şablondan gelir:
+
+- **Analiz şablonu** (Studio › Analiz şablonu): 9 bölüm — Amaç ve iş değeri, Kapsam (dahil / hariç),
+  Etki analizi, Kabul kriterleri, Ekran ve API değişiklikleri, Test yaklaşımı, Risk ve geri dönüş planı,
+  Kaynaklar, Netleştirilecek açık maddeler. Başlıklar ve AI talimatları bankanın süreç tanım
+  dokümanı (PDD) diliyle yazılmıştır; bölümler motorun sabit iskeletine **sırayla** eşlenir.
+- **Word şablonu** (Studio › Word şablonu): `sablon/HFKB-Analiz-Sablonu.docx` — bankanın kendi PDD
+  dosyasından türetilmiş kapak, künye, içindekiler, üstbilgi/altbilgi ve "Belge Onayı" tablosu;
+  gövdede 9 bölüm yuvası (`{{bolum:1}}` … `{{bolum:9}}`) ve taşan bölümler için `{{govde}}`.
+
+Kurulumdan sonra ikisini tek komutla yayınlayın (Studio yönetici hesabıyla giriş ister):
+
+```bash
+./sablon/analiz-sablonu-yayinla.sh
+```
+
+**Ticket ekleri okunur.** Analist ve tamlık kontrolü, ticket'a eklenmiş dosyaların metnini görür:
+`.txt/.md/.csv/.json/.xml/.yaml`, Word (`.docx`) ve PDF (metin katmanı olan). Görsel, `.xlsx`, `.pptx`
+ve eski `.doc` yalnız adıyla anılır — model onları "incelenmeli" diye yazar, içeriğini uydurmaz.
+Sınırlar: ilk 8 ek, ek başına 8 MB indirme ve 20 000 karakter, toplam 60 000 karakter. Koşu
+defterinde "ekler okundu" satırı hangi ekin okunduğunu, hangisinin neden okunmadığını söyler.
+
+**Tamlık kontrolü sormadan önce bakar.** Ajan bir bilgiyi eksik saymadan önce "bunu nereden alırım"
+sorgusunu yapar: ticket metni, yorumlar, ekler ve o ajanın Studio'daki öğrenme notları. Oralarda
+bulduğunu sormaz. Analiz sırasında repodan/knowledge base'den öğrenilecek şeyleri (uygulama adı,
+endpoint, mevcut davranış) reporter'a sormaz, analiste bırakır. Yalnız reporter'ın bilebileceği
+öz bilgi (iş kuralı, beklenen davranış, hangi ekran) sorulur ve sorunun yanında nereye bakıldığı
+yazar. Koşu defterindeki "ticket eksik/eksiksiz" satırı sorulMAYAN maddeleri de gerekçesiyle listeler.
+Ek içeriği ticket metniyle aynı PII maskesinden geçer.
+
+Word'de belge açılırken "alanlar güncellensin mi?" sorusuna **Evet** deyin: içindekiler o anda
+yenilenir. Şablonu kendi PDD'nizden yeniden üretmek için `sablon/sablon-uret.py` kaynak dosyayı
+`plan/` klasöründen okur; kişi adları ve tarihler üretilen dosyada yer almaz.
+
+### 5.8 Dört ajanlı zincir: analiz → plan → geliştirici → doğrulayıcı
+
+Kurumun ajan tanımlarındaki dört ayrı sözleşme motorda ayrı çağrılar olarak koşar:
+
+| Ajan | Adım | Ne okur | Ne üretir |
+|---|---|---|---|
+| Analiz ajanı (salt-okunur) | 3ö | Repo (bu çalışma dizini), ticket, ekler | Gereksinim → kod karşılığı (dosya:satır), eksikler, ölçek riski izleri (N+1, senkron transaction, timeout/pool/payload, hacim testi), aday dosyalar, kapsam seçenekleri, açık sorular |
+| Analist (yapılandırılmış) | 3 | Keşif notları, ticket, ekler, öğrenme notları, şablon | Analiz belgesi: 7 şablon bölümü + gereksinim listesi, iş kuralları, kod karşılığı, eksikler, ölçek riski (karşılar / karşılamaz / belirsiz), kapsam kararları (seçenek + ödün, SEÇMEZ), açık sorular |
+| Plancı (ayrı çağrı) | 3 | Analiz + keşif notları | Uygulama planı: dosya listesi, endpoint sözleşmesi, DTO alanları, örnek alınacak konvansiyonlar |
+| Geliştirici | 6a | Onaylı plan + iş kuralları + görev | Kod; plan dışına çıktığı her şeyi son mesajında `PLAN SAPMASI: … — …` satırıyla loglar, defterde "plan sapması" girdisi olur |
+| Doğrulayıcı (ayrı oturum) | 6c | Değişen kod, iş kuralları, kurulumun doğrulama komutları | Derleme sonucu + iş kuralı bazında PASS/FAIL/BELİRSİZ tablosu + kırılan testler; FAIL ya da kırmızı derleme onay değildir |
+
+Belge Word şablonunda 8-15. bölümler olarak gelir (yalnız dolu olanlar); plan kapı 4/5'te analizle
+birlikte onaylanır. Deposuz (yalnız analiz) koşuda kod karşılığı ve plan üretilmez, belge bunu söyler.
+
+**Ajan eğitimleri nerede?** Dört ajanın talimatı Studio "Ajan tanımları"nda, her ajanın PERSONA
+metnidir: kurulum `analyst-default` (analiz), `planner-default` (plancı), `engineer-default`
+(geliştirici) ve `verifier-default` (doğrulayıcı, rol: kod gözden geçiren) ajanlarını bu eğitimlerle
+tohumlar. Motor her adımda o rolün ajanının personasını okur; persona boşsa Maestro ile gelen eğitim
+metnine düşer. Eski bir kurulumda `analyst-default` ve `engineer-default` zaten varsa dokunulmaz: ajanı
+açıp "Yeni sürüm yayınla" içindeki **Varsayılan eğitimi yükle** ile yeni eğitimi persona kutusuna alın,
+gerekirse düzenleyip yayınlayın. Plancı ve doğrulayıcı ajanları güncellemede kendiliğinden eklenir
+(migration 0028 `planner` rolünü açar). Tamlık kontrolü kuralları `packages/agent-roles/data/prompts.tr.json`,
+şablon bölüm talimatları Studio "Analiz şablonu".
+
+### 5.9 Sandbox (geliştirici ve doğrulayıcı için çalıştırıcı imajı)
+
+Analist ve plancı sandbox istemez. **Geliştirici** ve **doğrulayıcı** ister: kod konteynerde
+derlenir/test edilir (`RUNNER_IMAGE_LINUX`, digest sabitli). İmaj `deploy/docker/Dockerfile.runner-linux`
+ile üretilir (Node 22, git, JDK 17, Maven, Python, make/g++; model yok). Üç değişken birlikte
+ayarlanır:
+
+```
+WORKSPACE_ROOT="/srv/maestro/workspaces"            # BFF/worker'ın klon kökü
+RUNNER_WORKSPACE_HOST_ROOT="/srv/maestro/workspaces" # aynı ağacın Docker KONAĞINDAKİ yolu
+RUNNER_SANDBOX_USER="1000:1000"                      # klonun sahibi
+RUNNER_IMAGE_LINUX="docker.io/uguryldz/maestro-runner-linux@sha256:c328e21013a4e4cc419b9c98f2b2a79f73a4a41ef35a1e8c72325140d99218e1"
+```
+
+Ajan (Claude CLI) konakta koşar ve klonu düzenler; sandbox aynı klonu bağlı hacimden görür,
+`git diff` ile korumalı yolları denetler ve doğrulama komutlarını koşar. `RUNNER_WORKSPACE_HOST_ROOT`
+yoksa sandbox boş bir hacimde çalışır ve hiçbir şeyi doğrulamaz. Ağ: `RUNNER_NETWORK` verilmezse
+sandbox ağsızdır (Maven bağımlılığı indiremez); banka için iç ağ + proxy tanımlayın.
+Ajan sürücüsü için `CLAUDE_BIN_PATH` (Claude Code koltuğu) gerekir; yalnız gpt-oss ile depoyu
+gezen ajanlar çalışmaz.
+
+## 6. Sessiz arızalar — belirtiye göre teşhis
+
+### 6.0 Önce bunu çalıştırın: tek dosyalık tanı raporu
+
+Aşağıdaki tabloyu tek tek denemeden önce, sunucuda **bu klasörde**:
+
+```bash
+./tani.sh                    # her şey, servis başına son 200 satır log
+./tani.sh --satir 500        # daha uzun log kuyruğu
+./tani.sh --jira-yok         # canlı Jira denemesini ATLA
+./tani.sh --ticket ABC-123   # canlı okumada bu ticket'ı kullan
+./tani.sh --cikti /yol/x.html
+```
+
+Çıktı: `maestro-tani-YYYYAAGG-SSDD.html` — **tek dosya**, gömülü CSS, harici
+kaynak yok. Tarayıcıda açılır, yazdırılabilir, destek için gönderilebilir.
+
+**Dört bölüm var:**
+
+1. **Yapılandırma teşhisi** (en üstte, en önemli) — hangi Jira sürücüsü seçili
+   ve **hangi değişken** seçti; tarama ve yoklama açık mı, periyodu ne, değer
+   **nereden** geliyor; bot kimliği var mı (netleştirme döngüsü buna bağlı);
+   ajan modelleri erişilebilir mi; webhook sırrı tanımlı mı; migration sayısı
+   beklenen mi; dinleme kuralları ve statü haritası. Sorunlular **kırmızı**,
+   iyiler **yeşil**, bilinmeyenler **sarı** — ve her sorunlu satırda **ne
+   yapılacağı** yazar.
+2. **Akış durumu** — kaç koşu, hangi adımda; **2b'de bekleyenler ayrı** (bunlar
+   netleştirme cevabı bekleyen koşulardır); son koşular; Temporal'daki açık
+   workflow sayısı.
+3. **Jira bağlantı testi (canlı)** — `getTicket`, `listComments`, `searchIssues`
+   ve statü geçişlerinin **listelenmesi** gerçekten denenir; her biri için
+   başarılı mı, HTTP kodu ne, hata varsa sebebi ne.
+4. **Servis log'ları** — hata/uyarı satırları **öne çıkarılmış**, her servis
+   katlanabilir bir bölümde. Gürültü (postgres checkpoint, temporal yaşam
+   döngüsü, nginx 2xx erişim satırları) ayıklanır ve **kaç satır gizlendiği
+   yazılır** — çünkü elle toplanan bir logda asıl hata tam olarak bunların
+   altında kaybolmuştu.
+
+**Güvenlidir:** hiçbir tabloya yazmaz, hiçbir ticket'a yorum düşmez, **hiçbir
+statü geçişi uygulamaz** (geçişleri yalnızca *listeler*). Canlı bir yığında
+çalıştırılabilir.
+
+**Sırlar maskelenir:** jeton/parola/anahtar **değerleri** hiç yazılmaz — yalnızca
+"tanımlı/tanımsız". URL'lerdeki `//kullanıcı:parola@` maskelenir, log satırları
+da maskeden geçer. Yine de bu **en iyi çabadır**: göndermeden önce bir göz atın.
+
+Çıkış kodu `3` ise rapor üretildi **ve kritik bulgu var** — sayfanın en
+üstündeki kırmızı satırlar, bu kurulumda sessizce çalışmayan işleri gösterir.
+
+### 6.1 Belirti tablosu
+
+
+Buradaki arızaların ortak özelliği: **hiçbiri hata vermez.** Sistem açıktır,
+loglar temizdir, panel çalışır — ama iş görülmez.
+
+| Belirti | Gerçek sebep | Çözüm |
+|---|---|---|
+| Kural kurdum, **hiçbir talep yakalanmıyor**, log temiz | Motorun kimliği (`MAESTRO_BOT_ACCOUNT_ID`) ile bağlantının kimliği farklı | §5.5 |
+| Talepler işleniyor ama **yanlış kişinin** talepleri | Keşif `currentUser()` ile çalışıyor ve jeton bir insana ait | Panele **bot hesabının** jetonunu girin |
+| Analiz **"elle tamamlayın"** diye bitiyor | Talep `gizli` sınıfta, on-prem model yok sayılıyor (`LLM_ON_PREM=false`) | `LLM_ON_PREM="true"` + `docker compose up -d --force-recreate` |
+| Panel açılıyor, **her istek 502** | BFF konteyner içinde `127.0.0.1`'e bağlanmış; nginx ulaşamıyor | `.env`'de `BFF_HOST="0.0.0.0"` |
+| Panele hiç erişilemiyor | `STUDIO_PORT` yayınlanmamış ya da güvenlik duvarı kapalı | `docker compose ps` ile port eşlemesini kontrol edin |
+| `SecretNotFoundError` — ama `.env`'de değer dolu | Sır değişkeninin **adı** yanlış (`MAESTRO_SECRET_JIRA_TOKEN` gibi) | Adları `.env.example`'dan **birebir** kopyalayın |
+| Açılışta `SecretKeyError` | Referans biçimi `env:JIRA_TOKEN` gibi; `<mount>/<yol>#alan` olmalı | `JIRA_TOKEN_REF="kv/jira#token"` |
+| Açılışta `JIRA_BASE_URL: the work port has no default instance` | Jira **Cloud** kullanıyorsunuz ama Cloud adresi boş; sürücü Data Center'a düşüyor | `.env` §5'te `JIRA_CLOUD_BASE_URL`'i doldurun, `JIRA_BASE_URL`'i yorumlayın |
+| Açılışta `JIRA_BASE_URL ve JIRA_CLOUD_BASE_URL birlikte tanımlı` | İki adres birden dolu; hangisinin kullanılacağı tahmin edilmez | Konuştuğunuz Jira hangisiyse **yalnızca** onun adresini bırakın |
+| Panel açılıyor ama hiçbir ticket işlenmiyor | Ne `JIRA_BASE_URL` ne `JIRA_CLOUD_BASE_URL` dolu — Jira portu "henüz tanımlanmadı" diyor | `.env` §5'e Jira adresinizi yazıp yeniden başlatın |
+| BFF açılmıyor, env-file hatası | `NODE_ENV=production` ama sırlar hâlâ `.env`'de (Vault yok) | `NODE_ENV="development"` (bkz. `.env.example` §2) |
+| Yeni bir alan kaydediliyor ama **veritabanına yazılmıyor** | İmajdaki Prisma istemcisi bayat, yeni sütunu yok sayıyor | Güncel koddan yeniden build (§2.3-c) |
+| Model çağrıları **404** | `LLM_BASE_URL` sonunda `/v1` var, sürücü de ekliyor | Sondaki `/v1`'i silin |
+| `unable to verify the first certificate` | Banka kök CA'sı Node'un listesinde yok | `NODE_EXTRA_CA_CERTS` + CA'yı `certs/` içine koyun |
+| Panelde jetonlar bozuk / çözülemiyor | `CONNECTOR_MASTER_KEY` değişti ya da kayboldu | Eski anahtarı geri koyun; yoksa jetonları yeniden girin |
+| Her `/approve` **"üye değil"** diye reddediliyor | Rol adları (`product-owners`/`tech-leads`/`qa`) Jira'da grup olarak yok ve `GATE_GROUPS` eşlenmemiş — kapı fail-closed'dır | §5.6 — `GATE_GROUPS`'u kendi Jira gruplarınıza eşleyin |
+
+---
+
+## 7. Güncelleme (veri korunarak)
+
+> **Önce okuyun:** Şema göçleri (migration) YALNIZCA İLERİ yöndedir. Geri alma
+> göçü yoktur ve olmayacaktır. Yani bir yükseltme kötü giderse imaj etiketini
+> eskiye çevirmek YETMEZ — yeni göç şemayı çoktan değiştirmiştir ve eski kod o
+> şemayı okuyamaz. **Tek gerçek geri dönüş yolu, yükseltmeden ÖNCE alınmış
+> veritabanı yedeğidir.** Bu yüzden yedek, prosedürün 1. adımıdır, öneri değil.
+
+```bash
+# 1) YEDEK AL — bu adım atlanırsa geri dönüş YOKTUR
+docker compose exec -T postgres pg_dump -U maestro maestro \
+  | gzip > maestro-yedek-$(date +%F-%H%M).sql.gz
+cp .env .env.yedek-$(date +%F-%H%M)          # CONNECTOR_MASTER_KEY burada
+ls -lh maestro-yedek-*.sql.gz                # boyutu 0 DEĞİLSE devam edin
+
+# 2) Yeni imaj tar'ını yükleyin
+gunzip -c maestro-imajlar-<YENI_TAG>.tar.gz | docker load
+
+# 3) .env'de etiketleri yeni sürüme çevirin — ESKİ ETİKETİ NOT EDİN
+#    MAESTRO_NODE_IMAGE / MAESTRO_STUDIO_IMAGE
+grep -E '^MAESTRO_(NODE|STUDIO)_IMAGE' .env    # geri dönerken bu değerler lazım
+
+# 4) Yeni paketin .env.example'ında EKLENMİŞ alan var mı, karşılaştırın:
+diff <(grep -oE '^[A-Z_]+=' .env.example | sort) <(grep -oE '^[A-Z_]+=' .env | sort)
+
+# 5) Uygulayın — migrate otomatik çalışır, veri korunur
+./install.sh --yes
+
+# 6) Doğrulayın: yedi servis de sağlıklı mı, panel açılıyor mu
+docker compose ps
+```
+
+> Yeni bir sürüm yeni bir **zorunlu** değişken getirebilir. 4. adımı atlamayın:
+> eski bir `.env`, yeni pakette eksik kalır. `install.sh`, `.env` ile paketin
+> `BUNDLE_VERSION`'ı tutmuyorsa zaten uyarır.
+
+**ASLA `docker compose down -v` çalıştırmayın** — `-v` veritabanı volume'ünü siler.
+
+---
+
+## 7b. Geri alma (yükseltme kötü giderse)
+
+Bu bölümün var olması, geri almanın KOLAY olduğu anlamına gelmez. Tersine:
+**geri alma pahalıdır ve yedek gerektirir.** Ne yapılabileceğini önceden bilmek,
+gece yarısı öğrenmekten iyidir.
+
+**Durum A — göç uygulanmadı** (migrate adımı hata verdi, servisler kalkmadı).
+Şema değişmemiştir; etiketi geri almak yeterlidir:
+
+```bash
+# .env'de MAESTRO_NODE_IMAGE / MAESTRO_STUDIO_IMAGE'i ESKİ etikete çevirin
+docker compose up -d
+docker compose ps                              # yedi servis sağlıklı olmalı
+```
+
+**Durum B — göç uygulandı, sonra sorun çıktı.** Şema yeni, kod eski olacaktır;
+etiketi geri almak TEK BAŞINA yetmez ve yeni hatalar üretir. Yedekten dönün:
+
+```bash
+# 1) Yığını durdurun (-v YOK: volume'e dokunmuyoruz)
+docker compose down
+
+# 2) Veritabanını yedeğin alındığı ana geri sarın
+docker compose up -d postgres
+docker compose exec -T postgres psql -U maestro -d postgres \
+  -c 'DROP DATABASE maestro;' -c 'CREATE DATABASE maestro OWNER maestro;'
+gunzip -c maestro-yedek-<TARİH>.sql.gz \
+  | docker compose exec -T postgres psql -U maestro -d maestro
+
+# 3) .env'i ve imaj etiketlerini yedekteki hâline döndürün
+cp .env.yedek-<TARİH> .env
+
+# 4) Kaldırın
+docker compose up -d
+```
+
+> Yedekten dönmek, yedek anından sonraki İŞLERİ SİLER: o aralıkta açılan
+> koşular, verilen onaylar ve yazılan denetim kayıtları geri gelmez. Bu yüzden
+> yükseltmeyi iş saatleri dışında ve yedek alarak yapın.
+
+> `CONNECTOR_MASTER_KEY` değişmişse kayıtlı bağlantı jetonlarının hiçbiri
+> çözülemez. `.env` yedeği bu yüzden veritabanı yedeği kadar önemlidir.
+
+---
+
+## 8. Yedekleme
+
+```bash
+# Veritabanı
+docker compose exec -T postgres pg_dump -U maestro maestro | gzip > maestro-$(date +%F).sql.gz
+
+# .env dosyası — CONNECTOR_MASTER_KEY burada. Kaybolursa kayıtlı bağlantı
+# jetonlarının hiçbiri çözülemez. Şifreli ve ayrı bir yerde saklayın.
+```
+
+---
+
+## 9. Bu kurulumda ÇALIŞMAYAN şeyler
+
+Dürüst liste — sunum değil, kurulum gerçeği:
+
+- **SIEM'e otomatik log akışı yok.** CEF/syslog biçimlendirici hazır, ama
+  toplayıcıya ileten taşıyıcı yazılmadı. Denetim kaydı panelden JSON/CSV indirilir.
+- **E-posta bildirimi yok.** SMTP sürücüsü yazıldı, taşıma katmanı bağlanmadı.
+  Çalışan kanallar: Jira yorumu, Teams, Slack.
+- **SAML/OIDC SSO yok.** Kimlik doğrulama LDAP/LDAPS veya yerel hesap.
+- **Kod yazma hattı kuruludur ama uçtan uca canlı denenmemiştir.** scm portu
+  (GitHub) her kurulumda kuruludur; build doğrulaması ve kod taraması ise
+  yapılandırılana kadar "henüz yapılandırılmadı" diye **adıyla** cevap verir —
+  sessizce "bulgu yok" DÖNDÜRMEZ.
+- **Vault bu pakette varsayılan değil.** `NODE_ENV=development` iken sırlar
+  `.env` dosyasındadır (`chmod 600`). Vault'a geçiş `NODE_ENV=production` ile
+  yapılır ve ayrıca S3 uyumlu depolama gerektirir.

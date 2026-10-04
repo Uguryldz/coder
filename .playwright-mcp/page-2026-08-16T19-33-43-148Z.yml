@@ -1,0 +1,163 @@
+- generic [ref=f34e2]:
+  - generic [ref=f34e27]:
+    - navigation "Ana gezinme" [ref=f34e28]:
+      - generic [ref=f34e29]:
+        - generic [ref=f34e30]: M
+        - generic [ref=f34e31]:
+          - text: Maestro
+          - generic [ref=f34e32]: SDLC otomasyonu
+      - generic [ref=f34e33]:
+        - generic [ref=f34e34]: İşler
+        - link "Panel" [ref=f34e35] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f34e36]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f34e37] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f34e38]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f34e39] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f34e40]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f34e41]:
+        - generic [ref=f34e42]: Ajanlar
+        - link "Ajan tanımları" [ref=f34e43] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f34e44]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f34e45] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f34e46]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f34e47] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f34e48]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f34e49] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f34e50]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f34e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f34e52]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f34e53]: yakında
+      - generic [ref=f34e54]:
+        - generic [ref=f34e55]: Denetim
+        - link "Denetim izi" [ref=f34e56] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f34e57]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f34e58] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f34e59]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f34e60] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f34e61]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f34e62] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f34e63]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f34e64]: yakında
+        - link "Kanıt paketi yakında" [ref=f34e65] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f34e66]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f34e67]: yakında
+      - generic [ref=f34e68]:
+        - generic [ref=f34e69]: Kurulum
+        - link "Kurulum sihirbazı" [ref=f34e70] [cursor=pointer]:
+          - /url: /setup
+          - generic [ref=f34e71]: 🧭
+          - text: Kurulum sihirbazı
+        - link "Proje bağlama" [ref=f34e72] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f34e73]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f34e74] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f34e75]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f34e76] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f34e77]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f34e78] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f34e79]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f34e80] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f34e81]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f34e82] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f34e83]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f34e84]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f34e85] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f34e86]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f34e87]:
+      - banner [ref=f34e88]:
+        - heading "Kurulum sihirbazı" [level=1] [ref=f34e89]
+        - generic [ref=f34e90]:
+          - generic [ref=f34e91]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f34e92]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f34e93]: admin
+        - button "Çıkış" [ref=f34e94] [cursor=pointer]
+      - main [ref=f34e95]:
+        - generic [ref=f34e96]:
+          - generic [ref=f34e97]:
+            - generic [ref=f34e98]:
+              - heading "Kurulum sihirbazı" [level=3] [ref=f34e99]
+              - generic [ref=f34e100]: beş soruda çalışır bir kurulum
+            - generic [ref=f34e101]:
+              - paragraph [ref=f34e102]: "Bu sihirbaz Maestro'yu uçtan uca kurar: hangi işi yapmasını istediğinizi seçersiniz, hangi Jira projesi ve hangi kod deposuyla çalışacağını söylersiniz, hangi ticket'ları alacağını belirlersiniz. Hangi ekranın ne işe yaradığını bilmeniz gerekmez. Her adımda geri dönebilirsiniz; yazdıklarınız kaybolmaz."
+              - list [ref=f34e103]:
+                - listitem [ref=f34e104]:
+                  - button "1 · Ne yapsın" [ref=f34e105] [cursor=pointer]
+                - listitem [ref=f34e106]:
+                  - button "2 · Proje & uygulama" [disabled] [ref=f34e107] [cursor=pointer]
+                - listitem [ref=f34e108]:
+                  - button "3 · Hangi ticket'lar" [disabled] [ref=f34e109] [cursor=pointer]
+                - listitem [ref=f34e110]:
+                  - button "4 · Jira durumları" [disabled] [ref=f34e111] [cursor=pointer]
+                - listitem [ref=f34e112]:
+                  - button "5 · Özet & kaydet" [disabled] [ref=f34e113] [cursor=pointer]
+          - generic [ref=f34e114]:
+            - generic [ref=f34e115]:
+              - heading "Ne yapmak istiyorsunuz?" [level=3] [ref=f34e116]
+              - generic [ref=f34e117]: 1. adım · bu seçim sonraki adımların varsayılanlarını belirler
+            - generic [ref=f34e118]:
+              - paragraph [ref=f34e119]: Maestro'nun bu projede ne yapacağını seçin. Seçtiğiniz işe göre hangi onay kapılarının çalışacağına ve kod deposuna dokunulup dokunulmayacağına sihirbaz karar verir; bunları ayrıca ayarlamanız gerekmez.
+              - radiogroup "Ne yapmak istiyorsunuz?" [ref=f34e8]:
+                - generic [ref=f34e9] [cursor=pointer]:
+                  - radio "Yalnızca analiz Maestro talebi inceleyip analiz belgesi hazırlasın; kod yazmasın. Kod deposuna dokunulmaz. Sonuçta yalnızca bir analiz belgesi çıkar ve onayınıza sunulur." [ref=f34e10]
+                  - generic [ref=f34e11]:
+                    - generic [ref=f34e12]: Yalnızca analiz
+                    - generic [ref=f34e13]: Maestro talebi inceleyip analiz belgesi hazırlasın; kod yazmasın.
+                    - generic [ref=f34e14]: Kod deposuna dokunulmaz. Sonuçta yalnızca bir analiz belgesi çıkar ve onayınıza sunulur.
+                - generic [ref=f34e15] [cursor=pointer]:
+                  - radio "Hata düzeltme Maestro bildirilen hatayı bulup düzeltmeyi kodlasın ve incelemeniz için pull request açsın. Kod yazılır ve pull request açılır. Analiz onay kapısı atlanır; PR yine sizin incelemenizden geçer, merge'i insan yapar." [checked] [active] [ref=f34e16]
+                  - generic [ref=f34e17]:
+                    - generic [ref=f34e18]: Hata düzeltme
+                    - generic [ref=f34e19]: Maestro bildirilen hatayı bulup düzeltmeyi kodlasın ve incelemeniz için pull request açsın.
+                    - generic [ref=f34e20]: Kod yazılır ve pull request açılır. Analiz onay kapısı atlanır; PR yine sizin incelemenizden geçer, merge'i insan yapar.
+                - generic [ref=f34e21] [cursor=pointer]:
+                  - 'radio "Yeni özellik geliştirme Maestro talebi analiz etsin, onayınızdan sonra kodlasın ve pull request açsın. En uzun akış: analiz → onay → kod → PR. Her PR için altı kontrolün tamamı çalışır, merge''i insan yapar." [ref=f34e22]'
+                  - generic [ref=f34e23]:
+                    - generic [ref=f34e24]: Yeni özellik geliştirme
+                    - generic [ref=f34e25]: Maestro talebi analiz etsin, onayınızdan sonra kodlasın ve pull request açsın.
+                    - generic [ref=f34e26]: "En uzun akış: analiz → onay → kod → PR. Her PR için altı kontrolün tamamı çalışır, merge'i insan yapar."
+          - generic [ref=f34e122]:
+            - button "Geri" [disabled] [ref=f34e123]
+            - button "İleri" [ref=f34e124] [cursor=pointer]
+  - region

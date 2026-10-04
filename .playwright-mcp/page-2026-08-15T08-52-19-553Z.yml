@@ -1,0 +1,190 @@
+- generic [ref=f16e2]:
+  - generic [ref=f16e298]:
+    - navigation "Ana gezinme" [ref=f16e299]:
+      - generic [ref=f16e300]:
+        - generic [ref=f16e301]: M
+        - generic [ref=f16e302]:
+          - text: Maestro
+          - generic [ref=f16e303]: SDLC otomasyonu
+      - generic [ref=f16e304]:
+        - generic [ref=f16e305]: İşler
+        - link "Panel" [ref=f16e306] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f16e307]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f16e308] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f16e309]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f16e310] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f16e311]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f16e312]:
+        - generic [ref=f16e313]: Ajanlar
+        - link "Ajan tanımları" [ref=f16e314] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f16e315]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f16e316] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f16e317]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f16e318] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f16e319]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f16e320] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f16e321]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f16e322] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f16e323]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f16e324]: yakında
+      - generic [ref=f16e325]:
+        - generic [ref=f16e326]: Denetim
+        - link "Denetim izi" [ref=f16e327] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f16e328]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [active] [ref=f16e329] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f16e330]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f16e331] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f16e332]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f16e333] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f16e334]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f16e335]: yakında
+        - link "Kanıt paketi yakında" [ref=f16e336] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f16e337]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f16e338]: yakında
+      - generic [ref=f16e339]:
+        - generic [ref=f16e340]: Kurulum
+        - link "Proje bağlama" [ref=f16e341] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f16e342]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f16e343] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f16e344]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f16e345] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f16e346]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f16e347] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f16e348]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f16e349] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f16e350]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f16e351] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f16e352]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f16e353]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f16e354] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f16e355]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f16e356]:
+      - banner [ref=f16e357]:
+        - heading "PII maskeleme" [level=1] [ref=f16e965]
+        - generic [ref=f16e359]:
+          - generic [ref=f16e360]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f16e361]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f16e362]: admin
+        - button "Çıkış" [ref=f16e363] [cursor=pointer]
+      - main [ref=f16e364]:
+        - generic [ref=f16e966]:
+          - heading "Bugün" [level=3] [ref=f16e968]
+          - generic [ref=f16e969]:
+            - generic [ref=f16e970]:
+              - generic [ref=f16e971]:
+                - generic [ref=f16e972]: Maskelenen çağrı
+                - generic [ref=f16e973]: 0 / 25
+                - generic [ref=f16e974]: "%0"
+              - generic [ref=f16e975]:
+                - generic [ref=f16e976]: Maskelenen alan
+                - generic [ref=f16e977]: "0"
+              - generic [ref=f16e978]:
+                - generic [ref=f16e979]: On-prem'e giden
+                - generic [ref=f16e980]: "25"
+                - generic [ref=f16e981]: gizli sınıf — ağdan çıkmadığı için maskesiz
+              - generic [ref=f16e982]:
+                - generic [ref=f16e983]: Muaf variant
+                - generic [ref=f16e984]: "0"
+                - generic [ref=f16e985]: yok
+            - paragraph [ref=f16e986]:
+              - generic [ref=f16e987]: arşive maskeli hali yazılıyor
+              - text: v1'de maskesiz hali arşive yazılıyordu; v2'de arşiv daima maskelidir.
+        - generic [ref=f16e989]:
+          - generic [ref=f16e990]:
+            - heading "Maskeleme kuralları" [level=3] [ref=f16e991]
+            - generic [ref=f16e992]: eşleşme ve strateji · isabet sayısıyla
+          - table [ref=f16e995]:
+            - rowgroup [ref=f16e996]:
+              - row [ref=f16e997]:
+                - columnheader "Tip" [ref=f16e998]
+                - columnheader "Eşleşme" [ref=f16e999]
+                - columnheader "Strateji" [ref=f16e1000]
+                - columnheader "İsabet" [ref=f16e1001]
+            - rowgroup [ref=f16e1002]:
+              - row [ref=f16e1003]:
+                - cell "Desen" [ref=f16e1004]
+                - cell [ref=f16e1006]:
+                  - code [ref=f16e1007]: iban
+                - cell "Hash'lenir" [ref=f16e1008]
+                - cell "0" [ref=f16e1010]
+              - row [ref=f16e1011]:
+                - cell "Desen" [ref=f16e1012]
+                - cell [ref=f16e1014]:
+                  - code [ref=f16e1015]: card
+                - cell "Hash'lenir" [ref=f16e1016]
+                - cell "0" [ref=f16e1018]
+              - row [ref=f16e1019]:
+                - cell "Desen" [ref=f16e1020]
+                - cell [ref=f16e1022]:
+                  - code [ref=f16e1023]: tckn
+                - cell "Hash'lenir" [ref=f16e1024]
+                - cell "0" [ref=f16e1026]
+              - row [ref=f16e1027]:
+                - cell "Desen" [ref=f16e1028]
+                - cell [ref=f16e1030]:
+                  - code [ref=f16e1031]: phone
+                - cell "Hash'lenir" [ref=f16e1032]
+                - cell "0" [ref=f16e1034]
+              - row [ref=f16e1035]:
+                - cell "Desen" [ref=f16e1036]
+                - cell [ref=f16e1038]:
+                  - code [ref=f16e1039]: email
+                - cell "Hash'lenir" [ref=f16e1040]
+                - cell "0" [ref=f16e1042]
+              - row [ref=f16e1043]:
+                - cell "Desen" [ref=f16e1044]
+                - cell [ref=f16e1046]:
+                  - code [ref=f16e1047]: account
+                - cell "Hash'lenir" [ref=f16e1048]
+                - cell "0" [ref=f16e1050]
+              - row [ref=f16e1051]:
+                - cell "Alan adı" [ref=f16e1052]
+                - cell [ref=f16e1054]:
+                  - code [ref=f16e1055]: field
+                - cell "Hash'lenir" [ref=f16e1056]
+                - cell "0" [ref=f16e1058]
+        - paragraph [ref=f16e1059]: "Maskeleme sunucuda yapılır. Studio maskeyi çözemez ve çözmeye çalışmaz: bu ekran neyin maskelendiğini yalnızca sayı ve kural olarak gösterir, maskelenen değeri hiçbir yerde göstermez."
+  - region

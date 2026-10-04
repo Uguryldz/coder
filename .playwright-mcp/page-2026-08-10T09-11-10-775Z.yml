@@ -1,0 +1,263 @@
+- generic [ref=f8e2]:
+  - generic [ref=f8e3]:
+    - navigation "Ana gezinme" [ref=f8e4]:
+      - generic [ref=f8e5]:
+        - generic [ref=f8e6]: M
+        - generic [ref=f8e7]:
+          - text: Maestro
+          - generic [ref=f8e8]: SDLC otomasyonu
+      - generic [ref=f8e9]:
+        - generic [ref=f8e10]: Operasyon
+        - link "Panel" [ref=f8e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f8e12]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f8e13] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f8e14]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f8e15] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f8e16]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f8e17] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f8e18]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f8e19] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f8e20]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f8e21] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f8e22]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f8e23] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f8e24]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f8e25] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f8e26]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f8e27] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f8e28]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [active] [ref=f8e29] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f8e30]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f8e31]:
+        - generic [ref=f8e32]: Yürütme
+        - link "Runner havuzları" [ref=f8e33] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f8e34]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f8e35] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f8e36]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f8e37] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f8e38]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f8e39] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f8e40]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f8e41]:
+        - generic [ref=f8e42]: Ajanlar
+        - link "Variant'lar" [ref=f8e43] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f8e44]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f8e45] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f8e46]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f8e47] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f8e48]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f8e49] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f8e50]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f8e51] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f8e52]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f8e53] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f8e54]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f8e55]:
+        - generic [ref=f8e56]: Yönetişim
+        - link "LLM Gateway" [ref=f8e57] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f8e58]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f8e59] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f8e60]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f8e61] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f8e62]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f8e63] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f8e64]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f8e65] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f8e66]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f8e67] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f8e68]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f8e69] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f8e70]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f8e71]:
+        - generic [ref=f8e72]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f8e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f8e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f8e75] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f8e76]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f8e77] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f8e78]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f8e79] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f8e80]: ➕
+          - text: Uygulama ekle
+        - link "Ayarlar & bağlantılar" [ref=f8e81] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f8e82]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f8e83] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f8e84]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f8e85] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f8e86]: ✔
+          - text: Karar defteri
+    - generic [ref=f8e87]:
+      - banner [ref=f8e88]:
+        - heading "Jira komut seti" [level=1] [ref=f8e561]
+        - generic [ref=f8e90]:
+          - generic [ref=f8e91]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f8e92]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f8e93]: ayse.kaya@ugurbank.local
+        - button "Çıkış" [ref=f8e94] [cursor=pointer]
+      - main [ref=f8e95]:
+        - generic [ref=f8e562]:
+          - generic [ref=f8e563]:
+            - generic [ref=f8e564]:
+              - heading "Jira komut seti" [level=3] [ref=f8e565]
+              - generic [ref=f8e566]: Yetki, adım ve idempotency doğrulamalı
+            - table [ref=f8e569]:
+              - caption [ref=f8e570]: Jira komut seti
+              - rowgroup [ref=f8e571]:
+                - row [ref=f8e572]:
+                  - columnheader "Komut" [ref=f8e573]
+                  - columnheader "Kim kullanabilir" [ref=f8e574]
+                  - columnheader "Hangi adımda" [ref=f8e575]
+                  - columnheader "Etki" [ref=f8e576]
+              - rowgroup [ref=f8e577]:
+                - row [ref=f8e578]:
+                  - cell [ref=f8e579]:
+                    - code [ref=f8e580]: /approve
+                  - cell "tech-lead product-owner qa" [ref=f8e581]:
+                    - generic [ref=f8e582]:
+                      - generic [ref=f8e583]: tech-lead
+                      - generic [ref=f8e584]: product-owner
+                      - generic [ref=f8e585]: qa
+                  - cell "Açık onay kapısı varken" [ref=f8e586]
+                  - cell "Kapıyı onaylar; imza denetim zincirine yazılır (M32/M33)." [ref=f8e587]
+                - row [ref=f8e588]:
+                  - cell [ref=f8e589]:
+                    - code [ref=f8e590]: /reject <argüman>
+                  - cell "tech-lead product-owner qa" [ref=f8e591]:
+                    - generic [ref=f8e592]:
+                      - generic [ref=f8e593]: tech-lead
+                      - generic [ref=f8e594]: product-owner
+                      - generic [ref=f8e595]: qa
+                  - cell "Açık onay kapısı varken" [ref=f8e596]
+                  - cell "Kapıyı gerekçesiyle reddeder; akış geri döner." [ref=f8e597]
+                - row [ref=f8e598]:
+                  - cell [ref=f8e599]:
+                    - code [ref=f8e600]: /status
+                  - cell "herkes" [ref=f8e601]
+                  - cell "Her adımda" [ref=f8e604]
+                  - cell "Koşunun bulunduğu adımı ve durumunu yorum olarak yazar." [ref=f8e605]
+                - row [ref=f8e606]:
+                  - cell [ref=f8e607]:
+                    - code [ref=f8e608]: /ai-explain
+                  - cell "herkes" [ref=f8e609]
+                  - cell "Her adımda" [ref=f8e612]
+                  - cell "Açıklama ister — bu sürümde desteklenmiyor, komut açıkça reddedilir." [ref=f8e613]
+                - row [ref=f8e614]:
+                  - cell [ref=f8e615]:
+                    - code [ref=f8e616]: /ai-start
+                  - cell "developer tech-lead" [ref=f8e617]:
+                    - generic [ref=f8e618]:
+                      - generic [ref=f8e619]: developer
+                      - generic [ref=f8e620]: tech-lead
+                  - cell "Henüz koşu yokken" [ref=f8e621]
+                  - cell "Ticket için akışı başlatır (opt-in projelerde zorunlu)." [ref=f8e622]
+                - row [ref=f8e623]:
+                  - cell [ref=f8e624]:
+                    - code [ref=f8e625]: /ai-assign <argüman>
+                  - cell "developer tech-lead" [ref=f8e626]:
+                    - generic [ref=f8e627]:
+                      - generic [ref=f8e628]: developer
+                      - generic [ref=f8e629]: tech-lead
+                  - cell "Uygulama atanmamışken" [ref=f8e630]
+                  - cell "Ticket’ı verilen uygulamaya atar ve akışı başlatır." [ref=f8e631]
+                - row [ref=f8e632]:
+                  - cell [ref=f8e633]:
+                    - code [ref=f8e634]: /mode-change <argüman>
+                  - cell "developer tech-lead" [ref=f8e635]:
+                    - generic [ref=f8e636]:
+                      - generic [ref=f8e637]: developer
+                      - generic [ref=f8e638]: tech-lead
+                  - cell "Koşu sürerken" [ref=f8e639]
+                  - cell "Çalışma modunu değiştirir (M46)." [ref=f8e640]
+                - row [ref=f8e641]:
+                  - cell [ref=f8e642]:
+                    - code [ref=f8e643]: /ai-takeover
+                  - cell "developer tech-lead" [ref=f8e644]:
+                    - generic [ref=f8e645]:
+                      - generic [ref=f8e646]: developer
+                      - generic [ref=f8e647]: tech-lead
+                  - cell "Koşu sürerken" [ref=f8e648]
+                  - cell "İnsan klavyeyi devralır; mod human_lead olur (M46)." [ref=f8e649]
+          - generic [ref=f8e650]:
+            - generic [ref=f8e651]:
+              - heading "Doğrulama zinciri" [level=3] [ref=f8e652]
+              - generic [ref=f8e653]: Bir yorumun karar sayılması için geçmesi gereken kontroller
+            - generic [ref=f8e654]:
+              - list [ref=f8e655]:
+                - listitem [ref=f8e656]: Komut tanınıyor mu? Yazım hatasında nazik bir uyarı döner.
+                - listitem [ref=f8e657]: Argüman almayan komutlarda yorumda başka metin olamaz.
+                - listitem [ref=f8e658]: Yorum düzenlemesi komut sayılmaz — sonradan onay yazılamaz.
+                - listitem [ref=f8e659]: Kişi bu kapının sorumlusu mu?
+                - listitem [ref=f8e660]: Akış bu komuta uygun adımda mı?
+                - listitem [ref=f8e661]: Görevler ayrılığı ihlali var mı? (üreten ≠ onaylayan)
+                - listitem [ref=f8e662]: Aynı komut daha önce işlendi mi?
+              - generic [ref=f8e663]: "\"/approve etmiyorum\" onay SAYILMAZ: Türkçede olumsuzlama sonda geldiği için, argüman almayan komutlarda yorumun tamamı komutun kendisi olmalıdır. Bu bir kolaylık değil, güvenlik kuralıdır."
+  - region

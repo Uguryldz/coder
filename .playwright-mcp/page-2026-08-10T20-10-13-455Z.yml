@@ -1,0 +1,249 @@
+- generic [ref=e2]:
+  - generic [ref=e23]:
+    - navigation "Ana gezinme" [ref=e24]:
+      - generic [ref=e25]:
+        - generic [ref=e26]: M
+        - generic [ref=e27]:
+          - text: Maestro
+          - generic [ref=e28]: SDLC otomasyonu
+      - generic [ref=e29]:
+        - generic [ref=e30]: Operasyon
+        - link "Panel" [ref=e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=e36]: 🎬
+          - text: Canlı demo
+        - link "Canlı akış / Pilot" [ref=e37] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=e38]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=e39] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=e40]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=e41] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=e42]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=e43] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=e44]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=e45] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=e46]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=e47] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=e48]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=e49] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=e50]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=e51] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=e52]: ⌨
+          - text: Jira komut seti
+      - generic [ref=e53]:
+        - generic [ref=e54]: Yürütme
+        - link "Runner havuzları" [ref=e55] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=e56]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=e57] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=e58]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=e59] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=e60]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=e61] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=e62]: 📄
+          - text: .maestro.yaml
+      - generic [ref=e63]:
+        - generic [ref=e64]: Ajanlar
+        - link "Variant'lar" [ref=e65] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=e66]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=e67] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=e68]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=e69] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=e70]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=e71] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=e72]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=e73] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=e74]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=e75] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=e76]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=e77]:
+        - generic [ref=e78]: Yönetişim
+        - link "LLM Gateway" [ref=e79] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=e80]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=e81] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=e82]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=e83] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=e84]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=e85] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=e86]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=e87] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=e88]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=e89] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=e90]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=e91] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=e92]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=e93]:
+        - generic [ref=e94]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=e95] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=e96]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=e97] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=e98]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=e99] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=e100]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=e101] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=e102]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=e103] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=e104]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=e105] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=e106]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=e107] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=e108]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=e109] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=e110]: ✔
+          - text: Karar defteri
+    - generic [ref=e111]:
+      - banner [ref=e112]:
+        - heading "Panel" [level=1] [ref=e113]
+        - generic [ref=e114]:
+          - generic [ref=e115]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=e116]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=e117]: ayse.kaya
+        - button "Çıkış" [ref=e118] [cursor=pointer]
+      - main [ref=e119]:
+        - generic [ref=e120]:
+          - generic [ref=e123]:
+            - generic [ref=e124]: 🎬
+            - generic [ref=e125]:
+              - text: Akışın tamamını 1 ekranda gör
+              - generic [ref=e126]: Ticket'tan merge'e kadar hangi adımı kimin yaptığını ve şu an neyin çalıştığını gösterir.
+            - link "Akışı aç" [ref=e127] [cursor=pointer]:
+              - /url: /live
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - generic [ref=e130]: Aktif iş akışı
+              - generic [ref=e131]: "5"
+              - generic [ref=e132]: 3 tanesi hatalı
+            - generic [ref=e133]:
+              - generic [ref=e134]: Kapıda bekleyen
+              - generic [ref=e135]: "6"
+              - generic [ref=e136]: insan kararı bekliyor
+            - generic [ref=e137]:
+              - generic [ref=e138]: Tamamlanan
+              - generic [ref=e139]: "2"
+              - generic [ref=e140]: kanıt paketi üretildi
+            - generic [ref=e141]:
+              - generic [ref=e142]: Toplam
+              - generic [ref=e143]: "17"
+              - generic [ref=e144]: görebildiğin akışlar
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - heading "Dikkat isteyenler" [level=3] [ref=e147]
+              - generic [ref=e148]: önce hatalılar, sonra en uzun süredir açık olanlar
+              - link "Tümü" [ref=e150] [cursor=pointer]:
+                - /url: /tickets
+            - generic [ref=e151]:
+              - button "UGURDESK-45 hatalı düşük Rapor ekranı dışa aktarma · Testlerin koşulması · 1 gün açık" [ref=e152] [cursor=pointer]:
+                - generic [ref=e153]: ✕
+                - generic [ref=e154]:
+                  - text: UGURDESK-45
+                  - generic [ref=e155]: hatalı
+                  - generic [ref=e156]: düşük
+                  - generic [ref=e157]: Rapor ekranı dışa aktarma · Testlerin koşulması · 1 gün açık
+              - button "UGURWEB-95 devredildi düşük A/B test altyapısı temizliği · Geliştirme (sandbox) · 1 gün açık" [ref=e158] [cursor=pointer]:
+                - generic [ref=e159]: ✕
+                - generic [ref=e160]:
+                  - text: UGURWEB-95
+                  - generic [ref=e161]: devredildi
+                  - generic [ref=e162]: düşük
+                  - generic [ref=e163]: A/B test altyapısı temizliği · Geliştirme (sandbox) · 1 gün açık
+              - button "UGURDESK-52 hatalı kritik Toplu EFT dosyası içe aktarma · Güvenlik taraması · 6 saat açık" [ref=e164] [cursor=pointer]:
+                - generic [ref=e165]: ✕
+                - generic [ref=e166]:
+                  - text: UGURDESK-52
+                  - generic [ref=e167]: hatalı
+                  - generic [ref=e168]: kritik
+                  - generic [ref=e169]: Toplu EFT dosyası içe aktarma · Güvenlik taraması · 6 saat açık
+              - button "UGURPAY-504 kapıda orta Kredi limiti — masaüstü şube ekranı · PO onayı · 16 gün açık" [ref=e170] [cursor=pointer]:
+                - generic [ref=e171]: ⏳
+                - generic [ref=e172]:
+                  - text: UGURPAY-504
+                  - generic [ref=e173]: kapıda
+                  - generic [ref=e174]: orta
+                  - generic [ref=e175]: Kredi limiti — masaüstü şube ekranı · PO onayı · 16 gün açık
+              - button "UGURPAY-501 kapıda orta Kredi limiti — API + web arayüzü · PR onayı · 6 gün açık" [ref=e176] [cursor=pointer]:
+                - generic [ref=e177]: ⏳
+                - generic [ref=e178]:
+                  - text: UGURPAY-501
+                  - generic [ref=e179]: kapıda
+                  - generic [ref=e180]: orta
+                  - generic [ref=e181]: Kredi limiti — API + web arayüzü · PR onayı · 6 gün açık
+          - generic [ref=e182]:
+            - generic [ref=e183]:
+              - heading "Son 24 saatte akış" [level=3] [ref=e184]
+              - generic [ref=e185]: adım adım hareket dökümü
+            - generic [ref=e186]:
+              - paragraph [ref=e187]: Hareket dökümü için sunucuda bir uç yok (GET /activity). Uydurma satır göstermemek için boş bırakıldı.
+              - button "Yenile" [ref=e189] [cursor=pointer]
+  - region

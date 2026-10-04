@@ -1,0 +1,285 @@
+- generic [ref=f152e2]:
+  - generic [ref=f152e23]:
+    - navigation "Ana gezinme" [ref=f152e24]:
+      - generic [ref=f152e25]:
+        - generic [ref=f152e26]: M
+        - generic [ref=f152e27]:
+          - text: Maestro
+          - generic [ref=f152e28]: SDLC otomasyonu
+      - generic [ref=f152e29]:
+        - generic [ref=f152e30]: İzleme
+        - link "Panel" [ref=f152e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f152e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f152e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f152e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f152e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f152e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f152e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f152e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f152e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f152e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f152e41]:
+        - generic [ref=f152e42]: Çalışma
+        - link "Runner havuzları" [ref=f152e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f152e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f152e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f152e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f152e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f152e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f152e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f152e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f152e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f152e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f152e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f152e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f152e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f152e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f152e57]:
+        - generic [ref=f152e58]: Yönetişim
+        - link "Denetim izi" [ref=f152e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f152e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f152e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f152e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f152e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f152e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f152e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f152e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f152e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f152e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f152e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f152e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f152e71]:
+        - generic [ref=f152e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f152e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f152e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f152e75] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f152e76]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f152e77] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f152e78]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f152e79] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f152e80]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f152e81] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f152e82]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f152e83] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f152e84]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f152e85] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f152e86]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f152e87] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f152e88]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f152e89]:
+      - banner [ref=f152e90]:
+        - heading "Uygulama ekle" [level=1] [ref=f152e91]
+        - generic [ref=f152e92]:
+          - generic [ref=f152e93]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f152e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f152e95]: admin
+        - button "Çıkış" [ref=f152e96] [cursor=pointer]
+      - main [ref=f152e97]:
+        - generic [ref=f152e98]:
+          - generic [ref=f152e99]:
+            - generic [ref=f152e100]:
+              - heading "Yeni uygulama bağla" [level=3] [ref=f152e101]
+              - generic [ref=f152e102]: Bir Jira projesini bir repoya bağlar — 4 adım
+            - paragraph [ref=f152e104]: "1) Jira projesi + hedef repo seçin. 2) Platform profilini (derleme ortamı) belirleyin. 3) .maestro.yaml önerilir. 4) Kapı/tetikleme kurallarını seçin. Göndermeden önce 'kuru koşum' zorunludur (son ticket'lar bu kurallarla nereye düşerdi). Sonuç canlıya geçmez: paket admin onayına gider — onaydan sonra eşleme kuralı ve .maestro.yaml PR'ı oluşur."
+          - list [ref=f152e105]:
+            - listitem [ref=f152e106]: 1 · Jira kaynağı
+            - listitem [ref=f152e107]: 2 · Repo ve politika
+            - listitem [ref=f152e108]: 3 · .maestro.yaml
+            - listitem [ref=f152e109]: 4 · Kapı ve tetikleme
+          - generic [ref=f152e110]:
+            - generic [ref=f152e111]:
+              - heading "Jira projesi ve hedef repo" [level=3] [ref=f152e112]
+              - generic [ref=f152e113]: Bu projenin ticket'ları hangi repoya gider?
+            - generic [ref=f152e114]:
+              - generic [ref=f152e115]:
+                - generic [ref=f152e116]:
+                  - generic [ref=f152e117]: Jira bağlantısı
+                  - combobox "Jira bağlantısı" [ref=f152e118]:
+                    - option "— seç —"
+                    - option "Jira (uyildiz) · Jira Cloud" [selected]
+                  - paragraph [ref=f152e119]: Ayarlar > Bağlantılar'daki Jira Cloud / Data Center bağlantılarından biri.
+                - generic [ref=f152e120]:
+                  - generic [ref=f152e121]: Jira projesi
+                  - combobox "Jira projesi" [ref=f152e122]:
+                    - option "— proje seç —"
+                    - option "OPS · Çevrimiçi Ödeme Sistemi" [selected]
+                    - option "SAM1 · (Example) Billing System Dev"
+              - generic [ref=f152e123]:
+                - generic [ref=f152e124]:
+                  - generic [ref=f152e125]: SCM bağlantısı
+                  - combobox "SCM bağlantısı" [ref=f152e126]:
+                    - option "— seç —"
+                    - option "GitHub (maestro-pilot) · GitHub" [selected]
+                  - paragraph [ref=f152e127]: Ayarlar > Bağlantılar'daki GitHub / Azure DevOps bağlantılarından biri.
+                - generic [ref=f152e128]:
+                  - generic [ref=f152e129]: Repo
+                  - combobox "Repo" [ref=f152e130]:
+                    - option "— seç —"
+                    - option "Uguryldz/maestro-pilot" [selected]
+                    - option "Uguryldz/wendococr"
+                    - option "Uguryldz/wendoctestsil"
+                    - option "Uguryldz/wendoc.ai"
+                    - option "cupolaai/cupola-license"
+                    - option "Uguryldz/wp-platform"
+                    - option "tecnoi-global/wp-platform"
+                    - option "cupolaai/garak"
+                    - option "cupolaai/llama-stack-provider-trustyai-garak"
+                    - option "cupolaai/trustyai-explainability"
+                    - option "alibahadirabra/creqit"
+                    - option "cupolaai/cupola-ogx"
+                    - option "cupolaai/cupola-trusty-service-operator"
+                    - option "cupolaai/cupola-dspo"
+                    - option "Uguryldz/DestekOl"
+                    - option "cupolaai/trustyai-service-operator"
+                    - option "cupolaai/kserve"
+                    - option "cupolaai/kuadrant-operator"
+                    - option "cupolaai/trainer"
+                    - option "cupolaai/mlflow"
+                    - option "cupolaai/hub"
+                    - option "cupolaai/ogx"
+                    - option "cupolaai/vllm"
+                    - option "cupolaai/argo-workflows"
+                    - option "cupolaai/opendatahub-operator"
+                    - option "cupolaai/Guardrails"
+                    - option "cupolaai/pipelines"
+                    - option "cupolaai/kueue"
+                    - option "cupolaai/ml-metadata"
+                    - option "cupolaai/modelmesh-serving"
+                    - option "cupolaai/codeflare-operator"
+                    - option "cupolaai/model_server"
+                    - option "cupolaai/MLServer"
+                    - option "cupolaai/authorino"
+                    - option "cupolaai/lm-evaluation-harness"
+                    - option "cupolaai/ogx-k8s-operator"
+                    - option "cupolaai/feast"
+                    - option "cupolaai/ray"
+                    - option "cupolaai/kuberay"
+                    - option "cupolaai/llm-d"
+                    - option "cupolaai/sendnn-inference"
+                    - option "cupolaai/data-science-pipelines-operator"
+                    - option "cupolaai/notebooks"
+                    - option "cupolaai/cupola-examples"
+                    - option "Uguryldz/nodex"
+                    - option "tecnoi-global/mole-website"
+                    - option "tecnoi-global/tecnoi-website"
+                    - option "tecnoi-global/mole-windows"
+                    - option "tecnoi-global/mole-v3"
+                    - option "tecnoi-global/mole-v2"
+                    - option "tecnoi-global/wendoc-ocr"
+                    - option "tecnoi-global/wendoc"
+                    - option "Uguryldz/nnnnn8n"
+                    - option "Uguryldz/KelimeEzber"
+                    - option "Uguryldz/nodexagent"
+                    - option "Uguryldz/nodexsil"
+                    - option "Uguryldz/nodexfirst"
+                    - option "Uguryldz/coder"
+                    - option "Uguryldz/jiraai-web"
+                    - option "rkazak07/anomivox"
+                    - option "Uguryldz/website"
+                    - option "Uguryldz/n8nclean"
+                    - option "Uguryldz/nodebaserp"
+                    - option "Uguryldz/nodebase"
+                    - option "Uguryldz/tgwinnertbot"
+                    - option "Uguryldz/papertrade"
+                    - option "Uguryldz/U_ProjectNew"
+                    - option "Uguryldz/frp"
+                    - option "Uguryldz/ihubv2"
+                    - option "Uguryldz/whatsapp-platform"
+                    - option "Uguryldz/U_n8nLicBypass"
+                    - option "Uguryldz/uinv"
+                    - option "Uguryldz/wpmodel"
+                    - option "Uguryldz/traquent"
+                    - option "Uguryldz/creqitClean"
+                    - option "Uguryldz/creqit"
+                    - option "sevvalOpturKarya/hospital_whatsapp_clone"
+                    - option "Uguryldz/vpackhub"
+                    - option "Uguryldz/packhub"
+                    - option "Uguryldz/Ftp_n8n"
+                    - option "Uguryldz/Soap_RequestNode"
+                    - option "Uguryldz/n8nLicbypss"
+                    - option "abrapartners/ftp"
+                    - option "Uguryldz/SoapWslCreator"
+                    - option "abrapartners/ekb-ihub"
+                    - option "rkazak07/orqflow"
+                    - option "Uguryldz/AutomationEngine"
+                    - option "Uguryldz/ihub"
+                    - option "abrapartners/integrationHub"
+                    - option "gorki92/airgoNew"
+                    - option "Uguryldz/umybi"
+                    - option "Uguryldz/UaiProcessMining"
+                    - option "Uguryldz/uinsights"
+                    - option "Uguryldz/udoc"
+                    - option "Uguryldz/uinsightsold"
+                    - option "Uguryldz/U_XMLInvoiceDataExtraction"
+                    - option "Uguryldz/U_PdfToExcel"
+                    - option "Uguryldz/Image"
+                    - option "Uguryldz/UiPath_CICD"
+                    - option "kafeinarge/captcha_solver_v1"
+              - generic [ref=f152e131]: Kural eşleşmeyen ticket asla sessizce bir repoya gitmez.
+          - generic [ref=f152e132]:
+            - generic [ref=f152e133]:
+              - heading "Kuru koşum (M102)" [level=3] [ref=f152e134]
+              - generic [ref=f152e135]: Son ticket'lar bu kurallarla nereye düşerdi?
+              - button "Kuru koşum yap" [ref=f152e137] [cursor=pointer]
+            - paragraph [ref=f152e139]: Henüz kuru koşum yapılmadı. Aktivasyondan önce zorunludur.
+          - generic [ref=f152e140]:
+            - heading "İşlemler" [level=3] [ref=f152e142]
+            - generic [ref=f152e143]:
+              - button "İleri" [ref=f152e145] [cursor=pointer]
+              - generic [ref=f152e146]: "Bu sihirbaz canlı yapılandırma üretmez: paket admin onayına gider. Onaydan sonra eşleme kuralı, .maestro.yaml PR'ı ve gerekiyorsa taslak pipeline oluşturulur."
+  - region

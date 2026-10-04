@@ -1,0 +1,5 @@
+[     453ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=8dba140a:20102
+[     576ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/favicon.ico:0
+[     586ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/favicon.ico:0
+[    8948ms] [ERROR] Access to fetch at 'http://localhost:7001/auth/login' from origin 'http://localhost:7000' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ http://localhost:7000/login:0
+[    8951ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:7001/auth/login:0

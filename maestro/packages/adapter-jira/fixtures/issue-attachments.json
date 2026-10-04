@@ -1,0 +1,35 @@
+{
+  "id": "10501",
+  "key": "UGURPAY-501",
+  "fields": {
+    "attachment": [
+      {
+        "id": "10201",
+        "self": "https://jira.internal.bank/rest/api/2/attachment/10201",
+        "filename": "kredi-limit-analiz.docx",
+        "author": { "name": "ugyildiz" },
+        "created": "2026-09-01T09:12:00.000+0300",
+        "size": 48120,
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "content": "https://jira.internal.bank/secure/attachment/10201/kredi-limit-analiz.docx"
+      },
+      {
+        "id": "10202",
+        "self": "https://jira.internal.bank/rest/api/2/attachment/10202",
+        "filename": "notlar.txt",
+        "author": { "name": "ugyildiz" },
+        "created": "2026-09-01T09:13:00.000+0300",
+        "size": 240,
+        "mimeType": "text/plain",
+        "content": "https://jira.internal.bank/secure/attachment/10202/notlar.txt"
+      },
+      {
+        "id": "10203",
+        "filename": "ekran.png",
+        "size": 120000,
+        "mimeType": "image/png",
+        "content": "https://jira.internal.bank/secure/attachment/10203/ekran.png"
+      }
+    ]
+  }
+}

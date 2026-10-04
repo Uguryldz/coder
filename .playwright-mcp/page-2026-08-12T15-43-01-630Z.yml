@@ -1,0 +1,141 @@
+- generic [ref=e2]:
+  - generic [ref=e23]:
+    - navigation "Ana gezinme" [ref=e24]:
+      - generic [ref=e25]:
+        - generic [ref=e26]: M
+        - generic [ref=e27]:
+          - text: Maestro
+          - generic [ref=e28]: SDLC otomasyonu
+      - generic [ref=e29]:
+        - generic [ref=e30]: İzleme
+        - link "Panel" [ref=e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=e41]:
+        - generic [ref=e42]: Çalışma
+        - link "Runner havuzları" [ref=e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=e57]:
+        - generic [ref=e58]: Yönetişim
+        - link "Denetim izi" [ref=e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=e71]:
+        - generic [ref=e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Uygulama ekle" [ref=e75] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=e76]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=e77] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=e78]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=e79] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=e80]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=e81] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=e82]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=e83] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=e84]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=e85] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=e86]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=e87]:
+      - banner [ref=e88]:
+        - heading "Panel" [level=1] [ref=e89]
+        - generic [ref=e90]:
+          - generic [ref=e91]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=e92]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=e93]: admin
+        - button "Çıkış" [ref=e94] [cursor=pointer]
+      - main [ref=e95]:
+        - generic [ref=e96]:
+          - generic [ref=e99]:
+            - generic [ref=e100]: 🎬
+            - generic [ref=e101]:
+              - text: Akışın tamamını 1 ekranda gör
+              - generic [ref=e102]: Ticket'tan merge'e kadar hangi adımı kimin yaptığını ve şu an neyin çalıştığını gösterir.
+            - link "Akışı aç" [ref=e103] [cursor=pointer]:
+              - /url: /live
+          - generic [ref=e104]:
+            - generic [ref=e105]: 📭
+            - paragraph [ref=e106]: Henüz iş akışı yok
+            - paragraph [ref=e107]: Jira'da bir ticket açıldığında ve eşleşme kurulduğunda akış burada görünür.
+  - region

@@ -1,0 +1,194 @@
+- generic [ref=f175e2]:
+  - generic [ref=f175e37]:
+    - navigation "Ana gezinme" [ref=f175e38]:
+      - generic [ref=f175e39]:
+        - generic [ref=f175e40]: M
+        - generic [ref=f175e41]:
+          - text: Maestro
+          - generic [ref=f175e42]: SDLC otomasyonu
+      - generic [ref=f175e43]:
+        - generic [ref=f175e44]: İzleme
+        - link "Panel" [ref=f175e45] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f175e46]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f175e47] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f175e48]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f175e49] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f175e50]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f175e51] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f175e52]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f175e53] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f175e54]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f175e55]:
+        - generic [ref=f175e56]: Çalışma
+        - link "Runner havuzları" [ref=f175e57] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f175e58]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f175e59] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f175e60]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f175e61] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f175e62]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f175e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f175e64]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f175e65] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f175e66]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f175e67] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f175e68]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f175e69] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f175e70]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f175e71]:
+        - generic [ref=f175e72]: Yönetişim
+        - link "Denetim izi" [ref=f175e73] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f175e74]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f175e75] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f175e76]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f175e77] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f175e78]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f175e79] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f175e80]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f175e81] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f175e82]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f175e83] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f175e84]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f175e85]:
+        - generic [ref=f175e86]: Yönetim
+        - link "Proje bağlama" [ref=f175e87] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f175e88]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f175e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f175e90]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f175e91] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f175e92]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f175e93] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f175e94]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f175e95] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f175e96]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f175e97] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f175e98]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f175e99]:
+      - banner [ref=f175e100]:
+        - heading "Proje bağlama" [level=1] [ref=f175e101]
+        - generic [ref=f175e102]:
+          - generic [ref=f175e103]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f175e104]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f175e105]: admin
+        - button "Çıkış" [ref=f175e106] [cursor=pointer]
+      - main [ref=f175e107]:
+        - generic [ref=f175e108]:
+          - tablist "Proje bağlama adımları" [ref=f175e109]:
+            - tab "Uygulama ekle" [ref=f175e110] [cursor=pointer]
+            - tab "Jira eşleme & onay" [selected] [ref=f175e111] [cursor=pointer]
+            - tab "Dinleme kuralları" [ref=f175e112] [cursor=pointer]
+          - tabpanel "Jira eşleme & onay" [ref=f175e23]:
+            - generic [ref=f175e25]:
+              - generic [ref=f175e26]:
+                - heading "Bağlı Jira projeleri" [level=3] [ref=f175e27]
+                - generic [ref=f175e28]: Her projeye bir veya daha fazla uygulama bağlanabilir
+                - button "+ Proje/uygulama bağla" [ref=f175e30] [cursor=pointer]
+              - generic [ref=f175e32]:
+                - generic [ref=f175e33]: 📭
+                - paragraph [ref=f175e34]: Bağlı proje yok
+            - group [ref=f175e35]:
+              - generic "▾ Gelişmiş · Perde arkasında ne oluyor?" [active] [ref=f175e113] [cursor=pointer]
+              - paragraph [ref=f175e114]: Aşağıdakiler günlük iş için gerekli değildir; sistemin nasıl çalıştığını ve model yönlendirme politikasını merak edenler içindir.
+              - generic [ref=f175e116]:
+                - generic [ref=f175e117]:
+                  - heading "Yönlendirme politikası" [level=3] [ref=f175e118]
+                  - generic [ref=f175e119]: Hangi veri sınıfı hangi yapay zekâ modeline gider
+                  - button "Politikayı düzenle" [ref=f175e121] [cursor=pointer]
+                - table [ref=f175e124]:
+                  - rowgroup [ref=f175e125]:
+                    - row [ref=f175e126]:
+                      - columnheader "Koşul" [ref=f175e127]
+                      - columnheader "Arka uç" [ref=f175e128]
+                      - columnheader "Model" [ref=f175e129]
+                      - columnheader "Sonuç" [ref=f175e130]
+                      - columnheader "Ne anlama gelir" [ref=f175e131]
+                  - rowgroup [ref=f175e132]:
+                    - row [ref=f175e133]:
+                      - cell "veri sınıfı = acik" [ref=f175e134]
+                      - cell "api" [ref=f175e135]
+                      - cell [ref=f175e137]:
+                        - code [ref=f175e138]: api
+                      - cell "tamam" [ref=f175e139]
+                      - cell "Çağrı normal şekilde karşılandı." [ref=f175e141]
+                    - row [ref=f175e142]:
+                      - cell "veri sınıfı = dahili" [ref=f175e143]
+                      - cell "api" [ref=f175e144]
+                      - cell [ref=f175e146]:
+                        - code [ref=f175e147]: api
+                      - cell "tamam" [ref=f175e148]
+                      - cell "Çağrı normal şekilde karşılandı." [ref=f175e150]
+                    - row [ref=f175e151]:
+                      - cell "veri sınıfı = gizli" [ref=f175e152]
+                      - cell "onprem" [ref=f175e153]
+                      - cell [ref=f175e155]:
+                        - code [ref=f175e156]: onprem
+                      - cell "tamam" [ref=f175e157]
+                      - cell "Çağrı normal şekilde karşılandı." [ref=f175e159]
+                    - row [ref=f175e160]:
+                      - cell "onprem arka ucu erişilemez olduğunda" [ref=f175e161]
+                      - cell "onprem" [ref=f175e162]
+                      - cell [ref=f175e164]:
+                        - code [ref=f175e165]: onprem
+                      - cell "geriye düşürüldü" [ref=f175e166]
+                      - cell "İstenen arka uç kullanılamadı; akış \"AI destekli\" moduna düştü — AI önerir, uygulamayı insan yapar." [ref=f175e168]
+              - generic [ref=f175e170]:
+                - generic [ref=f175e171]:
+                  - heading "Kayıtlı uygulamalar" [level=3] [ref=f175e172]
+                  - generic [ref=f175e173]: Ticket'ların yönlendirilebileceği repolar
+                - generic [ref=f175e174]:
+                  - generic [ref=f175e175]:
+                    - generic [ref=f175e176]: 📭
+                    - paragraph [ref=f175e177]: Kayıtlı uygulama yok
+                  - paragraph [ref=f175e178]: Her uygulama bir repo ve platformdan oluşur; bir ticket ancak burada kayıtlı bir uygulamaya yönlendirilebilir.
+              - paragraph [ref=f175e179]: "Bu ayarlar koddan değil, bu ekrandan yönetilir: kota dolduğunda ya da gizli veride ne olacağı buradan belirlenir."
+  - region

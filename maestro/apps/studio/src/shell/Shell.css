@@ -1,0 +1,234 @@
+/* Application chrome: sidebar + top bar + content well. Compact by design. */
+.shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.shell__side {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 10px 8px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.shell__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 10px;
+}
+
+.shell__brand b {
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+
+.shell__brand small {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.shell__logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--blue);
+  display: grid;
+  place-items: center;
+  color: var(--on-primary);
+  font-weight: 700;
+  font-size: 14px;
+  flex: none;
+}
+
+.shell__navgroup {
+  margin: 10px 0 2px;
+  padding: 0 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 600;
+}
+
+.shell__nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 1px;
+}
+
+.shell__nav:hover {
+  background: var(--panel2);
+  color: var(--text);
+}
+
+.shell__nav--active {
+  background: var(--blue-bg);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.shell__ic {
+  width: 16px;
+  text-align: center;
+  font-size: 13px;
+  flex: none;
+}
+
+.shell__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.shell__top h1 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell__spacer {
+  flex: 1;
+}
+
+.shell__user {
+  font-size: 12.5px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shell__role {
+  font-size: 11px;
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: var(--muted);
+}
+
+.shell__lang {
+  background: var(--panel2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 3px 7px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.shell__content {
+  padding: 16px 18px 48px;
+  max-width: 1400px;
+  width: 100%;
+}
+
+/* Hamburger — only rendered narrow, only visible narrow. */
+.shell__burger {
+  display: none;
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 16px;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.shell__backdrop {
+  display: none;
+}
+
+/* Per-screen error panel (app/ErrorBoundary.tsx). */
+.ui-errorpanel {
+  margin: 4px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--red);
+  background: var(--red-bg);
+  color: var(--text);
+  border-radius: var(--radius);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.ui-errorpanel__hint {
+  margin: 0;
+  color: var(--muted);
+}
+
+.ui-errorpanel__detail {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--red);
+}
+
+@media (max-width: 820px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .shell__side {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 240px;
+    max-width: 85vw;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.15s ease-out;
+    box-shadow: 0 0 0 1px var(--border);
+  }
+  .shell--nav-open .shell__side {
+    transform: translateX(0);
+  }
+  .shell__backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(15, 23, 42, 0.35);
+    border: 0;
+    padding: 0;
+  }
+  .shell__burger {
+    display: inline-block;
+  }
+  .shell__top {
+    padding: 8px 12px;
+  }
+  .shell__content {
+    padding: 12px 12px 40px;
+  }
+  .shell__user {
+    display: none;
+  }
+}

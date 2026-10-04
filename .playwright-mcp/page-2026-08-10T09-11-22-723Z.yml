@@ -1,0 +1,308 @@
+- generic [ref=f8e2]:
+  - generic [ref=f8e3]:
+    - navigation "Ana gezinme" [ref=f8e4]:
+      - generic [ref=f8e5]:
+        - generic [ref=f8e6]: M
+        - generic [ref=f8e7]:
+          - text: Maestro
+          - generic [ref=f8e8]: SDLC otomasyonu
+      - generic [ref=f8e9]:
+        - generic [ref=f8e10]: Operasyon
+        - link "Panel" [ref=f8e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f8e12]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f8e13] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f8e14]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f8e15] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f8e16]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f8e17] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f8e18]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f8e19] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f8e20]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f8e21] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f8e22]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f8e23] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f8e24]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f8e25] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f8e26]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f8e27] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f8e28]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f8e29] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f8e30]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f8e31]:
+        - generic [ref=f8e32]: Yürütme
+        - link "Runner havuzları" [ref=f8e33] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f8e34]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f8e35] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f8e36]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f8e37] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f8e38]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f8e39] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f8e40]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f8e41]:
+        - generic [ref=f8e42]: Ajanlar
+        - link "Variant'lar" [ref=f8e43] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f8e44]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f8e45] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f8e46]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f8e47] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f8e48]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f8e49] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f8e50]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f8e51] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f8e52]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f8e53] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f8e54]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f8e55]:
+        - generic [ref=f8e56]: Yönetişim
+        - link "LLM Gateway" [ref=f8e57] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f8e58]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f8e59] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f8e60]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f8e61] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f8e62]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f8e63] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f8e64]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f8e65] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f8e66]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f8e67] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f8e68]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f8e69] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f8e70]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f8e71]:
+        - generic [ref=f8e72]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f8e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f8e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f8e75] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f8e76]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [active] [ref=f8e77] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f8e78]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f8e79] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f8e80]: ➕
+          - text: Uygulama ekle
+        - link "Ayarlar & bağlantılar" [ref=f8e81] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f8e82]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f8e83] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f8e84]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f8e85] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f8e86]: ✔
+          - text: Karar defteri
+    - generic [ref=f8e87]:
+      - banner [ref=f8e88]:
+        - heading "Maestro MCP" [level=1] [ref=f8e664]
+        - generic [ref=f8e90]:
+          - generic [ref=f8e91]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f8e92]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f8e93]: ayse.kaya@ugurbank.local
+        - button "Çıkış" [ref=f8e94] [cursor=pointer]
+      - main [ref=f8e95]:
+        - generic [ref=f8e665]:
+          - generic [ref=f8e666]:
+            - generic [ref=f8e667]:
+              - generic [ref=f8e668]: Uç
+              - generic [ref=f8e669]: maestro-mcp · /mcp
+              - generic [ref=f8e670]: streamable HTTP
+            - generic [ref=f8e671]:
+              - generic [ref=f8e672]: Kimlik
+              - generic [ref=f8e673]: kişisel token
+              - generic [ref=f8e674]: AI, senin RBAC'ınla sınırlıdır
+            - generic [ref=f8e675]:
+              - generic [ref=f8e676]: Audit aktörü
+              - generic [ref=f8e677]: ai-via:<user>
+              - generic [ref=f8e678]: Her araç çağrısı denetim zincirinde
+            - generic [ref=f8e679]:
+              - generic [ref=f8e680]: Kapı kararı
+              - generic [ref=f8e681]: yok
+              - generic [ref=f8e682]: Onay yalnız insan kanalından
+          - generic [ref=f8e683]:
+            - generic [ref=f8e684]:
+              - heading "Araç seti" [level=3] [ref=f8e685]
+              - generic [ref=f8e686]: Etkin kapsam = kullanıcının RBAC'ı ∩ aracın kapsamı
+            - table [ref=f8e689]:
+              - caption [ref=f8e690]: Araç seti
+              - rowgroup [ref=f8e691]:
+                - row [ref=f8e692]:
+                  - columnheader "Araç" [ref=f8e693]
+                  - columnheader "Kapsam" [ref=f8e694]
+                  - columnheader "Ne yapar" [ref=f8e695]
+              - rowgroup [ref=f8e696]:
+                - row [ref=f8e697]:
+                  - cell [ref=f8e698]:
+                    - code [ref=f8e699]: list_runs
+                  - cell "read" [ref=f8e700]
+                  - cell "Workflow koşuları; durum, ticket veya uygulamaya göre süzülebilir." [ref=f8e702]
+                - row [ref=f8e703]:
+                  - cell [ref=f8e704]:
+                    - code [ref=f8e705]: get_run
+                  - cell "read" [ref=f8e706]
+                  - 'cell "Tek koşu: adım, durum, risk sınıfı, çalışma modu ve beklediği kapı." [ref=f8e708]'
+                - row [ref=f8e709]:
+                  - cell [ref=f8e710]:
+                    - code [ref=f8e711]: get_journal
+                  - cell "read" [ref=f8e712]
+                  - cell "Koşunun ticket günlüğü kayıtları, sıra numarasına göre (M30)." [ref=f8e714]
+                - row [ref=f8e715]:
+                  - cell [ref=f8e716]:
+                    - code [ref=f8e717]: get_params
+                  - cell "read" [ref=f8e718]
+                  - cell "Operasyonel parametreler ve kapsam bazında güncel değerleri (M71)." [ref=f8e720]
+                - row [ref=f8e721]:
+                  - cell [ref=f8e722]:
+                    - code [ref=f8e723]: get_repo_card
+                  - cell "read" [ref=f8e724]
+                  - 'cell "Uygulamanın repo kartı: modül haritası ve çapraz etki özetleri (M100)." [ref=f8e726]'
+                - row [ref=f8e727]:
+                  - cell [ref=f8e728]:
+                    - code [ref=f8e729]: search_knowledge
+                  - cell "read" [ref=f8e730]
+                  - 'cell "Bilgi tabanında arama: repo kartları, geçmiş analizler, karar kayıtları." [ref=f8e732]'
+                - row [ref=f8e733]:
+                  - cell [ref=f8e734]:
+                    - code [ref=f8e735]: list_pending_gates
+                  - cell "read" [ref=f8e736]
+                  - 'cell "Bekleyen onay kapıları: sahibi, süresi ve neden beklediği." [ref=f8e738]'
+                - row [ref=f8e739]:
+                  - cell [ref=f8e740]:
+                    - code [ref=f8e741]: quota_status
+                  - cell "read" [ref=f8e742]
+                  - 'cell "LLM/token bütçesi: bu pencerede ne harcandı ve kısıtlama var mı." [ref=f8e744]'
+                - row [ref=f8e745]:
+                  - cell [ref=f8e746]:
+                    - code [ref=f8e747]: runner_health
+                  - cell "read" [ref=f8e748]
+                  - 'cell "Runner filosu: durum, aktif sandbox sayısı ve son sinyal." [ref=f8e750]'
+                - row [ref=f8e751]:
+                  - cell [ref=f8e752]:
+                    - code [ref=f8e753]: start_workflow
+                  - cell "operate" [ref=f8e754]
+                  - cell "Opt-in bir projedeki ticket için teslim akışını başlatır." [ref=f8e756]
+                - row [ref=f8e757]:
+                  - cell [ref=f8e758]:
+                    - code [ref=f8e759]: assign_app
+                  - cell "operate" [ref=f8e760]
+                  - cell "Ticket’ı bir uygulamaya atar — eşleştirmenin insan katmanı (M99 ③)." [ref=f8e762]
+                - row [ref=f8e763]:
+                  - cell [ref=f8e764]:
+                    - code [ref=f8e765]: set_workmode
+                  - cell "operate" [ref=f8e766]
+                  - cell "Koşunun çalışma modunu değiştirir; mod, AI’ın ne kadarını tek başına yaptığını belirler." [ref=f8e768]
+                - row [ref=f8e769]:
+                  - cell [ref=f8e770]:
+                    - code [ref=f8e771]: pause_run
+                  - cell "operate" [ref=f8e772]
+                  - cell "Koşuyu duraklatır. Beklediği kapılar açık kalır; duraklatmak bir karar değildir." [ref=f8e774]
+                - row [ref=f8e775]:
+                  - cell [ref=f8e776]:
+                    - code [ref=f8e777]: resume_run
+                  - cell "operate" [ref=f8e778]
+                  - cell "Duraklatılmış koşuyu kaldığı yerden sürdürür." [ref=f8e780]
+                - row [ref=f8e781]:
+                  - cell [ref=f8e782]:
+                    - code [ref=f8e783]: retry_step
+                  - cell "operate" [ref=f8e784]
+                  - cell "Geçici hatadan sonra bir adımı yeniden çalıştırır. Adım atlamaz, kapı hiç atlamaz." [ref=f8e786]
+                - row [ref=f8e787]:
+                  - cell [ref=f8e788]:
+                    - code [ref=f8e789]: notify_gate_owner
+                  - cell "operate" [ref=f8e790]
+                  - cell "Bekleyen kapının sahibine hatırlatma gönderir — karar vermez." [ref=f8e792]
+                - row [ref=f8e793]:
+                  - cell [ref=f8e794]:
+                    - code [ref=f8e795]: propose_param_change
+                  - cell "admin-öneri" [ref=f8e796]
+                  - cell "Parametre değişikliği ÖNERİR; öneri dört-göz kuyruğuna girer, araç uygulamaz." [ref=f8e798]
+                - row [ref=f8e799]:
+                  - cell [ref=f8e800]:
+                    - code [ref=f8e801]: propose_killswitch
+                  - cell "admin-öneri" [ref=f8e802]
+                  - cell "Acil durdurma ÖNERİR; kararı insan verir, araç uygulamaz." [ref=f8e804]
+          - generic [ref=f8e805]:
+            - generic [ref=f8e806]:
+              - heading "Bilerek olmayan araçlar" [level=3] [ref=f8e807]
+              - generic [ref=f8e808]: Bu araçlar tanımlı değildir — eksik değil, kasıtlı
+            - generic [ref=f8e809]:
+              - generic [ref=f8e810]:
+                - generic [ref=f8e811]:
+                  - generic [ref=f8e812]: ⛔
+                  - code [ref=f8e813]: approve_gate
+                - generic [ref=f8e814]:
+                  - generic [ref=f8e815]: ⛔
+                  - code [ref=f8e816]: reject_gate
+                - generic [ref=f8e817]:
+                  - generic [ref=f8e818]: ⛔
+                  - code [ref=f8e819]: merge_pr
+              - generic [ref=f8e820]: MCP kapıyı listeler, özetler ve sahibine hatırlatır — ama karar veremez. Onay imzası yalnız insan kanalından atılır; aksi hâlde "üreten ≠ onaylayan" kuralı (M32) kâğıt üzerinde kalırdı.
+          - generic [ref=f8e821]:
+            - generic [ref=f8e822]:
+              - heading "Bağlantı" [level=3] [ref=f8e823]
+              - generic [ref=f8e824]: Claude Code / IDE'ye eklenir
+            - paragraph [ref=f8e826]: Token kişiseldir ve paylaşılmaz. Token iptali erişim iptalidir; her çağrı denetim zincirine yazılır. Bu sunucu, ajanların sandbox içinde kullandığı MCP sunucularından ayrıdır.
+  - region

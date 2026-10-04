@@ -1,0 +1,104 @@
+digraph OrkestraAjan {
+  rankdir=TB;
+  bgcolor="white";
+  compound=true;
+  splines=spline;
+  nodesep=0.55;
+  ranksep=0.75;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=12, shape=box, style=filled,
+        fillcolor="white", color="#1E293B", penwidth=2, margin="0.3,0.2"];
+  edge [fontname="Helvetica", fontsize=11, color="#1E293B", penwidth=1.6];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="22"><B>Worker İçindeki Ajan Nasıl Çalışır?</B></FONT><BR/>
+        <FONT POINT-SIZE="12" COLOR="#64748B">7 ajanın hepsi aynı mantıkla koşar — değişen tek şey: hangi variant, hangi prompt, hangi belgeler</FONT><BR/> >;
+
+  // ══════════ GİRİŞ ══════════
+  gorev [label="ORKESTRATÖR görev verir\n\"şu ticket için ANALIST çalıştır\"",
+         fillcolor="#DCFCE7", color="#16A34A", penwidth=2.5];
+
+  // ══════════ AJAN ÇALIŞMA ZİNCİRİ ══════════
+  subgraph cluster_run {
+    label="  AJAN ÇALIŞMA ZİNCİRİ  (worker container içinde)  ";
+    style="filled,rounded"; fillcolor="#F8FAFC"; color="#2563EB"; penwidth=2.5;
+    fontname="Helvetica-Bold"; fontsize=14; fontcolor="#1E40AF";
+
+    s1 [label="① VARIANT SEÇ\nticket'a bakıp doğru uzmanı seç\nörn. mobil ticket → \"analyst-mobile\"",
+        fillcolor="#DBEAFE", color="#2563EB"];
+
+    s2 [label="② PROMPT'U AL\nvariant'ın aktif sürümü\n(sistem talimatı · model · sıcaklık)",
+        fillcolor="#DBEAFE", color="#2563EB"];
+
+    s3 [label="③ BELGELERİ YÜKLE  (Knowledge Pack)\nbu variant'a bağlı tüm dokümanlar okunur\n→ prompt'a eklenir",
+        fillcolor="#FEF3C7", color="#D97706", penwidth=2.5];
+
+    s4 [label="④ PII MASKELE\nkişisel veriyi gizle\n(isim · e-posta · TCKN → ***)",
+        fillcolor="#FEE2E2", color="#DC2626"];
+
+    s5 [label="⑤ MODELE SOR\nprompt + belgeler + ticket\ngönderilir",
+        fillcolor="#DBEAFE", color="#2563EB", penwidth=2.5];
+
+    s6 [label="⑥ CEVABI DOĞRULA\nZod şeması ile kontrol\nformat bozuksa TEKRAR SOR",
+        fillcolor="#DBEAFE", color="#2563EB"];
+
+    s7 [label="⑦ PII GERİ KOY\nmaskelenen veri yerine konur",
+        fillcolor="#FEE2E2", color="#DC2626"];
+
+    s8 [label="⑧ KAYDET\nsonuç · token · maliyet · audit log",
+        fillcolor="#DBEAFE", color="#2563EB"];
+
+    s1 -> s2 -> s3 -> s4 -> s5 -> s6 -> s7 -> s8 [penwidth=2, color="#2563EB"];
+    s6 -> s5 [label="  şema tutmadı\l  tekrar dene\l", style=dashed, color="#DC2626",
+              fontcolor="#B91C1C", constraint=false];
+  }
+
+  // ══════════ BİLGİ KAYNAKLARI ══════════
+  subgraph cluster_bilgi {
+    label="  AJANIN ÖĞRENDİĞİ BELGELER  —  Agent Studio'dan admin yükler  ";
+    style="filled,rounded"; fillcolor="#FFFBEB"; color="#D97706"; penwidth=2.5;
+    fontname="Helvetica-Bold"; fontsize=14; fontcolor="#92400E";
+
+    node [fillcolor="#FFFFFF", color="#D97706", fontsize=11];
+
+    b1 [label="KURUM STANDARTLARI\nkodlama kuralları · mimari kararlar\nisimlendirme · katman yapısı"];
+    b2 [label="ALANA ÖZEL BİLGİ\nmodül dokümanları · iş kuralları\nAzure DevOps / Confluence çıktıları"];
+    b3 [label="ÖRNEK ÇÖZÜMLER\ngeçmiş ticket → analiz örnekleri\nGolden Ticket kayıtları"];
+
+    b1 -> b2 -> b3 [style=invis];
+  }
+
+  // ══════════ 7 AJAN — tek kutu ══════════
+  ajanlar [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7">
+      <TR><TD COLSPAN="2" BGCOLOR="#DBEAFE"><B>AYNI ZİNCİRİ KOŞAN 7 AJAN</B></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>INTAKE</B></TD><TD ALIGN="LEFT">ticket tam mı?</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>ANALYST</B></TD><TD ALIGN="LEFT">analiz + teknik tasarım</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>DEVELOPER</B></TD><TD ALIGN="LEFT">kod yazar</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>DEV-REVIEWER</B></TD><TD ALIGN="LEFT">kodu inceler</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>TEST-DESIGNER</B></TD><TD ALIGN="LEFT">senaryo yazar</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>TEST-REVIEWER</B></TD><TD ALIGN="LEFT">senaryoyu inceler</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>TEST-RUNNER</B></TD><TD ALIGN="LEFT">testi koşar</TD></TR>
+    </TABLE>>, shape=plain, fillcolor="white", color="#2563EB", penwidth=2];
+
+  // ══════════ ÇIKTI ══════════
+  cikti [label="SONUÇ ORKESTRATÖRE DÖNER\nbir sonraki adıma geçilir\n(ya da insan onayı beklenir)",
+         fillcolor="#DCFCE7", color="#16A34A", penwidth=2.5];
+
+  sandbox [label="SANDBOX\nkod yazan/test koşan ajanlar için\ngeçici container",
+           fillcolor="#F3E8FF", color="#9333EA", style="filled,dashed", penwidth=2];
+
+  // ══════════ BAĞLANTILAR ══════════
+  gorev -> s1 [lhead=cluster_run, penwidth=2.2, color="#16A34A"];
+  s8 -> cikti [ltail=cluster_run, penwidth=2.2, color="#16A34A"];
+
+  b1 -> s3 [ltail=cluster_bilgi, lhead=cluster_run, label="  prompt'a eklenir  ",
+            color="#D97706", fontcolor="#A16207", penwidth=2.2];
+
+  ajanlar -> s1 [lhead=cluster_run, label="  her ajan aynı zinciri koşar\l  farklı variant + farklı belgelerle\l",
+            style=dashed, color="#2563EB", fontcolor="#1D4ED8", penwidth=1.8];
+
+  s5 -> sandbox [label="  developer / test-runner ise\l  kodu burada çalıştırır\l",
+                 style=dashed, color="#9333EA", fontcolor="#7E22CE", penwidth=1.8];
+
+  // ══════════ HİZALAMA ══════════
+}

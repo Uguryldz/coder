@@ -1,0 +1,374 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e3]:
+    - navigation "Main navigation" [ref=f2e315]:
+      - generic [ref=f2e5]:
+        - generic [ref=f2e6]: M
+        - generic [ref=f2e7]:
+          - text: Maestro
+          - generic [ref=f2e8]: SDLC automation
+      - generic [ref=f2e9]:
+        - generic [ref=f2e10]: Work
+        - link "Dashboard" [ref=f2e316] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f2e12]: ▦
+          - text: Dashboard
+        - link "Live flow" [ref=f2e317] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f2e14]: 🎥
+          - text: Live flow
+        - link "Live sessions" [ref=f2e318] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f2e16]: ▶
+          - text: Live sessions
+      - generic [ref=f2e17]:
+        - generic [ref=f2e18]: Agents
+        - link "Agent profiles" [ref=f2e319] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f2e20]: 🤖
+          - text: Agent profiles
+        - link "Knowledge library" [ref=f2e320] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f2e22]: 📚
+          - text: Knowledge library
+        - link "Analysis template" [ref=f2e321] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f2e24]: 📋
+          - text: Analysis template
+        - link "Document template (Word)" [ref=f2e322] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f2e26]: 📄
+          - text: Document template (Word)
+        - link "Version quality test soon" [ref=f2e323] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f2e28]: 🎯
+          - text: Version quality test
+          - generic [ref=f2e29]: soon
+      - generic [ref=f2e30]:
+        - generic [ref=f2e31]: Audit
+        - link "Audit trail" [ref=f2e324] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f2e33]: 🔒
+          - text: Audit trail
+        - link "PII masking" [ref=f2e325] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f2e35]: 🔏
+          - text: PII masking
+        - link "AI Usage & Cost" [ref=f2e326] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f2e37]: ₺
+          - text: AI Usage & Cost
+        - link "Security scans soon" [ref=f2e327] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f2e39]: 🛡
+          - text: Security scans
+          - generic [ref=f2e40]: soon
+        - link "Evidence package soon" [ref=f2e328] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f2e42]: 📦
+          - text: Evidence package
+          - generic [ref=f2e43]: soon
+      - generic [ref=f2e44]:
+        - generic [ref=f2e45]: Setup
+        - link "Project binding" [ref=f2e329] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f2e47]: ⇄
+          - text: Project binding
+        - link "Notification & escalation" [ref=f2e330] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f2e49]: 🔔
+          - text: Notification & escalation
+        - link "Users & roles" [ref=f2e331] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f2e51]: 👥
+          - text: Users & roles
+        - link "Settings & connections" [ref=f2e332] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f2e53]: ⚙
+          - text: Settings & connections
+        - link "System health" [ref=f2e333] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f2e55]: 💚
+          - text: System health
+        - link "Worker machines soon" [ref=f2e334] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f2e57]: 🖥
+          - text: Worker machines
+          - generic [ref=f2e58]: soon
+        - link "Help — how to use" [ref=f2e335] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f2e60]: 📖
+          - text: Help — how to use
+    - generic [ref=f2e61]:
+      - banner [ref=f2e62]:
+        - heading "Settings & connections" [level=1] [ref=f2e336]
+        - generic [ref=f2e64]:
+          - generic [ref=f2e65]: ●
+          - text: Running normally
+        - combobox "Language" [ref=f2e337]:
+          - option "Turkish"
+          - option "English" [selected]
+        - generic [ref=f2e67]: admin
+        - button "Sign out" [ref=f2e338] [cursor=pointer]
+      - main [ref=f2e69]:
+        - generic [ref=f2e70]:
+          - generic [ref=f2e71]:
+            - generic [ref=f2e72]:
+              - heading "Connections" [level=3] [ref=f2e339]
+              - generic [ref=f2e74]: Manage outbound connections here — tokens are stored AES-encrypted and shown masked
+              - button "➕ Add connection" [ref=f2e340] [cursor=pointer]
+            - table [ref=f2e341]:
+              - caption [ref=f2e80]: Connections
+              - rowgroup [ref=f2e81]:
+                - row [ref=f2e342]:
+                  - columnheader "Connection" [ref=f2e343]
+                  - columnheader "Status" [ref=f2e344]
+                  - columnheader "URL" [ref=f2e345]
+                  - columnheader "Token" [ref=f2e86]
+                  - columnheader [ref=f2e87]
+              - rowgroup [ref=f2e88]:
+                - row [ref=f2e346]:
+                  - cell "GitHub (maestro-pilot) GitHub" [ref=f2e90]:
+                    - generic [ref=f2e91]:
+                      - text: GitHub (maestro-pilot)
+                      - generic [ref=f2e92]: GitHub
+                  - cell "connected 5d" [ref=f2e347]:
+                    - generic [ref=f2e94]:
+                      - generic [ref=f2e95]:
+                        - generic [ref=f2e96]: ●
+                        - text: connected
+                      - generic [ref=f2e97]: 5d
+                  - cell "https://api.github.com" [ref=f2e98]
+                  - cell "****fOgX" [ref=f2e99]
+                  - cell [ref=f2e348]:
+                    - generic [ref=f2e101]:
+                      - button "🔌 Test" [ref=f2e349] [cursor=pointer]
+                      - button "Edit" [ref=f2e350] [cursor=pointer]
+                      - button "Delete" [ref=f2e351] [cursor=pointer]
+                - row [ref=f2e352]:
+                  - cell "Jira (uyildiz) Jira Cloud" [ref=f2e106]:
+                    - generic [ref=f2e107]:
+                      - text: Jira (uyildiz)
+                      - generic [ref=f2e108]: Jira Cloud
+                  - cell "connected 2d" [ref=f2e353]:
+                    - generic [ref=f2e110]:
+                      - generic [ref=f2e111]:
+                        - generic [ref=f2e112]: ●
+                        - text: connected
+                      - generic [ref=f2e113]: 2d
+                  - cell "https://uyildiz.atlassian.net" [ref=f2e114]
+                  - cell "****0275" [ref=f2e115]
+                  - cell [ref=f2e354]:
+                    - generic [ref=f2e117]:
+                      - button "🔌 Test" [ref=f2e355] [cursor=pointer]
+                      - button "Edit" [ref=f2e356] [cursor=pointer]
+                      - button "Delete" [ref=f2e357] [cursor=pointer]
+                - row [ref=f2e358]:
+                  - cell "OpenRouter (LLM) OpenRouter (LLM)" [ref=f2e122]:
+                    - generic [ref=f2e123]:
+                      - text: OpenRouter (LLM)
+                      - generic [ref=f2e124]: OpenRouter (LLM)
+                  - cell "connected 5d" [ref=f2e359]:
+                    - generic [ref=f2e126]:
+                      - generic [ref=f2e127]:
+                        - generic [ref=f2e128]: ●
+                        - text: connected
+                      - generic [ref=f2e129]: 5d
+                  - cell "https://openrouter.ai/api/v1" [ref=f2e130]
+                  - cell "****eba6" [ref=f2e131]
+                  - cell [ref=f2e360]:
+                    - generic [ref=f2e133]:
+                      - button "🔌 Test" [ref=f2e361] [cursor=pointer]
+                      - button "Edit" [ref=f2e362] [cursor=pointer]
+                      - button "Delete" [ref=f2e363] [cursor=pointer]
+          - generic [ref=f2e137]:
+            - generic [ref=f2e138]:
+              - heading "Infrastructure (read-only)" [level=3] [ref=f2e364]
+              - generic [ref=f2e140]: This deployment's infrastructure — read from deploy/.env, not editable here
+            - table [ref=f2e365]:
+              - caption [ref=f2e144]: Infrastructure (read-only)
+              - rowgroup [ref=f2e145]:
+                - row [ref=f2e366]:
+                  - columnheader "Connection" [ref=f2e367]
+                  - columnheader "Status" [ref=f2e368]
+                  - columnheader "Target" [ref=f2e369]
+                  - columnheader "Credential reference" [ref=f2e370]
+              - rowgroup [ref=f2e151]:
+                - row [ref=f2e371]:
+                  - cell "Workflow engine (Temporal)" [ref=f2e372]
+                  - cell "connected probed 1m ago" [ref=f2e373]:
+                    - generic [ref=f2e155]:
+                      - generic [ref=f2e156]:
+                        - generic [ref=f2e157]: ●
+                        - text: connected
+                      - generic [ref=f2e158]: probed 1m ago
+                  - cell "localhost:7233" [ref=f2e159]
+                  - cell "none" [ref=f2e160]
+                - row [ref=f2e374]:
+                  - cell "Database (PostgreSQL)" [ref=f2e375]
+                  - cell "connected probed 1m ago" [ref=f2e376]:
+                    - generic [ref=f2e164]:
+                      - generic [ref=f2e165]:
+                        - generic [ref=f2e166]: ●
+                        - text: connected
+                      - generic [ref=f2e167]: probed 1m ago
+                  - cell "postgresql://maestro:***@localhost:55432/maestro" [ref=f2e168]
+                  - cell "DATABASE_URL" [ref=f2e169]
+                - row [ref=f2e377]:
+                  - cell "Jira (Cloud / DC)" [ref=f2e171]
+                  - cell "configured not probed" [ref=f2e378]:
+                    - generic [ref=f2e173]:
+                      - generic [ref=f2e174]:
+                        - generic [ref=f2e175]: ◍
+                        - text: configured
+                      - generic [ref=f2e176]: not probed
+                  - cell "https://uyildiz.atlassian.net" [ref=f2e177]
+                  - cell "vault:maestro/jira#token" [ref=f2e178]
+                - row [ref=f2e379]:
+                  - cell "LLM (model endpoint)" [ref=f2e380]
+                  - cell "configured not probed" [ref=f2e381]:
+                    - generic [ref=f2e182]:
+                      - generic [ref=f2e183]:
+                        - generic [ref=f2e184]: ◍
+                        - text: configured
+                      - generic [ref=f2e185]: not probed
+                  - cell "https://openrouter.ai/api (anthropic/claude-sonnet-4.5)" [ref=f2e186]
+                  - cell "kv/llm#apikey" [ref=f2e187]
+                - row [ref=f2e382]:
+                  - cell "Azure DevOps" [ref=f2e189]
+                  - cell "not configured not probed" [ref=f2e383]:
+                    - generic [ref=f2e191]:
+                      - generic [ref=f2e192]:
+                        - generic [ref=f2e193]: ○
+                        - text: not configured
+                      - generic [ref=f2e194]: not probed
+                  - cell "no address configured" [ref=f2e384]
+                  - cell "vault:maestro/ado#pat" [ref=f2e196]
+                - row [ref=f2e385]:
+                  - cell "Vault" [ref=f2e198]
+                  - cell "not configured not probed" [ref=f2e386]:
+                    - generic [ref=f2e200]:
+                      - generic [ref=f2e201]:
+                        - generic [ref=f2e202]: ○
+                        - text: not configured
+                      - generic [ref=f2e203]: not probed
+                  - cell "no address configured" [ref=f2e387]
+                  - cell "kubernetes-auth" [ref=f2e205]
+                - row [ref=f2e388]:
+                  - cell "Storage (StoragePort)" [ref=f2e389]
+                  - cell "not configured not probed" [ref=f2e390]:
+                    - generic [ref=f2e209]:
+                      - generic [ref=f2e210]:
+                        - generic [ref=f2e211]: ○
+                        - text: not configured
+                      - generic [ref=f2e212]: not probed
+                  - cell "no address configured" [ref=f2e391]
+                  - cell "vault:maestro/storage#access-key" [ref=f2e214]
+                - row [ref=f2e392]:
+                  - cell "Egress proxy" [ref=f2e216]
+                  - cell "not configured not probed" [ref=f2e393]:
+                    - generic [ref=f2e218]:
+                      - generic [ref=f2e219]:
+                        - generic [ref=f2e220]: ○
+                        - text: not configured
+                      - generic [ref=f2e221]: not probed
+                  - cell "no address configured" [ref=f2e394]
+                  - cell "none" [ref=f2e223]
+                - row [ref=f2e395]:
+                  - cell "Identity (AD/LDAP)" [ref=f2e396]
+                  - cell "configured not probed" [ref=f2e397]:
+                    - generic [ref=f2e227]:
+                      - generic [ref=f2e228]:
+                        - generic [ref=f2e229]: ◍
+                        - text: configured
+                      - generic [ref=f2e230]: not probed
+                  - cell "local" [ref=f2e231]
+                  - cell "bcrypt" [ref=f2e232]
+                - row [ref=f2e398]:
+                  - cell "SIEM" [ref=f2e234]
+                  - cell "not configured not probed" [ref=f2e399]:
+                    - generic [ref=f2e236]:
+                      - generic [ref=f2e237]:
+                        - generic [ref=f2e238]: ○
+                        - text: not configured
+                      - generic [ref=f2e239]: not probed
+                  - cell "no address configured" [ref=f2e400]
+                  - cell "none" [ref=f2e241]
+                - row [ref=f2e401]:
+                  - cell "Confluence (PublishPort)" [ref=f2e243]
+                  - cell "configured not probed" [ref=f2e402]:
+                    - generic [ref=f2e245]:
+                      - generic [ref=f2e246]:
+                        - generic [ref=f2e247]: ◍
+                        - text: configured
+                      - generic [ref=f2e248]: not probed
+                  - cell "https://uyildiz.atlassian.net" [ref=f2e249]
+                  - cell "vault:maestro/jira#token" [ref=f2e250]
+          - generic [ref=f2e251]:
+            - generic [ref=f2e252]:
+              - heading "Engine settings" [level=3] [ref=f2e403]
+              - generic [ref=f2e254]: Runtime settings of the flow engine (pilot) — changes apply to the next job
+              - button "Save" [ref=f2e404] [cursor=pointer]
+            - generic [ref=f2e258]:
+              - generic [ref=f2e259]:
+                - generic [ref=f2e260]: Approver group
+                - textbox "Approver group" [ref=f2e405]: jira-users-uyildiz
+              - generic [ref=f2e262]:
+                - generic [ref=f2e263]: Model
+                - textbox "Model" [ref=f2e264]: anthropic/claude-sonnet-4.5
+              - generic [ref=f2e265]:
+                - generic [ref=f2e266]: Command poll interval (ms)
+                - spinbutton "Command poll interval (ms)" [ref=f2e406]: "3000"
+              - generic [ref=f2e268]:
+                - generic [ref=f2e269]: Discovery poll interval (ms)
+                - spinbutton "Discovery poll interval (ms)" [ref=f2e407]: "15000"
+              - generic [ref=f2e271]:
+                - generic [ref=f2e272]: Data class
+                - combobox "Data class" [ref=f2e408]:
+                  - option "public"
+                  - option "internal"
+                  - option "confidential" [selected]
+              - generic [ref=f2e274]:
+                - generic [ref=f2e275]: Operator account
+                - textbox "Operator account" [ref=f2e409]: 0uguryldz94@gmail.com
+              - generic [ref=f2e277]:
+                - generic [ref=f2e278]: Sandbox root
+                - textbox "Sandbox root" [ref=f2e410]: /home/ubuntu/coder/maestro/.sandbox
+              - generic [ref=f2e280]:
+                - generic [ref=f2e281]: Review status name
+                - textbox "Review status name" [ref=f2e411]: İNCELEMEDE
+              - generic [ref=f2e283]:
+                - checkbox "Auto-merge" [ref=f2e412]
+                - text: Auto-merge
+              - generic [ref=f2e285]:
+                - checkbox "autoStart" [checked] [ref=f2e286]
+                - text: autoStart
+          - generic [ref=f2e287]:
+            - generic [ref=f2e288]:
+              - heading "Emergency stop (kill switch)" [level=3] [ref=f2e413]
+              - generic [ref=f2e290]: Safely halts Maestro when something goes wrong. Admin only · reason required · written to the audit log.
+            - generic [ref=f2e291]:
+              - generic [ref=f2e292]:
+                - generic [ref=f2e414]:
+                  - term [ref=f2e415]: Current state
+                  - definition [ref=f2e416]:
+                    - generic [ref=f2e417]:
+                      - generic [ref=f2e418]: ●
+                      - text: Running normally
+                - generic [ref=f2e419]:
+                  - term [ref=f2e420]: Last changed by
+                  - definition [ref=f2e421]: maestro-worker
+                - generic [ref=f2e422]:
+                  - term [ref=f2e423]: Reason
+                  - definition [ref=f2e424]: initial
+              - generic [ref=f2e304]:
+                - generic [ref=f2e305]:
+                  - generic [ref=f2e306]:
+                    - generic [ref=f2e307]: ① Stop taking new work (soft brake)
+                    - generic [ref=f2e308]: No new tickets are picked up from Jira. Work already running is NOT cut off — it finishes naturally. The analysis sandbox stays up.
+                  - button "Stop taking new work" [ref=f2e425] [cursor=pointer]
+                - generic [ref=f2e310]:
+                  - generic [ref=f2e311]:
+                    - generic [ref=f2e312]: ② Stop everything (emergency brake)
+                    - generic [ref=f2e313]: A 'stop' signal goes to every running ticket. Open approval gates keep waiting (never lost). The persistent analysis sandbox is NOT torn down — Maestro's core environment stays up.
+                  - button "Stop everything" [ref=f2e426] [cursor=pointer]
+  - region

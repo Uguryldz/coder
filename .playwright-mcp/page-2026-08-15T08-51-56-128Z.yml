@@ -1,0 +1,187 @@
+- generic [ref=f16e2]:
+  - generic [ref=f16e298]:
+    - navigation "Ana gezinme" [ref=f16e299]:
+      - generic [ref=f16e300]:
+        - generic [ref=f16e301]: M
+        - generic [ref=f16e302]:
+          - text: Maestro
+          - generic [ref=f16e303]: SDLC otomasyonu
+      - generic [ref=f16e304]:
+        - generic [ref=f16e305]: İşler
+        - link "Panel" [ref=f16e306] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f16e307]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f16e308] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f16e309]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f16e310] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f16e311]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f16e312]:
+        - generic [ref=f16e313]: Ajanlar
+        - link "Ajan tanımları" [ref=f16e314] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f16e315]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f16e316] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f16e317]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f16e318] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f16e319]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f16e320] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f16e321]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f16e322] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f16e323]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f16e324]: yakında
+      - generic [ref=f16e325]:
+        - generic [ref=f16e326]: Denetim
+        - link "Denetim izi" [ref=f16e327] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f16e328]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f16e329] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f16e330]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f16e331] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f16e332]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f16e333] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f16e334]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f16e335]: yakında
+        - link "Kanıt paketi yakında" [ref=f16e336] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f16e337]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f16e338]: yakında
+      - generic [ref=f16e339]:
+        - generic [ref=f16e340]: Kurulum
+        - link "Proje bağlama" [ref=f16e341] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f16e342]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f16e343] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f16e344]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [active] [ref=f16e345] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f16e346]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f16e347] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f16e348]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f16e349] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f16e350]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f16e351] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f16e352]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f16e353]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f16e354] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f16e355]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f16e356]:
+      - banner [ref=f16e357]:
+        - heading "Kullanıcılar & roller" [level=1] [ref=f16e887]
+        - generic [ref=f16e359]:
+          - generic [ref=f16e360]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f16e361]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f16e362]: admin
+        - button "Çıkış" [ref=f16e363] [cursor=pointer]
+      - main [ref=f16e364]:
+        - generic [ref=f16e888]:
+          - generic [ref=f16e889]:
+            - generic [ref=f16e890]:
+              - heading "Kullanıcılar" [level=3] [ref=f16e891]
+              - generic [ref=f16e892]: Yerel hesaplar — ekle, düzenle, pasifleştir (M8/M86)
+              - button "➕ Kullanıcı ekle" [ref=f16e894] [cursor=pointer]
+            - table [ref=f16e897]:
+              - caption [ref=f16e898]: Kullanıcılar
+              - rowgroup [ref=f16e899]:
+                - row [ref=f16e900]:
+                  - columnheader "Kullanıcı" [ref=f16e901]
+                  - columnheader "Dizin grubu" [ref=f16e902]
+                  - columnheader "Maestro rolü" [ref=f16e903]
+                  - columnheader "Hesap" [ref=f16e904]
+                  - columnheader [ref=f16e905]
+              - rowgroup [ref=f16e906]:
+                - row [ref=f16e907]:
+                  - cell "admin admin@maestro.local" [ref=f16e908]:
+                    - generic [ref=f16e909]:
+                      - text: admin
+                      - generic [ref=f16e910]: admin@maestro.local
+                  - cell "maestro-admins" [ref=f16e911]
+                  - cell "viewer admin" [ref=f16e912]:
+                    - generic [ref=f16e913]:
+                      - generic [ref=f16e914]: viewer
+                      - generic [ref=f16e915]: admin
+                  - cell "etkin" [ref=f16e916]
+                  - cell [ref=f16e918]:
+                    - generic [ref=f16e919]:
+                      - button "Düzenle" [ref=f16e920] [cursor=pointer]
+                      - button "Pasifleştir" [ref=f16e921] [cursor=pointer]
+          - generic [ref=f16e922]:
+            - generic [ref=f16e923]:
+              - heading "Rol kümesi" [level=3] [ref=f16e924]
+              - generic [ref=f16e925]: Kapalı küme — bir oturumun yetkisi bu listeden okunur
+            - generic [ref=f16e926]:
+              - generic [ref=f16e927]:
+                - generic [ref=f16e928]:
+                  - term [ref=f16e929]:
+                    - generic [ref=f16e930]: admin
+                  - definition [ref=f16e931]: "Tam yetki: kullanıcılar, tüm ayarlar, bağlantılar, acil durdurma. Platformu yönetir."
+                - generic [ref=f16e932]:
+                  - term [ref=f16e933]:
+                    - generic [ref=f16e934]: tech-lead
+                  - definition [ref=f16e935]: "Teknik lider: kod ve PR onay kapıları, mühendislik kararları. Ayar/kurulum görebilir."
+                - generic [ref=f16e936]:
+                  - term [ref=f16e937]:
+                    - generic [ref=f16e938]: product-owner
+                  - definition [ref=f16e939]: "Ürün sahibi / analist yöneticisi: analiz onayı verir, iş riskini yükseltebilir."
+                - generic [ref=f16e940]:
+                  - term [ref=f16e941]:
+                    - generic [ref=f16e942]: qa
+                  - definition [ref=f16e943]: "Test kalite: test senaryosu ve sonuç onay kapıları."
+                - generic [ref=f16e944]:
+                  - term [ref=f16e945]:
+                    - generic [ref=f16e946]: developer
+                  - definition [ref=f16e947]: "Geliştirici: kendi işlerini izler, iş başlatır, netleştirme sorularını yanıtlar."
+                - generic [ref=f16e948]:
+                  - term [ref=f16e949]:
+                    - generic [ref=f16e950]: viewer
+                  - definition [ref=f16e951]: "Yalnız izleme: her giriş yapanın tabanı. Görür ama hiçbir kapıyı onaylayamaz."
+              - generic [ref=f16e952]: "Roller doğrudan verilmez: yetki, dizin grubu üyeliğinin okunmasıyla belirlenir (M8). Bir hesap eklerken ya da düzenlerken grup seçilir; roller platformun o gruplardan çıkardığı okumadır. Kapalı kümenin dışındaki bir grup hiçbir rol vermez."
+          - generic [ref=f16e953]:
+            - generic [ref=f16e954]:
+              - heading "Görevler ayrılığı (SoD)" [level=3] [ref=f16e955]
+              - generic [ref=f16e956]: İş akışı motorunun uyguladığı kurallar (M32/M92)
+            - generic [ref=f16e957]:
+              - list [ref=f16e958]:
+                - listitem [ref=f16e959]: Kodu üreten kimlik ≠ onaylayan kimlik
+                - listitem [ref=f16e960]: PO onayı ≠ Tech Lead onayı
+                - listitem [ref=f16e961]: PR onaylayan ≠ merge eden
+                - listitem [ref=f16e962]: QA senaryo onayı ≠ QA sonuç onayı
+                - listitem [ref=f16e963]: AI servis hesabı onay veremez
+              - generic [ref=f16e964]: AI servis hesabı onay veremez — teknik olarak yetkisi yoktur.
+  - region

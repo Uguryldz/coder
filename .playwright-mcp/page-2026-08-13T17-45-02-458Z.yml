@@ -1,0 +1,175 @@
+- generic [ref=f98e2]:
+  - generic [ref=f98e23]:
+    - navigation "Ana gezinme" [ref=f98e24]:
+      - generic [ref=f98e25]:
+        - generic [ref=f98e26]: M
+        - generic [ref=f98e27]:
+          - text: Maestro
+          - generic [ref=f98e28]: SDLC otomasyonu
+      - generic [ref=f98e29]:
+        - generic [ref=f98e30]: İzleme
+        - link "Panel" [ref=f98e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f98e32]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f98e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f98e34]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f98e35] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f98e36]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f98e37] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f98e38]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f98e39] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f98e40]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f98e41]:
+        - generic [ref=f98e42]: Çalışma
+        - link "Runner havuzları" [ref=f98e43] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f98e44]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f98e45] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f98e46]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f98e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f98e48]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f98e49] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f98e50]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f98e51] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f98e52]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f98e53] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f98e54]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f98e55] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f98e56]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f98e57]:
+        - generic [ref=f98e58]: Yönetişim
+        - link "Denetim izi" [ref=f98e59] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f98e60]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f98e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f98e62]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f98e63] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f98e64]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f98e65] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f98e66]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f98e67] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f98e68]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f98e69] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f98e70]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f98e71]:
+        - generic [ref=f98e72]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f98e73] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f98e74]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f98e75] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f98e76]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f98e77] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f98e78]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f98e79] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f98e80]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f98e81] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f98e82]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f98e83] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f98e84]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f98e85] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f98e86]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [active] [ref=f98e87] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f98e88]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f98e89]:
+      - banner [ref=f98e90]:
+        - heading "Sistem sağlığı" [level=1] [ref=f98e110]
+        - generic [ref=f98e92]:
+          - generic [ref=f98e93]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f98e94]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f98e95]: admin
+        - button "Çıkış" [ref=f98e96] [cursor=pointer]
+      - main [ref=f98e97]:
+        - generic [ref=f98e111]:
+          - generic [ref=f98e113]:
+            - generic [ref=f98e114]: ●
+            - text: Tüm servisler sağlıklı
+          - generic [ref=f98e115]:
+            - heading "Servisler" [level=3] [ref=f98e117]
+            - table [ref=f98e120]:
+              - caption [ref=f98e121]: Servisler
+              - rowgroup [ref=f98e122]:
+                - row [ref=f98e123]:
+                  - columnheader "Servis" [ref=f98e124]
+                  - columnheader "Durum" [ref=f98e125]
+                  - columnheader "Sürüm" [ref=f98e126]
+                  - columnheader "Son kontrol" [ref=f98e127]
+                  - columnheader "Not" [ref=f98e128]
+              - rowgroup [ref=f98e129]:
+                - row [ref=f98e130]:
+                  - cell "PostgreSQL" [ref=f98e131]
+                  - cell [ref=f98e132]:
+                    - generic [ref=f98e133]:
+                      - generic [ref=f98e134]: ●
+                      - text: sağlıklı
+                  - cell "postgres-16" [ref=f98e135]
+                  - cell "az önce" [ref=f98e136]
+                  - cell "—" [ref=f98e137]
+                - row [ref=f98e138]:
+                  - cell "Pilot (akış motoru)" [ref=f98e139]
+                  - cell [ref=f98e140]:
+                    - generic [ref=f98e141]:
+                      - generic [ref=f98e142]: ●
+                      - text: sağlıklı
+                  - cell "pilot" [ref=f98e143]
+                  - cell "az önce" [ref=f98e144]
+                  - cell "—" [ref=f98e145]
+          - generic [ref=f98e146]:
+            - generic [ref=f98e147]:
+              - heading "Yedekleme" [level=3] [ref=f98e148]
+              - generic [ref=f98e149]: Yedek alma ve geri dönüş tatbikatı (M66)
+            - generic [ref=f98e151]:
+              - generic [ref=f98e152]: 🚧
+              - paragraph [ref=f98e153]: Bu bölüm henüz yayında değil
+              - paragraph [ref=f98e154]: Yedekleme ve geri dönüş tatbikatı durumunu sunan bir uç henüz yok. Uydurma bir "tatbikat yapılmadı" satırı, platformun bu konuyu takip ettiği izlenimi verirdi (M66) — o yüzden burası boş.
+  - region

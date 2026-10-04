@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dinleme Kuralı · Maestro</title>
+<style>
+  :root{
+    --board:#EDEEEA; --surface:#fff; --sunk:#F5F6F3;
+    --ink:#16191C; --ink2:#5C6470; --ink3:#8A929C;
+    --line:#D3D7D1; --line2:#B6BCB4;
+    --bot:#1F5F5B; --bot-bg:#DEEAE8; --bot-line:#B9D2CF;
+    --human:#9C5A15; --human-bg:#F8EEDF; --human-line:#E0CBA8;
+    --off-bg:#EAEBE8;
+    --bad:#A32E2E; --bad-bg:#F7E2E2;
+    --ok:#2F6B3A; --ok-bg:#E3EFE5;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--board);color:var(--ink);
+    font:15px/1.55 "Inter","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit}
+  :focus-visible{outline:2px solid var(--bot);outline-offset:2px;border-radius:4px}
+
+  .app{height:100vh;display:flex;flex-direction:column}
+  .bar{display:flex;align-items:center;gap:16px;padding:11px 20px;
+    background:var(--surface);border-bottom:1px solid var(--line)}
+  .bar b{font-weight:640;letter-spacing:-.015em}
+  .bar .sp{flex:1}
+  .btn{border:1px solid var(--line);background:var(--surface);padding:6px 13px;
+    border-radius:6px;cursor:pointer}
+  .btn:hover{border-color:var(--bot);color:var(--bot)}
+  .btn.pri{background:var(--bot);border-color:var(--bot);color:#fff}
+  .btn.pri:hover{background:#1a504c}
+
+  .wrap{flex:1;display:grid;grid-template-columns:minmax(700px,1fr) 380px;min-height:0}
+  .board{overflow:auto;padding:20px 24px 60px}
+  .side{overflow:auto;background:var(--surface);border-left:1px solid var(--line);
+    padding:18px 20px 60px}
+
+  h1{margin:0 0 3px;font-size:18px;font-weight:640;letter-spacing:-.015em}
+  .sub{margin:0 0 18px;color:var(--ink2);font-size:13.5px;max-width:66ch}
+
+  .palette{background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    padding:11px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+  .palette b{font-size:12.5px;font-weight:640;white-space:nowrap}
+  .palette .note{font-size:12px;color:var(--ink2);flex:1}
+  .pool{display:flex;gap:7px;min-height:24px;align-items:center}
+  .pool:empty::after{content:'hepsi bağlı';font-size:12px;color:var(--ink3);font-style:italic}
+
+  .heads{display:grid;grid-template-columns:176px 1fr;gap:18px;margin-bottom:8px}
+  .heads span{font-size:11px;font-weight:640;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--ink3)}
+
+  .lane{display:grid;grid-template-columns:176px 1fr;gap:18px;margin-bottom:8px}
+  .st{background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    padding:11px 13px;display:flex;flex-direction:column;justify-content:center}
+  .st .nm{font-weight:600;font-size:14.5px}
+  .st .ct{font-size:11px;color:var(--ink3);margin-top:1px}
+  .st .live{margin-top:6px;font-size:11.5px;color:var(--bot);font-weight:560}
+
+  .steps{display:flex;flex-direction:column;gap:6px}
+  .step{background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    padding:9px 11px;display:flex;align-items:center;gap:9px;cursor:pointer;flex-wrap:wrap}
+  .step:hover{border-color:var(--line2)}
+  .step.sel{border-color:var(--bot);box-shadow:0 0 0 1px var(--bot)}
+  .step.gate{background:var(--human-bg);border-color:var(--human-line)}
+  .step.gate.sel{border-color:var(--human);box-shadow:0 0 0 1px var(--human)}
+  .step.skip{background:var(--off-bg);border-style:dashed}
+  .step.ret{background:var(--sunk);border-style:dashed}
+  .step .lbl{flex:1;min-width:160px}
+  .step .lbl b{display:block;font-weight:560;font-size:14px}
+  .step .lbl i{display:block;font-style:normal;font-size:11.5px;color:var(--ink2)}
+  .step.skip .lbl b,.step.skip .lbl i{color:var(--ink3)}
+
+  .agent{display:inline-flex;align-items:center;gap:4px;background:var(--bot-bg);
+    color:var(--bot);border:1px solid var(--bot-line);border-radius:6px;
+    padding:3px 7px;font-size:12px;font-weight:560;cursor:grab;white-space:nowrap}
+  .agent:active{cursor:grabbing}
+  .agent.drag{opacity:.4}
+  .agent .rm{border:0;background:none;color:var(--bot);cursor:pointer;
+    padding:0 0 0 1px;font-size:14px;line-height:1;opacity:.5}
+  .agent .rm:hover{opacity:1;color:var(--bad)}
+  .slot{border:1px dashed var(--line2);border-radius:6px;padding:3px 8px;
+    font-size:11.5px;color:var(--ink3);white-space:nowrap}
+  .slot.over{border-color:var(--bot);background:var(--bot-bg);color:var(--bot)}
+  .who{font-size:12px;color:var(--human);font-weight:560;white-space:nowrap}
+
+  .moves{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;
+    color:var(--ink2);background:var(--sunk);border:1px solid var(--line);
+    border-radius:6px;padding:2px 7px;white-space:nowrap}
+  .moves select{border:0;background:none;font:inherit;font-size:11.5px;
+    font-weight:600;color:var(--bot);cursor:pointer;padding:0;outline:none}
+  .moves.human{background:var(--human-bg);border-color:var(--human-line)}
+  .moves.human select{color:var(--human)}
+
+  .arrow{display:grid;grid-template-columns:176px 1fr;gap:18px;height:15px;align-items:center}
+  .arrow svg{grid-column:1;justify-self:center}
+
+  .side h2{margin:0 0 3px;font-size:16px;font-weight:640;letter-spacing:-.01em}
+  .side .lead{margin:0 0 15px;font-size:13px;color:var(--ink2)}
+  .f{margin-bottom:13px}
+  .f label{display:block;font-size:12.5px;color:var(--ink2);margin-bottom:5px}
+  .f select{width:100%;padding:7px 9px;border:1px solid var(--line);
+    border-radius:6px;background:var(--surface);font:inherit}
+  .hint{margin:5px 0 0;font-size:11.5px;color:var(--ink3);line-height:1.45}
+  .sec{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+  .sec h3{margin:0 0 3px;font-size:13px;font-weight:640}
+  .sec .note{margin:0 0 11px;font-size:12px;color:var(--ink2)}
+
+  .fam{display:flex;flex-direction:column;gap:7px;margin-bottom:9px}
+  .card{border:1px solid var(--line);border-radius:8px;padding:9px 11px;
+    display:flex;align-items:center;gap:9px;background:var(--surface)}
+  .card.empty{border-style:dashed;background:var(--sunk)}
+  .card .val{flex:1;min-width:0}
+  .card .val b{display:block;font-weight:560;font-size:13.5px}
+  .card .val i{display:block;font-style:normal;font-size:11.5px;color:var(--ink2);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card.empty .val i{color:var(--human)}
+  .card .x{border:0;background:none;color:var(--ink3);cursor:pointer;font-size:15px;padding:2px}
+  .card .x:hover{color:var(--bad)}
+  .card select{border:1px solid var(--line);border-radius:5px;padding:4px 6px;
+    font:inherit;font-size:12.5px;background:var(--surface);max-width:180px}
+
+  .alert{display:flex;gap:8px;padding:10px 12px;border-radius:7px;font-size:12.5px;
+    background:var(--bad-bg);color:#6B2222;margin-bottom:15px;line-height:1.45}
+  .alert b{font-weight:640}
+
+  .pill{font-size:11px;padding:2px 7px;border-radius:99px;white-space:nowrap;font-weight:560}
+  .pill.off{background:var(--off-bg);color:var(--ink3)}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:18px;padding-top:13px;
+    border-top:1px solid var(--line);font-size:12px;color:var(--ink2)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .sw{width:20px;height:12px;border-radius:4px;border:1px solid var(--line)}
+  .sw.b{background:var(--bot-bg);border-color:var(--bot-line)}
+  .sw.h{background:var(--human-bg);border-color:var(--human-line)}
+  .sw.o{background:var(--off-bg);border-style:dashed}
+
+  @media (max-width:1100px){
+    .wrap{grid-template-columns:1fr}
+    .side{border-left:0;border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+<header class="bar">
+  <b>Maestro</b>
+  <span style="color:var(--ink2);font-size:13.5px">OPS · dinleme kuralı</span>
+  <span class="sp"></span>
+  <button class="btn">Kuru çalıştır</button>
+  <button class="btn pri">Kaydet</button>
+</header>
+
+<div class="wrap">
+
+  <main class="board">
+    <h1>Epik tipindeki işler</h1>
+    <p class="sub">Solda Jira statüleri, sağda o statüde koşan adımlar. Ajanlar işini bitirince
+      ticket'ı kendi taşır — nereye taşıyacağını adımın sonundaki rozetten seç.</p>
+
+    <div class="palette">
+      <b>Bağlı olmayan ajanlar</b>
+      <span class="note">Bir adıma sürükle; çıkarmak için × bas. Çıkarılan adım atlanır.</span>
+      <div class="pool" id="pool"></div>
+    </div>
+
+    <div class="heads"><span>Jira statüsü</span><span>Maestro adımları</span></div>
+
+    <div class="lane">
+      <div class="st"><span class="nm">Yapılacaklar</span><span class="ct">Yapılacaklar</span>
+        <span class="live">2 ticket bekliyor</span></div>
+      <div class="steps">
+        <div class="step sel" data-s="2">
+          <span class="lbl"><b>Tamlık kontrolü</b><i>ticket yeterli bilgi taşıyor mu</i></span>
+          <span class="slot">ajan bırak</span>
+        </div>
+        <div class="step" data-s="2b">
+          <span class="lbl"><b>Soru sorma</b><i>eksikse raportörden bilgi ister, cevap gelene kadar bekler</i></span>
+          <span class="who">👤 raportör</span>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><svg width="12" height="15"><path d="M6 0V11M2 7l4 5 4-5" stroke="#8A929C" fill="none" stroke-width="1.4"/></svg></div>
+
+    <div class="lane">
+      <div class="st"><span class="nm">Devam Ediyor</span><span class="ct">Devam Ediyor</span>
+        <span class="live">1 ticket · OPS-78</span></div>
+      <div class="steps">
+        <div class="step" data-s="3o">
+          <span class="lbl"><b>Depo keşfi</b><i>kodu okur, gereksinimi dosyada arar</i></span>
+          <span class="agent" draggable="true" data-a="Analist">Analist<button class="rm" title="Çıkar">×</button></span>
+        </div>
+        <div class="step" data-s="3">
+          <span class="lbl"><b>Analiz</b><i>gereksinim → kod eşlemesi, eksikler, riskler</i></span>
+          <span class="agent" draggable="true" data-a="Analist">Analist<button class="rm" title="Çıkar">×</button></span>
+        </div>
+        <div class="step" data-s="3p">
+          <span class="lbl"><b>Plan</b><i>dosya listesi, uç sözleşmesi, DTO alanları</i></span>
+          <span class="agent" draggable="true" data-a="Plancı">Plancı<button class="rm" title="Çıkar">×</button></span>
+          <span class="moves">bitince ticket'ı taşı →
+            <select><option>İNCELEMEDE</option><option>Devam Ediyor</option><option>Tamam</option><option>taşıma</option></select></span>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><svg width="12" height="15"><path d="M6 0V11M2 7l4 5 4-5" stroke="#8A929C" fill="none" stroke-width="1.4"/></svg></div>
+
+    <div class="lane">
+      <div class="st"><span class="nm">İNCELEMEDE</span><span class="ct">Devam Ediyor</span></div>
+      <div class="steps">
+        <div class="step gate skip" data-s="4">
+          <span class="lbl"><b>PO onayı</b><i>bu kuralda kapalı — düşük riskli işlerde açılmaz</i></span>
+          <span class="pill off">kapalı</span>
+        </div>
+        <div class="step gate" data-s="5">
+          <span class="lbl"><b>Teknik lider onayı</b><i>analizi onaylar ya da geri gönderir</i></span>
+          <span class="who">👤 insan</span>
+          <span class="moves human">onaylayınca →
+            <select><option>Tamam</option><option>Devam Ediyor</option><option>taşıma</option></select></span>
+        </div>
+        <div class="step ret" data-s="5r">
+          <span class="lbl"><b>↩ Geri gönderilirse</b><i>analiz yeniden yazılır, gerekçe ajana verilir · en fazla 3 tur</i></span>
+          <span class="moves">taşı →
+            <select><option>Devam Ediyor</option><option>Yapılacaklar</option><option>taşıma</option></select></span>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><svg width="12" height="15"><path d="M6 0V11M2 7l4 5 4-5" stroke="#8A929C" fill="none" stroke-width="1.4"/></svg></div>
+
+    <div class="lane">
+      <div class="st"><span class="nm">Tamam</span><span class="ct">Tamamlandı</span></div>
+      <div class="steps">
+        <div class="step" data-s="13">
+          <span class="lbl"><b>Teslim</b><i>analiz belgesi ticket'a eklenir, ticket kapanır</i></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw b"></i> ajan çalışır ve ticket'ı taşır</span>
+      <span><i class="sw h"></i> insan karar verir</span>
+      <span><i class="sw o"></i> bu kuralda kapalı</span>
+    </div>
+  </main>
+
+  <aside class="side">
+    <h2>Tamlık kontrolü</h2>
+    <p class="lead">Ticket kurala düştüğünde ilk çalışan adım.</p>
+
+    <div class="alert"><span>⚠</span>
+      <div><b>Depo okunamıyor.</b> Klon anahtarı ortamda yok; analiz ticket metninden
+        üretiliyor. Son 29 koşunun 27'sinde klon açılamadı.</div></div>
+
+    <div class="f">
+      <label>Bu kural hangi ticket'ları alır</label>
+      <select><option>Konu türü = Epik</option><option>Etiket = maestro</option>
+        <option>Statü = Yapılacaklar</option><option>Bota atanan her şey</option></select>
+    </div>
+
+    <div class="f">
+      <label>Akış tipi</label>
+      <select><option>analiz — kod yazılmaz, belge teslim edilir</option>
+        <option>gelistirme — analiz + kod + PR</option>
+        <option>duzeltme — analiz kapıları atlanır</option></select>
+      <p class="hint">Akış tipi hangi adımların koşacağını belirler.</p>
+    </div>
+
+    <div class="f">
+      <label>Yalnız bu statülerdeyken çalış</label>
+      <select><option>Yapılacaklar</option><option>kısıt yok</option></select>
+      <p class="hint">Giriş kapısı. Ticket başka statüdeyse kural hiç eşleşmez.</p>
+    </div>
+
+    <div class="sec">
+      <h3>Hangi depo açılır</h3>
+      <p class="note">Ticket'ın <b>İş Ailesi</b> alanına göre. Analist ve geliştirici aynı klonu kullanır.</p>
+
+      <div class="f">
+        <label>Depoyu belirleyen alan</label>
+        <select><option>İş Ailesi</option><option>Bileşen</option><option>Etiket</option>
+          <option>alan kullanma — tek depo</option></select>
+      </div>
+
+      <div class="fam" id="fam">
+        <div class="card">
+          <span class="val"><b>Faturalama</b><i>yaylagrup/billing · main</i></span>
+          <button class="x" title="Kaldır">×</button>
+        </div>
+        <div class="card">
+          <span class="val"><b>Kimlik</b><i>yaylagrup/identity · develop</i></span>
+          <button class="x" title="Kaldır">×</button>
+        </div>
+        <div class="card empty">
+          <span class="val"><b>Entegrasyon</b><i>depo seçilmedi</i></span>
+          <select><option>depo seç…</option><option>yaylagrup/maestro-bff</option>
+            <option>yaylagrup/billing</option><option>yaylagrup/identity</option></select>
+        </div>
+        <div class="card empty">
+          <span class="val"><b>Raporlama</b><i>depo seçilmedi</i></span>
+          <select><option>depo seç…</option><option>yaylagrup/reporting</option>
+            <option>yaylagrup/billing</option></select>
+        </div>
+      </div>
+      <p class="hint">Jira'daki iş ailelerinin hepsi listede. Depo seçilmemiş bir aileden
+        ticket gelirse varsayılan depoda analiz edilir ve ticket'a not düşülür.</p>
+    </div>
+  </aside>
+
+</div>
+</div>
+
+<script>
+let dragged=null;
+function wire(el){
+  el.addEventListener('dragstart',e=>{dragged=el;el.classList.add('drag');
+    e.dataTransfer.effectAllowed='move';});
+  el.addEventListener('dragend',()=>{el.classList.remove('drag');dragged=null;});
+  const rm=el.querySelector('.rm');
+  if(rm)rm.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    const slot=document.createElement('span');
+    slot.className='slot';slot.textContent='ajan bırak';
+    el.replaceWith(slot);zone(slot);
+    const c=document.createElement('span');
+    c.className='agent';c.draggable=true;c.dataset.a=el.dataset.a;c.textContent=el.dataset.a;
+    document.getElementById('pool').appendChild(c);wire(c);
+  });
+}
+function zone(z){
+  z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('over');});
+  z.addEventListener('dragleave',()=>z.classList.remove('over'));
+  z.addEventListener('drop',e=>{
+    e.preventDefault();z.classList.remove('over');
+    if(!dragged)return;
+    const n=dragged.dataset.a;
+    const c=document.createElement('span');
+    c.className='agent';c.draggable=true;c.dataset.a=n;
+    c.innerHTML=n+'<button class="rm" title="Çıkar">×</button>';
+    z.replaceWith(c);wire(c);
+    if(dragged.parentElement&&dragged.parentElement.id==='pool')dragged.remove();
+  });
+}
+document.querySelectorAll('.agent').forEach(wire);
+document.querySelectorAll('.slot').forEach(zone);
+
+document.querySelectorAll('.step').forEach(s=>{
+  s.addEventListener('click',e=>{
+    if(e.target.closest('select')||e.target.closest('.rm'))return;
+    document.querySelectorAll('.step').forEach(x=>x.classList.remove('sel'));
+    s.classList.add('sel');
+    document.querySelector('.side h2').textContent=s.querySelector('.lbl b').textContent;
+  });
+});
+document.getElementById('fam').addEventListener('click',e=>{
+  if(e.target.classList.contains('x')){
+    const c=e.target.closest('.card');
+    const n=c.querySelector('b').textContent;
+    c.classList.add('empty');
+    c.innerHTML='<span class="val"><b>'+n+'</b><i>depo seçilmedi</i></span>'+
+      '<select><option>depo seç…</option><option>yaylagrup/billing</option>'+
+      '<option>yaylagrup/identity</option><option>yaylagrup/maestro-bff</option></select>';
+  }
+});
+document.getElementById('fam').addEventListener('change',e=>{
+  if(e.target.tagName==='SELECT'&&e.target.selectedIndex>0){
+    const c=e.target.closest('.card');
+    const n=c.querySelector('b').textContent;
+    c.classList.remove('empty');
+    c.innerHTML='<span class="val"><b>'+n+'</b><i>'+e.target.value+' · main</i></span>'+
+      '<button class="x" title="Kaldır">×</button>';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maestro · Akış ve ajanlar</title>
+<style>
+  :root{
+    --board:#E4E7E3;
+    --surface:#FFFFFF;
+    --ink:#14181C;
+    --ink-2:#5A6470;
+    --line:#C8CEC8;
+    --wire:#1F5F5B;
+    --wire-soft:#DCE9E7;
+    --idle:#9AA4A2;
+    --warn:#A85B12;
+    --warn-soft:#F6E9DA;
+    --fail:#A32E2E;
+    --fail-soft:#F6E0E0;
+    --ok:#2F6B3A;
+    --focus:#1F5F5B;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--board);
+    color:var(--ink);
+    font:15px/1.5 "Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  code,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.85em;letter-spacing:-.01em}
+  button{font:inherit;color:inherit}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+
+  /* ---------- kabuk ---------- */
+  .app{height:100vh;display:flex;flex-direction:column}
+  .bar{
+    display:flex;align-items:center;gap:18px;
+    padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--line);
+  }
+  .brand{font-weight:640;letter-spacing:-.015em}
+  .brand span{color:var(--ink-2);font-weight:420;margin-left:8px}
+  .bar .spacer{flex:1}
+  .meta{color:var(--ink-2);font-size:13px}
+  .btn{
+    border:1px solid var(--line);background:var(--surface);
+    padding:7px 14px;border-radius:6px;cursor:pointer;
+  }
+  .btn:hover{border-color:var(--wire);color:var(--wire)}
+  .btn.primary{background:var(--wire);border-color:var(--wire);color:#fff}
+  .btn.primary:hover{background:#194e4a;color:#fff}
+
+  .cols{flex:1;display:grid;grid-template-columns:230px minmax(420px,1fr) 400px;min-height:0}
+  .pane{min-height:0;overflow:auto}
+  .pane + .pane{border-left:1px solid var(--line)}
+
+  /* ---------- sol: talepler ---------- */
+  .rail{background:#EDEFEC;padding:14px 0}
+  .rail h2{margin:0 16px 10px;font-size:12px;font-weight:600;color:var(--ink-2);letter-spacing:.02em}
+  .ticket{
+    display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;
+    padding:9px 16px;border-left:3px solid transparent;
+  }
+  .ticket:hover{background:#E4E7E3}
+  .ticket[aria-current="true"]{background:var(--surface);border-left-color:var(--wire)}
+  .ticket .key{font-weight:600}
+  .ticket .sum{display:block;color:var(--ink-2);font-size:13px;margin-top:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ticket .st{display:inline-block;margin-top:5px;font-size:11.5px;color:var(--ink-2);
+    border:1px solid var(--line);border-radius:99px;padding:1px 8px;background:#fff}
+
+  /* ---------- orta: akış ---------- */
+  .canvas{background:var(--board);padding:18px 20px 40px}
+  .canvas h1{margin:0 0 2px;font-size:17px;font-weight:620;letter-spacing:-.01em}
+  .canvas .sub{color:var(--ink-2);font-size:13px;margin-bottom:14px}
+  svg{width:100%;height:auto;display:block}
+  .node{cursor:pointer}
+  .node rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5;rx:7}
+  .node:hover rect{stroke:var(--wire)}
+  .node.sel rect{stroke:var(--wire);stroke-width:2.5}
+  .node .t{font-size:13.5px;font-weight:560;fill:var(--ink)}
+  .node .s{font-size:11.5px;fill:var(--ink-2)}
+  .bot rect{fill:var(--wire-soft);stroke:var(--wire);stroke-width:1.5;stroke-dasharray:0;rx:7}
+  .bot.off rect{fill:#EFF0EE;stroke:var(--idle);stroke-dasharray:4 3}
+  .bot .t{font-size:12.5px;font-weight:560;fill:var(--wire)}
+  .bot.off .t{fill:var(--ink-2)}
+  .bot .s{font-size:11px;fill:var(--ink-2)}
+  .edge{stroke:var(--ink-2);stroke-width:1.4;fill:none}
+  .edge.back{stroke:var(--warn);stroke-dasharray:5 4}
+  .edge.tap{stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 3}
+  .node.gate rect{fill:#FBF3E7;stroke:#D8B98A}
+  .node.gate.sel rect,.node.gate:hover rect{stroke:var(--warn)}
+  .elabel{font-size:11px;fill:var(--ink-2)}
+  .elabel.back{fill:var(--warn)}
+  .elabel.bot{fill:var(--wire)}
+  .dot{r:4}
+
+  /* ---------- sağ: ajan paneli ---------- */
+  .panel{background:var(--surface);padding:18px 20px 40px}
+  .panel h2{margin:0 0 3px;font-size:16px;font-weight:620;letter-spacing:-.01em}
+  .panel .lead{color:var(--ink-2);font-size:13px;margin:0 0 16px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:5px}
+  .field select,.field input{
+    width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;
+    background:var(--surface);font:inherit;
+  }
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  .detect,.live{display:flex;align-items:center;gap:8px;margin-top:7px;font-size:12.5px;color:var(--ink-2)}
+  .map{width:100%;border-collapse:collapse;margin-bottom:8px}
+  .map th{
+    text-align:left;font-size:11.5px;font-weight:500;color:var(--ink-2);
+    padding:0 4px 5px;border-bottom:1px solid var(--line);
+  }
+  .map td{padding:3px 2px;vertical-align:middle}
+  .map input,.map select{
+    width:100%;min-width:0;padding:5px 6px;border:1px solid transparent;border-radius:4px;
+    background:#F4F6F4;font:inherit;font-size:12.5px;
+  }
+  .map input:hover,.map select:hover{border-color:var(--line)}
+  .map input:focus,.map select:focus{background:#fff;border-color:var(--wire);outline:none}
+  .map td:nth-child(5){width:22px}
+  .x{border:0;background:none;color:var(--ink-2);cursor:pointer;padding:2px 4px;line-height:1;font-size:16px}
+  .x:hover{color:var(--fail)}
+  .btn.small{padding:5px 11px;font-size:13px;border-radius:5px}
+
+  .sect{border-top:1px solid var(--line);margin-top:18px;padding-top:14px}
+  .sect h3{margin:0 0 4px;font-size:13px;font-weight:600}
+  .note{margin:0 0 12px;font-size:12.5px;color:var(--ink-2)}
+  .hint{margin:5px 0 0;font-size:12px;color:var(--ink-2)}
+  .hint.bad{color:var(--warn)}
+  .stages{border-top:1px solid var(--line);margin-top:18px;padding-top:14px}
+  .stages h3{margin:0 0 10px;font-size:13px;font-weight:600}
+  .stage{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;overflow:hidden}
+  .stage.bad{border-color:#E3BDBD}
+  .stage > button{
+    width:100%;display:flex;align-items:center;gap:10px;
+    padding:10px 12px;background:var(--surface);border:0;cursor:pointer;text-align:left;
+  }
+  .stage > button:hover{background:#F6F8F6}
+  .num{
+    flex:none;width:22px;height:22px;border-radius:99px;background:var(--wire-soft);
+    color:var(--wire);font-size:12px;font-weight:640;display:grid;place-items:center;
+  }
+  .stage.bad .num{background:var(--fail-soft);color:var(--fail)}
+  .stage .name{flex:1;font-weight:560}
+  .stage .name em{display:block;font-style:normal;font-weight:400;color:var(--ink-2);font-size:12.5px}
+  .chev{color:var(--ink-2);transition:transform .18s}
+  .stage[open-state="1"] .chev{transform:rotate(90deg)}
+  .body{display:none;padding:2px 12px 13px 44px;border-top:1px solid #EEF1EE}
+  .stage[open-state="1"] .body{display:block}
+  .body dl{margin:0;display:grid;grid-template-columns:78px 1fr;gap:5px 10px;font-size:13px}
+  .body dt{color:var(--ink-2)}
+  .body dd{margin:0}
+  .body ul{margin:6px 0 0;padding-left:17px;font-size:13px}
+  .body li{margin-bottom:2px}
+
+  .body .src{color:var(--ink-2);font-size:12px}
+  .pill{font-size:11.5px;padding:2px 8px;border-radius:99px;white-space:nowrap}
+  .pill.ok{background:#E4EFE6;color:var(--ok)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  .pill.fail{background:var(--fail-soft);color:var(--fail)}
+
+  .alert{
+    display:flex;gap:9px;padding:10px 12px;border-radius:8px;font-size:13px;
+    background:var(--fail-soft);color:#6E2020;margin-bottom:16px;
+  }
+  .alert b{font-weight:600}
+  .alert a{color:inherit}
+
+  @media (max-width:1100px){
+    .cols{grid-template-columns:1fr;overflow:auto}
+    .pane+.pane{border-left:0;border-top:1px solid var(--line)}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="bar">
+    <div class="brand">Maestro <span>OPS projesi</span></div>
+    <div class="spacer"></div>
+    <div class="meta mono">gap-b10-b14 · 96d737c</div>
+    <button class="btn">Önizle</button>
+    <button class="btn primary">Değişiklikleri kaydet</button>
+  </header>
+
+  <div class="cols">
+
+    <!-- SOL -->
+    <nav class="pane rail" aria-label="Bağlı talepler">
+      <h2>Bağlı talepler</h2>
+      <button class="ticket" aria-current="true">
+        <span class="key mono">OPS-78</span>
+        <span class="sum">Fatura toplu aktarım ucu</span>
+        <span class="st">Analizde</span>
+      </button>
+      <button class="ticket">
+        <span class="key mono">OPS-79</span>
+        <span class="sum">PII maskeleme denetimi</span>
+        <span class="st">Yapılacaklar</span>
+      </button>
+      <button class="ticket">
+        <span class="key mono">OPS-81</span>
+        <span class="sum">Webhook yeniden deneme</span>
+        <span class="st">Kod incelemesi</span>
+      </button>
+    </nav>
+
+    <!-- ORTA -->
+    <main class="pane canvas">
+      <h1>OPS-78 · Fatura toplu aktarım ucu</h1>
+      <p class="sub">Ticket bu akışta ilerliyor. Bir statüye bot bağlamak için kutuya tıkla.</p>
+
+      <svg viewBox="0 0 596 690" role="img" aria-label="Akış diyagramı">
+        <defs>
+          <marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" fill="#5A6470"/>
+          </marker>
+          <marker id="aw" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" fill="#A85B12"/>
+          </marker>
+        </defs>
+
+        <!-- ret döngüleri: insan reddederse aynı adım yeniden koşar -->
+        <path class="edge back" d="M60 273 C 20 273 20 167 60 167" marker-end="url(#aw)"/>
+        <text class="elabel back" x="14" y="220" transform="rotate(-90 14 220)">reddedilirse yeniden</text>
+
+        <path class="edge back" d="M60 485 C 20 485 20 379 60 379" marker-end="url(#aw)"/>
+        <text class="elabel back" x="14" y="432" transform="rotate(-90 14 432)">reddedilirse yeniden</text>
+
+        <!-- ana hat -->
+        <path class="edge" d="M140 88 L140 116" marker-end="url(#a)"/>
+        <path class="edge" d="M140 194 L140 222" marker-end="url(#a)"/>
+        <text class="elabel bot" x="150" y="212">bot taşır</text>
+        <path class="edge" d="M140 300 L140 328" marker-end="url(#a)"/>
+        <text class="elabel" x="150" y="318">insan onaylar</text>
+        <path class="edge" d="M140 406 L140 434" marker-end="url(#a)"/>
+        <text class="elabel bot" x="150" y="424">bot taşır</text>
+        <path class="edge" d="M140 512 L140 540" marker-end="url(#a)"/>
+        <text class="elabel" x="150" y="530">insan onaylar</text>
+        <path class="edge" d="M140 618 L140 646" marker-end="url(#a)"/>
+
+        <!-- statüler -->
+        <g class="node" data-step="todo" tabindex="0"><rect x="60" y="34" width="160" height="54"/>
+          <text class="t" x="76" y="57">Yapılacaklar</text><text class="s" x="76" y="75">giriş statüsü</text></g>
+
+        <g class="node sel" data-step="analiz" tabindex="0"><rect x="60" y="140" width="160" height="54"/>
+          <text class="t" x="76" y="163">Analizde</text><text class="s" x="76" y="181">analist · plancı</text></g>
+
+        <g class="node gate" data-step="analiz-onay" tabindex="0"><rect x="60" y="246" width="160" height="54"/>
+          <text class="t" x="76" y="269">Analiz onayı</text><text class="s" x="76" y="287">insan · SLA 48s</text></g>
+
+        <g class="node" data-step="gelistirme" tabindex="0"><rect x="60" y="352" width="160" height="54"/>
+          <text class="t" x="76" y="375">Geliştirmede</text><text class="s" x="76" y="393">1 bot bağlı</text></g>
+
+        <g class="node gate" data-step="inceleme" tabindex="0"><rect x="60" y="458" width="160" height="54"/>
+          <text class="t" x="76" y="481">Kod incelemesi</text><text class="s" x="76" y="499">insan · bot rapor verir</text></g>
+
+        <g class="node" data-step="test" tabindex="0"><rect x="60" y="564" width="160" height="54"/>
+          <text class="t" x="76" y="587">Testte</text><text class="s" x="76" y="605">bot yok</text></g>
+
+        <g class="bot off" data-step="test" tabindex="0"><rect x="268" y="564" width="248" height="54"/>
+          <text class="t" x="284" y="587">Bot bağla</text>
+          <text class="s" x="284" y="605">şimdilik burayı insan yürütüyor</text></g>
+
+        <g class="node" data-step="done" tabindex="0"><rect x="60" y="646" width="160" height="40"/>
+          <text class="t" x="76" y="671">Bitti</text></g>
+
+        <!-- bağlı botlar -->
+        <path class="edge tap" d="M220 154 L268 134"/>
+        <g class="bot" data-step="analist" tabindex="0"><rect x="268" y="106" width="248" height="56"/>
+          <text class="t" x="284" y="129">Analist</text>
+          <text class="s" x="284" y="147">depoyu klonlar, gereksinimi kodda arar</text></g>
+
+        <path class="edge" d="M392 162 L392 182" marker-end="url(#a)"/>
+        <text class="elabel" x="400" y="177">devreder</text>
+
+        <g class="bot" data-step="planci" tabindex="0"><rect x="268" y="182" width="248" height="56"/>
+          <text class="t" x="284" y="205">Plancı</text>
+          <text class="s" x="284" y="223">analizden plan yazar, kod okumaz</text></g>
+
+        <path class="edge tap" d="M220 379 L268 379"/>
+        <g class="bot" data-step="gelistirme" tabindex="0"><rect x="268" y="352" width="248" height="54"/>
+          <text class="t" x="284" y="375">Geliştirici</text>
+          <text class="s" x="284" y="393">planı uygular, dal açar</text></g>
+
+        <path class="edge tap" d="M220 485 L268 485"/>
+        <g class="bot" data-step="inceleme" tabindex="0"><rect x="268" y="458" width="248" height="54"/>
+          <text class="t" x="284" y="481">Doğrulayıcı</text>
+          <text class="s" x="284" y="499">kural kural PASS / FAIL</text></g>
+      </svg>
+    </main>
+
+    <!-- SAĞ -->
+    <aside class="pane panel" aria-label="Bot ayarları">
+      <h2>Analiz botu</h2>
+      <p class="lead">Ticket <em>Analizde</em> statüsüne girdiğinde çalışır.</p>
+
+      <div class="alert">
+        <span>⚠</span>
+        <div><b>Depo okunamıyor.</b> Klon anahtarı ortamda tanımlı değil, analiz ticket metninden üretiliyor. Son 29 koşunun 27'sinde klon açılamadı.</div>
+      </div>
+
+      <div class="field">
+        <label for="trig">Tetikleyici</label>
+        <select id="trig">
+          <option>Statü "Analizde" olduğunda</option>
+          <option>Yapılacaklar'a geri gönderildiğinde</option>
+          <option>Bota atandığında</option>
+          <option>Etiket eklendiğinde</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="akis">Akış tipi</label>
+        <select id="akis"><option>gelistirme</option><option>analiz</option><option>duzeltme</option></select>
+      </div>
+
+      <div class="sect">
+        <h3>Hangi kod açılacak</h3>
+        <p class="note">Depo ticket'ın iş ailesinden belirlenir. Analist eşleşen satırı klonlar; plancı kod okumaz.</p>
+
+        <div class="field">
+          <label for="kaynak">Depoyu belirleyen alan</label>
+          <select id="kaynak">
+            <option>İş Ailesi</option>
+            <option>Bileşen</option>
+            <option>Etiket</option>
+            <option>Alan kullanma — tek depo</option>
+          </select>
+          <p class="hint">Değerler Jira'daki alan tanımından geliyor. Çok değerli alanlarda her değer ayrı ayrı aranır.</p>
+        </div>
+
+        <table class="map">
+          <thead><tr><th>İş ailesi</th><th>Depo</th><th>Dal</th><th>Görülecek yol</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><select class="fam"></select></td>
+              <td><select class="repo"></select></td>
+              <td><select class="br"></select></td>
+              <td><input value="src/" placeholder="tüm depo"></td>
+              <td><button class="x" title="Satırı sil">×</button></td>
+            </tr>
+            <tr>
+              <td><select class="fam" data-v="Kimlik"></select></td>
+              <td><select class="repo" data-v="yaylagrup/identity"></select></td>
+              <td><select class="br"></select></td>
+              <td><input value="" placeholder="tüm depo"></td>
+              <td><button class="x" title="Satırı sil">×</button></td>
+            </tr>
+            <tr>
+              <td><select class="fam" data-v="Entegrasyon"></select></td>
+              <td><select class="repo" data-v="yaylagrup/maestro-bff"></select></td>
+              <td><select class="br" data-v="develop"></select></td>
+              <td><input value="src/, web/"></td>
+              <td><button class="x" title="Satırı sil">×</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <button class="btn small" id="addrow">Satır ekle</button>
+        <p class="hint" style="margin-top:7px">Listeler Jira ve git sunucusundan çekiliyor, elle yazılmıyor. Eksik bir depo görüyorsan listeyi yenile.</p>
+
+        <div class="field" style="margin-top:14px">
+          <label for="fallback">Hiçbir satır eşleşmezse</label>
+          <select id="fallback">
+            <option>Koşuyu açma — ticket'a "iş ailesi eşleşmedi" yaz</option>
+            <option>Projenin varsayılan deposunu kullan</option>
+          </select>
+          <p class="hint bad">Bugün varsayılana düşüyor ve sebep yalnız log'a yazılıyor. Yanlış depoda analiz, analizsizlikten kötü.</p>
+        </div>
+      </div>
+
+      <div class="sect">
+        <h3>Çalışma ortamı</h3>
+        <p class="note">Analist ve geliştirici aynı sandbox'ı kullanır. Analistin okuduğu ağaç, geliştiricinin yazdığı ağaçtır.</p>
+
+        <div class="field">
+          <label for="ort">Ortam</label>
+          <select id="ort">
+            <option>Depodan algıla</option>
+            <option>Node 20 · React</option>
+            <option>Java 17 · Maven</option>
+            <option>.NET 8</option>
+            <option>Python 3.12</option>
+          </select>
+          <div class="detect">
+            <span class="pill ok">algılandı</span>
+            <span>package.json → Node 20 · React 18 · pnpm</span>
+          </div>
+          <p class="hint">Depoda birden fazla ortam varsa hepsi kurulur. Yanlış algılarsa buradan sabitle.</p>
+        </div>
+
+        <div class="field">
+          <label for="omur">Sandbox ne zaman kapansın</label>
+          <select id="omur">
+            <option>Ticket kapanınca</option>
+            <option>Son koşudan 30 gün sonra</option>
+            <option>Her koşudan sonra</option>
+          </select>
+          <p class="hint">Aylarca açık kalabilir. Boşta kaldığında uyur, yeni koşuda saniyeler içinde kaldığı yerden uyanır — dosyalar ve dal durur.</p>
+        </div>
+
+        <div class="field">
+          <label>Şu an</label>
+          <div class="live">
+            <span class="pill ok">uyanık</span>
+            <span>OPS-78 · <span class="mono">maestro/ops-78</span> dalı · 14 gündür açık · analist ve geliştirici bağlı</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <h3>İş bitince</h3>
+
+        <div class="field">
+          <label for="sonraki">Ticket şu statüye taşınsın</label>
+          <select id="sonraki">
+            <option>Analiz onayı</option>
+            <option>Geliştirmede</option>
+            <option>bekle — taşıma, yorum bırak</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="onay">Onaylayacak kişi</label>
+          <select id="onay">
+            <option>Ticket'ı açan</option>
+            <option>Proje lideri</option>
+            <option>Belirli kişi seç…</option>
+          </select>
+          <p class="hint">48 saat içinde cevap gelmezse hatırlatma düşer.</p>
+        </div>
+
+        <div class="field">
+          <label for="ret">Reddedilirse</label>
+          <select id="ret">
+            <option>Yeniden koş — ret gerekçesini ajana ver</option>
+            <option>Dur, insana bırak</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="deneme">En fazla kaç kez yeniden koşsun</label>
+          <select id="deneme"><option>2</option><option>1</option><option>3</option></select>
+          <p class="hint bad">Bugün koşu kimliği ticket başına tek. Yeniden koşma için her denemeye ayrı numara verilmeli — kod tarafında henüz yok.</p>
+        </div>
+      </div>
+
+      <div class="stages">
+        <h3>Zincir · 4 aşama</h3>
+
+        <div class="stage" open-state="1">
+          <button type="button">
+            <span class="num">1</span>
+            <span class="name">Analist<em>talebi kodda karşılığına oturtur</em></span>
+            <span class="pill fail">depo yok</span><span class="chev">›</span>
+          </button>
+          <div class="body">
+            <dl>
+              <dt>Görür</dt><dd>Ticket metni, ekler, yorumlar + depo klonu</dd>
+              <dt>Yetki</dt><dd>Salt okuma — dosya değiştiremez, dal açamaz</dd>
+              <dt>Depo</dt><dd>yaylagrup/billing · main · src/<br><span class="src">iş ailesi "Faturalama" satırından</span></dd>
+              <dt>Model</dt><dd>Claude Sonnet 4.5</dd>
+            </dl>
+            <ul>
+              <li>Gereksinim listesi (G1, G2…)</li>
+              <li>Her gereksinimin kod karşılığı — dosya:satır</li>
+              <li>Eksik olan: "uç var" ile "gereksinimi karşılıyor" ayrı yazılır</li>
+              <li>Ölçek riski, aday dosyalar, kapsam seçenekleri, açık sorular</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="stage bad">
+          <button type="button">
+            <span class="num">2</span>
+            <span class="name">Plancı<em>geliştiricinin uygulayacağı planı yazar</em></span>
+            <span class="pill fail">model seçilmedi</span><span class="chev">›</span>
+          </button>
+          <div class="body">
+            <dl>
+              <dt>Görür</dt><dd>Analiz belgesi + analistin depo notları</dd>
+              <dt>Yetki</dt><dd>Kod yazmaz, kapsamı değiştirmez</dd>
+              <dt>Depo</dt><dd>açılmaz — analistin notlarından okur</dd>
+              <dt>Model</dt><dd>seçilmedi — analistin modeline düşer</dd>
+            </dl>
+            <ul>
+              <li>Dosya listesi, uç sözleşmesi, DTO alanları</li>
+              <li>Örnek alınacak konvansiyonlar, sıra ve bağımlılıklar</li>
+              <li>Analizde "eksik" denen her madde planda kapanmalı</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="stage">
+          <button type="button">
+            <span class="num">3</span>
+            <span class="name">Geliştirici<em>onaylı planı uygular</em></span>
+            <span class="pill ok">hazır</span><span class="chev">›</span>
+          </button>
+          <div class="body">
+            <dl>
+              <dt>Görür</dt><dd>Onaylı plan + iş kuralları</dd>
+              <dt>Yetki</dt><dd>Sandbox içinde kod yazar, koşunun dalında çalışır</dd>
+            </dl>
+            <ul>
+              <li>Plan dışına çıkarsa "plan sapması" satırı yazar</li>
+              <li>Planda olmayan refactor yapmaz</li>
+              <li>Her iş kuralının hangi dosyada karşılandığını bildirir</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="stage bad">
+          <button type="button">
+            <span class="num">4</span>
+            <span class="name">Doğrulayıcı<em>yazılan kodu kural kural denetler</em></span>
+            <span class="pill fail">model seçilmedi</span><span class="chev">›</span>
+          </button>
+          <div class="body">
+            <dl>
+              <dt>Görür</dt><dd>İş kuralları + değişen dosyalar (diff)</dd>
+              <dt>Yetki</dt><dd>Düzeltme yapamaz — yalnız raporlar</dd>
+            </dl>
+            <ul>
+              <li>Derleme komutlarını çalıştırır, hataları yazar</li>
+              <li>Her kural için PASS / FAIL / belirsiz + kanıt</li>
+              <li>Mevcut testleri koşar, kırılanı adıyla bildirir</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+
+<script>
+  // Gerçekte bu listeler Jira ve git sunucusundan gelir; burada örnek veri.
+  const FAM  = ['Faturalama','Kimlik','Entegrasyon','Raporlama','Saha Servis'];
+  const REPO = ['yaylagrup/billing','yaylagrup/identity','yaylagrup/maestro-bff','yaylagrup/maestro','yaylagrup/reporting'];
+  const BR   = ['main','develop','release/2026.9'];
+
+  function fill(sel){
+    const list = sel.classList.contains('fam') ? FAM
+               : sel.classList.contains('repo') ? REPO : BR;
+    sel.innerHTML = list.map(v=>`<option>${v}</option>`).join('');
+    if(sel.dataset.v) sel.value = sel.dataset.v;
+  }
+  document.querySelectorAll('.map select').forEach(fill);
+
+  const tbody = document.querySelector('.map tbody');
+  document.getElementById('addrow').addEventListener('click',()=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td><select class="fam"></select></td>'+
+      '<td><select class="repo"></select></td>'+
+      '<td><select class="br"></select></td>'+
+      '<td><input placeholder="tüm depo"></td>'+
+      '<td><button class="x" title="Satırı sil">×</button></td>';
+    tbody.appendChild(tr);
+    tr.querySelectorAll('select').forEach(fill);
+    tr.querySelector('select').focus();
+  });
+  tbody.addEventListener('click',e=>{
+    if(e.target.classList.contains('x')) e.target.closest('tr').remove();
+  });
+
+  document.querySelectorAll('.stage > button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const s=b.parentElement;
+      s.setAttribute('open-state', s.getAttribute('open-state')==='1'?'0':'1');
+    });
+  });
+  document.querySelectorAll('.node').forEach(n=>{
+    n.addEventListener('click',()=>{
+      document.querySelectorAll('.node').forEach(x=>x.classList.remove('sel'));
+      n.classList.add('sel');
+    });
+  });
+  document.querySelectorAll('.ticket').forEach(t=>{
+    t.addEventListener('click',()=>{
+      document.querySelectorAll('.ticket').forEach(x=>x.setAttribute('aria-current','false'));
+      t.setAttribute('aria-current','true');
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+[    1600ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[    1792ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/favicon.ico:0
+[    1843ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/favicon.ico:0
+[ 1237525ms] [ERROR] %o
+
+%s
+
+%s
+ Error: useAuth must be used inside <AuthProvider>
+    at useAuth (http://localhost:7000/src/auth/AuthProvider.tsx?t=1786654560450:104:27)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx?t=1786654560450:8:31)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13) The above error occurred in the <RequireSession> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 1237526ms] [ERROR] [studio] render failed Error: useAuth must be used inside <AuthProvider>
+    at useAuth (http://localhost:7000/src/auth/AuthProvider.tsx?t=1786654560450:104:27)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx?t=1786654560450:8:31)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13) 
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx?t=1786654560450:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx?t=1786655961367:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786654571668:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 1239752ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 1243170ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 1246213ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 1542875ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[ 1547027ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[ 1548032ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[ 1550036ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[ 1565894ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 2381710ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 2392363ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 2542456ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/onboarding/jira-connections:0
+[ 2556407ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/onboarding/jira-connections:0
+[ 2560365ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/onboarding/jira-connections:0
+[ 2606462ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "onboard.field.jira_connection" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786657113971:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786657113971:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786657113971:33:27)
+    at OnboardingSteps (http://localhost:7000/src/screens/onboard/OnboardingSteps.tsx?t=1786657330505:23:20)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) The above error occurred in the <OnboardingSteps> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 2606463ms] [ERROR] [studio] render failed MissingMessageError: missing message "onboard.field.jira_connection" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786657113971:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786657113971:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786657113971:33:27)
+    at OnboardingSteps (http://localhost:7000/src/screens/onboard/OnboardingSteps.tsx?t=1786657330505:23:20)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) 
+    at OnboardingSteps (http://localhost:7000/src/screens/onboard/OnboardingSteps.tsx?t=1786657330505:6:3)
+    at QueryState (http://localhost:7000/src/screens/shared/QueryState.tsx?t=1786657113971:7:3)
+    at MaybeUnwired (http://localhost:7000/src/screens/shared/unwired.tsx?t=1786657113971:8:3)
+    at div (<anonymous>)
+    at OnboardScreen (http://localhost:7000/src/screens/Onboard.tsx?t=1786657284410:33:15)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786657113971:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786657113971:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 2621270ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "onboard.field.jira_connection" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786657113971:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786657113971:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786657113971:33:27)
+    at OnboardingSteps (http://localhost:7000/src/screens/onboard/OnboardingSteps.tsx?t=1786657345294:23:20)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) The above error occurred in the <OnboardingSteps> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[ 2621271ms] [ERROR] [studio] render failed MissingMessageError: missing message "onboard.field.jira_connection" for locale "tr"
+    at t (http://localhost:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786657113971:20:34)
+    at translate (http://localhost:7000/src/i18n/catalog.ts?t=1786657113971:9:10)
+    at t (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786657113971:33:27)
+    at OnboardingSteps (http://localhost:7000/src/screens/onboard/OnboardingSteps.tsx?t=1786657345294:23:20)
+    at Object.react_stack_bottom_frame (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) 
+    at OnboardingSteps (http://localhost:7000/src/screens/onboard/OnboardingSteps.tsx?t=1786657345294:6:3)
+    at QueryState (http://localhost:7000/src/screens/shared/QueryState.tsx?t=1786657113971:7:3)
+    at MaybeUnwired (http://localhost:7000/src/screens/shared/unwired.tsx?t=1786657113971:8:3)
+    at div (<anonymous>)
+    at OnboardScreen (http://localhost:7000/src/screens/Onboard.tsx?t=1786657284410:33:15)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://localhost:7000/src/shell/Shell.tsx?t=1786657113971:11:13)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://localhost:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://localhost:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://localhost:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://localhost:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://localhost:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://localhost:7000/src/i18n/I18nProvider.tsx?t=1786657113971:12:3)
+    at ErrorBoundary (http://localhost:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://localhost:7000/src/app/ErrorBoundary.tsx:9
+[ 2636245ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 2636526ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/onboarding/jira-connections:0
+[ 2643342ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 2643482ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:7000/api/onboarding/jira-connections:0
+[ 2824999ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[ 2850336ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 3312042ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[ 3331074ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:7000/api/killswitch:0
+[ 3337024ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 3367433ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:7000/api/killswitch:0

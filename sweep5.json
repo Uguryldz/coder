@@ -1,0 +1,112 @@
+[
+  {
+    "p": "runners",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "sandbox",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "cache",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "eval",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "security",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "knowledge",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "evidence",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "variant",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "greenfield",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "template",
+    "errBox": false,
+    "notLive": true
+  },
+  {
+    "p": "users",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "onboard",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "notify",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "yaml",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "live",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "fanout",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "clarify",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "dash",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "doctemplate",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "health",
+    "errBox": false,
+    "notLive": true
+  },
+  {
+    "p": "mcp",
+    "errBox": false,
+    "notLive": false
+  },
+  {
+    "p": "settings",
+    "errBox": false,
+    "notLive": false
+  }
+]

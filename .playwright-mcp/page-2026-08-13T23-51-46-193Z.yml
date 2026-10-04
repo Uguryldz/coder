@@ -1,0 +1,152 @@
+- generic [ref=f161e2]:
+  - generic [ref=f161e3]:
+    - navigation "Ana gezinme" [ref=f161e4]:
+      - generic [ref=f161e5]:
+        - generic [ref=f161e6]: M
+        - generic [ref=f161e7]:
+          - text: Maestro
+          - generic [ref=f161e8]: SDLC otomasyonu
+      - generic [ref=f161e9]:
+        - generic [ref=f161e10]: İzleme
+        - link "Panel" [ref=f161e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f161e12]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f161e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f161e14]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f161e15] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f161e16]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f161e17] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f161e18]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f161e19] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f161e20]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f161e21]:
+        - generic [ref=f161e22]: Çalışma
+        - link "Runner havuzları" [active] [ref=f161e23] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f161e24]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f161e25] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f161e26]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f161e27] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f161e28]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f161e29] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f161e30]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f161e31] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f161e32]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f161e33] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f161e34]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f161e35] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f161e36]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f161e37]:
+        - generic [ref=f161e38]: Yönetişim
+        - link "Denetim izi" [ref=f161e39] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f161e40]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f161e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f161e42]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f161e43] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f161e44]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f161e45] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f161e46]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f161e47] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f161e48]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f161e49] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f161e50]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f161e51]:
+        - generic [ref=f161e52]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f161e53] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f161e54]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f161e55] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f161e56]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f161e57] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f161e58]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f161e59] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f161e60]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f161e61] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f161e62]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f161e63] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f161e64]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f161e65] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f161e66]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f161e67] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f161e68]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f161e69]:
+      - banner [ref=f161e70]:
+        - heading "Runner havuzları" [level=1] [ref=f161e90]
+        - generic [ref=f161e72]:
+          - generic [ref=f161e73]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f161e74]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f161e75]: admin
+        - button "Çıkış" [ref=f161e76] [cursor=pointer]
+      - main [ref=f161e77]:
+        - generic [ref=f161e97]:
+          - generic [ref=f161e98]:
+            - heading "İzolasyon profili" [level=3] [ref=f161e100]
+            - generic [ref=f161e102]:
+              - generic [ref=f161e103]:
+                - term [ref=f161e104]: Linux
+                - definition [ref=f161e105]: Tek kullanımlık konteynır · salt-okunur rootfs · cap-drop ALL · root olmayan kullanıcı · bellek/CPU/pid limitli
+              - generic [ref=f161e106]:
+                - term [ref=f161e107]: Windows/macOS
+                - definition [ref=f161e108]: İş başına tek kullanımlık kullanıcı ve çalışma alanı · dar yetki · MDM/EDR · iş sonunda audit'li temizlik
+              - generic [ref=f161e109]:
+                - term [ref=f161e110]: Ağ
+                - definition [ref=f161e111]: Yalnızca egress proxy üzerinden izinli hedefler; kalan her şey kapalı
+              - generic [ref=f161e112]:
+                - term [ref=f161e113]: Kimlik
+                - definition [ref=f161e114]: Git push için Vault'tan kısa ömürlü kimlik
+          - generic [ref=f161e115]:
+            - heading "Kabul edilmiş risk" [level=3] [ref=f161e117]
+            - paragraph [ref=f161e119]: "Windows ve macOS'ta konteynır izolasyonu yok — Xcode ve MSBuild konteynıra sığmıyor. Telafi: tek kullanımlık kullanıcı, dar yetki, EDR ve aynı egress kuralları. Bu, planda kabul edilmiş risk olarak kayıtlıdır."
+  - region

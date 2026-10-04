@@ -1,0 +1,56 @@
+-- HAND-WRITTEN MIGRATION.
+--
+-- `trigger.mode` PARAMETRESİ KALDIRILIYOR. Şema DEĞİŞMİYOR: burada tek bir
+-- kolon, tip ya da constraint'e dokunulmuyor — yalnızca VERİ satırı siliniyor.
+--
+-- WHY. Tetikleme 0023'te tek yere, dinleme kuralına taşındı (statü/atanma/
+-- etiket/iş tipi). Proje seviyesindeki opt-in etiket kapısı `runIntake`'ten
+-- kalktı, panelden seçici kaldırıldı, Routing ekranındaki "Tetikleme" sütunu
+-- kaldırıldı. `trigger.mode` parametresi bu temizliğin SON GÖRÜNÜR İZİYDİ:
+-- Parametreler ekranında duruyor, varsayılanı "label" görünüyor ve operatör
+-- oradan bir tetikleme modu SEÇEBİLİYORDU — ama hiçbir kod onu okumuyordu.
+-- Banka operatörünün "hâlâ etiket yazıyor" şikayetinin kaynaklarından biri
+-- tam olarak buydu: ekranda etiket yazan, seçilebilen, hiçbir şey yapmayan
+-- bir düğme.
+--
+-- WHY A MIGRATION IS REQUIRED, KODDAN SİLMEK YETMEZ. `PrismaParamStore.
+-- definitions()` tanımları KODDAN DEĞİL, `Param` TABLOSUNDAN okur; `seedParams`
+-- ise yalnızca upsert eder, hiçbir zaman silmez. Yani tanımı
+-- `DEFAULT_PARAM_DEFINITIONS`'tan çıkarmak, ZATEN KURULU bir veritabanında
+-- hiçbir şeyi değiştirmez: satır tabloda kalır ve ekranda AYNEN görünmeye
+-- devam ederdi. Şikayeti çözen şey bu DELETE'tir; kod tarafı yalnızca yeni
+-- kurulumlara yeniden ekilmesini engeller.
+--
+-- WHY DELETING DATA IS SAFE HERE. Silinen değerin OKUYUCUSU YOK. Bu parametreyi
+-- okuyan tek bir kod yolu kalmadı; hiçbir karar, hiçbir akış, hiçbir rapor
+-- ona bakmıyor. Dolayısıyla kaybolan bir davranış yok — kaybolan tek şey,
+-- ekranda yanlış bir söz veren bir satır.
+--
+-- Buna karşılık BIRAKMANIN bedeli somut: satır kalırsa `definitions()` onu
+-- döndürmeye devam eder, `Params.tsx` `view.definitions.map()` ile satırı
+-- çizer ve `descriptionKey` artık locale'de OLMADIĞI için ekranda ham anahtar
+-- ya da boş bir açıklama görünür — yani "ölü ama görünür" durumdan "ölü ve
+-- BOZUK görünür" duruma geçerdi. Veriyi bırakmak burada daha riskli.
+--
+-- ORDER MATTERS. `ParamVersion.key -> Param.key` FK'sı `onDelete: Restrict`.
+-- Yani önce sürüm satırları (proje kapsamlı geçmiş dahil), sonra bekleyen
+-- öneri, en sonda tanımın kendisi silinir. Ters sıra FK ihlaliyle patlardı.
+--
+-- WHAT AN OPERATOR LOSES. Bu parametrenin YAZILMIŞ değerlerinin denetim izi
+-- (`ParamVersion` satırları: kim, ne zaman, hangi modu seçmişti). Bilerek
+-- siliniyor: hiçbir zaman etkisi olmamış bir seçimin denetim geçmişini
+-- saklamak, denetim kaydına güveni artırmaz — "bu değişiklik bir şey yaptı"
+-- izlenimi verdiği için AZALTIR. Değişikliğin kendisi bu dosyada yazılı.
+--
+-- IDEMPOTENT / REPEATABLE. Üç DELETE de eşleşen satır yoksa sessizce 0 satır
+-- etkiler; parametresi hiç ekilmemiş bir veritabanında da, iki kez uygulanan
+-- bir veritabanında da aynı sonucu verir.
+--
+-- REVERSIBLE? Geri yön `seedParams`'ın kendisidir: tanım
+-- `DEFAULT_PARAM_DEFINITIONS`'a geri konur ve ekim satırı yeniden yaratır.
+-- Silinen operatör geçmişi geri gelmez — yukarıda gerekçelendirildiği gibi,
+-- bilerek.
+
+DELETE FROM "ParamVersion" WHERE "key" = 'trigger.mode';
+DELETE FROM "PendingParamChange" WHERE "key" = 'trigger.mode';
+DELETE FROM "Param" WHERE "key" = 'trigger.mode';

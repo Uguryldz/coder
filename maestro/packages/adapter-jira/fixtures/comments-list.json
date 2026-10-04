@@ -1,0 +1,70 @@
+{
+  "startAt": 0,
+  "maxResults": 1048576,
+  "total": 3,
+  "comments": [
+    {
+      "self": "https://jira.internal.bank/rest/api/2/issue/10501/comment/45200",
+      "id": "45200",
+      "author": {
+        "self": "https://jira.internal.bank/rest/api/2/user?username=maestro.svc",
+        "name": "maestro.svc",
+        "key": "JIRAUSER10100",
+        "displayName": "Maestro Servis",
+        "active": true,
+        "timeZone": "Europe/Istanbul"
+      },
+      "body": "▶ Maestro durum: analiz adımı çalışıyor. Komutlar: {{/approve}} · {{/reject <sebep>}} · {{/status}}",
+      "updateAuthor": {
+        "name": "maestro.svc",
+        "key": "JIRAUSER10100",
+        "displayName": "Maestro Servis",
+        "active": true
+      },
+      "created": "2026-08-08T13:10:02.000+0300",
+      "updated": "2026-08-08T13:10:02.000+0300"
+    },
+    {
+      "self": "https://jira.internal.bank/rest/api/2/issue/10501/comment/45201",
+      "id": "45201",
+      "author": {
+        "self": "https://jira.internal.bank/rest/api/2/user?username=mert.demir",
+        "name": "mert.demir",
+        "key": "JIRAUSER10321",
+        "emailAddress": "mert.demir@bank.example",
+        "displayName": "Mert Demir",
+        "active": true,
+        "timeZone": "Europe/Istanbul"
+      },
+      "body": "/approve",
+      "updateAuthor": {
+        "name": "mert.demir",
+        "key": "JIRAUSER10321",
+        "displayName": "Mert Demir",
+        "active": true
+      },
+      "created": "2026-08-08T13:12:33.000+0300",
+      "updated": "2026-08-08T13:12:33.000+0300"
+    },
+    {
+      "self": "https://jira.internal.bank/rest/api/2/issue/10501/comment/45202",
+      "id": "45202",
+      "author": {
+        "self": "https://jira.internal.bank/rest/api/2/user?username=ayse.kaya",
+        "name": "ayse.kaya",
+        "key": "JIRAUSER10444",
+        "displayName": "Ayşe Kaya",
+        "active": true
+      },
+      "body": "/approve",
+      "updateAuthor": {
+        "name": "proje.lideri",
+        "key": "JIRAUSER10999",
+        "displayName": "Proje Lideri",
+        "active": true
+      },
+      "created": "2026-08-08T13:20:00.000+0300",
+      "updated": "2026-08-08T13:41:12.000+0300"
+    }
+  ]
+}

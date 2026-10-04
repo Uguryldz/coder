@@ -1,0 +1,56 @@
+[     695ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:20102
+[   65084ms] [ERROR] Encountered two children with the same key, `%s`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. notify-72 @ http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:4924
+[   80395ms] [ERROR] %o
+
+%s
+
+%s
+ TypeError: Cannot read properties of undefined (reading 'length')
+    at Object.cell (http://127.0.0.1:7443/src/screens/Routing.tsx:52:41)
+    at http://127.0.0.1:7443/src/ui/Table.tsx:79:34
+    at Array.map (<anonymous>)
+    at http://127.0.0.1:7443/src/ui/Table.tsx:74:29
+    at Array.map (<anonymous>)
+    at Table (http://127.0.0.1:7443/src/ui/Table.tsx:58:54)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:18509:20)
+    at renderWithHooks (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:7475:21)
+    at beginWork (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:8525:20) The above error occurred in the <Table> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:7000
+[   80397ms] [ERROR] [studio] render failed TypeError: Cannot read properties of undefined (reading 'length')
+    at Object.cell (http://127.0.0.1:7443/src/screens/Routing.tsx:52:41)
+    at http://127.0.0.1:7443/src/ui/Table.tsx:79:34
+    at Array.map (<anonymous>)
+    at http://127.0.0.1:7443/src/ui/Table.tsx:74:29
+    at Array.map (<anonymous>)
+    at Table (http://127.0.0.1:7443/src/ui/Table.tsx:58:54)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:18509:20)
+    at renderWithHooks (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:7475:21)
+    at beginWork (http://127.0.0.1:7443/node_modules/.vite/deps/react-dom_client.js?v=7df2fbc7:8525:20) 
+    at Table (http://127.0.0.1:7443/src/ui/Table.tsx:6:3)
+    at QueryState (http://127.0.0.1:7443/src/screens/shared/QueryState.tsx:7:3)
+    at MaybeUnwired (http://127.0.0.1:7443/src/screens/shared/unwired.tsx:8:3)
+    at div (<anonymous>)
+    at section (<anonymous>)
+    at Card (http://127.0.0.1:7443/src/ui/Card.tsx:3:24)
+    at RoutingScreen (http://127.0.0.1:7443/src/screens/Routing.tsx:12:13)
+    at RenderedRoute (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:4281:26)
+    at Outlet (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://127.0.0.1:7443/src/shell/Shell.tsx:11:13)
+    at RenderedRoute (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:4281:26)
+    at Outlet (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:4886:26)
+    at RequireSession (http://127.0.0.1:7443/src/auth/RequireSession.tsx:8:22)
+    at RenderedRoute (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:4281:26)
+    at Routes (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:4891:29)
+    at BrowserRouter (http://127.0.0.1:7443/node_modules/.vite/deps/react-router.js?v=0542896b:7361:26)
+    at ToastProvider (http://127.0.0.1:7443/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7443/src/auth/AuthProvider.tsx:8:3)
+    at QueryClientProvider (http://127.0.0.1:7443/node_modules/.vite/deps/@tanstack_react-query.js?v=9d42f2d0:3188:3)
+    at I18nProvider (http://127.0.0.1:7443/src/i18n/I18nProvider.tsx:12:3)
+    at ErrorBoundary (http://127.0.0.1:7443/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7443/src/app/ErrorBoundary.tsx:9

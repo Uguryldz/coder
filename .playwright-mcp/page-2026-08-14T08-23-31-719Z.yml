@@ -1,0 +1,184 @@
+- generic [ref=f178e2]:
+  - generic [ref=f178e3]:
+    - navigation "Ana gezinme" [ref=f178e4]:
+      - generic [ref=f178e5]:
+        - generic [ref=f178e6]: M
+        - generic [ref=f178e7]:
+          - text: Maestro
+          - generic [ref=f178e8]: SDLC otomasyonu
+      - generic [ref=f178e9]:
+        - generic [ref=f178e10]: İzleme
+        - link "Panel" [ref=f178e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f178e12]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f178e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f178e14]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f178e15] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f178e16]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f178e17] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f178e18]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f178e19] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f178e20]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f178e21]:
+        - generic [ref=f178e22]: Çalışma
+        - link "Runner havuzları" [ref=f178e23] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f178e24]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f178e25] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f178e26]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f178e27] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f178e28]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f178e29] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f178e30]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f178e31] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f178e32]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f178e33] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f178e34]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f178e35] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f178e36]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f178e37]:
+        - generic [ref=f178e38]: Yönetişim
+        - link "Denetim izi" [ref=f178e39] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f178e40]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f178e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f178e42]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f178e43] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f178e44]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f178e45] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f178e46]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f178e47] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f178e48]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f178e49] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f178e50]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f178e51]:
+        - generic [ref=f178e52]: Yönetim
+        - link "Proje bağlama" [ref=f178e53] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f178e54]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f178e55] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f178e56]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f178e57] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f178e58]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f178e59] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f178e60]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f178e61] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f178e62]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f178e63] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f178e64]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f178e65]:
+      - banner [ref=f178e66]:
+        - heading "Proje bağlama" [level=1] [ref=f178e67]
+        - generic [ref=f178e68]:
+          - generic [ref=f178e69]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f178e70]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f178e71]: admin
+        - button "Çıkış" [ref=f178e72] [cursor=pointer]
+      - main [ref=f178e73]:
+        - generic [ref=f178e74]:
+          - tablist "Proje bağlama adımları" [ref=f178e75]:
+            - tab "Uygulama ekle" [ref=f178e76] [cursor=pointer]
+            - tab "Jira eşleme & onay" [ref=f178e77] [cursor=pointer]
+            - tab "Dinleme kuralları" [active] [selected] [ref=f178e78] [cursor=pointer]
+          - tabpanel "Dinleme kuralları" [ref=f178e79]:
+            - generic [ref=f178e80]:
+              - generic [ref=f178e81]:
+                - generic [ref=f178e82]:
+                  - heading "Dinleme kuralları" [level=3] [ref=f178e83]
+                  - generic [ref=f178e84]: Maestro hangi ticket'ları alsın ve nasıl işlesin — proje + robot hesabına atama + (statü ya da iş tipi) → akış tipi.
+                - paragraph [ref=f178e86]: Bir ticket burada tanımlı bir kurala uyduğunda (ilgili projede, Maestro Bot'a atalı ve statüsü/iş tipi eşleşiyorsa) Maestro onu alır ve belirtilen akış tipiyle (analiz / düzeltme / geliştirme) işler. Kural yoksa varsayılan davranış sürer.
+              - generic [ref=f178e87]:
+                - generic [ref=f178e88]:
+                  - heading "Yeni kural ekle" [level=3] [ref=f178e89]
+                  - generic [ref=f178e90]: "Hangi ticket'ların işleneceğini belirleyin: proje, bot kullanıcısı, eşleşme koşulu ve yapılacak iş."
+                - generic [ref=f178e92]:
+                  - generic [ref=f178e93]:
+                    - generic [ref=f178e94]: Proje
+                    - textbox "Proje" [ref=f178e95]
+                    - paragraph [ref=f178e96]: Henüz bağlı proje yok. Önce "Uygulama ekle" sekmesinden bir proje bağlayın.
+                  - generic [ref=f178e97]:
+                    - generic [ref=f178e98]: Bot kullanıcısı
+                    - textbox "Bot kullanıcısı" [ref=f178e99]:
+                      - /placeholder: 712020:…
+                    - paragraph [ref=f178e100]: Ticket'ların atandığı Maestro Bot hesabının Jira kimliği (accountId). Değeri Jira'da botun profil sayfası URL'inden ya da bağlantı ayarlarından kopyalayın.
+                  - generic [ref=f178e101]:
+                    - generic [ref=f178e102]: Neye göre eşleşsin
+                    - combobox "Neye göre eşleşsin" [ref=f178e103]:
+                      - option "İş tipi" [selected]
+                      - option "Statü"
+                  - generic [ref=f178e104]:
+                    - generic [ref=f178e105]: Değer
+                    - textbox "Değer" [ref=f178e106]:
+                      - /placeholder: Hata
+                    - paragraph [ref=f178e107]: Jira'daki iş tipi ya da statü adıyla birebir aynı yazın (örn. "Hata"). Farklı yazılırsa kural hiçbir ticket'a uymaz.
+                  - generic [ref=f178e108]:
+                    - generic [ref=f178e109]: Ne yapılsın (akış)
+                    - combobox "Ne yapılsın (akış)" [ref=f178e110]:
+                      - option "Analiz" [selected]
+                      - option "Düzeltme"
+                      - option "Geliştirme"
+                  - button "Kural ekle" [ref=f178e112] [cursor=pointer]
+              - table [ref=f178e116]:
+                - rowgroup [ref=f178e117]:
+                  - row [ref=f178e118]:
+                    - columnheader "Proje" [ref=f178e119]
+                    - columnheader "Tetikleyici" [ref=f178e120]
+                    - columnheader "Akış" [ref=f178e121]
+                    - columnheader "Bot kullanıcısı" [ref=f178e122]
+                    - columnheader [ref=f178e123]
+                - rowgroup [ref=f178e124]:
+                  - row [ref=f178e125]:
+                    - cell "OPS" [ref=f178e126]
+                    - cell "İş tipi Hata" [ref=f178e127]
+                    - cell "Düzeltme" [ref=f178e128]
+                    - cell "712020:b836c…" [ref=f178e130]
+                    - cell [ref=f178e131]:
+                      - button "Sil" [ref=f178e132] [cursor=pointer]
+  - region

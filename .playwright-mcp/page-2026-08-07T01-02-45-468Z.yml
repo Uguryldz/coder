@@ -1,0 +1,332 @@
+- generic [ref=f4e2]:
+  - complementary [ref=f4e3]:
+    - generic [ref=f4e4]:
+      - generic [ref=f4e5]: M
+      - generic [ref=f4e6]:
+        - text: Maestro
+        - generic [ref=f4e7]: UI prototipi · mock veri
+    - generic [ref=f4e8]:
+      - generic [ref=f4e9]: Operasyon
+      - link "▦ Panel" [ref=f4e10] [cursor=pointer]:
+        - /url: "#dash"
+        - generic [ref=f4e11]: ▦
+        - text: Panel
+      - link "🎬 Canlı demo (vibe)" [ref=f4e12] [cursor=pointer]:
+        - /url: "#live"
+        - generic [ref=f4e13]: 🎬
+        - text: Canlı demo (vibe)
+      - link "≡ İş akışları 22" [ref=f4e14] [cursor=pointer]:
+        - /url: "#tickets"
+        - generic [ref=f4e15]: ≡
+        - text: İş akışları
+        - generic [ref=f4e16]: "22"
+      - link "⑂ Ana ticket (fan-out)" [ref=f4e17] [cursor=pointer]:
+        - /url: "#fanout"
+        - generic [ref=f4e18]: ⑂
+        - text: Ana ticket (fan-out)
+      - link "❓ Clarification (2b)" [ref=f4e19] [cursor=pointer]:
+        - /url: "#clarify"
+        - generic [ref=f4e20]: ❓
+        - text: Clarification (2b)
+      - link "⇋ Work mode & devir" [ref=f4e21] [cursor=pointer]:
+        - /url: "#workmode"
+        - generic [ref=f4e22]: ⇋
+        - text: Work mode & devir
+      - link "✦ Yeni proje sihirbazı" [ref=f4e23] [cursor=pointer]:
+        - /url: "#greenfield"
+        - generic [ref=f4e24]: ✦
+        - text: Yeni proje sihirbazı
+      - link "💬 Jira'da görünüm" [ref=f4e25] [cursor=pointer]:
+        - /url: "#jira"
+        - generic [ref=f4e26]: 💬
+        - text: Jira'da görünüm
+      - link "⌨ Jira komut seti" [ref=f4e27] [cursor=pointer]:
+        - /url: "#commands"
+        - generic [ref=f4e28]: ⌨
+        - text: Jira komut seti
+      - generic [ref=f4e29]: Yürütme
+      - link "🖥 Runner havuzları" [ref=f4e30] [cursor=pointer]:
+        - /url: "#runners"
+        - generic [ref=f4e31]: 🖥
+        - text: Runner havuzları
+      - link "▶ Canlı sandbox oturumu" [ref=f4e32] [cursor=pointer]:
+        - /url: "#sandbox"
+        - generic [ref=f4e33]: ▶
+        - text: Canlı sandbox oturumu
+      - link "🗄 Cache & çalışma alanı" [ref=f4e34] [cursor=pointer]:
+        - /url: "#cache"
+        - generic [ref=f4e35]: 🗄
+        - text: Cache & çalışma alanı
+      - link "📄 .maestro.yaml" [ref=f4e36] [cursor=pointer]:
+        - /url: "#yaml"
+        - generic [ref=f4e37]: 📄
+        - text: .maestro.yaml
+      - generic [ref=f4e38]: Ajanlar
+      - link "🤖 Variant'lar 9" [ref=f4e39] [cursor=pointer]:
+        - /url: "#variants"
+        - generic [ref=f4e40]: 🤖
+        - text: Variant'lar
+        - generic [ref=f4e41]: "9"
+      - link "⚙ Variant detayı" [ref=f4e42] [cursor=pointer]:
+        - /url: "#variant"
+        - generic [ref=f4e43]: ⚙
+        - text: Variant detayı
+      - link "🎯 Eval / golden ticket" [ref=f4e44] [cursor=pointer]:
+        - /url: "#eval"
+        - generic [ref=f4e45]: 🎯
+        - text: Eval / golden ticket
+      - link "📚 Knowledge kütüphanesi" [ref=f4e46] [cursor=pointer]:
+        - /url: "#knowledge"
+        - generic [ref=f4e47]: 📚
+        - text: Knowledge kütüphanesi
+      - link "📋 Analiz şablonu" [ref=f4e48] [cursor=pointer]:
+        - /url: "#template"
+        - generic [ref=f4e49]: 📋
+        - text: Analiz şablonu
+      - generic [ref=f4e50]: Yönetişim
+      - link "⚡ LLM Gateway" [ref=f4e51] [cursor=pointer]:
+        - /url: "#llm"
+        - generic [ref=f4e52]: ⚡
+        - text: LLM Gateway
+      - link "🔏 PII maskeleme" [ref=f4e53] [cursor=pointer]:
+        - /url: "#pii"
+        - generic [ref=f4e54]: 🔏
+        - text: PII maskeleme
+      - link "₺ Maliyet & kota" [ref=f4e55] [cursor=pointer]:
+        - /url: "#cost"
+        - generic [ref=f4e56]: ₺
+        - text: Maliyet & kota
+      - link "🔒 Denetim izi" [ref=f4e57] [cursor=pointer]:
+        - /url: "#audit"
+        - generic [ref=f4e58]: 🔒
+        - text: Denetim izi
+      - link "📦 Kanıt paketi" [ref=f4e59] [cursor=pointer]:
+        - /url: "#evidence"
+        - generic [ref=f4e60]: 📦
+        - text: Kanıt paketi
+      - link "🛡 Güvenlik bulguları" [ref=f4e61] [cursor=pointer]:
+        - /url: "#security"
+        - generic [ref=f4e62]: 🛡
+        - text: Güvenlik bulguları
+      - link "🔔 Bildirim & eskalasyon" [ref=f4e63] [cursor=pointer]:
+        - /url: "#notify"
+        - generic [ref=f4e64]: 🔔
+        - text: Bildirim & eskalasyon
+      - generic [ref=f4e65]: Sistem
+      - link "⇄ Yönlendirme kuralları" [ref=f4e66] [cursor=pointer]:
+        - /url: "#routing"
+        - generic [ref=f4e67]: ⇄
+        - text: Yönlendirme kuralları
+      - link "🎛 Parametreler (DB)" [ref=f4e68] [cursor=pointer]:
+        - /url: "#params"
+        - generic [ref=f4e69]: 🎛
+        - text: Parametreler (DB)
+      - link "➕ Uygulama ekle" [ref=f4e70] [cursor=pointer]:
+        - /url: "#onboard"
+        - generic [ref=f4e71]: ➕
+        - text: Uygulama ekle
+      - link "👥 Kullanıcılar & roller" [ref=f4e72] [cursor=pointer]:
+        - /url: "#users"
+        - generic [ref=f4e73]: 👥
+        - text: Kullanıcılar & roller
+      - link "⚙ Ayarlar & bağlantılar" [ref=f4e74] [cursor=pointer]:
+        - /url: "#settings"
+        - generic [ref=f4e75]: ⚙
+        - text: Ayarlar & bağlantılar
+      - link "💚 Sistem sağlığı" [ref=f4e76] [cursor=pointer]:
+        - /url: "#health"
+        - generic [ref=f4e77]: 💚
+        - text: Sistem sağlığı
+      - link "🔑 Giriş ekranı" [ref=f4e78] [cursor=pointer]:
+        - /url: "#login"
+        - generic [ref=f4e79]: 🔑
+        - text: Giriş ekranı
+      - link "✔ ✓ Karar defteri" [ref=f4e80] [cursor=pointer]:
+        - /url: "#issues"
+        - generic [ref=f4e81]: ✔
+        - text: ✓ Karar defteri
+    - generic [ref=f4e82]:
+      - generic [ref=f4e83]: Bu bir tıklanabilir maket. Veriler sahte, kod yok.
+      - generic [ref=f4e84]:
+        - button "🌓 Tema" [ref=f4e85] [cursor=pointer]
+        - button "🌐 TR" [ref=f4e86] [cursor=pointer]
+  - main [ref=f4e87]:
+    - generic [ref=f4e88]:
+      - generic [ref=f4e89]:
+        - heading "UGURMOB-188 — Bildirim izinleri — Android 15 uyumu" [level=1] [ref=f4e90]
+        - generic [ref=f4e91]: "ugurmobil-android · linux-android · full-auto · risk düşük · reporter: Selin A."
+      - textbox "🔍 Ticket ara… (ör. UGURWEB)" [ref=f4e93]:
+        - /placeholder: 🔍 Ticket ara…  (ör. UGURWEB)
+      - button "🔔 4" [ref=f4e94] [cursor=pointer]
+      - generic [ref=f4e95]: Sistem sağlıklı
+      - generic [ref=f4e97]: 👤 Uğur Yıldız · admin
+    - generic [ref=f4e99]:
+      - generic [ref=f4e101]:
+        - generic [ref=f4e102]:
+          - generic [ref=f4e103]: Adımlar
+          - generic [ref=f4e104]: Ticket defteri (7)
+          - generic [ref=f4e105]: Analiz
+          - generic [ref=f4e106]: Değişiklik
+          - generic [ref=f4e107]: Testler
+          - generic [ref=f4e108]: Tüketim
+        - generic [ref=f4e110]:
+          - generic [ref=f4e111]:
+            - generic [ref=f4e112]: "0"
+            - generic [ref=f4e113]:
+              - generic [ref=f4e114]: Work mode seçimi
+              - generic [ref=f4e115]: Jira label / RoutingRule
+            - generic [ref=f4e116]: tamamlandı
+          - generic [ref=f4e117]:
+            - generic [ref=f4e118]: "2"
+            - generic [ref=f4e119]:
+              - generic [ref=f4e120]: Intake
+              - generic [ref=f4e121]: Ticket tamlık kontrolü (AI)
+            - generic [ref=f4e122]: tamamlandı
+          - generic [ref=f4e123]:
+            - generic [ref=f4e124]: 2b
+            - generic [ref=f4e125]:
+              - generic [ref=f4e126]: Clarification
+              - generic [ref=f4e127]: Reporter'a soru — süresiz bekleme
+            - generic [ref=f4e128]: tamamlandı
+          - generic [ref=f4e129]:
+            - generic [ref=f4e130]: 3ö
+            - generic [ref=f4e131]:
+              - generic [ref=f4e132]: Repo keşfi
+              - generic [ref=f4e133]: Agent SDK salt-okunur oturum
+            - generic [ref=f4e134]: tamamlandı
+          - generic [ref=f4e135]:
+            - generic [ref=f4e136]: "3"
+            - generic [ref=f4e137]:
+              - generic [ref=f4e138]: Analyst
+              - generic [ref=f4e139]: Şablona göre analiz + etki matrisi (AI)
+            - generic [ref=f4e140]: tamamlandı
+          - generic [ref=f4e141]:
+            - generic [ref=f4e142]: "4"
+            - generic [ref=f4e143]:
+              - generic [ref=f4e144]: PO onayı
+              - generic [ref=f4e145]: İnsan kapısı · grup doğrulamalı
+            - generic [ref=f4e146]: tamamlandı
+          - generic [ref=f4e147]:
+            - generic [ref=f4e148]: "5"
+            - generic [ref=f4e149]:
+              - generic [ref=f4e150]: Tech Lead onayı
+              - generic [ref=f4e151]: İnsan kapısı · SoD (4-göz)
+            - generic [ref=f4e152]: kapıda bekliyor
+          - generic [ref=f4e153]:
+            - generic [ref=f4e154]: 6a
+            - generic [ref=f4e155]:
+              - generic [ref=f4e156]: Geliştirme
+              - generic [ref=f4e157]: Agent SDK oturumu — runner'da
+            - generic [ref=f4e158]: bekliyor
+          - generic [ref=f4e159]:
+            - generic [ref=f4e160]: 6b
+            - generic [ref=f4e161]:
+              - generic [ref=f4e162]: Güvenlik taraması
+              - generic [ref=f4e163]: gitleaks · semgrep · trivy (fail-closed)
+            - generic [ref=f4e164]: bekliyor
+          - generic [ref=f4e165]:
+            - generic [ref=f4e166]: 6c
+            - generic [ref=f4e167]:
+              - generic [ref=f4e168]: Dev-reviewer
+              - generic [ref=f4e169]: Gerçek diff incelemesi (AI)
+            - generic [ref=f4e170]: bekliyor
+          - generic [ref=f4e171]:
+            - generic [ref=f4e172]: "7"
+            - generic [ref=f4e173]:
+              - generic [ref=f4e174]: Test-designer
+              - generic [ref=f4e175]: Gherkin senaryolar (AI)
+            - generic [ref=f4e176]: bekliyor
+          - generic [ref=f4e177]:
+            - generic [ref=f4e178]: "8"
+            - generic [ref=f4e179]:
+              - generic [ref=f4e180]: Test-reviewer
+              - generic [ref=f4e181]: 4-göz kapsam denetimi (AI)
+            - generic [ref=f4e182]: bekliyor
+          - generic [ref=f4e183]:
+            - generic [ref=f4e184]: "9"
+            - generic [ref=f4e185]:
+              - generic [ref=f4e186]: QA onayı
+              - generic [ref=f4e187]: İnsan kapısı
+            - generic [ref=f4e188]: bekliyor
+          - generic [ref=f4e189]:
+            - generic [ref=f4e190]: "10"
+            - generic [ref=f4e191]:
+              - generic [ref=f4e192]: Test-engineer
+              - generic [ref=f4e193]: Testler GERÇEKTEN koşar
+            - generic [ref=f4e194]: bekliyor
+          - generic [ref=f4e195]:
+            - generic [ref=f4e196]: 10b
+            - generic [ref=f4e197]:
+              - generic [ref=f4e198]: CI gate
+              - generic [ref=f4e199]: ADO build validation → sinyal
+            - generic [ref=f4e200]: bekliyor
+          - generic [ref=f4e201]:
+            - generic [ref=f4e202]: "11"
+            - generic [ref=f4e203]:
+              - generic [ref=f4e204]: QA sonuç onayı
+              - generic [ref=f4e205]: İnsan kapısı
+            - generic [ref=f4e206]: bekliyor
+          - generic [ref=f4e207]:
+            - generic [ref=f4e208]: "12"
+            - generic [ref=f4e209]:
+              - generic [ref=f4e210]: PR onayı
+              - generic [ref=f4e211]: Tech Lead + ADO reviewer
+            - generic [ref=f4e212]: bekliyor
+          - generic [ref=f4e213]:
+            - generic [ref=f4e214]: 12b
+            - generic [ref=f4e215]:
+              - generic [ref=f4e216]: PR yorum döngüsü
+              - generic [ref=f4e217]: Thread'ler → 6a'ya dönüş
+            - generic [ref=f4e218]: bekliyor
+          - generic [ref=f4e219]:
+            - generic [ref=f4e220]: "13"
+            - generic [ref=f4e221]:
+              - generic [ref=f4e222]: Kanıt paketi
+              - generic [ref=f4e223]: Arşiv + Jira özeti
+            - generic [ref=f4e224]: bekliyor
+      - generic [ref=f4e225]:
+        - generic [ref=f4e226]:
+          - heading "⏳ Onay bekleniyor" [level=3] [ref=f4e228]
+          - generic [ref=f4e229]:
+            - generic [ref=f4e230]:
+              - generic [ref=f4e231]: Kapı
+              - generic [ref=f4e232]: 5 · Analiz onayı
+              - generic [ref=f4e233]: Sorumlu
+              - generic [ref=f4e234]: Tech Lead
+              - generic [ref=f4e235]: Süre
+              - generic [ref=f4e236]: 3 saat
+              - generic [ref=f4e237]: Hatırlatıcı
+              - generic [ref=f4e238]: 24s Jira → 72s Teams/e-posta → 7g delegasyon
+              - generic [ref=f4e239]: SoD kontrolü
+              - generic [ref=f4e240]: ✓ üreten ≠ onaylayan
+            - generic [ref=f4e241]:
+              - button "✓ Onayla" [ref=f4e242] [cursor=pointer]
+              - button "✕ Reddet" [ref=f4e243] [cursor=pointer]
+            - generic [ref=f4e244]:
+              - text: Aynı işlem Jira'da
+              - code [ref=f4e245]: /approve
+              - text: "yorumuyla — iki yolda da AD grubu doğrulanır. Bu makette buton gerçekten çalışır: akış ilerler."
+        - generic [ref=f4e246]:
+          - heading "Bağlantılar" [level=3] [ref=f4e248]
+          - generic [ref=f4e250]:
+            - generic [ref=f4e251]: Jira
+            - generic [ref=f4e252]: UGURMOB-188 ↗
+            - generic [ref=f4e253]: Branch
+            - generic [ref=f4e254]: feature/UGURMOB-188
+            - generic [ref=f4e255]: Runner
+            - generic [ref=f4e256]: lnx-01 · docker-linux
+            - generic [ref=f4e257]: Oturum
+            - generic [ref=f4e258]: resume edilebilir
+            - generic [ref=f4e259]: Risk / kapı
+            - generic [ref=f4e260]:
+              - generic [ref=f4e261]: düşük · 2 kapı
+              - text: (M51)
+            - generic [ref=f4e262]: Tüketim
+            - generic [ref=f4e263]: 0.8M token · abonelik
+            - generic [ref=f4e264]: Merge modu
+            - generic [ref=f4e265]: insan-merge (proje varsayılanı — M48)
+        - generic [ref=f4e266]:
+          - generic [ref=f4e267]:
+            - heading "Yaşayan özet" [level=3] [ref=f4e268]
+            - generic [ref=f4e269]: her adımda ucuz modelle güncellenir
+          - generic [ref=f4e270]: "\"Bildirim izinleri — Android 15 uyumu\" işi ugurmobil-android üzerinde full_auto modunda sürüyor. Analiz şablon v3 ile doğrulandı (risk: düşük). Sonraki adım: Geliştirme."

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# UI'dan düzenlenen pilot ayarlarının kalıcılık dosyası (kişisel, ortama özgü)
+.pilot-settings.json
+# Kalıcı analiz/kod çalışma alanı (ticket-başına izole)
+.sandbox/
+
+# Bankanın örnek PDD dosyaları: kişi adları içerir, depoya girmez (sablon-uret.py yerelden okur)
+plan/*.docx

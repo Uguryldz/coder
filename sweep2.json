@@ -1,0 +1,250 @@
+[
+  {
+    "p": "runners",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 607,
+    "head": "İzolasyon profili Linux Tek kullanımlık konteynır · salt-okunur rootfs · cap-drop ALL · root olmayan kullanıcı · bellek/CPU/pid limitli Windows/macOS İş başına tek kullanımlık kullanıcı ve çalışma ala"
+  },
+  {
+    "p": "sandbox",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 389,
+    "head": "Bu ekran oturumun durumunu gösterir, çıktısını değil: canlı ajan çıktısı maskelenmemiş ticket metni içerebilir (M18) ve tarayıcıya taşınmaz. Bu ekranda silme düğmesi yok: hareketsiz çalışma alanı kend"
+  },
+  {
+    "p": "cache",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 137,
+    "head": "Cache katmanları 3 katman · ticket açık kaldığı sürece yaşar Aktif ticket çalışma alanları kapanışta ya da iptalde audit kaydıyla silinir"
+  },
+  {
+    "p": "eval",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 202,
+    "head": "Golden ticket havuzu gerçek geçmiş ticket'lardan seçilmiş referans set Son eval koşumu Kaydetmek sürümü yayınlamaz. Yayından önce golden ticket eval'i koşar; skor düşerse gerileme burada açıkça görünü"
+  },
+  {
+    "p": "knowledge",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 166,
+    "head": "Knowledge kütüphanesi Paylaşılan bilgi dosyaları · birden çok variant'a bağlanır Ara Bu uç arama yapar; en az bir kelime gerekir. Sonuçlar Aramak için bir kelime yaz."
+  },
+  {
+    "p": "evidence",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 132,
+    "head": "Kanıt paketi tamamlanmış bir iş akışının denetim dosyası Ticket Örnek biçim: UGURPAY-123 Paketi görmek için bir ticket anahtarı yaz."
+  },
+  {
+    "p": "security",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 188,
+    "head": "Bulgular önem sırasına göre · hiçbiri gizlenmez Fail-closed: tarayıcı imajı çekilemezse ya da çalışmazsa adım kırmızı olur — sessizce \"temiz\" sayılmaz. Eşikler Studio parametresidir (M71)."
+  },
+  {
+    "p": "variant",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 86,
+    "head": "Variant detayı 🤖 Önce bir variant seç Ajan variant'ları listesinden bir satıra tıkla."
+  },
+  {
+    "p": "greenfield",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 92,
+    "head": "Greenfield akışı ✦ Önce bir ticket seç Bu ekran bir greenfield ticket'ının akışını gösterir."
+  },
+  {
+    "p": "issues",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 3985,
+    "head": "Karar defteri 36 / 36 kayıt gösteriliyor Filtre REFERANS ÖNEM SORU KARAR DURUM TARİH GATE_REJECT yüksek UGURPAY-501 · 12 GATE_REJECT · ayse.kaya@ugurbank.local rejected 2026-08-04T13:11:00.000Z GATE_O"
+  },
+  {
+    "p": "audit",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 5154,
+    "head": "Zincir durumu hash zincirli · tek yazarlı · SIEM'e CEF olarak akıyor Zinciri şimdi doğrula Zincir tutarlı (yeniden hesaplandı) Kayıtlar yeniden hash'lendi. Dış çapa yok — geçmişe dönük değişiklik bu d"
+  },
+  {
+    "p": "params",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 3554,
+    "head": "Parametreler DB'de · versiyonlu · audit'li (M71) Parametreler PARAMETRE DEĞER KAPSAM SÜRÜM DEĞİŞTİREN İŞLEM binding.dry_run_sample_size Proje bağlarken kuru koşumda incelenecek ticket sayısı 20 proje "
+  },
+  {
+    "p": "mcp",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 2390,
+    "head": "Uç maestro-mcp · /mcp streamable HTTP Kimlik kişisel token AI, senin RBAC'ınla sınırlıdır Audit aktörü ai-via:<user> Her araç çağrısı denetim zincirinde Kapı kararı yok Onay yalnız insan kanalından Ar"
+  },
+  {
+    "p": "users",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1033,
+    "head": "Kullanıcı sorgula Dizindeki hesabın Maestro'daki karşılığı Kullanıcı adı Dizindeki kullanıcı adı, örn. ayse.kaya Sorgula Rol kümesi Kapalı küme — bir oturumun yetkisi bu listeden okunur admin Platform"
+  },
+  {
+    "p": "settings",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1165,
+    "head": "Bağlantılar Secret'lar Vault'ta tutulur — burada yalnız referansı görünür Bağlantılar BAĞLANTI DURUM KİMLİK REFERANSI Jira DC https://jira.example.local ● bağlı vault:maestro/jira#token Azure DevOps h"
+  },
+  {
+    "p": "llm",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1295,
+    "head": "Abonelik havuzu birincil yol · kota/pencere takibi · dolan hesap pas geçilir (M55) tamam HESAP SÜRÜCÜ DURUM PENCERELER PENCERE AÇILIŞI claude-sub-01 claude-sub hazır 5h: %62 · weekly: %41 2026-08-08T1"
+  },
+  {
+    "p": "cost",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1080,
+    "head": "Maliyet & kota Tek doğruluk kaynağı LLM Gateway · abonelikte kota, API'de dolar (M55) API harcaması $0.74 3 çağrı fiyatlı sürücüden karşılandı Kotadan karşılanan çağrı 2 abonelik sürücüleri · dolar ma"
+  },
+  {
+    "p": "yaml",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1401,
+    "head": "ugurmasaustu ugurmobil-android ugurmobil-ios ugurpay ugurweb ugurmasaustu Sube/_git/ugurmasaustu windows-dotnet Bu dosya repoda yaşar; Studio yalnız okur. Değiştirmek için takımın kendi PR süreci kull"
+  },
+  {
+    "p": "live",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1060,
+    "head": "Ticket'tan merge'e insanın dokunduğu üç nokta 1 · Ticket yaz 2 · Analizi onayla 3 · PR'ı onayla 4 · Merge + kanıt Geliştiricinin yaptığı üç şey vardır: ticket yazmak, analizi onaylamak, PR'ı onaylamak"
+  },
+  {
+    "p": "jira",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 2025,
+    "head": "Kullanıcıların çoğu Maestro'yu Jira'dan kullanır Analiz yorum olarak gelir, onay yorumla verilir, ilerleme etiketle gösterilir. Jira workflow durumuna dokunulmaz (M102) ve onay yetkisi Jira izniyle de"
+  },
+  {
+    "p": "commands",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1524,
+    "head": "Jira komut seti Yetki, adım ve idempotency doğrulamalı Jira komut seti KOMUT KİM KULLANABİLİR HANGİ ADIMDA ETKİ /approve tech-lead product-owner qa Açık onay kapısı varken Kapıyı onaylar; imza denetim"
+  },
+  {
+    "p": "workmode",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 848,
+    "head": "Mod matrisi hangi adımı kim yapar Work mode matrisi MOD ANALİZ KOD İNCELEME TEST TASARIMI TEST KOŞUMU KULLANIM full_auto AI AI AI AI AI Rutin ek geliştirme ai_assist AI İnsan AI AI AI Karmaşık veya ri"
+  },
+  {
+    "p": "fanout",
+    "notLive": false,
+    "err": false,
+    "notWired": true,
+    "len": 557,
+    "head": "Ana ticket etki matrisinden alt ticket açılan koordinatör iş Ana ticket anahtarı Örnek biçim: UGURPAY-500 Etki matrisi Etki matrisi analiz belgesinde yaşıyor ve sunucuda bir ucu yok. Alt ticket bağı a"
+  },
+  {
+    "p": "clarify",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 663,
+    "head": "Yanıt gönder adım 2b — intake'in sorduğu eksik bilgi Ticket Örnek biçim: UGURPAY-712 Yanıt Sorulan her maddeyi yanıtla — eksik yanıt yeni bir tur açar. Yanıtı gönder Yanıt, Jira yorumuyla aynı sinyali"
+  },
+  {
+    "p": "doctemplate",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 1136,
+    "head": "Kurumsal .docx şablonu kapak · antet/altbilgi · logo · stil tanımları · onay tablosu şablon yok Kurumsal şablon yüklenmemiş. Üretim durmaz — analiz sade varsayılan kapakla üretilir. Şablon yüklenmemiş"
+  },
+  {
+    "p": "variants",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 789,
+    "head": "Ajan variant'ları 7 rol × platform · her biri versiyonlu persona + knowledge VARİANT ROL PLATFORM MODEL AKTİF SÜRÜM KNOWLEDGE EVAL SKORU intake-default alım default claude-haiku-4-5 v3 2 dosya 97 anal"
+  },
+  {
+    "p": "notify",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 517,
+    "head": "Hatırlatıcı merdiveni Adımlar, kanallar ve süreler parametreden okunur (M88) 24. saat: Jira yorumu → 72. saat: E-posta + Teams → 168. saat: vekile delegasyon → 336. saat: bekleyen kapılar raporu Hiçbi"
+  },
+  {
+    "p": "pii",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 659,
+    "head": "Bugün Maskelenen çağrı 1 / 5 %20 Maskelenen alan 2 On-prem'e giden 1 gizli sınıf — ağdan çıkmadığı için maskesiz Muaf variant 0 yok arşive maskeli hali yazılıyor v1'de maskesiz hali arşive yazılıyordu"
+  },
+  {
+    "p": "routing",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 967,
+    "head": "Bağlı Jira projeleri proje ↔ uygulama N:M · tetikleme modu PROJE TETİKLEME UYGULAMALAR NOT UGURDESK otomatik ugurmasaustu every ticket starts a run UGURKREDI etiket eşleşme yok draft: not yet bound UG"
+  },
+  {
+    "p": "help",
+    "notLive": false,
+    "err": false,
+    "notWired": false,
+    "len": 3882,
+    "head": "Maestro tek paragrafta Jira'ya ticket yazarsın; Maestro okur, eksik varsa yorumla sorar, analiz yazar. Sen onaylarsın; kodu izole sandbox'ta yazar ve testleri gerçekten koşturur, sonra PR açar. PR'ı y"
+  },
+  {
+    "p": "health",
+    "notLive": true,
+    "err": false,
+    "notWired": false,
+    "len": 430,
+    "head": "● Tüm servisler sağlıklı Servisler Servisler SERVİS DURUM SÜRÜM SON KONTROL NOT PostgreSQL ● sağlıklı postgres az önce — Temporal ● sağlıklı temporal az önce — Yedekleme Yedek alma ve geri dönüş tatbi"
+  }
+]

@@ -1,0 +1,225 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: M
+      - generic [ref=e6]:
+        - text: Maestro
+        - generic [ref=e7]: UI prototipi · mock veri
+    - generic [ref=e8]:
+      - generic [ref=e9]: Operasyon
+      - link "▦ Panel" [ref=e10] [cursor=pointer]:
+        - /url: "#dash"
+        - generic [ref=e11]: ▦
+        - text: Panel
+      - link "≡ İş akışları 9" [ref=e12] [cursor=pointer]:
+        - /url: "#tickets"
+        - generic [ref=e13]: ≡
+        - text: İş akışları
+        - generic [ref=e14]: "9"
+      - link "◉ İş akışı detayı" [ref=e15] [cursor=pointer]:
+        - /url: "#detail"
+        - generic [ref=e16]: ◉
+        - text: İş akışı detayı
+      - link "⑂ Ana ticket (fan-out)" [ref=e17] [cursor=pointer]:
+        - /url: "#fanout"
+        - generic [ref=e18]: ⑂
+        - text: Ana ticket (fan-out)
+      - link "✦ Yeni proje sihirbazı" [ref=e19] [cursor=pointer]:
+        - /url: "#greenfield"
+        - generic [ref=e20]: ✦
+        - text: Yeni proje sihirbazı
+      - link "💬 Jira'da görünüm" [ref=e21] [cursor=pointer]:
+        - /url: "#jira"
+        - generic [ref=e22]: 💬
+        - text: Jira'da görünüm
+      - generic [ref=e23]: Yürütme
+      - link "🖥 Runner havuzları" [ref=e24] [cursor=pointer]:
+        - /url: "#runners"
+        - generic [ref=e25]: 🖥
+        - text: Runner havuzları
+      - link "▶ Canlı sandbox oturumu" [ref=e26] [cursor=pointer]:
+        - /url: "#sandbox"
+        - generic [ref=e27]: ▶
+        - text: Canlı sandbox oturumu
+      - link "🗄 Cache & çalışma alanı" [ref=e28] [cursor=pointer]:
+        - /url: "#cache"
+        - generic [ref=e29]: 🗄
+        - text: Cache & çalışma alanı
+      - generic [ref=e30]: Ajanlar
+      - link "🤖 Variant'lar 9" [ref=e31] [cursor=pointer]:
+        - /url: "#variants"
+        - generic [ref=e32]: 🤖
+        - text: Variant'lar
+        - generic [ref=e33]: "9"
+      - link "⚙ Variant detayı" [ref=e34] [cursor=pointer]:
+        - /url: "#variant"
+        - generic [ref=e35]: ⚙
+        - text: Variant detayı
+      - link "📚 Knowledge kütüphanesi" [ref=e36] [cursor=pointer]:
+        - /url: "#knowledge"
+        - generic [ref=e37]: 📚
+        - text: Knowledge kütüphanesi
+      - link "📋 Analiz şablonu" [ref=e38] [cursor=pointer]:
+        - /url: "#template"
+        - generic [ref=e39]: 📋
+        - text: Analiz şablonu
+      - generic [ref=e40]: Yönetişim
+      - link "⚡ LLM Gateway" [ref=e41] [cursor=pointer]:
+        - /url: "#llm"
+        - generic [ref=e42]: ⚡
+        - text: LLM Gateway
+      - link "₺ Maliyet & bütçe" [ref=e43] [cursor=pointer]:
+        - /url: "#cost"
+        - generic [ref=e44]: ₺
+        - text: Maliyet & bütçe
+      - link "🔒 Denetim izi" [ref=e45] [cursor=pointer]:
+        - /url: "#audit"
+        - generic [ref=e46]: 🔒
+        - text: Denetim izi
+      - link "📦 Kanıt paketi" [ref=e47] [cursor=pointer]:
+        - /url: "#evidence"
+        - generic [ref=e48]: 📦
+        - text: Kanıt paketi
+      - link "🛡 Güvenlik bulguları" [ref=e49] [cursor=pointer]:
+        - /url: "#security"
+        - generic [ref=e50]: 🛡
+        - text: Güvenlik bulguları
+      - generic [ref=e51]: Sistem
+      - link "⇄ Yönlendirme kuralları" [ref=e52] [cursor=pointer]:
+        - /url: "#routing"
+        - generic [ref=e53]: ⇄
+        - text: Yönlendirme kuralları
+      - link "⚙ Ayarlar & bağlantılar" [ref=e54] [cursor=pointer]:
+        - /url: "#settings"
+        - generic [ref=e55]: ⚙
+        - text: Ayarlar & bağlantılar
+      - link "❗ ⚠ Tartışılacaklar 6" [ref=e56] [cursor=pointer]:
+        - /url: "#issues"
+        - generic [ref=e57]: ❗
+        - text: ⚠ Tartışılacaklar
+        - generic [ref=e58]: "6"
+    - generic [ref=e59]:
+      - generic [ref=e60]: Bu bir tıklanabilir maket. Veriler sahte, kod yok.
+      - button "🌓 Tema değiştir" [ref=e61] [cursor=pointer]
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - heading "UGURPAY-500 — Kredi limiti artırma (ana ticket)" [level=1] [ref=e158]
+        - generic [ref=e66]: Koordinatör iş akışı · 4 platforma dokunuyor · 6 gündür açık
+      - generic [ref=e67]: Sistem sağlıklı
+      - generic [ref=e69]: 👤 Uğur Yıldız · admin
+    - generic [ref=e70]:
+      - generic [ref=e159]:
+        - generic [ref=e160]:
+          - heading "Etki matrisi" [level=3] [ref=e161]
+          - generic [ref=e162]: analizden otomatik çıkarıldı → alt ticket'lar buradan açıldı
+        - table [ref=e164]:
+          - rowgroup [ref=e165]:
+            - row [ref=e166]:
+              - columnheader "Platform" [ref=e167]
+              - columnheader "Modül" [ref=e168]
+              - columnheader "Değişiklik" [ref=e169]
+              - columnheader "Alt ticket" [ref=e170]
+              - columnheader "Durum" [ref=e171]
+          - rowgroup [ref=e172]:
+            - row [ref=e173]:
+              - cell "🐧 linux-node" [ref=e174]
+              - cell "ugurpay · API + web" [ref=e176]
+              - cell "Yeni uç + form" [ref=e177]
+              - cell "UGURPAY-501" [ref=e178]
+              - cell "⏳ kapıda PR onayı" [ref=e179]:
+                - generic [ref=e180]: ⏳ kapıda
+                - text: PR onayı
+            - row [ref=e181]:
+              - cell "🍎 macos-xcode" [ref=e182]
+              - cell "ugurmobil-ios" [ref=e184]
+              - cell "Limit ekranı" [ref=e185]
+              - cell "UGURPAY-502" [ref=e186]
+              - cell "● çalışıyor test tasarımı" [ref=e187]:
+                - generic [ref=e188]: ● çalışıyor
+                - text: test tasarımı
+            - row [ref=e189]:
+              - cell "🤖 linux-android" [ref=e190]
+              - cell "ugurmobil-android" [ref=e192]
+              - cell "Limit ekranı" [ref=e193]
+              - cell "UGURPAY-503" [ref=e194]
+              - cell "● çalışıyor geliştirme (insan)" [ref=e195]:
+                - generic [ref=e196]: ● çalışıyor
+                - text: geliştirme (insan)
+            - row [ref=e197]:
+              - cell "🪟 windows-dotnet" [ref=e198]
+              - cell "ugurmasaüstü · şube" [ref=e200]
+              - cell "Onay ekranı" [ref=e201]
+              - cell "UGURPAY-504" [ref=e202]
+              - cell "⏳ kapıda PO onayı ⚠ 16 gün" [ref=e203]:
+                - generic [ref=e204]: ⏳ kapıda
+                - text: PO onayı ⚠ 16 gün
+      - generic [ref=e205]:
+        - generic [ref=e206]:
+          - heading "Bağımlılık sırası" [level=3] [ref=e208]
+          - generic [ref=e209]:
+            - generic [ref=e210]:
+              - generic [ref=e211]: 501 API ucu · merge bekliyor
+              - generic [ref=e212]: →
+              - generic [ref=e213]: 502 iOS
+              - generic [ref=e214]: 503 Android
+              - generic [ref=e215]: 504 Masaüstü
+            - generic [ref=e216]: "İstemci ticket'ları API sözleşmesine bağımlı: 501 merge olduğunda üçüne birden \"bağımlılık hazır\" sinyali gider. 504 zaten kendi PO onayında beklediği için sıradan etkilenmiyor."
+        - generic [ref=e217]:
+          - heading "Toplam durum" [level=3] [ref=e219]
+          - generic [ref=e221]:
+            - generic [ref=e222]: İlerleme
+            - generic [ref=e223]: 4 alt ticket · 0 tamamlandı
+            - generic [ref=e224]: Toplam maliyet
+            - generic [ref=e225]: $18.40 (bütçe $60)
+            - generic [ref=e226]: En eski bekleme
+            - generic [ref=e227]: 16 gün 2 saat (504 · PO)
+            - generic [ref=e228]: Ana kapanış
+            - generic [ref=e229]: tüm alt ticket'lar Done olunca
+            - generic [ref=e230]: Kanıt paketi
+            - generic [ref=e231]: alt paketlerin birleşimi
+      - generic [ref=e232]:
+        - generic [ref=e233]:
+          - heading "Alt ticket'lar" [level=3] [ref=e234]
+          - generic [ref=e235]: her biri kendi runner/kapı/PR'ıyla bağımsız
+        - generic [ref=e236]:
+          - generic [ref=e237] [cursor=pointer]:
+            - generic [ref=e238]:
+              - text: UGURPAY-501 — Kredi limiti — API + web UI
+              - generic [ref=e239]:
+                - text: UgurBank/ugurpay ·
+                - generic [ref=e240]: full-auto
+                - text: · adım 9 QA onayı · sorumlu Mert D.
+            - generic [ref=e241]:
+              - generic [ref=e242]: ⏳ kapıda
+              - generic [ref=e243]: $6.20
+          - generic [ref=e244] [cursor=pointer]:
+            - generic [ref=e245]:
+              - text: UGURPAY-502 — Kredi limiti — iOS ekranı
+              - generic [ref=e246]:
+                - text: UgurBank/ugurmobil-ios ·
+                - generic [ref=e247]: full-auto
+                - text: · adım 6a Geliştirme · sorumlu Selin A.
+            - generic [ref=e248]:
+              - generic [ref=e249]: ● çalışıyor
+              - generic [ref=e250]: $4.10
+          - generic [ref=e251] [cursor=pointer]:
+            - generic [ref=e252]:
+              - text: UGURPAY-503 — Kredi limiti — Android ekranı
+              - generic [ref=e253]:
+                - text: ·
+                - generic [ref=e254]: ai-assist
+                - text: · adım 5 Tech Lead onayı · sorumlu Baran T.
+            - generic [ref=e255]:
+              - generic [ref=e256]: ● çalışıyor
+              - generic [ref=e257]: $3.00
+          - generic [ref=e258] [cursor=pointer]:
+            - generic [ref=e259]:
+              - text: UGURPAY-504 — Kredi limiti — masaüstü şube ekranı
+              - generic [ref=e260]:
+                - text: UgurBank/ugurmasaustu ·
+                - generic [ref=e261]: full-auto
+                - text: · adım 4 PO onayı · sorumlu Ayşe K.
+            - generic [ref=e262]:
+              - generic [ref=e263]: ⏳ kapıda
+              - generic [ref=e264]: $1.40

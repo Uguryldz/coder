@@ -1,0 +1,518 @@
+import type { RoleResult } from "@maestro/agent-roles";
+import type { LlmOutcome, LlmPort } from "@maestro/ports";
+import { activityInfo } from "@temporalio/activity";
+import { ApplicationFailure } from "@temporalio/common";
+import type { ActivityDeps, RunContext } from "./deps.js";
+import { audit, notifyEvent, record } from "./record.js";
+
+/**
+ * The four ends of an LLM call (M18/M55/M97), turned into the two things an
+ * activity can do: return a value, or stop.
+ *
+ * `queued` and `blocked` both stop the activity, and it matters enormously
+ * which one: a quota wait is a RETRYABLE failure, so Temporal holds the run
+ * and comes back when the window opens — no work is lost and no human is
+ * disturbed. A policy block is NON-retryable, because retrying a decision the
+ * compliance policy already made just burns the retry budget.
+ */
+
+export const QUOTA_WAIT = "LlmQuotaWait";
+// Declared in `../failure-types.ts` (workflow-safe) so the workflow can catch them.
+export { LLM_AUTH_REJECTED, LLM_BLOCKED, LLM_SCHEMA_UNMET } from "../failure-types.js";
+import { LLM_AUTH_REJECTED, LLM_BLOCKED, LLM_SCHEMA_UNMET } from "../failure-types.js";
+
+/**
+ * How many activity attempts an auth-rejected key is given before the run is
+ * handed to a human (see `guardModelCall`).
+ *
+ * On the thinking ladder (1 minute doubling to a 1-hour cap) attempt 30 lands
+ * roughly a full day after the first 401/403. That window is chosen for the
+ * case the two status codes cannot distinguish: OpenRouter answers the SAME
+ * 403 for a key whose prepaid limit is exhausted — which heals the moment the
+ * operator tops up — and for a key that was revoked, which never heals. A day
+ * is enough for "the quota returns in the morning" and short enough that a
+ * dead key becomes a named handover instead of a run that is `running`
+ * forever with nothing on the panel saying why.
+ */
+export const AUTH_RETRY_MAX_ATTEMPTS = 30;
+
+/**
+ * Bir modelin şemayı tutturamaması kaç activity denemesi sonra insana devredilir.
+ *
+ * ── NEDEN BU SINIR VAR ──────────────────────────────────────────────────────
+ * `LlmSchemaValidationError` (llm-gateway) modelin cevabı şemayı İKİ turda da
+ * tutturamayınca atılır — `generateStructured` ilk çağrı + bir onarım turu
+ * yapar, sonra fırlatır. Bu düz bir exception'dır, `LlmOutcome` değil, yani
+ * `resolveOutcome`'a hiç uğramaz; Temporal'a düz exception ise YENİDEN
+ * DENENEBİLİR görünür. Düşünme rolleri `thinkActs` proxy'sinde çalışıyor ve
+ * onun bütçesi `maximumAttempts: Number.POSITIVE_INFINITY` — yani şemayı
+ * tutturamayan bir model SONSUZA KADAR yeniden denenirdi ve koşunun satırı
+ * günlerce `running` kalırdı, panelde nedenini söyleyen tek satır olmadan.
+ * `guardModelCall`'un 401/403 için kapattığı deliğin AYNISI, bu kez şema
+ * tarafında.
+ *
+ * ── NEDEN 5, 30 DEĞİL ───────────────────────────────────────────────────────
+ * 401/403'te beklemek mantıklıydı: kota sabaha dolabilir, anahtar
+ * yenilenebilir — sorun kendi kendine İYİLEŞEBİLİR. Şema uyuşmazlığı
+ * iyileşmez: aynı model, aynı prompt, aynı şema. Tek dalgalanma kaynağı
+ * örneklemenin (temperature) rastgeleliği, ve bu tam olarak birkaç denemede
+ * tükenen bir şanstır. gpt-oss gibi küçük/açık modellerde bu sık görülen bir
+ * durumdur; 5 deneme (her biri kendi içinde 2 tur = 10 model çağrısı) şansa
+ * yeterli fırsatı verir, sonrasında beklemek yalnızca gerçeği geciktirir.
+ * Merdiven (1 dk × 2, 1 saat tavan) ile 5. deneme ilk hatadan ~15 dakika
+ * sonraya düşer: operatör modeli/şablonu değiştirmek için makul sürede
+ * çağrılır.
+ */
+export const SCHEMA_RETRY_MAX_ATTEMPTS = 5;
+
+/**
+ * The gateway's `LlmAuthError` (401/403), recognised STRUCTURALLY.
+ *
+ * This package may not import `@maestro/llm-gateway` — M44 keeps every
+ * concrete driver out of the core, and the seam it does import (`LlmPort`)
+ * deliberately leaves real failures as exceptions. Matching on the error's
+ * class NAME is the same classification Temporal itself performs when it turns
+ * a thrown error into a failure `type`; it is not the message-string matching
+ * the gateway's error taxonomy exists to prevent.
+ */
+function isLlmAuthError(err: unknown): err is Error & { status?: number } {
+  return err instanceof Error && err.name === "LlmAuthError";
+}
+
+/**
+ * Modelin yapılandırılmış çıktısı şemayı tutturamadı — YAPISAL tanınıyor.
+ *
+ * İki ayrı katman aynı gerçeği farklı adla fırlatıyor ve ikisi de aynı
+ * muameleyi hak ediyor:
+ *
+ *  - `LlmSchemaValidationError` (`@maestro/llm-gateway`): cevap ŞEKLİ tutmadı
+ *    (JSON yok, alan eksik, tip yanlış) — gateway'in kendi onarım turundan
+ *    sonra.
+ *  - `RoleOutputError` (`@maestro/agent-roles`): şekil tuttu ama İÇERİK
+ *    yetersizdi (kaynaksız bölüm, "eksik ama soru yok" çelişkisi) — rol
+ *    katmanının en fazla iki onarım turundan sonra.
+ *
+ * `isLlmAuthError` ile aynı gerekçeyle isim üzerinden eşleşiyor: bu paket
+ * M44 gereği ne `@maestro/llm-gateway`'i ne de somut bir sürücüyü import
+ * edebilir, ve sınıf ADI zaten Temporal'ın bir exception'ı failure `type`'ına
+ * çevirirken yaptığı sınıflandırmanın aynısı — hata taksonomisinin önlemek
+ * için var olduğu mesaj-metni eşleştirmesi değil.
+ */
+function isSchemaError(err: unknown): err is Error {
+  return (
+    err instanceof Error &&
+    (err.name === "LlmSchemaValidationError" || err.name === "RoleOutputError")
+  );
+}
+
+/**
+ * The current attempt number, when running inside a Temporal activity.
+ *
+ * Outside one (a unit test calling the activity function directly) there is no
+ * context and the answer is 1 — the guard then behaves like a first attempt,
+ * which is the only honest default.
+ */
+function currentAttempt(): number {
+  try {
+    return activityInfo().attempt;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Run one model call and refuse to let an auth OR a schema failure retry in
+ * silence.
+ *
+ * THE DEFECT THIS CLOSES. `LlmAuthError` is thrown by the driver — it is a
+ * real failure, not an `LlmOutcome`, so it never reaches `resolveOutcome` —
+ * and a plain thrown error is RETRYABLE to Temporal. Under the thinking
+ * proxy's unlimited/1-hour ladder (built for M55 quota waits) a rejected key
+ * therefore retried forever, and the run's row sat `running` for days with
+ * nothing in the panel saying why (the install rehearsal's OPS-78/OPS-79).
+ *
+ * The policy is BOUNDED retries rather than fail-fast, because the provider
+ * cannot tell us which auth failure this is: a quota-exhausted prepaid key and
+ * a revoked key both come back 403, and waiting is exactly right for the first
+ * (the run resumes on its own when the operator tops up, no restart needed).
+ * What was missing is the bound and the trace, and both are added here: every
+ * attempt leaves a journal line naming the count, and the attempt after
+ * `AUTH_RETRY_MAX_ATTEMPTS` stops retrying, hands the ticket to a human (M97
+ * machinery — journal + audit + notification), and dies non-retryably with
+ * `LLM_AUTH_REJECTED`.
+ *
+ * THE SECOND DEFECT, same family. A model that cannot satisfy the schema
+ * throws too — `LlmSchemaValidationError` from the gateway after its own
+ * repair round, or `RoleOutputError` from `agent-roles` after its two — and
+ * those exceptions are just as retryable to Temporal, on the same unlimited
+ * ladder. A small open-weight model (gpt-oss and friends) misses a strict
+ * seven-section schema often enough that this is not a theoretical hazard: the
+ * run would retry the same impossible document forever with a `running` row
+ * and no explanation. It is bounded here at `SCHEMA_RETRY_MAX_ATTEMPTS` —
+ * lower than the auth bound, because an auth failure can heal on its own and a
+ * schema mismatch cannot (see the constant).
+ *
+ * Every other error passes through untouched: this guard exists for the two
+ * failure classes whose retry semantics were wrong, not to re-classify the rest.
+ */
+export async function guardModelCall<T>(
+  deps: ActivityDeps,
+  run: RunContext,
+  what: string,
+  call: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    if (isSchemaError(err)) return await guardSchemaError(deps, run, what, err);
+    if (!isLlmAuthError(err)) throw err;
+
+    const attempt = currentAttempt();
+    const status = typeof err.status === "number" ? `HTTP ${err.status}` : "HTTP 401/403";
+    /**
+     * Kesici açıksa bu deneme AĞA ÇIKMADI: sağlayıcı dövülmedi, anahtar
+     * pencere sonunda yeniden yoklanacak. Defterde bunu adıyla söylemek
+     * gerekiyor — "30 kez reddedildi" ile "30 kez beklendi" operatör için
+     * farklı iki cümle; birincisi anahtarı, ikincisi sabrı sorgulatır.
+     * Deneme yine sayılır: devir bütçesi (≈1 gün) olduğu gibi duruyor, kesici
+     * yalnız denemeleri bedava yapıyor.
+     */
+    const waited = (err as { breakerOpen?: boolean }).breakerOpen === true;
+    // The provider's own sentence ("Key limit exceeded (total limit)…") is the
+    // one thing the operator can act on; a bare "403" sent one to re-enter a
+    // key that was fine and merely out of budget.
+    const reason = authReasonOf(err);
+    const because = reason === null ? "" : ` · ${reason}`;
+
+    if (attempt < AUTH_RETRY_MAX_ATTEMPTS) {
+      // The panel must show the wait: one line per attempt, keyed on the
+      // attempt so a Temporal retry of THIS attempt's writes collapses while
+      // the next attempt still gets its own line. Bounded by the attempt cap,
+      // so this can never flood the journal.
+      await record(deps, run, {
+        kind: "other",
+        title: waited ? "model anahtarı bekleniyor" : "model anahtarı reddedildi",
+        detail: waited
+          ? `${what} · kesici açık, ağa çıkılmadı · anahtar düzelince kaldığı yerden sürer (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`
+          : `${what} · ${status}${because} · yeniden denenecek (${attempt}/${AUTH_RETRY_MAX_ATTEMPTS})`,
+        key: `auth-retry:${what}:${attempt}`,
+      });
+      // Rethrown as-is: the proxy's own ladder decides when the next attempt
+      // runs, and the original error keeps its name for Temporal's record.
+      throw err;
+    }
+
+    // The budget is spent. Same shape as the M18 `blocked` branch: a human
+    // takes the ticket, the reason is on the record BEFORE the activity dies,
+    // and the failure type is named so nothing upstream mistakes it for quota.
+    await handOver(
+      deps,
+      run,
+      `${what}: model anahtarı reddedildi (${status}, ${attempt} deneme)${because} — Ayarlar > Bağlantılar'dan anahtarı/limiti düzeltin`,
+      `auth-rejected:${what}`,
+    );
+    throw ApplicationFailure.create({
+      message: `LLM auth rejected for ${what} after ${attempt} attempts (${status}); fix the model key in Ayarlar > Bağlantılar`,
+      type: LLM_AUTH_REJECTED,
+      nonRetryable: true,
+    });
+  }
+}
+
+/**
+ * Şemayı tutturamayan bir modeli sınırlı sayıda yeniden dene, sonra devret.
+ *
+ * `guardModelCall`'un auth dalıyla aynı iskelet, iki bilerek yapılmış farkla:
+ *
+ *  1. **Bütçe daha kısa.** Gerekçe `SCHEMA_RETRY_MAX_ATTEMPTS`'te yazılı: auth
+ *     hatası kendi kendine iyileşebilir, şema uyuşmazlığı iyileşemez.
+ *  2. **Devir mesajı modeli işaret eder, anahtarı değil.** Operatörün yapacağı
+ *     iş "anahtarı düzelt" değil; ya daha güçlü bir model bağlaması ya da
+ *     şablonu sadeleştirmesi gerekiyor. Hangi şemanın tutmadığı ve modelin ne
+ *     dediği mesajda duruyor, çünkü bunu okuyan kişinin elindeki tek ipucu bu.
+ *
+ * Dönüş tipi `Promise<never>`: bu fonksiyon her yolda fırlatır. `guardModelCall`
+ * içinde `return await` ile çağrılıyor, böylece jenerik `T` ile uyuşuyor ama
+ * hiçbir zaman bir değer üretmiyor.
+ */
+async function guardSchemaError(
+  deps: ActivityDeps,
+  run: RunContext,
+  what: string,
+  err: Error,
+): Promise<never> {
+  const attempt = currentAttempt();
+  // Şemanın adı ve modelin eksikleri hatanın mesajında zaten duruyor; panelde
+  // bir satırın taşıyabileceğinden uzun olabildiği için kırpılıyor.
+  const detail = err.message.length > 400 ? `${err.message.slice(0, 400)}…` : err.message;
+
+  if (attempt < SCHEMA_RETRY_MAX_ATTEMPTS) {
+    // Auth dalıyla aynı sebeple attempt'e anahtarlı: bu denemenin yazımlarının
+    // Temporal tarafından tekrarlanması tek satıra çöker, sonraki deneme yine
+    // kendi satırını alır. Bütçe sınırlı olduğu için günlüğü asla su basmaz.
+    await record(deps, run, {
+      kind: "other",
+      title: "model çıktısı şemayı tutturamadı",
+      detail: `${what} · ${detail} · yeniden denenecek (${attempt}/${SCHEMA_RETRY_MAX_ATTEMPTS})`,
+      key: `schema-retry:${what}:${attempt}`,
+    });
+    // Olduğu gibi yeniden fırlatılıyor: bekleme merdiveni proxy'nin, hatanın
+    // adı da Temporal'ın failure kaydının.
+    throw err;
+  }
+
+  await handOver(
+    deps,
+    run,
+    `${what}: model çıktısı ${attempt} denemede de şemayı tutturamadı — ${detail} · ` +
+      `Ayarlar > Modeller'den bu rol için daha güçlü bir model bağlayın ya da şablonu sadeleştirin`,
+    `schema-unmet:${what}`,
+  );
+  throw ApplicationFailure.create({
+    message: `LLM output did not satisfy the schema for ${what} after ${attempt} attempts: ${detail}`,
+    type: LLM_SCHEMA_UNMET,
+    nonRetryable: true,
+  });
+}
+
+export type Resolved<T> =
+  | { readonly status: "ok"; readonly value: T }
+  /** M18 `degrade_ai_assist`: the flow continues, human-led (M97). */
+  | { readonly status: "degraded"; readonly messageKey: string };
+
+/**
+ * Wait for a quota window (M55). Retryable on purpose, with the delay the
+ * gateway itself named: the run sits in Temporal, costs nothing, and resumes
+ * on its own.
+ */
+export function quotaWait(resumeAt: string, now: Date): ApplicationFailure {
+  const delayMs = Math.max(0, new Date(resumeAt).getTime() - now.getTime());
+  return ApplicationFailure.create({
+    message: `LLM quota exhausted; retry after ${resumeAt}`,
+    type: QUOTA_WAIT,
+    nonRetryable: false,
+    nextRetryDelay: delayMs,
+  });
+}
+
+/**
+ * Branch on the outcome of one thinking-role call and leave the right trace.
+ *
+ * The exhaustive switch is the point: `LlmOutcome` adding a fifth state must
+ * break compilation here rather than fall through to "treat it as ok".
+ */
+export async function resolveOutcome<T>(
+  deps: ActivityDeps,
+  run: RunContext,
+  what: string,
+  outcome: LlmOutcome<T>,
+): Promise<Resolved<T>> {
+  switch (outcome.status) {
+    case "ok":
+      return { status: "ok", value: outcome.value };
+
+    case "queued": {
+      await record(deps, run, {
+        kind: "quota",
+        title: "LLM kotası doldu",
+        detail: `${what} · ${outcome.reason} · ${outcome.resumeAt}`,
+        key: `quota:${what}:${outcome.resumeAt}`,
+      });
+      await audit(deps, run, {
+        action: "QUOTA_WARN",
+        meta: { what, resumeAt: outcome.resumeAt },
+        key: `quota:${what}:${outcome.resumeAt}`,
+      });
+      throw quotaWait(outcome.resumeAt, deps.now());
+    }
+
+    case "degraded": {
+      // M18/M97: no permitted backend may see this data class, so the work
+      // still happens — a human does it, in ai-assist mode.
+      await deps.runs.patch(run.ticket, { mode: "ai_assist" });
+      await record(deps, run, {
+        kind: "other",
+        title: "ai_assist moduna düşüldü",
+        detail: `${what} · ${outcome.messageKey} · ${outcome.dataClass}`,
+        key: `degrade:${what}`,
+      });
+      await audit(deps, run, {
+        action: "MODE_CHANGED",
+        meta: { what, to: "ai_assist", messageKey: outcome.messageKey },
+        key: `degrade:${what}`,
+      });
+      return { status: "degraded", messageKey: outcome.messageKey };
+    }
+
+    case "blocked": {
+      // M18 `block`: there is no ai-assist fallback. A human takes the ticket
+      // and the compliance decision is on the record before the activity dies.
+      await handOver(deps, run, `${what}: ${outcome.messageKey}`, `blocked:${what}`);
+      throw ApplicationFailure.create({
+        message: `LLM policy blocked ${what}: ${outcome.messageKey}`,
+        type: LLM_BLOCKED,
+        nonRetryable: true,
+      });
+    }
+  }
+}
+
+/**
+ * Hand the ticket to a human, with everything they need to continue: the
+ * journal entry, the audit record and the notification. Shared by the blocked
+ * branch above, by M52/M54 handovers and by the workflow's own `handOverToHuman`.
+ */
+export async function handOver(
+  deps: ActivityDeps,
+  run: RunContext,
+  reason: string,
+  key: string,
+): Promise<void> {
+  /**
+   * ── DEVREDİLEN KOŞU `handover` YAZAR, `done` DEĞİL ────────────────────────
+   *
+   * CANLIDA ÖLÇÜLDÜ. OPS-120/121/122/123 LLM 403'ü yüzünden insana devredildi,
+   * ama satırları `status='done'`, `step='2'`, `archivedAt` boş kaldı. Tarama
+   * her turda "atlandı: koşusu var (tamamlandı, adım 2)" diyordu ve o
+   * ticket'lar bir daha HİÇ akışa girmedi — operatörün "havuzda ticket
+   * kalamaz" kuralının tam ihlali.
+   *
+   * SEBEP, ve neden tam olarak BURASI. Bu fonksiyon bugüne kadar YALNIZ
+   * `mode`u yazıyordu; satırın DURUMUNA hiç dokunmuyordu. Devir sonrası
+   * workflow `state.status = "handover"` ile dönüyor, Temporal yürütmeyi
+   * `Completed` sayıyor, ve açılışta koşan kıyas (`reconcileRunStatuses`,
+   * `apps/deploy/src/stores/reconcile.ts`) `completed → "done"` eşlemesiyle
+   * satıra `done` yazıyordu. Yani `done`u yazan reconcile'dı, ama yazabilmesinin
+   * TEK sebebi satırın `handover` demiyor olmasıydı: o dosyanın
+   * `RECONCILE_PROTECTED` listesi `handover`ı zaten koruyor ve gerekçesi orada
+   * yazılı — "motorun execution durumunun taşımadığı bir bilgi".
+   *
+   * Bu yüzden düzeltme reconcile'da değil burada: devri YAPAN taraf, devrin
+   * olduğunu satıra yazmalı. Koruma zaten vardı; korunacak değer yoktu.
+   *
+   * `handover` TERMİNAL DEĞİL (`TERMINAL_STATUSES`, `stores/run-context.ts`),
+   * ve bu bilinçli: devredilen koşu "bitmiş" bir koşu değil, insanın elinde
+   * bekleyen bir koşu. Terminal olsaydı `get` onu canlı saymayı bırakır ve
+   * devirden sonra gelen bir insan yorumu bağlamsız kalırdı.
+   *
+   * `mode` ile AYNI yazımda: iki ayrı `patch` iki ayrı UPDATE demek ve ikisi
+   * arasında satır yarım kalabilirdi — devredilmiş ama hâlâ `full_auto`
+   * görünen bir koşu, panelin operatöre söylediği en kötü yalan.
+   */
+  await deps.runs.patch(run.ticket, { mode: "ai_assist", status: "handover" });
+  await record(deps, run, {
+    kind: "handover",
+    title: "insana devredildi",
+    detail: reason,
+    key: `handover:${key}`,
+  });
+  await audit(deps, run, { action: "HANDOVER", meta: { reason }, key: `handover:${key}` });
+  // Jira'ya da: ticket'ın başındaki kişi panele bakmaz, ticket'a bakar.
+  // Yorum yazılamazsa devir yine olur — defter ve denetim zaten yazıldı.
+  try {
+    await deps.idempotency.once(`${run.runId}:handover-comment:${key}`, () =>
+      deps.work.addComment(run.ticket, deps.translate(run.locale, "jira.handover", { ticket: run.ticket, reason })),
+    );
+  } catch (error) {
+    await record(deps, run, {
+      kind: "other",
+      title: "devir yorumu yazılamadı",
+      detail: String(error).slice(0, 300),
+      key: `handover-comment-failed:${key}`,
+    });
+  }
+  await notifyEvent(deps, run, {
+    event: "handover",
+    messageKey: "notify.handover",
+    params: { ticket: run.ticket, reason },
+    to: await deps.directory.membersOf("tech-leads"),
+    key: `handover:${key}`,
+  });
+}
+
+/**
+ * `deps.llm`'in `guardModelCall` ile SARILMIŞ hâli.
+ *
+ * ── NEDEN GEREKLİ ───────────────────────────────────────────────────────────
+ * `guardModelCall` bir çağrıyı sarar. `@maestro/agent-roles`'ün `runRole`'ü ise
+ * `LlmPort`'u KENDİSİ çağırır — hem ilk turda hem de en fazla iki onarım
+ * turunda. Yani `guardModelCall(… () => runIntake({llm: deps.llm, …}))` yazmak
+ * yalnızca DIŞ çağrıyı korurdu ve onarım turlarındaki 401/403'ler korumasız
+ * kalırdı: tam da `guardModelCall`'un kapattığı sessiz sonsuz yeniden deneme
+ * deliği, bu kez rol katmanının içinde.
+ *
+ * Bunun yerine PORT sarılıyor: `runRole` içinde kaç çağrı olursa olsun her biri
+ * aynı korumadan geçer. Guard'ın kendisi idempotent değil ama olmasına gerek
+ * yok — attempt sayısı Temporal'ın activity attempt'inden okunuyor, tur
+ * sayısından değil, yani bir activity denemesindeki üç rol turu üç ayrı
+ * "yeniden denenecek" satırı değil, aynı attempt numarasını taşıyan tek bir
+ * kayıt üretir (`record`'un `key`'i attempt'e bağlı).
+ *
+ * `agentSession` de sarılıyor: bu paket onu rol katmanından çağırmıyor, ama
+ * yarısı korumalı bir port ileride sessizce yanlış olurdu.
+ */
+export function guardedLlm(deps: ActivityDeps, run: RunContext, what: string): LlmPort {
+  const llm = deps.llm;
+  return {
+    generateObject: (req, schema) => guardModelCall(deps, run, what, () => llm.generateObject(req, schema)),
+    agentSession: (opts) => guardModelCall(deps, run, what, () => llm.agentSession(opts)),
+  };
+}
+
+/**
+ * Bir `agent-roles` `RoleResult`'ını `resolveOutcome`'ın anladığı `LlmOutcome`'a
+ * çevirir.
+ *
+ * ── NEDEN ÇEVİRİ, YENİ BİR DAL DEĞİL ────────────────────────────────────────
+ * İki tip aynı dört ucu anlatıyor (M18/M55/M97) ve bu tesadüf değil: `RoleResult`
+ * `LlmOutcome`'ın üç ok-olmayan hâlini bilerek OLDUĞU GİBİ yeniden yayıyor.
+ * Çeviri, `resolveOutcome`'ın kota bekleme / ai-assist'e düşme / insana devir
+ * davranışını TEK bir yerde tutar — rol katmanı için ikinci bir kopya yazmak,
+ * M97'nin degraded yolunu iki farklı yerde bakımı yapılacak hâle sokardı.
+ *
+ * `log` alanı: `LlmOutcome.ok` bir çağrı kaydı taşır, `RoleResult.ok` ise bir
+ * kayıt LİSTESİ (onarım turları da çağrıdır). `resolveOutcome` yalnızca `value`
+ * okuduğu için SON kayıt yeterli — ama liste boş olamaz, çünkü `ok` bir cevabın
+ * geldiği anlamına gelir; yine de tip güvenliği için boş hâl elde ediliyor.
+ */
+export function outcomeOfRole<T>(result: RoleResult<T>): LlmOutcome<T> {
+  switch (result.status) {
+    case "ok": {
+      const log = result.logs[result.logs.length - 1];
+      if (log === undefined) {
+        // Ulaşılamaz: `ok` bir modelin cevap verdiği anlamına gelir, yani en az
+        // bir kayıt vardır. Yine de sessizce uydurulmuş bir kayıt üretmektense
+        // yüksek sesle patlamak doğru — sahte bir maliyet satırı M55'in kota
+        // muhasebesini ve kanıt paketini bozar.
+        throw new Error("agent-roles returned ok with no call log; the accounting would be wrong");
+      }
+      return { status: "ok", value: result.value, log };
+    }
+    case "queued":
+      return { status: "queued", resumeAt: result.resumeAt, reason: result.reason };
+    case "degraded":
+      return { status: "degraded", messageKey: result.messageKey, dataClass: result.dataClass };
+    case "blocked":
+      return { status: "blocked", messageKey: result.messageKey, dataClass: result.dataClass };
+  }
+}
+
+/**
+ * The provider's error sentence out of an auth failure's body: OpenAI-style
+ * `{error:{message}}`, plain `{message}`, or the first line of text. Null when
+ * the body carries nothing readable. Never the request, never a key.
+ */
+export function authReasonOf(err: unknown): string | null {
+  const body = (err as { responseBody?: unknown } | null)?.responseBody;
+  if (typeof body !== "string" || body.trim() === "") return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: unknown } | string; message?: unknown };
+    const nested = typeof parsed.error === "object" && parsed.error !== null ? parsed.error.message : parsed.error;
+    const message = typeof nested === "string" ? nested : typeof parsed.message === "string" ? parsed.message : null;
+    if (message !== null && message.trim() !== "") return message.trim().slice(0, 200);
+  } catch {
+    /* not JSON — fall through to the raw line */
+  }
+  const line = body.split("\n")[0]?.trim() ?? "";
+  return line === "" ? null : line.slice(0, 200);
+}

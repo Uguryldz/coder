@@ -1,0 +1,361 @@
+- generic [ref=f21e2]:
+  - generic [ref=f21e3]:
+    - navigation "Ana gezinme" [ref=f21e4]:
+      - generic [ref=f21e5]:
+        - generic [ref=f21e6]: M
+        - generic [ref=f21e7]:
+          - text: Maestro
+          - generic [ref=f21e8]: SDLC otomasyonu
+      - generic [ref=f21e9]:
+        - generic [ref=f21e10]: İşler
+        - link "Panel" [ref=f21e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f21e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f21e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f21e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f21e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f21e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f21e17]:
+        - generic [ref=f21e18]: Ajanlar
+        - link "Ajan tanımları" [ref=f21e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f21e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f21e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f21e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f21e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f21e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f21e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f21e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f21e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f21e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f21e29]: yakında
+      - generic [ref=f21e30]:
+        - generic [ref=f21e31]: Denetim
+        - link "Denetim izi" [ref=f21e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f21e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f21e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f21e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [active] [ref=f21e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f21e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f21e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f21e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f21e40]: yakında
+        - link "Kanıt paketi yakında" [ref=f21e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f21e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f21e43]: yakında
+      - generic [ref=f21e44]:
+        - generic [ref=f21e45]: Kurulum
+        - link "Proje bağlama" [ref=f21e46] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f21e47]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f21e48] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f21e49]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f21e50] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f21e51]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f21e52] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f21e53]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f21e54] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f21e55]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f21e56] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f21e57]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f21e58]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f21e59] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f21e60]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f21e61]:
+      - banner [ref=f21e62]:
+        - heading "Yapay Zekâ Kullanımı & Maliyeti" [level=1] [ref=f21e568]
+        - generic [ref=f21e64]:
+          - generic [ref=f21e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f21e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f21e67]: admin
+        - button "Çıkış" [ref=f21e68] [cursor=pointer]
+      - main [ref=f21e69]:
+        - generic [ref=f21e569]:
+          - tablist "Kullanım görünümü" [ref=f21e570]:
+            - tab "Maliyet" [selected] [ref=f21e571] [cursor=pointer]
+            - tab "Trafik" [ref=f21e572] [cursor=pointer]
+          - tabpanel "Maliyet" [ref=f21e573]:
+            - generic [ref=f21e574]:
+              - generic [ref=f21e575]:
+                - heading "Maliyet & kota" [level=3] [ref=f21e576]
+                - generic [ref=f21e577]: Tek doğruluk kaynağı LLM Gateway · abonelikte kota, API'de dolar (M55)
+              - generic [ref=f21e578]:
+                - generic [ref=f21e579]:
+                  - generic [ref=f21e580]:
+                    - generic [ref=f21e581]: API harcaması
+                    - generic [ref=f21e582]: $0.00
+                    - generic [ref=f21e583]: 0 çağrı fiyatlı sürücüden karşılandı
+                  - generic [ref=f21e584]:
+                    - generic [ref=f21e585]: Kotadan karşılanan çağrı
+                    - generic [ref=f21e586]: "25"
+                    - generic [ref=f21e587]: abonelik sürücüleri · dolar maliyeti yok
+                  - generic [ref=f21e588]:
+                    - generic [ref=f21e589]: Token
+                    - generic [ref=f21e590]: 197,407
+                - paragraph [ref=f21e591]: Bu sayfadaki 25 çağrıdan hesaplandı — tüm zamanların toplamı değil.
+            - generic [ref=f21e593]:
+              - generic [ref=f21e594]:
+                - heading "Abonelik havuzu" [level=3] [ref=f21e595]
+                - generic [ref=f21e596]: kota dolduğunda iş durmaz, kuyruğa girer (M55)
+              - generic [ref=f21e597]:
+                - paragraph [ref=f21e598]:
+                  - generic [ref=f21e599]: kuyrukta
+                  - text: "Abonelik havuzu doldu: iş durmadı, kuyrukta bekliyor ve pencere açılınca kaldığı yerden devam edecek."
+                - paragraph [ref=f21e600]: hazır 0 · soğuyan 0 · dolan 0 · pasif 0
+            - generic [ref=f21e602]:
+              - generic [ref=f21e603]:
+                - heading "Gateway çağrı kaydı" [level=3] [ref=f21e604]
+                - generic [ref=f21e605]: tek doğruluk kaynağı
+              - table [ref=f21e608]:
+                - rowgroup [ref=f21e609]:
+                  - row [ref=f21e610]:
+                    - columnheader "Saat" [ref=f21e611]
+                    - columnheader "Akış" [ref=f21e612]
+                    - columnheader "Rol" [ref=f21e613]
+                    - columnheader "Sürücü" [ref=f21e614]
+                    - columnheader "Giriş / Çıkış" [ref=f21e615]
+                    - columnheader "Maliyet" [ref=f21e616]
+                    - columnheader "Veri sınıfı" [ref=f21e617]
+                - rowgroup [ref=f21e618]:
+                  - row [ref=f21e619]:
+                    - cell "2026-08-15T01:57:08.312Z" [ref=f21e620]
+                    - cell "pilot-20260815015600" [ref=f21e621]
+                    - cell "analist" [ref=f21e622]
+                    - cell "openai-compat" [ref=f21e623]
+                    - cell "8986 / 2749" [ref=f21e625]
+                    - cell "kotadan" [ref=f21e626]
+                    - cell "gizli" [ref=f21e627]
+                  - row [ref=f21e629]:
+                    - cell "2026-08-15T01:56:48.109Z" [ref=f21e630]
+                    - cell "pilot-20260815015600" [ref=f21e631]
+                    - cell "analist" [ref=f21e632]
+                    - cell "openai-compat" [ref=f21e633]
+                    - cell "5974 / 2749" [ref=f21e635]
+                    - cell "kotadan" [ref=f21e636]
+                    - cell "gizli" [ref=f21e637]
+                  - row [ref=f21e639]:
+                    - cell "2026-08-15T01:56:03.652Z" [ref=f21e640]
+                    - cell "pilot-20260815015600" [ref=f21e641]
+                    - cell "alım" [ref=f21e642]
+                    - cell "openai-compat" [ref=f21e643]
+                    - cell "1834 / 24" [ref=f21e645]
+                    - cell "kotadan" [ref=f21e646]
+                    - cell "gizli" [ref=f21e647]
+                  - row [ref=f21e649]:
+                    - cell "2026-08-15T01:51:38.028Z" [ref=f21e650]
+                    - cell "pilot-20260815015130" [ref=f21e651]
+                    - cell "alım" [ref=f21e652]
+                    - cell "openai-compat" [ref=f21e653]
+                    - cell "1632 / 307" [ref=f21e655]
+                    - cell "kotadan" [ref=f21e656]
+                    - cell "gizli" [ref=f21e657]
+                  - row [ref=f21e659]:
+                    - cell "2026-08-15T01:50:27.565Z" [ref=f21e660]
+                    - cell "pilot-20260815014912" [ref=f21e661]
+                    - cell "analist" [ref=f21e662]
+                    - cell "openai-compat" [ref=f21e663]
+                    - cell "8956 / 2730" [ref=f21e665]
+                    - cell "kotadan" [ref=f21e666]
+                    - cell "gizli" [ref=f21e667]
+                  - row [ref=f21e669]:
+                    - cell "2026-08-15T01:50:07.978Z" [ref=f21e670]
+                    - cell "pilot-20260815014912" [ref=f21e671]
+                    - cell "analist" [ref=f21e672]
+                    - cell "openai-compat" [ref=f21e673]
+                    - cell "14714 / 5032" [ref=f21e675]
+                    - cell "kotadan" [ref=f21e676]
+                    - cell "gizli" [ref=f21e677]
+                  - row [ref=f21e679]:
+                    - cell "2026-08-15T01:49:15.516Z" [ref=f21e680]
+                    - cell "pilot-20260815014912" [ref=f21e681]
+                    - cell "alım" [ref=f21e682]
+                    - cell "openai-compat" [ref=f21e683]
+                    - cell "1879 / 24" [ref=f21e685]
+                    - cell "kotadan" [ref=f21e686]
+                    - cell "gizli" [ref=f21e687]
+                  - row [ref=f21e689]:
+                    - cell "2026-08-15T01:47:05.535Z" [ref=f21e690]
+                    - cell "pilot-20260815014554" [ref=f21e691]
+                    - cell "analist" [ref=f21e692]
+                    - cell "openai-compat" [ref=f21e693]
+                    - cell "8676 / 2349" [ref=f21e695]
+                    - cell "kotadan" [ref=f21e696]
+                    - cell "gizli" [ref=f21e697]
+                  - row [ref=f21e699]:
+                    - cell "2026-08-15T01:46:46.255Z" [ref=f21e700]
+                    - cell "pilot-20260815014554" [ref=f21e701]
+                    - cell "analist" [ref=f21e702]
+                    - cell "openai-compat" [ref=f21e703]
+                    - cell "14229 / 4510" [ref=f21e705]
+                    - cell "kotadan" [ref=f21e706]
+                    - cell "gizli" [ref=f21e707]
+                  - row [ref=f21e709]:
+                    - cell "2026-08-15T01:45:58.093Z" [ref=f21e710]
+                    - cell "pilot-20260815014554" [ref=f21e711]
+                    - cell "alım" [ref=f21e712]
+                    - cell "openai-compat" [ref=f21e713]
+                    - cell "1878 / 24" [ref=f21e715]
+                    - cell "kotadan" [ref=f21e716]
+                    - cell "gizli" [ref=f21e717]
+                  - row [ref=f21e719]:
+                    - cell "2026-08-15T01:44:42.420Z" [ref=f21e720]
+                    - cell "pilot-20260815014337" [ref=f21e721]
+                    - cell "analist" [ref=f21e722]
+                    - cell "openai-compat" [ref=f21e723]
+                    - cell "9015 / 2948" [ref=f21e725]
+                    - cell "kotadan" [ref=f21e726]
+                    - cell "gizli" [ref=f21e727]
+                  - row [ref=f21e729]:
+                    - cell "2026-08-15T01:44:20.961Z" [ref=f21e730]
+                    - cell "pilot-20260815014337" [ref=f21e731]
+                    - cell "analist" [ref=f21e732]
+                    - cell "openai-compat" [ref=f21e733]
+                    - cell "6005 / 2702" [ref=f21e735]
+                    - cell "kotadan" [ref=f21e736]
+                    - cell "gizli" [ref=f21e737]
+                  - row [ref=f21e739]:
+                    - cell "2026-08-15T01:43:40.735Z" [ref=f21e740]
+                    - cell "pilot-20260815014337" [ref=f21e741]
+                    - cell "alım" [ref=f21e742]
+                    - cell "openai-compat" [ref=f21e743]
+                    - cell "1876 / 24" [ref=f21e745]
+                    - cell "kotadan" [ref=f21e746]
+                    - cell "gizli" [ref=f21e747]
+                  - row [ref=f21e749]:
+                    - cell "2026-08-15T01:39:32.242Z" [ref=f21e750]
+                    - cell "pilot-20260815013832" [ref=f21e751]
+                    - cell "analist" [ref=f21e752]
+                    - cell "openai-compat" [ref=f21e753]
+                    - cell "8737 / 2483" [ref=f21e755]
+                    - cell "kotadan" [ref=f21e756]
+                    - cell "gizli" [ref=f21e757]
+                  - row [ref=f21e759]:
+                    - cell "2026-08-15T01:39:13.230Z" [ref=f21e760]
+                    - cell "pilot-20260815013832" [ref=f21e761]
+                    - cell "analist" [ref=f21e762]
+                    - cell "openai-compat" [ref=f21e763]
+                    - cell "6002 / 2468" [ref=f21e765]
+                    - cell "kotadan" [ref=f21e766]
+                    - cell "gizli" [ref=f21e767]
+                  - row [ref=f21e769]:
+                    - cell "2026-08-15T01:38:35.839Z" [ref=f21e770]
+                    - cell "pilot-20260815013832" [ref=f21e771]
+                    - cell "alım" [ref=f21e772]
+                    - cell "openai-compat" [ref=f21e773]
+                    - cell "1873 / 24" [ref=f21e775]
+                    - cell "kotadan" [ref=f21e776]
+                    - cell "gizli" [ref=f21e777]
+                  - row [ref=f21e779]:
+                    - cell "2026-08-15T01:30:20.766Z" [ref=f21e780]
+                    - cell "pilot-20260815012921" [ref=f21e781]
+                    - cell "analist" [ref=f21e782]
+                    - cell "openai-compat" [ref=f21e783]
+                    - cell "8753 / 2506" [ref=f21e785]
+                    - cell "kotadan" [ref=f21e786]
+                    - cell "gizli" [ref=f21e787]
+                  - row [ref=f21e789]:
+                    - cell "2026-08-15T01:30:01.344Z" [ref=f21e790]
+                    - cell "pilot-20260815012921" [ref=f21e791]
+                    - cell "analist" [ref=f21e792]
+                    - cell "openai-compat" [ref=f21e793]
+                    - cell "5999 / 2446" [ref=f21e795]
+                    - cell "kotadan" [ref=f21e796]
+                    - cell "gizli" [ref=f21e797]
+                  - row [ref=f21e799]:
+                    - cell "2026-08-15T01:29:25.383Z" [ref=f21e800]
+                    - cell "pilot-20260815012921" [ref=f21e801]
+                    - cell "alım" [ref=f21e802]
+                    - cell "openai-compat" [ref=f21e803]
+                    - cell "1870 / 24" [ref=f21e805]
+                    - cell "kotadan" [ref=f21e806]
+                    - cell "gizli" [ref=f21e807]
+                  - row [ref=f21e809]:
+                    - cell "2026-08-15T00:42:50.912Z" [ref=f21e810]
+                    - cell "pilot-20260815004151" [ref=f21e811]
+                    - cell "analist" [ref=f21e812]
+                    - cell "openai-compat" [ref=f21e813]
+                    - cell "8763 / 2483" [ref=f21e815]
+                    - cell "kotadan" [ref=f21e816]
+                    - cell "gizli" [ref=f21e817]
+                  - row [ref=f21e819]:
+                    - cell "2026-08-15T00:42:31.748Z" [ref=f21e820]
+                    - cell "pilot-20260815004151" [ref=f21e821]
+                    - cell "analist" [ref=f21e822]
+                    - cell "openai-compat" [ref=f21e823]
+                    - cell "6233 / 2268" [ref=f21e825]
+                    - cell "kotadan" [ref=f21e826]
+                    - cell "gizli" [ref=f21e827]
+                  - row [ref=f21e829]:
+                    - cell "2026-08-15T00:41:54.799Z" [ref=f21e830]
+                    - cell "pilot-20260815004151" [ref=f21e831]
+                    - cell "alım" [ref=f21e832]
+                    - cell "openai-compat" [ref=f21e833]
+                    - cell "1818 / 24" [ref=f21e835]
+                    - cell "kotadan" [ref=f21e836]
+                    - cell "gizli" [ref=f21e837]
+                  - row [ref=f21e839]:
+                    - cell "2026-08-15T00:32:47.345Z" [ref=f21e840]
+                    - cell "pilot-20260815003154" [ref=f21e841]
+                    - cell "analist" [ref=f21e842]
+                    - cell "openai-compat" [ref=f21e843]
+                    - cell "8450 / 2266" [ref=f21e845]
+                    - cell "kotadan" [ref=f21e846]
+                    - cell "gizli" [ref=f21e847]
+                  - row [ref=f21e849]:
+                    - cell "2026-08-15T00:32:28.353Z" [ref=f21e850]
+                    - cell "pilot-20260815003154" [ref=f21e851]
+                    - cell "analist" [ref=f21e852]
+                    - cell "openai-compat" [ref=f21e853]
+                    - cell "6090 / 2159" [ref=f21e855]
+                    - cell "kotadan" [ref=f21e856]
+                    - cell "gizli" [ref=f21e857]
+                  - row [ref=f21e859]:
+                    - cell "2026-08-15T00:31:57.972Z" [ref=f21e860]
+                    - cell "pilot-20260815003154" [ref=f21e861]
+                    - cell "alım" [ref=f21e862]
+                    - cell "openai-compat" [ref=f21e863]
+                    - cell "1818 / 24" [ref=f21e865]
+                    - cell "kotadan" [ref=f21e866]
+                    - cell "gizli" [ref=f21e867]
+            - paragraph [ref=f21e869]: "Görünürlük (M86): herkes kendi işinin tüketimini görür; havuz toplamları yönetim panelindedir."
+  - region

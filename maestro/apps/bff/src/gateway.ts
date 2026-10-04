@@ -1,0 +1,223 @@
+import type {
+  DataClass,
+  FlowType,
+  MatchResult,
+  TicketKey,
+  WorkMode,
+  WorkflowRunState,
+} from "@maestro/contracts";
+import type { GateSteps, StatusMap } from "./listening-store.js";
+
+/**
+ * The workflow engine as the BFF sees it. Temporal lives behind this interface
+ * so no route imports a client library, and so every test in this package runs
+ * offline against a fake (M44 DI, insa-plani §2).
+ */
+
+/** One Temporal execution per ticket; the id is derived, never stored. */
+export function workflowIdFor(ticket: TicketKey): string {
+  return `maestro-${ticket}`;
+}
+
+/** Inverse of {@link workflowIdFor}; `null` for ids this deployment did not mint. */
+export function ticketOfWorkflowId(workflowId: string): string | null {
+  const prefix = "maestro-";
+  return workflowId.startsWith(prefix) ? workflowId.slice(prefix.length) : null;
+}
+
+/** Closed-run outcomes Temporal reports, plus the one open state. */
+export type RunExecutionStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "terminated"
+  | "continued_as_new"
+  | "timed_out";
+
+export interface RunSummary {
+  workflowId: string;
+  ticketKey: TicketKey;
+  runId: string;
+  status: RunExecutionStatus;
+  startedAt: string;
+  closedAt: string | null;
+}
+
+export interface StartRunInput {
+  ticket: TicketKey;
+  /**
+   * Absent for an analysis-only start: the binding named no application, and
+   * intake only lets the `analiz` flow through that way (`runIntake` still
+   * refuses `no_application` for every flow that writes code). The gateway
+   * omits the field from the workflow input rather than sending a null, so
+   * absence means the same thing on both sides of the wire.
+   */
+  appId?: string;
+  mode: WorkMode;
+  dataClass: DataClass;
+  /**
+   * Which phases the run should execute (`planFor`). A different axis from
+   * `mode`: `mode` says how much the AI may decide alone, `flow` says which
+   * steps run at all.
+   *
+   * Absent means the full pipeline — a ticket is never silently
+   * under-processed because nothing named a flow.
+   */
+  flow?: FlowType | null;
+  /**
+   * Where the deciding listening rule wants the ticket to SIT on the board at
+   * each point of the flow ("durum eşlemesi"). Absent or `null` is comment-only
+   * mode — Maestro narrates in comments and never moves the ticket, which is
+   * what every run did before the map existed.
+   *
+   * It travels beside `flow` and for the same reason: both are read off the
+   * rule set once, on the way in, and PINNED into the start input. A workflow
+   * cannot read the rules itself (M44), and a run that re-read them later could
+   * finish under a rule it did not start under.
+   */
+  statusMap?: StatusMap | null;
+  /**
+   * HANGİ ONAY KAPILARI açılsın — kararı veren dinleme kuralının seçtiği dizi,
+   * koşunun başlangıç girdisine çivileniyor.
+   *
+   * `statusMap` ile aynı üç sebep: workflow kuralları okuyamaz (M44), sonradan
+   * okusa kapıda bekleyen koşu başka bir kuralla biterdi, ve girdiden türeyen
+   * bir karar replay'de sonsuza dek aynı cevabı verir.
+   *
+   * Absent/`null` = "kural seçim yapmadı", varsayılana düşülür — bugüne kadarki
+   * davranış. `{steps: []}` bundan FARKLI ve bu yüzden `flow`/`analystVariantId`
+   * gibi "boşsa hiç gönderme" normalizasyonuna TABİ DEĞİL: boş dizi bir seçim,
+   * ve gönderilmezse operatörün kapattığı kapılar geri açılır.
+   */
+  gateSteps?: GateSteps | null;
+  /**
+   * Hangi AJANIN koşacağı, kararı veren dinleme kuralı bir ajan seçtiyse.
+   *
+   * Absent, tam olarak bugüne kadarki davranış demek: kurulumun etkin
+   * varyantına düşülür (`activeAnalystVariantId` / `activeEngineerVariantId`).
+   * Bu yüzden alan opsiyonel ve bu yüzden `null` gönderilmez — ajan seçmemiş
+   * bir kural, bu alan hiç yokken nasıl koşuyorsa öyle koşar.
+   *
+   * `flow` ve `statusMap` ile birlikte yolculuk ediyor, çünkü üçü de aynı anda,
+   * aynı kural satırından okunuyor ve koşunun başlangıç girdisine çivileniyor:
+   * bir workflow kuralları kendisi okuyamaz (M44) ve sonradan okusa replay'de
+   * başka bir cevap alırdı.
+   */
+  analystVariantId?: string;
+  /** {@link analystVariantId}'nin mühendislik (kod yazan) tarafı. */
+  engineerVariantId?: string;
+  /**
+   * The branch the work lands on (environment): the listening rule's repo map
+   * names it per row ("Krediler → bank/kredi, develop"). Absent = the
+   * repository's own default branch, read from the clone at run start.
+   */
+  targetBranch?: string;
+  /**
+   * TICKET UYGULAMASINI NASIL BULDU (M99 `MatchResult`) — koşunun satırına
+   * yazılmak üzere.
+   *
+   * ── NEDEN BU ALAN VAR ─────────────────────────────────────────────────────
+   * `WorkflowRun.matchJson` sütunu M99'dan beri şemada duruyor ve SAHADA
+   * ÖLÇÜLDÜ ki hiçbir üretim kodu onu yazmıyordu: tek yazıcı demo seed'iydi
+   * (`packages/db/src/seed-demo.ts`). Sonuç, `/onboarding/dry-run`da doğrudan
+   * görünüyordu — `tierOf()` her koşuda `MatchResult.safeParse(null)` ile
+   * başarısız olup `"unresolved"` dönüyor, 35 koşunun 35'i "çözülemedi"
+   * kovasına düşüyor ve operatör "uygulamalar ekranı doğrulanamıyor" diyordu.
+   *
+   * Karar zaten BURADA, alımda veriliyor (`runIntake`: elle atama mı, kuralın
+   * depo eşlemesi mi, kod araması mı, yoksa proje bağlamasının varsayılanı
+   * mı). Taşımadığımız için kayboluyordu; artık koşunun başlangıç girdisiyle
+   * birlikte yolculuk ediyor — `flow`/`statusMap`/`analystVariantId` ile aynı
+   * gerekçe ve aynı biçim: bir workflow bu kararı kendisi okuyamaz (M44) ve
+   * sonradan okusa başka bir cevap alırdı.
+   *
+   * Opsiyonel, çünkü yokluk BUGÜNKÜ davranış demek: sütun `NULL` kalır ve
+   * satır bu alan hiç yokken nasıl yazılıyorsa öyle yazılır. Bir kararın
+   * uydurulması, kaydedilmemesinden kötüdür.
+   */
+  match?: MatchResult;
+}
+
+export interface SignalWithStartInput extends StartRunInput {
+  /**
+   * Delivered to the run whether it had to be created or was already going.
+   * Omitted for a plain intake, where the start itself is the whole event.
+   */
+  signal?: { name: string; args: readonly unknown[] };
+}
+
+export interface StartOutcome {
+  workflowId: string;
+  /** False when the call joined a run that was already going. */
+  started: boolean;
+}
+
+/** `no_run` instead of a throw: "nobody is listening" is an answer, not a fault. */
+export type SignalOutcome = "delivered" | "no_run";
+
+export interface RunGateway {
+  /** Cheap reachability probe for `/readyz`; throws when the engine is down. */
+  ping(): Promise<void>;
+  list(options?: { limit?: number; onlyRunning?: boolean }): Promise<RunSummary[]>;
+  /** `null` when no execution exists for that id. */
+  queryRunState(workflowId: string): Promise<WorkflowRunState | null>;
+  /**
+   * Resolve an execution's `runId` to the ticket that owns it, or `null`.
+   *
+   * `MaestroPlatform` is keyed by `runId` while every store here is keyed by
+   * ticket, so something has to bridge the two. This method exists because the
+   * obvious bridge — list a page of runs and look through it — is not a lookup
+   * but a SEARCH, and a search has a horizon: the first implementation scanned
+   * one 200-row page ordered by recency, so the 201st run in a caller's own
+   * project answered "no such run" and could not be paused. A run id is an
+   * exact key; resolving it must not depend on how recently the run was
+   * touched or on how many runs the bank has.
+   *
+   * The engine is the right place for it because the engine minted the id.
+   */
+  findByRunId(runId: string): Promise<RunSummary | null>;
+  /**
+   * Signal an EXISTING run. Never creates one: a gate decision or a build
+   * result for a ticket Maestro is not running is a mistake to report, not a
+   * reason to invent a workflow (M14).
+   */
+  signal(workflowId: string, name: string, arg: unknown): Promise<SignalOutcome>;
+  /**
+   * Start-or-signal in one atomic call — the intake path. A ticket that has no
+   * run gets one; a ticket that already has one just hears the signal, so two
+   * webhook deliveries racing on the same ticket cannot produce two runs.
+   */
+  signalWithStart(input: SignalWithStartInput): Promise<StartOutcome>;
+  /**
+   * Why a FAILED execution failed, from the engine's own history — or `null`
+   * when the execution is missing, still running, or closed without a
+   * failure. Optional: an engine that cannot read history simply leaves the
+   * panel with the journal. Without this, a run that died on an uncaught
+   * error showed "hatalı" and nothing else, because the run row has no error
+   * column and the journal only holds what the activity managed to write.
+   */
+  failureOf?(workflowId: string): Promise<EngineFailure | null>;
+  /**
+   * The execution's status from the engine's own description — the honest
+   * "is it alive" answer. `queryRunState` is NOT that answer: Temporal replays
+   * a CLOSED (failed, completed) execution to serve a query, so a run that
+   * died three days ago still "answers", and the restart route read that as
+   * alive and refused (409) exactly when the operator needed it most.
+   * `null` when no execution exists.
+   */
+  executionStatus?(workflowId: string): Promise<RunExecutionStatus | null>;
+  /**
+   * Stop a RUNNING execution for good, with a reason on the engine's record.
+   * `false` when there was nothing to stop. The operator's "durdur ve baştan
+   * al" — a run stuck in a retry loop is otherwise untouchable.
+   */
+  terminate?(workflowId: string, reason: string): Promise<boolean>;
+}
+
+export interface EngineFailure {
+  readonly message: string;
+  /** The `ApplicationFailure` type when the activity named one, else null. */
+  readonly type: string | null;
+  readonly at: string | null;
+}

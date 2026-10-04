@@ -1,0 +1,464 @@
+- generic [ref=f6e2]:
+  - generic [ref=f6e3]:
+    - navigation "Ana gezinme" [ref=f6e4]:
+      - generic [ref=f6e5]:
+        - generic [ref=f6e6]: M
+        - generic [ref=f6e7]:
+          - text: Maestro
+          - generic [ref=f6e8]: SDLC otomasyonu
+      - generic [ref=f6e9]:
+        - generic [ref=f6e10]: İşler
+        - link "Panel" [active] [ref=f6e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f6e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f6e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f6e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f6e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f6e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f6e17]:
+        - generic [ref=f6e18]: Ajanlar
+        - link "Ajan tanımları" [ref=f6e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f6e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f6e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f6e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f6e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f6e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f6e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f6e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f6e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f6e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f6e29]: yakında
+      - generic [ref=f6e30]:
+        - generic [ref=f6e31]: Denetim
+        - link "Denetim izi" [ref=f6e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f6e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f6e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f6e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f6e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f6e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f6e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f6e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f6e40]: yakında
+        - link "Kanıt paketi yakında" [ref=f6e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f6e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f6e43]: yakında
+      - generic [ref=f6e44]:
+        - generic [ref=f6e45]: Kurulum
+        - link "Proje bağlama" [ref=f6e46] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f6e47]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f6e48] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f6e49]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f6e50] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f6e51]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f6e52] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f6e53]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f6e54] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f6e55]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f6e56] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f6e57]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f6e58]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f6e59] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f6e60]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f6e61]:
+      - banner [ref=f6e62]:
+        - heading "Panel" [level=1] [ref=f6e606]
+        - generic [ref=f6e64]:
+          - generic [ref=f6e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f6e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f6e67]: admin
+        - button "Çıkış" [ref=f6e68] [cursor=pointer]
+      - main [ref=f6e69]:
+        - generic [ref=f6e607]:
+          - generic [ref=f6e608]:
+            - generic [ref=f6e609]:
+              - heading "Canlı motor işleri" [level=3] [ref=f6e610]
+              - generic [ref=f6e611]: akış motorunun (pilot) gerçekten çalıştırdığı işler — satır Canlı akış ekranını açar
+            - button "OPS-40 şu an çalışıyor" [ref=f6e614] [cursor=pointer]:
+              - generic [ref=f6e615]: OPS-40
+              - generic [ref=f6e616]: şu an çalışıyor
+          - generic [ref=f6e618]:
+            - generic [ref=f6e619]:
+              - heading "Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin" [level=3] [ref=f6e620]
+              - generic [ref=f6e621]: Aşağıdaki adımları sırayla tamamlayın. Bir sonraki yapmanız gereken adım vurgulanır.
+            - generic [ref=f6e622]:
+              - list [ref=f6e623]:
+                - listitem [ref=f6e624]:
+                  - button "Bağlantıları kur Jira ve GitHub/Azure bağlantını ekle (Ayarlar > Bağlantılar)." [ref=f6e625] [cursor=pointer]:
+                    - generic [ref=f6e626]: ✓
+                    - generic [ref=f6e627]:
+                      - generic [ref=f6e628]: Bağlantıları kur
+                      - generic [ref=f6e629]: Jira ve GitHub/Azure bağlantını ekle (Ayarlar > Bağlantılar).
+                - listitem [ref=f6e630]:
+                  - button "Projeni bağla Bir Jira projesini bir repoya bağla — hazır dinleme kuralları otomatik kurulur (Proje bağlama)." [ref=f6e631] [cursor=pointer]:
+                    - generic [ref=f6e632]: ✓
+                    - generic [ref=f6e633]:
+                      - generic [ref=f6e634]: Projeni bağla
+                      - generic [ref=f6e635]: Bir Jira projesini bir repoya bağla — hazır dinleme kuralları otomatik kurulur (Proje bağlama).
+                - listitem [ref=f6e636]:
+                  - button "Jira webhook'unu kur Ticket'ın Maestro'ya kendiliğinden düşmesi için Jira admin'inden tek global webhook iste. Nasıl yapılacağı Yardım'da yazıyor. Şimdi bunu yap →" [ref=f6e637] [cursor=pointer]:
+                    - generic [ref=f6e638]: "3"
+                    - generic [ref=f6e639]:
+                      - generic [ref=f6e640]: Jira webhook'unu kur
+                      - generic [ref=f6e641]: Ticket'ın Maestro'ya kendiliğinden düşmesi için Jira admin'inden tek global webhook iste. Nasıl yapılacağı Yardım'da yazıyor.
+                    - generic [ref=f6e642]: Şimdi bunu yap →
+                - listitem [ref=f6e643]:
+                  - button "Ajanlarını belgelerle eğit Ajanlar ekranından bir ajan seç ve Bilgi kütüphanesi'ne kurum belgelerini yükle." [ref=f6e644] [cursor=pointer]:
+                    - generic [ref=f6e645]: ✓
+                    - generic [ref=f6e646]:
+                      - generic [ref=f6e647]: Ajanlarını belgelerle eğit
+                      - generic [ref=f6e648]: Ajanlar ekranından bir ajan seç ve Bilgi kütüphanesi'ne kurum belgelerini yükle.
+                - listitem [ref=f6e649]:
+                  - button "Jira'da iş aç, Panel'den izle Onayı Jira'da yorum yazarak ya da ticket'ı bota atayarak ver; akışı Panel'den izle." [ref=f6e650] [cursor=pointer]:
+                    - generic [ref=f6e651]: "5"
+                    - generic [ref=f6e652]:
+                      - generic [ref=f6e653]: Jira'da iş aç, Panel'den izle
+                      - generic [ref=f6e654]: Onayı Jira'da yorum yazarak ya da ticket'ı bota atayarak ver; akışı Panel'den izle.
+              - generic [ref=f6e655]:
+                - generic [ref=f6e656] [cursor=pointer]:
+                  - checkbox "Jira webhook'u kuruldu (bunu Maestro doğrulayamaz, siz onaylayın)" [ref=f6e657]
+                  - generic [ref=f6e658]: Jira webhook'u kuruldu (bunu Maestro doğrulayamaz, siz onaylayın)
+                - button "Anladım, gizle" [ref=f6e659] [cursor=pointer]
+              - paragraph [ref=f6e660]: Gizlemek kurulumu tamamlamaz — eksik adımlar Panel'de kısa bir not olarak kalır.
+          - generic [ref=f6e661]:
+            - generic [ref=f6e662]:
+              - generic [ref=f6e663]: Aktif iş akışı
+              - generic [ref=f6e664]: "2"
+              - generic [ref=f6e665]: 11 tanesi hatalı
+            - generic [ref=f6e666]:
+              - generic [ref=f6e667]: Kapıda bekleyen
+              - generic [ref=f6e668]: "2"
+              - generic [ref=f6e669]: insan kararı bekliyor
+            - generic [ref=f6e670]:
+              - generic [ref=f6e671]: Tamamlanan
+              - generic [ref=f6e672]: "4"
+              - generic [ref=f6e673]: kanıt paketi üretildi
+            - generic [ref=f6e674]:
+              - generic [ref=f6e675]: Toplam
+              - generic [ref=f6e676]: "19"
+              - generic [ref=f6e677]: görebildiğin akışlar
+          - generic [ref=f6e678]:
+            - generic [ref=f6e679]:
+              - heading "Dikkat isteyenler" [level=3] [ref=f6e680]
+              - generic [ref=f6e681]: önce hatalılar, sonra en uzun süredir açık olanlar
+            - generic [ref=f6e682]:
+              - button "OPS-25 hatalı orta OPS-25 · Repo keşfi (salt-okunur) · 16 saat açık" [ref=f6e683] [cursor=pointer]:
+                - generic [ref=f6e684]: ✕
+                - generic [ref=f6e685]:
+                  - text: OPS-25
+                  - generic [ref=f6e686]: hatalı
+                  - generic [ref=f6e687]: orta
+                  - generic [ref=f6e688]: OPS-25 · Repo keşfi (salt-okunur) · 16 saat açık
+              - button "OPS-26 hatalı orta OPS-26 · Repo keşfi (salt-okunur) · 16 saat açık" [ref=f6e689] [cursor=pointer]:
+                - generic [ref=f6e690]: ✕
+                - generic [ref=f6e691]:
+                  - text: OPS-26
+                  - generic [ref=f6e692]: hatalı
+                  - generic [ref=f6e693]: orta
+                  - generic [ref=f6e694]: OPS-26 · Repo keşfi (salt-okunur) · 16 saat açık
+              - button "OPS-27 hatalı orta OPS-27 · Repo keşfi (salt-okunur) · 15 saat açık" [ref=f6e695] [cursor=pointer]:
+                - generic [ref=f6e696]: ✕
+                - generic [ref=f6e697]:
+                  - text: OPS-27
+                  - generic [ref=f6e698]: hatalı
+                  - generic [ref=f6e699]: orta
+                  - generic [ref=f6e700]: OPS-27 · Repo keşfi (salt-okunur) · 15 saat açık
+              - button "OPS-28 hatalı orta OPS-28 · Repo keşfi (salt-okunur) · 15 saat açık" [ref=f6e701] [cursor=pointer]:
+                - generic [ref=f6e702]: ✕
+                - generic [ref=f6e703]:
+                  - text: OPS-28
+                  - generic [ref=f6e704]: hatalı
+                  - generic [ref=f6e705]: orta
+                  - generic [ref=f6e706]: OPS-28 · Repo keşfi (salt-okunur) · 15 saat açık
+              - button "OPS-29 hatalı orta OPS-29 · Repo keşfi (salt-okunur) · 15 saat açık" [ref=f6e707] [cursor=pointer]:
+                - generic [ref=f6e708]: ✕
+                - generic [ref=f6e709]:
+                  - text: OPS-29
+                  - generic [ref=f6e710]: hatalı
+                  - generic [ref=f6e711]: orta
+                  - generic [ref=f6e712]: OPS-29 · Repo keşfi (salt-okunur) · 15 saat açık
+          - generic [ref=f6e713]:
+            - heading "Arşiv / örnek kayıtlar" [level=2] [ref=f6e714]
+            - paragraph [ref=f6e715]: Veritabanındaki iş kayıtları (tohum/arşiv). Motorun gerçekten çalıştırdığı işler yukarıdaki 'Canlı motor işleri' listesinde.
+            - generic [ref=f6e718]:
+              - button "Tümü (19)" [pressed] [ref=f6e719] [cursor=pointer]
+              - button "Çalışıyor (2)" [ref=f6e720] [cursor=pointer]
+              - button "Kapıda (2)" [ref=f6e721] [cursor=pointer]
+              - button "Tamamlandı (4)" [ref=f6e722] [cursor=pointer]
+              - button "Hatalı (11)" [ref=f6e723] [cursor=pointer]
+              - generic [ref=f6e724]:
+                - generic [ref=f6e725]: Ara
+                - textbox "Ara" [ref=f6e726]:
+                  - /placeholder: ticket no ya da başlık
+              - generic [ref=f6e727]:
+                - generic [ref=f6e728]: Proje
+                - combobox "Proje" [ref=f6e729]:
+                  - option "Tüm projeler" [selected]
+                  - option "OPS"
+            - table [ref=f6e733]:
+              - caption [ref=f6e734]: Görebildiğin iş akışları
+              - rowgroup [ref=f6e735]:
+                - row [ref=f6e736]:
+                  - columnheader "Ticket" [ref=f6e737]
+                  - columnheader "Uygulama" [ref=f6e738]
+                  - columnheader "Durum" [ref=f6e739]
+                  - columnheader "Adım" [ref=f6e740]
+                  - columnheader "Risk" [ref=f6e741]
+                  - columnheader "Mod" [ref=f6e742]
+                  - columnheader "Başlangıç" [ref=f6e743]
+                  - columnheader "Yaş" [ref=f6e744]
+              - rowgroup [ref=f6e745]:
+                - button [ref=f6e746]:
+                  - cell "OPS-51 OPS-51" [ref=f6e747]:
+                    - text: OPS-51
+                    - generic [ref=f6e748]: OPS-51
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e749]
+                  - cell "tamamlandı" [ref=f6e750]
+                  - cell "13 Kanıt paketi ve kapanış" [ref=f6e752]
+                  - cell "orta" [ref=f6e753]
+                  - cell "İnsan öncülüğünde" [ref=f6e755]
+                  - cell "16.08.2026 14:41" [ref=f6e757]
+                  - cell "9 dk" [ref=f6e758]
+                - button [ref=f6e759]:
+                  - cell "OPS-49 OPS-49" [ref=f6e760]:
+                    - text: OPS-49
+                    - generic [ref=f6e761]: OPS-49
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e762]
+                  - cell "tamamlandı" [ref=f6e763]
+                  - cell "13 Kanıt paketi ve kapanış" [ref=f6e765]
+                  - cell "orta" [ref=f6e766]
+                  - cell "İnsan öncülüğünde" [ref=f6e768]
+                  - cell "16.08.2026 13:55" [ref=f6e770]
+                  - cell "55 dk" [ref=f6e771]
+                - button [ref=f6e772]:
+                  - cell "OPS-42 OPS-42" [ref=f6e773]:
+                    - text: OPS-42
+                    - generic [ref=f6e774]: OPS-42
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e775]
+                  - cell "tamamlandı" [ref=f6e776]
+                  - cell "13 Kanıt paketi ve kapanış" [ref=f6e778]
+                  - cell "orta" [ref=f6e779]
+                  - cell "İnsan öncülüğünde" [ref=f6e781]
+                  - cell "16.08.2026 13:51" [ref=f6e783]
+                  - cell "59 dk" [ref=f6e784]
+                - button [ref=f6e785]:
+                  - cell "OPS-40 OPS-40" [ref=f6e786]:
+                    - text: OPS-40
+                    - generic [ref=f6e787]: OPS-40
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e788]
+                  - cell "tamamlandı" [ref=f6e789]
+                  - cell "13 Kanıt paketi ve kapanış" [ref=f6e791]
+                  - cell "orta" [ref=f6e792]
+                  - cell "İnsan öncülüğünde" [ref=f6e794]
+                  - cell "16.08.2026 08:46" [ref=f6e796]
+                  - cell "6 saat" [ref=f6e797]
+                - button [ref=f6e798]:
+                  - cell "OPS-38 OPS-38" [ref=f6e799]:
+                    - text: OPS-38
+                    - generic [ref=f6e800]: OPS-38
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e801]
+                  - cell "hatalı" [ref=f6e802]
+                  - cell "6a Geliştirme (sandbox)" [ref=f6e804]
+                  - cell "orta" [ref=f6e805]
+                  - cell "İnsan öncülüğünde" [ref=f6e807]
+                  - cell "16.08.2026 08:07" [ref=f6e809]
+                  - cell "6 saat" [ref=f6e810]
+                - button [ref=f6e811]:
+                  - cell "OPS-36 OPS-36" [ref=f6e812]:
+                    - text: OPS-36
+                    - generic [ref=f6e813]: OPS-36
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e814]
+                  - cell "hatalı" [ref=f6e815]
+                  - cell "5 Tech Lead onayı" [ref=f6e817]
+                  - cell "orta" [ref=f6e818]
+                  - cell "İnsan öncülüğünde" [ref=f6e820]
+                  - cell "16.08.2026 00:18" [ref=f6e822]
+                  - cell "14 saat" [ref=f6e823]
+                - button [ref=f6e824]:
+                  - cell "OPS-33 OPS-33" [ref=f6e825]:
+                    - text: OPS-33
+                    - generic [ref=f6e826]: OPS-33
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e827]
+                  - cell "hatalı" [ref=f6e828]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e830]
+                  - cell "orta" [ref=f6e831]
+                  - cell "İnsan öncülüğünde" [ref=f6e833]
+                  - cell "15.08.2026 23:17" [ref=f6e835]
+                  - cell "15 saat" [ref=f6e836]
+                - button [ref=f6e837]:
+                  - cell "OPS-32 OPS-32" [ref=f6e838]:
+                    - text: OPS-32
+                    - generic [ref=f6e839]: OPS-32
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e840]
+                  - cell "hatalı" [ref=f6e841]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e843]
+                  - cell "orta" [ref=f6e844]
+                  - cell "İnsan öncülüğünde" [ref=f6e846]
+                  - cell "15.08.2026 23:13" [ref=f6e848]
+                  - cell "15 saat" [ref=f6e849]
+                - button [ref=f6e850]:
+                  - cell "OPS-31 OPS-31" [ref=f6e851]:
+                    - text: OPS-31
+                    - generic [ref=f6e852]: OPS-31
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e853]
+                  - cell "hatalı" [ref=f6e854]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e856]
+                  - cell "orta" [ref=f6e857]
+                  - cell "İnsan öncülüğünde" [ref=f6e859]
+                  - cell "15.08.2026 23:10" [ref=f6e861]
+                  - cell "15 saat" [ref=f6e862]
+                - button [ref=f6e863]:
+                  - cell "OPS-30 OPS-30" [ref=f6e864]:
+                    - text: OPS-30
+                    - generic [ref=f6e865]: OPS-30
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e866]
+                  - cell "hatalı" [ref=f6e867]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e869]
+                  - cell "orta" [ref=f6e870]
+                  - cell "İnsan öncülüğünde" [ref=f6e872]
+                  - cell "15.08.2026 23:07" [ref=f6e874]
+                  - cell "15 saat" [ref=f6e875]
+                - button [ref=f6e876]:
+                  - cell "OPS-29 OPS-29" [ref=f6e877]:
+                    - text: OPS-29
+                    - generic [ref=f6e878]: OPS-29
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e879]
+                  - cell "hatalı" [ref=f6e880]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e882]
+                  - cell "orta" [ref=f6e883]
+                  - cell "İnsan öncülüğünde" [ref=f6e885]
+                  - cell "15.08.2026 23:00" [ref=f6e887]
+                  - cell "15 saat" [ref=f6e888]
+                - button [ref=f6e889]:
+                  - cell "OPS-28 OPS-28" [ref=f6e890]:
+                    - text: OPS-28
+                    - generic [ref=f6e891]: OPS-28
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e892]
+                  - cell "hatalı" [ref=f6e893]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e895]
+                  - cell "orta" [ref=f6e896]
+                  - cell "İnsan öncülüğünde" [ref=f6e898]
+                  - cell "15.08.2026 22:58" [ref=f6e900]
+                  - cell "15 saat" [ref=f6e901]
+                - button [ref=f6e902]:
+                  - cell "OPS-27 OPS-27" [ref=f6e903]:
+                    - text: OPS-27
+                    - generic [ref=f6e904]: OPS-27
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e905]
+                  - cell "hatalı" [ref=f6e906]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e908]
+                  - cell "orta" [ref=f6e909]
+                  - cell "İnsan öncülüğünde" [ref=f6e911]
+                  - cell "15.08.2026 22:56" [ref=f6e913]
+                  - cell "15 saat" [ref=f6e914]
+                - button [ref=f6e915]:
+                  - cell "OPS-26 OPS-26" [ref=f6e916]:
+                    - text: OPS-26
+                    - generic [ref=f6e917]: OPS-26
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e918]
+                  - cell "hatalı" [ref=f6e919]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e921]
+                  - cell "orta" [ref=f6e922]
+                  - cell "İnsan öncülüğünde" [ref=f6e924]
+                  - cell "15.08.2026 22:17" [ref=f6e926]
+                  - cell "16 saat" [ref=f6e927]
+                - button [ref=f6e928]:
+                  - cell "OPS-25 OPS-25" [ref=f6e929]:
+                    - text: OPS-25
+                    - generic [ref=f6e930]: OPS-25
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e931]
+                  - cell "hatalı" [ref=f6e932]
+                  - cell "3o Repo keşfi (salt-okunur)" [ref=f6e934]
+                  - cell "orta" [ref=f6e935]
+                  - cell "İnsan öncülüğünde" [ref=f6e937]
+                  - cell "15.08.2026 21:59" [ref=f6e939]
+                  - cell "16 saat" [ref=f6e940]
+                - button [ref=f6e941]:
+                  - cell "OPS-34 OPS-34" [ref=f6e942]:
+                    - text: OPS-34
+                    - generic [ref=f6e943]: OPS-34
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e944]
+                  - cell "kapıda" [ref=f6e945]
+                  - cell "4 PO onayı" [ref=f6e947]
+                  - cell "orta" [ref=f6e948]
+                  - cell "İnsan öncülüğünde" [ref=f6e950]
+                  - cell "15.08.2026 23:25" [ref=f6e952]
+                  - cell "15 saat" [ref=f6e953]
+                - button [ref=f6e954]:
+                  - cell "OPS-24 OPS-24" [ref=f6e955]:
+                    - text: OPS-24
+                    - generic [ref=f6e956]: OPS-24
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e957]
+                  - cell "kapıda" [ref=f6e958]
+                  - cell "2b Clarification — reporter'a soru" [ref=f6e960]
+                  - cell "orta" [ref=f6e961]
+                  - cell "İnsan öncülüğünde" [ref=f6e963]
+                  - cell "15.08.2026 20:04" [ref=f6e965]
+                  - cell "18 saat" [ref=f6e966]
+                - button [ref=f6e967]:
+                  - cell "OPS-23 OPS-23" [ref=f6e968]:
+                    - text: OPS-23
+                    - generic [ref=f6e969]: OPS-23
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e970]
+                  - cell "çalışıyor" [ref=f6e971]
+                  - cell "2 Intake — ticket tamlık kontrolü" [ref=f6e973]
+                  - cell "orta" [ref=f6e974]
+                  - cell "İnsan öncülüğünde" [ref=f6e976]
+                  - cell "15.08.2026 19:58" [ref=f6e978]
+                  - cell "18 saat" [ref=f6e979]
+                - button [ref=f6e980]:
+                  - cell "OPS-22 OPS-22" [ref=f6e981]:
+                    - text: OPS-22
+                    - generic [ref=f6e982]: OPS-22
+                  - cell "Uguryldz/maestro-pilot" [ref=f6e983]
+                  - cell "çalışıyor" [ref=f6e984]
+                  - cell "2 Intake — ticket tamlık kontrolü" [ref=f6e986]
+                  - cell "orta" [ref=f6e987]
+                  - cell "İnsan öncülüğünde" [ref=f6e989]
+                  - cell "15.08.2026 19:51" [ref=f6e991]
+                  - cell "18 saat" [ref=f6e992]
+            - paragraph [ref=f6e993]:
+              - text: Satıra tıkla → o ticket'ın adımları, defteri ve açık kapısı. Liste iş akışının durum sözlüğünü kullanır; kapıda bekleyenler doğrudan süzülebilir.
+              - button "Yenile" [ref=f6e994] [cursor=pointer]
+  - region

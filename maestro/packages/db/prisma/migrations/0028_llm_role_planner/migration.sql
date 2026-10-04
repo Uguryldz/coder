@@ -1,0 +1,12 @@
+-- 0028 — LlmRoleE'ye `planner` değeri.
+--
+-- Müşterinin ajan zinciri (analiz ajanı → PLANCI → geliştirici → doğrulayıcı):
+-- plancı, analizden sonra uygulama planını (dosya listesi, endpoint sözleşmesi,
+-- DTO alanları) yazan AYRI ajan. Studio'da ayrı bir ajan tanımı (rol: planner)
+-- olarak görünür; LlmCall günlüğü de bu rolü taşır.
+--
+-- `ALTER TYPE ... ADD VALUE` tabloyu yeniden yazmaz, mevcut satırlara dokunmaz;
+-- `IF NOT EXISTS` ile yeniden uygulanabilir. Bu dosya yeni değeri KULLANMAZ
+-- (tek ifade), dolayısıyla Postgres 12+ transaction kısıtı sorun çıkarmaz
+-- (bkz. 0026).
+ALTER TYPE "LlmRoleE" ADD VALUE IF NOT EXISTS 'planner';

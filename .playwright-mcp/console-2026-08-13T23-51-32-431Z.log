@@ -1,0 +1,41 @@
+[     903ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[   12844ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/runners:0
+[   13884ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/runners:0
+[   15915ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/runners:0
+[   33683ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[   34719ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[   36761ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24509704ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24513628ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[24513895ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24514919ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24516965ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24540100ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[24540339ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24541357ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24542818ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[24542981ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24544003ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24546017ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24554861ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[24555117ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24556129ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24558140ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24566317ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[24566462ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24567474ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24569502ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24636224ms] [ERROR] [vite] ReferenceError: ProjectsScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786689728638:71:13 @ http://localhost:7000/@vite/client:808
+[24636231ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[24645230ms] [ERROR] [vite] ReferenceError: ProjectsScreen is not defined
+    at http://localhost:7000/src/app/screen-components.ts?t=1786689737646:70:13 @ http://localhost:7000/@vite/client:808
+[24645230ms] [ERROR] [vite] Failed to reload /src/app/routes.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:7000/@vite/client:808
+[24866722ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:7000/api/killswitch:0
+[24867730ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:7000/api/killswitch:0
+[24869811ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:7000/api/killswitch:0
+[24877751ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:7000/@vite/client:864
+[24903939ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[24904090ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24905100ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0
+[24907118ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://localhost:7000/api/studio/scans:0

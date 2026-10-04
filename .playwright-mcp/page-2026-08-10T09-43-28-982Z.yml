@@ -1,0 +1,417 @@
+- generic [ref=f13e2]:
+  - generic [ref=f13e23]:
+    - navigation "Ana gezinme" [ref=f13e24]:
+      - generic [ref=f13e25]:
+        - generic [ref=f13e26]: M
+        - generic [ref=f13e27]:
+          - text: Maestro
+          - generic [ref=f13e28]: SDLC otomasyonu
+      - generic [ref=f13e29]:
+        - generic [ref=f13e30]: Operasyon
+        - link "Panel" [ref=f13e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f13e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f13e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f13e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f13e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f13e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f13e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f13e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f13e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f13e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f13e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f13e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f13e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f13e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f13e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f13e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f13e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f13e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f13e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f13e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f13e51]:
+        - generic [ref=f13e52]: Yürütme
+        - link "Runner havuzları" [ref=f13e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f13e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f13e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f13e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f13e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f13e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f13e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f13e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f13e61]:
+        - generic [ref=f13e62]: Ajanlar
+        - link "Variant'lar" [ref=f13e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f13e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f13e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f13e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f13e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f13e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f13e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f13e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f13e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f13e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f13e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f13e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f13e75]:
+        - generic [ref=f13e76]: Yönetişim
+        - link "LLM Gateway" [ref=f13e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f13e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f13e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f13e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f13e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f13e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f13e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f13e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f13e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f13e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f13e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f13e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f13e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f13e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f13e91]:
+        - generic [ref=f13e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [ref=f13e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f13e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f13e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f13e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f13e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f13e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f13e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f13e100]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f13e101] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f13e102]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f13e103] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f13e104]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f13e105] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f13e106]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f13e107] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f13e108]: ✔
+          - text: Karar defteri
+    - generic [ref=f13e109]:
+      - banner [ref=f13e110]:
+        - heading "Doküman şablonu (Word)" [level=1] [ref=f13e111]
+        - generic [ref=f13e112]:
+          - generic [ref=f13e113]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f13e114]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f13e115]: ayse.kaya@bank
+        - button "Çıkış" [ref=f13e116] [cursor=pointer]
+      - main [ref=f13e117]:
+        - generic [ref=f13e118]:
+          - generic [ref=f13e119]:
+            - heading "Kurumsal .docx şablonu" [level=3] [ref=f13e120]
+            - generic [ref=f13e121]: kapak · antet/altbilgi · logo · stil tanımları · onay tablosu
+          - generic [ref=f13e122]:
+            - paragraph [ref=f13e123]:
+              - text: sablon-v2.docx
+              - generic [ref=f13e124]: v2
+            - paragraph [ref=f13e125]: "2026-08-10T09:40:23.280Z · yükleyen: ayse.kaya@bank · 9 KB"
+            - generic [ref=f13e126]:
+              - generic [ref=f13e127]: "Şablondan okunan stiller:"
+              - generic [ref=f13e128]: Endnote Text Char
+              - generic [ref=f13e129]: Footnote Text Char
+              - generic [ref=f13e130]: Heading 1
+              - generic [ref=f13e131]: Heading 2
+              - generic [ref=f13e132]: Heading 3
+              - generic [ref=f13e133]: Heading 4
+              - generic [ref=f13e134]: Heading 5
+              - generic [ref=f13e135]: Heading 6
+              - generic [ref=f13e136]: Hyperlink
+              - generic [ref=f13e137]: Kurum Başlık
+              - generic [ref=f13e138]: Kurum Gövde
+              - generic [ref=f13e139]: List Paragraph
+              - generic [ref=f13e140]: Strong
+              - generic [ref=f13e141]: Title
+              - generic [ref=f13e142]: endnote reference
+              - generic [ref=f13e143]: endnote text
+              - generic [ref=f13e144]: footnote reference
+              - generic [ref=f13e145]: footnote text
+            - paragraph [ref=f13e146]: "Şablon yüklenmemişse üretim durmaz, ama bu durum sessizce geçilmez: Studio uyarır ve çıktı sade varsayılan kapakla üretilir."
+        - generic [ref=f13e148]:
+          - generic [ref=f13e149]:
+            - heading "Tanınan yer tutucular" [level=3] [ref=f13e150]
+            - generic [ref=f13e151]: 12 yer tutucu şablonda bulunamadı
+          - table [ref=f13e154]:
+            - rowgroup [ref=f13e155]:
+              - row [ref=f13e156]:
+                - columnheader "Yer tutucu" [ref=f13e157]
+                - columnheader "Ne yazılır" [ref=f13e158]
+                - columnheader "Şablondaki yeri" [ref=f13e159]
+                - columnheader "Durum" [ref=f13e160]
+            - rowgroup [ref=f13e161]:
+              - row [ref=f13e162]:
+                - cell [ref=f13e163]:
+                  - code [ref=f13e164]: "{{baslik}}"
+                - cell "Doküman başlığı" [ref=f13e165]
+                - 'cell "Başlık: {{baslik}}" [ref=f13e166]'
+                - cell "bulundu" [ref=f13e167]
+              - row [ref=f13e169]:
+                - cell [ref=f13e170]:
+                  - code [ref=f13e171]: "{{ticket}}"
+                - cell "Ticket anahtarı (örn. PAY-101)" [ref=f13e172]
+                - 'cell "Ticket: {{ticket}}" [ref=f13e173]'
+                - cell "bulundu" [ref=f13e174]
+              - row [ref=f13e176]:
+                - cell [ref=f13e177]:
+                  - code [ref=f13e178]: "{{kosu}}"
+                - cell "Koşu kimliği" [ref=f13e179]
+                - 'cell "Koşu: {{kosu}}" [ref=f13e180]'
+                - cell "bulundu" [ref=f13e181]
+              - row [ref=f13e183]:
+                - cell [ref=f13e184]:
+                  - code [ref=f13e185]: "{{sablon_surumu}}"
+                - cell "Analiz şablonunun sürümü" [ref=f13e186]
+                - cell [ref=f13e187]
+                - cell "şablonda yok" [ref=f13e188]
+              - row [ref=f13e190]:
+                - cell [ref=f13e191]:
+                  - code [ref=f13e192]: "{{kunye}}"
+                - 'cell "Künye tablosu: hazırlayan, tarih, kapsam" [ref=f13e193]'
+                - 'cell "Künye: {{kunye}}" [ref=f13e194]'
+                - cell "bulundu" [ref=f13e195]
+              - row [ref=f13e197]:
+                - cell [ref=f13e198]:
+                  - code [ref=f13e199]: "{{onay_tablosu}}"
+                - 'cell "Onay tablosu: kim, ne zaman, hangi kapı" [ref=f13e200]'
+                - cell [ref=f13e201]
+                - cell "şablonda yok" [ref=f13e202]
+              - row [ref=f13e204]:
+                - cell [ref=f13e205]:
+                  - code [ref=f13e206]: "{{govde}}"
+                - cell "Şablonda yeri olmayan bölümlerin gövdesi" [ref=f13e207]
+                - 'cell "Gövde: {{govde}}" [ref=f13e208]'
+                - cell "bulundu" [ref=f13e209]
+              - row [ref=f13e211]:
+                - cell [ref=f13e212]:
+                  - code [ref=f13e213]: "{{bolum:1}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e214]
+                - 'cell "Bölüm 1: {{bolum:1}}" [ref=f13e215]'
+                - cell "bulundu" [ref=f13e216]
+              - row [ref=f13e218]:
+                - cell [ref=f13e219]:
+                  - code [ref=f13e220]: "{{bolum:2}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e221]
+                - 'cell "Bölüm 2: {{bolum:2}}" [ref=f13e222]'
+                - cell "bulundu" [ref=f13e223]
+              - row [ref=f13e225]:
+                - cell [ref=f13e226]:
+                  - code [ref=f13e227]: "{{bolum:3}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e228]
+                - cell "3" [ref=f13e229]
+                - cell "şablonda yok" [ref=f13e230]
+              - row [ref=f13e232]:
+                - cell [ref=f13e233]:
+                  - code [ref=f13e234]: "{{bolum:4}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e235]
+                - cell "4" [ref=f13e236]
+                - cell "şablonda yok" [ref=f13e237]
+              - row [ref=f13e239]:
+                - cell [ref=f13e240]:
+                  - code [ref=f13e241]: "{{bolum:5}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e242]
+                - cell "5" [ref=f13e243]
+                - cell "şablonda yok" [ref=f13e244]
+              - row [ref=f13e246]:
+                - cell [ref=f13e247]:
+                  - code [ref=f13e248]: "{{bolum:6}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e249]
+                - cell "6" [ref=f13e250]
+                - cell "şablonda yok" [ref=f13e251]
+              - row [ref=f13e253]:
+                - cell [ref=f13e254]:
+                  - code [ref=f13e255]: "{{bolum:7}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e256]
+                - cell "7" [ref=f13e257]
+                - cell "şablonda yok" [ref=f13e258]
+              - row [ref=f13e260]:
+                - cell [ref=f13e261]:
+                  - code [ref=f13e262]: "{{bolum:8}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e263]
+                - cell "8" [ref=f13e264]
+                - cell "şablonda yok" [ref=f13e265]
+              - row [ref=f13e267]:
+                - cell [ref=f13e268]:
+                  - code [ref=f13e269]: "{{bolum:9}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e270]
+                - cell "9" [ref=f13e271]
+                - cell "şablonda yok" [ref=f13e272]
+              - row [ref=f13e274]:
+                - cell [ref=f13e275]:
+                  - code [ref=f13e276]: "{{bolum:10}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e277]
+                - cell "10" [ref=f13e278]
+                - cell "şablonda yok" [ref=f13e279]
+              - row [ref=f13e281]:
+                - cell [ref=f13e282]:
+                  - code [ref=f13e283]: "{{bolum:11}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e284]
+                - cell "11" [ref=f13e285]
+                - cell "şablonda yok" [ref=f13e286]
+              - row [ref=f13e288]:
+                - cell [ref=f13e289]:
+                  - code [ref=f13e290]: "{{bolum:12}}"
+                - cell "Analizin ilgili bölümü" [ref=f13e291]
+                - cell "12" [ref=f13e292]
+                - cell "şablonda yok" [ref=f13e293]
+        - generic [ref=f13e296]:
+          - generic [ref=f13e297]:
+            - heading "Bölüm eşlemesi" [level=3] [ref=f13e298]
+            - generic [ref=f13e299]: Analiz şablonundaki (M108) her bölüm bir yer tutucuya eşlenir.
+          - table [ref=f13e302]:
+            - rowgroup [ref=f13e303]:
+              - row [ref=f13e304]:
+                - columnheader "#" [ref=f13e305]
+                - columnheader "Bölüm" [ref=f13e306]
+                - columnheader "Yer tutucu" [ref=f13e307]
+                - columnheader "Durum" [ref=f13e308]
+            - rowgroup [ref=f13e309]:
+              - row [ref=f13e310]:
+                - cell "1" [ref=f13e311]
+                - cell "1" [ref=f13e312]
+                - cell [ref=f13e313]:
+                  - code [ref=f13e314]: "{{bolum:1}}"
+                - cell "eşlendi" [ref=f13e315]
+              - row [ref=f13e317]:
+                - cell "2" [ref=f13e318]
+                - cell "2" [ref=f13e319]
+                - cell [ref=f13e320]:
+                  - code [ref=f13e321]: "{{bolum:2}}"
+                - cell "eşlendi" [ref=f13e322]
+              - row [ref=f13e324]:
+                - cell "3" [ref=f13e325]
+                - cell "3" [ref=f13e326]
+                - cell [ref=f13e327]:
+                  - code [ref=f13e328]: "{{bolum:3}}"
+                - cell "sona eklenecek" [ref=f13e329]
+              - row [ref=f13e331]:
+                - cell "4" [ref=f13e332]
+                - cell "4" [ref=f13e333]
+                - cell [ref=f13e334]:
+                  - code [ref=f13e335]: "{{bolum:4}}"
+                - cell "sona eklenecek" [ref=f13e336]
+              - row [ref=f13e338]:
+                - cell "5" [ref=f13e339]
+                - cell "5" [ref=f13e340]
+                - cell [ref=f13e341]:
+                  - code [ref=f13e342]: "{{bolum:5}}"
+                - cell "sona eklenecek" [ref=f13e343]
+              - row [ref=f13e345]:
+                - cell "6" [ref=f13e346]
+                - cell "6" [ref=f13e347]
+                - cell [ref=f13e348]:
+                  - code [ref=f13e349]: "{{bolum:6}}"
+                - cell "sona eklenecek" [ref=f13e350]
+              - row [ref=f13e352]:
+                - cell "7" [ref=f13e353]
+                - cell "7" [ref=f13e354]
+                - cell [ref=f13e355]:
+                  - code [ref=f13e356]: "{{bolum:7}}"
+                - cell "sona eklenecek" [ref=f13e357]
+              - row [ref=f13e359]:
+                - cell "8" [ref=f13e360]
+                - cell "8" [ref=f13e361]
+                - cell [ref=f13e362]:
+                  - code [ref=f13e363]: "{{bolum:8}}"
+                - cell "sona eklenecek" [ref=f13e364]
+              - row [ref=f13e366]:
+                - cell "9" [ref=f13e367]
+                - cell "9" [ref=f13e368]
+                - cell [ref=f13e369]:
+                  - code [ref=f13e370]: "{{bolum:9}}"
+                - cell "sona eklenecek" [ref=f13e371]
+              - row [ref=f13e373]:
+                - cell "10" [ref=f13e374]
+                - cell "10" [ref=f13e375]
+                - cell [ref=f13e376]:
+                  - code [ref=f13e377]: "{{bolum:10}}"
+                - cell "sona eklenecek" [ref=f13e378]
+              - row [ref=f13e380]:
+                - cell "11" [ref=f13e381]
+                - cell "11" [ref=f13e382]
+                - cell [ref=f13e383]:
+                  - code [ref=f13e384]: "{{bolum:11}}"
+                - cell "sona eklenecek" [ref=f13e385]
+              - row [ref=f13e387]:
+                - cell "12" [ref=f13e388]
+                - cell "12" [ref=f13e389]
+                - cell [ref=f13e390]:
+                  - code [ref=f13e391]: "{{bolum:12}}"
+                - cell "sona eklenecek" [ref=f13e392]
+        - generic [ref=f13e395]:
+          - heading "Son üretilen belgeler" [level=3] [ref=f13e397]
+          - generic [ref=f13e399]:
+            - generic [ref=f13e400]: 📭
+            - paragraph [ref=f13e401]: Henüz belge üretilmedi
+        - paragraph [ref=f13e402]: "Belge kurumun kendi stilleriyle üretilir: yazı tipi, başlık numaralandırması, antet ve altbilgi şablondan gelir; Maestro yalnız içeriği yerleştirir. Şablonda karşılığı olmayan bölüm sona sırayla eklenir — doküman üretimi durmaz."
+  - region

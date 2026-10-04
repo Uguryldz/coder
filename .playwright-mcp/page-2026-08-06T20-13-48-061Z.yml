@@ -1,0 +1,193 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: M
+      - generic [ref=e6]:
+        - text: Maestro
+        - generic [ref=e7]: UI prototipi · mock veri
+    - generic [ref=e8]:
+      - generic [ref=e9]: Operasyon
+      - link "▦ Panel" [ref=e10] [cursor=pointer]:
+        - /url: "#dash"
+        - generic [ref=e11]: ▦
+        - text: Panel
+      - link "≡ İş akışları 9" [ref=e12] [cursor=pointer]:
+        - /url: "#tickets"
+        - generic [ref=e13]: ≡
+        - text: İş akışları
+        - generic [ref=e14]: "9"
+      - link "◉ İş akışı detayı" [ref=e15] [cursor=pointer]:
+        - /url: "#detail"
+        - generic [ref=e16]: ◉
+        - text: İş akışı detayı
+      - link "⑂ Ana ticket (fan-out)" [ref=e17] [cursor=pointer]:
+        - /url: "#fanout"
+        - generic [ref=e18]: ⑂
+        - text: Ana ticket (fan-out)
+      - link "✦ Yeni proje sihirbazı" [ref=e19] [cursor=pointer]:
+        - /url: "#greenfield"
+        - generic [ref=e20]: ✦
+        - text: Yeni proje sihirbazı
+      - link "💬 Jira'da görünüm" [ref=e21] [cursor=pointer]:
+        - /url: "#jira"
+        - generic [ref=e22]: 💬
+        - text: Jira'da görünüm
+      - generic [ref=e23]: Yürütme
+      - link "🖥 Runner havuzları" [ref=e24] [cursor=pointer]:
+        - /url: "#runners"
+        - generic [ref=e25]: 🖥
+        - text: Runner havuzları
+      - link "▶ Canlı sandbox oturumu" [ref=e26] [cursor=pointer]:
+        - /url: "#sandbox"
+        - generic [ref=e27]: ▶
+        - text: Canlı sandbox oturumu
+      - link "🗄 Cache & çalışma alanı" [ref=e28] [cursor=pointer]:
+        - /url: "#cache"
+        - generic [ref=e29]: 🗄
+        - text: Cache & çalışma alanı
+      - generic [ref=e30]: Ajanlar
+      - link "🤖 Variant'lar 9" [ref=e31] [cursor=pointer]:
+        - /url: "#variants"
+        - generic [ref=e32]: 🤖
+        - text: Variant'lar
+        - generic [ref=e33]: "9"
+      - link "⚙ Variant detayı" [ref=e34] [cursor=pointer]:
+        - /url: "#variant"
+        - generic [ref=e35]: ⚙
+        - text: Variant detayı
+      - link "📚 Knowledge kütüphanesi" [ref=e36] [cursor=pointer]:
+        - /url: "#knowledge"
+        - generic [ref=e37]: 📚
+        - text: Knowledge kütüphanesi
+      - link "📋 Analiz şablonu" [ref=e38] [cursor=pointer]:
+        - /url: "#template"
+        - generic [ref=e39]: 📋
+        - text: Analiz şablonu
+      - generic [ref=e40]: Yönetişim
+      - link "⚡ LLM Gateway" [ref=e41] [cursor=pointer]:
+        - /url: "#llm"
+        - generic [ref=e42]: ⚡
+        - text: LLM Gateway
+      - link "₺ Maliyet & bütçe" [ref=e43] [cursor=pointer]:
+        - /url: "#cost"
+        - generic [ref=e44]: ₺
+        - text: Maliyet & bütçe
+      - link "🔒 Denetim izi" [ref=e45] [cursor=pointer]:
+        - /url: "#audit"
+        - generic [ref=e46]: 🔒
+        - text: Denetim izi
+      - link "📦 Kanıt paketi" [ref=e47] [cursor=pointer]:
+        - /url: "#evidence"
+        - generic [ref=e48]: 📦
+        - text: Kanıt paketi
+      - link "🛡 Güvenlik bulguları" [ref=e49] [cursor=pointer]:
+        - /url: "#security"
+        - generic [ref=e50]: 🛡
+        - text: Güvenlik bulguları
+      - generic [ref=e51]: Sistem
+      - link "⇄ Yönlendirme kuralları" [ref=e52] [cursor=pointer]:
+        - /url: "#routing"
+        - generic [ref=e53]: ⇄
+        - text: Yönlendirme kuralları
+      - link "⚙ Ayarlar & bağlantılar" [ref=e54] [cursor=pointer]:
+        - /url: "#settings"
+        - generic [ref=e55]: ⚙
+        - text: Ayarlar & bağlantılar
+      - link "❗ ⚠ Tartışılacaklar 6" [ref=e56] [cursor=pointer]:
+        - /url: "#issues"
+        - generic [ref=e57]: ❗
+        - text: ⚠ Tartışılacaklar
+        - generic [ref=e58]: "6"
+    - generic [ref=e59]:
+      - generic [ref=e60]: Bu bir tıklanabilir maket. Veriler sahte, kod yok.
+      - button "🌓 Tema değiştir" [ref=e61] [cursor=pointer]
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - heading "Panel" [level=1] [ref=e65]
+        - generic [ref=e66]: Bugün · 6 Ağustos 2026
+      - generic [ref=e67]: Sistem sağlıklı
+      - generic [ref=e69]: 👤 Uğur Yıldız · admin
+    - generic [ref=e70]:
+      - generic [ref=e71]:
+        - generic [ref=e72]:
+          - generic [ref=e73]: Aktif iş akışı
+          - generic [ref=e74]: "9"
+          - generic [ref=e75]: 3'ü insan kapısında bekliyor
+        - generic [ref=e76]:
+          - generic [ref=e77]: Bugün açılan PR
+          - generic [ref=e78]: "4"
+          - generic [ref=e79]: 2'si merge edildi
+        - generic [ref=e80]:
+          - generic [ref=e81]: Bekleyen onay
+          - generic [ref=e82]: "3"
+          - generic [ref=e83]: en eskisi 16 gün ⚠
+        - generic [ref=e84]:
+          - generic [ref=e85]: Günlük LLM maliyeti
+          - generic [ref=e86]: $47.20
+          - generic [ref=e87]: aylık bütçenin %31'i
+      - generic [ref=e88]:
+        - generic [ref=e89]:
+          - generic [ref=e90]:
+            - heading "Dikkat isteyenler" [level=3] [ref=e91]
+            - link "Tümü" [ref=e92] [cursor=pointer]:
+              - /url: "#tickets"
+          - generic [ref=e93]:
+            - generic [ref=e94]:
+              - generic [ref=e95]: ⚠
+              - generic [ref=e96]:
+                - text: UGURPAY-504 — PO onayı 16 gün 2 saattir bekliyor
+                - generic [ref=e97]: Hatırlatıcılar gönderildi (Jira 24s, Slack 72s, 7. gün yedek kişiye delegasyon). Otomatik ret YOK — akış bağlamını koruyor.
+            - generic [ref=e98]:
+              - generic [ref=e99]: ✕
+              - generic [ref=e100]:
+                - text: UGURDESK-45 — CI kırmızı (windows-dotnet)
+                - generic [ref=e101]: vstest 3 senaryoda başarısız → 6a'ya döndü, ajan aynı oturumu sürdürüyor.
+            - generic [ref=e102]:
+              - generic [ref=e103]: ⏳
+              - generic [ref=e104]: UGURPAY-501 — PR onayı 2 gündür bekliyor (Tech Lead)
+        - generic [ref=e105]:
+          - generic [ref=e106]:
+            - heading "Runner havuzları" [level=3] [ref=e107]
+            - link "Detay" [ref=e108] [cursor=pointer]:
+              - /url: "#runners"
+          - generic [ref=e109]:
+            - generic [ref=e111]:
+              - generic [ref=e112]: docker-linux
+              - generic [ref=e113]: 5/12 slot · 2 makine
+            - generic [ref=e117]:
+              - generic [ref=e118]: agent-windows
+              - generic [ref=e119]: 1/4 slot · 2 makine
+            - generic [ref=e123]:
+              - generic [ref=e124]: agent-macos
+              - generic [ref=e125]: 1/4 slot · 2 makine
+            - generic [ref=e128]: "mac-02 uyarı veriyor: Xcode 17.2 güncellemesi bekliyor → iOS kapasitesi yarıya düştü."
+      - generic [ref=e129]:
+        - generic [ref=e130]:
+          - heading "Son 24 saatte akış" [level=3] [ref=e131]
+          - generic [ref=e132]: her satır bir iş akışı adımı
+        - generic [ref=e133]:
+          - generic [ref=e134]:
+            - generic [ref=e135]: 14:12
+            - generic [ref=e136]: UGURPAY-123
+            - generic [ref=e137]: QA sonuç onayı verildi (Mert D.)
+          - generic [ref=e138]:
+            - generic [ref=e139]: 13:58
+            - generic [ref=e140]: UGURPAY-123
+            - generic [ref=e141]: Testler koştu — coverage %83, flaky 0
+          - generic [ref=e142]:
+            - generic [ref=e143]: 13:40
+            - generic [ref=e144]: UGURPAY-501
+            - generic [ref=e145]: Güvenlik taraması temiz (gitleaks/semgrep/trivy)
+          - generic [ref=e146]:
+            - generic [ref=e147]: 11:22
+            - generic [ref=e148]: UGURPAY-501
+            - generic [ref=e149]: Tech Lead onayı (Ayşe K.) — SoD doğrulandı
+          - generic [ref=e150]:
+            - generic [ref=e151]: 09:03
+            - generic [ref=e152]: UGURPAY-504
+            - generic [ref=e153]: "PII maskelendi: 3 alan (TCKN, telefon, e-posta)"
+          - generic [ref=e154]:
+            - generic [ref=e155]: 08:31
+            - generic [ref=e156]: UGURPAY-500
+            - generic [ref=e157]: "Alt ticket'lar açıldı: 501·502·503·504"

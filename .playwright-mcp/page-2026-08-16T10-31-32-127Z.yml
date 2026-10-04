@@ -1,0 +1,208 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - navigation "Ana gezinme" [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: M
+        - generic [ref=e7]:
+          - text: Maestro
+          - generic [ref=e8]: SDLC otomasyonu
+      - generic [ref=e9]:
+        - generic [ref=e10]: İşler
+        - link "Panel" [ref=e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [active] [ref=e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=e17]:
+        - generic [ref=e18]: Ajanlar
+        - link "Ajan tanımları" [ref=e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=e29]: yakında
+      - generic [ref=e30]:
+        - generic [ref=e31]: Denetim
+        - link "Denetim izi" [ref=e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=e40]: yakında
+        - link "Kanıt paketi yakında" [ref=e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=e43]: yakında
+      - generic [ref=e44]:
+        - generic [ref=e45]: Kurulum
+        - link "Proje bağlama" [ref=e46] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=e47]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=e48] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=e49]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=e50] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=e51]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=e52] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=e53]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=e54] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=e55]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=e56] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=e57]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=e58]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=e59] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=e60]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=e61]:
+      - banner [ref=e62]:
+        - heading "Canlı akış" [level=1] [ref=e84]
+        - generic [ref=e64]:
+          - generic [ref=e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=e67]: admin
+        - button "Çıkış" [ref=e68] [cursor=pointer]
+      - main [ref=e69]:
+        - generic [ref=e85]:
+          - tablist "Canlı akış görünümü" [ref=e86]:
+            - tab "Canlı liste" [selected] [ref=e87] [cursor=pointer]
+            - tab "Süreç haritası" [ref=e88] [cursor=pointer]
+          - tabpanel "Canlı liste" [ref=e89]:
+            - generic [ref=e90]:
+              - generic [ref=e91]:
+                - generic [ref=e92]:
+                  - heading "Canlı akış" [level=3] [ref=e93]
+                  - generic [ref=e94]: Gerçek bir işi başlatın ve canlı izleyin
+                - generic [ref=e95]:
+                  - paragraph [ref=e96]: "Maestro, canlı Jira'da maestro etiketli bir ticket bulur ve tüm akışı yürütür: analiz, kod yazımı, güvenlik taraması, test, PR ve iki insan onayı. Bu ekrandan bir işi başlatıp adım adım canlı izleyebilirsiniz."
+                  - paragraph [ref=e97]: "Canlı Jira: https://uyildiz.atlassian.net · onaycı grubu: jira-users-uyildiz"
+              - generic [ref=e98]:
+                - generic [ref=e99]:
+                  - heading "Keşfedilen ticket'lar" [level=3] [ref=e100]
+                  - generic [ref=e101]: gerçek Jira'da maestro etiketli OPS ticket'ları
+                - paragraph [ref=e104]: Şu an keşfedilmiş maestro ticket'ı yok
+              - generic [ref=e105]:
+                - generic [ref=e106]:
+                  - heading "Çalışan akış" [level=3] [ref=e107]
+                  - generic [ref=e108]: adımlar, açık kapı ve belgeler
+                  - link "Jira'da aç ↗" [ref=e110] [cursor=pointer]:
+                    - /url: https://uyildiz.atlassian.net/browse/OPS-40
+                - generic [ref=e111]:
+                  - paragraph [ref=e112]:
+                    - generic [ref=e113]: OPS-40
+                    - generic [ref=e114]: çalışıyor
+                  - status [ref=e115]:
+                    - generic [ref=e116]: İnsan kapısı açık
+                    - text: Adım 3 onay bekliyor. GERÇEK Jira ticket'ının yorumuna /approve yazın.
+                  - generic [ref=e117]:
+                    - generic [ref=e118]:
+                      - generic [ref=e119]: "1"
+                      - generic [ref=e120]:
+                        - text: Ticket okundu
+                        - generic [ref=e121]: Maestro GERÇEK Jira'dan ticket'ı çekti, etiketledi, durum yorumunu açtı.
+                      - generic [ref=e122]: tamam
+                    - generic [ref=e124]:
+                      - generic [ref=e125]: "2"
+                      - generic [ref=e126]:
+                        - text: Analiz üretildi
+                        - generic [ref=e127]: Yapay zeka analizi yazdı; şablon 7 bölüm olarak doğrulandı.
+                      - generic [ref=e128]: tamam
+                    - generic [ref=e130]:
+                      - generic [ref=e131]: "3"
+                      - generic [ref=e132]:
+                        - text: İnsan kapısı — analiz onayı
+                        - generic [ref=e133]: GERÇEK Jira'da yoruma /approve yazılmasını yokluyor (yetki + grup).
+                      - generic [ref=e134]: onay
+                    - generic [ref=e136]:
+                      - generic [ref=e137]: "4"
+                      - generic [ref=e138]:
+                        - text: Kod yazıldı
+                        - generic [ref=e139]: Yapay zeka gerçek dosya içeriği üretti; çalışma alanına yazıldı.
+                      - generic [ref=e140]: bekliyor
+                    - generic [ref=e142]:
+                      - generic [ref=e143]: "5"
+                      - generic [ref=e144]:
+                        - text: Tarama
+                        - generic [ref=e145]: Üretilen kod kişisel veri sızıntısına karşı tarandı (fail-closed).
+                      - generic [ref=e146]: bekliyor
+                    - generic [ref=e148]:
+                      - generic [ref=e149]: "6"
+                      - generic [ref=e150]:
+                        - text: Testler koştu
+                        - generic [ref=e151]: Üretilen test dosyası gerçekten çalıştırıldı — sonuç uydurulmadı.
+                      - generic [ref=e152]: bekliyor
+                    - generic [ref=e154]:
+                      - generic [ref=e155]: "7"
+                      - generic [ref=e156]:
+                        - text: PR açıldı + CI
+                        - generic [ref=e157]: ADO'da (sahte) dal ve pull request açıldı; build sonucu webhook ile geldi.
+                      - generic [ref=e158]: bekliyor
+                    - generic [ref=e160]:
+                      - generic [ref=e161]: "8"
+                      - generic [ref=e162]:
+                        - text: İnsan kapısı — PR onayı
+                        - generic [ref=e163]: GERÇEK Jira'da ikinci /approve yoklanıyor.
+                      - generic [ref=e164]: bekliyor
+                    - generic [ref=e166]:
+                      - generic [ref=e167]: "9"
+                      - generic [ref=e168]:
+                        - text: Merge + kapanış
+                        - generic [ref=e169]: PR birleşti, ticket kapatıldı, denetim kaydı doğrulandı. Maestro burada durur — prod'a çıkış (release) kurumun kendi sürecidir.
+                      - generic [ref=e170]: bekliyor
+                  - paragraph [ref=e172]:
+                    - generic [ref=e173]: "Analiz belgeleri hazır:"
+                    - button "PDF indir" [ref=e174] [cursor=pointer]
+                    - button "Word indir" [ref=e175] [cursor=pointer]
+              - generic [ref=e176]:
+                - generic [ref=e177]:
+                  - heading "Geçmiş işler" [level=3] [ref=e178]
+                  - generic [ref=e179]: Tamamlanan akışların kaydı — en yeni en üstte
+                - paragraph [ref=e181]: Henüz tamamlanmış iş yok. Bir işi başlatıp bitirdiğinizde burada listelenir.
+  - region

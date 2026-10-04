@@ -1,0 +1,247 @@
+[
+  {
+    "p": "dash",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "help",
+    "errBox": false,
+    "notLive": false,
+    "rows": 8,
+    "tables": 1
+  },
+  {
+    "p": "live",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "tickets",
+    "errBox": false,
+    "notLive": false,
+    "rows": 22,
+    "tables": 1
+  },
+  {
+    "p": "fanout",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "clarify",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "workmode",
+    "errBox": false,
+    "notLive": false,
+    "rows": 4,
+    "tables": 1
+  },
+  {
+    "p": "greenfield",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "jira",
+    "errBox": false,
+    "notLive": false,
+    "rows": 11,
+    "tables": 1
+  },
+  {
+    "p": "commands",
+    "errBox": false,
+    "notLive": false,
+    "rows": 8,
+    "tables": 1
+  },
+  {
+    "p": "runners",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "sandbox",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "cache",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "yaml",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "variants",
+    "errBox": false,
+    "notLive": false,
+    "rows": 9,
+    "tables": 1
+  },
+  {
+    "p": "variant",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "eval",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "knowledge",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "template",
+    "errBox": false,
+    "notLive": true,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "doctemplate",
+    "errBox": false,
+    "notLive": false,
+    "rows": 12,
+    "tables": 1
+  },
+  {
+    "p": "llm",
+    "errBox": false,
+    "notLive": false,
+    "rows": 10,
+    "tables": 2
+  },
+  {
+    "p": "pii",
+    "errBox": false,
+    "notLive": false,
+    "rows": 8,
+    "tables": 1
+  },
+  {
+    "p": "cost",
+    "errBox": false,
+    "notLive": false,
+    "rows": 5,
+    "tables": 1
+  },
+  {
+    "p": "audit",
+    "errBox": false,
+    "notLive": false,
+    "rows": 50,
+    "tables": 1
+  },
+  {
+    "p": "evidence",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "security",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "notify",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "routing",
+    "errBox": false,
+    "notLive": false,
+    "rows": 9,
+    "tables": 2
+  },
+  {
+    "p": "params",
+    "errBox": false,
+    "notLive": false,
+    "rows": 19,
+    "tables": 1
+  },
+  {
+    "p": "mcp",
+    "errBox": false,
+    "notLive": false,
+    "rows": 18,
+    "tables": 1
+  },
+  {
+    "p": "onboard",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "users",
+    "errBox": false,
+    "notLive": false,
+    "rows": 0,
+    "tables": 0
+  },
+  {
+    "p": "settings",
+    "errBox": false,
+    "notLive": false,
+    "rows": 12,
+    "tables": 2
+  },
+  {
+    "p": "health",
+    "errBox": false,
+    "notLive": true,
+    "rows": 2,
+    "tables": 1
+  },
+  {
+    "p": "issues",
+    "errBox": false,
+    "notLive": false,
+    "rows": 36,
+    "tables": 1
+  }
+]

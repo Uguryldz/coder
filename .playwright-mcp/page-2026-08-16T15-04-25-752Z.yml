@@ -1,0 +1,164 @@
+- generic [ref=f8e2]:
+  - generic [ref=f8e23]:
+    - navigation "Ana gezinme" [ref=f8e24]:
+      - generic [ref=f8e25]:
+        - generic [ref=f8e26]: M
+        - generic [ref=f8e27]:
+          - text: Maestro
+          - generic [ref=f8e28]: SDLC otomasyonu
+      - generic [ref=f8e29]:
+        - generic [ref=f8e30]: İşler
+        - link "Panel" [ref=f8e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f8e32]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f8e33] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f8e34]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f8e35] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f8e36]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f8e37]:
+        - generic [ref=f8e38]: Ajanlar
+        - link "Ajan tanımları" [ref=f8e39] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f8e40]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f8e41] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f8e42]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f8e43] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f8e44]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f8e45] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f8e46]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f8e47] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f8e48]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f8e49]: yakında
+      - generic [ref=f8e50]:
+        - generic [ref=f8e51]: Denetim
+        - link "Denetim izi" [ref=f8e52] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f8e53]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f8e54] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f8e55]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f8e56] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f8e57]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f8e58] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f8e59]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f8e60]: yakında
+        - link "Kanıt paketi yakında" [ref=f8e61] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f8e62]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f8e63]: yakında
+      - generic [ref=f8e64]:
+        - generic [ref=f8e65]: Kurulum
+        - link "Proje bağlama" [ref=f8e66] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f8e67]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f8e68] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f8e69]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f8e70] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f8e71]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f8e72] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f8e73]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f8e74] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f8e75]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f8e76] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f8e77]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f8e78]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f8e79] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f8e80]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f8e81]:
+      - banner [ref=f8e82]:
+        - heading "Panel" [level=1] [ref=f8e83]
+        - generic [ref=f8e84]:
+          - generic [ref=f8e85]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f8e86]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f8e87]: admin
+        - button "Çıkış" [ref=f8e88] [cursor=pointer]
+      - main [ref=f8e89]:
+        - generic [ref=f8e90]:
+          - generic [ref=f8e91]:
+            - generic [ref=f8e92]:
+              - heading "Canlı motor işleri" [level=3] [ref=f8e93]
+              - generic [ref=f8e94]: akış motorunun (pilot) gerçekten çalıştırdığı işler — satır Canlı akış ekranını açar
+            - button "OPS-40 şu an çalışıyor" [ref=f8e97] [cursor=pointer]:
+              - generic [ref=f8e98]: OPS-40
+              - generic [ref=f8e99]: şu an çalışıyor
+          - generic [ref=f8e101]:
+            - generic [ref=f8e102]:
+              - heading "Hoş geldiniz — Maestro'yu 5 adımda çalışır hale getirin" [level=3] [ref=f8e103]
+              - generic [ref=f8e104]: Aşağıdaki adımları sırayla tamamlayın. Bir sonraki yapmanız gereken adım vurgulanır.
+            - generic [ref=f8e105]:
+              - list [ref=f8e106]:
+                - listitem [ref=f8e107]:
+                  - button "Bağlantıları kur Jira ve GitHub/Azure bağlantını ekle (Ayarlar > Bağlantılar)." [ref=f8e108] [cursor=pointer]:
+                    - generic [ref=f8e109]: ✓
+                    - generic [ref=f8e110]:
+                      - generic [ref=f8e111]: Bağlantıları kur
+                      - generic [ref=f8e112]: Jira ve GitHub/Azure bağlantını ekle (Ayarlar > Bağlantılar).
+                - listitem [ref=f8e113]:
+                  - button "Projeni bağla Bir Jira projesini bir repoya bağla — hazır dinleme kuralları otomatik kurulur (Proje bağlama)." [ref=f8e114] [cursor=pointer]:
+                    - generic [ref=f8e115]: ✓
+                    - generic [ref=f8e116]:
+                      - generic [ref=f8e117]: Projeni bağla
+                      - generic [ref=f8e118]: Bir Jira projesini bir repoya bağla — hazır dinleme kuralları otomatik kurulur (Proje bağlama).
+                - listitem [ref=f8e119]:
+                  - button "Jira webhook'unu kur Ticket'ın Maestro'ya kendiliğinden düşmesi için Jira admin'inden tek global webhook iste. Nasıl yapılacağı Yardım'da yazıyor. Şimdi bunu yap →" [ref=f8e120] [cursor=pointer]:
+                    - generic [ref=f8e121]: "3"
+                    - generic [ref=f8e122]:
+                      - generic [ref=f8e123]: Jira webhook'unu kur
+                      - generic [ref=f8e124]: Ticket'ın Maestro'ya kendiliğinden düşmesi için Jira admin'inden tek global webhook iste. Nasıl yapılacağı Yardım'da yazıyor.
+                    - generic [ref=f8e125]: Şimdi bunu yap →
+                - listitem [ref=f8e126]:
+                  - button "Ajanlarını belgelerle eğit Ajanlar ekranından bir ajan seç ve Bilgi kütüphanesi'ne kurum belgelerini yükle." [ref=f8e127] [cursor=pointer]:
+                    - generic [ref=f8e128]: ✓
+                    - generic [ref=f8e129]:
+                      - generic [ref=f8e130]: Ajanlarını belgelerle eğit
+                      - generic [ref=f8e131]: Ajanlar ekranından bir ajan seç ve Bilgi kütüphanesi'ne kurum belgelerini yükle.
+                - listitem [ref=f8e132]:
+                  - button "Jira'da iş aç, Panel'den izle Onayı Jira'da yorum yazarak ya da ticket'ı bota atayarak ver; akışı Panel'den izle." [ref=f8e133] [cursor=pointer]:
+                    - generic [ref=f8e134]: "5"
+                    - generic [ref=f8e135]:
+                      - generic [ref=f8e136]: Jira'da iş aç, Panel'den izle
+                      - generic [ref=f8e137]: Onayı Jira'da yorum yazarak ya da ticket'ı bota atayarak ver; akışı Panel'den izle.
+              - generic [ref=f8e138]:
+                - generic [ref=f8e139] [cursor=pointer]:
+                  - checkbox "Jira webhook'u kuruldu (bunu Maestro doğrulayamaz, siz onaylayın)" [ref=f8e140]
+                  - generic [ref=f8e141]: Jira webhook'u kuruldu (bunu Maestro doğrulayamaz, siz onaylayın)
+                - button "Anladım, gizle" [ref=f8e142] [cursor=pointer]
+              - paragraph [ref=f8e143]: Gizlemek kurulumu tamamlamaz — eksik adımlar Panel'de kısa bir not olarak kalır.
+  - region

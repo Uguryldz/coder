@@ -1,0 +1,73 @@
+.ui-btn {
+  border: 1px solid var(--border2);
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ui-btn:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.ui-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-btn--primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.ui-btn--success {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.ui-btn--danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.ui-btn--sm {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+/* Quiet action: no chrome until hovered. */
+.ui-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.ui-btn--ghost:hover:not(:disabled) {
+  background: var(--panel2);
+  border-color: transparent;
+  color: var(--text);
+}
+
+/* Reads as a link, behaves as a button. Inline: no padding, so it sits in a
+   sentence without pushing the line apart. */
+.ui-btn--link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--blue);
+  text-decoration: underline;
+  font-weight: 500;
+  border-radius: 3px;
+}
+
+.ui-btn--link:hover:not(:disabled) {
+  text-decoration: none;
+}

@@ -1,0 +1,71 @@
+{
+  "expand": "transitions",
+  "transitions": [
+    {
+      "id": "11",
+      "name": "Analize Al",
+      "description": "Kaydı analiz aşamasına taşır.",
+      "opsbarSequence": 10,
+      "fields": {},
+      "to": {
+        "self": "https://jira.internal.bank/rest/api/2/status/10101",
+        "description": "Analist üzerinde çalışıyor.",
+        "iconUrl": "https://jira.internal.bank/images/icons/statuses/inprogress.png",
+        "name": "ANALİZ",
+        "id": "10101",
+        "statusColor": "yellow",
+        "statusCategory": {
+          "self": "https://jira.internal.bank/rest/api/2/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "In Progress"
+        }
+      }
+    },
+    {
+      "id": "21",
+      "name": "Bilgi Bekleniyor",
+      "description": "Eksik bilgi için kaydı geri gönderir.",
+      "opsbarSequence": 20,
+      "fields": {},
+      "to": {
+        "self": "https://jira.internal.bank/rest/api/2/status/10100",
+        "description": "Sıradaki iş.",
+        "iconUrl": "https://jira.internal.bank/images/icons/statuses/open.png",
+        "name": "TODO",
+        "id": "10100",
+        "statusColor": "blue-gray",
+        "statusCategory": {
+          "self": "https://jira.internal.bank/rest/api/2/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "To Do"
+        }
+      }
+    },
+    {
+      "id": "31",
+      "name": "İncelemeye Gönder",
+      "description": "Analiz onayı için yöneticiye gönderir.",
+      "opsbarSequence": 30,
+      "fields": {},
+      "to": {
+        "self": "https://jira.internal.bank/rest/api/2/status/10102",
+        "description": "Analiz onayı bekliyor.",
+        "iconUrl": "https://jira.internal.bank/images/icons/statuses/inprogress.png",
+        "name": "AnalysisApproval",
+        "id": "10102",
+        "statusColor": "yellow",
+        "statusCategory": {
+          "self": "https://jira.internal.bank/rest/api/2/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "In Progress"
+        }
+      }
+    }
+  ]
+}

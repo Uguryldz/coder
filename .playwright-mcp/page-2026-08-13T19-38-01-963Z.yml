@@ -1,0 +1,232 @@
+- generic [ref=f116e2]:
+  - generic [ref=f116e3]:
+    - navigation "Ana gezinme" [ref=f116e4]:
+      - generic [ref=f116e5]:
+        - generic [ref=f116e6]: M
+        - generic [ref=f116e7]:
+          - text: Maestro
+          - generic [ref=f116e8]: SDLC otomasyonu
+      - generic [ref=f116e9]:
+        - generic [ref=f116e10]: İzleme
+        - link "Panel" [ref=f116e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f116e12]: ▦
+          - text: Panel
+        - link "Canlı akış / Pilot" [ref=f116e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f116e14]: 🎥
+          - text: Canlı akış / Pilot
+        - link "İş akışları" [ref=f116e15] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f116e16]: ≡
+          - text: İş akışları
+        - link "Ajan iş akışı" [ref=f116e17] [cursor=pointer]:
+          - /url: /flow
+          - generic [ref=f116e18]: 🔀
+          - text: Ajan iş akışı
+        - link "Yardım — nasıl kullanılır?" [ref=f116e19] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f116e20]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f116e21]:
+        - generic [ref=f116e22]: Çalışma
+        - link "Runner havuzları" [ref=f116e23] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f116e24]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f116e25] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f116e26]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Knowledge kütüphanesi" [ref=f116e27] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f116e28]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Variant'lar" [ref=f116e29] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f116e30]: 🤖
+          - text: Variant'lar
+        - link "Eval / golden ticket" [ref=f116e31] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f116e32]: 🎯
+          - text: Eval / golden ticket
+        - link "Analiz şablonu" [ref=f116e33] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f116e34]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f116e35] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f116e36]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f116e37]:
+        - generic [ref=f116e38]: Yönetişim
+        - link "Denetim izi" [ref=f116e39] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f116e40]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f116e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f116e42]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f116e43] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f116e44]: 🛡
+          - text: Güvenlik bulguları
+        - link "Maliyet & kota" [ref=f116e45] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f116e46]: ₺
+          - text: Maliyet & kota
+        - link "LLM Gateway" [ref=f116e47] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f116e48]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f116e49] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f116e50]: 🔏
+          - text: PII maskeleme
+      - generic [ref=f116e51]:
+        - generic [ref=f116e52]: Yönetim
+        - link "Jira bağlantısı & eşleme" [ref=f116e53] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f116e54]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Dinleme kuralları" [ref=f116e55] [cursor=pointer]:
+          - /url: /listening
+          - generic [ref=f116e56]: 👂
+          - text: Dinleme kuralları
+        - link "Uygulama ekle" [ref=f116e57] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f116e58]: ➕
+          - text: Uygulama ekle
+        - link "Bildirim & eskalasyon" [ref=f116e59] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f116e60]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Parametreler (DB)" [ref=f116e61] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f116e62]: 🎛
+          - text: Parametreler (DB)
+        - link "Kullanıcılar & roller" [ref=f116e63] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f116e64]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [active] [ref=f116e65] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f116e66]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f116e67] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f116e68]: 💚
+          - text: Sistem sağlığı
+    - generic [ref=f116e69]:
+      - banner [ref=f116e70]:
+        - heading "Ayarlar & bağlantılar" [level=1] [ref=f116e90]
+        - generic [ref=f116e72]:
+          - generic [ref=f116e73]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f116e74]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f116e75]: admin
+        - button "Çıkış" [ref=f116e76] [cursor=pointer]
+      - main [ref=f116e77]:
+        - generic [ref=f116e91]:
+          - generic [ref=f116e92]:
+            - generic [ref=f116e93]:
+              - heading "Bağlantılar" [level=3] [ref=f116e94]
+              - generic [ref=f116e95]: Dış bağlantıları buradan yönetin — token AES ile şifreli saklanır, ekranda maskeli görünür
+              - button "➕ Bağlantı ekle" [ref=f116e97] [cursor=pointer]
+            - table [ref=f116e100]:
+              - caption [ref=f116e101]: Bağlantılar
+              - rowgroup [ref=f116e102]:
+                - row [ref=f116e103]:
+                  - columnheader "Bağlantı" [ref=f116e104]
+                  - columnheader "Durum" [ref=f116e105]
+                  - columnheader "Adres" [ref=f116e106]
+                  - columnheader "Token" [ref=f116e107]
+                  - columnheader [ref=f116e108]
+              - rowgroup [ref=f116e109]:
+                - row [ref=f116e110]:
+                  - cell "GitHub (maestro-pilot) GitHub" [ref=f116e111]:
+                    - generic [ref=f116e112]:
+                      - text: GitHub (maestro-pilot)
+                      - generic [ref=f116e113]: GitHub
+                  - cell "bağlı 2 gün" [ref=f116e114]:
+                    - generic [ref=f116e115]:
+                      - generic [ref=f116e116]:
+                        - generic [ref=f116e117]: ●
+                        - text: bağlı
+                      - generic [ref=f116e118]: 2 gün
+                  - cell "https://api.github.com" [ref=f116e119]
+                  - cell "****fOgX" [ref=f116e120]
+                  - cell [ref=f116e121]:
+                    - generic [ref=f116e122]:
+                      - button "🔌 Test et" [ref=f116e123] [cursor=pointer]
+                      - button "Düzenle" [ref=f116e124] [cursor=pointer]
+                      - button "Sil" [ref=f116e125] [cursor=pointer]
+                - row [ref=f116e126]:
+                  - cell "Jira (uyildiz) Jira Cloud" [ref=f116e127]:
+                    - generic [ref=f116e128]:
+                      - text: Jira (uyildiz)
+                      - generic [ref=f116e129]: Jira Cloud
+                  - cell "bağlı 32 dk" [ref=f116e130]:
+                    - generic [ref=f116e131]:
+                      - generic [ref=f116e132]:
+                        - generic [ref=f116e133]: ●
+                        - text: bağlı
+                      - generic [ref=f116e134]: 32 dk
+                  - cell "https://uyildiz.atlassian.net" [ref=f116e135]
+                  - cell "****0275" [ref=f116e136]
+                  - cell [ref=f116e137]:
+                    - generic [ref=f116e138]:
+                      - button "🔌 Test et" [ref=f116e139] [cursor=pointer]
+                      - button "Düzenle" [ref=f116e140] [cursor=pointer]
+                      - button "Sil" [ref=f116e141] [cursor=pointer]
+                - row [ref=f116e142]:
+                  - cell "OpenRouter (LLM) OpenRouter (LLM)" [ref=f116e143]:
+                    - generic [ref=f116e144]:
+                      - text: OpenRouter (LLM)
+                      - generic [ref=f116e145]: OpenRouter (LLM)
+                  - cell "bağlı 2 gün" [ref=f116e146]:
+                    - generic [ref=f116e147]:
+                      - generic [ref=f116e148]:
+                        - generic [ref=f116e149]: ●
+                        - text: bağlı
+                      - generic [ref=f116e150]: 2 gün
+                  - cell "https://openrouter.ai/api/v1" [ref=f116e151]
+                  - cell "****eba6" [ref=f116e152]
+                  - cell [ref=f116e153]:
+                    - generic [ref=f116e154]:
+                      - button "🔌 Test et" [ref=f116e155] [cursor=pointer]
+                      - button "Düzenle" [ref=f116e156] [cursor=pointer]
+                      - button "Sil" [ref=f116e157] [cursor=pointer]
+          - generic [ref=f116e158]:
+            - generic [ref=f116e159]:
+              - heading "Acil durdurma (kill-switch)" [level=3] [ref=f116e160]
+              - generic [ref=f116e161]: Bir sorun anında Maestro'yu güvenle durdurur. Sadece admin · gerekçe zorunlu · denetim iznine yazılır.
+            - generic [ref=f116e162]:
+              - generic [ref=f116e163]:
+                - generic [ref=f116e164]:
+                  - term [ref=f116e165]: Şu anki durum
+                  - definition [ref=f116e166]:
+                    - generic [ref=f116e167]:
+                      - generic [ref=f116e168]: ●
+                      - text: Normal çalışıyor
+                - generic [ref=f116e169]:
+                  - term [ref=f116e170]: Son değiştiren
+                  - definition [ref=f116e171]: maestro-worker
+                - generic [ref=f116e172]:
+                  - term [ref=f116e173]: Gerekçe
+                  - definition [ref=f116e174]: initial
+              - generic [ref=f116e175]:
+                - generic [ref=f116e176]:
+                  - generic [ref=f116e177]:
+                    - generic [ref=f116e178]: ① Yeni iş almayı durdur (yumuşak fren)
+                    - generic [ref=f116e179]: Jira'dan yeni ticket alınmaz. Şu an çalışan işler yarıda kesilmez, doğal olarak biter. Analiz sandbox'ı açık kalır.
+                  - button "Yeni iş almayı durdur" [ref=f116e180] [cursor=pointer]
+                - generic [ref=f116e181]:
+                  - generic [ref=f116e182]:
+                    - generic [ref=f116e183]: ② Her şeyi durdur (acil fren)
+                    - generic [ref=f116e184]: Çalışan tüm ticket işlerine 'dur' sinyali gider. Açık onay kapıları beklemede kalır (kaybolmaz). Kalıcı analiz sandbox'ı KAPANMAZ — Maestro'nun çekirdek ortamı ayakta kalır.
+                  - button "Her şeyi durdur" [ref=f116e185] [cursor=pointer]
+  - region

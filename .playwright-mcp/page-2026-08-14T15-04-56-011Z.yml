@@ -1,0 +1,158 @@
+- generic [ref=f247e2]:
+  - generic [ref=f247e23]:
+    - navigation "Ana gezinme" [ref=f247e24]:
+      - generic [ref=f247e25]:
+        - generic [ref=f247e26]: M
+        - generic [ref=f247e27]:
+          - text: Maestro
+          - generic [ref=f247e28]: SDLC otomasyonu
+      - generic [ref=f247e29]:
+        - generic [ref=f247e30]: Başla
+        - link "Panel" [ref=f247e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f247e32]: ▦
+          - text: Panel
+        - link "Proje bağlama" [ref=f247e33] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f247e34]: ⇄
+          - text: Proje bağlama
+        - link "Analiz şablonu" [ref=f247e35] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f247e36]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f247e37] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f247e38]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Bildirim & eskalasyon" [ref=f247e39] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f247e40]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Yardım — nasıl kullanılır?" [ref=f247e41] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f247e42]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f247e43]:
+        - generic [ref=f247e44]: İzle
+        - link "Canlı akış" [ref=f247e45] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f247e46]: 🎥
+          - text: Canlı akış
+        - link "Bilgi kütüphanesi" [ref=f247e47] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f247e48]: 📚
+          - text: Bilgi kütüphanesi
+      - generic [ref=f247e49]:
+        - generic [ref=f247e50]: Denetim ve Uyum
+        - link "Denetim izi" [ref=f247e51] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f247e52]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f247e53] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f247e54]: 📦
+          - text: Kanıt paketi
+        - link "PII maskeleme" [ref=f247e55] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f247e56]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f247e57] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f247e58]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+      - generic [ref=f247e59]:
+        - generic [ref=f247e60]: Yapay Zekâ Ayarları
+        - link "Ajan tanımları" [ref=f247e61] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f247e62]: 🤖
+          - text: Ajan tanımları
+        - link "Sürüm kalite testi" [ref=f247e63] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f247e64]: 🎯
+          - text: Sürüm kalite testi
+        - link "Güvenlik taramaları" [ref=f247e65] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f247e66]: 🛡
+          - text: Güvenlik taramaları
+      - generic [ref=f247e67]:
+        - generic [ref=f247e68]: Sistem
+        - link "Kullanıcılar & roller" [ref=f247e69] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f247e70]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f247e71] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f247e72]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Parametreler (DB)" [ref=f247e73] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f247e74]: 🎛
+          - text: Parametreler (DB)
+        - link "Sistem sağlığı" [ref=f247e75] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f247e76]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler" [ref=f247e77] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f247e78]: 🖥
+          - text: Çalışan makineler
+        - link "Canlı oturumlar" [ref=f247e79] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f247e80]: ▶
+          - text: Canlı oturumlar
+    - generic [ref=f247e81]:
+      - banner [ref=f247e82]:
+        - heading "Knowledge kütüphanesi" [level=1] [ref=f247e83]
+        - generic [ref=f247e84]:
+          - generic [ref=f247e85]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f247e86]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f247e87]: admin
+        - button "Çıkış" [ref=f247e88] [cursor=pointer]
+      - main [ref=f247e89]:
+        - generic [ref=f247e90]:
+          - generic [ref=f247e91]:
+            - heading "Öğrenme kaynakları" [level=3] [ref=f247e92]
+            - generic [ref=f247e93]: Yüklediğiniz notlar yeni analizde AI'a 'dikkat edilecekler' olarak verilir
+          - generic [ref=f247e94]:
+            - paragraph [ref=f247e95]: Buraya bir kural, kurum bilgisi ya da 'analiz yaparken şuna dikkat et' notu ekleyin. 'Öğreniyor' işaretli notlar, yeni bir analiz hazırlanırken AI'ın önüne konur. İşareti kapatınca not silinmez, sadece o analizde dikkate alınmaz.
+            - generic [ref=f247e96]:
+              - generic [ref=f247e97]:
+                - generic [ref=f247e98]: Başlık
+                - textbox "Başlık" [ref=f247e99]:
+                  - /placeholder: örn. Ekstre ekranı kuralları
+              - generic [ref=f247e100]:
+                - generic [ref=f247e101]: İçerik
+                - textbox "İçerik Kısa ve net yazın. Bu metin analiz isteminin içine birebir eklenir." [ref=f247e102]:
+                  - /placeholder: örn. Ekstre filtreleri her zaman son 12 ayla sınırlı olmalı; tarih aralığı kullanıcı seçiminden bağımsız olarak sunucuda doğrulanmalı.
+                - generic [ref=f247e103]: Kısa ve net yazın. Bu metin analiz isteminin içine birebir eklenir.
+              - button "Ekle" [disabled] [ref=f247e105]
+            - table [ref=f247e107]:
+              - rowgroup [ref=f247e108]:
+                - row [ref=f247e109]:
+                  - columnheader "Başlık" [ref=f247e110]
+                  - columnheader "İçerik" [ref=f247e111]
+                  - columnheader "Durum" [ref=f247e112]
+                  - columnheader [ref=f247e113]
+              - rowgroup [ref=f247e114]:
+                - row [ref=f247e115]:
+                  - cell "Ekstre ekranı kuralı" [ref=f247e116]
+                  - cell "Ekstre filtreleri her zaman son 12 ayla sınırlı olmalı; tarih aralığı sunucuda doğrulanmalı." [ref=f247e117]
+                  - cell [ref=f247e118]:
+                    - button "✓ öğreniyor" [ref=f247e119] [cursor=pointer]
+                  - cell [ref=f247e121]:
+                    - button "Sil" [ref=f247e122] [cursor=pointer]
+        - generic [ref=f247e123]:
+          - generic [ref=f247e124]:
+            - heading "Bilgi kütüphanesi — arama" [level=3] [ref=f247e125]
+            - generic [ref=f247e126]: Yapay zekânın kullandığı paylaşılan bilgi dosyaları
+          - generic [ref=f247e128]:
+            - generic [ref=f247e129]: Ara
+            - textbox "Ara" [ref=f247e130]
+            - paragraph [ref=f247e131]: Bu uç arama yapar; en az bir kelime gerekir.
+        - generic [ref=f247e133]:
+          - heading "Sonuçlar" [level=3] [ref=f247e135]
+          - paragraph [ref=f247e137]: Aramak için bir kelime yaz.
+  - region

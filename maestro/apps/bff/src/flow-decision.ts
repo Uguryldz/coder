@@ -1,0 +1,483 @@
+import { hasNoStatusGate } from "./listening-store.js";
+import type { FlowType, GateSteps, ListeningRuleRecord, MatchKind, StatusMap } from "./listening-store.js";
+
+/**
+ * Per-ticket flow selection: which of Maestro's flows a single ticket runs.
+ *
+ * Until this existed the flow was a DEPLOYMENT-level fact (`MAESTRO_PROFILE` /
+ * `MAESTRO_FLOW`, `apps/deploy/src/bin/bff.ts` `flowOf`). One install meant one
+ * flow, so a bank running one Jira project could not have "analyse this" and
+ * "fix this bug" tickets side by side — the whole deployment had to be one or
+ * the other. The rule rows have been able to express the finer answer since the
+ * `ListeningRule` table landed; nothing read them on the platform side.
+ *
+ * Ported from `apps/pilot/src/listening.ts` `ruleFor` (retired pilot, proven on
+ * real tickets) rather than reinvented. It lives HERE, in `apps/bff`, because of
+ * M44: the decision must be made by the composition-root side that may talk to
+ * a database, and `packages/workflows` may not — a workflow that asked Postgres
+ * "which flow am I?" would replay differently after any rule edit. The BFF picks
+ * the flow BEFORE `signalWithStart` and passes it in the run input, exactly as
+ * `openGate` resolves a directory group before handing it to `canCloseGate`
+ * (HANDOFF item 2). The rule TYPES also already live in `apps/bff`
+ * (`listening-store.ts`), not in the frozen `@maestro/contracts`, so importing
+ * them here crosses no frozen boundary.
+ */
+
+/** The ticket fields a rule can match on. `null` means "the payload did not say". */
+export interface ClassifiableTicket {
+  /** The ticket's own project key, so a rule only ever matches its project. */
+  projectKey: string;
+  status: string | null;
+  issueType: string | null;
+  /**
+   * The SAME two fields as Jira's own ids — because on a TEAM-MANAGED project
+   * a rule stores the id, not the name.
+   *
+   * ── CANLI BULGU ─────────────────────────────────────────────────────────────
+   * Takım yönetimli (`style: "next-gen"`) bir projede JQL adları çözmüyor:
+   * `issuetype = "Görev"` sıfır döner, `issuetype = 10008` on dört. `jqlFor`
+   * bu yüzden sayısal değeri tırnaksız yazar ve panel o projede kurala İD
+   * kaydeder. Ama eşleşme burada ADI karşılaştırıyordu — yani sorgu ticket'ı
+   * BULUYOR, `matches()` hepsini ELİYOR (`"Görev" === "10008"`). Arıza "hiç
+   * bulunmuyor"dan "bulunuyor ama işlenmiyor"a taşınırdı; ikisi de sessiz.
+   *
+   * Opsiyonel, çünkü dört üretici ucun bir kısmı bu alanlardan önce yazıldı ve
+   * yokluk `null` ile aynı anlama gelmek zorunda: id'yi okumamış bir çağıran
+   * için kural ADLA karşılaştırılmaya devam eder (bugünkü davranış).
+   */
+  statusId?: string | null;
+  issueTypeId?: string | null;
+  /**
+   * Who the ticket is assigned to. A rule with a non-empty `assigneeAccountId`
+   * only matches when the ticket is assigned to that account — that is how "the
+   * Maestro Bot was given this ticket" is expressed. `null` is "unassigned".
+   */
+  assignee: string | null;
+  /**
+   * The ticket's labels, for a `matchKind: "label"` rule.
+   *
+   * `null` and `[]` are DIFFERENT answers and the difference is the same one
+   * `work-events.ts` draws on the delivery side: `[]` says "this ticket has no
+   * labels" (a label rule correctly does not match), `null` says "the caller
+   * could not tell us", which also matches nothing — a rule must never fire on
+   * a field nobody read.
+   *
+   * Optional in the type because three of the four entry points predate it and
+   * an absent field must keep meaning exactly what `null` means.
+   */
+  labels?: readonly string[] | null;
+}
+
+/** Why a ticket ended up on the flow it did — the operator-facing answer. */
+export type FlowDecisionReason =
+  /** A listening rule matched; `ruleId` names it. */
+  | "rule"
+  /** Rules matched but disagreed; the narrowest flow was taken (fail-closed). */
+  | "rule_conflict"
+  /** No rule matched, so the deployment default applied. */
+  | "default"
+  /** No rule matched and the deployment names no default: the full pipeline. */
+  | "none";
+
+export interface FlowDecision {
+  /** The flow to run, or `null` for "unset — the engine's full-pipeline default". */
+  flow: FlowType | null;
+  reason: FlowDecisionReason;
+  /** The rule that decided, when one did. */
+  ruleId?: string;
+  /**
+   * Every rule that matched, when more than one did. Present only for
+   * `rule_conflict`, so the audit entry can name the rules an admin must fix.
+   */
+  conflictingRuleIds?: readonly string[];
+  /**
+   * Where the DECIDING rule wants the ticket to sit on the board at each point
+   * of the flow. `null` — including for every no-rule outcome — is comment-only
+   * mode: Maestro narrates and never moves the ticket, which is what every run
+   * did before the map existed.
+   *
+   * It rides along with the flow rather than being fetched separately for the
+   * reason the flow itself is decided here: this is the one moment the rule set
+   * is read, and the answer is pinned into the run's start input. A workflow
+   * that asked for its map later could get a different one — an admin editing a
+   * rule at lunchtime would change where the morning's tickets land, with the
+   * run's own history unable to say why.
+   *
+   * The map belongs to whichever rule WON, including under `rule_conflict`:
+   * "which flow" and "which board columns" must come from the same row, or a
+   * ticket would run the narrow flow of one rule while being driven around
+   * another's board.
+   */
+  statusMap?: StatusMap | null;
+  /**
+   * HANGİ AJAN koşacak — kararı veren kuralın iğnelediği analist varyantı.
+   *
+   * `undefined`/`null` "kural bir ajan seçmedi" demek ve KURULUM VARSAYILANINA
+   * düşülür (`activeAnalystVariantId`). Bu bir kapı değil, bir daraltmadır:
+   * ajan seçmemiş bir kural bugüne kadar nasıl koşuyorsa öyle koşmaya devam
+   * eder — aksi hâlde mevcut her kural, sırf bu alan boş diye durdurulmuş
+   * olurdu.
+   *
+   * `statusMap` ile aynı gerekçeyle burada, akışın yanında taşınıyor: kural
+   * kümesi bir kez, girişte okunuyor ve cevap koşunun başlangıç girdisine
+   * ÇİVİLENİYOR. Sonradan sorulsa, öğlen bir kuralı düzenleyen admin sabahki
+   * ticket'ın hangi ajanla koştuğunu değiştirmiş olurdu — ve koşunun kendi
+   * geçmişi bunu açıklayamazdı (M38/M83).
+   *
+   * Kazanan kuraldan alınır — `rule_conflict` dahil — `statusMap` gibi:
+   * "hangi akış" ile "hangi ajan" aynı satırdan gelmezse, ticket bir kuralın
+   * dar akışını başka bir kuralın ajanıyla koşardı.
+   */
+  analystVariantId?: string | null;
+  /** {@link analystVariantId}'nin MÜHENDİSLİK (kod yazan) tarafı. */
+  engineerVariantId?: string | null;
+  /**
+   * HANGİ ONAYLAR beklenecek — kararı veren kuralın seçtiği kapı dizisi.
+   *
+   * `statusMap` ve ajan iğneleriyle aynı gerekçeyle burada: kural kümesi bir
+   * kez, girişte okunur ve cevap koşunun başlangıç girdisine ÇİVİLENİR. Sonra
+   * sorulsaydı, öğle arası bir kuralı düzenleyen admin sabah KAPIDA BEKLEYEN
+   * bir koşunun kaç kapı daha göreceğini değiştirmiş olurdu — ve koşunun kendi
+   * geçmişi bunu açıklayamazdı.
+   *
+   * `undefined`/`null` = kural seçim yapmadı, varsayılana düşülür. `{steps: []}`
+   * bundan FARKLI: onay kapısı istenmedi. Bu ayrım uçtan uca korunur.
+   *
+   * Kazanan kuraldan — `rule_conflict` dahil, `statusMap` gibi: bir kuralın
+   * akışını başka bir kuralın kapı dizisiyle koşturmak, çakışmayı çözmek değil
+   * üçüncü bir yapılandırma uydurmaktır.
+   */
+  gateSteps?: GateSteps | null;
+}
+
+/**
+ * How narrow each flow is — the fail-closed ordering.
+ *
+ * Lower is narrower. `analiz` writes no code at all: it produces a document a
+ * human reads. `duzeltme` and `gelistirme` both put an agent on a branch. So
+ * when rules disagree about a ticket the analysis flow is the safe answer,
+ * because the cost of being wrong is a document nobody needed rather than a
+ * change nobody asked for.
+ *
+ * This ordering is consulted ONLY to break a tie between rules that both
+ * matched. It is not a default: a ticket no rule matched is not "ambiguous",
+ * it is "unclassified", and that case falls through to the deployment default
+ * instead (see `flowDecisionFor`).
+ */
+const NARROWNESS: Readonly<Record<FlowType, number>> = {
+  analiz: 0,
+  duzeltme: 1,
+  gelistirme: 2,
+};
+
+/**
+ * STATÜ KAPISI — her kuralda, her tetikleme tipinde ayrıca sorulur (0024).
+ *
+ * Dört tetikleme tipi (`status`/`issuetype`/`assigned`/`label`) ALTERNATİFTİ:
+ * operatör `assigned` seçtiğinde ticket'ın statüsüne HİÇ bakılmıyordu. Statü
+ * koşulu tek bir yerde vardı — `matchKind = "status"` — ve o da diğer üçünün
+ * ALTERNATİFİYDİ, üstüne eklenmiyordu.
+ *
+ * Neden bu platformda tehlikeli: Maestro'nun Jira servis hesabı bir bankada
+ * rutin olarak ADMIN'dir ve bota atanmış her ticket'ı HER projede görür. Statü
+ * kapısı olmadan, biri Maestro'ya rastgele bir ticket atadığında — daha
+ * yazılmamış bir taslak, çoktan kapatılmış bir kayıt — sistem onu analize
+ * alıyordu. Operatörün cümlesi: "atanmış olsa da izin verdiğim analiz
+ * statüsünde değilse, o olmadan çalışmamalı."
+ *
+ * Üç cevap verir ve üçü de ayrı:
+ *
+ *   `true`   ticket izin verilen bir statüde — kapı açık.
+ *   `false`  ticket BAŞKA bir statüde — kapı kapalı, kural eşleşmez.
+ *   `true` + `ungated`  kuralda hiç statü kısıtı yok (0024 öncesi satırlar).
+ *
+ * Üçüncüsü bu kapının en önemli kararı ve `hasNoStatusGate` ile tek yerde
+ * tanımlı: kısıtsız kural ÇALIŞIR. Fail-closed backfill, bankanın bugün
+ * çalışan her `issuetype` kuralını kimse hiçbir şey değiştirmeden sessizce
+ * durdururdu — bir güvenlik iyileştirmesinin bedeli "sabah hiçbir ticket
+ * gelmiyor" olamaz. Ama sessiz de değil: `statusGateOf` bu durumu ADLANDIRIR
+ * ve panel, karar dökümü ve tarama günlüğü aynı adı okur.
+ *
+ * BİLİNMEYEN STATÜ (`null`) KAPALI SAYILIR — kapının fail-closed yönü. Bir
+ * kural, kimsenin okumadığı bir alan üzerinden ateşlemez: `matches()`'in
+ * `matchValue` için zaten uyguladığı kuralın aynısı, ama burada bedeli daha
+ * ağır olduğu için ayrıca yazılıyor. Statüsü okunmamış bir ticket'ı kısıtlı
+ * bir kuralla işlemek, tam olarak kapının engellemek için var olduğu şeyi
+ * yapmaktır.
+ */
+export type StatusGate = "open" | "closed" | "ungated" | "unknown_status";
+
+export function statusGateOf(
+  rule: Pick<ListeningRuleRecord, "allowedStatuses">,
+  status: string | null,
+  statusId?: string | null,
+): StatusGate {
+  if (hasNoStatusGate(rule)) return "ungated";
+  if (status === null && (statusId ?? null) === null) return "unknown_status";
+  /**
+   * Kapı hem ADLA hem İD'yle açılır — `matches()`'in `matchValue` için
+   * uyguladığı kuralın aynısı, aynı sebeple.
+   *
+   * ── CANLI BULGU ─────────────────────────────────────────────────────────────
+   * Takım yönetimli projede `status in ("Yapılacaklar")` sıfır döner,
+   * `status in (10004)` bir. Bu yüzden panel o projede kapıya İD yazıyor. Ama
+   * burası yalnız ADI karşılaştırıyordu: tarama ticket'ı BULUYOR, kapı onu
+   * ELİYOR (`"Yapılacaklar" !== "10004"`). Sahada tam bu görüldü — prova
+   * "1 ticket bulundu, 0'ı kurala düştü" dedi.
+   *
+   * Salt rakam olan bir izin değeri İD'yle, geri kalanı ADLA karşılaştırılır;
+   * rakamdan ibaret bir statü ADI olmadığı için ikisi çakışmaz.
+   */
+  const name = status?.trim() ?? "";
+  const id = statusId?.trim() ?? "";
+  return rule.allowedStatuses!.some((allowed) => {
+    const wanted = allowed.trim();
+    return /^[0-9]+$/u.test(wanted) ? wanted === id : wanted === name;
+  })
+    ? "open"
+    : "closed";
+}
+
+/** Whether one rule matches one ticket. */
+function matches(rule: ListeningRuleRecord, ticket: ClassifiableTicket): boolean {
+  if (!rule.enabled) return false;
+  // A rule belongs to its project; it never classifies another project's ticket.
+  if (rule.projectKey !== ticket.projectKey) return false;
+
+  // An empty `assigneeAccountId` means "whoever it is assigned to". A non-empty
+  // one must equal the ticket's assignee — a ticket assigned to a human is not
+  // Maestro's to run just because its status matches.
+  const wanted = rule.assigneeAccountId.trim();
+  if (wanted !== "" && wanted !== (ticket.assignee ?? "").trim()) return false;
+
+  /**
+   * STATÜ KAPISI, TETİKLEME TİPİNDEN ÖNCE VE ONDAN BAĞIMSIZ.
+   *
+   * Buranın `matchKind` kontrollerinin ÜSTÜNDE olması bilinçli: kapı bir
+   * daraltma değil, bir ÖN ŞART. `assigned` kuralı aşağıda `return true` ile
+   * erken çıkar ve kapı altta olsaydı o kural için hiç sorulmazdı — yani tam
+   * olarak operatörün kapatmak istediği delik açık kalırdı.
+   */
+  const gate = statusGateOf(rule, ticket.status, ticket.statusId);
+  if (gate === "closed" || gate === "unknown_status") return false;
+
+  // `assigned` is the whole rule: the assignment check above IS the condition,
+  // so there is nothing further to compare. It reaches this line only after
+  // passing that check, which is why a rule with an EMPTY `assigneeAccountId`
+  // and this kind matches every ticket in its project — deliberately, since
+  // "whoever it is assigned to" plus "no further condition" is exactly what
+  // such a rule says. `matchValue` is not consulted; see ASSIGNED_MATCH_VALUE.
+  if (rule.matchKind === "assigned") return true;
+
+  /**
+   * A LABEL rule is the one MEMBERSHIP test, because labels are the one
+   * many-valued field: a ticket has exactly one status and one issue type but
+   * any number of labels, so "equals" is not a question that can be asked of
+   * them. Comparing `labels.join()` to the value, or only the first label,
+   * would both make a rule that matches a real ticket's real label report no
+   * match — which is precisely the silent failure the project-level opt-in
+   * gate used to produce.
+   *
+   * A caller that did not read the labels (`null`/absent) matches NOTHING, for
+   * the same reason a missing status does below: a rule must not fire on a
+   * field nobody looked at.
+   */
+  if (rule.matchKind === "label") {
+    const labels = ticket.labels;
+    if (labels === null || labels === undefined) return false;
+    return labels.some((label) => label.trim() === rule.matchValue);
+  }
+
+  /**
+   * A NUMERIC `matchValue` is a Jira id, and it is compared against the
+   * ticket's id — never against its name. The rule is the same one `jqlFor`'s
+   * `term()` applies, and it must stay the same one: the query and the filter
+   * disagreeing is how a ticket gets fetched and then silently dropped.
+   *
+   * There is no status or issue-type NAME made only of digits, so this split
+   * cannot misread a company-managed project's rule.
+   */
+  const wantedValue = rule.matchValue.trim();
+  if (/^[0-9]+$/u.test(wantedValue)) {
+    const id = rule.matchKind === "status" ? (ticket.statusId ?? null) : (ticket.issueTypeId ?? null);
+    return id !== null && id === wantedValue;
+  }
+  const field = fieldOf(rule.matchKind, ticket);
+  // A field the payload did not carry matches NOTHING. Treating a missing
+  // status as an empty string would let a rule with an empty `matchValue`
+  // classify every ticket whose status simply was not delivered.
+  return field !== null && field === rule.matchValue;
+}
+
+/**
+ * The ticket field a rule of this kind compares against. Never called for
+ * `assigned` (compares no field) or `label` (compares a LIST) — `matches`
+ * returns before it gets here for both.
+ */
+function fieldOf(kind: MatchKind, ticket: ClassifiableTicket): string | null {
+  return kind === "status" ? ticket.status : ticket.issueType;
+}
+
+/**
+ * How SPECIFIC a rule is — the ordering that keeps a catch-all from shouting
+ * down the rule an operator wrote on purpose.
+ *
+ * Lower is more specific. A `status`, `issuetype` or `label` rule names a
+ * condition the ticket had to satisfy; an `assigned` rule names none, so it is
+ * the answer of last resort among the rules that matched. This is NOT a tie-break — it
+ * outranks `priority`, because the two express different things: priority
+ * orders rules an admin considers comparable, while specificity says one of
+ * them was not really a competitor at all.
+ *
+ * Without it, the intended configuration — "Hata tickets get düzeltme, anything
+ * else assigned to the bot gets analiz" — would report `rule_conflict` on EVERY
+ * bug ticket, filling the audit trail with misconfiguration warnings about a
+ * setup that is correct and that the wizard itself now produces.
+ */
+function specificityOf(rule: ListeningRuleRecord): number {
+  return rule.matchKind === "assigned" ? 1 : 0;
+}
+
+/**
+ * Every rule that matches this ticket, most important first.
+ *
+ * Ordered by specificity (a named condition beats the catch-all), then by
+ * `priority` (lower wins, as the pilot and the Studio screen both present it),
+ * then by `ruleId` so two rules sharing both still order DETERMINISTICALLY —
+ * the same rule set must always produce the same decision, whatever order the
+ * store handed the rows over in.
+ */
+export function rulesFor(
+  rules: readonly ListeningRuleRecord[],
+  ticket: ClassifiableTicket,
+): readonly ListeningRuleRecord[] {
+  return rules
+    .filter((rule) => matches(rule, ticket))
+    .sort(
+      (a, b) =>
+        specificityOf(a) - specificityOf(b) ||
+        a.priority - b.priority ||
+        a.ruleId.localeCompare(b.ruleId),
+    );
+}
+
+/**
+ * The single rule that classifies a ticket, or `null` when none does.
+ *
+ * The pilot's `ruleFor`, preserved: highest-priority match wins. The whole rule
+ * is returned, not just its flow, so a caller can also read the agent-variant
+ * mapping (`analystVariantId` / `engineerVariantId`) the rule carries.
+ */
+export function ruleFor(
+  rules: readonly ListeningRuleRecord[],
+  ticket: ClassifiableTicket,
+): ListeningRuleRecord | null {
+  const matched = rulesFor(rules, ticket);
+  return matched.length === 0 ? null : { ...matched[0]! };
+}
+
+/**
+ * Decide a ticket's flow, and say WHY.
+ *
+ * The reason is returned rather than logged here because the answer has to
+ * reach an operator who asks "why did OPS-41 write code?" months later. The
+ * caller writes it into the audit chain alongside the run; a decision that only
+ * existed in a log line would be gone by then.
+ *
+ * Precedence, highest first:
+ *  1. A single matching rule decides.
+ *  2. A rule that names a CONDITION beats the `assigned` catch-all outright,
+ *     with no conflict reported. The two are not competing claims about the
+ *     same ticket: "Hata tickets run düzeltme" and "anything else assigned to
+ *     the bot runs analiz" is one coherent setup — the very setup the wizard
+ *     produces — and calling it a misconfiguration on every bug ticket would
+ *     bury the real conflicts in noise.
+ *  3. Several rules of the SAME specificity matching with DIFFERENT flows is a
+ *     misconfiguration. It is resolved fail-closed — the narrowest flow of that
+ *     set — and reported as `rule_conflict` so an admin can fix the rules. It is
+ *     not refused: refusing would strand the ticket, and the narrow flow is
+ *     safe. (The unique index on (projectKey, assigneeAccountId, matchKind,
+ *     matchValue) stops the COMMON case at the database, but two rules can
+ *     still match one ticket through different `matchKind`s — a status rule and
+ *     an issuetype rule — which no index can prevent.)
+ *  4. No rule matched: the deployment default (`flowOf(env)`) still applies, so
+ *     an install that has no rules yet behaves exactly as it did before.
+ */
+export function flowDecisionFor(
+  rules: readonly ListeningRuleRecord[],
+  ticket: ClassifiableTicket,
+  defaultFlow: FlowType | null | undefined,
+): FlowDecision {
+  const all = rulesFor(rules, ticket);
+
+  if (all.length === 0) {
+    return defaultFlow === undefined || defaultFlow === null
+      ? { flow: null, reason: "none" }
+      : { flow: defaultFlow, reason: "default" };
+  }
+
+  // Only the most specific tier competes. `rulesFor` has already sorted, so the
+  // head's specificity is the winning tier and the catch-all drops out of the
+  // conflict question entirely whenever a conditioned rule matched.
+  const best = specificityOf(all[0]!);
+  const matched = all.filter((rule) => specificityOf(rule) === best);
+
+  const flows = new Set(matched.map((rule) => rule.flowType));
+  if (flows.size === 1) {
+    const winner = matched[0]!;
+    return {
+      flow: winner.flowType,
+      reason: "rule",
+      ruleId: winner.ruleId,
+      statusMap: winner.statusMap ?? null,
+      gateSteps: winner.gateSteps ?? null,
+      ...agentsOf(winner),
+    };
+  }
+
+  // Disagreement: take the narrowest flow any matching rule asked for, and name
+  // every rule involved so the misconfiguration is fixable.
+  const narrowest = [...matched].sort(
+    (a, b) => NARROWNESS[a.flowType] - NARROWNESS[b.flowType] || a.priority - b.priority || a.ruleId.localeCompare(b.ruleId),
+  )[0]!;
+  return {
+    flow: narrowest.flowType,
+    reason: "rule_conflict",
+    ruleId: narrowest.ruleId,
+    conflictingRuleIds: matched.map((rule) => rule.ruleId),
+    // From the rule that WON, not merged across the matching set: two maps
+    // combined would drive the ticket to a column no single rule asked for,
+    // which is a board move nobody configured and nobody can explain.
+    statusMap: narrowest.statusMap ?? null,
+    // Kapı dizisi de KAZANAN kuraldan, `statusMap` ile aynı gerekçeyle.
+    gateSteps: narrowest.gateSteps ?? null,
+    // Ajanlar da KAZANAN kuraldan, `statusMap` ile aynı gerekçeyle: bir
+    // kuralın akışını başka bir kuralın ajanıyla koşturmak, çakışmayı çözmek
+    // değil, üçüncü bir yapılandırma uydurmaktır.
+    ...agentsOf(narrowest),
+  };
+}
+
+/**
+ * Kazanan kuralın ajan iğneleri, karara iliştirilebilecek hâlde.
+ *
+ * Boş string ile `null` AYNI cevaba indirgenir ("kural ajan seçmedi"), çünkü
+ * panel bir seçimi kaldırdığında satırda hangisinin kaldığı bir depolama
+ * ayrıntısıdır; koşuya boş bir varyant kimliği geçmek ise gateway sözleşmesini
+ * ilk model çağrısında, üç aktivite denemesi ötede bozar — `run-pins.ts`'in
+ * "boşlatma, adlandır" kuralının aynısı, bir adım yukarıda uygulanmış hâli.
+ *
+ * Seçilmemiş alan, `null` olarak DEĞİL, HİÇ yazılmaz: `flow` ve `statusMap`
+ * neden atlanıyorsa o yüzden — yokluk zaten "varsayılana düş" demek, açık bir
+ * `null` ise aynı şeyi birinin verdiği bir karar gibi göstermek olurdu.
+ */
+function agentsOf(
+  rule: ListeningRuleRecord,
+): Pick<FlowDecision, "analystVariantId" | "engineerVariantId"> {
+  const analyst = rule.analystVariantId?.trim() ?? "";
+  const engineer = rule.engineerVariantId?.trim() ?? "";
+  return {
+    ...(analyst === "" ? {} : { analystVariantId: analyst }),
+    ...(engineer === "" ? {} : { engineerVariantId: engineer }),
+  };
+}

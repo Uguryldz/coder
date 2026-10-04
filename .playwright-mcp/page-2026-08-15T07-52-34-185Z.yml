@@ -1,0 +1,27 @@
+- generic [active] [ref=f7e1]:
+  - generic [ref=f7e4]:
+    - generic [ref=f7e5]: M
+    - heading "Jira'ya düşen talebi analize çeviren ajan hattı" [level=1] [ref=f7e7]: Jira'ya düşen talebianalize çeviren ajan hattı
+    - paragraph [ref=f7e8]:
+      - text: Maestro, banka içi yazılım taleplerini Jira üzerinden dinler; uygunluk kontrolünden analiz dokümanına kadar olan yolu yapay zekâ ajanlarıyla yürütür —
+      - strong [ref=f7e9]: her kritik adımda insan onayı
+      - text: ve
+      - strong [ref=f7e10]: kopmayan denetim izi
+      - text: ile.
+    - generic [ref=f7e11]:
+      - generic [ref=f7e12]:
+        - generic [ref=f7e13]: 4 / 4
+        - generic [ref=f7e14]: Canlı Jira senaryosu
+      - generic [ref=f7e15]:
+        - generic [ref=f7e16]: "2.305"
+        - generic [ref=f7e17]: Otomatik test
+      - generic [ref=f7e18]:
+        - generic [ref=f7e19]: "38"
+        - generic [ref=f7e20]: Kopmamış denetim kaydı
+      - generic [ref=f7e21]:
+        - generic [ref=f7e22]: 176K
+        - generic [ref=f7e23]: Satır TypeScript
+  - generic [ref=f7e24]:
+    - button "Önceki slayt" [ref=f7e25] [cursor=pointer]: ←
+    - generic [ref=f7e26]: 1/14
+    - button "Sonraki slayt" [ref=f7e27] [cursor=pointer]: →

@@ -1,0 +1,174 @@
+- generic [ref=f21e2]:
+  - generic [ref=f21e3]:
+    - navigation "Ana gezinme" [ref=f21e4]:
+      - generic [ref=f21e5]:
+        - generic [ref=f21e6]: M
+        - generic [ref=f21e7]:
+          - text: Maestro
+          - generic [ref=f21e8]: SDLC otomasyonu
+      - generic [ref=f21e9]:
+        - generic [ref=f21e10]: İşler
+        - link "Panel" [ref=f21e11] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f21e12]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f21e13] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f21e14]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f21e15] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f21e16]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f21e17]:
+        - generic [ref=f21e18]: Ajanlar
+        - link "Ajan tanımları" [ref=f21e19] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f21e20]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f21e21] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f21e22]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f21e23] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f21e24]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f21e25] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f21e26]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f21e27] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f21e28]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f21e29]: yakında
+      - generic [ref=f21e30]:
+        - generic [ref=f21e31]: Denetim
+        - link "Denetim izi" [ref=f21e32] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f21e33]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f21e34] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f21e35]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f21e36] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f21e37]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f21e38] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f21e39]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f21e40]: yakında
+        - link "Kanıt paketi yakında" [ref=f21e41] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f21e42]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f21e43]: yakında
+      - generic [ref=f21e44]:
+        - generic [ref=f21e45]: Kurulum
+        - link "Proje bağlama" [ref=f21e46] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f21e47]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f21e48] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f21e49]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f21e50] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f21e51]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f21e52] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f21e53]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [active] [ref=f21e54] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f21e55]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f21e56] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f21e57]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f21e58]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f21e59] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f21e60]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f21e61]:
+      - banner [ref=f21e62]:
+        - heading "Sistem sağlığı" [level=1] [ref=f21e870]
+        - generic [ref=f21e64]:
+          - generic [ref=f21e65]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f21e66]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f21e67]: admin
+        - button "Çıkış" [ref=f21e68] [cursor=pointer]
+      - main [ref=f21e69]:
+        - generic [ref=f21e871]:
+          - generic [ref=f21e873]:
+            - generic [ref=f21e874]: ●
+            - text: Tüm servisler sağlıklı
+          - generic [ref=f21e875]:
+            - heading "Servisler" [level=3] [ref=f21e877]
+            - table [ref=f21e880]:
+              - caption [ref=f21e881]: Servisler
+              - rowgroup [ref=f21e882]:
+                - row [ref=f21e883]:
+                  - columnheader "Servis" [ref=f21e884]
+                  - columnheader "Durum" [ref=f21e885]
+                  - columnheader "Sürüm" [ref=f21e886]
+                  - columnheader "Son kontrol" [ref=f21e887]
+                  - columnheader "Not" [ref=f21e888]
+              - rowgroup [ref=f21e889]:
+                - row [ref=f21e890]:
+                  - cell "PostgreSQL" [ref=f21e891]
+                  - cell [ref=f21e892]:
+                    - generic [ref=f21e893]:
+                      - generic [ref=f21e894]: ●
+                      - text: sağlıklı
+                  - cell "postgres-16" [ref=f21e895]
+                  - cell "az önce" [ref=f21e896]
+                  - cell "—" [ref=f21e897]
+                - row [ref=f21e898]:
+                  - cell "BFF" [ref=f21e899]
+                  - cell [ref=f21e900]:
+                    - generic [ref=f21e901]:
+                      - generic [ref=f21e902]: ●
+                      - text: sağlıklı
+                  - cell "bff" [ref=f21e903]
+                  - cell "az önce" [ref=f21e904]
+                  - cell "—" [ref=f21e905]
+                - row [ref=f21e906]:
+                  - cell "Studio" [ref=f21e907]
+                  - cell [ref=f21e908]:
+                    - generic [ref=f21e909]:
+                      - generic [ref=f21e910]: ●
+                      - text: sağlıklı
+                  - cell "studio" [ref=f21e911]
+                  - cell "az önce" [ref=f21e912]
+                  - cell "—" [ref=f21e913]
+                - row [ref=f21e914]:
+                  - cell "Pilot (akış motoru)" [ref=f21e915]
+                  - cell [ref=f21e916]:
+                    - generic [ref=f21e917]:
+                      - generic [ref=f21e918]: ●
+                      - text: sağlıklı
+                  - cell "pilot" [ref=f21e919]
+                  - cell "az önce" [ref=f21e920]
+                  - cell "—" [ref=f21e921]
+                - row [ref=f21e922]:
+                  - cell "Jira (canlı bağlantı)" [ref=f21e923]
+                  - cell [ref=f21e924]:
+                    - generic [ref=f21e925]:
+                      - generic [ref=f21e926]: ●
+                      - text: sağlıklı
+                  - cell "jira-cloud" [ref=f21e927]
+                  - cell "az önce" [ref=f21e928]
+                  - cell "—" [ref=f21e929]
+  - region

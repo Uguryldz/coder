@@ -1,0 +1,240 @@
+- generic [ref=f21e2]:
+  - generic [ref=f21e23]:
+    - navigation "Ana gezinme" [ref=f21e24]:
+      - generic [ref=f21e25]:
+        - generic [ref=f21e26]: M
+        - generic [ref=f21e27]:
+          - text: Maestro
+          - generic [ref=f21e28]: SDLC otomasyonu
+      - generic [ref=f21e29]:
+        - generic [ref=f21e30]: Operasyon
+        - link "Panel" [ref=f21e31] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f21e32]: ▦
+          - text: Panel
+        - link "Yardım — nasıl kullanılır?" [ref=f21e33] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f21e34]: 📖
+          - text: Yardım — nasıl kullanılır?
+        - link "Canlı demo" [ref=f21e35] [cursor=pointer]:
+          - /url: /live
+          - generic [ref=f21e36]: 🎬
+          - text: Canlı demo
+        - link "İş akışları" [ref=f21e37] [cursor=pointer]:
+          - /url: /tickets
+          - generic [ref=f21e38]: ≡
+          - text: İş akışları
+        - link "Ana ticket (fan-out)" [ref=f21e39] [cursor=pointer]:
+          - /url: /fanout
+          - generic [ref=f21e40]: ⑂
+          - text: Ana ticket (fan-out)
+        - link "Clarification (2b)" [ref=f21e41] [cursor=pointer]:
+          - /url: /clarify
+          - generic [ref=f21e42]: ❓
+          - text: Clarification (2b)
+        - link "Work mode & devir" [ref=f21e43] [cursor=pointer]:
+          - /url: /workmode
+          - generic [ref=f21e44]: ⇋
+          - text: Work mode & devir
+        - link "Yeni proje sihirbazı" [ref=f21e45] [cursor=pointer]:
+          - /url: /greenfield
+          - generic [ref=f21e46]: ✦
+          - text: Yeni proje sihirbazı
+        - link "Jira'da görünüm" [ref=f21e47] [cursor=pointer]:
+          - /url: /jira
+          - generic [ref=f21e48]: 💬
+          - text: Jira'da görünüm
+        - link "Jira komut seti" [ref=f21e49] [cursor=pointer]:
+          - /url: /commands
+          - generic [ref=f21e50]: ⌨
+          - text: Jira komut seti
+      - generic [ref=f21e51]:
+        - generic [ref=f21e52]: Yürütme
+        - link "Runner havuzları" [ref=f21e53] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f21e54]: 🖥
+          - text: Runner havuzları
+        - link "Canlı sandbox oturumu" [ref=f21e55] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f21e56]: ▶
+          - text: Canlı sandbox oturumu
+        - link "Cache & çalışma alanı" [ref=f21e57] [cursor=pointer]:
+          - /url: /cache
+          - generic [ref=f21e58]: 🗄
+          - text: Cache & çalışma alanı
+        - link ".maestro.yaml" [ref=f21e59] [cursor=pointer]:
+          - /url: /yaml
+          - generic [ref=f21e60]: 📄
+          - text: .maestro.yaml
+      - generic [ref=f21e61]:
+        - generic [ref=f21e62]: Ajanlar
+        - link "Variant'lar" [ref=f21e63] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f21e64]: 🤖
+          - text: Variant'lar
+        - link "Variant detayı" [ref=f21e65] [cursor=pointer]:
+          - /url: /variant
+          - generic [ref=f21e66]: ⚙
+          - text: Variant detayı
+        - link "Eval / golden ticket" [ref=f21e67] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f21e68]: 🎯
+          - text: Eval / golden ticket
+        - link "Knowledge kütüphanesi" [ref=f21e69] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f21e70]: 📚
+          - text: Knowledge kütüphanesi
+        - link "Analiz şablonu" [ref=f21e71] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f21e72]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f21e73] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f21e74]: 📄
+          - text: Doküman şablonu (Word)
+      - generic [ref=f21e75]:
+        - generic [ref=f21e76]: Yönetişim
+        - link "LLM Gateway" [ref=f21e77] [cursor=pointer]:
+          - /url: /llm
+          - generic [ref=f21e78]: ⚡
+          - text: LLM Gateway
+        - link "PII maskeleme" [ref=f21e79] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f21e80]: 🔏
+          - text: PII maskeleme
+        - link "Maliyet & kota" [ref=f21e81] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f21e82]: ₺
+          - text: Maliyet & kota
+        - link "Denetim izi" [ref=f21e83] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f21e84]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f21e85] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f21e86]: 📦
+          - text: Kanıt paketi
+        - link "Güvenlik bulguları" [ref=f21e87] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f21e88]: 🛡
+          - text: Güvenlik bulguları
+        - link "Bildirim & eskalasyon" [ref=f21e89] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f21e90]: 🔔
+          - text: Bildirim & eskalasyon
+      - generic [ref=f21e91]:
+        - generic [ref=f21e92]: Sistem
+        - link "Jira bağlantısı & eşleme" [active] [ref=f21e93] [cursor=pointer]:
+          - /url: /routing
+          - generic [ref=f21e94]: ⇄
+          - text: Jira bağlantısı & eşleme
+        - link "Parametreler (DB)" [ref=f21e95] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f21e96]: 🎛
+          - text: Parametreler (DB)
+        - link "Maestro MCP" [ref=f21e97] [cursor=pointer]:
+          - /url: /mcp
+          - generic [ref=f21e98]: 🔌
+          - text: Maestro MCP
+        - link "Uygulama ekle" [ref=f21e99] [cursor=pointer]:
+          - /url: /onboard
+          - generic [ref=f21e100]: ➕
+          - text: Uygulama ekle
+        - link "Kullanıcılar & roller" [ref=f21e101] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f21e102]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f21e103] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f21e104]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f21e105] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f21e106]: 💚
+          - text: Sistem sağlığı
+        - link "Karar defteri" [ref=f21e107] [cursor=pointer]:
+          - /url: /issues
+          - generic [ref=f21e108]: ✔
+          - text: Karar defteri
+    - generic [ref=f21e109]:
+      - banner [ref=f21e110]:
+        - heading "Jira bağlantısı & eşleme" [level=1] [ref=f21e239]
+        - generic [ref=f21e112]:
+          - generic [ref=f21e113]: ●
+          - text: Kill-switch kapalı
+        - combobox "Dil" [ref=f21e114]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f21e115]: ayse.kaya@bank
+        - button "Çıkış" [ref=f21e116] [cursor=pointer]
+      - main [ref=f21e117]:
+        - generic [ref=f21e240]:
+          - generic [ref=f21e241]:
+            - heading "Bağlı Jira projeleri" [level=3] [ref=f21e242]
+            - generic [ref=f21e243]: proje ↔ uygulama N:M · tetikleme modu
+          - table [ref=f21e246]:
+            - rowgroup [ref=f21e247]:
+              - row [ref=f21e248]:
+                - columnheader "Proje" [ref=f21e249]
+                - columnheader "Tetikleme" [ref=f21e250]
+                - columnheader "Uygulamalar" [ref=f21e251]
+                - columnheader "Not" [ref=f21e252]
+            - rowgroup [ref=f21e253]:
+              - row [ref=f21e254]:
+                - cell "UGURKREDI" [ref=f21e255]
+                - cell "etiket" [ref=f21e256]
+                - cell "eşleşme yok" [ref=f21e258]
+                - 'cell "taslak: henüz bağlanmadı" [ref=f21e259]'
+              - row [ref=f21e260]:
+                - cell "UGURPAY" [ref=f21e261]
+                - cell "etiket" [ref=f21e262]
+                - cell "odeme-api" [ref=f21e264]
+                - cell "\"maestro\" etiketini ya da /ai-start komutunu bekler" [ref=f21e265]
+              - row [ref=f21e266]:
+                - cell "UGURWEB" [ref=f21e267]
+                - cell "otomatik" [ref=f21e268]
+                - cell "web" [ref=f21e270]
+                - cell "her ticket bir iş akışı başlatır" [ref=f21e271]
+        - generic [ref=f21e273]:
+          - generic [ref=f21e274]:
+            - heading "Yönlendirme politikası" [level=3] [ref=f21e275]
+            - generic [ref=f21e276]: routing.yaml · kod değil konfigürasyon
+          - table [ref=f21e279]:
+            - rowgroup [ref=f21e280]:
+              - row [ref=f21e281]:
+                - columnheader "Koşul" [ref=f21e282]
+                - columnheader "Arka uç" [ref=f21e283]
+                - columnheader "Model" [ref=f21e284]
+                - columnheader "Sonuç" [ref=f21e285]
+                - columnheader "Ne anlama gelir" [ref=f21e286]
+            - rowgroup [ref=f21e287]:
+              - row [ref=f21e288]:
+                - cell "veri sınıfı = acik" [ref=f21e289]
+                - cell "api" [ref=f21e290]
+                - cell [ref=f21e292]:
+                  - code [ref=f21e293]: api
+                - cell "tamam" [ref=f21e294]
+                - cell "Çağrı normal şekilde karşılandı." [ref=f21e296]
+              - row [ref=f21e297]:
+                - cell "veri sınıfı = dahili" [ref=f21e298]
+                - cell "api" [ref=f21e299]
+                - cell [ref=f21e301]:
+                  - code [ref=f21e302]: api
+                - cell "tamam" [ref=f21e303]
+                - cell "Çağrı normal şekilde karşılandı." [ref=f21e305]
+              - row [ref=f21e306]:
+                - cell "veri sınıfı = gizli" [ref=f21e307]
+                - cell "onprem" [ref=f21e308]
+                - cell [ref=f21e310]:
+                  - code [ref=f21e311]: onprem
+                - cell "tamam" [ref=f21e312]
+                - cell "Çağrı normal şekilde karşılandı." [ref=f21e314]
+              - row [ref=f21e315]:
+                - cell "onprem arka ucu erişilemez olduğunda" [ref=f21e316]
+                - cell "onprem" [ref=f21e317]
+                - cell [ref=f21e319]:
+                  - code [ref=f21e320]: onprem
+                - cell "geriye düşürüldü" [ref=f21e321]
+                - cell "İstenen arka uç kullanılamadı; akış ai_assist'e düştü — AI önerir, uygulamayı insan yapar." [ref=f21e323]
+        - paragraph [ref=f21e324]: Politika kod değil konfigürasyondur; kota dolduğunda ya da gizli veri sınıfında ne olacağı buradan okunur.
+  - region

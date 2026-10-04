@@ -1,0 +1,213 @@
+- generic [ref=f3e2]:
+  - complementary [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - generic [ref=f3e5]: M
+      - generic [ref=f3e6]:
+        - text: Maestro
+        - generic [ref=f3e7]: UI prototipi · mock veri
+    - generic [ref=f3e8]:
+      - generic [ref=f3e9]: Operasyon
+      - link "▦ Panel" [ref=f3e10] [cursor=pointer]:
+        - /url: "#dash"
+        - generic [ref=f3e11]: ▦
+        - text: Panel
+      - link "≡ İş akışları 9" [ref=f3e12] [cursor=pointer]:
+        - /url: "#tickets"
+        - generic [ref=f3e13]: ≡
+        - text: İş akışları
+        - generic [ref=f3e14]: "9"
+      - link "◉ İş akışı detayı" [ref=f3e15] [cursor=pointer]:
+        - /url: "#detail"
+        - generic [ref=f3e16]: ◉
+        - text: İş akışı detayı
+      - link "⑂ Ana ticket (fan-out)" [ref=f3e17] [cursor=pointer]:
+        - /url: "#fanout"
+        - generic [ref=f3e18]: ⑂
+        - text: Ana ticket (fan-out)
+      - link "❓ Clarification (2b)" [ref=f3e19] [cursor=pointer]:
+        - /url: "#clarify"
+        - generic [ref=f3e20]: ❓
+        - text: Clarification (2b)
+      - link "⇋ Work mode & devir" [ref=f3e21] [cursor=pointer]:
+        - /url: "#workmode"
+        - generic [ref=f3e22]: ⇋
+        - text: Work mode & devir
+      - link "✦ Yeni proje sihirbazı" [ref=f3e23] [cursor=pointer]:
+        - /url: "#greenfield"
+        - generic [ref=f3e24]: ✦
+        - text: Yeni proje sihirbazı
+      - link "💬 Jira'da görünüm" [ref=f3e25] [cursor=pointer]:
+        - /url: "#jira"
+        - generic [ref=f3e26]: 💬
+        - text: Jira'da görünüm
+      - link "⌨ Jira komut seti" [ref=f3e27] [cursor=pointer]:
+        - /url: "#commands"
+        - generic [ref=f3e28]: ⌨
+        - text: Jira komut seti
+      - generic [ref=f3e29]: Yürütme
+      - link "🖥 Runner havuzları" [ref=f3e30] [cursor=pointer]:
+        - /url: "#runners"
+        - generic [ref=f3e31]: 🖥
+        - text: Runner havuzları
+      - link "▶ Canlı sandbox oturumu" [ref=f3e32] [cursor=pointer]:
+        - /url: "#sandbox"
+        - generic [ref=f3e33]: ▶
+        - text: Canlı sandbox oturumu
+      - link "🗄 Cache & çalışma alanı" [ref=f3e34] [cursor=pointer]:
+        - /url: "#cache"
+        - generic [ref=f3e35]: 🗄
+        - text: Cache & çalışma alanı
+      - link "📄 .maestro.yaml" [ref=f3e36] [cursor=pointer]:
+        - /url: "#yaml"
+        - generic [ref=f3e37]: 📄
+        - text: .maestro.yaml
+      - generic [ref=f3e38]: Ajanlar
+      - link "🤖 Variant'lar 9" [ref=f3e39] [cursor=pointer]:
+        - /url: "#variants"
+        - generic [ref=f3e40]: 🤖
+        - text: Variant'lar
+        - generic [ref=f3e41]: "9"
+      - link "⚙ Variant detayı" [ref=f3e42] [cursor=pointer]:
+        - /url: "#variant"
+        - generic [ref=f3e43]: ⚙
+        - text: Variant detayı
+      - link "🎯 Eval / golden ticket" [ref=f3e44] [cursor=pointer]:
+        - /url: "#eval"
+        - generic [ref=f3e45]: 🎯
+        - text: Eval / golden ticket
+      - link "📚 Knowledge kütüphanesi" [ref=f3e46] [cursor=pointer]:
+        - /url: "#knowledge"
+        - generic [ref=f3e47]: 📚
+        - text: Knowledge kütüphanesi
+      - link "📋 Analiz şablonu" [ref=f3e48] [cursor=pointer]:
+        - /url: "#template"
+        - generic [ref=f3e49]: 📋
+        - text: Analiz şablonu
+      - generic [ref=f3e50]: Yönetişim
+      - link "⚡ LLM Gateway" [ref=f3e51] [cursor=pointer]:
+        - /url: "#llm"
+        - generic [ref=f3e52]: ⚡
+        - text: LLM Gateway
+      - link "🔏 PII maskeleme" [ref=f3e53] [cursor=pointer]:
+        - /url: "#pii"
+        - generic [ref=f3e54]: 🔏
+        - text: PII maskeleme
+      - link "₺ Maliyet & bütçe" [ref=f3e55] [cursor=pointer]:
+        - /url: "#cost"
+        - generic [ref=f3e56]: ₺
+        - text: Maliyet & bütçe
+      - link "🔒 Denetim izi" [ref=f3e57] [cursor=pointer]:
+        - /url: "#audit"
+        - generic [ref=f3e58]: 🔒
+        - text: Denetim izi
+      - link "📦 Kanıt paketi" [ref=f3e59] [cursor=pointer]:
+        - /url: "#evidence"
+        - generic [ref=f3e60]: 📦
+        - text: Kanıt paketi
+      - link "🛡 Güvenlik bulguları" [ref=f3e61] [cursor=pointer]:
+        - /url: "#security"
+        - generic [ref=f3e62]: 🛡
+        - text: Güvenlik bulguları
+      - link "🔔 Bildirim & eskalasyon" [ref=f3e63] [cursor=pointer]:
+        - /url: "#notify"
+        - generic [ref=f3e64]: 🔔
+        - text: Bildirim & eskalasyon
+      - generic [ref=f3e65]: Sistem
+      - link "⇄ Yönlendirme kuralları" [ref=f3e66] [cursor=pointer]:
+        - /url: "#routing"
+        - generic [ref=f3e67]: ⇄
+        - text: Yönlendirme kuralları
+      - link "👥 Kullanıcılar & roller" [ref=f3e68] [cursor=pointer]:
+        - /url: "#users"
+        - generic [ref=f3e69]: 👥
+        - text: Kullanıcılar & roller
+      - link "⚙ Ayarlar & bağlantılar" [ref=f3e70] [cursor=pointer]:
+        - /url: "#settings"
+        - generic [ref=f3e71]: ⚙
+        - text: Ayarlar & bağlantılar
+      - link "💚 Sistem sağlığı" [ref=f3e72] [cursor=pointer]:
+        - /url: "#health"
+        - generic [ref=f3e73]: 💚
+        - text: Sistem sağlığı
+      - link "🔑 Giriş ekranı" [ref=f3e74] [cursor=pointer]:
+        - /url: "#login"
+        - generic [ref=f3e75]: 🔑
+        - text: Giriş ekranı
+      - link "❗ ⚠ Tartışılacaklar 12" [ref=f3e76] [cursor=pointer]:
+        - /url: "#issues"
+        - generic [ref=f3e77]: ❗
+        - text: ⚠ Tartışılacaklar
+        - generic [ref=f3e78]: "12"
+    - generic [ref=f3e79]:
+      - generic [ref=f3e80]: Bu bir tıklanabilir maket. Veriler sahte, kod yok.
+      - button "🌓 Tema değiştir" [ref=f3e81] [cursor=pointer]
+  - main [ref=f3e82]:
+    - generic [ref=f3e83]:
+      - generic [ref=f3e84]:
+        - heading "⚠ Tartışılacaklar" [level=1] [ref=f3e85]
+        - generic [ref=f3e86]: Maketi yaparken ortaya çıkan, karar bekleyen noktalar
+      - generic [ref=f3e87]: Sistem sağlıklı
+      - generic [ref=f3e89]: 👤 Uğur Yıldız · admin
+    - generic [ref=f3e90]:
+      - generic [ref=f3e91]: Bu ekran ürünün parçası değil — maketi incelerken benim tespit ettiğim, senin kararını bekleyen açık uçlar. Her biri planda küçük bir değişiklik gerektirebilir.
+      - generic [ref=f3e93]:
+        - generic [ref=f3e94]: "1"
+        - generic [ref=f3e95]:
+          - text: Onay kapısı Jira'da mı Studio'da mı verilecek?
+          - generic [ref=f3e96]: Plan Jira-yorum diyor; maket her ikisini de gösteriyor. İkisi de açık kalırsa SoD denetimi iki yerde doğrulanmalı — karmaşıklık artar.
+      - generic [ref=f3e98]:
+        - generic [ref=f3e99]: "2"
+        - generic [ref=f3e100]:
+          - text: Alt ticket'ları kim kapatır?
+          - generic [ref=f3e101]: Ana ticket otomatik mi kapansın, yoksa PO manuel mi onaylasın? Maket otomatik varsayıyor (fan-out ekranı).
+      - generic [ref=f3e103]:
+        - generic [ref=f3e104]: "3"
+        - generic [ref=f3e105]:
+          - text: "16 gündür bekleyen kapı: eskalasyon yeterli mi?"
+          - generic [ref=f3e106]: 24s Jira → 72s Slack → 7g delegasyon var; e-posta veya yönetici raporu yok. Bildirim ekranındaki 14. gün adımı taslak.
+      - generic [ref=f3e108]:
+        - generic [ref=f3e109]: "4"
+        - generic [ref=f3e110]:
+          - text: Maliyet kime görünsün?
+          - generic [ref=f3e111]: v1 kararı 'arka planda' idi. Maket admin'e ve iş akışı detayına koyuyor; PO/QA ekranında yok. Doğrulanmalı.
+      - generic [ref=f3e113]:
+        - generic [ref=f3e114]: "5"
+        - generic [ref=f3e115]:
+          - text: Runner sağlığı kime bildirilecek?
+          - generic [ref=f3e116]: mac-02 uyarıda ve iOS kapasitesi yarıya düştü; bunu görecek operasyon ekibi/kanal tanımlı değil.
+      - generic [ref=f3e118]:
+        - generic [ref=f3e119]: "6"
+        - generic [ref=f3e120]:
+          - text: Analiz şablonu sürümü değişince açık ticketlar?
+          - generic [ref=f3e121]: Maket 'her akış kendi sürümüyle biter' varsayıyor. Denetim 'hangi ticket hangi şablonla analiz edildi' raporu isteyebilir.
+      - generic [ref=f3e123]:
+        - generic [ref=f3e124]: "7"
+        - generic [ref=f3e125]:
+          - text: Eval regresyonunda yayın engellensin mi?
+          - generic [ref=f3e126]: Variant → Test sekmesinde v8 ortalamayı yükseltiyor ama GT-4'te (regülasyon) düşüyor. Maket yayını engelliyor — sert mi, yoksa gerekçeli geçiş mi?
+      - generic [ref=f3e128]:
+        - generic [ref=f3e129]: "8"
+        - generic [ref=f3e130]:
+          - text: .maestro.yaml'ı 5 repoya kim ekleyecek?
+          - generic [ref=f3e131]: Dosya repo'da yaşıyor (doğru karar) ama ilk kurulumda 5 repoya eklenmeli. Maestro bunu bir PR ile önersin mi?
+      - generic [ref=f3e133]:
+        - generic [ref=f3e134]: "9"
+        - generic [ref=f3e135]:
+          - text: QA senaryo onayı ≠ QA sonuç onayı kuralı
+          - generic [ref=f3e136]: "SoD matrisinde opsiyonel ve KAPALI: aynı QA hem senaryoyu hem sonucu onaylıyor. Denetim bunu sorabilir."
+      - generic [ref=f3e138]:
+        - generic [ref=f3e139]: "10"
+        - generic [ref=f3e140]:
+          - text: Ticket çalışma alanına yaş sınırı
+          - generic [ref=f3e141]: UGURPAY-504'ün şifreli çalışma alanı 16 gündür duruyor. 30/60 gün üst sınırı ve arşivleme politikası tanımlı değil.
+      - generic [ref=f3e143]:
+        - generic [ref=f3e144]: "11"
+        - generic [ref=f3e145]:
+          - text: Geri dönüş (restore) tatbikatı yapılmadı
+          - generic [ref=f3e146]: "Sistem sağlığında sarı: yedekler alınıyor ama geri yükleme hiç denenmedi. Plan Aşama 3'e koyuyor — pilot öncesi yapılsın mı?"
+      - generic [ref=f3e148]:
+        - generic [ref=f3e149]: "12"
+        - generic [ref=f3e150]:
+          - text: Gizli veri sınıfında 'yapan' rol
+          - generic [ref=f3e151]: On-prem model Agent SDK'yi desteklemediği için akış ai-assist'e düşüyor; gizli sınıf ticket'larda otomasyon fiilen kapanıyor. Kabul mü?
+      - generic [ref=f3e152]: Bunlara ek olarak senin gözünle bakınca çıkacaklar asıl değerli olan — ekranları gezerken "burada şu eksik" dediğin her şeyi not al, plana işleyelim.

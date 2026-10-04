@@ -1,0 +1,95 @@
+import type { ReactNode } from "react";
+import "./Card.css";
+
+export interface CardProps {
+  /** Already-translated heading. Omit for a card with no header strip. */
+  readonly title?: string;
+  /** Already-translated sub-heading beside the title. */
+  readonly subtitle?: string;
+  /** Right-aligned header slot: buttons, tags, links. */
+  readonly actions?: ReactNode;
+  /** Set false when the body supplies its own padding (e.g. a full-bleed Table). */
+  readonly padded?: boolean;
+  readonly children: ReactNode;
+}
+
+/** Mirrors `.card` / `.card .hd` / `.card .bd` from the mock. */
+export function Card({ title, subtitle, actions, padded = true, children }: CardProps) {
+  const hasHeader = title !== undefined || actions !== undefined;
+  return (
+    <section className="ui-card">
+      {hasHeader && (
+        <header className="ui-card__hd">
+          {title !== undefined && <h3>{title}</h3>}
+          {subtitle !== undefined && <span className="ui-card__sub">{subtitle}</span>}
+          {actions !== undefined && <div className="ui-card__actions">{actions}</div>}
+        </header>
+      )}
+      <div className={padded ? "ui-card__bd" : ""}>{children}</div>
+    </section>
+  );
+}
+
+export interface KpiProps {
+  /** Already-translated metric label. */
+  readonly label: string;
+  readonly value: string;
+  /** Already-translated footnote under the number. */
+  readonly note?: string;
+  /**
+   * Makes the tile a button: the number becomes the way INTO the list it
+   * counts. `title` names the destination for the screen reader and the hover.
+   */
+  readonly onClick?: () => void;
+  readonly title?: string;
+}
+
+/** The dashboard stat tile (`.card.kpi` in the mock). */
+export function Kpi({ label, value, note, onClick, title }: KpiProps) {
+  const body = (
+    <>
+      <div className="ui-kpi__lbl">{label}</div>
+      <div className="ui-kpi__val">{value}</div>
+      {note !== undefined && <div className="ui-kpi__note">{note}</div>}
+    </>
+  );
+  if (onClick !== undefined) {
+    // Still a `section` outside (the tile keeps its place in the grid and its
+    // landmark), with the button filling it — the whole tile is the target.
+    return (
+      <section className="ui-card ui-kpi ui-kpi--btn">
+        <button type="button" className="ui-kpi__btn" onClick={onClick} title={title}>
+          {body}
+        </button>
+      </section>
+    );
+  }
+  return <section className="ui-card ui-kpi">{body}</section>;
+}
+
+export interface SectionProps {
+  /** Already-translated heading. */
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly actions?: ReactNode;
+  readonly children: ReactNode;
+}
+
+/**
+ * A titled block WITHOUT a box: heading rule, then content. Cards were being
+ * used for everything, so a page of six small things became six bordered
+ * boxes; a Section is the calmer default for anything that is not a distinct
+ * panel of its own.
+ */
+export function Section({ title, subtitle, actions, children }: SectionProps) {
+  return (
+    <section className="ui-section">
+      <header className="ui-section__hd">
+        <h3>{title}</h3>
+        {subtitle !== undefined && <span className="ui-section__sub">{subtitle}</span>}
+        {actions !== undefined && <div className="ui-section__actions">{actions}</div>}
+      </header>
+      {children}
+    </section>
+  );
+}

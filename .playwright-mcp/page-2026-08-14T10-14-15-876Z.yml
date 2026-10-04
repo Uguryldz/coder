@@ -1,0 +1,184 @@
+- generic [ref=f199e42]:
+  - generic [ref=f199e43]:
+    - navigation "Ana gezinme" [ref=f199e44]:
+      - generic [ref=f199e45]:
+        - generic [ref=f199e46]: M
+        - generic [ref=f199e47]:
+          - text: Maestro
+          - generic [ref=f199e48]: SDLC otomasyonu
+      - generic [ref=f199e49]:
+        - generic [ref=f199e50]: Başla
+        - link "Panel" [ref=f199e51] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f199e52]: ▦
+          - text: Panel
+        - link "Proje bağlama" [ref=f199e53] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f199e54]: ⇄
+          - text: Proje bağlama
+        - link "Analiz şablonu" [ref=f199e55] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f199e56]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f199e57] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f199e58]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Bildirim & eskalasyon" [ref=f199e59] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f199e60]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Yardım — nasıl kullanılır?" [ref=f199e61] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f199e62]: 📖
+          - text: Yardım — nasıl kullanılır?
+      - generic [ref=f199e63]:
+        - generic [ref=f199e64]: İzle
+        - link "Canlı akış" [ref=f199e65] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f199e66]: 🎥
+          - text: Canlı akış
+        - link "Bilgi kütüphanesi" [ref=f199e67] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f199e68]: 📚
+          - text: Bilgi kütüphanesi
+      - generic [ref=f199e69]:
+        - generic [ref=f199e70]: Denetim ve Uyum
+        - link "Denetim izi" [ref=f199e71] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f199e72]: 🔒
+          - text: Denetim izi
+        - link "Kanıt paketi" [ref=f199e73] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f199e74]: 📦
+          - text: Kanıt paketi
+        - link "PII maskeleme" [ref=f199e75] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f199e76]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f199e77] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f199e78]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+      - generic [ref=f199e79]:
+        - generic [ref=f199e80]: Yapay Zekâ Ayarları
+        - link "Ajan tanımları" [ref=f199e81] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f199e82]: 🤖
+          - text: Ajan tanımları
+        - link "Sürüm kalite testi" [ref=f199e83] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f199e84]: 🎯
+          - text: Sürüm kalite testi
+        - link "Güvenlik taramaları" [ref=f199e85] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f199e86]: 🛡
+          - text: Güvenlik taramaları
+      - generic [ref=f199e87]:
+        - generic [ref=f199e88]: Sistem
+        - link "Kullanıcılar & roller" [ref=f199e89] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f199e90]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [ref=f199e91] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f199e92]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Parametreler (DB)" [ref=f199e93] [cursor=pointer]:
+          - /url: /params
+          - generic [ref=f199e94]: 🎛
+          - text: Parametreler (DB)
+        - link "Sistem sağlığı" [ref=f199e95] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f199e96]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler" [ref=f199e97] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f199e98]: 🖥
+          - text: Çalışan makineler
+        - link "Canlı oturumlar" [ref=f199e99] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f199e100]: ▶
+          - text: Canlı oturumlar
+    - generic [ref=f199e101]:
+      - banner [ref=f199e102]:
+        - heading "Canlı akış" [level=1] [ref=f199e103]
+        - generic [ref=f199e104]:
+          - generic [ref=f199e105]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f199e106]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f199e107]: admin
+        - button "Çıkış" [ref=f199e108] [cursor=pointer]
+      - main [ref=f199e1]:
+        - generic [ref=f199e2]:
+          - tablist "Canlı akış görünümü" [ref=f199e3]:
+            - tab "Canlı liste" [ref=f199e4] [cursor=pointer]
+            - tab "Süreç haritası" [active] [selected] [ref=f199e5] [cursor=pointer]
+          - tabpanel "Süreç haritası" [ref=f199e109]:
+            - generic [ref=f199e110]:
+              - generic [ref=f199e111]:
+                - generic [ref=f199e112]:
+                  - heading "Ajan iş akışı" [level=3] [ref=f199e113]
+                  - generic [ref=f199e114]: Maestro'nun kendi dokuz adımlık akışı — hangi adımda hangi ajan ne iş yapıyor. Bir çalışma başladığında canlı olarak hangi adımda olduğunu yakar.
+                - generic [ref=f199e115]:
+                  - paragraph [ref=f199e116]: Bu, Jira'nın statü diyagramı değil — Maestro'nun kendi iş akışı. Bir talep geldiğinde sırasıyla hangi ajanın ne yaptığını gösterir; uygun değilse İADE, analiz reddedilirse yeniden-analiz dalları da çizilidir.
+                  - status [ref=f199e117]: Şu an çalışan bir iş yok — bu harita referans olarak duruyor. Bir iş başlayınca adımlar canlı yanar.
+              - generic [ref=f199e120]:
+                - img "Maestro ajan hattı" [ref=f199e122]:
+                  - generic [ref=f199e123]:
+                    - generic [ref=f199e124]: İADE
+                    - generic [ref=f199e126]: red
+                  - generic [ref=f199e128]:
+                    - generic [ref=f199e129]:
+                      - generic [ref=f199e132]: "1"
+                      - generic [ref=f199e133]: Maestro
+                      - generic [ref=f199e134]: Talep okundu
+                      - generic [ref=f199e135]: bekliyor
+                    - generic [ref=f199e136]:
+                      - generic [ref=f199e139]: "2"
+                      - generic [ref=f199e140]: Intake Ajanı
+                      - generic [ref=f199e141]: Uygunluk kapısı
+                      - generic [ref=f199e142]: bekliyor
+                    - generic [ref=f199e143]:
+                      - generic [ref=f199e146]: "3"
+                      - generic [ref=f199e147]: Analist Yönetici
+                      - generic [ref=f199e148]: Analiz onayı
+                      - generic [ref=f199e149]: bekliyor
+                    - generic [ref=f199e150]:
+                      - generic [ref=f199e153]: "4"
+                      - generic [ref=f199e154]: Yazılım Ajanı
+                      - generic [ref=f199e155]: Kod yazımı
+                      - generic [ref=f199e156]: bekliyor
+                    - generic [ref=f199e157]:
+                      - generic [ref=f199e160]: "5"
+                      - generic [ref=f199e161]: Tarama Ajanı
+                      - generic [ref=f199e162]: Kişisel veri taraması
+                      - generic [ref=f199e163]: bekliyor
+                    - generic [ref=f199e164]:
+                      - generic [ref=f199e167]: "6"
+                      - generic [ref=f199e168]: Test Ajanı
+                      - generic [ref=f199e169]: Testler
+                      - generic [ref=f199e170]: bekliyor
+                    - generic [ref=f199e171]:
+                      - generic [ref=f199e174]: "7"
+                      - generic [ref=f199e175]: Maestro
+                      - generic [ref=f199e176]: PR + CI
+                      - generic [ref=f199e177]: bekliyor
+                    - generic [ref=f199e178]:
+                      - generic [ref=f199e181]: "8"
+                      - generic [ref=f199e182]: İnceleyen
+                      - generic [ref=f199e183]: PR onayı
+                      - generic [ref=f199e184]: bekliyor
+                    - generic [ref=f199e185]:
+                      - generic [ref=f199e188]: "9"
+                      - generic [ref=f199e189]: Maestro
+                      - generic [ref=f199e190]: Merge + denetim
+                      - generic [ref=f199e191]: bekliyor
+                - generic [ref=f199e192]:
+                  - generic [ref=f199e193]: Maestro
+                  - generic [ref=f199e195]: Yapay zeka ajanı
+                  - generic [ref=f199e197]: İnsan kapısı
+                  - generic [ref=f199e199]: Şu an çalışan / kapı bekleyen adım
+  - region

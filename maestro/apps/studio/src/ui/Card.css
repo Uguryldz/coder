@@ -1,0 +1,119 @@
+.ui-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ui-card__hd {
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ui-card__hd h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.ui-card__sub {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ui-card__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ui-card__bd {
+  padding: 12px 13px;
+}
+
+.ui-kpi {
+  padding: 10px 13px;
+}
+
+.ui-kpi__lbl {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
+.ui-kpi__val {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+.ui-kpi__note {
+  font-size: 11.5px;
+  color: var(--faint);
+  margin-top: 3px;
+}
+
+/* A clickable tile: same box, the button fills it. */
+.ui-kpi--btn {
+  padding: 0;
+}
+
+.ui-kpi__btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  padding: 10px 13px;
+  cursor: pointer;
+  display: block;
+  border-radius: var(--radius);
+}
+
+.ui-kpi--btn:hover,
+.ui-kpi--btn:focus-within {
+  border-color: var(--accent, var(--muted));
+}
+
+/* A plain titled block — no border, no background. Use it where a Card would
+   be one box too many (a form's second half, a list under a heading). */
+.ui-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ui-section__hd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-section__hd h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ui-section__sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ui-section__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

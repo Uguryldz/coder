@@ -1,0 +1,117 @@
+digraph OrkestraFlow {
+  rankdir=TB;
+  bgcolor="#FAFAFA";
+  compound=true;
+  nodesep=0.35;
+  ranksep=0.45;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=11, style="filled,rounded", shape=box, margin="0.22,0.13"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="20"><B>Jira AI Orkestra — Süreç Akışı</B></FONT><BR/>
+        <FONT POINT-SIZE="11" COLOR="#475569">15 adım · 7 AI ajan · 6 insan onay kapısı · 4 work mode · Temporal ile durum yönetimi</FONT><BR/>
+        <FONT POINT-SIZE="9" COLOR="#94A3B8">kaynak: packages/workflows/src/workflow.ts</FONT>>;
+
+  // ---------- Ana akış ----------
+  start [label="JIRA TICKET\nwebhook → API", shape=oval, fillcolor="#1E293B", fontcolor="white", penwidth=2];
+  done  [label="DONE\nPR merge + Jira → Done", shape=oval, fillcolor="#10B981", fontcolor="white", penwidth=2];
+
+  mode [label="0. WORK MODE\nfull_auto · ai_assist · human_lead · human_only", fillcolor="#F1F5F9", color="#64748B"];
+
+  // AI adımları
+  intake  [label="2. INTAKE  (AI)\nticket tam mı? · work mode önerisi", fillcolor="#DBEAFE", color="#2563EB"];
+  analyst [label="3. ANALYST  (AI)\nfonksiyonel analiz · teknik tasarım · risk", fillcolor="#DBEAFE", color="#2563EB"];
+  dev     [label="6a. DEVELOPER\nmode'a göre AI ya da insan\nknowledge pack + repo map + sandbox", fillcolor="#DBEAFE", color="#2563EB"];
+  devrev  [label="6c. DEV-REVIEWER  (AI)\npatch incelemesi · breaking change", fillcolor="#DBEAFE", color="#2563EB"];
+  tdes    [label="7. TEST-DESIGNER  (AI)\nGherkin senaryolar + negatif kapsam", fillcolor="#DBEAFE", color="#2563EB"];
+  trev    [label="8. TEST-REVIEWER  (AI)\ncoverage · test pyramid (4-göz)", fillcolor="#DBEAFE", color="#2563EB"];
+  trun    [label="10. TEST-RUNNER  (AI)\ntest kodu · koşum · flaky tespiti", fillcolor="#DBEAFE", color="#2563EB"];
+
+  // Otomatik kapılar
+  scan [label="6b. GÜVENLİK TARAMASI\ngitleaks · semgrep · trivy", fillcolor="#EDE9FE", color="#7C3AED"];
+  ci   [label="10b. CI GATE\nBitbucket / GitHub / GitLab pipeline", fillcolor="#EDE9FE", color="#7C3AED"];
+
+  // İnsan kapıları
+  clar [label="2b. CLARIFICATION\nreporter yanıtı bekleniyor", shape=hexagon, fillcolor="#FEF3C7", color="#D97706"];
+  po   [label="4. PO ONAYI", shape=hexagon, fillcolor="#FED7AA", color="#EA580C"];
+  tl   [label="5. TECH LEAD ONAYI\nteknik tasarım", shape=hexagon, fillcolor="#FED7AA", color="#EA580C"];
+  qa1  [label="9. QA ONAYI\nsenaryolar yeterli mi", shape=hexagon, fillcolor="#FED7AA", color="#EA580C"];
+  qa2  [label="11. QA SONUÇ ONAYI\ntest raporu", shape=hexagon, fillcolor="#FED7AA", color="#EA580C"];
+  pr   [label="12. PR ONAYI\nTech Lead · 4-göz kuralı", shape=hexagon, fillcolor="#FED7AA", color="#EA580C"];
+
+  // İlerleme kenarları
+  edge [color="#059669", penwidth=1.7];
+  start -> mode;
+  mode -> intake;
+  intake -> analyst [label="  tam"];
+  analyst -> po;
+  po -> tl   [label="  /approve"];
+  tl -> dev  [label="  /approve"];
+  dev -> scan;
+  scan -> devrev [label="  temiz"];
+  devrev -> tdes [label="  APPROVE"];
+  tdes -> trev;
+  trev -> qa1;
+  qa1 -> trun [label="  /approve"];
+  trun -> ci;
+  ci -> qa2 [label="  yeşil"];
+  qa2 -> pr [label="  /approve"];
+  pr -> done [label="  /approve"];
+
+  // Ret / döngü kenarları
+  edge [color="#DC2626", style=dashed, penwidth=1.2, fontcolor="#DC2626"];
+  intake -> clar   [label="eksik bilgi"];
+  clar -> intake   [label="güncellendi"];
+  po -> analyst    [label="/reject"];
+  qa1 -> tdes      [label="/reject"];
+  ci -> dev        [label="fail"];
+  pr -> dev        [label="request changes"];
+  scan -> dev      [label="zafiyet"];
+  devrev -> dev    [label="CHANGES"];
+
+  // ---------- Temporal sinyalleri ----------
+  subgraph cluster_signals {
+    label="TEMPORAL SİNYALLERİ  (Jira yorumu · webhook · Studio)";
+    style="filled,rounded"; fillcolor="#FFF7ED"; color="#FB923C";
+    fontname="Helvetica-Bold"; fontsize=12;
+    node [shape=box, fillcolor="#FFFFFF", color="#EA580C", fontsize=10];
+    s1 [label="/approve · /reject · /cancel · /retry"];
+    s2 [label="/ai-takeover · /ai-handoff\ninsan ↔ AI mid-flow devir"];
+    s3 [label="/ai-analyze · /ai-write-test · /ai-explain\ntek seferlik AI yardımı"];
+    s4 [label="/mode-change\nwork mode değiştir"];
+    s5 [label="pr-approved · pr-review-changes · ci-result\n(git webhook)"];
+    s1 -> s2 -> s3 -> s4 -> s5 [style=invis];
+  }
+
+  // ---------- Proaktif kontroller ----------
+  subgraph cluster_controls {
+    label="PROAKTİF KONTROLLER";
+    style="filled,rounded"; fillcolor="#F8FAFC"; color="#94A3B8";
+    fontname="Helvetica-Bold"; fontsize=12;
+    node [shape=box, fillcolor="#FFFFFF", color="#94A3B8", fontsize=10];
+    c1 [label="Cost Budget\n$5/workflow · %80 uyarı · %100 durdur"];
+    c2 [label="4-Göz Kuralı\nanaliz onaylayan ≠ PR onaylayan"];
+    c3 [label="Rate Limit\nAnthropic TPM/RPM + backoff"];
+    c4 [label="SLA Timer\nclarification zaman aşımı"];
+    c5 [label="Audit Log\nhash-chain'li kayıt"];
+    c6 [label="PII Maskeleme\nalan + regex bazlı"];
+    c1 -> c2 -> c3 -> c4 -> c5 -> c6 [style=invis];
+  }
+
+  // ---------- Ajan envanteri ----------
+  subgraph cluster_agents {
+    label="7 AI AJAN  (her biri variant'lanır · Knowledge Pack ile beslenir)";
+    style="filled,rounded"; fillcolor="#EFF6FF"; color="#3B82F6";
+    fontname="Helvetica-Bold"; fontsize=12;
+    node [shape=box, fillcolor="#FFFFFF", color="#2563EB", fontsize=10];
+    a1 [label="intake"];
+    a2 [label="analyst"];
+    a3 [label="developer"];
+    a4 [label="dev_reviewer"];
+    a5 [label="test_designer"];
+    a6 [label="test_reviewer"];
+    a7 [label="test_runner"];
+    a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 [style=invis];
+  }
+}

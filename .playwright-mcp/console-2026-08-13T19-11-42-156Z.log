@@ -1,0 +1,162 @@
+[     603ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  696589ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: TeamsWebhookCard is not defined
+    at NotifyScreen (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786648998635:278:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) The above error occurred in the <NotifyScreen> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[  696589ms] [ERROR] [studio] render failed ReferenceError: TeamsWebhookCard is not defined
+    at NotifyScreen (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786648998635:278:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) 
+    at NotifyScreen (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786648998635:19:15)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786648204128:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786648204128:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  702181ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: TeamsWebhookCard is not defined
+    at NotifyScreen (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786649004230:278:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) The above error occurred in the <NotifyScreen> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[  702181ms] [ERROR] [studio] render failed ReferenceError: TeamsWebhookCard is not defined
+    at NotifyScreen (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786649004230:278:13)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98)
+    at workLoopSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12424:43)
+    at renderRootSync (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12408:13)
+    at performWorkOnRoot (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:11827:37) 
+    at NotifyScreen (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786649004230:19:15)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786648204128:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786648204128:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  713901ms] [ERROR] %o
+
+%s
+
+%s
+ MissingMessageError: missing message "notify.teams.title" for locale "tr"
+    at t (http://127.0.0.1:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786648204128:20:34)
+    at translate (http://127.0.0.1:7000/src/i18n/catalog.ts?t=1786648204128:9:10)
+    at t (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786648204128:33:27)
+    at TeamsWebhookCard (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786649015886:397:48)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) The above error occurred in the <TeamsWebhookCard> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7000
+[  713901ms] [ERROR] [studio] render failed MissingMessageError: missing message "notify.teams.title" for locale "tr"
+    at t (http://127.0.0.1:7000/@fs/home/ubuntu/coder/maestro/packages/config/src/i18n.ts?t=1786648204128:20:34)
+    at translate (http://127.0.0.1:7000/src/i18n/catalog.ts?t=1786648204128:9:10)
+    at t (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786648204128:33:27)
+    at TeamsWebhookCard (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786649015886:397:48)
+    at Object.react_stack_bottom_frame (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:18509:20)
+    at renderWithHooks (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:5654:24)
+    at updateFunctionComponent (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:7475:21)
+    at beginWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:8525:20)
+    at runWithFiberInDEV (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:997:72)
+    at performUnitOfWork (http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:12561:98) 
+    at TeamsWebhookCard (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786649015886:389:3)
+    at QueryState (http://127.0.0.1:7000/src/screens/shared/QueryState.tsx?t=1786648204128:7:3)
+    at MaybeUnwired (http://127.0.0.1:7000/src/screens/shared/unwired.tsx?t=1786648204128:8:3)
+    at div (<anonymous>)
+    at NotifyScreen (http://127.0.0.1:7000/src/screens/Notify.tsx?t=1786649015886:19:15)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at main (<anonymous>)
+    at div (<anonymous>)
+    at div (<anonymous>)
+    at Shell (http://127.0.0.1:7000/src/shell/Shell.tsx?t=1786648204128:11:13)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Outlet (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4886:26)
+    at RequireSession (http://127.0.0.1:7000/src/auth/RequireSession.tsx:8:31)
+    at RenderedRoute (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4281:26)
+    at Routes (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4939:19)
+    at AppRoutes (<anonymous>)
+    at Router (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:4891:29)
+    at BrowserRouter (http://127.0.0.1:7000/node_modules/.vite/deps/react-router.js?v=512bcb7d:7361:26)
+    at ToastProvider (http://127.0.0.1:7000/src/ui/Toast.tsx:7:33)
+    at AuthProvider (http://127.0.0.1:7000/src/auth/AuthProvider.tsx:24:3)
+    at QueryClientProvider (http://127.0.0.1:7000/node_modules/.vite/deps/@tanstack_react-query.js?v=512bcb7d:3188:3)
+    at I18nProvider (http://127.0.0.1:7000/src/i18n/I18nProvider.tsx?t=1786648204128:12:3)
+    at ErrorBoundary (http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:4:8)
+    at App (<anonymous>) @ http://127.0.0.1:7000/src/app/ErrorBoundary.tsx:9
+[  730459ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[  730787ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:7000/notify:0
+[  940777ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[  941784ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[  943791ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[  973797ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[  974805ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[  976815ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:7000/api/killswitch:0
+[  990285ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:7000/@vite/client:864
+[ 1006819ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1007823ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:7000/api/killswitch:0
+[ 1012166ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:7000/node_modules/.vite/deps/react-dom_client.js?v=512bcb7d:20102
+[ 1012263ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:7000/api/auth/session:0

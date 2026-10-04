@@ -1,0 +1,83 @@
+digraph OrkestraWindows {
+  rankdir=TB;
+  bgcolor="white";
+  compound=true;
+  splines=spline;
+  nodesep=0.55;
+  ranksep=0.9;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=12, shape=box, style=filled,
+        fillcolor="white", color="#1E293B", penwidth=2, margin="0.3,0.2"];
+  edge [fontname="Helvetica", fontsize=11, color="#1E293B", penwidth=1.6];
+
+  labelloc="t";
+  label=<<FONT POINT-SIZE="22"><B>Windows Build Makinesi — MCP Bağlantısı</B></FONT><BR/>
+        <FONT POINT-SIZE="12" COLOR="#64748B">düz çizgi = bugün çalışıyor  ·  kesikli gri = planlanan</FONT><BR/>
+        <FONT POINT-SIZE="11" COLOR="#94A3B8">neden gerekli: mevcut sandbox Linux container — .NET Framework / MSVC / Windows'a özgü build orada koşamaz</FONT><BR/> >;
+
+  // ══════════ LİNUX SUNUCU ══════════
+  subgraph cluster_linux {
+    label="  LİNUX SUNUCU  (bugünkü kurulum)  ";
+    style="filled,rounded"; fillcolor="#FFFBEB"; color="#F59E0B"; penwidth=2.5;
+    fontname="Helvetica-Bold"; fontsize=14; fontcolor="#92400E";
+
+    temporal [label="SDLC ORKESTRATÖR\nTemporal\nhangi adımdayız · retry · onay",
+              fillcolor="#DCFCE7", color="#16A34A", penwidth=2.5];
+
+    worker [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="3" CELLPADDING="4">
+        <TR><TD><B>WORKER</B></TD></TR>
+        <TR><TD>7 AI ajan burada çalışır</TD></TR>
+        <TR><TD>developer · test-runner · diğerleri</TD></TR>
+        <TR><TD BGCOLOR="#F1F5F9"><FONT COLOR="#475569">+ MCP İSTEMCİSİ  (yeni yazılacak)</FONT></TD></TR>
+      </TABLE>>, fillcolor="#DBEAFE", color="#2563EB", penwidth=2.5];
+
+    sandbox [label="LINUX SANDBOX\ngeçici container\nnode · python · java · go",
+             fillcolor="#F3E8FF", color="#9333EA", style="filled,dashed", penwidth=2];
+  }
+
+  // ══════════ WINDOWS MAKİNE ══════════
+  subgraph cluster_win {
+    label="  WINDOWS BUILD MAKİNESİ  —  PLANLANAN  ";
+    style="filled,rounded"; fillcolor="#F8FAFC"; color="#94A3B8"; penwidth=2.5;
+    fontname="Helvetica-Bold"; fontsize=14; fontcolor="#475569";
+    node [style="filled,dashed", fillcolor="#FFFFFF", color="#94A3B8", fontcolor="#334155"];
+
+    mcpsrv [label="MCP SUNUCUSU\nyeni yazılacak\nOrkestra'dan gelen isteği karşılar",
+            penwidth=2.5, color="#64748B"];
+
+    vs [label="VISUAL STUDIO 2022\nMSBuild · dotnet CLI\nvstest — test koşumu", penwidth=2];
+
+    ws [label="ÇALIŞMA ALANI\nrepo klonu\nderleme çıktıları"];
+  }
+
+  // ══════════ DIŞ ══════════
+  git [label="BITBUCKET / GITHUB / GITLAB\nrepo · PR", fillcolor="#F1F5F9", penwidth=2];
+
+  // ══════════ BAĞLANTILAR ══════════
+
+  // Çalışan akış
+  temporal -> worker [label="  adımı çalıştır  ", penwidth=2.2, color="#16A34A", fontcolor="#15803D"];
+  worker -> sandbox  [label="  Linux projesi ise\l  burada derle/test et\l",
+                      color="#9333EA", fontcolor="#7E22CE", penwidth=2];
+
+  // Planlanan akış
+  edge [style=dashed, color="#94A3B8", fontcolor="#475569", penwidth=2];
+
+  worker -> mcpsrv [label="  .NET / Windows projesi ise\l  MCP ile ağ üzerinden gönder\l  \"şu repo'yu derle\"  ·  \"testleri koş\"\l",
+                    lhead=cluster_win, penwidth=2.5, color="#64748B", fontcolor="#334155"];
+
+  mcpsrv -> vs [label="  MSBuild çağır  "];
+  vs -> ws     [label="  derle · test et  "];
+  ws -> mcpsrv [label="  sonuç · log · hata  ", constraint=false];
+  mcpsrv -> worker [label="  başarılı mı?\l  test sonuçları\l", constraint=false,
+                    ltail=cluster_win, penwidth=2.5, color="#64748B", fontcolor="#334155"];
+
+  // Repo çekme
+  edge [style=dashed, color="#94A3B8", penwidth=1.6];
+  git -> ws [label="  klonla  ", fontcolor="#475569"];
+
+  edge [style=solid, color="#0891B2", penwidth=1.8, fontcolor="#0E7490"];
+  worker -> git [label="  branch · commit · PR  "];
+
+  // Hizalama — mcpcli Linux kutusu içinde kalsın
+}

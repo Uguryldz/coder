@@ -1,0 +1,251 @@
+- generic [ref=f16e2]:
+  - generic [ref=f16e298]:
+    - navigation "Ana gezinme" [ref=f16e299]:
+      - generic [ref=f16e300]:
+        - generic [ref=f16e301]: M
+        - generic [ref=f16e302]:
+          - text: Maestro
+          - generic [ref=f16e303]: SDLC otomasyonu
+      - generic [ref=f16e304]:
+        - generic [ref=f16e305]: İşler
+        - link "Panel" [ref=f16e306] [cursor=pointer]:
+          - /url: /dash
+          - generic [ref=f16e307]: ▦
+          - text: Panel
+        - link "Canlı akış" [ref=f16e308] [cursor=pointer]:
+          - /url: /pilot
+          - generic [ref=f16e309]: 🎥
+          - text: Canlı akış
+        - link "Canlı oturumlar" [ref=f16e310] [cursor=pointer]:
+          - /url: /sandbox
+          - generic [ref=f16e311]: ▶
+          - text: Canlı oturumlar
+      - generic [ref=f16e312]:
+        - generic [ref=f16e313]: Ajanlar
+        - link "Ajan tanımları" [ref=f16e314] [cursor=pointer]:
+          - /url: /variants
+          - generic [ref=f16e315]: 🤖
+          - text: Ajan tanımları
+        - link "Bilgi kütüphanesi" [ref=f16e316] [cursor=pointer]:
+          - /url: /knowledge
+          - generic [ref=f16e317]: 📚
+          - text: Bilgi kütüphanesi
+        - link "Analiz şablonu" [ref=f16e318] [cursor=pointer]:
+          - /url: /template
+          - generic [ref=f16e319]: 📋
+          - text: Analiz şablonu
+        - link "Doküman şablonu (Word)" [ref=f16e320] [cursor=pointer]:
+          - /url: /doctemplate
+          - generic [ref=f16e321]: 📄
+          - text: Doküman şablonu (Word)
+        - link "Sürüm kalite testi yakında" [ref=f16e322] [cursor=pointer]:
+          - /url: /eval
+          - generic [ref=f16e323]: 🎯
+          - text: Sürüm kalite testi
+          - generic [ref=f16e324]: yakında
+      - generic [ref=f16e325]:
+        - generic [ref=f16e326]: Denetim
+        - link "Denetim izi" [ref=f16e327] [cursor=pointer]:
+          - /url: /audit
+          - generic [ref=f16e328]: 🔒
+          - text: Denetim izi
+        - link "PII maskeleme" [ref=f16e329] [cursor=pointer]:
+          - /url: /pii
+          - generic [ref=f16e330]: 🔏
+          - text: PII maskeleme
+        - link "Yapay Zekâ Kullanımı & Maliyeti" [ref=f16e331] [cursor=pointer]:
+          - /url: /cost
+          - generic [ref=f16e332]: ₺
+          - text: Yapay Zekâ Kullanımı & Maliyeti
+        - link "Güvenlik taramaları yakında" [ref=f16e333] [cursor=pointer]:
+          - /url: /security
+          - generic [ref=f16e334]: 🛡
+          - text: Güvenlik taramaları
+          - generic [ref=f16e335]: yakında
+        - link "Kanıt paketi yakında" [ref=f16e336] [cursor=pointer]:
+          - /url: /evidence
+          - generic [ref=f16e337]: 📦
+          - text: Kanıt paketi
+          - generic [ref=f16e338]: yakında
+      - generic [ref=f16e339]:
+        - generic [ref=f16e340]: Kurulum
+        - link "Proje bağlama" [ref=f16e341] [cursor=pointer]:
+          - /url: /projects
+          - generic [ref=f16e342]: ⇄
+          - text: Proje bağlama
+        - link "Bildirim & eskalasyon" [ref=f16e343] [cursor=pointer]:
+          - /url: /notify
+          - generic [ref=f16e344]: 🔔
+          - text: Bildirim & eskalasyon
+        - link "Kullanıcılar & roller" [ref=f16e345] [cursor=pointer]:
+          - /url: /users
+          - generic [ref=f16e346]: 👥
+          - text: Kullanıcılar & roller
+        - link "Ayarlar & bağlantılar" [active] [ref=f16e347] [cursor=pointer]:
+          - /url: /settings
+          - generic [ref=f16e348]: ⚙
+          - text: Ayarlar & bağlantılar
+        - link "Sistem sağlığı" [ref=f16e349] [cursor=pointer]:
+          - /url: /health
+          - generic [ref=f16e350]: 💚
+          - text: Sistem sağlığı
+        - link "Çalışan makineler yakında" [ref=f16e351] [cursor=pointer]:
+          - /url: /runners
+          - generic [ref=f16e352]: 🖥
+          - text: Çalışan makineler
+          - generic [ref=f16e353]: yakında
+        - link "Yardım — nasıl kullanılır?" [ref=f16e354] [cursor=pointer]:
+          - /url: /help
+          - generic [ref=f16e355]: 📖
+          - text: Yardım — nasıl kullanılır?
+    - generic [ref=f16e356]:
+      - banner [ref=f16e357]:
+        - heading "Ayarlar & bağlantılar" [level=1] [ref=f16e755]
+        - generic [ref=f16e359]:
+          - generic [ref=f16e360]: ●
+          - text: Normal çalışıyor
+        - combobox "Dil" [ref=f16e361]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+        - generic [ref=f16e362]: admin
+        - button "Çıkış" [ref=f16e363] [cursor=pointer]
+      - main [ref=f16e364]:
+        - generic [ref=f16e756]:
+          - generic [ref=f16e757]:
+            - generic [ref=f16e758]:
+              - heading "Bağlantılar" [level=3] [ref=f16e759]
+              - generic [ref=f16e760]: Dış bağlantıları buradan yönetin — token AES ile şifreli saklanır, ekranda maskeli görünür
+              - button "➕ Bağlantı ekle" [ref=f16e762] [cursor=pointer]
+            - table [ref=f16e765]:
+              - caption [ref=f16e766]: Bağlantılar
+              - rowgroup [ref=f16e767]:
+                - row [ref=f16e768]:
+                  - columnheader "Bağlantı" [ref=f16e769]
+                  - columnheader "Durum" [ref=f16e770]
+                  - columnheader "Adres" [ref=f16e771]
+                  - columnheader "Token" [ref=f16e772]
+                  - columnheader [ref=f16e773]
+              - rowgroup [ref=f16e774]:
+                - row [ref=f16e775]:
+                  - cell "GitHub (maestro-pilot) GitHub" [ref=f16e776]:
+                    - generic [ref=f16e777]:
+                      - text: GitHub (maestro-pilot)
+                      - generic [ref=f16e778]: GitHub
+                  - cell "bağlı 4 gün" [ref=f16e779]:
+                    - generic [ref=f16e780]:
+                      - generic [ref=f16e781]:
+                        - generic [ref=f16e782]: ●
+                        - text: bağlı
+                      - generic [ref=f16e783]: 4 gün
+                  - cell "https://api.github.com" [ref=f16e784]
+                  - cell "****fOgX" [ref=f16e785]
+                  - cell [ref=f16e786]:
+                    - generic [ref=f16e787]:
+                      - button "🔌 Test et" [ref=f16e788] [cursor=pointer]
+                      - button "Düzenle" [ref=f16e789] [cursor=pointer]
+                      - button "Sil" [ref=f16e790] [cursor=pointer]
+                - row [ref=f16e791]:
+                  - cell "Jira (uyildiz) Jira Cloud" [ref=f16e792]:
+                    - generic [ref=f16e793]:
+                      - text: Jira (uyildiz)
+                      - generic [ref=f16e794]: Jira Cloud
+                  - cell "bağlı 1 gün" [ref=f16e795]:
+                    - generic [ref=f16e796]:
+                      - generic [ref=f16e797]:
+                        - generic [ref=f16e798]: ●
+                        - text: bağlı
+                      - generic [ref=f16e799]: 1 gün
+                  - cell "https://uyildiz.atlassian.net" [ref=f16e800]
+                  - cell "****0275" [ref=f16e801]
+                  - cell [ref=f16e802]:
+                    - generic [ref=f16e803]:
+                      - button "🔌 Test et" [ref=f16e804] [cursor=pointer]
+                      - button "Düzenle" [ref=f16e805] [cursor=pointer]
+                      - button "Sil" [ref=f16e806] [cursor=pointer]
+                - row [ref=f16e807]:
+                  - cell "OpenRouter (LLM) OpenRouter (LLM)" [ref=f16e808]:
+                    - generic [ref=f16e809]:
+                      - text: OpenRouter (LLM)
+                      - generic [ref=f16e810]: OpenRouter (LLM)
+                  - cell "bağlı 4 gün" [ref=f16e811]:
+                    - generic [ref=f16e812]:
+                      - generic [ref=f16e813]:
+                        - generic [ref=f16e814]: ●
+                        - text: bağlı
+                      - generic [ref=f16e815]: 4 gün
+                  - cell "https://openrouter.ai/api/v1" [ref=f16e816]
+                  - cell "****eba6" [ref=f16e817]
+                  - cell [ref=f16e818]:
+                    - generic [ref=f16e819]:
+                      - button "🔌 Test et" [ref=f16e820] [cursor=pointer]
+                      - button "Düzenle" [ref=f16e821] [cursor=pointer]
+                      - button "Sil" [ref=f16e822] [cursor=pointer]
+          - generic [ref=f16e823]:
+            - generic [ref=f16e824]:
+              - heading "Motor ayarları" [level=3] [ref=f16e825]
+              - generic [ref=f16e826]: Akış motorunun (pilot) çalışma ayarları — değişiklik bir sonraki işte geçerli olur
+              - button "Kaydet" [ref=f16e828] [cursor=pointer]
+            - generic [ref=f16e830]:
+              - generic [ref=f16e831]:
+                - generic [ref=f16e832]: Onaylayan grup
+                - textbox "Onaylayan grup" [ref=f16e833]: jira-users-uyildiz
+              - generic [ref=f16e834]:
+                - generic [ref=f16e835]: Model
+                - textbox "Model" [ref=f16e836]: anthropic/claude-sonnet-4.5
+              - generic [ref=f16e837]:
+                - generic [ref=f16e838]: Komut yoklama aralığı (ms)
+                - spinbutton "Komut yoklama aralığı (ms)" [ref=f16e839]: "3000"
+              - generic [ref=f16e840]:
+                - generic [ref=f16e841]: Keşif yoklama aralığı (ms)
+                - spinbutton "Keşif yoklama aralığı (ms)" [ref=f16e842]: "15000"
+              - generic [ref=f16e843]:
+                - generic [ref=f16e844]: Veri sınıfı
+                - combobox "Veri sınıfı" [ref=f16e845]:
+                  - option "açık"
+                  - option "dahili"
+                  - option "gizli" [selected]
+              - generic [ref=f16e846]:
+                - generic [ref=f16e847]: Operatör hesabı
+                - textbox "Operatör hesabı" [ref=f16e848]: 0uguryldz94@gmail.com
+              - generic [ref=f16e849]:
+                - generic [ref=f16e850]: Sandbox kökü
+                - textbox "Sandbox kökü" [ref=f16e851]
+              - generic [ref=f16e852]:
+                - generic [ref=f16e853]: İnceleme statüsü adı
+                - textbox "İnceleme statüsü adı" [ref=f16e854]: İNCELEMEDE
+              - generic [ref=f16e855]:
+                - checkbox "Otomatik birleştirme (auto-merge)" [ref=f16e856]
+                - text: Otomatik birleştirme (auto-merge)
+              - generic [ref=f16e857]:
+                - checkbox "autoStart" [checked] [ref=f16e858]
+                - text: autoStart
+          - generic [ref=f16e859]:
+            - generic [ref=f16e860]:
+              - heading "Acil durdurma (kill-switch)" [level=3] [ref=f16e861]
+              - generic [ref=f16e862]: Bir sorun anında Maestro'yu güvenle durdurur. Sadece admin · gerekçe zorunlu · denetim iznine yazılır.
+            - generic [ref=f16e863]:
+              - generic [ref=f16e864]:
+                - generic [ref=f16e865]:
+                  - term [ref=f16e866]: Şu anki durum
+                  - definition [ref=f16e867]:
+                    - generic [ref=f16e868]:
+                      - generic [ref=f16e869]: ●
+                      - text: Normal çalışıyor
+                - generic [ref=f16e870]:
+                  - term [ref=f16e871]: Son değiştiren
+                  - definition [ref=f16e872]: maestro-worker
+                - generic [ref=f16e873]:
+                  - term [ref=f16e874]: Gerekçe
+                  - definition [ref=f16e875]: initial
+              - generic [ref=f16e876]:
+                - generic [ref=f16e877]:
+                  - generic [ref=f16e878]:
+                    - generic [ref=f16e879]: ① Yeni iş almayı durdur (yumuşak fren)
+                    - generic [ref=f16e880]: Jira'dan yeni ticket alınmaz. Şu an çalışan işler yarıda kesilmez, doğal olarak biter. Analiz sandbox'ı açık kalır.
+                  - button "Yeni iş almayı durdur" [ref=f16e881] [cursor=pointer]
+                - generic [ref=f16e882]:
+                  - generic [ref=f16e883]:
+                    - generic [ref=f16e884]: ② Her şeyi durdur (acil fren)
+                    - generic [ref=f16e885]: Çalışan tüm ticket işlerine 'dur' sinyali gider. Açık onay kapıları beklemede kalır (kaybolmaz). Kalıcı analiz sandbox'ı KAPANMAZ — Maestro'nun çekirdek ortamı ayakta kalır.
+                  - button "Her şeyi durdur" [ref=f16e886] [cursor=pointer]
+  - region

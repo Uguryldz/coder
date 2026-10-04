@@ -1,0 +1,71 @@
+export * from "./actor.js";
+export * from "./bot-identity.js";
+export * from "./clarify-reentry.js";
+export * from "./config-health.js";
+export * from "./connection-health.js";
+export * from "./connection-service.js";
+export * from "./scm-repos-service.js";
+export * from "./repo-search-service.js";
+export * from "./jira-projects-service.js";
+export * from "./jira-match-values-service.js";
+export * from "./connection-store.js";
+export * from "./deps.js";
+export * from "./listening-identity.js";
+export * from "./listening-pool.js";
+export * from "./listening-store.js";
+export * from "./guidance-store.js";
+export * from "./doc-template-scan.js";
+export * from "./doc-template-service.js";
+export * from "./docx-zip.js";
+export * from "./errors.js";
+export * from "./identifiers.js";
+export * from "./jira-workflow-model.js";
+export * from "./notify-service.js";
+export * from "./routing-service.js";
+export * from "./gate-decision.js";
+export * from "./gate-status-reentry.js";
+export * from "./gateway.js";
+export * from "./jira-commands.js";
+export * from "./intake-decision-log.js";
+export * from "./jira-intake.js";
+export * from "./killswitch-service.js";
+export * from "./knowledge-policy.js";
+export * from "./messages.js";
+export * from "./onboarding-models.js";
+export * from "./onboarding-service.js";
+export * from "./params-service.js";
+export * from "./read-models.js";
+export * from "./run-restart.js";
+export * from "./read-studio.js";
+export * from "./repo-policy-service.js";
+export * from "./server.js";
+export * from "./signal-names.js";
+export * from "./auth/guard.js";
+export * from "./auth/local-identity.js";
+export * from "./auth/password.js";
+export * from "./auth/sessions.js";
+export * from "./platform/index.js";
+export * from "./routes/access.js";
+export * from "./routes/paging.js";
+export * from "./routes/unwired.js";
+export * from "./stores/admin-memory.js";
+export * from "./stores/connection-memory.js";
+export * from "./stores/doc-template-memory.js";
+export * from "./stores/memory.js";
+export * from "./stores/onboarding-memory.js";
+export * from "./stores/read-memory.js";
+export * from "./stores/settings-env.js";
+export * from "./stores/settings-wiring.js";
+export * from "./stores/variant-memory.js";
+
+/**
+ * Kural→akış kararı, TEŞHİS için dışa veriliyor.
+ *
+ * `runIntake` bunu kendi içinde çağırıyor ve dışarıdan çağıran yok — ama
+ * "bu kural hangi ticket'ları alır" sorusunu ajana hiçbir şey göndermeden
+ * cevaplayabilmek, sahada tekrar tekrar ihtiyaç duyulan şey oldu
+ * (`apps/deploy/src/bin/kural-provasi.ts`). Kararı ikinci kez yazmak yerine
+ * ASIL fonksiyonu prova ettirmek, provanın motorla ayrışmasını imkânsız kılar.
+ */
+export { flowDecisionFor, statusGateOf } from "./flow-decision.js";
+export type { ClassifiableTicket, FlowDecision } from "./flow-decision.js";

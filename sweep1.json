@@ -1,0 +1,282 @@
+[
+  {
+    "path": "dash",
+    "url": "/dash",
+    "notLive": false,
+    "errBox": false,
+    "len": 529,
+    "text": "🎬 Akışın tamamını 1 ekranda gör Ticket'tan merge'e kadar hangi adımı kimin yaptığını ve şu an neyin çalıştığını gösterir. Akışı aç Aktif iş akışı 0 0 tanesi hatalı Kapıda bekleyen 0 insan kararı bekliyor Tamamlanan 0 kanıt paketi üretildi Toplam 22 görebildiğin akışlar Dikkat isteyenler önce hatalılar, sonra en uzun süredir açık olanlar "
+  },
+  {
+    "path": "help",
+    "url": "/help",
+    "notLive": false,
+    "errBox": false,
+    "len": 3882,
+    "text": "Maestro tek paragrafta Jira'ya ticket yazarsın; Maestro okur, eksik varsa yorumla sorar, analiz yazar. Sen onaylarsın; kodu izole sandbox'ta yazar ve testleri gerçekten koşturur, sonra PR açar. PR'ı yine insan onaylar ve merge edilir. Prod'a hiçbir şey çıkarmaz — release kurumun kendi sürecidir. Rolüne göre İş tarafı / PO Jira'dan hiç çık"
+  },
+  {
+    "path": "live",
+    "url": "/live",
+    "notLive": false,
+    "errBox": false,
+    "len": 1060,
+    "text": "Ticket'tan merge'e insanın dokunduğu üç nokta 1 · Ticket yaz 2 · Analizi onayla 3 · PR'ı onayla 4 · Merge + kanıt Geliştiricinin yaptığı üç şey vardır: ticket yazmak, analizi onaylamak, PR'ı onaylamak. Analiz, kod, tarama, test, CI ve kanıt paketi arada akar. Adımların tamamı iş akışının kendi adım tablosundan 0 Work mode seçimi sistem 2 "
+  },
+  {
+    "path": "tickets",
+    "url": "/tickets",
+    "notLive": false,
+    "errBox": false,
+    "len": 2200,
+    "text": "Tümü (22) Çalışıyor (0) Kapıda (0) Tamamlandı (0) Hatalı (0) Proje Tüm projeler UGURDESK UGURMOB UGURPAY UGURWEB Görebildiğin iş akışları TİCKET UYGULAMA DURUM ADIM RİSK MOD BAŞLANGIÇ YAŞ UGURPAY-123 UGURPAY-123 ugurpay başlamadı — düşük full_auto 7.08.2026 11:20 2 gün UGURDESK-52 UGURDESK-52 ugurmasaustu başlamadı — kritik human_lead 8.0"
+  },
+  {
+    "path": "fanout",
+    "url": "/fanout",
+    "notLive": false,
+    "errBox": false,
+    "len": 557,
+    "text": "Ana ticket etki matrisinden alt ticket açılan koordinatör iş Ana ticket anahtarı Örnek biçim: UGURPAY-500 Etki matrisi Etki matrisi analiz belgesinde yaşıyor ve sunucuda bir ucu yok. Alt ticket bağı artık kayıttan okunuyor; aşağıdaki ağaç uydurma değil. Alt ticket'lar proje seçilmedi Yukarıya bir ana ticket anahtarı yaz. Fan-out kuralları"
+  },
+  {
+    "path": "clarify",
+    "url": "/clarify",
+    "notLive": false,
+    "errBox": false,
+    "len": 663,
+    "text": "Yanıt gönder adım 2b — intake'in sorduğu eksik bilgi Ticket Örnek biçim: UGURPAY-712 Yanıt Sorulan her maddeyi yanıtla — eksik yanıt yeni bir tur açar. Yanıtı gönder Yanıt, Jira yorumuyla aynı sinyali gönderir; ajan aynı oturumda devam eder. Açık iş akışları hangisinin 2b'de beklediği ticket detayında görünür Açık iş akışı yok Döngü kural"
+  },
+  {
+    "path": "workmode",
+    "url": "/workmode",
+    "notLive": false,
+    "errBox": false,
+    "len": 848,
+    "text": "Mod matrisi hangi adımı kim yapar Work mode matrisi MOD ANALİZ KOD İNCELEME TEST TASARIMI TEST KOŞUMU KULLANIM full_auto AI AI AI AI AI Rutin ek geliştirme ai_assist AI İnsan AI AI AI Karmaşık veya riskli değişiklik human_lead AI İnsan AI İnsan İnsan Uzman gerektiren iş human_only İnsan İnsan İnsan İnsan İnsan Gizli veri sınıfı veya AI ka"
+  },
+  {
+    "path": "greenfield",
+    "url": "/greenfield",
+    "notLive": false,
+    "errBox": false,
+    "len": 92,
+    "text": "Greenfield akışı ✦ Önce bir ticket seç Bu ekran bir greenfield ticket'ının akışını gösterir."
+  },
+  {
+    "path": "jira",
+    "url": "/jira",
+    "notLive": false,
+    "errBox": false,
+    "len": 2025,
+    "text": "Kullanıcıların çoğu Maestro'yu Jira'dan kullanır Analiz yorum olarak gelir, onay yorumla verilir, ilerleme etiketle gösterilir. Jira workflow durumuna dokunulmaz (M102) ve onay yetkisi Jira izniyle değil, Maestro'daki grup eşlemesiyle doğrulanır. Komut seti hepsi ticket'a yorum olarak yazılır Jira komutları KOMUT KİM NE ZAMAN ETKİ /approv"
+  },
+  {
+    "path": "commands",
+    "url": "/commands",
+    "notLive": false,
+    "errBox": false,
+    "len": 1524,
+    "text": "Jira komut seti Yetki, adım ve idempotency doğrulamalı Jira komut seti KOMUT KİM KULLANABİLİR HANGİ ADIMDA ETKİ /approve tech-lead product-owner qa Açık onay kapısı varken Kapıyı onaylar; imza denetim zincirine yazılır (M32/M33). /reject <argüman> tech-lead product-owner qa Açık onay kapısı varken Kapıyı gerekçesiyle reddeder; akış geri d"
+  },
+  {
+    "path": "runners",
+    "url": "/runners",
+    "notLive": false,
+    "errBox": false,
+    "len": 607,
+    "text": "İzolasyon profili Linux Tek kullanımlık konteynır · salt-okunur rootfs · cap-drop ALL · root olmayan kullanıcı · bellek/CPU/pid limitli Windows/macOS İş başına tek kullanımlık kullanıcı ve çalışma alanı · dar yetki · MDM/EDR · iş sonunda audit'li temizlik Ağ Yalnızca egress proxy üzerinden izinli hedefler; kalan her şey kapalı Kimlik Git "
+  },
+  {
+    "path": "sandbox",
+    "url": "/sandbox",
+    "notLive": false,
+    "errBox": false,
+    "len": 389,
+    "text": "Bu ekran oturumun durumunu gösterir, çıktısını değil: canlı ajan çıktısı maskelenmemiş ticket metni içerebilir (M18) ve tarayıcıya taşınmaz. Bu ekranda silme düğmesi yok: hareketsiz çalışma alanı kendi takvimiyle arşivlenir (M65). Operatörün elindeki bir silme düğmesi, bir insanın içinde çalıştığı oturumu yok etmenin en kolay yoludur — \"i"
+  },
+  {
+    "path": "cache",
+    "url": "/cache",
+    "notLive": false,
+    "errBox": false,
+    "len": 137,
+    "text": "Cache katmanları 3 katman · ticket açık kaldığı sürece yaşar Aktif ticket çalışma alanları kapanışta ya da iptalde audit kaydıyla silinir"
+  },
+  {
+    "path": "yaml",
+    "url": "/yaml",
+    "notLive": false,
+    "errBox": false,
+    "len": 1401,
+    "text": "ugurmasaustu ugurmobil-android ugurmobil-ios ugurpay ugurweb ugurmasaustu Sube/_git/ugurmasaustu windows-dotnet Bu dosya repoda yaşar; Studio yalnız okur. Değiştirmek için takımın kendi PR süreci kullanılır. # .maestro.yaml has not been observed in Sube/_git/ugurmasaustu. # # No run has read this repository's policy file yet, or the file "
+  },
+  {
+    "path": "variants",
+    "url": "/variants",
+    "notLive": false,
+    "errBox": false,
+    "len": 789,
+    "text": "Ajan variant'ları 7 rol × platform · her biri versiyonlu persona + knowledge VARİANT ROL PLATFORM MODEL AKTİF SÜRÜM KNOWLEDGE EVAL SKORU intake-default alım default claude-haiku-4-5 v3 2 dosya 97 analyst-desktop analist desktop claude-opus-5 v3 2 dosya 88 analyst-ios analist mobile-ios claude-opus-5 v4 2 dosya 91 analyst-web analist web c"
+  },
+  {
+    "path": "variant",
+    "url": "/variant",
+    "notLive": false,
+    "errBox": false,
+    "len": 86,
+    "text": "Variant detayı 🤖 Önce bir variant seç Ajan variant'ları listesinden bir satıra tıkla."
+  },
+  {
+    "path": "eval",
+    "url": "/eval",
+    "notLive": false,
+    "errBox": false,
+    "len": 202,
+    "text": "Golden ticket havuzu gerçek geçmiş ticket'lardan seçilmiş referans set Son eval koşumu Kaydetmek sürümü yayınlamaz. Yayından önce golden ticket eval'i koşar; skor düşerse gerileme burada açıkça görünür."
+  },
+  {
+    "path": "knowledge",
+    "url": "/knowledge",
+    "notLive": false,
+    "errBox": false,
+    "len": 166,
+    "text": "Knowledge kütüphanesi Paylaşılan bilgi dosyaları · birden çok variant'a bağlanır Ara Bu uç arama yapar; en az bir kelime gerekir. Sonuçlar Aramak için bir kelime yaz."
+  },
+  {
+    "path": "template",
+    "url": "/template",
+    "notLive": true,
+    "errBox": false,
+    "len": 540,
+    "text": "Analiz şablonu — tasarımcı Şablon Studio'da tasarlanır; analist çıktısı bu tanımdan üretilen şemayla doğrulanır (M108). 🚧 Bu bölüm henüz yayında değil Sunucu bu veriyi henüz sunmuyor. Uydurma veri göstermemek için burası boş bırakıldı. Sürüm geçmişi 🚧 Bu bölüm henüz yayında değil Sunucu bu veriyi henüz sunmuyor. Uydurma veri göstermemek"
+  },
+  {
+    "path": "doctemplate",
+    "url": "/doctemplate",
+    "notLive": false,
+    "errBox": false,
+    "len": 1136,
+    "text": "Kurumsal .docx şablonu kapak · antet/altbilgi · logo · stil tanımları · onay tablosu şablon yok Kurumsal şablon yüklenmemiş. Üretim durmaz — analiz sade varsayılan kapakla üretilir. Şablon yüklenmemişse üretim durmaz, ama bu durum sessizce geçilmez: Studio uyarır ve çıktı sade varsayılan kapakla üretilir. Tanınan yer tutucular hepsi şablo"
+  },
+  {
+    "path": "llm",
+    "url": "/llm",
+    "notLive": false,
+    "errBox": false,
+    "len": 1295,
+    "text": "Abonelik havuzu birincil yol · kota/pencere takibi · dolan hesap pas geçilir (M55) tamam HESAP SÜRÜCÜ DURUM PENCERELER PENCERE AÇILIŞI claude-sub-01 claude-sub hazır 5h: %62 · weekly: %41 2026-08-08T13:20:00.000Z · 2026-08-11T11:20:00.000Z claude-sub-02 claude-sub hazır 5h: %88 · weekly: %67 2026-08-08T12:20:00.000Z · 2026-08-11T11:20:00."
+  },
+  {
+    "path": "pii",
+    "url": "/pii",
+    "notLive": false,
+    "errBox": false,
+    "len": 659,
+    "text": "Bugün Maskelenen çağrı 1 / 5 %20 Maskelenen alan 2 On-prem'e giden 1 gizli sınıf — ağdan çıkmadığı için maskesiz Muaf variant 0 yok arşive maskeli hali yazılıyor v1'de maskesiz hali arşive yazılıyordu; v2'de arşiv daima maskelidir. Maskeleme kuralları eşleşme ve strateji · isabet sayısıyla TİP EŞLEŞME STRATEJİ İSABET regex iban hash 1 reg"
+  },
+  {
+    "path": "cost",
+    "url": "/cost",
+    "notLive": false,
+    "errBox": false,
+    "len": 1080,
+    "text": "Maliyet & kota Tek doğruluk kaynağı LLM Gateway · abonelikte kota, API'de dolar (M55) API harcaması $0.74 3 çağrı fiyatlı sürücüden karşılandı Kotadan karşılanan çağrı 2 abonelik sürücüleri · dolar maliyeti yok Token 228,100 Bu sayfadaki 5 çağrıdan hesaplandı — tüm zamanların toplamı değil. Abonelik havuzu kota dolduğunda iş durmaz, kuyru"
+  },
+  {
+    "path": "audit",
+    "url": "/audit",
+    "notLive": false,
+    "errBox": false,
+    "len": 5154,
+    "text": "Zincir durumu hash zincirli · tek yazarlı · SIEM'e CEF olarak akıyor Zinciri şimdi doğrula Zincir tutarlı (yeniden hesaplandı) Kayıtlar yeniden hash'lendi. Dış çapa yok — geçmişe dönük değişiklik bu doğrulamayla tespit edilemez. 76 kayıt yeniden hash'lendi Denetim kayıtları # SAAT AKTÖR EYLEM KONU HASH 76 2026-08-08T11:12:12.000Z maestro-"
+  },
+  {
+    "path": "evidence",
+    "url": "/evidence",
+    "notLive": false,
+    "errBox": false,
+    "len": 132,
+    "text": "Kanıt paketi tamamlanmış bir iş akışının denetim dosyası Ticket Örnek biçim: UGURPAY-123 Paketi görmek için bir ticket anahtarı yaz."
+  },
+  {
+    "path": "security",
+    "url": "/security",
+    "notLive": false,
+    "errBox": false,
+    "len": 188,
+    "text": "Bulgular önem sırasına göre · hiçbiri gizlenmez Fail-closed: tarayıcı imajı çekilemezse ya da çalışmazsa adım kırmızı olur — sessizce \"temiz\" sayılmaz. Eşikler Studio parametresidir (M71)."
+  },
+  {
+    "path": "notify",
+    "url": "/notify",
+    "notLive": false,
+    "errBox": false,
+    "len": 517,
+    "text": "Hatırlatıcı merdiveni Adımlar, kanallar ve süreler parametreden okunur (M88) 24. saat: Jira yorumu → 72. saat: E-posta + Teams → 168. saat: vekile delegasyon → 336. saat: bekleyen kapılar raporu Hiçbir aşamada otomatik ret yok. Bekleme bir karar değildir: akış bağlamını korur ve süresiz bekler; merdivenin son adımı bir insana rapordur. De"
+  },
+  {
+    "path": "routing",
+    "url": "/routing",
+    "notLive": false,
+    "errBox": false,
+    "len": 967,
+    "text": "Bağlı Jira projeleri proje ↔ uygulama N:M · tetikleme modu PROJE TETİKLEME UYGULAMALAR NOT UGURDESK otomatik ugurmasaustu every ticket starts a run UGURKREDI etiket eşleşme yok draft: not yet bound UGURMOB komut ugurmobil-android, ugurmobil-ios waits for the \"maestro\" label or /ai-start UGURPAY otomatik ugurpay every ticket starts a run U"
+  },
+  {
+    "path": "params",
+    "url": "/params",
+    "notLive": false,
+    "errBox": false,
+    "len": 3554,
+    "text": "Parametreler DB'de · versiyonlu · audit'li (M71) Parametreler PARAMETRE DEĞER KAPSAM SÜRÜM DEĞİŞTİREN İŞLEM binding.dry_run_sample_size Proje bağlarken kuru koşumda incelenecek ticket sayısı 20 proje v1 installer Düzenle build.timeout_min CI build sonucunun beklenme süresi (dakika) { \"byPlatform\": { \"linux-node\": 30, \"macos-xcode\": 60, \"l"
+  },
+  {
+    "path": "mcp",
+    "url": "/mcp",
+    "notLive": false,
+    "errBox": false,
+    "len": 2390,
+    "text": "Uç maestro-mcp · /mcp streamable HTTP Kimlik kişisel token AI, senin RBAC'ınla sınırlıdır Audit aktörü ai-via:<user> Her araç çağrısı denetim zincirinde Kapı kararı yok Onay yalnız insan kanalından Araç seti Etkin kapsam = kullanıcının RBAC'ı ∩ aracın kapsamı Araç seti ARAÇ KAPSAM NE YAPAR list_runs read Workflow koşuları; durum, ticket v"
+  },
+  {
+    "path": "onboard",
+    "url": "/onboard",
+    "notLive": false,
+    "errBox": false,
+    "len": 632,
+    "text": "1 · Jira kaynağı 2 · Repo ve politika 3 · .maestro.yaml 4 · Kapı ve tetikleme Jira projesi ve hedef repo Bu projenin ticket'ları hangi repoya gider? Jira projesi — seç — UGURDESK UGURKREDI UGURMOB UGURPAY UGURWEB ADO reposu — seç — ugurmasaustu ugurmobil-android ugurmobil-ios ugurpay ugurweb Kural eşleşmeyen ticket asla sessizce bir repoy"
+  },
+  {
+    "path": "users",
+    "url": "/users",
+    "notLive": false,
+    "errBox": false,
+    "len": 1033,
+    "text": "Kullanıcı sorgula Dizindeki hesabın Maestro'daki karşılığı Kullanıcı adı Dizindeki kullanıcı adı, örn. ayse.kaya Sorgula Rol kümesi Kapalı küme — bir oturumun yetkisi bu listeden okunur admin Platform ayarları, korumalı parametreler, kill-switch önerisi tech-lead Mühendislik onay kapıları (adım 5 ve 12) product-owner Analiz kapısı (adım 4"
+  },
+  {
+    "path": "settings",
+    "url": "/settings",
+    "notLive": false,
+    "errBox": false,
+    "len": 1165,
+    "text": "Bağlantılar Secret'lar Vault'ta tutulur — burada yalnız referansı görünür Bağlantılar BAĞLANTI DURUM KİMLİK REFERANSI Jira DC https://jira.example.local ● bağlı vault:maestro/jira#token Azure DevOps https://dev.azure.com ● bağlı vault:maestro/ado#pat Vault https://vault.example.local ● bağlı kubernetes-auth Depolama (StoragePort) https://"
+  },
+  {
+    "path": "health",
+    "url": "/health",
+    "notLive": true,
+    "errBox": false,
+    "len": 430,
+    "text": "● Tüm servisler sağlıklı Servisler Servisler SERVİS DURUM SÜRÜM SON KONTROL NOT PostgreSQL ● sağlıklı postgres az önce — Temporal ● sağlıklı temporal az önce — Yedekleme Yedek alma ve geri dönüş tatbikatı (M66) 🚧 Bu bölüm henüz yayında değil Yedekleme ve geri dönüş tatbikatı durumunu sunan bir uç henüz yok. Uydurma bir \"tatbikat yapılmad"
+  },
+  {
+    "path": "issues",
+    "url": "/issues",
+    "notLive": false,
+    "errBox": false,
+    "len": 3985,
+    "text": "Karar defteri 36 / 36 kayıt gösteriliyor Filtre REFERANS ÖNEM SORU KARAR DURUM TARİH GATE_REJECT yüksek UGURPAY-501 · 12 GATE_REJECT · ayse.kaya@ugurbank.local rejected 2026-08-04T13:11:00.000Z GATE_OPEN orta UGURPAY-123 · 11 GATE_OPEN · maestro-worker open 2026-08-08T11:12:12.000Z GATE_OPEN orta UGURMOB-188 · 5 GATE_OPEN · maestro-worker"
+  }
+]

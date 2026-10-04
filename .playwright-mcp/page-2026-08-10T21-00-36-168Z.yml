@@ -1,0 +1,26 @@
+- generic [ref=f4e2]:
+  - main [ref=f4e23]:
+    - generic [ref=f4e24]:
+      - generic [ref=f4e25]:
+        - generic [ref=f4e26]: M
+        - generic [ref=f4e27]:
+          - text: Parolanızı belirleyin
+          - generic [ref=f4e28]: İlk girişte parola değişikliği zorunludur (bankacılık standardı).
+      - generic [ref=f4e31]:
+        - generic [ref=f4e32]:
+          - generic [ref=f4e33]: Mevcut parola
+          - textbox "Mevcut parola" [ref=f4e34]
+        - generic [ref=f4e35]:
+          - generic [ref=f4e36]: Yeni parola
+          - textbox "Yeni parola" [ref=f4e37]
+          - paragraph [ref=f4e38]: En az 12 karakter; büyük/küçük harf, rakam ve simge içermeli.
+        - generic [ref=f4e39]:
+          - generic [ref=f4e40]: Yeni parola (tekrar)
+          - textbox "Yeni parola (tekrar)" [ref=f4e41]
+        - button "Parolayı değiştir" [ref=f4e42] [cursor=pointer]
+      - generic [ref=f4e44]:
+        - generic [ref=f4e45]: Dil
+        - combobox "Dil" [ref=f4e46]:
+          - option "Türkçe" [selected]
+          - option "İngilizce"
+  - region
